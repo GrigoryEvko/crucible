@@ -1,11 +1,6 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_is_swmr_handle — sentinel TU for safety/IsSwmrHandle.h
-//
-// Cross-checks `is_swmr_writer_v` / `is_swmr_reader_v` against REAL
-// PermissionedSnapshot::WriterHandle / ReaderHandle and verifies the
-// mutual exclusion (a writer is rejected by the reader trait, and
-// vice versa).
-// ═══════════════════════════════════════════════════════════════════
+// A header that ships its own static_asserts is never compiled under the
+// project warning flags unless some translation unit includes it.  This
+// file is that translation unit for the writer and reader traits.
 
 #include <crucible/safety/IsSwmrHandle.h>
 
@@ -37,22 +32,18 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-#define EXPECT_TRUE(cond)                                                  \
-    do {                                                                   \
-        if (!(cond)) {                                                     \
-            std::fprintf(stderr,                                           \
-                "    EXPECT_TRUE failed: %s (%s:%d)\n",                    \
-                #cond, __FILE__, __LINE__);                                \
-            throw TestFailure{};                                           \
-        }                                                                  \
+#define EXPECT_TRUE(cond)                                                                            \
+    do {                                                                                             \
+        if (!(cond)) {                                                                               \
+            std::fprintf(stderr, "    EXPECT_TRUE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+            throw TestFailure{};                                                                     \
+        }                                                                                            \
     } while (0)
 
 namespace extract = ::crucible::safety::extract;
-namespace concur  = ::crucible::concurrent;
-namespace safety  = ::crucible::safety;
-namespace ses     = ::crucible::safety::proto::swmr_session;
-
-// ── Synthetic witnesses ─────────────────────────────────────────────
+namespace concur = ::crucible::concurrent;
+namespace safety = ::crucible::safety;
+namespace ses = ::crucible::safety::proto::swmr_session;
 
 struct synth_writer {
     void publish(int const&) noexcept {}
@@ -79,8 +70,6 @@ struct synth_void_load {
     void load() const noexcept {}
 };
 
-// ── Real-world cross-check setup ────────────────────────────────────
-
 struct cross_check_tag {};
 using Snap = concur::PermissionedSnapshot<int, cross_check_tag>;
 
@@ -100,9 +89,7 @@ static_assert(!extract::is_swmr_writer_v<SessionReader>);
 static_assert(std::is_same_v<extract::swmr_writer_value_t<SessionWriter>, int>);
 static_assert(std::is_same_v<extract::swmr_reader_value_t<SessionReader>, int>);
 
-void test_runtime_smoke() {
-    EXPECT_TRUE(extract::is_swmr_handle_smoke_test());
-}
+void test_runtime_smoke() { EXPECT_TRUE(extract::is_swmr_handle_smoke_test()); }
 
 void test_synthetic_writer_positive() {
     static_assert(extract::is_swmr_writer_v<synth_writer>);
@@ -138,14 +125,10 @@ void test_synthetic_reader_negative() {
 }
 
 void test_payload_extraction() {
-    static_assert(std::is_same_v<
-        extract::swmr_writer_value_t<synth_writer>, int>);
-    static_assert(std::is_same_v<
-        extract::swmr_writer_value_t<synth_writer const&>, int>);
-    static_assert(std::is_same_v<
-        extract::swmr_reader_value_t<synth_reader>, int>);
-    static_assert(std::is_same_v<
-        extract::swmr_reader_value_t<synth_reader const&>, int>);
+    static_assert(std::is_same_v<extract::swmr_writer_value_t<synth_writer>, int>);
+    static_assert(std::is_same_v<extract::swmr_writer_value_t<synth_writer const&>, int>);
+    static_assert(std::is_same_v<extract::swmr_reader_value_t<synth_reader>, int>);
+    static_assert(std::is_same_v<extract::swmr_reader_value_t<synth_reader const&>, int>);
 }
 
 void test_real_snapshot_writer_handle_matches() {
@@ -173,10 +156,8 @@ void test_real_snapshot_reader_rejected_by_writer_trait() {
 void test_real_payload_extraction() {
     using WH = Snap::WriterHandle;
     using RH = Snap::ReaderHandle;
-    static_assert(std::is_same_v<
-        extract::swmr_writer_value_t<WH>, int>);
-    static_assert(std::is_same_v<
-        extract::swmr_reader_value_t<RH>, int>);
+    static_assert(std::is_same_v<extract::swmr_writer_value_t<WH>, int>);
+    static_assert(std::is_same_v<extract::swmr_reader_value_t<RH>, int>);
 }
 
 void test_runtime_round_trip() {
@@ -193,22 +174,19 @@ void test_runtime_round_trip() {
 
 int main() {
     std::fprintf(stderr, "test_is_swmr_handle:\n");
-    run_test("test_runtime_smoke",                        test_runtime_smoke);
-    run_test("test_synthetic_writer_positive",            test_synthetic_writer_positive);
-    run_test("test_synthetic_writer_negative",            test_synthetic_writer_negative);
-    run_test("test_synthetic_reader_positive",            test_synthetic_reader_positive);
-    run_test("test_synthetic_reader_negative",            test_synthetic_reader_negative);
-    run_test("test_payload_extraction",                   test_payload_extraction);
-    run_test("test_real_snapshot_writer_handle_matches",  test_real_snapshot_writer_handle_matches);
-    run_test("test_real_snapshot_reader_handle_matches",  test_real_snapshot_reader_handle_matches);
-    run_test("test_real_snapshot_writer_rejected_by_reader_trait",
-                                                          test_real_snapshot_writer_rejected_by_reader_trait);
-    run_test("test_real_snapshot_reader_rejected_by_writer_trait",
-                                                          test_real_snapshot_reader_rejected_by_writer_trait);
-    run_test("test_real_payload_extraction",              test_real_payload_extraction);
-    run_test("test_runtime_round_trip",                   test_runtime_round_trip);
-    std::fprintf(stderr, "\n%d passed, %d failed\n",
-                 total_passed, total_failed);
+    run_test("test_runtime_smoke", test_runtime_smoke);
+    run_test("test_synthetic_writer_positive", test_synthetic_writer_positive);
+    run_test("test_synthetic_writer_negative", test_synthetic_writer_negative);
+    run_test("test_synthetic_reader_positive", test_synthetic_reader_positive);
+    run_test("test_synthetic_reader_negative", test_synthetic_reader_negative);
+    run_test("test_payload_extraction", test_payload_extraction);
+    run_test("test_real_snapshot_writer_handle_matches", test_real_snapshot_writer_handle_matches);
+    run_test("test_real_snapshot_reader_handle_matches", test_real_snapshot_reader_handle_matches);
+    run_test("test_real_snapshot_writer_rejected_by_reader_trait", test_real_snapshot_writer_rejected_by_reader_trait);
+    run_test("test_real_snapshot_reader_rejected_by_writer_trait", test_real_snapshot_reader_rejected_by_writer_trait);
+    run_test("test_real_payload_extraction", test_real_payload_extraction);
+    run_test("test_runtime_round_trip", test_runtime_round_trip);
+    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
     return EXIT_SUCCESS;

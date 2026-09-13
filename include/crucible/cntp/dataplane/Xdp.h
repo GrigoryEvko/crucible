@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-130 substrate slice. Runtime-owned XDP/BPF typed plans.
-//
-// This header does not attach programs to a NIC, allocate kernel maps, or load
-// verifier bytecode. It pins the userspace contract first: source-tagged XDP
-// program specs, source-tagged BPF map specs, NIC capability admission, Init-row
-// minting, and a fixed-size in-process map image for deterministic tests and
-// future loader wiring.
+// Nothing here attaches a program to a NIC, allocates a kernel map or loads
+// verifier bytecode.  BpfMapImage is a process-local array standing in for a
+// kernel map.
 
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>

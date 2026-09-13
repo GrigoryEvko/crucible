@@ -1,35 +1,14 @@
 #pragma once
 
-// Lower: TraceGraph → Graph IR conversion.
-//
-// Bridges the recording layer (TraceEntry[], CSR property graph)
-// and the mutable computation graph (GraphNode, 64B cache-line IR).
-//
-// One GraphNode per TraceEntry, plus dedicated INPUT nodes for
-// external tensors (params, data loader outputs), deduplicated
-// by slot_id. Slot IDs propagate through Graph's side-tables
-// so the Vessel can serve all tensors from the pre-allocated pool.
-//
-// Graph inputs  = INPUT nodes (external tensors).
-// Graph outputs = ops with no DATA_FLOW consumers in the DFG.
-
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/fixy/Source.h>  // FIXY-U-096h: tags::source::Recorded/Replayed
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096h: Tagged + FixedArray
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 
 #include <concepts>
 #include <cstring>
-
-// FIXY-U-096h production migration: Tagged / FixedArray / source::{Recorded,
-// Replayed} reached through the fixy:: umbrella instead of safety::* directly.
-// Lower.h is runtime-tier (fan-in: BackgroundThread + test_lower + vessel
-// adapter, all runtime-tier).  No substrate back-edge — fixy/Wrap.h's
-// transitive Arena.h is redundant (Lower already reaches Arena via Graph.h /
-// ExprPool.h), not cyclic.  fixy::tags::source::* path (not fixy::source::*)
-// per the federation-namespace reservation discovered in FIXY-U-096c.
 
 namespace crucible {
 
@@ -45,21 +24,11 @@ using LoweredGraph = fixy::wrap::Tagged<Graph*, Source>;
 
 using lower_trace_required_row = effects::Row<effects::Effect::Bg, effects::Effect::Alloc>;
 
-// Lower a provenance-tagged TraceGraph into a mutable Graph IR.
+// One graph node per recorded op, plus one input node per external tensor,
+// which is any tensor with a slot but no producing op in this trace.
 //
-// Populates `graph` with one GraphNode per TraceEntry:
-//   - NodeKind from classify_node_kind(kernel_id)
-//   - Symbolic sizes from output TensorMeta
-//   - Input/output slot IDs in the Graph's side-tables
-//   - Wired to producer nodes via input_trace_indices
-//
-// POINTWISE ops get add_pointwise (null body, filled by Tier 2+).
-// Everything else gets add_extern with ckernel_name as the label,
-// then kind is patched to the correct NodeKind.
-//
-// Null tensor inputs (Optional[Tensor] = None) are filtered out:
-// the Graph node will have fewer inputs than the TraceEntry. Slot
-// IDs are compacted to match the filtered input list.
+// An absent optional tensor input is dropped, so a node can end up with fewer
+// inputs than the entry it came from. The slot list is compacted to match.
 template <typename CallerRow, LowerTraceSource Source>
     requires effects::Subrow<lower_trace_required_row, CallerRow>
 [[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(effects::Alloc a, LowerTraceGraph<Source> trace,
@@ -72,11 +41,8 @@ template <typename CallerRow, LowerTraceSource Source>
 
     Arena& arena = graph.arena();
 
-    // ── Phase 1: INPUT nodes for external tensors ─────────────────
-    //
-    // Scan all op inputs to find externals (input_trace_indices == UINT32_MAX
-    // with a valid slot_id). Create one INPUT node per unique slot_id.
-
+    // An input with no producing op but a valid slot is external. One node
+    // is created per distinct slot.
     const uint32_t map_size = (num_slots > 0) ? num_slots : 1;
     auto** extern_map = arena.alloc_array<GraphNode*>(a, map_size);
     std::memset(extern_map, 0, map_size * sizeof(GraphNode*));
@@ -89,13 +55,8 @@ template <typename CallerRow, LowerTraceSource Source>
             if (te.input_trace_indices[j].is_valid()) continue;
             const SlotId sid = te.input_slot_ids[j];
             if (!sid.is_valid() || sid.raw() >= num_slots) continue;
-            if (extern_map[sid.raw()]) continue;  // already created
+            if (extern_map[sid.raw()]) continue;
 
-            // Create INPUT node with symbolic sizes from the TensorMeta.
-            // FixedArray<const Expr*, 8> (#932 production migration of #1081):
-            // NSDMI zero-init replaces the bare-array uninit-before-store window
-            // (the loop fills [0, ndim) and the std::span limits consumers to
-            // the populated prefix, so this is defense-in-depth, not correctness).
             const TensorMeta& m = te.input_metas[j];
             fixy::wrap::FixedArray<const Expr*, 8> sizes{};
             const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
@@ -108,18 +69,13 @@ template <typename CallerRow, LowerTraceSource Source>
         }
     }
 
-    // ── Phase 2: Compute nodes for each TraceEntry ────────────────
-
     auto** op_to_node = arena.alloc_array<GraphNode*>(a, num_ops);
 
     for (uint32_t i = 0; i < num_ops; i++) {
         const TraceEntry& te = tg.ops[i];
         const NodeKind kind = classify_node_kind(te.kernel_id);
 
-        // Output metadata from primary output tensor.
-        // FixedArray<const Expr*, 8> (#932 production migration of #1081):
-        // NSDMI default-init matches the prior `= {}` zero-init AND carries
-        // the type identity through to the std::span consumers below.
+        // The node's shape comes from the first output.
         uint8_t ndim = 0;
         ScalarType dtype = ScalarType::Undefined;
         int8_t dev = -1;
@@ -134,8 +90,7 @@ template <typename CallerRow, LowerTraceSource Source>
                 sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
         }
 
-        // Resolve input dependencies, filtering null inputs.
-        // Two passes: count real inputs, then collect.
+        // Counted first, then collected, because the count sizes the arrays.
         uint16_t real_count = 0;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             const OpIndex tidx = te.input_trace_indices ? te.input_trace_indices[j] : OpIndex{};
@@ -170,23 +125,20 @@ template <typename CallerRow, LowerTraceSource Source>
             k++;
         }
 
-        // Create GraphNode.
         GraphNode* node;
         if (kind == NodeKind::POINTWISE) {
             node =
                 graph.add_pointwise(a, std::span{sizes.data(), ndim}, dtype, dev, nullptr, std::span{deps, real_count});
         } else {
-            // EXTERN for everything else (REDUCTION, NOP, MUTATION, SCAN, EXTERN).
-            // add_extern provides the structural shell; kind is patched below.
+            // Every other kind is built through the external-node factory for
+            // its structural shell, then corrected to its real kind.
             node = graph.add_extern(a, ckernel_name(te.kernel_id), ckernel_name(te.kernel_id), dtype, dev,
                                     std::span{sizes.data(), ndim}, std::span{deps, real_count});
             node->kind = kind;
         }
 
-        // Multi-output ops (e.g. topk → values + indices).
         if (te.num_outputs > 1) node->num_outputs = te.num_outputs;
 
-        // Carry slot IDs into Graph's side-tables.
         if (real_count > 0) graph.set_input_slots(a, node->id, std::span{in_slots, real_count});
         if (te.output_slot_ids && te.num_outputs > 0)
             graph.set_output_slots(a, node->id, std::span<const SlotId>{te.output_slot_ids, te.num_outputs});
@@ -194,9 +146,7 @@ template <typename CallerRow, LowerTraceSource Source>
         op_to_node[i] = node;
     }
 
-    // ── Phase 3: Graph inputs and outputs ─────────────────────────
-
-    // Graph inputs: all INPUT nodes, ordered by slot_id.
+    // The graph's inputs are the input nodes, in slot order.
     auto* input_ids = arena.alloc_array<NodeId>(a, map_size);
     uint32_t n_inputs = 0;
     for (uint32_t s = 0; s < num_slots; s++) {
@@ -204,8 +154,8 @@ template <typename CallerRow, LowerTraceSource Source>
     }
     if (n_inputs > 0) graph.set_graph_inputs(a, std::span{input_ids, n_inputs});
 
-    // Graph outputs: ops whose outputs are not consumed by any
-    // DATA_FLOW edge within this iteration (terminal values).
+    // The graph's outputs are the ops whose results nothing in this trace
+    // consumes.
     auto* output_ids = arena.alloc_array<NodeId>(a, num_ops);
     uint32_t n_outputs = 0;
     for (uint32_t i = 0; i < num_ops; i++) {

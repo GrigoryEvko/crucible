@@ -63,26 +63,21 @@ int main() {
     assert(!gset_full_a.contains(3));
     auto malformed_gset_state = gset_full_b.state();
     malformed_gset_state.count = 3;
-    assert(!gset_full_a.merge(
-        typename GSet<int, 2>::gossiped_state_type{malformed_gset_state}));
+    assert(!gset_full_a.merge(typename GSet<int, 2>::gossiped_state_type{malformed_gset_state}));
     assert(gset_full_a.size().value() == 1);
-    auto gset_static_overflow =
-        GSet<int, 2>::merge(gset_full_a.state(), gset_full_b.state());
+    auto gset_static_overflow = GSet<int, 2>::merge(gset_full_a.state(), gset_full_b.state());
     assert(gset_static_overflow.contains(1));
     assert(!gset_static_overflow.contains(2));
     assert(!gset_static_overflow.contains(3));
 
-    // fixy-A5-003 regression: BoundedHashSetState's open-addressing
-    // position is computed via a Crucible-stable hash (fmix64), NOT
-    // std::hash<T>.  std::hash<int> on libstdc++ is identity, so under
-    // the old code value V landed at slot V%Capacity — a value
-    // shipped from a peer Relay (different libstdc++ ABI) would be
-    // stored at a different slot, breaking contains() on the receiver.
-    //
-    // Witness: with stable_hash<int>(N) = fmix64(N), the occupied slot
-    // for value N is fmix64(N)%Capacity, which differs from N%Capacity
-    // for almost every N.  Pin the prediction here so any future
-    // accidental regression to std::hash trips the test.
+    // The slot layout of a gossiped set is part of its wire format: a
+    // peer receives the slot array and probes it directly.  So the hash
+    // that picks the slot has to agree between every peer, and the
+    // standard does not require std::hash to agree between library
+    // implementations.  On this one std::hash<int> is the identity, so
+    // a set built with it would place value V at slot V % Capacity and
+    // a peer with a different implementation would look elsewhere.
+    // Predicting the slot for a known value pins the hash in place.
     {
         constexpr auto fmix64_of = [](std::uint64_t k) constexpr {
             k ^= k >> 33;
@@ -93,12 +88,10 @@ int main() {
             return k;
         };
         constexpr std::size_t expected_slot_7 = fmix64_of(7) % 8;
-        static_assert(
-            expected_slot_7 != 7,
-            "fmix64(7) % 8 must differ from std::hash<int>(7) % 8 — "
-            "otherwise the fixy-A5-003 stable-hash regression test "
-            "tautologically passes regardless of the hash function in "
-            "use.  Choose a different witness value.");
+        static_assert(expected_slot_7 != 7, "fmix64(7) % 8 must differ from std::hash<int>(7) % 8 — "
+                                            "otherwise the stable-hash check below passes whichever "
+                                            "hash function is in use.  Choose a different witness "
+                                            "value.");
 
         GSet<int, 8> stable_probe;
         assert(stable_probe.add(LocalWrite<int>{7}));
@@ -106,32 +99,29 @@ int main() {
         assert(stable_probe.size().value() == 1);
         assert(stable_state.slots[expected_slot_7].occupied);
         assert(stable_state.slots[expected_slot_7].value == 7);
-        // Slot 7 (where std::hash<int>(7)%8 would have placed it) is
-        // untouched — proves we are NOT using std::hash.
+        // Slot 7 is where the identity hash would have placed the
+        // value, and it is empty.
         assert(!stable_state.slots[7].occupied);
 
-        // Cross-instance: two independently-constructed GSets must
-        // produce byte-identical state for the same insertions — the
-        // open-addressing layout is purely a function of the values.
+        // Two independently built sets must agree byte for byte after
+        // the same insertion, because the layout is a function of the
+        // values alone and of nothing carried in the instance.
         GSet<int, 8> stable_probe_b;
         assert(stable_probe_b.add(LocalWrite<int>{7}));
         assert(stable_probe.state() == stable_probe_b.state());
         for (std::size_t i = 0; i < 8; ++i) {
-            assert(stable_state.slots[i].occupied ==
-                   stable_probe_b.state().slots[i].occupied);
+            assert(stable_state.slots[i].occupied == stable_probe_b.state().slots[i].occupied);
             if (stable_state.slots[i].occupied) {
-                assert(stable_state.slots[i].value ==
-                       stable_probe_b.state().slots[i].value);
+                assert(stable_state.slots[i].value == stable_probe_b.state().slots[i].value);
             }
         }
 
-        // Gossip round-trip: receive a peer's state directly (no
-        // mediating insert()), then ask contains().  contains() must
-        // use the SAME stable hash the producer used, otherwise the
-        // probe walks the wrong slot and answers wrong.
+        // The receiver takes a peer's state whole, with no insertion of
+        // its own to rebuild the layout.  Its probe therefore has to
+        // walk the slots the producer chose, which it can only do if
+        // both sides hash alike.
         GSet<int, 8> gossip_receiver;
-        assert(gossip_receiver.merge(
-            typename GSet<int, 8>::gossiped_state_type{stable_state}));
+        assert(gossip_receiver.merge(typename GSet<int, 8>::gossiped_state_type{stable_state}));
         assert(gossip_receiver.contains(7));
         assert(!gossip_receiver.contains(8));
         assert(gossip_receiver.state() == stable_state);
@@ -139,8 +129,7 @@ int main() {
 
     OrSet<int, std::uint64_t, 8> orset_a;
     OrSet<int, std::uint64_t, 8> orset_b;
-    assert(orset_a.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{
-        {.value = 7, .tag = 100}}));
+    assert(orset_a.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{{.value = 7, .tag = 100}}));
     assert(orset_b.merge(orset_a));
     assert(orset_b.contains(7));
     assert(orset_b.remove(LocalWrite<int>{7}));
@@ -150,56 +139,44 @@ int main() {
 
     OrSet<int, std::uint64_t, 2> orset_full_a;
     OrSet<int, std::uint64_t, 2> orset_full_b;
-    assert(orset_full_a.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{
-        {.value = 1, .tag = 1}}));
-    assert(orset_full_b.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{
-        {.value = 2, .tag = 2}}));
-    assert(orset_full_b.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{
-        {.value = 3, .tag = 3}}));
+    assert(orset_full_a.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{{.value = 1, .tag = 1}}));
+    assert(orset_full_b.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{{.value = 2, .tag = 2}}));
+    assert(orset_full_b.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{{.value = 3, .tag = 3}}));
     assert(!orset_full_a.merge(orset_full_b));
     assert(orset_full_a.contains(1));
     assert(!orset_full_a.contains(2));
     assert(!orset_full_a.contains(3));
     auto malformed_orset_state = orset_full_b.state();
     malformed_orset_state.count = 3;
-    assert(!orset_full_a.merge(
-        typename OrSet<int, std::uint64_t, 2>::gossiped_state_type{
-            malformed_orset_state}));
+    assert(!orset_full_a.merge(typename OrSet<int, std::uint64_t, 2>::gossiped_state_type{malformed_orset_state}));
     assert(orset_full_a.contains(1));
     assert(!orset_full_a.contains(2));
     assert(!orset_full_a.contains(3));
-    auto orset_static_overflow =
-        OrSet<int, std::uint64_t, 2>::merge(
-            orset_full_a.state(),
-            orset_full_b.state());
+    auto orset_static_overflow = OrSet<int, std::uint64_t, 2>::merge(orset_full_a.state(), orset_full_b.state());
     OrSet<int, std::uint64_t, 2> orset_static_probe;
-    assert(orset_static_probe.merge(
-        typename OrSet<int, std::uint64_t, 2>::gossiped_state_type{
-            orset_static_overflow}));
+    assert(orset_static_probe.merge(typename OrSet<int, std::uint64_t, 2>::gossiped_state_type{orset_static_overflow}));
     assert(orset_static_probe.contains(1));
     assert(!orset_static_probe.contains(2));
     assert(!orset_static_probe.contains(3));
 
     LwwRegister<int, HlcTimestamp> lww_a;
     LwwRegister<int, HlcTimestamp> lww_b;
-    assert(lww_a.assign(LocalWrite<LwwRegisterWrite<int, HlcTimestamp>>{
-        {.value = 10, .clock = {.physical_ns = 5, .counter = 0}}}));
-    assert(lww_b.assign(LocalWrite<LwwRegisterWrite<int, HlcTimestamp>>{
-        {.value = 20, .clock = {.physical_ns = 7, .counter = 0}}}));
+    assert(lww_a.assign(
+        LocalWrite<LwwRegisterWrite<int, HlcTimestamp>>{{.value = 10, .clock = {.physical_ns = 5, .counter = 0}}}));
+    assert(lww_b.assign(
+        LocalWrite<LwwRegisterWrite<int, HlcTimestamp>>{{.value = 20, .clock = {.physical_ns = 7, .counter = 0}}}));
     assert(lww_a.merge(lww_b));
     assert(lww_a.value().has_value());
     assert(*lww_a.value() == 20);
-    assert(lww_b.assign(LocalWrite<LwwRegisterWrite<int, HlcTimestamp>>{
-        {.value = 30, .clock = {.physical_ns = 7, .counter = 0}}}));
+    assert(lww_b.assign(
+        LocalWrite<LwwRegisterWrite<int, HlcTimestamp>>{{.value = 30, .clock = {.physical_ns = 7, .counter = 0}}}));
     assert(lww_a.merge(lww_b));
     assert(*lww_a.value() == 30);
 
     GCounter<4> gc_a;
     GCounter<4> gc_b;
-    assert(gc_a.increment(LocalWrite<CounterUpdate<4>>{
-        {.replica = ReplicaIndex<4>{0}, .amount = CounterAmount{3}}}));
-    assert(gc_b.increment(LocalWrite<CounterUpdate<4>>{
-        {.replica = ReplicaIndex<4>{1}, .amount = CounterAmount{5}}}));
+    assert(gc_a.increment(LocalWrite<CounterUpdate<4>>{{.replica = ReplicaIndex<4>{0}, .amount = CounterAmount{3}}}));
+    assert(gc_b.increment(LocalWrite<CounterUpdate<4>>{{.replica = ReplicaIndex<4>{1}, .amount = CounterAmount{5}}}));
     assert(gc_a.merge(gc_b));
     assert(gc_b.merge(gc_a));
     assert(gc_a.value() == 8);
@@ -207,53 +184,48 @@ int main() {
 
     PNCounter<4> pn_a;
     PNCounter<4> pn_b;
-    assert(pn_a.increment(LocalWrite<CounterUpdate<4>>{
-        {.replica = ReplicaIndex<4>{0}, .amount = CounterAmount{10}}}));
-    assert(pn_b.decrement(LocalWrite<CounterUpdate<4>>{
-        {.replica = ReplicaIndex<4>{1}, .amount = CounterAmount{4}}}));
+    assert(pn_a.increment(LocalWrite<CounterUpdate<4>>{{.replica = ReplicaIndex<4>{0}, .amount = CounterAmount{10}}}));
+    assert(pn_b.decrement(LocalWrite<CounterUpdate<4>>{{.replica = ReplicaIndex<4>{1}, .amount = CounterAmount{4}}}));
     assert(pn_a.merge(pn_b));
     assert(pn_a.value() == 6);
 
     using Snap = VectorClockSnapshot<4, ClockTag>;
     MVRegister<int, 4, 4, ClockTag> mv_a;
     MVRegister<int, 4, 4, ClockTag> mv_b;
-    assert(mv_a.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 1, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
-    assert(mv_b.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 2, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
+    assert(mv_a.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 1, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
+    assert(mv_b.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 2, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
     assert(mv_a.merge(mv_b));
     assert(mv_a.size().value() == 2);
-    assert(mv_a.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 3, .clock = Snap{std::in_place, 1, 1, 1, 0}}}));
+    assert(mv_a.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 3, .clock = Snap{std::in_place, 1, 1, 1, 0}}}));
     assert(mv_a.size().value() == 1);
     assert(mv_a.state().versions[0].value == 3);
 
     MVRegister<int, 2, 4, ClockTag> mv_full_a;
     MVRegister<int, 2, 4, ClockTag> mv_full_b;
-    assert(mv_full_a.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 10, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
-    assert(mv_full_a.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 20, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
-    assert(mv_full_b.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 30, .clock = Snap{std::in_place, 0, 0, 1, 0}}}));
+    assert(mv_full_a.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 10, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
+    assert(mv_full_a.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 20, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
+    assert(mv_full_b.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 30, .clock = Snap{std::in_place, 0, 0, 1, 0}}}));
     assert(!mv_full_a.merge(mv_full_b));
     assert(mv_full_a.size().value() == 2);
     assert(mv_full_a.state().versions[0].value == 20);
     assert(mv_full_a.state().versions[1].value == 10);
-    auto mv_static_overflow =
-        MVRegister<int, 2, 4, ClockTag>::merge(
-            mv_full_a.state(),
-            mv_full_b.state());
+    auto mv_static_overflow = MVRegister<int, 2, 4, ClockTag>::merge(mv_full_a.state(), mv_full_b.state());
     assert(mv_static_overflow.count == 2);
     assert(mv_static_overflow.versions[0].value == 20);
     assert(mv_static_overflow.versions[1].value == 10);
 
     MVRegister<int, 4, 4, ClockTag> mv_order_a;
     MVRegister<int, 4, 4, ClockTag> mv_order_b;
-    assert(mv_order_a.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 2, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
-    assert(mv_order_b.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-        {.value = 1, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
+    assert(mv_order_a.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 2, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
+    assert(mv_order_b.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 1, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
     assert(mv_order_a.merge(mv_order_b));
     assert(mv_order_b.merge(mv_order_a));
     assert(mv_order_a.state().count == 2);
@@ -266,11 +238,9 @@ int main() {
     MVRegister<int, 4, 4, ClockTag> mv_equal_clock_a;
     MVRegister<int, 4, 4, ClockTag> mv_equal_clock_b;
     assert(mv_equal_clock_a.assign(
-        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-            {.value = 40, .clock = Snap{std::in_place, 1, 1, 0, 0}}}));
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 40, .clock = Snap{std::in_place, 1, 1, 0, 0}}}));
     assert(mv_equal_clock_b.assign(
-        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
-            {.value = 20, .clock = Snap{std::in_place, 1, 1, 0, 0}}}));
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{{.value = 20, .clock = Snap{std::in_place, 1, 1, 0, 0}}}));
     assert(mv_equal_clock_a.merge(mv_equal_clock_b));
     assert(mv_equal_clock_b.merge(mv_equal_clock_a));
     assert(mv_equal_clock_a.state().versions[0].value == 20);
@@ -280,16 +250,12 @@ int main() {
 
     auto malformed_mv_state = mv_full_b.state();
     malformed_mv_state.count = 3;
-    assert(!mv_full_a.merge(
-        typename MVRegister<int, 2, 4, ClockTag>::gossiped_state_type{
-            malformed_mv_state}));
+    assert(!mv_full_a.merge(typename MVRegister<int, 2, 4, ClockTag>::gossiped_state_type{malformed_mv_state}));
     assert(mv_full_a.size().value() == 2);
     RgaList<int, std::uint64_t, 8> rga_a;
     RgaList<int, std::uint64_t, 8> rga_b;
-    assert(rga_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 10, .after = 0, .value = 1}}));
-    assert(rga_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 20, .after = 10, .value = 2}}));
+    assert(rga_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 10, .after = 0, .value = 1}}));
+    assert(rga_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 20, .after = 10, .value = 2}}));
     assert(rga_b.merge(rga_a));
     assert(rga_a.merge(rga_b));
     auto materialized = rga_a.materialize();
@@ -303,10 +269,8 @@ int main() {
 
     RgaList<int, std::uint64_t, 8> rga_conflict_a;
     RgaList<int, std::uint64_t, 8> rga_conflict_b;
-    assert(rga_conflict_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 30, .after = 0, .value = 9}}));
-    assert(rga_conflict_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 30, .after = 0, .value = 4}}));
+    assert(rga_conflict_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 30, .after = 0, .value = 9}}));
+    assert(rga_conflict_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 30, .after = 0, .value = 4}}));
     assert(rga_conflict_a.merge(rga_conflict_b));
     assert(rga_conflict_b.merge(rga_conflict_a));
     assert(rga_conflict_a.materialize().values[0] == 4);
@@ -314,32 +278,22 @@ int main() {
 
     RgaList<int, std::uint64_t, 2> rga_full_a;
     RgaList<int, std::uint64_t, 2> rga_full_b;
-    assert(rga_full_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 1, .after = 0, .value = 1}}));
-    assert(rga_full_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 2, .after = 1, .value = 2}}));
-    assert(rga_full_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
-        {.id = 3, .after = 2, .value = 3}}));
+    assert(rga_full_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 1, .after = 0, .value = 1}}));
+    assert(rga_full_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 2, .after = 1, .value = 2}}));
+    assert(rga_full_b.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{{.id = 3, .after = 2, .value = 3}}));
     assert(!rga_full_a.merge(rga_full_b));
     auto rga_full_materialized = rga_full_a.materialize();
     assert(rga_full_materialized.count == 1);
     assert(rga_full_materialized.values[0] == 1);
     auto malformed_rga_state = rga_full_b.state();
     malformed_rga_state.count = 3;
-    assert(!rga_full_a.merge(
-        typename RgaList<int, std::uint64_t, 2>::gossiped_state_type{
-            malformed_rga_state}));
+    assert(!rga_full_a.merge(typename RgaList<int, std::uint64_t, 2>::gossiped_state_type{malformed_rga_state}));
     rga_full_materialized = rga_full_a.materialize();
     assert(rga_full_materialized.count == 1);
     assert(rga_full_materialized.values[0] == 1);
-    auto rga_static_overflow =
-        RgaList<int, std::uint64_t, 2>::merge(
-            rga_full_a.state(),
-            rga_full_b.state());
+    auto rga_static_overflow = RgaList<int, std::uint64_t, 2>::merge(rga_full_a.state(), rga_full_b.state());
     RgaList<int, std::uint64_t, 2> rga_static_probe;
-    assert(rga_static_probe.merge(
-        typename RgaList<int, std::uint64_t, 2>::gossiped_state_type{
-            rga_static_overflow}));
+    assert(rga_static_probe.merge(typename RgaList<int, std::uint64_t, 2>::gossiped_state_type{rga_static_overflow}));
     auto rga_static_materialized = rga_static_probe.materialize();
     assert(rga_static_materialized.count == 1);
     assert(rga_static_materialized.values[0] == 1);

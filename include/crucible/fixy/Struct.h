@@ -1,74 +1,7 @@
 #pragma once
 
-// ── crucible::fixy::struct_ — Structural-wrapper re-exports ────────
-//
-// Re-export.  Surfaces every NON-Graded "structural" wrapper
-// under `fixy::struct_::` so callers who include only the fixy
-// umbrella never have to descend into the safety/ tree to reach a
-// structural primitive.  Companion to:
-//
-//   - fixy/Safety.h — Linear / Secret / ScopedView token mints
-//   - fixy/Mach.h   — Machine token mint
-//   - fixy/Perm.h   — Permission / SharedPermission token mints
-//   - fixy/Wrap.h   — Graded-backed value wrappers
-//   - fixy/Is.h     — Is*.h concept-gate aliases
-//
-// Per CLAUDE.md L0 §Safety, "structural wrappers — deliberately not
-// graded" are RAII / typestate / structural-constraint disciplines
-// that don't fit the `Graded<M, L, T>` shape.  This header re-exports
-// the nine of them that have not already shipped via Safety.h /
-// Mach.h:
-//
-//   1. Pinned<T> / NonMovable<T>     — address-stability mixins
-//   2. NotInherited<T> / FinalBy<T> /
-//      assert_not_inherited<T>()     — structural non-extensibility
-//   3. Checked.h primitives          — overflow-checked arithmetic
-//      (checked_*, wrapping_*, trapping_*, saturating_*, safe_*,
-//       ensure_bytes_fit)
-//   4. ct::select / ct::eq /
-//      ct::mask_from_bit / ct::less /
-//      ct::is_zero / ct::cswap       — branch-free crypto primitives
-//   5. crucible::simd::* facade      — DetSafe SIMD primitives
-//   6. OwnedRegion<T, Tag> +
-//      parallel_for_views<N> /
-//      parallel_reduce_views<N,R> /
-//      parallel_apply_pair<N> /
-//      parallel_for_views_adaptive /
-//      parallel_for_smart            — Workload concurrency primitives
-//
-// Note the name `struct_` (trailing underscore) — `struct` is a C++
-// keyword, so the canonical short name `struct` is unavailable.  This
-// matches the standard convention used by every modern PL with a
-// reserved-word collision (Python's `class_` / `def_`, Ruby's `def_`,
-// etc.).
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   InitSafe   — every primitive default-constructs to a well-defined
-//                state; aliases preserve.
-//   TypeSafe   — using-declarations preserve concept gates
-//                (std::integral T, std::unsigned_integral T,
-//                 DetSafeSimd<V>, etc.).
-//   NullSafe   — OwnedRegion carries (T*, count) with the invariant
-//                "count == 0 iff base == nullptr"; alias preserves.
-//   MemSafe    — Pinned/NonMovable delete copy AND move at compile
-//                time; OwnedRegion is move-only by its embedded
-//                Permission; aliases preserve.
-//   BorrowSafe — Workload primitives encode the CSL fork-rule;
-//                ct::* primitives are branch-free; aliases preserve.
-//   ThreadSafe — Workload uses std::jthread + RAII join (happens-
-//                before); aliases preserve.
-//   LeakSafe   — every primitive is value-typed or stack-allocated;
-//                no leak path.
-//   DetSafe    — pure value primitives; bit-exact across re-export;
-//                Simd facade pins integer-only reductions for
-//                BITEXACT recipes.
-//
-// ── Cost ───────────────────────────────────────────────────────────
-//
-// Zero.  using-declarations are pure name-lookup directives —
-// `sizeof(fixy::struct_::X) == sizeof(safety::X)` for every X.  No
-// runtime indirection, no extra branch, no extra storage.
+// The namespace carries a trailing underscore because struct is a
+// keyword.
 
 #include <crucible/Saturate.h>
 #include <crucible/safety/Checked.h>
@@ -79,23 +12,16 @@
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Workload.h>
 
-#include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
+#include <type_traits>
 
 namespace crucible::fixy::struct_ {
-
-// ── Pinned / NonMovable (address-stability mixins) ─────────────────
 
 using ::crucible::safety::NonMovable;
 using ::crucible::safety::Pinned;
 
-// ── NotInherited / FinalBy (structural non-extensibility) ──────────
-
 using ::crucible::safety::FinalBy;
 using ::crucible::safety::NotInherited;
 using ::crucible::safety::assert_not_inherited;
-
-// ── Checked arithmetic (overflow-checked / wrapping / trapping /
-//    saturating / compile-time safe_* / byte-budget) ───────────────
 
 using ::crucible::safety::checked_abs;
 using ::crucible::safety::checked_add;
@@ -120,14 +46,13 @@ using ::crucible::safety::saturating_add;
 using ::crucible::safety::saturating_mul;
 using ::crucible::safety::saturating_sub;
 
-// Saturation primitives live in `crucible::sat` (Saturate.h); re-export
-// the canonical names alongside the wrapper-tier `saturating_*` aliases
-// for callers reaching into the lower layer directly.
+// The saturating_ names above and the _sat names below are the same
+// three operations at two layers. Both spellings are re-exported so a
+// caller keeps whichever layer it already speaks.
 using ::crucible::sat::add_sat;
 using ::crucible::sat::mul_sat;
 using ::crucible::sat::sub_sat;
 
-// Compile-time variable templates (size-arithmetic, byte budgets).
 using ::crucible::safety::bytes_fit_v;
 using ::crucible::safety::ensure_bytes_fit;
 using ::crucible::safety::safe_add;
@@ -141,13 +66,6 @@ using ::crucible::safety::safe_size_sum;
 using ::crucible::safety::safe_struct_bytes;
 using ::crucible::safety::safe_sub;
 
-// ── ConstantTime primitives (branch-free crypto) ───────────────────
-//
-// Re-exported under their own ::ct sub-namespace to match the
-// substrate's `crucible::safety::ct::*` convention.  Callers spell
-// `fixy::struct_::ct::select(...)` exactly the way they'd spell
-// `safety::ct::select(...)` — the only change is the include path.
-
 namespace ct {
 
 using ::crucible::safety::ct::cswap;
@@ -159,16 +77,8 @@ using ::crucible::safety::ct::select;
 
 }  // namespace ct
 
-// ── crucible::simd facade (DetSafe SIMD primitives) ────────────────
-//
-// Re-exported under ::simd sub-namespace to match the substrate's
-// `crucible::simd::*` convention.  Width-pinned aliases + the
-// DetSafeSimd concept + iota_v / prefix_mask + the microarch
-// detection flags + runtime probes all survive the using-decl path.
-
 namespace simd {
 
-// Width-pinned vec aliases.
 using ::crucible::simd::i32x16;
 using ::crucible::simd::i32x8;
 using ::crucible::simd::i64x4;
@@ -183,32 +93,23 @@ using ::crucible::simd::u64x8_mask;
 using ::crucible::simd::u8x16;
 using ::crucible::simd::u8x32;
 
-// Concept gate for BITEXACT-eligible vec types.
 template <typename V>
 concept DetSafeSimd = ::crucible::simd::DetSafeSimd<V>;
 
-// Primitives std::simd doesn't ship.
+// Neither primitive has a standard-library counterpart.
 using ::crucible::simd::iota_v;
 using ::crucible::simd::prefix_mask;
 
-// Compile-time microarch detection.
 using ::crucible::simd::kAvx2Available;
 using ::crucible::simd::kAvx512Available;
 using ::crucible::simd::kNeonAvailable;
 using ::crucible::simd::kSse42Available;
 
-// Runtime microarch detection.
 using ::crucible::simd::runtime_supports_avx2;
 using ::crucible::simd::runtime_supports_avx512;
 using ::crucible::simd::runtime_supports_sse42;
 
 }  // namespace simd
-
-// ── OwnedRegion + Workload primitives ──────────────────────────────
-//
-// OwnedRegion<T, Tag> is the contiguous-buffer model that substitutes
-// for Rust's borrow checker.  Workload.h's parallel_for_views family
-// is the user-facing concurrency layer that consumes OwnedRegions.
 
 using ::crucible::safety::OwnedRegion;
 using ::crucible::safety::Slice;
@@ -224,64 +125,39 @@ using ::crucible::safety::WorkBudget;
 
 }  // namespace crucible::fixy::struct_
 
-// ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
-//
-// Drift-catch for the 77 outer using-decls + ct:: (6) + simd:: (22
-// using-decls + 1 concept DetSafeSimd) nested re-exports.  Same
-// recipe as fixy/Bridge.h / fixy/Diag.h / fixy/Pipe.h sentinels:
-// type-identity witnesses for representative items + cardinality
-// mirror.  Pulls <type_traits> through Pinned.h transitively; no
-// extra include needed.  Doc-block simd-bucket completed by
-// FIXY-U-132 to match the per-bucket breakdown below (Class G drift
-// — comment count under-listed concept entry).
-//
-// FIXY-U-103.
-
 namespace crucible::fixy::struct_::self_test {
 
-// ── Representative type-identity witnesses ────────────────────────
-
 static_assert(std::is_same_v<::crucible::fixy::struct_::Pinned<int>, ::crucible::safety::Pinned<int>>,
-              "fixy::struct_::Pinned must alias safety::Pinned");
+              "Pinned must alias the substrate template.");
 
 static_assert(std::is_same_v<::crucible::fixy::struct_::NonMovable<int>, ::crucible::safety::NonMovable<int>>,
-              "fixy::struct_::NonMovable must alias safety::NonMovable");
+              "NonMovable must alias the substrate template.");
 
 static_assert(std::is_same_v<::crucible::fixy::struct_::FinalBy<int>, ::crucible::safety::FinalBy<int>>,
-              "fixy::struct_::FinalBy must alias safety::FinalBy");
+              "FinalBy must alias the substrate template.");
 
 static_assert(
     std::is_same_v<::crucible::fixy::struct_::OwnedRegion<int, void>, ::crucible::safety::OwnedRegion<int, void>>,
-    "fixy::struct_::OwnedRegion must alias safety::OwnedRegion");
+    "OwnedRegion must alias the substrate template.");
 
 static_assert(std::is_same_v<::crucible::fixy::struct_::WorkBudget, ::crucible::safety::WorkBudget>,
-              "fixy::struct_::WorkBudget must alias safety::WorkBudget");
+              "WorkBudget must alias the substrate type.");
 
-// NotInherited is a concept (template <typename T> concept NotInherited =
-// std::is_final_v<T>), not a type — exercise reachability via concept
-// equivalence on a final probe type.
 struct NotInheritedProbe_ final {};
 static_assert(::crucible::fixy::struct_::NotInherited<NotInheritedProbe_>);
 static_assert(::crucible::fixy::struct_::NotInherited<NotInheritedProbe_>
                   == ::crucible::safety::NotInherited<NotInheritedProbe_>,
-              "fixy::struct_::NotInherited concept must mirror substrate.");
-
-// ── Cardinality witness ──────────────────────────────────────────
-//
-// Outer-namespace using-decls (77) + ct:: nested (6) + simd:: nested
-// (22 using-decls + 1 concept DetSafeSimd).  Any add/remove of a
-// using-decl above must update this number AND the corresponding
-// test_fixy_struct.cpp mirror (when present).
+              "NotInherited must mirror the substrate concept.");
 
 constexpr int struct_outer_cardinality = 77;
 constexpr int struct_ct_cardinality = 6;
 constexpr int struct_simd_using_cardinality = 22;
 constexpr int struct_simd_concept_cardinality = 1;
 
-static_assert(struct_outer_cardinality == 77, "fixy::struct_:: outer surface drifted from 77 — Struct.h and "
-                                              "its sentinel must update in lockstep.");
-static_assert(struct_ct_cardinality == 6, "fixy::struct_::ct:: surface drifted from 6.");
-static_assert(struct_simd_using_cardinality == 22, "fixy::struct_::simd:: using-decl surface drifted from 22.");
-static_assert(struct_simd_concept_cardinality == 1, "fixy::struct_::simd:: concept surface drifted from 1.");
+static_assert(struct_outer_cardinality == 77, "The outer re-export count and the using-declarations above "
+                                              "must move together.");
+static_assert(struct_ct_cardinality == 6, "The constant-time re-export count has drifted.");
+static_assert(struct_simd_using_cardinality == 22, "The SIMD re-export count has drifted.");
+static_assert(struct_simd_concept_cardinality == 1, "The SIMD namespace re-exports one concept.");
 
 }  // namespace crucible::fixy::struct_::self_test

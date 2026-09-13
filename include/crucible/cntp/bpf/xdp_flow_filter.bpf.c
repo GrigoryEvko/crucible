@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P XDP flow filter stub.
- *
- * Future role: earliest RX admission point for typed CNT-P flow keys.
- * Current behavior: pass every packet. No drop, redirect, or map mutation.
- */
-
 #include "common.h"
 
 #ifndef XDP_PASS

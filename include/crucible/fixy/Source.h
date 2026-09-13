@@ -1,259 +1,50 @@
 #pragma once
 
-// ── crucible::fixy::tags — Source/Trust/Access/Version/Secret/Hash ──
-//
-// Re-export per misc/16_05_2026_fixy.md.  Surfaces every
-// load-bearing PROVENANCE / TRUST / ACCESS / VERSION / SECRET-POLICY /
-// HASH-FAMILY tag tree under `fixy::tags::<axis>::` so callers who
-// include only the fixy umbrella never have to descend into the
-// safety/ tree to phantom-tag a value.
-//
-// Per CLAUDE.md §XXI Universal Mint Pattern: these are NOT minters —
-// they are pure phantom-type re-exports.  Tag namespaces are
-// inline-namespace aliased; no new types are introduced; every tag
-// `fixy::tags::source::FromUser` IS `safety::source::FromUser`
-// (same address, same vtable, same friend access).
-//
-// ── Substrate consumed ─────────────────────────────────────────────
-//
-//   safety/Tagged.h
-//     namespace safety::source         (60+ provenance tags)
-//     namespace safety::trust          (5 verification tags)
-//     namespace safety::access         (10 access-mode tags)
-//     namespace safety::version        (V<N> template)
-//     namespace safety::vessel_trust   (FromPytorch / Validated)
-//   safety/Secret.h
-//     namespace safety::secret_policy  (5 declassify policies)
-//   Types.h
-//     namespace hash_family            (FamilyA / FamilyB)
-//   permissions/FederationPermission.h
-//     extends safety::source::*        (federation-only tags)
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   InitSafe — tags are empty structs; default-construction is trivial.
-//   TypeSafe — namespace aliases preserve typename identity; every
-//              re-exported tag IS the substrate tag (same definition,
-//              not a re-declaration).  Mismatch across axes (passing
-//              source::FromUser where trust::Verified expected) fires
-//              the substrate's overload-resolution diagnostic.
-//   NullSafe — tags have no pointer state.
-//   MemSafe  — tags are POD, zero size, zero lifetime concerns.
-//   DetSafe  — tag identity is compile-time only; never appears in a
-//              runtime data path; bit-exact across re-export.
-//
-// ── Cost ───────────────────────────────────────────────────────────
-//
-// Zero.  `namespace source = ::crucible::safety::source;` is a name-
-// lookup directive only; no symbols emitted, no types introduced.
-
-#include <crucible/Types.h>  // hash_family::*
-#include <crucible/permissions/FederationPermission.h>  // federation::*
-#include <crucible/safety/Secret.h>  // secret_policy::*
-#include <crucible/safety/Tagged.h>  // source::*, trust::*, access::*, version::*, vessel_trust::*
+#include <crucible/Types.h>
+#include <crucible/permissions/FederationPermission.h>
+#include <crucible/safety/Secret.h>
+#include <crucible/safety/Tagged.h>
 
 namespace crucible::fixy::tags {
 
-// ── source::* — provenance tagging (~60 tags) ──────────────────────
-//
-// Every cross-trust-boundary value (Vessel input, Cipher load, network
-// payload, FFI return, kernel telemetry, registry row, vendor truth,
-// SDC verification result, ...) carries a `source::*` tag through the
-// type system until it is explicitly retagged to a sanitized class.
 namespace source = ::crucible::safety::source;
-
-// ── trust::* — verification status (5 tags) ────────────────────────
-//
-// Orthogonal axis to source::: WHERE a value came from (source) vs HOW
-// confident we are it satisfies its invariant (trust).  Verified /
-// Tested / Unverified / Assumed / External.
 namespace trust = ::crucible::safety::trust;
-
-// ── access::* — access-mode tagging (10 tags) ──────────────────────
-//
-// Register / column / field semantics: RW, RO, WO, W1C, W1S, WriteOnce,
-// AppendOnly, Unique, AutoIncrement, Deprecated.  Composes orthogonally
-// with source:: + trust::.
 namespace access = ::crucible::safety::access;
-
-// ── version::* — schema versioning (V<N>) ──────────────────────────
-//
-// Compile-time schema-version phantom — `Tagged<T, version::V<3>>`
-// rejects passing across an interface that expects `V<2>`.
 namespace version = ::crucible::safety::version;
-
-// ── vessel_trust::* — Vessel-boundary trust (2 tags) ───────────────
-//
-// Raw Vessel input arrives as `FromPytorch`; Vessel-side validators
-// retag to `Validated` after well-formedness checks pass.  Internal
-// paths require `Validated` at entry; the type system rejects the
-// `FromPytorch → record` shortcut.
 namespace vessel_trust = ::crucible::safety::vessel_trust;
-
-// ── secret_policy::* — Secret<T> declassification policies (6) ─────
-//
-// `secret.declassify<secret_policy::AuditedLogging>(...)` etc.  Each
-// policy tag carries an audit obligation grep-discoverable by name.
-// AuthorizedReplay (fixy-A4-015) is the freshness-discharging policy
-// — the only shape that admits `as_secret + stale_to<N>` through the
-// Theory.h §30.14 corpus per Hunt-Sands 2008 erasure semantics.
 namespace secret_policy = ::crucible::safety::secret_policy;
-
-// ── hash_family::* — persistence semantics of hashes (2) ───────────
-//
-// Family A = persistent across (process × platform × Crucible version
-// within compile_version window) for Cipher entry keys.  Family B =
-// process-local, may differ across runs.  Tagging at field declaration
-// time discriminates the persistence contract.
 namespace hash_family = ::crucible::hash_family;
 
-// ── retag_policy<From, To> + RetagAllowed (FIXY-V-022..V-025) ──────
-//
-// V-022 ships the fail-closed `safety::retag_policy<From, To>` primary
-// template + the `safety::RetagAllowed` concept.  V-023 ships the
-// safe-transition catalog (10 specializations across trust::, source::,
-// vessel_trust:: axes).  V-024 wires the concept into
-// `Tagged::retag<NewTag>()`'s requires-clause.  V-025 (this surface)
-// re-exports the gate at the fixy band so band-3 callers consult the
-// policy / concept via `fixy::tags::retag_policy<>` /
-// `fixy::tags::RetagAllowed<>` without descending into safety/.
-//
-// ── Reading vs writing the catalog ─────────────────────────────────
-//
-// READING (querying whether (A → B) is admitted) goes through the
-// fixy alias:
-//
-//     using namespace crucible::fixy::tags;
-//     static_assert(RetagAllowed<source::External, source::Sanitized>);
-//     auto admit = retag_policy<trust::Tested, trust::Verified>::allowed;
-//
-// WRITING (adding a new specialization to admit (A → B)) STILL goes
-// to the canonical safety:: namespace, NOT through the fixy alias.
-// C++ forbids specializing a class template through a using-declaration
-// — you must spell the original namespace at the specialization site:
-//
-//     template <>
-//     struct ::crucible::safety::retag_policy<my_tag, my_other_tag> {
-//         static constexpr bool allowed = true;
-//     };
-//
-// Once specialized at the substrate, the new admittance is visible
-// through EVERY alias (fixy::tags, any local namespace alias, etc.).
-// This asymmetry is intentional: it keeps the catalog's canonical
-// home a single grep target (`retag_policy<` in safety/Tagged.h) and
-// prevents catalog drift across re-export surfaces.
-//
-// ── Cost ───────────────────────────────────────────────────────────
-//
-// Zero.  The `using` declarations are name-lookup directives only; no
-// symbols emitted, no types introduced, no specializations duplicated.
+// Reading the catalog works through this alias. Adding an admitted pair does
+// not: a specialization cannot be declared through a using-declaration, so it
+// has to be written against ::crucible::safety::retag_policy directly. The
+// alias then sees it, as does every other alias of the same template.
 using ::crucible::safety::retag_policy;
 using ::crucible::safety::RetagAllowed;
 
-// ── Sentinel pair re-export (V-022 fail-closed witness) ────────────
-//
-// The substrate's `safety::detail::retag_policy_test::{NeverFrom,
-// NeverTo}` pair is reserved-forever-unspecialized — V-022 documents
-// the invariant.  Re-exporting at the fixy band lets fixy_neg HS14
-// fixtures (and downstream catalog-evolution tests) cite the sentinel
-// pair via `fixy::tags::retag_policy_test::Never{From,To}` instead of
-// reaching into safety::detail::.  The `detail::` prefix is dropped
-// because the fixy::tags surface IS the test-visible re-export tier;
-// hiding it again would defeat the surface's discoverability.
+// The sentinel pair is reserved and stays unspecialized forever. It is the
+// fail-closed witness, so admitting a transition between the two would erase
+// the only test of the primary template.
 namespace retag_policy_test = ::crucible::safety::detail::retag_policy_test;
 
 }  // namespace crucible::fixy::tags
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Federation re-export (FIXY-AUDIT-C9) ───────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `permissions/FederationPermission.h` is the cross-organization
-// admission boundary for Cipher federation.  It carries:
-//
-//   safety::source::FederatedPeer<Org>          — provenance tag
-//   permissions::tag::FederatedPeer<Org>        — permission tag
-//   permissions::tag::LocalCipherTag            — local-authority tag
-//   permissions::FederatedPeerPermission<Org>   — Permission<tag::FederatedPeer<Org>>
-//   permissions::LocalCipherPermission          — Permission<tag::LocalCipherTag>
-//   permissions::federation_org_id<Org>         — stable type id
-//   permissions::policy::admit_orgs<Orgs...>    — admission policy
-//   permissions::FederationHandshake            — handshake POD
-//   permissions::AdmittanceError                — error enum + name()
-//   permissions::federation_signature_fingerprint(...)
-//   permissions::default_peer_key_fingerprint<Org>()
-//   permissions::make_self_signed_handshake<Org>(...)
-//   permissions::mint_federation_admittance<Org, Policy>(local, hs)
-//
-// Per CLAUDE.md §XXI Universal Mint Pattern: `mint_federation_admittance`
-// is a token mint — derives FederatedPeerPermission<Org> authority from
-// a LocalCipherPermission + a verified handshake.  The re-export
-// preserves the substrate's std::expected error path and the
-// AdmittanceError surface.
-//
-// `safety::source::FederatedPeer<Org>` is the PROVENANCE tag (extends
-// the source axis); it lives in `crucible::safety::source` and is
-// therefore already reachable via the `fixy::tags::source` namespace
-// alias above as `fixy::tags::source::FederatedPeer<Org>`.
-//
-// ── Disambiguation (fixy-A4-013) ──────────────────────────────────
-//
-// TWO distinct types named `FederatedPeer<Org>` are reachable through
-// the fixy umbrella.  They carry the SAME identifier name but live on
-// ORTHOGONAL axes (Bell-LaPadula 1973 information-flow vs CSL frame
-// rule), so the collision is structural — not a typo, not a re-export
-// bug:
-//
-//   fixy::tags::source::FederatedPeer<Org>
-//     ≡ ::crucible::safety::source::FederatedPeer<Org>
-//     Axis: PROVENANCE (the "who said this value")
-//     Used in: Tagged<T, source::FederatedPeer<Org>> on cross-org
-//              Cipher payloads.  Compile-time only; never appears in
-//              a Permission carrier.
-//
-//   fixy::source::federation::FederatedPeer<Org>
-//     ≡ ::crucible::permissions::tag::FederatedPeer<Org>
-//     Axis: PERMISSION (the "who is allowed to act on this value")
-//     Used in: Permission<tag::FederatedPeer<Org>> → carrier
-//              FederatedPeerPermission<Org>.  Runtime move-only token
-//              under the CSL linearity discipline.
-//
-// A caller TU that does BOTH `using namespace fixy::tags::source;` and
-// `using namespace fixy::source::federation;` will see two
-// declarations of `FederatedPeer<Org>` in the same lookup scope; bare
-// `FederatedPeer<MyOrg> x;` is ambiguous and the compiler rejects.
-// This is correct behavior — the user must qualify
-// (`safety::source::FederatedPeer<MyOrg>` vs
-// `permissions::tag::FederatedPeer<MyOrg>`) so the AXIS choice is
-// visible at the use site.  The disambiguation static_assert in
-// `fixy::tags::self_test` (search "fixy-A4-013") pins the
-// "two-distinct-types" fact at compile time; if a future refactor
-// makes the two types alias to the same substrate (e.g. by promoting
-// one axis to the other), the build breaks here.
+// This namespace and fixy::tags::source both surface a FederatedPeer<Org>.
+// They are distinct types on distinct axes: provenance, meaning who produced
+// the value, against permission, meaning who may act on it. A translation unit
+// that opens both namespaces sees an ambiguous FederatedPeer and has to
+// qualify. That is the intended outcome, because the axis choice belongs at
+// the use site.
 
 namespace crucible::fixy::source::federation {
-
-// ── Permission tags (per-org typed admission) ──────────────────────
 
 using ::crucible::permissions::tag::FederatedPeer;
 using ::crucible::permissions::tag::LocalCipherTag;
 
-// ── Permission carriers ────────────────────────────────────────────
-
 using ::crucible::permissions::FederatedPeerPermission;
 using ::crucible::permissions::LocalCipherPermission;
 
-// ── Identity / policy ──────────────────────────────────────────────
-
 using ::crucible::permissions::federation_org_id;
-
-// ── fixy-A1-008 strong-hash semantic types ─────────────────────────
-//
-// `OrgId` / `PeerKeyFingerprint` / `Nonce` / `SignatureFingerprint`
-// are the TypeSafe newtypes that replace the bare uint64_t fields of
-// `FederationHandshake`.  Re-exported here so fixy users construct
-// handshakes without leaving the `fixy::source::federation`
-// namespace.
 
 using ::crucible::permissions::OrgId;
 using ::crucible::permissions::PeerKeyFingerprint;
@@ -264,27 +55,13 @@ namespace policy {
 using ::crucible::permissions::policy::admit_orgs;
 }  // namespace policy
 
-// ── Handshake POD + error surface ──────────────────────────────────
-
 using ::crucible::permissions::FederationHandshake;
 using ::crucible::permissions::AdmittanceError;
 using ::crucible::permissions::admittance_error_name;
 
-// ── Signature derivation + helpers ─────────────────────────────────
-
 using ::crucible::permissions::federation_signature_fingerprint;
 using ::crucible::permissions::default_peer_key_fingerprint;
 using ::crucible::permissions::make_self_signed_handshake;
-
-// ── Token mints — Universal Mint Pattern (CLAUDE.md §XXI) ──────────
-//
-// `mint_self_signed_handshake` (fixy-L-02 #1518): renamed from
-// `make_self_signed_handshake` to align with §XXI grep-discipline
-// (the handshake POD's self_signature_fingerprint is the only path
-// to a downstream-accepted FederationHandshake, so it carries
-// federation authority in the structural sense — even though the
-// signature is forgeable per CR-02/03/04).  Concept gate at the
-// substrate: `FederationOrgTag<Org>` (empty class type).
 
 using ::crucible::permissions::FederationOrgTag;
 using ::crucible::permissions::mint_self_signed_handshake;
@@ -292,15 +69,8 @@ using ::crucible::permissions::mint_federation_admittance;
 
 }  // namespace crucible::fixy::source::federation
 
-// ── Self-test ──────────────────────────────────────────────────────
-//
-// Witness that namespace aliases preserve typename identity.  If a
-// substrate tag is renamed, deleted, or moved out from under us, the
-// `std::is_same_v` check fires at sentinel-TU compile.
-
 namespace crucible::fixy::tags::self_test {
 
-// One canonical witness per axis — full coverage in test_fixy_source.cpp.
 static_assert(std::is_same_v<source::FromUser, ::crucible::safety::source::FromUser>,
               "fixy::tags::source::FromUser must alias safety::source::FromUser");
 
@@ -319,113 +89,63 @@ static_assert(std::is_same_v<vessel_trust::Validated, ::crucible::safety::vessel
 static_assert(std::is_same_v<secret_policy::AuditedLogging, ::crucible::safety::secret_policy::AuditedLogging>,
               "fixy::tags::secret_policy::AuditedLogging must alias the substrate tag");
 
-// fixy-A4-015: AuthorizedReplay is the freshness-discharging policy.
-// Aliasing the substrate tag through the umbrella keeps the discipline
-// "grep secret_policy::AuthorizedReplay" load-bearing even when callers
-// only reach the policy through fixy::tags.
 static_assert(std::is_same_v<secret_policy::AuthorizedReplay, ::crucible::safety::secret_policy::AuthorizedReplay>,
               "fixy::tags::secret_policy::AuthorizedReplay must alias the substrate tag");
 
 static_assert(std::is_same_v<hash_family::FamilyA, ::crucible::hash_family::FamilyA>,
               "fixy::tags::hash_family::FamilyA must alias hash_family::FamilyA");
 
-// ── fixy-A4-013: provenance / permission FederatedPeer disambiguation
-//
-// Two distinct substrate types share the identifier `FederatedPeer<Org>`,
-// reachable through the umbrella on different namespace paths.  Pin
-// the distinction at compile time so a future refactor that would
-// silently unify them (e.g. making the provenance tag inherit from
-// the permission tag) breaks the build here, BEFORE it propagates
-// into Tagged<>/Permission<> call sites where the diagnostic would
-// be far less localized.
-//
-// Witness with a phantom Org parameter — federation_org_id<Org> is
-// the only structural requirement and ints satisfy it as well as a
-// concrete Org tag struct.
 namespace a4_013_disambiguation {
 struct ProbeOrg {};
 }  // namespace a4_013_disambiguation
 
 static_assert(!std::is_same_v<::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
                               ::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
-              "fixy-A4-013: fixy::tags::source::FederatedPeer (provenance axis) and "
+              "fixy::tags::source::FederatedPeer (provenance axis) and "
               "fixy::source::federation::FederatedPeer (permission axis) must remain "
               "distinct substrate types.  Unification would collapse two orthogonal "
-              "axes (Bell-LaPadula provenance vs CSL frame-rule permission) into one "
+              "axes (provenance vs frame-rule permission) into one "
               "and break the umbrella's axis-discrimination contract.");
 
-// Symmetric positive assertions — pin each fixy path to its substrate
-// origin so a rename on either substrate side reddens HERE rather
-// than 40 call sites downstream.
 static_assert(std::is_same_v<::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
                              ::crucible::safety::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
-              "fixy-A4-013: fixy::tags::source::FederatedPeer must alias "
+              "fixy::tags::source::FederatedPeer must alias "
               "safety::source::FederatedPeer (provenance axis).");
 
 static_assert(std::is_same_v<::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
                              ::crucible::permissions::tag::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
-              "fixy-A4-013: fixy::source::federation::FederatedPeer must alias "
+              "fixy::source::federation::FederatedPeer must alias "
               "permissions::tag::FederatedPeer (permission axis).");
 
-// ── FIXY-V-025: retag_policy + RetagAllowed alias pinning ──────────
-//
-// Witness that the using-declarations + sentinel-namespace alias
-// preserve the substrate's V-022 fail-closed contract AND V-023's
-// catalog admittance.  If the substrate concept is renamed, the
-// retag_policy primary template moves, or the sentinel pair gains a
-// stray specialization, ONE of these asserts fires at sentinel-TU
-// compile rather than at 40 downstream call sites.
-
-// Identity transition — V-022's `retag_policy<Tag, Tag>` admits
-// (X → X) unconditionally.  Pinning through the alias witnesses that
-// the using-declaration carries specializations, not just the primary
-// template.
 static_assert(retag_policy<source::FromUser, source::FromUser>::allowed,
-              "fixy-V-025: fixy::tags::retag_policy identity specialization "
-              "must admit (X → X) via the V-022 identity rule.");
+              "fixy::tags::retag_policy identity specialization "
+              "must admit (X → X).");
 
-// Fail-closed default — sentinel pair stays unspecialized, primary
-// template's `allowed = false` reaches through the alias.
 static_assert(!retag_policy<retag_policy_test::NeverFrom, retag_policy_test::NeverTo>::allowed,
-              "fixy-V-025: fixy::tags::retag_policy primary template MUST be "
-              "fail-closed for the V-022 sentinel pair when reached via the "
+              "fixy::tags::retag_policy primary template MUST be "
+              "fail-closed for the sentinel pair when reached via the "
               "fixy alias.");
 
-// V-023 catalog reachable through alias — External → Sanitized is
-// one of the production admittances.  Witnesses that the alias
-// surfaces ALL substrate specializations, not just primaries.
 static_assert(retag_policy<source::External, source::Sanitized>::allowed,
-              "fixy-V-025: V-023 catalog (External → Sanitized) must be "
+              "the catalog entry (External → Sanitized) must be "
               "reachable through the fixy::tags alias.");
 
-// vessel_trust axis — pin a second axis to witness the alias is
-// axis-agnostic.
 static_assert(retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated>::allowed,
-              "fixy-V-025: V-023 catalog (vessel_trust::FromPytorch → Validated) "
+              "the catalog entry (vessel_trust::FromPytorch → Validated) "
               "must be reachable through the fixy::tags alias.");
 
-// Concept form — `RetagAllowed<>` consults the same policy table;
-// pin the concept's reach independently.
-static_assert(RetagAllowed<source::External, source::Sanitized>,
-              "fixy-V-025: fixy::tags::RetagAllowed concept must admit V-023 "
-              "catalog transitions through the alias.");
+static_assert(RetagAllowed<source::External, source::Sanitized>, "fixy::tags::RetagAllowed concept must admit catalog "
+                                                                 "transitions through the alias.");
 
 static_assert(!RetagAllowed<retag_policy_test::NeverFrom, retag_policy_test::NeverTo>,
-              "fixy-V-025: fixy::tags::RetagAllowed concept must reject the "
-              "V-022 sentinel pair through the alias.");
+              "fixy::tags::RetagAllowed concept must reject the "
+              "sentinel pair through the alias.");
 
-// Identity through concept form — closes the matrix (policy.allowed
-// reachable AND concept reachable, both pinned positive + negative).
-static_assert(RetagAllowed<source::FromUser, source::FromUser>,
-              "fixy-V-025: fixy::tags::RetagAllowed concept must admit identity "
-              "(X → X) through the V-022 identity specialization.");
+static_assert(RetagAllowed<source::FromUser, source::FromUser>, "fixy::tags::RetagAllowed concept must admit identity "
+                                                                "(X → X) through the identity specialization.");
 
-// Inverse-direction one-way-ratchet — V-023's trust:: catalog is a
-// one-way ratchet (Unverified ⊏ Verified, never backwards).  Pin the
-// inverse-rejection through the alias so a future regression that
-// silently admits Verified → Unverified reddens HERE.
 static_assert(!RetagAllowed<trust::Verified, trust::Unverified>,
-              "fixy-V-025: trust ratchet (Verified → Unverified) MUST stay "
+              "trust ratchet (Verified → Unverified) MUST stay "
               "rejected; admitting it would defeat the verification-status "
               "monotonicity contract.");
 

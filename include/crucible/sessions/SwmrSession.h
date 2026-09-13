@@ -1,22 +1,5 @@
 #pragma once
 
-// ── SwmrSession.h — typed-session facade for SWMR snapshots ─────────
-//
-// Single-writer / multiple-reader publication built on the shipped
-// AtomicSnapshot + SharedPermissionPool substrate.  This header adds
-// the session-shaped role surface that SpscSession.h provides for
-// streaming rings: a writer role that can only publish and a reader
-// role that can only load, plus optional PermissionedSessionHandle
-// wrappers for code that wants the canonical SWMR protocol shape:
-// Loop<Send<ContentAddressed<T>>> / Loop<Recv<Borrowed<T, ReaderTag>>>.
-//
-// ContentAddressed<T> remains a type-level quotient marker in the
-// current session stack, not a runtime carrier.  PermissionedSessionHandle
-// accepts raw T sends into Send<ContentAddressed<T>> via the existing
-// subsort rule (T <= ContentAddressed<T>), so the runtime transport still
-// publishes a T value while the protocol records the dedup-eligible
-// content-addressed shape.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/permissions/Permission.h>
@@ -36,6 +19,10 @@
 
 namespace crucible::safety::proto::swmr_session {
 
+// ContentAddressed<T> is a type-level quotient marker, not a runtime carrier.
+// The payload subsort rule T <= ContentAddressed<T> lets a plain T satisfy
+// Send<ContentAddressed<T>>. The transport therefore publishes a plain T while
+// the protocol records the shape that is eligible for deduplication.
 template <typename T>
 using WriterProto = Loop<Send<ContentAddressed<T>, Continue>>;
 

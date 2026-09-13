@@ -1,11 +1,5 @@
 #pragma once
 
-// Bounded Plumtree broadcast substrate for Canopy.
-//
-// This layer owns eager/lazy link classification, bounded message-ID history,
-// and repair-plan construction. Transport owns bytes, timers, and channels:
-// callers carry Plumtree plans over HyParView/CNTP/Scuttlebutt surfaces.
-
 #include <crucible/Platform.h>
 #include <crucible/canopy/HyParView.h>
 #include <crucible/cntp/Integrity.h>
@@ -57,13 +51,10 @@ enum class PlumtreeError : std::uint8_t {
     EmptyMessage,
     InvalidConfig,
     PeerNotFound,
-    // fixy-A5-032: explicit signal that a populate-from-membership
-    // attempt observed a racy HyParView snapshot (per-peer admission
-    // failure mid-iteration — duplicate or zero-uuid that wouldn't
-    // be there in a quiescent snapshot).  Callers branch on this
-    // code to apply backoff + retry; CapacityExceeded stays
-    // reserved for the structural static-overshoot signal so the
-    // two semantics never conflate.
+    // A per-peer admission failure seen while walking a membership snapshot
+    // that changes underneath the walk.  Callers back off and retry on this
+    // code.  CapacityExceeded stays reserved for a structural overshoot, so
+    // the two never conflate.
     TransientShapeInconsistency,
     UnknownPeer,
     ZeroUuid,
@@ -163,20 +154,14 @@ public:
     using ihave_type = PlumtreeIHave<MaxHistory>;
 
     explicit PlumtreeBroadcast(PlumtreeConfig config = {}) noexcept : config_{config} {
-        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
     }
 
-    // fixy-A5-032: transient HyParView shape inconsistency must not
-    // abort the daemon.  HyParView's active_view can transiently
-    // overshoot MaxPeers (or expose a duplicate / zero-uuid) during
-    // a concurrent join+shuffle race window — the snapshot we take
-    // here is read-only but not race-free.  Pre-fix the per-peer
-    // FATAL_INVARIANT killed the Keeper on every such window.  Now
-    // peers that fail to admit increment `transient_skipped_count_`
-    // and the constructor proceeds with the peers that did admit.
-    // Callers detect overshoot via `transient_skipped_count()` and
-    // can rebuild after the HyParView shuffle settles.
+    // The membership snapshot this constructor walks is read-only but not
+    // race-free.  A concurrent join or shuffle can leave the active view
+    // holding more peers than MaxPeers, or a duplicate peer, or a zero uuid.
+    // A peer that fails to admit increments the skip counter, and construction
+    // continues with the peers that did admit.
     template <std::size_t HyMaxActive, std::size_t HyMaxPassive>
         requires HyParViewShape<HyMaxActive, HyMaxPassive>
     explicit PlumtreeBroadcast(HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership,
@@ -209,11 +194,8 @@ public:
                                        typename PlumtreeCount<MaxPeers>::Trusted{}};
     }
 
-    // fixy-A5-032: how many active-view peers were rejected by
-    // add_link_ during membership-ctor iteration.  Non-zero means
-    // the HyParView snapshot was inconsistent at capture time
-    // (concurrent join+shuffle race); rebuild after the shuffle
-    // settles.  Stays zero for the in-bounds steady-state.
+    // A non-zero count means the membership snapshot was inconsistent at the
+    // moment of capture.  Rebuild once the membership settles.
     [[nodiscard]] std::uint16_t transient_skipped_count() const noexcept { return transient_skipped_count_; }
 
     [[nodiscard]] PlumtreeCount<MaxHistory> history_size() const noexcept {
@@ -445,10 +427,6 @@ private:
     std::uint16_t eager_count_ = 0;
     std::uint16_t history_count_ = 0;
     std::uint16_t history_cursor_ = 0;
-    // fixy-A5-032: per-construction count of active peers rejected
-    // by add_link_ (CapacityExceeded / DuplicatePeer / ZeroUuid)
-    // during ctor iteration.  Saturates at uint16_t max — non-zero
-    // means the snapshot was inconsistent at the moment of capture.
     std::uint16_t transient_skipped_count_ = 0;
 };
 
@@ -463,19 +441,10 @@ mint_plumtree(effects::Init, HyParViewMembership<HyMaxActive, HyMaxPassive> cons
     return PlumtreeBroadcast<MaxPeers, MaxHistory>{membership, config};
 }
 
-// fixy-A5-030: recoverable admission path for Plumtree construction.
-// The two existing constructors trap via CRUCIBLE_FATAL_INVARIANT on
-// configs whose fanout exceeds MaxPeers OR when a passed membership has
-// more active peers than MaxPeers can accept — daemon-killing for any
-// caller that hasn't pre-checked.  These helpers expose the same
-// checks as a std::expected return so callers recover instead of abort.
-//
-// Usage pattern:
-//   auto admitted = admit_plumtree_config<MaxPeers>(config);
-//   if (!admitted) { return diagnose(admitted.error()); }
-//   PlumtreeBroadcast<MaxPeers, MaxHistory> b{*admitted};
-//   auto pop = populate_plumtree_from_membership(b, membership);
-//   if (!pop) { return diagnose(pop.error()); }
+// The constructors above abort on a fanout larger than MaxPeers and on a
+// membership holding more active peers than MaxPeers accepts.  The two helpers
+// below run the same checks and return the outcome, so a caller that cannot
+// pre-check recovers instead of dying.
 template <std::size_t MaxPeers>
     requires(MaxPeers > 0)
 [[nodiscard]] constexpr std::expected<PlumtreeConfig, PlumtreeError>
@@ -496,12 +465,9 @@ populate_plumtree_from_membership(PlumtreeBroadcast<MaxPeers, MaxHistory>& broad
         // Static overshoot — caller's config is wrong, not a race.
         return std::unexpected(PlumtreeError::CapacityExceeded);
     }
-    // fixy-A5-032: per-peer admission failures during iteration
-    // signal a racy HyParView snapshot (a peer that wouldn't be
-    // present in a quiescent view — duplicate / zero-uuid).
-    // Remap to TransientShapeInconsistency so callers branch on
-    // a single explicit "retry with backoff" code instead of
-    // pattern-matching on multiple per-peer error variants.
+    // Every per-peer admission failure here means the snapshot is changing
+    // during the walk.  All of them map onto one retry code, so a caller
+    // branches once instead of matching each per-peer error separately.
     for (cog::CogIdentity const& peer : active.as_span()) {
         auto admitted = admit_hyparview_peer(peer);
         if (!admitted.has_value()) {

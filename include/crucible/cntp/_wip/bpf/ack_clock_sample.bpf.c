@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P WIP ACK-clock sample stub.
- *
- * Future role: sample ACK timing for pacing-rate and inflight estimates.
- * Current behavior: no-op tracepoint handler.
- */
-
 #include "../../dataplane/bpf/net_common.h"
 
 struct {

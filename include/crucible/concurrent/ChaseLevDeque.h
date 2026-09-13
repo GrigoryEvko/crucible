@@ -1,87 +1,35 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// ChaseLevDeque<T, Capacity> — owner-friendly work-stealing deque
+// Single-owner, multi-thief lock-free work-stealing deque.  The owner
+// pushes and pops at the bottom, which is LIFO and takes no CAS on the
+// common path.  Thieves take from the top, so they contend with each
+// other and with the owner only over the last element.
 //
-// Single-owner, multi-thief lock-free deque.  The owner pushes and
-// pops at the BOTTOM (LIFO — best cache locality, no atomic CAS on
-// the common path).  Thieves steal from the TOP (FIFO — only thieves
-// contend with each other, never the owner on the fast path).
+// That last element is the whole difficulty.  Without sequential
+// consistency at two points, store-buffer reordering lets the owner and
+// a thief both observe the pre-decrement state, both return the same
+// item, and one item is lost.  The two points are:
 //
-// Original algorithm: Chase & Lev, "Dynamic Circular Work-Stealing
-// Deque" (SPAA '05).  Memory-order analysis: Lê, Pop, Cohen, &
-// Nardelli, "Correct and Efficient Work-Stealing for Weak Memory
-// Models" (PPoPP '13) — they proved EXACTLY which orderings are
-// needed under C++11; this implementation follows their formulation.
+//   1. In pop_bottom, after the owner decrements bottom.  The fence
+//      orders that store globally ahead of the following load of top,
+//      so a thief that already read top loses the CAS below.
+//   2. In steal_top, between the load of top and the load of bottom.
+//      The fence stops the bottom load from moving ahead of the top
+//      load, where it would miss the owner's claim.
 //
-// ─── Why Chase-Lev over central MPMC ───────────────────────────────
+// Both CAS sites on top are seq_cst on success, so the total order
+// admits exactly one winner.
 //
-// Per-worker deque (this primitive) means the owner pays NO
-// contention cost on push/pop — the bottom side is a single-thread
-// load/store with one acquire load on `top_` for the capacity
-// check.  Thieves only contend when they're stealing from the SAME
-// deque (cross-worker stealing is the conflict path).
-//
-// Standard design for fork-join thread pools: TBB, Go runtime,
-// Java ForkJoin, Cilk.  Crucible uses it for the kernel compile
-// pool (QUEUE-5): main keeper pushes compile jobs to its own
-// deque, worker threads steal jobs to compile.
-//
-// ─── The two seq_cst points (load-bearing) ─────────────────────────
-//
-// Owner pop_bottom and thief steal_top can race on the LAST
-// element.  Without sequential consistency at the right two
-// points, store-buffer reordering on x86-TSO (or weaker on ARM)
-// lets BOTH sides observe the pre-decrement state and BOTH return
-// the same item — duplication and item loss.
-//
-// The two seq_cst points (per Lê et al. 2013 §3.3):
-//
-//   1. After owner's bottom decrement in pop_bottom:
-//        atomic_thread_fence(seq_cst);
-//      Ensures the bottom store globally orders BEFORE the
-//      subsequent top.load.  Thieves that have already loaded
-//      top will be visible-CAS'd against by the owner's
-//      compare_exchange_strong below.
-//
-//   2. Between thief's top.load and bottom.load in steal_top:
-//        atomic_thread_fence(seq_cst);
-//      Ensures the bottom load globally observes any owner's
-//      bottom decrement that has happened.  If the fence were
-//      omitted, the bottom.load could be reordered before the
-//      top.load, missing the owner's claim.
-//
-// Both top CAS sites use seq_cst on success: the total order
-// ensures only ONE side wins the race.
-//
-// ─── Constraints ───────────────────────────────────────────────────
-//
-//   * T must be trivially-copyable (we never destroy T on steal).
-//   * std::atomic<T>::is_always_lock_free must hold.  In practice
-//     this means sizeof(T) ≤ 16 bytes on x86-64 (cmpxchg16b) and
-//     aarch64 (LSE casp).  For larger payloads, store T* and
-//     allocate the body elsewhere.
-//   * Capacity must be a power of two and > 0.
-//
-// ─── Per-call atomic shape ─────────────────────────────────────────
-//
-//   push_bottom: 1 relaxed load + 1 relaxed store on bottom_,
-//                1 release store on the cell
-//   pop_bottom:  1 relaxed load + 1 relaxed store on bottom_,
-//                1 seq_cst fence, 1 acquire load on top_
-//                (and a CAS on the last-element race)
-//   steal_top:   1 acquire load on top_, 1 seq_cst fence,
-//                1 acquire load on bottom_, 1 seq_cst CAS on top_
-//   Steal contention scales with the number of thieves racing on
-//   the same deque; the owner's bottom side stays uncontended.
-// ═══════════════════════════════════════════════════════════════════
+// T lives in std::atomic<T> and must be always-lock-free, which in
+// practice caps it at the width of the target's widest atomic
+// instruction.  Anything larger is passed as a pointer.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
-#include <crucible/fixy/Hw.h>  // FIXY-V-264: grant::hw::barrier<Arch, Kind> + which_dim
-#include <crucible/fixy/Dim.h>  // FIXY-V-264: dim::DimensionAxis (BarrierStrength)
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-264: leq/join over fence strength
+#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/Dim.h>
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
 
 #include <array>
 #include <atomic>
@@ -94,65 +42,39 @@
 
 namespace crucible::concurrent {
 
-// ── FIXY-V-264: hardware-axis grant declaration (BarrierStrength) ───
-//
-// push_bottom / pop_bottom / steal_top rest on two fence strengths:
-//   * push_bottom's std::atomic_thread_fence(release)         → ReleaseStore
-//   * the two Lê 2013 §3.3 seq_cst fences (pop/steal critical
-//     points, via AtomicMonotonic<int64_t>::fence_seq_cst())  → SeqCst
-// Per the BarrierStrengthLattice "par=join" reading (V-252), a region
-// containing both sites is graded at the JOIN (the stronger fence) — so
-// the deque's characterizing barrier grant is SeqCst.  This block pins
-// that grant on the portable BarrierArch::Compiler family (the fences are
-// std::atomic_thread_fence, which the compiler lowers to mfence / DMB ISH
-// per target) and proves SeqCst is the lattice join of the two strengths.
+// The deque emits two fence strengths: a release fence in push_bottom
+// and a seq_cst fence at each of the two critical points.  A region
+// holding both is graded at their lattice join, so SeqCst is the grant
+// that characterizes the deque.  The grant is pinned on the portable
+// compiler family, because the fences are std::atomic_thread_fence and
+// the target instruction is the compiler's choice.
 namespace chaselev_hw {
 
 namespace fh = ::crucible::fixy::hw;
 namespace fgh = ::crucible::fixy::grant::hw;
 using BSL = ::crucible::algebra::lattices::BarrierStrengthLattice;
-using BS = ::crucible::fixy::hw::BarrierStrength;  // == lattices::BarrierStrength
+using BS = ::crucible::fixy::hw::BarrierStrength;
 
-// The strongest fence the algorithm needs (the two §3.3 seq_cst points),
-// expressed portably (compiler lowers std::atomic_thread_fence per arch).
-using ActiveBarrierGrant = fh::barrier_compiler_seqcst;  // barrier<Compiler, SeqCst>
+using ActiveBarrierGrant = fh::barrier_compiler_seqcst;
 
-// Well-formed grant tag routing to the BarrierStrength axis (FIXY-V-253) —
-// a DISTINCT axis from the SimdIsa/HwInstruction grants of V-262/V-263.
 static_assert(::crucible::fixy::grant::IsGrantTag<ActiveBarrierGrant>,
-              "FIXY-V-264: the active barrier grant must be a well-formed grant tag");
+              "the active barrier grant must be a well-formed grant tag");
 static_assert(::crucible::fixy::grant::which_dim_v<ActiveBarrierGrant>
                   == ::crucible::fixy::dim::DimensionAxis::BarrierStrength,
-              "FIXY-V-264: grant::hw::barrier routes to the BarrierStrength axis");
+              "the barrier grant routes to the BarrierStrength axis");
 
-// Strength consistency — SeqCst is the lattice JOIN of the deque's two
-// fence strengths (release fence ⊔ seq_cst fence), so it is the correct
-// characterizing grant; a weaker declaration would under-claim the fence
-// the §3.3 critical points actually emit.  Uses the lattice ordering
-// (robust to enum renumbering), not raw underlying values.
-static_assert(BSL::leq(BS::ReleaseStore, BS::SeqCst),
-              "FIXY-V-264: release fence is weaker than the §3.3 seq_cst fence");
+// Compared through the lattice ordering rather than the underlying
+// values, so a renumbering of the enum cannot silently invert this.
+static_assert(BSL::leq(BS::ReleaseStore, BS::SeqCst), "the release fence is weaker than the seq_cst fence");
 static_assert(BSL::join(BS::ReleaseStore, BS::SeqCst) == BS::SeqCst,
-              "FIXY-V-264: the deque's barrier grade is the join of its two "
+              "the deque's barrier grade is the join of its two "
               "fence strengths — SeqCst dominates the release fence");
 
 }  // namespace chaselev_hw
 
-// ── DequeValue<T> concept ─────────────────────────────────────────
-//
-// T must be safely storable in std::atomic<T> with always-lock-free
-// guarantees.  This is enforced via:
-//   * trivially-copyable: bytes-only semantics, no constructor
-//     races on transfer
-//   * trivially-destructible: stolen items leak no resources
-//   * std::atomic<T>::is_always_lock_free: hardware atomic CAS
-//     available without internal mutex
-
 template <typename T>
 concept DequeValue =
     std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && std::atomic<T>::is_always_lock_free;
-
-// ── ChaseLevDeque<T, Capacity> ────────────────────────────────────
 
 template <DequeValue T, std::size_t Capacity>
 class ChaseLevDeque : public safety::Pinned<ChaseLevDeque<T, Capacity>> {
@@ -161,31 +83,17 @@ public:
     static constexpr std::size_t channel_capacity = Capacity;
 
     static_assert(std::has_single_bit(Capacity), "Capacity must be a power of two");
-    // FIXY-FOUND-117: Capacity ≥ 2 — the Chase-Lev / Lê 2013 ABA-safety
-    // proof relies on top and bottom being SEPARATELY-indexed cells when
-    // the deque holds at least one element.  At Capacity = 1, MASK = 0
-    // and ALL accesses collapse to cell[0]: owner push, owner pop, AND
-    // thief steal write/read the same physical slot regardless of
-    // bottom/top values.  The published proof of CAS-failure on
-    // bottom-top conflict assumes the loser's read happens against a
-    // distinct backing storage than the winner's write — at Cap=1
-    // that assumption is structurally false, opening a small but real
-    // ABA-via-cell-aliasing hole for back-to-back push/pop/steal triples.
-    // (Lê 2013 §3.3 doesn't explicitly call out Cap≥2; the proof's
-    // separability assumption makes it implicit.)
-    //
-    // Cap=1 isn't a useful queue anyway — it holds 0 or 1 elements,
-    // contention pattern degenerates, and the test fuzzers (test_
-    // chase_lev_deque, test_concurrency_collision_fuzzer §10) require
-    // Cap ≥ 4 to exercise meaningful steal-vs-pop interleavings.  The
-    // tighter pin makes the implicit proof-precondition explicit.
-    static_assert(Capacity >= 2, "Capacity must be >= 2 — Lê 2013 ABA-safety proof "
-                                 "assumes top and bottom index DISTINCT cells; at Cap=1, "
-                                 "MASK=0 collapses all accesses to cell[0] and the proof's "
-                                 "separability assumption breaks.  Cap=1 also isn't a "
-                                 "useful work-stealing deque (0 or 1 elements only).");
+    // The ABA-safety argument assumes top and bottom index distinct
+    // cells whenever the deque is non-empty.  At Capacity 1 the mask is
+    // zero, so owner push, owner pop and thief steal all touch cell 0
+    // whatever top and bottom hold, and the argument's separability
+    // premise is false.  The published proof leaves that premise
+    // implicit, and this bound makes it explicit.
+    static_assert(Capacity >= 2, "Capacity must be >= 2 — the ABA-safety argument "
+                                 "assumes top and bottom index distinct cells, and at "
+                                 "Capacity 1 a zero mask collapses every access to cell 0");
     static_assert(Capacity <= (std::size_t{1} << 30), "Capacity must fit in 31-bit signed range "
-                                                      "(top/bottom are int64; Capacity ≤ 2^30 keeps the "
+                                                      "(top/bottom are int64; Capacity <= 2^30 keeps the "
                                                       "subtraction safe under any deque state)");
 
 private:
@@ -194,26 +102,15 @@ private:
 public:
     ChaseLevDeque() noexcept = default;
 
-    // ── push_bottom (owner only) ──────────────────────────────────
-    //
-    // Owner pushes to the bottom of the deque.  Returns false on
-    // capacity overflow (caller's responsibility — bounded deque).
-    //
-    // Memory ordering:
-    //   - load b: relaxed (own variable, no cross-thread sync)
-    //   - load t: acquire (cross-thread; sync with thief's CAS-
-    //             release on top so we observe steals up to t)
-    //   - cell store: relaxed (atomic, but no ordering needed yet)
-    //   - release fence: ensures cell store is visible BEFORE the
-    //                    bottom store below propagates
-    //   - bottom store: relaxed (release fence already sequenced)
+    // Owner only.  The acquire load of top pairs with the thieves'
+    // releasing CAS, so the capacity check counts completed steals.
+    // The release fence makes the cell store visible before the bottom
+    // store that advertises it, which is why both stores are relaxed.
     [[nodiscard]] bool push_bottom(T item) noexcept {
         const int64_t b = bottom_.load(std::memory_order_relaxed);
-        // top_.get() is acquire — pair with thieves' CAS-release in
-        // steal_top so we observe completed steals up to t.
         const int64_t t = top_.get();
         if (b - t >= static_cast<int64_t>(Capacity)) [[unlikely]] {
-            return false;  // full
+            return false;
         }
         buffer_[b & MASK].store(item, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
@@ -221,69 +118,34 @@ public:
         return true;
     }
 
-    // ── pop_bottom (owner only) ───────────────────────────────────
-    //
-    // Owner pops from the bottom.  Returns nullopt if empty.
-    //
-    // The interesting case: when t == b after decrement, owner
-    // and thief are racing for the LAST element.  CAS on top
-    // resolves the race — if owner wins, takes the item; if
-    // thief wins, owner restores bottom and returns empty.
-    //
-    // Memory ordering (Lê et al. 2013 §3.3, algorithm 5):
-    //   - load b - 1: relaxed (own variable)
-    //   - store b: relaxed (own variable, but visible to thieves
-    //              only after the seq_cst fence below)
-    //   - SEQ_CST FENCE: critical — globally orders the bottom
-    //              decrement BEFORE the top load below.  Without
-    //              this, store-buffer reordering on x86 lets the
-    //              top load happen first, missing in-flight steals.
-    //   - load t: relaxed (the seq_cst fence above has done the
-    //             heavy lifting; top reads here see any thief's
-    //             top updates that happened-before the fence)
-    //   - cell load: relaxed (we own this slot until we hand it
-    //               back to the deque)
-    //   - CAS top: seq_cst on success (race resolution), relaxed
-    //              on failure (no further write needed).
+    // Owner only.
     [[nodiscard]] std::optional<T> pop_bottom() noexcept {
         int64_t b = bottom_.load(std::memory_order_relaxed) - 1;
         bottom_.store(b, std::memory_order_relaxed);
-        // The seq_cst fence here is THE Lê 2013 §3.3 critical
-        // ordering point — orders the bottom decrement BEFORE the
-        // top load.  Co-located with the AtomicMonotonic call
-        // sites that bracket it.
+        // The first of the two critical points.  It orders the bottom
+        // decrement globally ahead of the load of top, so a thief
+        // cannot slip in between and be missed.
         safety::AtomicMonotonic<int64_t>::fence_seq_cst();
-        // top_.peek_relaxed() is correct here: the seq_cst fence
-        // above provides the cross-thread ordering; the load itself
-        // can be relaxed.
+        // A relaxed load suffices: the fence above already carries the
+        // cross-thread ordering.
         int64_t t = top_.peek_relaxed();
 
         if (t > b) {
-            // Empty: restore bottom and return.  The "+1" undoes
-            // our decrement; we never had a valid slot to take.
             bottom_.store(b + 1, std::memory_order_relaxed);
             return std::nullopt;
         }
 
         const T item = buffer_[b & MASK].load(std::memory_order_relaxed);
         if (t < b) {
-            // Strictly more than one element — no race possible.
-            // Owner takes the bottom slot; thieves may still be
-            // racing for top slots, but we own b.
+            // More than one element, so no thief can reach slot b.
             return item;
         }
 
-        // t == b: exactly one element, race window with thieves.
-        // CAS top: if it succeeds, we won the race (claimed t);
-        // if it fails, a thief has incremented top to t+1 (= b+1)
-        // and taken our item.  Either way, the deque is empty
-        // after this call, so restore bottom.
-        //
-        // compare_exchange_advance enforces monotonicity at the
-        // type level (pre: t < t+1).  Seq_cst on success acts as
-        // the RMW fence Lê 2013 §3.3 requires.
+        // One element left, and a thief may be claiming it.  A won CAS
+        // takes it, a lost CAS means the thief already advanced top and
+        // owns it.  Either way the deque ends up empty, so bottom is
+        // restored on both paths.
         if (!top_.compare_exchange_advance(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
-            // Thief got it.
             bottom_.store(b + 1, std::memory_order_relaxed);
             return std::nullopt;
         }
@@ -291,63 +153,40 @@ public:
         return item;
     }
 
-    // ── steal_top (any thread) ────────────────────────────────────
-    //
-    // Thief pops from the top.  Returns nullopt if empty OR if a
-    // concurrent thief / owner won the CAS race.  Caller may
-    // re-attempt; this primitive does NOT spin.
-    //
-    // Memory ordering (Lê et al. 2013 §3.3, algorithm 4):
-    //   - load t: acquire (sync with previous top updates from
-    //             other thieves' CAS-release; see all stolen slots)
-    //   - SEQ_CST FENCE: critical — globally orders the top load
-    //             BEFORE the bottom load below.  Without this, the
-    //             bottom load could be reordered above the top
-    //             load on weak memory models, missing an owner's
-    //             pop_bottom decrement that has happened-after our
-    //             top load.
-    //   - load b: acquire (cross-thread; sync with owner's
-    //             push_bottom release fence to see new items)
-    //   - cell load: relaxed (the CAS below confirms whether we
-    //               atomically claim the slot)
-    //   - CAS top: seq_cst on success (race resolution), relaxed
-    //              on failure.
+    // Any thread.  Returns nullopt when the deque is empty and also
+    // when another thief or the owner wins the race, which are not
+    // distinguished.  This does not spin, so the caller retries.
     [[nodiscard]] std::optional<T> steal_top() noexcept {
-        // top_.get() is acquire — sync with previous top updates from
-        // other thieves' CAS-release; see all stolen slots.
         int64_t t = top_.get();
+        // The second critical point.  It keeps the bottom load from
+        // moving ahead of the top load, where it would miss an owner
+        // decrement that happened after that load.
         safety::AtomicMonotonic<int64_t>::fence_seq_cst();
+        // Acquire, to pair with the release fence in push_bottom and
+        // so observe the cell the owner just wrote.
         const int64_t b = bottom_.load(std::memory_order_acquire);
 
         if (t >= b) {
-            return std::nullopt;  // empty (or owner racing)
+            return std::nullopt;
         }
 
-        // Read the candidate item.  If our CAS below fails, this
-        // value is discarded — another thief or the owner has
-        // claimed slot t.
+        // Speculative: a lost CAS below means the owner or another
+        // thief claimed slot t, and this value is discarded.
         const T item = buffer_[t & MASK].load(std::memory_order_relaxed);
 
-        // compare_exchange_advance enforces monotonicity (pre: t < t+1).
-        // Seq_cst on success — race-resolution against owner pop_bottom
-        // and other thieves.  The pre() compiles to nothing under
-        // hot-TU contract semantics; the runtime CAS is the same
-        // libstdc++ compare_exchange_strong as before.
         if (!top_.compare_exchange_advance(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
-            return std::nullopt;  // contention; caller may retry
+            return std::nullopt;
         }
 
         return item;
     }
 
-    // ── size_approx / empty_approx (any thread, NOT exact) ───────
-    //
-    // Snapshot reads — values may change immediately after return.
-    // Useful for telemetry / "should we stop polling?" decisions,
-    // NEVER for correctness invariants in caller logic.
+    // Snapshots.  Both values can change before the call returns, so
+    // these are for telemetry and polling decisions, never for a
+    // correctness invariant in the caller.
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
-        const int64_t t = top_.get();  // acquire
+        const int64_t t = top_.get();
         const int64_t b = bottom_.load(std::memory_order_acquire);
         const int64_t diff = b - t;
         return diff > 0 ? static_cast<std::size_t>(diff) : 0;
@@ -358,30 +197,12 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // ── Storage layout ────────────────────────────────────────────
+    // Each member takes a cache line of its own.  The thieves' CAS
+    // traffic on top must not invalidate the line the owner writes
+    // bottom on, and neither counter must share a line with the cells.
     //
-    // All three members on their own cache lines:
-    //   - top_:    contended between thieves; isolating prevents
-    //              their CAS traffic from invalidating bottom_'s
-    //              line.
-    //   - bottom_: written only by owner; isolating prevents
-    //              owner's stores from invalidating top_'s line.
-    //   - buffer_: per-cell atomics; the array's first cells
-    //              share a line with the last members of bottom_,
-    //              so we align the buffer too to keep the cells
-    //              cleanly separated from the counters.
-
-    // top_ migrated to AtomicMonotonic<int64_t> per FOUND-A20.
-    // The CAS on top_ in pop_bottom and steal_top routes through
-    // compare_exchange_advance, which carries the monotonicity
-    // contract (pre: new > observed) at the type level — making it
-    // structurally impossible to accidentally CAS top_ backward.
-    // Hot-path codegen identical to the prior bare atomic CAS.
-    //
-    // Pinned base — the original ChaseLevDeque already inherits
-    // Pinned, and AtomicMonotonic is itself Pinned, so this is a
-    // double-Pinned chain.  No double-base because Pinned is a
-    // CRTP marker (zero data).
+    // top only ever advances, and compare_exchange_advance is what
+    // holds that at the type level.
     alignas(64) safety::AtomicMonotonic<int64_t> top_{0};
     alignas(64) std::atomic<int64_t> bottom_{0};
     alignas(64) std::array<std::atomic<T>, Capacity> buffer_{};

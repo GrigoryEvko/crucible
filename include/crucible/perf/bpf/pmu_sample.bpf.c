@@ -1,37 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * pmu_sample.bpf.c — Zero-copy PMU sample capture via BPF perf_event programs.
- *
- * Attaches to hardware PMU counter overflows (LLC miss, branch miss, DTLB miss).
- * On every overflow, captures the instruction pointer and writes it to a shared
- * BPF_F_MMAPABLE circular buffer. Userspace reads via volatile mmap — no syscalls.
- *
- * This replaces the perf_event ring buffer path for rare events where period=1
- * captures literally every single hardware event with zero statistical compromise.
- *
- * Three entry points, one shared buffer:
- *   pmu_llc    (event_type=2) — Last-Level Cache miss
- *   pmu_branch (event_type=3) — Branch misprediction
- *   pmu_dtlb   (event_type=4) — Data TLB miss
- *
- * Cycles (event_type=0) and L1D misses (event_type=1) stay on the perf_event2
- * ring buffer path — they're too frequent for BPF overhead.
- *
- * Architecture support: x86_64 and aarch64 (ARMv8.0+, Cortex-A53/A72+).
- */
-
 #include "common.h"
 
-/* ─── Architecture-specific instruction pointer access ───────────────── */
-
 /*
- * bpf_perf_event_data.regs is bpf_user_pt_regs_t:
- *   x86_64:  struct pt_regs       → .ip field
- *   aarch64: struct user_pt_regs  → .pc field
- *
- * Kernel virtual address space boundary for filtering kernel IPs:
- *   x86_64:  canonical high half ≥ 0xFFFF800000000000
- *   aarch64: TTBR1 range          ≥ 0xFFFF000000000000 (48-bit VA)
+ * KERNEL_ADDR_MIN is where the kernel half of the address space starts: the
+ * canonical high half on x86-64, and the TTBR1 range on aarch64 with a 48-bit
+ * virtual address. An address at or above it is a kernel address.
  */
 #if defined(__TARGET_ARCH_arm64)
 #define SAMPLE_IP(ctx) ((ctx)->regs.pc)
@@ -43,8 +16,6 @@
 #error "Unsupported architecture for PMU sampling"
 #endif
 
-/* ─── Shared mmapable circular buffer for all PMU sample events ──────── */
-
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
@@ -53,68 +24,40 @@ struct {
     __type(value, struct pmu_sample_timeline);
 } pmu_sample_buf SEC(".maps");
 
-/* ─── Common emission logic (inlined into each entry point) ──────────── */
-
 /*
- * Write one PMU sample to the circular buffer.
- *
- * Protocol (identical to timeline events):
- * 1. Atomic write_idx increment claims a slot
- * 2. Payload fields written first (ip, tid, event_type)
- * 3. ts_ns written LAST — non-zero signals completion to reader
- *
- * Runs in NMI/PMI context — only BPF helpers safe in that context are used.
- *
- * Memory ordering:
- *   x86_64:  TSO guarantees store order — if reader sees ts_ns, all prior stores visible.
- *   aarch64: The __sync_fetch_and_add (LDAXR/STLXR) provides a full barrier before
- *            the payload stores. All fields within the 24-byte event struct share the
- *            same cache line — cache coherency delivers the full line atomically to
- *            the reader. Rust volatile loads provide the compiler barrier.
- *            Tested on: Cortex-A53 (RPi3), Cortex-A72 (RPi4), Neoverse N1 (Graviton2).
+ * This runs in NMI context, so it may call only the BPF helpers that are safe
+ * to call there.
  */
 static __always_inline int emit_pmu_sample(struct bpf_perf_event_data* ctx, __u8 etype) {
-    /* Filter: only our process */
     if (!is_target()) return 0;
 
-    /* Instruction pointer from the interrupted context (arch-portable) */
     __u64 ip = SAMPLE_IP(ctx);
 
-    /* Skip kernel-space IPs */
     if (ip >= KERNEL_ADDR_MIN) return 0;
 
-    /* Look up the shared circular buffer */
     __u32 zero = 0;
     struct pmu_sample_timeline* tl = bpf_map_lookup_elem(&pmu_sample_buf, &zero);
     if (!tl) return 0;
 
-    /* Atomically claim a slot */
     __u64 idx = __sync_fetch_and_add(&tl->hdr.write_idx, 1);
     __u32 slot = (__u32)(idx & PMU_SAMPLE_MASK);
 
-    /* Bounds check satisfies verifier (always true due to mask) */
+    /* The mask already bounds slot. The verifier does not follow that, and
+     * rejects the array access without this test. */
     if (slot < PMU_SAMPLE_CAPACITY) {
         tl->events[slot].ip = ip;
         tl->events[slot].tid = get_tid();
         tl->events[slot].event_type = etype;
-        /* Compiler barrier — GAPS-004c (2026-05-04, same fix as
-         * sched_switch.bpf.c per GAPS-004b-AUDIT).  Forces clang
-         * to emit the prior 3 stores BEFORE the ts_ns store; without
-         * this, -O2 may reorder and break the documented
-         * "ts_ns LAST as completion marker" contract.  Zero machine
-         * cost (asm volatile with empty body emits no instruction;
-         * the "memory" clobber tells the compiler not to reorder
-         * across this point).  Pairs with userspace's
-         * __atomic_load_n(&ts_ns, ACQUIRE). */
+        /* The memory clobber stops the compiler from sinking the three stores
+         * above past the ts_ns store. It pairs with the acquire load of ts_ns
+         * in the reader. */
         __asm__ __volatile__("" ::: "memory");
-        /* ts_ns LAST — completion marker */
+        /* completion marker */
         tl->events[slot].ts_ns = bpf_ktime_get_ns();
     }
 
     return 0;
 }
-
-/* ─── Entry points (one per PMU event type) ──────────────────────────── */
 
 SEC("perf_event")
 int pmu_llc(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 2); /* LLC miss */ }
@@ -126,25 +69,14 @@ SEC("perf_event")
 int pmu_dtlb(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 4); /* DTLB miss */ }
 
 /*
- * AMD IBS (Instruction-Based Sampling) entry points.
+ * AMD Instruction-Based Sampling reports the exact instruction rather than one
+ * several past the event. The kernel IBS handler copies the IBS_OP_RIP model
+ * specific register into pt_regs, so SAMPLE_IP reads it unchanged. The wider
+ * IBS payload of data address, cache level, load latency and TLB state stays
+ * in model specific registers that bpf_perf_event_data does not expose.
  *
- * IBS provides PRECISE instruction pointers — zero skid, unlike generic PMU
- * counters where the captured IP can drift several instructions past the actual
- * event. The kernel's IBS handler reads IBS_OP_RIP MSR and places it in
- * pt_regs.ip, so our existing SAMPLE_IP(ctx) macro works unchanged.
- *
- * IBS-Op samples completed micro-ops. Each sample carries the exact instruction
- * that was executing when the counter overflowed. The hardware also captures
- * data address, cache level, load latency, and TLB info in MSRs — but those
- * aren't exposed through bpf_perf_event_data, so we capture IP only here.
- * Full IBS data (data_src, latency) can be added via perf_event ring path later.
- *
- * IBS-Fetch samples instruction fetches. Provides I-cache and I-TLB info.
- * Less useful for our use case (memory/compute profiling) but included for
- * completeness and front-end stall analysis.
- *
- * Detection is runtime — the controller reads /sys/bus/event_source/devices/
- * ibs_op/type to get the dynamic PMU type ID. Non-AMD systems simply skip.
+ * The IBS PMU type identifier is allocated at run time and read from sysfs, so
+ * a machine without IBS simply never attaches these two programs.
  */
 SEC("perf_event")
 int pmu_ibs_op(struct bpf_perf_event_data* ctx) {
@@ -157,13 +89,10 @@ int pmu_ibs_fetch(struct bpf_perf_event_data* ctx) {
 }
 
 /*
- * Software event entry points.
- *
- * Attached via PerfEventConfig::Software — fire on kernel software events.
- * ctx->regs.ip gives the instruction pointer at the point the event occurred:
- *   - Major page fault: IP of the faulting load/store (memory-mapping hotspot)
- *   - CPU migration: IP where the task was running when moved to another core
- *   - Alignment fault: IP of the misaligned memory access
+ * These three attach to kernel software events rather than to hardware
+ * counters. The instruction pointer means the faulting load or store for a
+ * major page fault, the place the task was running when it moved for a CPU
+ * migration, and the misaligned access for an alignment fault.
  */
 SEC("perf_event")
 int pmu_sw_pagefault_maj(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 7); /* Major page fault */ }

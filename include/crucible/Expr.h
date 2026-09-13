@@ -4,7 +4,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
-#include <crucible/safety/Tagged.h>  // WRAP-Expr-1 #911: Tagged<u64, hash_family::FamilyB>
+#include <crucible/safety/Tagged.h>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -13,102 +13,43 @@
 
 namespace crucible {
 
-// Immutable, interned expression node.
+// An interned expression node. Two nodes with the same structure are the
+// same object, so equality is pointer equality.
 //
-// All Expr nodes are arena-allocated by ExprPool and globally interned:
-//   - Same structure → same pointer (identity equality)
-//   - Comparison: a == b is pointer comparison (~1ns)
-//   - Hash: precomputed at construction for intern table only
-//   - Lifetime: arena-managed, freed when ExprPool is destroyed
+// Every field is const because interning depends on a published node never
+// changing: a changed hash orphans its slot in the intern table, and a
+// changed payload breaks the structural equality that deduplication rests on.
 //
-// 32 bytes on 64-bit systems. Fits in half a cache line.
-//
-// ── Immutability ──
-// All member fields are `const`.  Once an Expr is constructed via the
-// full-argument constructor below, no code path can mutate its
-// structure — the TypeSafe axiom from CLAUDE.md extends from "silent
-// parameter swap" to "silent node rewrite".  The intern-table protocol
-// depends on Expr instances never changing after publication: a hash
-// mutation would orphan the slot in the Swiss table, a payload
-// mutation would corrupt structural equality in CSE.
-//
-// Arena storage: ExprPool allocates raw bytes from the Arena and
-// placement-news an Expr into them using the full-args constructor.
-// Arena never calls destructors; Expr is trivially destructible.
+// Nodes live in an arena, which never runs destructors. This type is
+// trivially destructible.
 struct Expr {
-    const Op op = Op::INTEGER;  // 1 byte  — node type
-    const uint8_t nargs = 0;  // 1 byte  — number of children (0-255)
-    const uint16_t flags = 0;  // 2 bytes — ExprFlags bitfield
-    const SymbolId symbol_id;  // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
-    // `hash` is Family-B (process-local intern key) per Types.h taxonomy.
-    // MUST NOT be persisted, federated, or fed into any Cipher key /
-    // merkle_hash / content_hash computation.  ExprPool uses it as the
-    // Swiss-table probing key and mixes arg-pointer bits (ASLR) for
-    // speed — the same structural input hashes differently per process.
-    // If FORGE federation ever needs Expr identity, compute a separate
-    // structural `content_hash()` that ignores `args` pointer values.
-    //
-    // WRAP-Expr-1 #911: pinned as Tagged<uint64_t, hash_family::FamilyB>
-    // so the Family-B-ness is enforced at the TYPE level.  Builds on
-    // #1069's hash_family::FamilyB tag.  Regime-1 EBO-collapse preserves
-    // the 8B field width — the 32B Expr layout is unchanged (the
-    // static_assert at the file end pins this).  ExprPool::intern probe
-    // sites unwrap via .value() at the Swiss-table modular-probe step.
-    //
-    // The bug class this prevents: a maintainer accidentally feeding
-    // Expr::hash into a Family-A computation (merkle_hash, ContentHash,
-    // Cipher key) — Tagged<u64, FamilyB> cannot be implicitly converted
-    // to Tagged<u64, FamilyA>; the cross-family confusion fails to
-    // compile at the call site.
-    const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB> hash{
-        std::uint64_t{0}};  // 8 bytes — Family-B intern key
-    // Tagged has no default ctor; mint
-    // the zero hash explicitly.
-    const int64_t payload = 0;  // 8 bytes — integer value, or bitcast double, or symbol name ptr
-    const Expr* const* const args = nullptr;  // 8 bytes — pointer to arena-allocated array of children
-    // ──────────
-    // 32 bytes total
+    const Op op = Op::INTEGER;
+    const uint8_t nargs = 0;
+    const uint16_t flags = 0;
+    const SymbolId symbol_id;  // default-valued on a node that is not a symbol
+    // This hash is process-local. The intern table mixes the addresses of the
+    // child array into it, so the same structure hashes differently in
+    // another process. It must never be persisted, shared between processes,
+    // or folded into a content hash. The tag is what makes a cross-family use
+    // fail to compile rather than silently produce an unstable key.
+    const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB> hash{std::uint64_t{0}};
+    const int64_t payload = 0;  // an integer, a double's bits, or a name pointer
+    const Expr* const* const args = nullptr;
 
-    // Default constructor: yields a valid "integer 0" atom.  Value-init
-    // via NSDMI keeps default-constructed instances well-defined per the
-    // InitSafe axiom.  Primarily used by Arena zero-fill paths and by
-    // tests that build placeholder Exprs.
+    // The default node is the integer zero.
     constexpr Expr() noexcept = default;
 
-    // Full-args constructor: the only way to create a non-default Expr.
-    // ExprPool::make_ uses this via placement-new into arena storage.
-    // hash_ and payload_ may legitimately be 0 (zero integer, zero-valued
-    // flag set).  args_ may be null iff nargs_ == 0.
-    //
-    // CONTRACT-115: the args-vs-nargs companionship discharges through
-    // the named predicate `crucible::decide::implies` (CONTRACT-081
-    // catalog) — `nargs_ > 0 ⇒ args_ != nullptr`.  Equivalent forms
-    // (`nargs_ == 0 || args_ != nullptr`, `args_ != nullptr || nargs_
-    // == 0`) are not used because the implication form is the natural
-    // mathematical reading of the doc-comment "args_ may be null iff
-    // nargs_ == 0".  Pure parameter ref — not consteval-bypass-vulnerable
-    // — so P2900 pre() is sufficient.  ExprPool::intern_node and the
-    // bool/int singleton paths are the only callers; neither passes
-    // nargs_ > 0 with args_ == nullptr in production, but the cite
-    // catches a future refactor that constructs an Expr from a partial
-    // arg-list initialization sequence (e.g., args_ = staging buffer
-    // before the staging is filled).
+    // Zero is a legitimate hash and a legitimate payload. A null child array
+    // is legitimate too, but only for a node with no children.
     constexpr Expr(Op op_, uint8_t nargs_, uint16_t flags_, SymbolId symbol_id_, uint64_t hash_, int64_t payload_,
                    const Expr* const* args_) noexcept
         pre(::crucible::decide::implies(::crucible::decide::positive(nargs_), args_ != nullptr))
         : op(op_), nargs(nargs_), flags(flags_), symbol_id(symbol_id_), hash(hash_), payload(payload_), args(args_) {}
 
-    // Copy/move: deleted because const fields make assignment impossible
-    // and copying an interned Expr would break intern-table identity
-    // (two pointers referencing equivalent structures must be THE SAME
-    // pointer, not distinct copies).  Move is likewise nonsensical since
-    // the target is an identity-interned pointer.
     Expr(const Expr&) = delete("interned Exprs have identity equality; copying would break intern");
     Expr& operator=(const Expr&) = delete("fields are const");
     Expr(Expr&&) = delete("interned Exprs are arena-pinned");
     Expr& operator=(Expr&&) = delete("fields are const");
-
-    // ---- Payload accessors ----
 
     [[nodiscard]] constexpr int64_t as_int() const { return payload; }
 
@@ -117,8 +58,6 @@ struct Expr {
     [[nodiscard]] const char* as_symbol_name() const noexcept CRUCIBLE_LIFETIMEBOUND {
         return std::bit_cast<const char*>(payload);
     }
-
-    // ---- Flag queries (branchless, single AND instruction) ----
 
     [[nodiscard, gnu::pure]] constexpr bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
     [[nodiscard, gnu::pure]] constexpr bool is_real() const { return flags & ExprFlags::IS_REAL; }
@@ -134,8 +73,6 @@ struct Expr {
     [[nodiscard, gnu::pure]] constexpr bool is_symbol() const { return flags & ExprFlags::IS_SYMBOL; }
     [[nodiscard, gnu::pure]] constexpr bool is_boolean() const { return flags & ExprFlags::IS_BOOLEAN; }
 
-    // ---- Structural queries ----
-
     [[nodiscard, gnu::pure]] constexpr bool is_atom() const { return nargs == 0; }
 
     [[nodiscard, gnu::pure]] constexpr bool is_one() const { return op == Op::INTEGER && payload == 1; }
@@ -144,37 +81,10 @@ struct Expr {
 
     [[nodiscard, gnu::pure]] constexpr bool is_zero_int() const { return op == Op::INTEGER && payload == 0; }
 
-    // ---- Child access ----
-
     [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND {
-        // CONTRACT-115: child-access bounds discharge through the named
-        // predicate `crucible::decide::in_range` (CONTRACT-102 catalog).
-        // The closed interval `[0, nargs - 1]` is reviewable as a single
-        // citation rather than a bare `<` (which conflates exclusive count
-        // with inclusive max — see decide.h anti-patterns).  Mirrors the
-        // ReplayEngine output_ptr / input_ptr migration pattern
-        // (CONTRACT-108, ReplayEngine.h:229-231 / 259-261).
-        //
-        // The `nargs > 0u` companion guard is paired because
-        // `nargs - 1u` underflows to UINT8_MAX when nargs == 0, which
-        // would make `in_range(i, 0, UINT8_MAX)` accept every value;
-        // production never calls arg() on a zero-arg Expr (no valid
-        // index can exist) but defense-in-depth catches a future
-        // refactor that exposes this path (e.g. an iterator that walks
-        // children without first checking is_atom()).
-        //
-        // The pre clauses move from P2900 `pre()` to in-body CRUCIBLE_PRE
-        // because P2900 `pre()` referencing class members through `this->`
-        // (here: `this->nargs` and `this->args`) is silently bypassed at
-        // consteval in GCC 16.1.1 (same gotcha that drove
-        // CONTRACT-100..108-POST and the ReplayEngine port migration).
-        // CRUCIBLE_PRE fires symmetrically at consteval, runtime, and as
-        // `[[assume]]` for the optimizer.  The args != nullptr check
-        // remains as a separate clause: `nargs > 0u` companions only
-        // prevent the `nargs - 1u` underflow; the actual non-null
-        // dereference of args[] is the orthogonal NullSafe obligation
-        // that the constructor's `decide::implies(nargs_ > 0, args_ !=
-        // nullptr)` pre witnesses on every Expr construction.
+        // The first guard is not redundant with the second. On a node with no
+        // children the subtraction below wraps to the largest uint8_t and the
+        // range check then admits every index.
         CRUCIBLE_PRE(nargs > 0u);
         CRUCIBLE_PRE(::crucible::decide::in_range<std::uint8_t>(i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
         CRUCIBLE_PRE(args != nullptr);
@@ -182,28 +92,17 @@ struct Expr {
     }
 };
 
-// Compile-time check: Expr must be 32 bytes for cache efficiency.
 static_assert(sizeof(Expr) == 32, "Expr must be exactly 32 bytes");
 
-// ── WRAP-Expr-1 #911 sentinel: Expr::hash Family-B pin ────────────
-//
-// The Tagged<u64, hash_family::FamilyB> wrap MUST regime-1 EBO-collapse
-// to sizeof(u64) — if it doesn't, the 32B Expr layout breaks and the
-// static_assert above catches it.  Pin the field's exact type and
-// width so a future regression cannot silently drop the wrap (or
-// switch to FamilyA, allowing Cipher confusion).
 static_assert(std::is_same_v<decltype(std::declval<Expr>().hash),
                              const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>>,
-              "WRAP-Expr-1 #911: Expr::hash must be "
-              "const Tagged<u64, hash_family::FamilyB> — Family-B intern key.");
+              "Expr::hash must stay a const Tagged<uint64_t, hash_family::FamilyB>");
 static_assert(sizeof(::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>) == sizeof(std::uint64_t),
-              "WRAP-Expr-1 #911: Tagged<u64, FamilyB> must be regime-1 EBO-"
-              "collapsible to preserve the 32B Expr layout.");
+              "Tagged<uint64_t, hash_family::FamilyB> must stay the width of its payload, or the Expr "
+              "layout changes");
 
 namespace detail {
 
-// MurmurHash3 64-bit finalizer — proven avalanche properties.
-// Shared by ExprPool (structural hashing) and ExprMap (pointer hashing).
 constexpr uint64_t fmix64(uint64_t k) {
     k ^= k >> 33;
     k *= 0xff51afd7ed558ccdULL;
@@ -213,27 +112,26 @@ constexpr uint64_t fmix64(uint64_t k) {
     return k;
 }
 
-// wyhash-style 64-bit mix: one 128-bit multiply, XOR halves.
-// ~2 instructions on x86-64 (mulq + xor). Superior avalanche to
-// XOR-shift chains when inputs are already somewhat random (pointers).
-// Used on the intern() hot path where every nanosecond matters.
+// One wide multiply with the halves folded together. It avalanches better
+// than a chain of shifts and xors when the inputs already carry some entropy,
+// which is the case for the addresses this mixes.
 inline uint64_t wymix(uint64_t a, uint64_t b) {
 #ifdef __SIZEOF_INT128__
     __uint128_t full = static_cast<__uint128_t>(a) * b;
     return static_cast<uint64_t>(full) ^ static_cast<uint64_t>(full >> 64);
 #else
-    // Fallback: fmix64 when 128-bit multiply unavailable
     return fmix64(a ^ b);
 #endif
 }
 
-// Per-dimension mixing constants for XOR-fold content hash.
-// sizes[d] uses kDimMix[d], strides[d] uses kDimMix[d + 8].
+// A distinct constant per lane, so an extent and a stride at the same index
+// cannot cancel when the fold xors them together. The first eight are for
+// extents and the second eight for strides. Each is an odd multiple of the
+// same seed, so all sixteen are distinct and coprime to the word size.
 //
-// Weyl sequence: k[i] = (i+1) * phi, phi = golden ratio constant.
-// Well-distributed, all distinct, coprime to 2^64. Independent
-// multiplies break the serial wymix chain: ndim XOR-folds (1 cy each)
-// + 1 wymix (~5 cy) instead of ndim wymix calls (~5 cy each serial).
+// Folding with xor rather than mixing each term keeps the sixteen products
+// independent of one another, leaving a single mix at the end instead of a
+// chain of them.
 inline constexpr uint64_t kDimMix[16] = {
     0x9E3779B97F4A7C15ULL * 1,  0x9E3779B97F4A7C15ULL * 2,  0x9E3779B97F4A7C15ULL * 3,  0x9E3779B97F4A7C15ULL * 4,
     0x9E3779B97F4A7C15ULL * 5,  0x9E3779B97F4A7C15ULL * 6,  0x9E3779B97F4A7C15ULL * 7,  0x9E3779B97F4A7C15ULL * 8,

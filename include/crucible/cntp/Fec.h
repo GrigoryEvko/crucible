@@ -1,11 +1,8 @@
 #pragma once
 
-// Reed-Solomon erasure coding for CNT-P payload shards.
-//
-// Systematic (K+M) code over GF(2^8): the first K output shards are the
-// padded input bytes, the following M shards are parity.  Decode chooses
-// any K surviving shards, inverts the corresponding generator submatrix,
-// and reconstructs the original K data shards.
+// On the wire a shard set is K systematic data shards followed by M parity
+// shards, each of equal length and contiguous in index order.  A peer
+// decoder must assume the same ordering.
 
 #include <crucible/Platform.h>
 #include <crucible/effects/Capabilities.h>
@@ -13,8 +10,8 @@
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Simd.h>
-#include <crucible/fixy/Vendor.h>  // FIXY-V-263: vendor::intrinsic<V,I> + canonical aliases
-#include <crucible/fixy/Simd.h>  // FIXY-V-263: simd::width<W> + width_* aliases
+#include <crucible/fixy/Vendor.h>
+#include <crucible/fixy/Simd.h>
 
 #include <algorithm>
 #include <array>
@@ -25,7 +22,7 @@
 #include <expected>
 #include <iterator>
 #include <limits>
-#include <memory>  // FIXY-U-082: std::start_lifetime_as for SIMD type-pun
+#include <memory>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -210,27 +207,9 @@ struct alignas(32) NibbleTables {
 }
 #endif
 
-// ── FIXY-V-263: hardware-axis grant declarations ───────────────────
-//
-// Each compile-time SIMD arm of the Reed-Solomon GF(2^8) kernels
-// (xor_bytes / mul_xor) declares — at the TYPE level — which
-// vendor::intrinsic<V, I> (FIXY-V-258) and simd::width<W> (FIXY-V-259)
-// it uses, so the FEC hardware dependency is a named, greppable,
-// type-checked surface (the V-264 check-fixy-hw-discipline.sh lint reads
-// it) rather than an invisible `#ifdef`.  Mirrors the SwissTable
-// declaration block (FIXY-V-262).  Reached through the fixy:: umbrella,
-// not raw safety::*, per the band-3 discipline.  Zero runtime cost —
-// empty grant tags + using-aliases, all consumed at compile time.
-//
-//   AVX2     → avx2_intrinsic + width_256  (32-byte XOR / shuffle blocks)
-//   NEON     → neon_intrinsic + width_128  (16-byte vld1q / vqtbl blocks)
-//   Portable → width_scalar, NO vendor intrinsic (byte-at-a-time GF(2^8)
-//              multiply over general-purpose registers — the absence of a
-//              vendor dependency IS the point of the scalar fallback).
-//
-// `ActiveSimdWidth` is defined on every arm; `ActiveVendorIsa` only on
-// the two real-SIMD arms.  The per-arm static_assert pins the declared
-// register width (bits) to the kernel's block stride (bytes × 8).
+// These aliases have no runtime use.  They restate the preprocessor arm
+// selected below as types, so an external lint can read which vendor
+// intrinsic and register width the kernels depend on.
 namespace fec_hw {
 
 namespace fv = ::crucible::fixy::vendor;
@@ -240,43 +219,34 @@ namespace fs = ::crucible::fixy::simd;
 using ActiveVendorIsa = fv::avx2_intrinsic;
 using ActiveSimdWidth = fs::width_256;
 static_assert(32u * 8u == std::to_underlying(fs::WidthBits::Bits256),
-              "FIXY-V-263: AVX2 FEC kernels stride 32-byte blocks = 256-bit width");
+              "the AVX2 kernels stride 32-byte blocks, which must equal the declared 256-bit width");
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 using ActiveVendorIsa = fv::neon_intrinsic;
 using ActiveSimdWidth = fs::width_128;
 static_assert(16u * 8u == std::to_underlying(fs::WidthBits::Bits128),
-              "FIXY-V-263: NEON FEC kernels stride 16-byte blocks = 128-bit width");
+              "the NEON kernels stride 16-byte blocks, which must equal the declared 128-bit width");
 #else
-using ActiveSimdWidth = fs::width_scalar;  // portable byte-at-a-time GF(2^8)
+using ActiveSimdWidth = fs::width_scalar;
 #endif
 
-// Arm-independent: the active SIMD-width grant is always well-formed and
-// routes to the SimdIsa axis (FIXY-V-253).
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>,
-              "FIXY-V-263: the active simd::width grant must be well-formed");
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>, "the active simd::width grant must be well-formed");
 static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth> == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
-              "FIXY-V-263: simd::width routes to the SimdIsa axis");
+              "simd::width routes to the SimdIsa axis");
 
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
-// The two real-SIMD arms additionally pin a vendor intrinsic; the
-// portable scalar fallback has no vendor dependency.
 static_assert(::crucible::fixy::grant::IsGrantTag<ActiveVendorIsa>,
-              "FIXY-V-263: the active vendor::intrinsic grant must be well-formed");
+              "the active vendor::intrinsic grant must be well-formed");
 static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
                   == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
-              "FIXY-V-263: vendor::intrinsic routes to the HwInstruction axis");
+              "vendor::intrinsic routes to the HwInstruction axis");
 #endif
 
 }  // namespace fec_hw
 
 #if defined(__AVX2__)
-// FIXY-U-082 / fixy-A5-028: std::start_lifetime_as is the C++23 idiom for
-// safely type-punning byte storage to an intrinsic vector type — no UB
-// from strict aliasing, no reinterpret_cast at the kernel level.  Full
-// std::simd migration deferred: <simd> is __SSE2__-gated (empty on ARM)
-// and the kernels here use AVX2/NEON-exclusive shuffle ops (_mm256_shuffle_epi8
-// / vqtbl1q_u8) for GF(2^8) nibble-table lookup that std::simd doesn't
-// expose at this level of detail.
+// std::simd loses here on two counts: it is gated on __SSE2__ and so
+// compiles to nothing on ARM, and it exposes no byte-shuffle, which the
+// GF(2^8) nibble-table lookup needs.
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
@@ -317,7 +287,6 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
     }
 }
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-// FIXY-U-082 / fixy-A5-028: same start_lifetime_as discipline as AVX2 path.
 CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
@@ -386,8 +355,6 @@ CRUCIBLE_HOT void mul_xor(std::byte* dst, std::byte const* src, std::uint8_t coe
 
 template <ByteContiguousBuffer Buffer>
 [[nodiscard]] inline std::span<const std::byte> bytes(Buffer const& buffer) noexcept {
-    // FIXY-U-082 / fixy-A5-028: std::as_bytes is the C++20 typed-span →
-    // byte-span idiom; strict-aliasing-safe, zero-cost.
     return std::as_bytes(std::span{std::data(buffer), static_cast<std::size_t>(std::size(buffer))});
 }
 

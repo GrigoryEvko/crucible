@@ -1,17 +1,6 @@
 #pragma once
 
-// SugiyamaLayout: layered graph drawing for DAGs.
-//
-// Classic four-phase algorithm:
-//   1. Layer assignment   — longest path from sources
-//   2. Crossing minimize  — barycenter heuristic (iterative up/down sweeps)
-//   3. X-coordinate       — median positioning within layers
-//   4. Compaction         — remove horizontal gaps
-//
-// Handles both intra-block (~50 ops) and inter-block (~160 blocks) layout.
-// Performance target: <10ms for 12K ops across 160 blocks.
-//
-// Not hot path — std::vector is appropriate.
+// This is not a hot path, so std::vector is appropriate.
 
 #include <crucible/vis/NetworkSimplex.h>
 
@@ -22,34 +11,25 @@
 
 namespace crucible::vis {
 
-// ═══════════════════════════════════════════════════════════════════
-// Input: a DAG as adjacency lists
-// ═══════════════════════════════════════════════════════════════════
-
 struct LayoutEdge {
     uint32_t src = 0;
     uint32_t dst = 0;
 };
 
 struct LayoutNode {
-    // Input (caller fills these):
-    float lw = 30;  // left half-width (center to left edge)
-    float rw = 30;  // right half-width (center to right edge)
-    float min_height = 28;  // minimum node height
+    // Filled by the caller.
+    float lw = 30;  // Distance from the center to the left edge.
+    float rw = 30;  // Distance from the center to the right edge.
+    float min_height = 28;
 
-    // Convenience: total width
     [[nodiscard]] float width() const { return lw + rw; }
 
-    // Output (layout fills these):
-    float x = 0;  // center x
-    float y = 0;  // top y
-    uint32_t layer = 0;  // assigned layer (0 = top)
-    uint32_t order = 0;  // position within layer (0 = leftmost)
+    // Filled by the layout.
+    float x = 0;  // Center of the node.
+    float y = 0;  // Top of the node.
+    uint32_t layer = 0;  // Layer 0 is the top.
+    uint32_t order = 0;  // Position in the layer. Position 0 is leftmost.
 };
-
-// ═══════════════════════════════════════════════════════════════════
-// Layout result
-// ═══════════════════════════════════════════════════════════════════
 
 struct LayoutResult {
     std::vector<LayoutNode> nodes;
@@ -58,29 +38,18 @@ struct LayoutResult {
     uint32_t num_layers = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// Layout parameters
-// ═══════════════════════════════════════════════════════════════════
-
 struct LayoutParams {
-    float node_h_gap = 16;  // horizontal gap between nodes in same layer
-    float layer_v_gap = 36;  // vertical gap between layers
-    float padding = 20;  // padding around the entire layout
-    bool use_network_simplex = true;  // use NS for X positioning (false = naive placement)
+    float node_h_gap = 16;
+    float layer_v_gap = 36;
+    float padding = 20;
+    bool use_network_simplex = true;
 };
-
-// ═══════════════════════════════════════════════════════════════════
-// Sugiyama layout algorithm
-// ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline LayoutResult sugiyama_layout(std::vector<LayoutNode> nodes, const std::vector<LayoutEdge>& edges,
                                                   const LayoutParams& params = {}) {
     const uint32_t n = static_cast<uint32_t>(nodes.size());
     if (n == 0) return {.nodes = {}, .total_width = 0, .total_height = 0};
 
-    // ── Phase 1: Layer assignment (longest path from sources) ────────
-
-    // Build adjacency: fwd[u] = successors, rev[u] = predecessors
     std::vector<std::vector<uint32_t>> fwd(n), rev(n);
     std::vector<uint32_t> in_deg(n, 0);
     for (const auto& e : edges) {
@@ -91,7 +60,6 @@ struct LayoutParams {
         }
     }
 
-    // Topological order via Kahn's algorithm
     std::vector<uint32_t> topo;
     {
         std::vector<uint32_t> queue;
@@ -109,7 +77,6 @@ struct LayoutParams {
         }
     }
 
-    // Longest path layer assignment (in topological order)
     for (uint32_t u : topo) {
         uint32_t max_pred = 0;
         for (uint32_t p : rev[u])
@@ -121,16 +88,13 @@ struct LayoutParams {
     for (const auto& nd : nodes)
         num_layers = std::max(num_layers, nd.layer + 1);
 
-    // ── Phase 1.5: Virtual nodes for multi-rank edges ────────────────
-    //
-    // When an edge spans >1 layer, insert thin dummy nodes at each
-    // intermediate layer. Replace the long edge with a chain of
-    // single-layer edges. Virtual nodes participate in crossing
-    // minimization and coordinate assignment, guiding long edges
-    // through intermediate ranks cleanly.
+    // An edge spanning more than one layer is replaced by a chain of
+    // single-layer edges through thin virtual nodes, one per intermediate
+    // layer. Virtual nodes take part in crossing minimization and coordinate
+    // assignment, so a long edge is routed through the layers it crosses
+    // instead of cutting across them.
 
     const uint32_t original_n = static_cast<uint32_t>(nodes.size());
-    // Count virtual nodes needed
     uint32_t num_virtual = 0;
     for (const auto& e : edges) {
         if (e.src >= original_n || e.dst >= original_n) continue;
@@ -138,7 +102,6 @@ struct LayoutParams {
         if (span > 1) num_virtual += static_cast<uint32_t>(span - 1);
     }
 
-    // Rebuild adjacency with virtual node chains
     std::vector<std::vector<uint32_t>> fwd2, rev2;
     fwd2.resize(original_n + num_virtual);
     rev2.resize(original_n + num_virtual);
@@ -150,19 +113,17 @@ struct LayoutParams {
 
         uint32_t src_layer = nodes[e.src].layer;
         uint32_t dst_layer = nodes[e.dst].layer;
-        if (dst_layer <= src_layer) continue;  // skip backward edges
+        if (dst_layer <= src_layer) continue;
 
         int32_t span = static_cast<int32_t>(dst_layer - src_layer);
         if (span <= 1) {
-            // Single-layer edge: keep as-is
             fwd2[e.src].push_back(e.dst);
             rev2[e.dst].push_back(e.src);
         } else {
-            // Multi-layer: insert virtual nodes
             uint32_t prev = e.src;
             for (int32_t k = 1; k < span; k++) {
                 LayoutNode vn{};
-                vn.lw = 2;  // thin virtual node
+                vn.lw = 2;
                 vn.rw = 2;
                 vn.min_height = 4;
                 vn.layer = src_layer + static_cast<uint32_t>(k);
@@ -177,9 +138,6 @@ struct LayoutParams {
         }
     }
 
-    // Also keep single-span edges that weren't multi-rank
-    // (already added above, but edges with dst_layer == src_layer+1
-    //  that we skipped in the span>1 path)
     for (const auto& e : edges) {
         if (e.src >= original_n || e.dst >= original_n) continue;
         if (e.src == e.dst) continue;
@@ -191,40 +149,30 @@ struct LayoutParams {
         }
     }
 
-    // Replace adjacency lists
     fwd = std::move(fwd2);
     rev = std::move(rev2);
 
-    // Update n to include virtual nodes
     const uint32_t total_n = static_cast<uint32_t>(nodes.size());
 
-    // ── Phase 2: Build layers ────────────────────────────────────────
-
-    // Group nodes by layer (including virtual nodes)
     std::vector<std::vector<uint32_t>> layers(num_layers);
     for (uint32_t i = 0; i < total_n; i++)
         layers[nodes[i].layer].push_back(i);
 
-    // Initial order: preserve input order within each layer
     for (auto& layer : layers) {
         for (uint32_t pos = 0; pos < layer.size(); pos++)
             nodes[layer[pos]].order = pos;
     }
 
-    // ── Phase 3: Crossing minimization (barycenter, 8 sweeps) ───────
-
-    // Weighted median: more robust than barycenter (mean) for crossing
-    // minimization. Returns median of adjacent nodes' positions.
-    auto weighted_median = [&](uint32_t node_id, bool use_pred) -> float {
+    // The median of the neighbours' positions resists outliers better than
+    // their mean, which is what the usual barycenter heuristic uses.
+    auto neighbor_median = [&](uint32_t node_id, bool use_pred) -> float {
         const auto& adj = use_pred ? rev[node_id] : fwd[node_id];
         if (adj.empty()) return static_cast<float>(nodes[node_id].order);
         if (adj.size() == 1) return static_cast<float>(nodes[adj[0]].order);
-        // Collect positions and sort
         std::vector<float> positions;
         for (uint32_t a : adj)
             positions.push_back(static_cast<float>(nodes[a].order));
         std::ranges::sort(positions);
-        // Return median
         size_t mid = positions.size() / 2;
         if (positions.size() % 2 == 0) return (positions[mid - 1] + positions[mid]) / 2;
         return positions[mid];
@@ -232,34 +180,28 @@ struct LayoutParams {
 
     constexpr uint32_t MAX_SWEEPS = 8;
     for (uint32_t sweep = 0; sweep < MAX_SWEEPS; sweep++) {
-        // Down sweep: order each layer by barycenter of predecessors
         for (uint32_t l = 1; l < num_layers; l++) {
             auto& layer = layers[l];
             std::ranges::sort(
-                layer, [&](uint32_t a, uint32_t b) { return weighted_median(a, true) < weighted_median(b, true); });
+                layer, [&](uint32_t a, uint32_t b) { return neighbor_median(a, true) < neighbor_median(b, true); });
             for (uint32_t pos = 0; pos < layer.size(); pos++)
                 nodes[layer[pos]].order = pos;
         }
 
-        // Up sweep: order each layer by barycenter of successors
         for (uint32_t l = num_layers - 1; l > 0; l--) {
             auto& layer = layers[l - 1];
             std::ranges::sort(
-                layer, [&](uint32_t a, uint32_t b) { return weighted_median(a, false) < weighted_median(b, false); });
+                layer, [&](uint32_t a, uint32_t b) { return neighbor_median(a, false) < neighbor_median(b, false); });
             for (uint32_t pos = 0; pos < layer.size(); pos++)
                 nodes[layer[pos]].order = pos;
         }
     }
 
-    // ── Phase 4: X-coordinate assignment via network simplex ──────────
-    //
-    // Build auxiliary constraint graph:
-    //   - Adjacent pairs in each rank: minlen = half-widths + gap (hard sep)
-    //   - Original edges: weight = edge weight (spring pulling together)
-    // Solve with network simplex for optimal X that minimizes weighted
-    // edge bending subject to non-overlap constraints.
+    // X placement is encoded as a rank problem on an auxiliary graph.
+    // Adjacent nodes in a layer get a hard separation constraint and each
+    // graph edge becomes a zero-length spring, so the solver minimizes
+    // weighted edge bending subject to non-overlap.
 
-    // Sort layers by order before building constraints
     for (uint32_t l = 0; l < num_layers; l++) {
         std::ranges::sort(layers[l], [&](uint32_t a, uint32_t b) { return nodes[a].order < nodes[b].order; });
     }
@@ -269,43 +211,30 @@ struct LayoutParams {
     if (params.use_network_simplex) {
         std::vector<NSEdge> aux_edges;
 
-        // Left-right separation constraints within each rank.
-        // x(right) - x(left) >= rw(left) + lw(right) + gap
-        // Separation: rw(left) + lw(right) + gap
         for (uint32_t l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
             for (uint32_t j = 1; j < layer.size(); j++) {
                 uint32_t left = layer[j - 1];
                 uint32_t right = layer[j];
                 int32_t sep = static_cast<int32_t>(nodes[left].rw + nodes[right].lw + params.node_h_gap);
-                aux_edges.push_back({left, right, sep, 0});  // hard constraint, no spring
+                aux_edges.push_back({left, right, sep, 0});  // Weight zero: a constraint with no pull.
             }
         }
 
-        // Spring edges for original DAG edges (pull connected nodes together)
         for (const auto& e : edges) {
             if (e.src < total_n && e.dst < total_n && e.src != e.dst) {
-                // Bidirectional spring: if src is left of dst, pull right;
-                // if src is right of dst, pull left. Network simplex handles
-                // this by allowing negative rank differences.
-                // We model as: both directions with minlen=0, weight=1
                 aux_edges.push_back({e.src, e.dst, 0, 1});
             }
         }
 
-        // Compaction: for each layer, add a weak edge from rightmost to
-        // leftmost node pulling the layout inward. Weight=1 (same as springs).
         for (uint32_t l = 0; l < num_layers; l++) {
             if (layers[l].size() >= 2) {
                 uint32_t first = layers[l].front();
                 uint32_t last = layers[l].back();
-                // Edge from last → first with minlen=0: NS will try to minimize
-                // the distance between them (compressing the layer).
                 aux_edges.push_back({last, first, 0, 1});
             }
         }
 
-        // Solve X positions via network simplex
         auto ns_result = network_simplex(total_n, aux_edges, 200);
         if (ns_result.converged) {
             for (uint32_t i = 0; i < total_n; i++) {
@@ -316,15 +245,13 @@ struct LayoutParams {
                 max_x = std::max(max_x, nodes[i].x + nodes[i].rw);
             total_width = max_x + params.padding;
         } else {
-            // NS didn't converge — fall through to naive placement
+            // Fall through to the naive placement below.
         }
-    }  // end if (params.use_network_simplex)
+    }
 
-    // Naive left-to-right placement (used when NS disabled or didn't converge).
-    // total_width is set to a positive value above on the NS-success path; the
-    // NS-failure / NS-disabled paths leave it at its 0.0f initializer, so a
-    // <=0 check is the safe sentinel for "still untouched" without tripping
-    // -Wfloat-equal.
+    // total_width is still at its zero initializer on both the disabled path
+    // and the non-converged path. A <= 0 test is the sentinel for "untouched"
+    // and does not trip -Wfloat-equal.
     if (total_width <= 0.0f) {
         std::vector<float> layer_widths(num_layers, 0);
         for (uint32_t l = 0; l < num_layers; l++) {
@@ -346,9 +273,6 @@ struct LayoutParams {
         }
     }
 
-    // ── Phase 5: Y-coordinate assignment ─────────────────────────────
-
-    // Compute per-layer max height
     std::vector<float> layer_heights(num_layers, 0);
     for (uint32_t i = 0; i < total_n; i++)
         layer_heights[nodes[i].layer] = std::max(layer_heights[nodes[i].layer], nodes[i].min_height);
@@ -364,13 +288,7 @@ struct LayoutParams {
 
     float total_height = y - params.layer_v_gap + params.padding;
 
-    // ── Phase 6: Median improvement (4 sweeps) ─────────────────────────
-    //
-    // Nudge nodes toward the median of their connected nodes' x positions.
-    // After each sweep, enforce minimum separation to prevent overlap.
-
     for (uint32_t sweep = 0; sweep < 4; sweep++) {
-        // Down sweep: nudge toward predecessor median
         for (uint32_t l = 1; l < num_layers; l++) {
             for (uint32_t idx : layers[l]) {
                 if (rev[idx].empty()) continue;
@@ -383,7 +301,6 @@ struct LayoutParams {
             }
         }
 
-        // Up sweep: nudge toward successor median
         for (uint32_t l = num_layers - 1; l > 0; l--) {
             for (uint32_t idx : layers[l - 1]) {
                 if (fwd[idx].empty()) continue;
@@ -396,33 +313,31 @@ struct LayoutParams {
             }
         }
 
-        // ── Overlap enforcement: sweep left→right within each layer ────
-        // Guarantees: edge-to-edge distance >= node_h_gap.
-        // This is a hard constraint — no node can violate it after this pass.
+        // After this pass no two nodes in a layer sit closer than
+        // node_h_gap. One left-to-right sweep is enough because a node is
+        // only ever pushed right.
         for (uint32_t l = 0; l < num_layers; l++) {
             auto& layer = layers[l];
-            // Sort by current x position
             std::ranges::sort(layer, [&](uint32_t a, uint32_t b) { return nodes[a].x < nodes[b].x; });
-            // Push right if overlapping
             for (uint32_t j = 1; j < layer.size(); j++) {
                 uint32_t prev = layer[j - 1];
                 uint32_t curr = layer[j];
                 float min_x = nodes[prev].x + nodes[prev].rw + params.node_h_gap + nodes[curr].lw;
                 if (nodes[curr].x < min_x) nodes[curr].x = min_x;
             }
-            // Update order to match new x positions
             for (uint32_t pos = 0; pos < layer.size(); pos++)
                 nodes[layer[pos]].order = pos;
         }
     }
 
-    // Recompute total width after nudging may have expanded the layout
+    // The nudge and the overlap pass can widen the layout.
     float actual_max_x = 0;
     for (uint32_t i = 0; i < total_n; i++)
         actual_max_x = std::max(actual_max_x, nodes[i].x + nodes[i].rw);
     total_width = actual_max_x + params.padding;
 
-    // Strip virtual nodes from output (caller only needs original nodes)
+    // The virtual nodes sit after the original ones, so truncating here
+    // drops exactly them.
     nodes.resize(original_n);
 
     return LayoutResult{

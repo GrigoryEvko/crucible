@@ -1,28 +1,5 @@
 #pragma once
 
-// CNT-P application-level path swap.
-//
-// GAPS-122 owns the transport-independent handoff protocol: drain the
-// old path, accept both paths during the handoff, then atomically move a
-// live session handle to a new resource at the same protocol position.
-// Kernel MPTCP subflow management, RDMA QP migration, route selection,
-// and socket creation are separate transport substrates.
-//
-// fixy-A5-024 STATE-ONLY HONESTY MARKER.  `PathSwapper` ships the
-// state-machine `Stable → Draining → BidirReceive → NewPathFlushing
-// → Complete` correctly but performs ZERO in-flight data migration.
-// `commit_sender` detaches the old session via
-// `TransportClosedOutOfBand` and mints a fresh handle on the new
-// resource — any bytes buffered on the OLD path are LOST.  Real
-// transport-class-specific reconnect (MPTCP subflow swap, RDMA QP
-// recovery, AF_XDP umem rebind) is downstream work tracked separately.
-//
-// The static constant `PathSwapper::data_migration_implemented` is
-// the grep-discoverable single-source-of-truth: callers branching on
-// it can detect the gap at compile time.  When per-transport engines
-// land, that constant flips to `true` per-specialization AND the
-// commit_sender doc warning is removed in the same PR.
-
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
@@ -52,28 +29,9 @@ enum class SwapState : std::uint8_t {
     Failed = 5,
 };
 
-// fixy-V-207 (Agent 7 Bug #3): canonical transition table.  Encodes
-// the SwapState DAG so PathSwapper::transition_to() can atomically
-// validate `(prev, next)` AT THE MOMENT of compare_exchange success
-// — closes the event-log-corruption race where a load+check+store
-// pair let two concurrent transitions both fire `append_event` with
-// stale `prev` values.
-//
-// Valid transitions:
-//   Stable          → Draining           (begin_swap)
-//   Complete        → Draining           (begin_swap, reuse PathSwapper)
-//   Draining        → BidirReceive       (receiver_accepts_bidir)
-//   Draining        → Failed             (check_live / timeout)
-//   BidirReceive    → NewPathFlushing    (sender_observed_drain_ack)
-//   BidirReceive    → Complete           (complete_receiver — receiver-only path)
-//   BidirReceive    → Failed             (check_live / timeout)
-//   NewPathFlushing → Complete           (commit_sender / complete_receiver)
-//   NewPathFlushing → Failed             (check_live / timeout)
-//
-// Terminal states (Complete, Failed) accept no further transitions
-// except `Complete → Draining` for swap reuse.  Failed is fully
-// terminal — the PathSwapper must be discarded and a fresh one minted
-// to recover.
+// Complete accepts Draining so one swapper can serve a second swap.  Failed
+// is fully terminal: recovery means discarding the swapper and minting a
+// fresh one.
 [[nodiscard]] constexpr bool is_valid_path_swap_transition(SwapState from, SwapState to) noexcept {
     switch (from) {
         case SwapState::Stable:
@@ -87,11 +45,11 @@ enum class SwapState : std::uint8_t {
         case SwapState::NewPathFlushing:
             return to == SwapState::Complete || to == SwapState::Failed;
         case SwapState::Failed:
-            return false;  // terminal — discard and re-mint
+            return false;
         default:
-            // Unreachable for valid SwapState values; -Werror=switch-default
-            // requires the arm.  An out-of-range cast (e.g. via std::bit_cast
-            // from an untrusted byte) lands here and refuses the transition.
+            // Unreachable for a valid SwapState.  The arm exists because
+            // switch-default is required, and a value cast in from untrusted
+            // bytes lands here and is refused.
             return false;
     }
 }
@@ -176,21 +134,17 @@ template <std::size_t MaxEvents = 16>
 class PathSwapper : public safety::Pinned<PathSwapper<MaxEvents>> {
     static_assert(MaxEvents > 0, "PathSwapper requires an audit-event ring");
     static_assert(std::atomic<SwapState>::is_always_lock_free,
-                  "PathSwapper observers need a lock-free state load on every "
-                  "supported platform; the target ISA does not provide one");
+                  "PathSwapper observers need a lock-free state load. The target ISA does not provide one");
 
 public:
-    // fixy-A5-024 honesty marker.  False until a per-transport engine
-    // ships actual MPTCP/RDMA/AF_XDP in-flight migration; callers can
-    // branch on this at compile time to detect the gap.
+    // False: commit_sender moves the protocol position to a new resource but
+    // migrates no in-flight data.
     static constexpr bool data_migration_implemented = false;
 
 private:
-    // fixy-A5-038: state_ is published by a single Bg-context writer and
-    // observed concurrently by foreground threads through state(). The
-    // Pinned base advertises address-stable cross-thread sharing — the
-    // field must be atomic to back that contract.  Plain `SwapState`
-    // would tear under concurrent transition_to/state() races.
+    // One writer in a background context, many concurrent readers through
+    // state().  The Pinned base advertises address-stable cross-thread
+    // sharing, so this field has to be atomic to back that promise.
     std::atomic<SwapState> state_{SwapState::Stable};
     PathSwapPlan plan_{};
     std::array<PathSwapEvent, MaxEvents> events_{};
@@ -216,37 +170,20 @@ private:
         }
     }
 
-    // fixy-V-207 (Agent 7 Bug #3): CAS-loop transition with table-driven
-    // validity check.  The pre-V-207 shape was a relaxed load → release
-    // store, which let two concurrent `transition_to` calls each fire
-    // `append_event` with a stale `prev` — silently corrupting the
-    // audit log with impossible "Stable → Failed, Stable → Complete"
-    // sequences when the watchdog timeout raced the completion path.
+    // Validity is re-checked inside the loop, on the value the failed
+    // compare_exchange loaded.  That is what makes exactly one thread observe
+    // a given (prev, next) edge, so append_event records the real predecessor
+    // rather than a stale load two threads both won.
     //
-    // The CAS loop guarantees that exactly ONE thread observes a given
-    // (prev, next) edge at the moment of swap, and that `prev` reflects
-    // the genuine pre-transition state — `append_event` records the
-    // truth instead of two threads' divergent stale loads.
+    // Returns false when another thread reached a state that is not a valid
+    // predecessor of next.  The public methods turn that into
+    // SwapError::InvalidTransition.  check_live ignores it, because losing
+    // the race there means someone else already left the live path.
     //
-    // Return value: `true` if the swap landed; `false` if another
-    // thread reached a state that is not a valid predecessor of
-    // `next`.  Callers that need to detect race-loss (the public-API
-    // methods below) propagate `false` as SwapError::InvalidTransition.
-    // Callers running off the watchdog (check_live) take the `false`
-    // path as "someone else already moved us off the live path" — no
-    //-op is correct there because the terminal state was reached by
-    // another route (e.g., Complete won the race).
-    //
-    // NOTE on Machine<SwapState> typestate (V-207 spec part b): the
-    // safety::Machine<> wrapper is a consumed-by-value typestate token
-    // and is incompatible with this class's multi-reader observer
-    // model — state() / expired() / event_at() all read state_
-    // concurrently with transitions through the std::atomic interface.
-    // Lifting state_ to Machine<> would require rewiring every
-    // observer to a typestate-borrow protocol that doesn't fit
-    // PathSwapper's existing API.  The constexpr table above is the
-    // load-bearing structural invariant; a full Machine-based refactor
-    // is tracked as separate follow-on work.
+    // A consumed-by-value typestate token would put this DAG in the type
+    // system, but state(), expired() and event_at() all read the state
+    // concurrently with transitions, and a token consumed on transition
+    // cannot be shared with readers.
     [[nodiscard]] bool transition_to(SwapState next, std::uint64_t at_ns) noexcept {
         SwapState prev = state_.load(std::memory_order_acquire);
         do {
@@ -266,11 +203,9 @@ private:
 
     [[nodiscard]] std::expected<void, SwapError> check_live(std::uint64_t now_ns) noexcept {
         if (expired(now_ns)) {
-            // V-207: race-loss on transition_to(Failed) is benign here
-            // — another thread already moved us off the live path
-            // (Complete via commit_sender, or another Failed from a
-            // peer watchdog).  Either way the deadline is no longer
-            // our concern; report Timeout to unwind the current call.
+            // Losing this transition is benign.  It means another thread
+            // already left the live path, so the deadline is moot either way
+            // and Timeout still unwinds the current call.
             (void)transition_to(SwapState::Failed, now_ns);
             return std::unexpected(SwapError::Timeout);
         }
@@ -319,8 +254,6 @@ public:
         if (state_.load(std::memory_order_acquire) != SwapState::Draining) {
             return std::unexpected(SwapError::InvalidTransition);
         }
-        // V-207: CAS may still race-lose (e.g. concurrent timeout watchdog
-        // wins Failed); propagate as InvalidTransition.
         if (!transition_to(SwapState::BidirReceive, now_ns)) {
             return std::unexpected(SwapError::InvalidTransition);
         }
@@ -342,22 +275,10 @@ public:
         return {};
     }
 
-    // fixy-A5-024: STATE-MACHINE-ONLY commit, no in-flight data migration.
-    //
-    // This call:
-    //   1. Detaches `current` with `TransportClosedOutOfBand{}`.  Any bytes
-    //      still buffered on the OLD path (kernel TX queue, NIC ring, in-
-    //      flight datagrams, app-level send window) are LOST — there is no
-    //      replay, no resend, no buffer hand-off.  Receivers MUST tolerate
-    //      this (or use an application-level ACK/idempotency layer).
-    //   2. Transitions Tier-1 state to `Complete`.
-    //   3. Mints a fresh `SessionHandle` over `new_resource` and returns it.
-    //
-    // The Tier-2 per-transport migration engines (MPTCP TCP_MIGRATE, RDMA
-    // path-migration verb, AF_XDP map swap) that would preserve in-flight
-    // bytes are intentionally NOT implemented here — see the class-level
-    // `data_migration_implemented = false` honesty marker.  Callers can
-    // branch on that constexpr to detect the gap at compile time.
+    // Detaching `current` drops whatever is still buffered on the old path:
+    // the kernel TX queue, the NIC ring, in-flight datagrams, the application
+    // send window.  Nothing is replayed, resent or handed over.  A receiver
+    // must tolerate that loss or sit behind its own idempotency layer.
     template <class Ctx, typename Proto, typename OldResource, typename LoopCtx, typename NewResource>
         requires CtxFitsPathSwapTransition<Ctx> && PathSwapSessionResource<NewResource>
     [[nodiscard]] auto commit_sender(Ctx const&, safety::proto::SessionHandle<Proto, OldResource, LoopCtx>&& current,
@@ -369,16 +290,12 @@ public:
         if (state_.load(std::memory_order_acquire) != SwapState::NewPathFlushing) {
             return std::unexpected(SwapError::InvalidTransition);
         }
-        // fixy-V-207: race-safe transition BEFORE detach — losing the CAS to
-        // another thread (e.g. concurrent commit_sender / complete_receiver /
-        // timeout-Failed) must NOT consume `current`, otherwise the resource
-        // leaks and the audit log gains a stale event.  transition_to() is
-        // [[nodiscard]] precisely so this path cannot regress silently.
+        // The transition has to land before the detach.  A thread that loses
+        // the race must not consume `current`, or the resource leaks and the
+        // audit log gains an event for a transition that never happened.
         if (!transition_to(SwapState::Complete, now_ns)) {
             return std::unexpected(SwapError::InvalidTransition);
         }
-        // STATE-ONLY: in-flight bytes on `current` are dropped on detach;
-        // see fixy-A5-024 doc-block above.
         std::move(current).detach(safety::proto::detach_reason::TransportClosedOutOfBand{});
         return safety::proto::mint_session_handle<Proto, NewResource>(std::forward<NewResource>(new_resource));
     }
@@ -389,12 +306,9 @@ public:
         if (auto live = check_live(now_ns); !live.has_value()) {
             return live;
         }
-        // fixy-V-207: the manual pre-check was racy — two readers observing
-        // BidirReceive could both call transition_to(Complete) and both fire
-        // append_event with stale `prev`.  CAS-loop in transition_to validates
-        // against is_valid_path_swap_transition() and the loser sees the new
-        // state, re-validates (Complete → Complete = INVALID), and we return
-        // InvalidTransition without corrupting the audit log.
+        // No pre-check on the current state is needed here.  Complete is not a
+        // valid predecessor of Complete, so a second caller loses the CAS,
+        // re-validates against the new state and is refused.
         if (!transition_to(SwapState::Complete, now_ns)) {
             return std::unexpected(SwapError::InvalidTransition);
         }

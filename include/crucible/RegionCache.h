@@ -1,68 +1,27 @@
 #pragma once
 
-// RegionCache: caches multiple compiled regions for instant switching.
+// Holds the regions compiled for earlier shapes so that a shape change can
+// switch to a matching one instead of recording a whole iteration again. The
+// switch can happen at any op position, not only at an iteration boundary.
 //
-// When input shapes change between iterations, the active region diverges.
-// Instead of falling back to RECORDING for a full iteration, the cache
-// stores previous regions so dispatch_op can instantly switch to a matching
-// variant — including mid-iteration switches with pool data migration.
-//
-// Typical use: dynamic batch sizes.  Region A compiled for batch=128,
-// Region B for batch=256.  On divergence at any op position,
-// find_alternate() locates Region B and Vigil switches — zero recording
-// overhead, zero background thread work.
-//
-// Capacity: 8 regions (power-of-2 for bitmask indexing).  FIFO eviction
-// when full.  Searched MRU-first (most recently activated regions are
-// most likely to match again).
-//
-// Layout: SoA (Structure of Arrays) — parallel arrays for each field.
-// find() and insert() dedup scan content_hashes_ without touching
-// RegionNode memory.  find_alternate() uses inline num_ops_ and
-// has_plan_ for filtering, then accesses ops_[idx][pos] with one
-// pointer chase (vs two through region->ops in the original design).
-//
-// Thread safety: NOT thread-safe.  All access is on the foreground
-// thread — insert() from try_align_(), find_alternate() from the
-// dispatch_op divergence path.
-//
-// WRAP-RegionCache-6 #991: every public method below carries the
-// CRUCIBLE_NO_THREAD_SAFETY attribute so Clang's -Wthread-safety
-// (P1179R1, enabled per Platform.h) accepts the unguarded mutable
-// state without false positives.  The attribute is the load-bearing
-// machine-readable form of the "NOT thread-safe" comment above:
-//   * GCC builds: the macro is empty (Platform.h:192) — zero cost,
-//     zero behavior change.
-//   * Clang builds: the attribute tells -Wthread-safety to skip
-//     the check on these methods, which would otherwise demand a
-//     mutex annotation we deliberately don't carry.
-//
-// Adding a new public method to RegionCache requires marking it
-// with CRUCIBLE_NO_THREAD_SAFETY — the discipline that converts
-// "single-threaded by convention" from comment text into a
-// machine-verified contract once Clang joins the build matrix.
+// Nothing here is thread-safe. Every entry point runs on the foreground
+// thread, and each carries the attribute that tells a thread-safety analyzer
+// so. A new entry point has to carry it too, or the analyzer demands a lock
+// this class deliberately does not have.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>  // WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY
-#include <crucible/safety/Cyclic.h>  // safety::Cyclic — ring write cursor (head_)
-#include <crucible/safety/Mutation.h>  // safety::BoundedMonotonic — saturating fill counter (count_)
-#include <crucible/safety/Tagged.h>  // WRAP-RegionCache-2 #987: source::RegionOps provenance
-#include <crucible/safety/WeakRef.h>  // safety::WeakRef — nullable non-owning cache slot
+#include <crucible/Platform.h>
+#include <crucible/safety/Cyclic.h>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/Tagged.h>
+#include <crucible/safety/WeakRef.h>
 
 #include <cassert>
 #include <cstdint>
 
-// WRAP-RegionCache-6 #991 sentinel: the marker MUST be available so
-// every public method below carries the analyzer-skip attribute.
-// If Platform.h ever drops the definition (unlikely but a real
-// regression class), this fires at every TU that includes
-// RegionCache.h — long before -Wthread-safety can scream at the
-// unguarded mutable state without an opt-out.
 #ifndef CRUCIBLE_NO_THREAD_SAFETY
-#error "WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY must be \
-defined by Platform.h before this header — the 4 public RegionCache \
-methods depend on the analyzer-skip attribute to compile cleanly \
-under Clang's -Wthread-safety (P1179R1)."
+#error "CRUCIBLE_NO_THREAD_SAFETY must be defined before this header: every \
+public RegionCache method needs it to compile under a thread-safety analyzer."
 #endif
 
 namespace crucible {
@@ -70,8 +29,6 @@ namespace crucible {
 struct RegionCache {
     static constexpr uint32_t CAP = 8;
     static_assert((CAP & (CAP - 1)) == 0, "CAP must be a power of 2");
-    // (MASK retired in #989: head_ is now safety::Cyclic<uint32_t, CAP>, which
-    //  owns the & (CAP-1) wrap-mask internally — see index()/index_back().)
 
     RegionCache() = default;
     RegionCache(const RegionCache&) = delete("embedded in Vigil; no reason to copy");
@@ -79,47 +36,34 @@ struct RegionCache {
     RegionCache(RegionCache&&) = delete("embedded in Vigil; no reason to move");
     RegionCache& operator=(RegionCache&&) = delete("embedded in Vigil; no reason to move");
 
-    // Insert a region.  No-op if already cached (same content_hash).
-    // If full, evicts the oldest entry (FIFO).
-    //
-    // Regions without a MemoryPlan are stored with num_ops_=0, making
-    // them invisible to find_alternate() (any pos >= 0 fails the bounds
-    // check).  Call notify_plan_ready() when the plan arrives.
-    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
     void insert(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
         assert(region && "inserting null region");
 
         const ContentHash hash = region->content_hash;
 
-        // Dedup: scan inline content_hashes_ — zero pointer chasing.
         for (uint32_t i = 0; i < count_.get(); i++) {
             if (content_hashes_[head_.index_back(i)] == hash) return;
         }
 
         const uint32_t slot = head_.index();
-        // WeakRef::from_raw is the populate-from-a-raw-pointer path; `region`
-        // is asserted non-null above, but the slot type is deliberately
-        // nullable so eviction/empty slots stay representable.
+        // The slot type stays nullable so an empty or evicted slot remains
+        // representable, even though this particular write is non-null.
         regions_[slot] = safety::WeakRef<const RegionNode>::from_raw(region);
         content_hashes_[slot] = hash;
-        // WRAP-RegionCache-2 #987: explicit OpsPtr construction at the
-        // cache-insertion boundary — raw `ops_[slot] = region->ops;` is
-        // rejected by Tagged's explicit ctor (see HS14 BYPASS fixture).
         ops_[slot] = OpsPtr{region->ops};
-        // Plan-less regions get num_ops_=0: find_alternate's bounds check
-        // (pos >= 0) rejects them without a separate plan check.
+        // A region with no memory plan is stored with a count of zero, which
+        // the position bound in find_alternate rejects. That is why there is
+        // no separate plan check there.
         num_ops_[slot] = region->plan ? region->num_ops : 0;
         head_.advance();
-        // count_ saturates at CAP: the guard is LOAD-BEARING, not defensive —
-        // BoundedMonotonic::bump() carries CRUCIBLE_PRE(get() < Max) and does
-        // NOT self-saturate, so bumping at CAP would trip the precondition.
+        // The counter does not saturate on its own. Its increment carries a
+        // precondition that the value is below the bound, so this guard is
+        // what keeps a full cache from tripping it.
         if (count_.get() < CAP) count_.bump();
     }
 
-    // Notify the cache that a region's plan has been set.
-    // Updates num_ops_ from 0 (invisible) to the real count, making
-    // the region eligible for find_alternate().
-    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
+    // Call this once a region's memory plan exists, which is what makes the
+    // region eligible for find_alternate.
     void notify_plan_ready(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
         assert(region && "null region");
         for (uint32_t i = 0; i < count_.get(); i++) {
@@ -131,40 +75,24 @@ struct RegionCache {
         }
     }
 
-    // Find a cached region whose op at position `pos` matches the given
-    // schema+shape hashes.  Excludes `exclude` (the region that just
-    // diverged).  Searched MRU-first.
-    //
-    // SoA hot path: regions_ for pointer comparison, ops_ for one-chase
-    // hash lookup, num_ops_ for bounds check.  The plan eligibility check
-    // is folded into num_ops_ (plan-less regions have num_ops_=0).
-    //
-    // Returns nullptr if no match found.
-    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
+    // The excluded region is the one that just diverged. The scan runs from
+    // the most recently inserted entry backwards, because a shape that
+    // matched recently is the one most likely to match again.
     [[nodiscard]] const RegionNode* find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
                                                    const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
     CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
 
-            // Filter: identity comparison + bounds check (inline, no ptr chase).
             if (regions_[idx].try_get() == exclude) continue;
             if (pos >= num_ops_[idx]) continue;
 
-            // One pointer chase: ops_[idx] -> TraceEntry at pos.
-            // WRAP-RegionCache-2 #987: extract the raw ptr via .value()
-            // once into a local — the typed wrapper is regime-1 EBO so
-            // there's no runtime cost, and the local makes the [pos]
-            // indexing read identical to the pre-migration codegen.
             const TraceEntry* ops_ptr = ops_[idx].value();
             if (ops_ptr[pos].schema_hash == schema && ops_ptr[pos].shape_hash == shape) return regions_[idx].try_get();
         }
         return nullptr;
     }
 
-    // Find by exact content hash.  Scans inline content_hashes_ —
-    // zero pointer chasing into RegionNode.
-    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
     [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
@@ -173,79 +101,41 @@ struct RegionCache {
         return nullptr;
     }
 
-    // ── Queries ──
-
     [[nodiscard]] uint32_t size() const { return count_.get(); }
     [[nodiscard]] bool empty() const { return count_.get() == 0; }
 
 private:
-    // SoA layout: each field in its own contiguous array.
+    // One array per field rather than one array of records, so that each
+    // scan reads only the arrays it needs. The three pointer-wide arrays are
+    // one cache line each at this capacity.
     //
-    // regions_:        8 * 8B = 64B = 1 cache line  (WeakRef slots: identity compare via try_get, return value)
-    // content_hashes_: 8 * 8B = 64B = 1 cache line  (find, insert dedup)
-    // ops_:            8 * 8B = 64B = 1 cache line  (direct ops[pos] access)
-    // num_ops_:        8 * 4B = 32B                  (bounds check)
-    //
-    // Total: 224B + 8B (head_, count_) = 232B.
-    // Each scan path touches only the arrays it needs:
-    //   find():           content_hashes_ + regions_  = 2 cache lines
-    //   insert() dedup:   content_hashes_             = 1 cache line
-    //   find_alternate(): regions_ + num_ops_ + ops_  = ~3 cache lines
-    // Nullable non-owning cache slots (WRAP-RegionCache-1, #986): each slot
-    // starts empty, is populated with a DAG-owned RegionNode the cache does
-    // NOT own, and is overwritten (evicted) on FIFO wrap.  WeakRef forces
-    // identity access through try_get() so a slot can never be mistaken for
-    // an owning pointer (TypeSafe).  Zero-cost: collapses to one pointer.
+    // A slot holds a region the graph owns and this cache does not. The slot
+    // type makes that explicit and keeps the identity read behind an accessor
+    // that can report an empty slot.
     safety::WeakRef<const RegionNode> regions_[CAP]{};
-    ContentHash content_hashes_[CAP]{};  // dedup + exact lookup (zero ptr chase)
-    // WRAP-RegionCache-2 #987: each ops_[i] is provenance-tagged as
-    // Tagged<const TraceEntry*, source::RegionOps>.  source::RegionOps
-    // encodes "this pointer was extracted from RegionNode.ops at cache-
-    // insertion time".  Regime-1 EBO collapse preserves the 8B pointer
-    // width — the CAP*8 = 64B array footprint is unchanged (the layout
-    // sentinel at the bottom of the class pins sizeof(OpsPtr) == 8).
+    ContentHash content_hashes_[CAP]{};
+    // The tag records that the pointer was taken out of a region at the
+    // moment it was inserted here.
     using OpsPtr = ::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>;
-    OpsPtr ops_[CAP]{};  // cached ops pointer (one fewer ptr chase)
-    uint32_t num_ops_[CAP]{};  // cached op count (bounds check inline)
+    OpsPtr ops_[CAP]{};
+    uint32_t num_ops_[CAP]{};
 
-    // Ring write cursor (WRAP-RegionCache-4, #989): a free-running counter read
-    // as head_.index() (next-write slot) and head_.index_back(i) (i-th most
-    // recent).  Cyclic carries the & (CAP-1) wrap-mask + advance discipline in
-    // the type, so the open-coded masking that MASK used to express is gone.
+    // A free-running counter. index() is the next slot to write and
+    // index_back(i) is the i-th most recently written one.
     safety::Cyclic<uint32_t, CAP> head_{};
-    // Saturating fill counter, 0..CAP (WRAP-RegionCache-4, #989):
-    // BoundedMonotonic enforces BOTH non-decrease and the CAP ceiling; insert()
-    // guards bump() with `get() < CAP` so the saturate-at-CAP semantics hold.
     safety::BoundedMonotonic<uint32_t, CAP> count_{uint32_t{0}};
 };
 
-// Zero-cost wiring (WRAP-RegionCache-1, #986): WeakRef<const RegionNode>
-// collapses to exactly one pointer, so the regions_[CAP] slot array keeps its
-// 64B (one cache-line) footprint and the SoA byte-accounting above stays
-// exact.  A regression in WeakRef's zero-cost guarantee reddens here.
-//
-// WRAP-RegionCache-2 #987 layout sentinel: Tagged<const TraceEntry*,
-// source::RegionOps> MUST collapse via regime-1 EBO to a single
-// pointer.  Otherwise the ops_[CAP] array footprint shifts off
-// 64B (the SoA accounting above assumes CAP*sizeof(ptr) per element
-// array) and the cache-line plan in the doc-block at the top of
-// the class becomes incorrect.
 static_assert(sizeof(::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>)
                   == sizeof(const TraceEntry*),
-              "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
-              "must preserve pointer size via regime-1 EBO collapse.");
+              "Tagged<const TraceEntry*, source::RegionOps> must preserve pointer size");
 static_assert(alignof(::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>)
                   == alignof(const TraceEntry*),
-              "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
-              "must preserve pointer alignment via regime-1 EBO collapse.");
+              "Tagged<const TraceEntry*, source::RegionOps> must preserve pointer alignment");
 static_assert(sizeof(safety::WeakRef<const RegionNode>[RegionCache::CAP])
                   == RegionCache::CAP * sizeof(const RegionNode*),
               "WeakRef cache-slot array must stay layout-identical to raw pointers");
 
-// Zero-cost ring state (WRAP-RegionCache-4, #989): head_ (Cyclic) and count_
-// (BoundedMonotonic) each collapse to one uint32_t, so the 8B cursor+count
-// footprint — and RegionCache's 232B total — is unchanged.  A regression in
-// either wrapper's zero-cost guarantee reddens here.
 static_assert(sizeof(safety::Cyclic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),
               "Cyclic ring cursor must stay layout-identical to a raw uint32_t");
 static_assert(sizeof(safety::BoundedMonotonic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/wrap/Refined.h>  // FIXY-U-096p: Refined + bounded_above through fixy:: (granular surface — keeps Types.h light, no OwnedRegion->Arena pull)
+#include <crucible/fixy/wrap/Refined.h>
 
 #include <compare>
 #include <cstddef>
@@ -10,65 +10,32 @@
 
 namespace crucible {
 
-// ── ElementBytes — strong type for "bytes per element of a dtype" (#129)
+// The number of bytes one element of a type occupies.
 //
-// Previously `element_size(ScalarType)` returned a raw `uint8_t`,
-// letting callers accidentally use the per-element byte size as a
-// SlotId count, a MetaLog index, or a running byte total — all of
-// which happen to fit in 8 bits but have completely different
-// semantics.  `ElementBytes` is a phantom-typed newtype whose value
-// range is tied to the per-element-size semantic, preventing
-// silent conflation at TypeSafe call sites.
-//
-// Value domain: 0 (ScalarType::Undefined) plus {1, 2, 4, 8, 16}
-// (real dtypes).  Underlying storage is `Refined<bounded_above<16>,
-// uint8_t>` (#1067 WRAP-Types-1) — the storage type carries the upper-
-// bound invariant structurally, so `ElementBytes{17}` is a contract
-// violation at construction (compile error in constexpr context, abort
-// at runtime under semantic=enforce).  The Refined wrapper is empty-
-// lattice-EBO-collapsed; sizeof is preserved via the BoolLattice
-// substrate from MIGRATE-2 (#462).
-//
-// The type is layout-identical to uint8_t — `sizeof(ElementBytes) ==
-// sizeof(uint8_t) == 1`.
+// A bare byte count is interchangeable with a slot count, a log index or a
+// running total, all of which also fit in eight bits and mean something else
+// entirely. This does not convert to any of them. The domain is zero, for the
+// undefined type, and the powers of two up to sixteen, so anything above
+// sixteen fails at construction rather than propagating.
 struct ElementBytes {
-    // Refined<bounded_above<16>, uint8_t>: value_.value() ≤ 16 by
-    // construction.  Default-init to 0 (matches ScalarType::Undefined
-    // semantics; bounded_above<16>(0) = true so the NSDMI does not
-    // trip the construction predicate).
     fixy::wrap::Refined<fixy::wrap::bounded_above<uint8_t{16}>, uint8_t> value_{uint8_t{0}};
 
     constexpr ElementBytes() noexcept = default;
-    // Construction routes through Refined's checked ctor, which fires
-    // `pre(bounded_above<16>(v))`; v > 16 is a contract violation at
-    // construction.  Existing call sites pass {0,1,2,4,8,16} only.
     explicit constexpr ElementBytes(uint8_t v) noexcept : value_{v} {}
 
     [[nodiscard]] constexpr uint8_t raw() const noexcept { return value_.value(); }
     [[nodiscard]] constexpr bool is_zero() const noexcept { return value_.value() == 0; }
 
-    // Comparison is defined between ElementBytes values only — raw
-    // integer literals DON'T implicitly convert (the ctor is
-    // `explicit`).  Tests and call sites write `ElementBytes{4}` when
-    // they want to compare against a literal, surfacing the unit.
-    // Defaulted member-wise <=> dispatches through Refined's friend
-    // operator<=>, which compares the underlying uint8_t values.
     auto operator<=>(const ElementBytes&) const = default;
 
-    // Common operation: multiply by a count to obtain total bytes.
-    // Returns `std::size_t` so the result is wide enough for arena /
-    // region / memory-plan totals without truncation.  Overflow is
-    // NOT checked here — callers needing safety wrap via Checked.h's
-    // `safe_mul<std::size_t, ...>` or the `safe_array_bytes<T, N>`
-    // helper family (#134).
+    // Widens to a size, so a total is not truncated. The multiplication is
+    // unchecked. A caller that cannot bound the count needs a checked one.
     [[nodiscard]] constexpr std::size_t times(std::size_t n) const noexcept { return std::size_t{value_.value()} * n; }
 };
-static_assert(sizeof(ElementBytes) == sizeof(uint8_t),
-              "ElementBytes must be layout-identical to uint8_t (#129/#1067) — "
-              "Refined<bounded_above<16>, uint8_t> must EBO-collapse to sizeof(uint8_t).");
+static_assert(sizeof(ElementBytes) == sizeof(uint8_t), "ElementBytes must be layout-identical to uint8_t");
 
-// Mirror c10::ScalarType ordinals exactly so int8_t casts are compatible
-// between the standalone library and the PyTorch Vessel adapter.
+// The ordinals mirror the foreign runtime's exactly, so a value crosses the
+// boundary as a plain cast in either direction.
 enum class ScalarType : int8_t {
     Byte = 0,
     Char = 1,
@@ -90,19 +57,10 @@ enum class ScalarType : int8_t {
     Undefined = -1,
 };
 
-// Byte size per dtype.  gnu::const: takes one value, no memory access.
-//
-// Returns an `ElementBytes` strong type (#129) — prevents conflation
-// of per-element byte sizes with SlotId counts, MetaLog indices, or
-// running byte totals at TypeSafe call sites.  `.raw()` extracts the
-// underlying uint8_t; `.times(n)` produces std::size_t for totals.
-//
-// Postcondition: result is non-zero for every ScalarType EXCEPT
-// Undefined (which returns ElementBytes{0}).  The post() contract
-// propagates as [[assume]] at call sites where t is known
-// non-Undefined, eliminating divide-by-zero branches in size-math
-// chains.  Callers that intend to accept Undefined must handle the
-// `.is_zero()` case explicitly.
+// Only the undefined type has a size of zero. The postcondition carries that
+// to call sites where the type is known, so size arithmetic there needs no
+// guard against dividing by zero. A caller that accepts the undefined type
+// handles the zero itself.
 CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept
     post(r : t == ScalarType::Undefined || !r.is_zero()) {
     switch (t) {
@@ -135,19 +93,19 @@ CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept
     }
 }
 
-// Mirror c10::DeviceType ordinals exactly (c10/core/DeviceType.h).
+// The ordinals mirror the foreign runtime's exactly.
 enum class DeviceType : int8_t {
     CPU = 0,
     CUDA = 1,
     MKLDNN = 2,
-    HIP = 6,  // AMD HIP — was incorrectly 20 (PrivateUse1's ordinal)
+    HIP = 6,
     XLA = 9,
     MPS = 13,
     Meta = 14,
     PrivateUse1 = 20,
 };
 
-// Mirror c10::Layout ordinals.
+// The ordinals mirror the foreign runtime's exactly.
 enum class Layout : int8_t {
     Strided = 0,
     Sparse = 1,
@@ -157,39 +115,24 @@ enum class Layout : int8_t {
     SparseBsc = 5,
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// Strong ID types — Rust-style newtypes over uint32_t
-//
-// Prevents mixing op indices, slot IDs, node IDs, symbol IDs at
-// compile time. Same codegen as raw uint32_t (single register).
-//
-// Design:
-//   - explicit ctor: no implicit conversion from uint32_t
-//   - .raw(): explicit unwrap (like Rust's .0 or .into())
-//   - .none(): named sentinel replacing bare UINT32_MAX
-//   - .is_valid(): sentinel check
-//   - operator<=>: full comparison support
-//   - No arithmetic: must unwrap, compute, rewrap (intentional)
-// ═══════════════════════════════════════════════════════════════════
+// Distinct index types that cannot be passed for one another. Arithmetic is
+// deliberately absent: a caller unwraps, computes, and wraps the result back,
+// which makes every place one index is derived from another one visible.
 
 #define CRUCIBLE_STRONG_ID(Name)                                                                  \
     struct Name {                                                                                 \
     private:                                                                                      \
-        /* #133: v is private.  External read goes through .raw(); external */                    \
-        /* construction goes through the explicit ctor OR from_raw().  This */                    \
-        /* closes the direct-field-access hole where `id.v = 999` could */                        \
-        /* bypass the explicit-ctor discipline and mutate a strong-ID in */                       \
-        /* place. */                                                                              \
+        /* Private, so the explicit constructor is the only way in. A public */                   \
+        /* field would let a plain assignment bypass it and rewrite an */                         \
+        /* identifier in place. */                                                                \
         uint32_t v;                                                                               \
                                                                                                   \
     public:                                                                                       \
         constexpr Name() noexcept : v(UINT32_MAX) {}                                              \
         constexpr explicit Name(uint32_t val) noexcept : v(val) {}                                \
-        /* #133: named factory for cross-kind bridges.  When converting */                        \
-        /* from ANOTHER strong-ID's raw (the silent-bug pattern), prefer */                       \
-        /* `Name::from_raw(other.raw())` — the explicit factory is */                             \
-        /* greppable for code review.  Audit: `grep "::from_raw"` finds */                        \
-        /* every bridge site mechanically. */                                                     \
+        /* The named form for building one identifier kind out of another, */                     \
+        /* which is where a silent mix-up happens. Naming it makes every */                       \
+        /* such crossing findable by one search. */                                               \
         [[nodiscard]] static constexpr Name from_raw(uint32_t val) noexcept { return Name{val}; } \
         [[nodiscard]] static constexpr Name none() noexcept { return Name{UINT32_MAX}; }          \
         [[nodiscard]] constexpr bool is_valid() const noexcept { return v != UINT32_MAX; }        \
@@ -199,64 +142,46 @@ enum class Layout : int8_t {
     };                                                                                            \
     static_assert(sizeof(Name) == sizeof(uint32_t))
 
-CRUCIBLE_STRONG_ID(OpIndex);  // index into TraceEntry[] ops array
-CRUCIBLE_STRONG_ID(SlotId);  // index into TensorSlot[] slots array
-CRUCIBLE_STRONG_ID(NodeId);  // index into Graph node array
-CRUCIBLE_STRONG_ID(SymbolId);  // index into SymbolTable entries
-CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
+CRUCIBLE_STRONG_ID(OpIndex);
+CRUCIBLE_STRONG_ID(SlotId);
+CRUCIBLE_STRONG_ID(NodeId);
+CRUCIBLE_STRONG_ID(SymbolId);
+CRUCIBLE_STRONG_ID(MetaIndex);
 
 #undef CRUCIBLE_STRONG_ID
 
-// ═══════════════════════════════════════════════════════════════════
-// Strong hash types — Rust-style newtypes over uint64_t
-//
-// Prevents mixing schema hashes, shape hashes, scope hashes, and
-// callsite hashes at compile time. Same codegen as raw uint64_t.
-//
-// Design:
-//   - explicit ctor: no implicit conversion from uint64_t
-//   - .raw(): explicit unwrap for hashing/indexing
-//   - Default: 0 (no hash / unset)
-//   - operator bool: true if non-zero
-//   - operator<=>: full comparison support
-//   - No arithmetic: must unwrap, compute, rewrap (intentional)
-// ═══════════════════════════════════════════════════════════════════
+// Distinct hash types that cannot be passed for one another. Zero means unset.
+// Arithmetic is absent for the same reason as on the index types above.
 
 #define CRUCIBLE_STRONG_HASH(Name)                                                                \
     struct Name {                                                                                 \
     private:                                                                                      \
-        /* #133: v is private; external access is via .raw() only. */                             \
         uint64_t v;                                                                               \
                                                                                                   \
     public:                                                                                       \
         constexpr Name() noexcept : v(0) {}                                                       \
         constexpr explicit Name(uint64_t val) noexcept : v(val) {}                                \
-        /* #133: named factory for cross-kind bridges — `grep "::from_raw"` */                    \
-        /* locates every cross-kind-hash conversion site. */                                      \
+        /* The named form for building one hash kind out of another, so that */                   \
+        /* every such crossing is findable by one search. */                                      \
         [[nodiscard]] static constexpr Name from_raw(uint64_t val) noexcept { return Name{val}; } \
         [[nodiscard]] constexpr uint64_t raw() const noexcept { return v; }                       \
         [[nodiscard]] constexpr explicit operator bool() const noexcept { return v != 0; }        \
-        /* Sentinel: impossible value used as end-of-region marker.            \
-     * No real hash can be UINT64_MAX — hash functions produce             \
-     * uniformly distributed values, and we reserve this one. */                  \
+        /* An end-of-region marker. The hash functions spread their output   \
+     * uniformly, so this one value is reserved rather than produced. */                    \
         [[nodiscard]] static constexpr Name sentinel() noexcept { return Name{UINT64_MAX}; }      \
         [[nodiscard]] constexpr bool is_sentinel() const noexcept { return v == UINT64_MAX; }     \
         constexpr auto operator<=>(const Name&) const noexcept = default;                         \
     };                                                                                            \
     static_assert(sizeof(Name) == sizeof(uint64_t))
 
-CRUCIBLE_STRONG_HASH(SchemaHash);  // op identity (OperatorHandle schema)
-CRUCIBLE_STRONG_HASH(ShapeHash);  // quick hash of input tensor shapes
-CRUCIBLE_STRONG_HASH(ScopeHash);  // module hierarchy path hash
-CRUCIBLE_STRONG_HASH(CallsiteHash);  // Python source location identity
-CRUCIBLE_STRONG_HASH(ContentHash);  // region content identity (kernel cache key)
-CRUCIBLE_STRONG_HASH(MerkleHash);  // subtree identity (includes all descendants)
-CRUCIBLE_STRONG_HASH(RecipeHash);  // NumericalRecipe identity (FORGE.md §19, §20)
-CRUCIBLE_STRONG_HASH(RowHash);  // effect-row content identity — fmix64 fold
-// over the wrapper-nesting order, see
-// FOUND-I02 (#761) for the canonical
-// algorithm and FOUND-I05/06/07 for the
-// L1/L2/L3 KernelCache lookup wiring.
+CRUCIBLE_STRONG_HASH(SchemaHash);  // identity of an operation
+CRUCIBLE_STRONG_HASH(ShapeHash);  // geometry of an operation's inputs
+CRUCIBLE_STRONG_HASH(ScopeHash);  // path through the module hierarchy
+CRUCIBLE_STRONG_HASH(CallsiteHash);  // identity of a source location
+CRUCIBLE_STRONG_HASH(ContentHash);  // structural identity of one region
+CRUCIBLE_STRONG_HASH(MerkleHash);  // identity of a subtree, descendants included
+CRUCIBLE_STRONG_HASH(RecipeHash);  // identity of a numerical recipe
+CRUCIBLE_STRONG_HASH(RowHash);  // identity of an effect row
 
 #undef CRUCIBLE_STRONG_HASH
 
@@ -265,31 +190,15 @@ struct FamilyA {};
 struct FamilyB {};
 }  // namespace hash_family
 
-// ─── WRAP-Types-3 #1069: hash-family discrimination at definition site ──
-//
-// `hash_family_of<H>::family` is the family-tag metafunction.  The
-// primary template is INCOMPLETE on purpose — instantiating it for an
-// unspecialized type is a hard compile error, forcing a deliberate
-// specialization for every new hash strong-id.  Each Family-A strong
-// ID below ships a one-line specialization; future Family-B strong
-// IDs (e.g., #364 InternHash) declare their family at the same site.
-//
-// `IsFamilyA<H>` / `IsFamilyB<H>` are the concept gates downstream
-// consumers use to constrain "Cipher-bound hashes only" or "intern-
-// table probes only" without naming every member of the family
-// explicitly.  Adding a new Family-A hash automatically widens
-// `IsFamilyA` to admit it once the specialization lands.
-//
-// Cost: zero.  All resolution happens at compile time; the macro-
-// generated strong-ID struct (CRUCIBLE_STRONG_HASH) carries no extra
-// field, the family tag lives in the type system alone.
+// Which family a hash belongs to. The primary template is left undefined so
+// that a new hash type without a specialisation fails to compile rather than
+// silently defaulting into one of the families. The concepts below let a
+// consumer say which family it accepts without naming every member.
 template <class HashT>
-struct hash_family_of;  // primary undefined
+struct hash_family_of;
 
-// Family-A specializations — every persistent (byte-stable) strong
-// hash declared via CRUCIBLE_STRONG_HASH above belongs here.  Order
-// matches the declaration order in Types.h:266-273 so a future
-// strong-hash addition has an obvious slot to fill.
+// One specialisation per hash above, in the same order, so a new hash has an
+// obvious place to go.
 template <>
 struct hash_family_of<SchemaHash> {
     using family = hash_family::FamilyA;
@@ -332,125 +241,46 @@ concept IsFamilyA = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyA
 template <class HashT>
 concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB>;
 
-// ── WRAP-Types-3 #1069 sentinel: per-hash family pin ──────────────
-// Pin each Family-A strong hash through the IsFamilyA concept.  A
-// future regression that adds a new strong hash WITHOUT a family
-// specialization trips at every TU including Types.h — IsFamilyA<X>
-// for an unspecialized X fails template instantiation.  A regression
-// that re-labels an existing hash (e.g., accidentally moving
-// ContentHash to FamilyB) fails the sentinel below.
-static_assert(IsFamilyA<SchemaHash>, "WRAP-Types-3 #1069: SchemaHash must be Family-A — op identity is "
-                                     "byte-stable across processes for KernelCache lookup.");
-static_assert(IsFamilyA<ShapeHash>, "WRAP-Types-3 #1069: ShapeHash must be Family-A — tensor geometry "
-                                    "must compare bit-stably across replay.");
-static_assert(IsFamilyA<ScopeHash>, "WRAP-Types-3 #1069: ScopeHash must be Family-A — module path "
-                                    "identity feeds Cipher entries.");
-static_assert(IsFamilyA<CallsiteHash>, "WRAP-Types-3 #1069: CallsiteHash must be Family-A — Python source "
-                                       "location identity is golden-stable.");
-static_assert(IsFamilyA<ContentHash>, "WRAP-Types-3 #1069: ContentHash must be Family-A — RegionNode "
-                                      "structural identity feeds Cipher object store + KernelCache.");
-static_assert(IsFamilyA<MerkleHash>, "WRAP-Types-3 #1069: MerkleHash must be Family-A — subtree identity "
-                                     "feeds Cipher + cross-vendor replay.");
-static_assert(IsFamilyA<RecipeHash>, "WRAP-Types-3 #1069: RecipeHash must be Family-A — NumericalRecipe "
-                                     "identity is federation-shareable (FORGE.md §19, §20).");
-static_assert(IsFamilyA<RowHash>, "WRAP-Types-3 #1069: RowHash must be Family-A — effect-row content "
-                                  "identity drives KernelCache L1/L2/L3 lookups (FOUND-I02).");
+// A new hash type with no family specialisation fails to instantiate these,
+// and a hash that changes family fails the one that names it.
+static_assert(IsFamilyA<SchemaHash>, "SchemaHash must be persistent: an operation's identity is compared "
+                                     "across processes.");
+static_assert(IsFamilyA<ShapeHash>, "ShapeHash must be persistent: tensor geometry is compared bit for bit "
+                                    "across a replay.");
+static_assert(IsFamilyA<ScopeHash>, "ScopeHash must be persistent: a module path identity is stored.");
+static_assert(IsFamilyA<CallsiteHash>, "CallsiteHash must be persistent: a source-location identity is "
+                                       "pinned in stored expectations.");
+static_assert(IsFamilyA<ContentHash>, "ContentHash must be persistent: a region's structural identity keys "
+                                      "stored objects and compiled kernels.");
+static_assert(IsFamilyA<MerkleHash>, "MerkleHash must be persistent: a subtree identity is stored and "
+                                     "compared across vendors.");
+static_assert(IsFamilyA<RecipeHash>, "RecipeHash must be persistent: a numerical recipe's identity is "
+                                     "shared between installations.");
+static_assert(IsFamilyA<RowHash>, "RowHash must be persistent: an effect row's identity is half of a "
+                                  "compiled-kernel lookup key.");
 
-// Cross-family separation: no Family-A hash satisfies IsFamilyB and
-// vice versa.  Spot-check one Family-A and (when the first Family-B
-// strong hash lands per the #364 deferred doc-block above) one
-// Family-B; for now the gate just pins that IsFamilyA AND IsFamilyB
-// are not BOTH true for any Family-A hash.
-static_assert(!IsFamilyB<ContentHash>, "WRAP-Types-3 #1069: IsFamilyB must reject Family-A hashes — "
-                                       "lane separation is the load-bearing invariant.");
+// The two families are disjoint.
+static_assert(!IsFamilyB<ContentHash>, "a persistent hash must not also be process-local: the separation "
+                                       "of the two families is what makes either safe.");
 
-// ═══════════════════════════════════════════════════════════════════
-// Hash taxonomy — TWO DISJOINT FAMILIES with different persistence
-// semantics.  Hash-producing fields should use `fixy::wrap::Tagged<...,
-// hash_family::FamilyA>` or `fixy::wrap::Tagged<..., hash_family::FamilyB>`
-// where layout permits; legacy strong-hash IDs remain bare newtypes
-// until their call-site migrations land.
+// The two families differ in what they promise, and the difference is what
+// makes each one usable.
 //
-// ── Family A: PERSISTENT hashes ────────────────────────────────────
+// A persistent hash is byte-stable across processes, machines and builds
+// within one format version. Stored keys, shared artefacts and replay
+// determinism all rest on that, so a single-bit change to how one is computed
+// is a format break and needs a version bump. An expectation pinned for one is
+// only trustworthy if it was taken from serialised bytes, since the bytes are
+// what the promise covers, not the in-memory layout that produced them.
 //
-// Must be byte-stable across processes, platforms, and Crucible
-// versions within a compile_version window.  Family A values:
-//   - flow into Cipher entry keys (L1/L2/L3 KernelCache, RegionNode
-//     object store, BranchNode arm targets, TrainingCheckpoint
-//     manifest; CRUCIBLE.md §9)
-//   - identify federation-shareable artifacts (IR002 snapshots,
-//     FORGE.md §23.2)
-//   - drive cross-vendor replay determinism (CRUCIBLE.md §10)
-//
-// A drift in any Family-A hash — even one bit — is a wire-format
-// break and requires a CDAG_VERSION bump.  Goldens for Family A are
-// correct AS LONG AS they are computed via serialize→hash-bytes
-// (the bytes are the ground truth; hashing in-memory structs is
-// fragile).
-//
-// Members (by type):
-//   ContentHash      — RegionNode structural identity
-//   MerkleHash       — subtree identity incl. descendants
-//   SchemaHash       — ATen op identity
-//   ShapeHash        — tensor geometry
-//   ScopeHash        — module hierarchy path
-//   CallsiteHash     — Python source-location identity
-//   RecipeHash       — NumericalRecipe identity (FORGE.md §19, §20)
-//   RowHash          — effect-row content identity (Met(X) wrapper stack)
-//   (future) KernelContentHash / PlanHash — FORGE.md §23
-//
-// Members (by function):
-//   compute_content_hash(TensorMeta...)      MerkleDag.h
-//   compute_merkle_hash(node)                MerkleDag.h
-//   Guard::hash()                             MerkleDag.h  (reflect_hash)
-//   feedback_signature(edges)                 MerkleDag.h
-//   loopterm_hash(LoopNode)                   MerkleDag.h
-//   branched_content_hash(BranchNode)         MerkleDag.h
-//
-// ── Family B: PROCESS-LOCAL hashes ─────────────────────────────────
-//
-// Intentionally NOT byte-stable across processes.  Family B values
-// embed arena pointer entropy (ASLR-randomized per process) to get
-// O(1) intern-table probing at zero-cost-beyond-pointer-compare.
-// The SAME structural input produces DIFFERENT bits in different
-// processes.
-//
-// Family B values MUST NOT:
-//   - be written to Cipher under any circumstance
-//   - flow into any Family-A hash computation
-//   - be pinned in a golden test file
-//   - be assumed stable across program restarts
-//
-// Members:
-//   Expr::hash                   — ExprPool Swiss-table intern key.
-//                                  Computed by detail::expr_hash
-//                                  mixing arg-pointer bits (Expr.h,
-//                                  ExprPool.h lines ~28-67).
-//   Graph::cse_hash_()           — GraphNode CSE probe hash; mixes
-//                                  canonical[] pointer entropy
-//                                  (Graph.h ~line 964).
-//   KernelCache slot probe       — the open-addressing probe order
-//                                  is process-local; the stored
-//                                  content_hash key IS Family A.
-//
-// If you ever need a cross-process stable identity for an Expr
-// (e.g., ComputeBody fragment hashing for FORGE federation per
-// FORGE.md §18.6), compute a new `Expr::content_hash()` that walks
-// the tree structurally without consulting `args[i]` pointers — do
-// NOT reuse `Expr::hash`.  Cache the structural hash on the Expr at
-// construction time (Exprs are const post-#113).
-//
-// ── Future: type-level distinction ─────────────────────────────────
-//
-// The clean fix is to replace `uint64_t Expr::hash` with a strong
-// type `InternHash` distinct from `ContentHash` / `MerkleHash`, so
-// that mixing them is a compile error.  Deferred — requires an
-// audit of ExprPool, Graph, KernelCache, and tests.  Document first,
-// enforce later.
-// ═══════════════════════════════════════════════════════════════════
+// A process-local hash is deliberately not stable. It mixes in address
+// entropy, which a modern loader randomises per process, to get a cheap
+// intern-table probe. The same structural input hashes differently in two
+// processes. Such a value must never be persisted, pinned in a stored
+// expectation, or folded into a persistent hash. Anything needing a stable
+// identity for the same structure must be computed by walking that structure
+// without consulting any address.
 
-// Trivial relocatability: all strong ID/hash types are trivially copyable
-// PODs — safe for Arena memcpy, vector reallocation, flat array storage.
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(OpIndex);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SlotId);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NodeId);
@@ -465,63 +295,27 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MerkleHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RecipeHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RowHash);
 
-// ═══════════════════════════════════════════════════════════════════
-// KernelCacheKey — composite identity for the federation-shared
-// KernelCache (CRUCIBLE.md §10, FORGE.md §23.2, Phase 5 of the
-// development plan).  FOUND-I01.
-//
-// Two orthogonal axes — neither sufficient alone:
-//
-//   • content_hash : ContentHash
-//       Region structural identity.  What the kernel *does* (op
-//       sequence, shapes, strides, dtypes, scalar args).  Frozen by
-//       compute_content_hash(...) at trace-build time.
-//
-//   • row_hash : RowHash
-//       Met(X) effect-row content identity.  What capabilities /
-//       guarantees the kernel *promises* (Pure ⊑ Tot ⊑ Div ⊑ ST ⊑ All
-//       and the cap stack: Alloc / IO / Block / DetSafe / Hot /
-//       Wait / Mem / Numerical / Recipe / ResidencyHeat / Vendor /
-//       Crash / ...).  Computed by the FOUND-I02 fmix64-fold over the
-//       canonical wrapper-nesting order (FOUND-I03).
-//
-// Two regions with byte-identical content_hash but different
-// row_hash represent the *same computation under different effect
-// regimes* — they MUST cache to distinct slots.  A Pure-row kernel
-// is trivially federatable; an IO-row kernel is not; sharing a slot
-// between them silently breaks the federation contract.
-//
-// Layout:  16 bytes — content_hash (8B) + row_hash (8B).  Both axes
-// are Family-A persistent hashes (see taxonomy above), so the entire
-// key is byte-stable across processes within a CDAG_VERSION window.
-//
-// API surface intentionally minimal at FOUND-I01: NSDMI defaults
-// (zero — meaning "unset"), `<=>` comparison, `is_zero()`,
-// `sentinel()` factory.  Combination into a single 64-bit slot probe
-// (the actual KernelCache::lookup signature change) is FOUND-I05/06/
-// 07 — the right fold strategy depends on which cache level (L1
-// IR002 / L2 IR003* / L3 compiled bytes) is doing the lookup.
+// Two axes, neither of which identifies a compiled kernel on its own. One says
+// what the computation does. The other says what effects it is allowed to
+// have. Two regions that agree on the first and differ on the second are the
+// same computation under different regimes and must occupy different cache
+// slots: one of them may be shareable between installations while the other,
+// carrying an effect, is not, and letting them share a slot breaks that
+// silently. Both are persistent hashes, so the whole key is stable across
+// processes for as long as the format version holds.
 struct KernelCacheKey {
-    ContentHash content_hash{};  // NSDMI: zero — Family-A persistent
-    RowHash row_hash{};  // NSDMI: zero — Family-A persistent
+    ContentHash content_hash{};
+    RowHash row_hash{};
 
-    // Default ctor is constexpr-implicit via NSDMI.  Defaulted <=>
-    // forms a strict weak order on (content_hash, row_hash) — content
-    // axis is the major key, row axis breaks ties.  Sufficient for
-    // flat_map / sorted-array storage.
+    // Orders on content first and breaks ties on the row.
     auto operator<=>(const KernelCacheKey&) const noexcept = default;
 
-    // is_zero(): both axes at default — typically means "unset", not
-    // "matches a real region".  Real region hashes are extremely
-    // unlikely to collide with zero by accident (FNV/fmix64 avalanche
-    // properties), but the sentinel() / is_sentinel() pair below is
-    // the *guaranteed* unused value for end-of-region markers.
+    // Both axes at their default. This normally means unset rather than a real
+    // region, but only the sentinel below is guaranteed never to be produced.
     [[nodiscard]] constexpr bool is_zero() const noexcept { return !content_hash && !row_hash; }
 
-    // sentinel(): both axes at UINT64_MAX — guaranteed never produced
-    // by any real hash function.  Used as the EMPTY-slot marker in
-    // the open-addressing probe table (KernelCache Entry layout —
-    // MerkleDag.h §979).
+    // The value no hash function produces, which is what an empty probe slot
+    // is marked with.
     [[nodiscard]] static constexpr KernelCacheKey sentinel() noexcept {
         return KernelCacheKey{ContentHash::sentinel(), RowHash::sentinel()};
     }
@@ -531,13 +325,9 @@ struct KernelCacheKey {
     }
 };
 
-// Layout invariant — the key is exactly two 64-bit hashes, no
-// padding.  KernelCache slot probes assume this for AoS / SoA
-// flexibility (FOUND-I05/06/07 will choose per cache level).
-static_assert(sizeof(KernelCacheKey) == 16, "KernelCacheKey must be exactly 16 bytes "
-                                            "(ContentHash + RowHash, no padding).");
-static_assert(alignof(KernelCacheKey) == 8, "KernelCacheKey must be 8-byte aligned for atomic-pair "
-                                            "compatibility on x86-64 / aarch64.");
+static_assert(sizeof(KernelCacheKey) == 16, "KernelCacheKey must be exactly two 64-bit hashes with no padding.");
+static_assert(alignof(KernelCacheKey) == 8, "KernelCacheKey must be 8-byte aligned to stay compatible with a "
+                                            "paired atomic on the supported architectures.");
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(KernelCacheKey);
 

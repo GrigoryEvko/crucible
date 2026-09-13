@@ -1,11 +1,5 @@
 #pragma once
 
-// CNT-P runtime ownership for incast-control state.
-//
-// cntp/IncastControl.h owns socket-local DCTCP/RTO primitives. CNT-P owns the
-// bounded per-flow credit controller because receiver-issued fan-in pacing is
-// transport state, not a congestion-control algorithm by itself.
-
 #include <crucible/cntp/IncastControl.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -21,10 +15,6 @@
 
 namespace crucible::cntp {
 
-// fixy-A5-039 worked-example migration: the named CtxOwnsAnyOf /
-// CtxOwnsCapability lift in effects/ExecCtx.h replaces the verbose
-// row_contains_v<row_type_of_t<Ctx>, ...> expansion.  Same predicate,
-// same cost, grep-discoverable authorization shape.
 template <class Ctx>
 concept CtxFitsIncastConfigure = effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Bg>;
 
@@ -138,16 +128,10 @@ public:
         };
     }
 
-    // fixy-A5-005: poll-once-fast consume of issued credit.  The
-    // previous name `await_credit` falsely promised a blocking wait —
-    // no waiting happens; the controller is a single-threaded BG-drain
-    // state machine and a real wait would be a self-deadlock against
-    // its own issue_credit call site.  The unused PositiveRtoMinUsec
-    // parameter (which encoded a timeout that nothing observed) is
-    // dropped.  Callers that want producer-consumer queueing wire
-    // PermissionedSpscChannel<PositiveCreditBytes, ...> over this
-    // accessor and block on the channel side, never inside the flow
-    // controller.
+    // This never waits.  The controller is a single-threaded drain-side state
+    // machine, and waiting inside it would deadlock against its own
+    // issue_credit call site.  A caller that wants producer-consumer queueing
+    // blocks on a channel wrapped around this accessor, never in here.
     template <class Ctx>
         requires CtxFitsIncastCredit<Ctx>
     [[nodiscard]] constexpr std::expected<cntp::PositiveCreditBytes, cntp::IncastError>

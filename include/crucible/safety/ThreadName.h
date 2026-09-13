@@ -1,71 +1,29 @@
 #pragma once
 
-// ── crucible::safety::ThreadName — pthread_setname_np as an Init-row mint ──
+// The Linux kernel caps a thread name at TASK_COMM_LEN, 16 bytes counting the
+// terminator, and truncates anything longer without an error.  Bounding the
+// name type keeps an over-long name from ever reaching the kernel.
 //
-// FIXY-V-189 (Agent 6 §3.3 item 6).  A DIFFERENT shape from its four
-// sibling wrappers (ClockSource / SchedClass / CpuPinned / SuspendBehavior,
-// V-185..188): those are value-level Graded lattice carriers; THIS is a
-// bounded compile-time thread-name type plus a ctx-gated syscall mint.  No
-// lattice, no DimensionAxis, no row_hash — a thread name is not a graded
-// value, it is a one-time kernel side effect performed during init.
-//
-// ── The two bug classes this header eliminates ──────────────────────
-//
-//   (1) SILENT TRUNCATION.  The Linux kernel caps a thread name at
-//       TASK_COMM_LEN = 16 bytes (15 visible chars + NUL) and SILENTLY
-//       truncates anything longer — no errno, no diagnostic.  A
-//       `ThreadNameLiteral<N>` makes N > 16 a COMPILE ERROR, so the
-//       truncation can never reach the kernel.
-//
-//   (2) WRONG-PHASE NAMING.  `pthread_setname_np` is a syscall (writes
-//       /proc/self/task/<tid>/comm).  `mint_thread_name` admits only an
-//       init-phase context (`effects::Init`, or an ExecCtx whose row
-//       contains `Effect::Init`).  Hot-path code holds NO context, so it
-//       structurally cannot perform the syscall.
-//
-// ── §XXI Universal Mint Pattern ─────────────────────────────────────
-//
-//   mint_thread_name<Name>(ctx) -> ThreadNamed<Name>
-//     requires CtxIsInitPhase<Ctx>
-//
-// The mint names the CALLING thread (pthread_self) — the canonical model
-// is "each thread names itself as its init step", which is exactly where
-// the thread holds its own init-phase proof.  The returned `ThreadNamed<Name>`
-// is a phantom witness (sizeof == 1) that observe/perf code can demand as
-// proof a thread went through the naming ritual (correlating PERF_RECORD_COMM).
-//
-// Because the only documented failure of `pthread_setname_np(self, name)` is
-// ERANGE (name too long) and `ThreadNameLiteral` excludes that statically,
-// the mint cannot fail at runtime — it returns the witness directly, with no
-// std::expected ceremony.
-//
-// HS14 negative coverage (two distinct mismatch classes):
-//   - neg_thread_name_too_long   (TASK_COMM_LEN static_assert at the literal)
-//   - neg_thread_name_wrong_ctx  (CtxIsInitPhase rejects a Bg context)
+// Naming writes to the calling thread's entry under /proc, so the mint takes an
+// init-phase context.  Code that holds no context cannot name a thread.
 
 #include <crucible/Platform.h>
-#include <crucible/effects/ExecCtx.h>  // IsExecCtx, row_type_of_t, row_contains_v, Effect, Init
+#include <crucible/effects/ExecCtx.h>
 
-#include <pthread.h>  // pthread_setname_np, pthread_self
+#include <pthread.h>
 
-#include <cstddef>  // std::size_t
-#include <string_view>  // self-test name comparison
-#include <type_traits>  // remove_cvref_t, is_same_v
+#include <cstddef>
+#include <string_view>
+#include <type_traits>
 
 namespace crucible::safety {
 
-// ── ThreadNameLiteral<N> — the TASK_COMM_LEN-bounded fixed string ───
-//
-// A structural class type usable as a non-type template parameter (the
-// `template <ThreadNameLiteral Name>` form deduces N via CTAD).  `N`
-// counts the trailing NUL of the source string literal, so the kernel
-// limit of 15 visible characters is `N <= 16`.
 template <std::size_t N>
 struct ThreadNameLiteral {
-    // TASK_COMM_LEN == 16 (15 visible chars + NUL).  A source literal of
-    // length N (NUL inclusive) names N-1 visible chars; N must fit the cap.
+    // N counts the terminator of the source literal, so the kernel's cap of 15
+    // visible characters is a bound of 16 here.
     static_assert(N >= 1, "ThreadNameLiteral: degenerate empty literal");
-    static_assert(N <= 16, "FIXY-V-189: thread name exceeds TASK_COMM_LEN (15 visible chars + "
+    static_assert(N <= 16, "thread name exceeds TASK_COMM_LEN (15 visible chars + "
                            "NUL); the Linux kernel would SILENTLY truncate it — shorten the name.");
 
     char data[N]{};
@@ -78,15 +36,11 @@ struct ThreadNameLiteral {
 
     [[nodiscard]] constexpr const char* c_str() const noexcept { return data; }
 
-    // Visible-character count (excludes the trailing NUL).
     static constexpr std::size_t visible_length = N - 1;
 };
 
-// ── ThreadNamed<Name> — the phantom naming witness ──────────────────
-//
-// Empty proof token (sizeof == 1, EBO-collapsible) returned by the mint.
-// Carries the name at the type level so a downstream consumer can require
-// `IsThreadNamed` proof without re-reading /proc.
+// The witness carries the name in its type, so a consumer can demand proof that
+// a thread was named without reading /proc back.
 template <ThreadNameLiteral Name>
 struct [[nodiscard]] ThreadNamed {
     static constexpr ThreadNameLiteral name = Name;
@@ -95,7 +49,6 @@ struct [[nodiscard]] ThreadNamed {
     [[nodiscard]] static constexpr std::size_t visible_length() noexcept { return Name.visible_length; }
 };
 
-// ── IsThreadNamed concept + extractor ───────────────────────────────
 namespace detail::thread_name_extract {
 
 template <typename T>
@@ -108,66 +61,47 @@ inline constexpr bool is_thread_named_v<ThreadNamed<Name>> = true;
 template <typename T>
 concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remove_cvref_t<T>>;
 
-// ── CtxIsInitPhase — the single §XXI mint gate ──────────────────────
-//
-// Admits either the bare `effects::Init` context (what `effects::testing
-// ::init()` produces) OR any ExecCtx whose effect-row owns Effect::Init.
-// The right arm uses the named lift `effects::CtxOwnsCapability`
-// (fixy-A5-039) rather than an inline `row_contains_v<row_type_of_t<...>,
-// ...>`; the lift folds the `IsExecCtx` guard so `row_type_of_t<Ctx>` is
-// never named on a non-ExecCtx, and the `||` short-circuits the bare-`Init`
-// case before the right arm is evaluated.
+// The right arm goes through the named capability lift rather than reading the
+// row inline, because the lift folds in the guard that keeps a row from being
+// named on a type that has none.
 template <typename Ctx>
 concept CtxIsInitPhase =
     std::same_as<std::remove_cvref_t<Ctx>, ::crucible::effects::Init>
     || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::crucible::effects::Effect::Init>;
 
-// ── mint_thread_name — the Init-row syscall mint (§XXI) ─────────────
-//
-// §XXI carve-out: cx=alloc — the mint drops compile-time evaluation
-// because it performs a real kernel side effect (the same carve-out a
-// genuinely-allocating mint takes).  noexcept: the only documented failure
-// mode (ERANGE) is statically excluded by ThreadNameLiteral's bound.
+// Not constexpr: the body performs a kernel side effect.
+// §XXI carve-out: cx=alloc — naming a thread is a kernel side effect.
 template <ThreadNameLiteral Name, typename Ctx>
     requires CtxIsInitPhase<Ctx>
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept {
-    // Self-name: the calling thread is the one being set up under `ctx`.
-    // Return is ignored — ERANGE is impossible (visible_length <= 15) and
-    // there is no other failure for a self-target on Linux.
+    // ERANGE is the only documented failure and the name type excludes it, so
+    // there is nothing to report and nothing to throw.
     (void)::pthread_setname_np(::pthread_self(), Name.c_str());
     return ThreadNamed<Name>{};
 }
 
-// ── Layout invariants ───────────────────────────────────────────────
 static_assert(sizeof(ThreadNamed<"x">) == 1, "ThreadNamed must be an empty witness");
 static_assert(ThreadNameLiteral<2>{"x"}.visible_length == 1);
 static_assert(ThreadNameLiteral<16>{"123456789012345"}.visible_length == 15);
 
-// ── Self-test ────────────────────────────────────────────────────────
 namespace detail::thread_name_self_test {
 
 using namespace ::crucible::safety::detail::thread_name_extract;
 
-// Distinct names yield distinct witness types.
 static_assert(!std::is_same_v<ThreadNamed<"a">, ThreadNamed<"b">>);
 static_assert(std::is_same_v<ThreadNamed<"a">, ThreadNamed<"a">>);
 
-// Concept extractor.
 static_assert(IsThreadNamed<ThreadNamed<"crucible-bg">>);
 static_assert(!IsThreadNamed<int>);
 
-// Compile-time name readout.
 static_assert(ThreadNamed<"crucible-fg">::visible_length() == 11);
 static_assert(std::string_view{ThreadNamed<"crucible-fg">::c_str()} == "crucible-fg");
 
-// CtxIsInitPhase admits the bare Init context, rejects Bg / Test.
 static_assert(CtxIsInitPhase<::crucible::effects::Init>);
 static_assert(!CtxIsInitPhase<::crucible::effects::Bg>);
 static_assert(!CtxIsInitPhase<::crucible::effects::Test>);
 
-// Runtime smoke: actually mint a name through the init witness.  The
-// returned witness's static accessors must agree with the literal.  (This
-// renames the running test thread to "crux-smoke" — harmless.)
+// Running this renames the calling thread.
 inline void runtime_smoke_test() {
     auto init = ::crucible::effects::testing::init();
     auto witness = mint_thread_name<"crux-smoke">(init);

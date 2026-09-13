@@ -1,74 +1,14 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// PermissionedSnapshot<T, UserTag> — SWMR worked example
+// A seqlock snapshot behind one linear Writer permission and any number
+// of fractional Reader shares drawn from a pool.  The handle types
+// carry the role, so a reader cannot publish.  The pool's count of
+// outstanding shares is what lets the writer drain the readers and take
+// the snapshot exclusively.
 //
-// Combines AtomicSnapshot<T> (Lamport seqlock for the data race)
-// with SharedPermissionPool<Reader> (atomic refcount + mode-transition
-// CAS for the type-system enforcement).  The result: runtime observation-style
-// metrics broadcast pattern — one writer, many readers, race-free,
-// with type-system proof that "writer" and "reader" roles cannot be
-// confused at compile time.
-//
-//   sizeof(WriterHandle) == sizeof(PermissionedSnapshot*)  (Permission EBO)
-//   sizeof(ReaderHandle) == sizeof(SharedPermissionGuard)  (= sizeof(void*))
-//
-// Per-operation cost (steady state):
-//   publish() : ~15 ns    (AtomicSnapshot's two fetch_add + memcpy)
-//   load()    : ~10 ns    (AtomicSnapshot's seq + memcpy + seq + retry)
-//   reader() acquire/release: 2 atomic acq_rel ops on Pool refcount
-//
-// ─── The three-piece architecture ───────────────────────────────────
-//
-//   AtomicSnapshot<T>            — handles the BYTE-level race
-//                                   (seqlock retry, two fetch_add per
-//                                    publish, fence + retry per load)
-//   SharedPermissionPool<Reader> — handles the LIFETIME tracking
-//                                   (atomic refcount of outstanding
-//                                    Reader shares, mode-transition CAS
-//                                    when writer needs exclusive)
-//   PermissionedSnapshot         — composes the two with type-system
-//                                   enforcement (Writer vs Reader at
-//                                   the API level)
-//
-// Why both layers?  AtomicSnapshot alone is sound for SWMR (publish is
-// lock-free, load retries on torn reads).  But it offers no API-level
-// distinction between writer and reader — any thread can call publish()
-// or load() because they're both methods on the snapshot.  Wrapping
-// with SharedPermissionPool adds:
-//
-//   1. Compile-time type discrimination (Writer vs Reader handles)
-//   2. Runtime lifetime tracking (Pool refcount of outstanding readers)
-//   3. Mode-transition mechanism (with_drained_access for ops that
-//      need all readers out — schema reset, atomic reinitialization)
-//
-// ─── The runtime metrics use case ─────────────────────────────────────
-//
-// Runtime metrics publication broadcasts a Metrics struct from one
-// background thread to many monitoring readers.  PermissionedSnapshot
-// gives:
-//
-//   * Type system enforces that monitoring readers cannot accidentally
-//     overwrite metrics (no .publish() on ReaderHandle)
-//   * Pool refcount tells the writer how many monitors are live
-//   * Mode transition lets the writer reset the snapshot atomically
-//     when the metrics schema version bumps
-//
-// All without requiring a lock anywhere on the hot path — both
-// publish() and load() remain wait-free under the underlying
-// AtomicSnapshot's protocol.
-//
-// ─── Constraints ────────────────────────────────────────────────────
-//
-//   * T satisfies SnapshotValue (trivially-copyable, trivially-
-//     destructible, sizeof <= 256 bytes).  Inherited from
-//     AtomicSnapshot.
-//   * Each PermissionedSnapshot instance must use a distinct UserTag
-//     (or different T) so its Permission tags don't collide.  In
-//     practice: define a tag-class per logical channel.
-//   * WriterHandle / ReaderHandle are move-only (the embedded
-//     Permission / Guard enforce linearity).
-// ═══════════════════════════════════════════════════════════════════
+// Each snapshot needs a UserTag of its own.  Two snapshots sharing a
+// tag share Permission types, and their endpoints become
+// interchangeable.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/AtomicSnapshot.h>
@@ -85,12 +25,8 @@
 
 namespace crucible::concurrent {
 
-// ── Tag tree for PermissionedSnapshot ────────────────────────────────
-//
-// Each logical snapshot channel picks its own UserTag (a phantom
-// type, typically an empty struct).  The (Whole, Writer, Reader)
-// triple is auto-specialized for splits_into — no per-tag
-// boilerplate.
+// The triple is specialized for splitting at the foot of this file, so
+// a user tag takes no per-tag boilerplate.
 
 namespace snapshot_tag {
 
@@ -103,8 +39,6 @@ struct Reader {};
 
 }  // namespace snapshot_tag
 
-// ── PermissionedSnapshot<T, UserTag> ─────────────────────────────────
-
 template <SnapshotValue T, typename UserTag = void>
 class PermissionedSnapshot : public safety::Pinned<PermissionedSnapshot<T, UserTag>> {
 public:
@@ -114,24 +48,15 @@ public:
     using writer_tag = snapshot_tag::Writer<UserTag>;
     using reader_tag = snapshot_tag::Reader<UserTag>;
 
-    // ── Construction ──────────────────────────────────────────────
-    //
-    // The Reader permission is minted internally and parked in the
-    // Pool — fractional model means the framework manages its own
-    // share-tracking root.  The user keeps the Writer permission
-    // separately (mint with mint_permission_root<writer_tag>(),
-    // hand to writer() factory below).
+    // The reader root is minted here and parked in the pool, because
+    // the fractional side tracks its own shares.  The caller mints and
+    // keeps the writer permission.
 
     PermissionedSnapshot() noexcept : snap_{}, reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
     explicit PermissionedSnapshot(const T& initial) noexcept
         : snap_{initial}, reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
-    // ── WriterHandle ──────────────────────────────────────────────
-    //
-    // Move-only by virtue of the embedded Permission's deleted copy.
-    // Constructed via writer() factory; consumes the Writer permission.
-    // sizeof(WriterHandle) == sizeof(void*) via EBO.
     class WriterHandle {
         PermissionedSnapshot* snap_ = nullptr;
         [[no_unique_address]] safety::Permission<writer_tag> perm_;
@@ -150,36 +75,19 @@ public:
         constexpr WriterHandle(WriterHandle&&) noexcept = default;
         constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
-        // Publish — wait-free per AtomicSnapshot's protocol.
         void publish(const T& value) noexcept { snap_->snap_.publish(value); }
 
-        // Diagnostic: the snapshot's publish version (post-publish count).
         [[nodiscard]] std::uint64_t version() const noexcept { return snap_->snap_.version(); }
 
-        // FIXY-FOUND-113-AUDIT: release the writer Permission so the
-        // caller can pass it to PermissionedSnapshot::with_recombined_
-        // access for TRUE full-exclusion mode transitions.  Linear
-        // discipline preserved: this method is rvalue-qualified, so
-        // the WriterHandle is consumed at the call site.  After
-        // release, the handle is moved-from; do not call publish() on
-        // it (the moved-from Permission's state is unspecified).
-        //
-        // Usage:
-        //   auto handle = snap.writer(std::move(perm));
-        //   handle.publish(x);
-        //   auto perm_back = std::move(handle).release_permission();
-        //   auto r = snap.with_recombined_access(std::move(perm_back),
-        //                                       [&]() noexcept { ... });
-        //   handle = snap.writer(std::move(r.writer_perm));
+        // Hands the writer permission back, so the caller can spend it
+        // on a full-exclusion transition.  The rvalue qualification
+        // consumes the handle at the call site, and the handle is
+        // moved-from afterwards: it must not publish again.
         [[nodiscard]] safety::Permission<writer_tag> release_permission() && noexcept { return std::move(perm_); }
     };
 
-    // ── ReaderHandle ──────────────────────────────────────────────
-    //
-    // Move-only via the embedded SharedPermissionGuard's deleted copy.
-    // Constructed via reader() factory; holds a Pool refcount share
-    // for its lifetime (decrement happens on destruction).
-    // sizeof(ReaderHandle) == sizeof(snap_*) + sizeof(Guard).
+    // Holds a pool share for its whole lifetime and gives it back on
+    // destruction.
     class ReaderHandle {
         PermissionedSnapshot* snap_ = nullptr;
         safety::SharedPermissionGuard<reader_tag> guard_;
@@ -195,68 +103,40 @@ public:
         ReaderHandle& operator=(const ReaderHandle&) =
             delete("ReaderHandle owns a Pool refcount share — assignment would double-count");
         constexpr ReaderHandle(ReaderHandle&&) noexcept = default;
-        // Move assignment deleted because Guard's lifetime is fixed
-        // at construction (Guard itself rejects move-assignment).
+        // Move assignment stays deleted, because the share's lifetime
+        // is fixed at construction.
 
-        // Load — blocking retry on torn reads via AtomicSnapshot's seqlock.
         [[nodiscard]] T load() const noexcept { return snap_->snap_.load(); }
 
-        // Try-load — non-blocking; nullopt iff in-progress write detected.
         [[nodiscard]] std::optional<T> try_load() const noexcept { return snap_->snap_.try_load(); }
 
-        // Diagnostic: snapshot's publish version.
         [[nodiscard]] std::uint64_t version() const noexcept { return snap_->snap_.version(); }
     };
 
-    // ── Factories ─────────────────────────────────────────────────
-
-    // Writer endpoint — consumes the Writer permission token.
-    // Caller mints via mint_permission_root<writer_tag>() at startup,
-    // moves it through writer() to obtain the unique WriterHandle.
     [[nodiscard]] WriterHandle writer(safety::Permission<writer_tag>&& perm) noexcept {
         return WriterHandle{*this, std::move(perm)};
     }
 
-    // Reader endpoint — lends a Pool share.  Returns nullopt iff
-    // exclusive mode is active (with_drained_access in flight).
-    // Multiple readers may hold ReaderHandles concurrently — that's
-    // the entire point of the fractional permission.
+    // Lends a pool share, and refuses while an exclusive transition is
+    // in flight.  Several reader handles coexisting is the point of the
+    // fractional side.
     [[nodiscard]] std::optional<ReaderHandle> reader() noexcept {
         auto guard = reader_pool_.lend();
         if (!guard) return std::nullopt;
         return ReaderHandle{*this, std::move(*guard)};
     }
 
-    // ── Mode transition: scoped reader-drained access ─────────────
+    // Drains the readers only.  The writer permission is linear and is
+    // not touched here, so the caller contract is that the thread
+    // owning that permission is the one calling this.  Same-thread
+    // sequencing is then what keeps a publish from overlapping the
+    // body.  Any other thread calling this while the writer publishes
+    // gets the ordinary seqlock behaviour, and the body runs without
+    // exclusion against the writer.  with_recombined_access below is
+    // the form that excludes both sides.
     //
-    // FIXY-FOUND-113 honest framing: this primitive drains READERS
-    // only.  The writer permission is LINEAR (single-token, held by
-    // ONE thread) and is NOT touched by this call.  Caller contract:
-    //
-    //   * The writer thread (the unique owner of Permission<
-    //     writer_tag>) is the only thread allowed to call
-    //     with_drained_access.  Single-threaded sequencing means the
-    //     writer cannot be mid-publish concurrently with body, since
-    //     publish() and with_drained_access() execute on the same
-    //     thread.
-    //   * A NON-writer thread calling with_drained_access while the
-    //     writer is concurrently in publish() observes the writer's
-    //     in-flight memcpy as if it were a normal AtomicSnapshot
-    //     reader — the seqlock retry semantics apply, but body runs
-    //     WITHOUT exclusive access to the writer side.
-    //
-    // For TRUE full exclusion (writer-side drained as well as readers),
-    // use `with_recombined_access` below — it consumes the writer
-    // permission as type-level proof of writer-side exclusivity,
-    // mirroring PermissionedSpscChannel's pattern for primitives with
-    // linear-permission sides.
-    //
-    // Returns true iff body ran (false iff readers were active).
-    // Body signature: void() noexcept.
-    //
-    // Cost: one CAS to acquire (succeeds iff outstanding == 0),
-    // one release-store to deposit back.  Body's runtime is the
-    // rest.  Subsequent reader() calls succeed once body returns.
+    // Returns false when readers were still out and the body did not
+    // run.  A reader can be lent again once the body returns.
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
@@ -267,28 +147,13 @@ public:
         return true;
     }
 
-    // ── Mode transition: scoped full exclusion (FIXY-FOUND-113) ───
+    // Excludes both sides.  Surrendering the writer permission is the
+    // proof for the writer side: while this call holds it, nothing else
+    // can, so no publish can be in flight.  The pool upgrade covers the
+    // readers.
     //
-    // For callers that need BOTH writer-side AND reader-side
-    // exclusion (atomic reinit while writer is also quiesced).
-    // Consumes the writer Permission as type-level proof of
-    // writer-side quiescence — at the moment the caller hands the
-    // permission to this method, NO other call can hold it, so no
-    // publish() can be in progress.  Combined with the reader-pool
-    // upgrade, body runs with TRUE exclusive access to the snapshot.
-    //
-    // Mirrors PermissionedSpscChannel::with_recombined_access for
-    // primitives with at least one linear-permission side.  The
-    // writer Permission is ALWAYS returned (both on body-ran and
-    // on busy-reader-pool paths) so linearity holds: one Permission
-    // in, exactly one Permission out, never duplicated nor lost.
-    //
-    // Body signature: void() noexcept.  Returns a struct carrying
-    // both the recovered Permission and a `body_ran` flag.
-    //
-    // Cost: zero atomic ops on the writer side (linearity proof is
-    // type-level); one CAS on the reader pool to acquire-exclusive,
-    // one release-store to deposit back.
+    // The permission comes back on every path, taken or refused, so
+    // exactly one goes in and exactly one comes out.
     struct WithRecombinedResult {
         [[no_unique_address]] safety::Permission<writer_tag> writer_perm;
         bool body_ran;
@@ -300,9 +165,6 @@ public:
                                                               Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = reader_pool_.try_upgrade();
         if (!upgrade) {
-            // Reader-pool busy; return writer permission unchanged
-            // and body_ran=false so caller can retry.  Linearity
-            // preserved: in = 1 permission, out = 1 permission.
             return WithRecombinedResult{std::move(writer_perm), false};
         }
         std::forward<Body>(body)();
@@ -310,42 +172,22 @@ public:
         return WithRecombinedResult{std::move(writer_perm), true};
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────
-    //
-    // FIXY-FOUND-122: the bare-scalar overloads below are RACY by
-    // design — they read reader_pool_'s atomic state without any
-    // happens-before with concurrent acquire/release/upgrade ops.
-    // By the time the caller observes the returned bool/uint64_t,
-    // more readers may have entered or left, and the exclusive
-    // holder may have deposited.  The bare returns are kept for
-    // compatibility with the cross-primitive diagnostic concept
-    // (`crucible::concurrent::traits::IsLinearizable` requires
-    // `is_exclusive_active() -> std::same_as<bool>` uniformly across
-    // all six Permissioned* primitives; promoting that contract is
-    // a separate multi-cycle sweep).
-    //
-    // The `_stale` companion accessors below expose the Stale-wrapped
-    // surface that type-documents the race.  `at_infinity` because
-    // these accessors share no step-counter with the concurrent
-    // pool — the lag is genuinely unbounded.  Callers explicitly
-    // `.peek()` to acknowledge the unsynchronized snapshot.
-    //
-    // Use the _stale form on new code paths; the bare overloads are
-    // retained for the unified diagnostic concept and existing test
-    // call sites that perform single-threaded snapshot inspection
-    // (where the race is structurally absent).
+    // These two bare accessors race by design.  They read the pool's
+    // atomic state with no happens-before against a concurrent lend,
+    // return or upgrade, so by the time the caller looks at the value
+    // readers may have come and gone.  They stay in this shape because
+    // a diagnostic concept shared across the permissioned primitives
+    // requires the bare scalar, and because single-threaded inspection
+    // has no race to describe.
 
     [[nodiscard]] std::uint64_t outstanding_readers() const noexcept { return reader_pool_.outstanding(); }
 
     [[nodiscard]] bool is_exclusive_active() const noexcept { return reader_pool_.is_exclusive_out(); }
 
-    // FIXY-FOUND-122: Stale-wrapped companions.  Same semantics as
-    // the bare-scalar accessors above, but the return type carries
-    // the τ=∞ staleness grade so the race is grep-visible in source
-    // and downstream callers cannot silently consume the value as
-    // if it were synchronized with the writer/readers.  Mirrors the
-    // TraceRing::size() / MetaLog::size() precedent (WRAP-TraceRing
-    // S2b of #1736).
+    // The same two values with the staleness grade attached, which
+    // makes the race visible in the type and forces the caller to
+    // acknowledge it.  The grade is unbounded because these accessors
+    // share no step counter with the pool.
     [[nodiscard]] ::crucible::safety::Stale<std::uint64_t> outstanding_readers_stale() const noexcept {
         return ::crucible::safety::Stale<std::uint64_t>::at_infinity(reader_pool_.outstanding());
     }
@@ -354,9 +196,6 @@ public:
         return ::crucible::safety::Stale<bool>::at_infinity(reader_pool_.is_exclusive_out());
     }
 
-    // Snapshot's publish version (count of completed publishes).
-    // Useful for "did the snapshot change?" cache-invalidation
-    // decisions in monitoring code.
     [[nodiscard]] std::uint64_t version() const noexcept { return snap_.version(); }
 
 private:
@@ -366,11 +205,8 @@ private:
 
 }  // namespace crucible::concurrent
 
-// ── splits_into auto-specialization ─────────────────────────────────
-//
-// User declares Permission<Whole<X>> at startup; framework does the
-// rest.  splits_into binary form supports the canonical
-// (Whole → Writer + Reader) decomposition without per-tag boilerplate.
+// Both the binary and the variadic split forms are specialized, so a
+// caller can reach for either one.
 
 namespace crucible::safety {
 
@@ -382,7 +218,6 @@ template <typename UserTag>
 struct splits_into_pack<concurrent::snapshot_tag::Whole<UserTag>, concurrent::snapshot_tag::Writer<UserTag>,
                         concurrent::snapshot_tag::Reader<UserTag>> : std::true_type {};
 
-// fixy-M-29 authoring witnesses.
 template <typename UserTag>
 struct splits_into_authoring_witness<concurrent::snapshot_tag::Whole<UserTag>,
                                      concurrent::snapshot_tag::Writer<UserTag>,

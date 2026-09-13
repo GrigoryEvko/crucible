@@ -1,13 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_fx_aliases — FOUND-G79 / G80 dedicated test
-//
-// Exercises the F*-style alias rows + predicate concepts through
-// templated callers — the production-shape surface for any future
-// row-validated function signature.  Sentinel coverage in
-// test_effects_compile.cpp closes the header-only static_assert
-// blind-spot; this file pins call-site behaviour.
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/effects/FxAliases.h>
 
 #include <crucible/effects/Capabilities.h>
@@ -36,68 +26,74 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-#define EXPECT_TRUE(cond)                                                  \
-    do {                                                                   \
-        if (!(cond)) {                                                     \
-            std::fprintf(stderr,                                           \
-                "    EXPECT_TRUE failed: %s (%s:%d)\n",                    \
-                #cond, __FILE__, __LINE__);                                \
-            throw TestFailure{};                                           \
-        }                                                                  \
+#define EXPECT_TRUE(cond)                                                                            \
+    do {                                                                                             \
+        if (!(cond)) {                                                                               \
+            std::fprintf(stderr, "    EXPECT_TRUE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+            throw TestFailure{};                                                                     \
+        }                                                                                            \
     } while (0)
 
 namespace fx = ::crucible::effects;
 
-// ── Templated callers — the production-shape surface ──────────────
-//
-// Each `accepts_X<R>` returns true iff R satisfies the corresponding
-// concept.  This is exactly the pattern a future row-validated
-// function template will use as its requires-clause.
+// Each caller constrains on exactly one predicate, so every test below
+// exercises the concept through a requires-clause rather than by evaluating
+// it directly. That is the shape a row-validated function signature has.
 
 template <typename R>
     requires fx::IsPure<R>
-constexpr bool accepts_pure() noexcept { return true; }
+constexpr bool accepts_pure() noexcept {
+    return true;
+}
 
 template <typename R>
     requires fx::IsTot<R>
-constexpr bool accepts_tot() noexcept { return true; }
+constexpr bool accepts_tot() noexcept {
+    return true;
+}
 
 template <typename R>
     requires fx::IsGhost<R>
-constexpr bool accepts_ghost() noexcept { return true; }
+constexpr bool accepts_ghost() noexcept {
+    return true;
+}
 
 template <typename R>
     requires fx::IsDiv<R>
-constexpr bool accepts_div() noexcept { return true; }
+constexpr bool accepts_div() noexcept {
+    return true;
+}
 
 template <typename R>
     requires fx::IsST<R>
-constexpr bool accepts_st() noexcept { return true; }
+constexpr bool accepts_st() noexcept {
+    return true;
+}
 
 template <typename R>
     requires fx::IsAll<R>
-constexpr bool accepts_all() noexcept { return true; }
-
-// ── Tests ─────────────────────────────────────────────────────────
+constexpr bool accepts_all() noexcept {
+    return true;
+}
 
 void test_pure_alias_admits_empty_row_only() {
     EXPECT_TRUE(accepts_pure<fx::PureRow>());
-    EXPECT_TRUE(accepts_pure<fx::TotRow>());     // structurally PureRow
-    EXPECT_TRUE(accepts_pure<fx::GhostRow>());   // structurally PureRow
+    EXPECT_TRUE(accepts_pure<fx::TotRow>());
+    EXPECT_TRUE(accepts_pure<fx::GhostRow>());
 
-    // Sanity: PureRow / TotRow / GhostRow are *the same row type*
-    // under the current Crucible mapping.  A future Ghost atom would
-    // make GhostRow distinct; this test would then need amendment.
+    // The three rows coincide only because no Ghost atom exists. Introducing
+    // one makes GhostRow a distinct type and these assertions wrong.
     static_assert(std::is_same_v<fx::PureRow, fx::TotRow>);
     static_assert(std::is_same_v<fx::PureRow, fx::GhostRow>);
 }
 
 void test_div_alias_admits_block_only() {
-    EXPECT_TRUE(accepts_div<fx::PureRow>());                           // ∅ ⊆ {Block}
-    EXPECT_TRUE(accepts_div<fx::DivRow>());                            // {Block} ⊆ {Block}
-    EXPECT_TRUE(accepts_div<fx::Row<fx::Effect::Block>>());            // alias-equivalent row
-    // Substitution failure for state effects covered in the neg-compile
-    // fixture (fits production discipline — no try/catch on consteval).
+    EXPECT_TRUE(accepts_div<fx::PureRow>());
+    EXPECT_TRUE(accepts_div<fx::DivRow>());
+    EXPECT_TRUE(accepts_div<fx::Row<fx::Effect::Block>>());
+    // A row carrying a state effect must fail substitution here. That case
+    // cannot be spelled as a runtime expectation and lives in a
+    // compile-failure fixture instead.
 }
 
 void test_st_alias_admits_block_alloc_io() {
@@ -118,112 +114,88 @@ void test_all_alias_admits_every_row() {
     EXPECT_TRUE(accepts_all<fx::Row<fx::Effect::Bg>>());
     EXPECT_TRUE(accepts_all<fx::Row<fx::Effect::Init>>());
     EXPECT_TRUE(accepts_all<fx::Row<fx::Effect::Test>>());
-    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Bg, fx::Effect::Init,
-                                     fx::Effect::Test>>()));
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Bg, fx::Effect::Init, fx::Effect::Test>>()));
 }
 
 void test_refinement_chain_at_call_site() {
-    // The F* refinement chain made operational: a function declared
-    // IsPure can be called from any caller that has a Pure row, and
-    // such a row is also Tot/Ghost/Div/ST/All — the standard
-    // "functor of permission" pattern.
-
     using R = fx::PureRow;
-    EXPECT_TRUE(accepts_pure <R>());
-    EXPECT_TRUE(accepts_tot  <R>());
+    EXPECT_TRUE(accepts_pure<R>());
+    EXPECT_TRUE(accepts_tot<R>());
     EXPECT_TRUE(accepts_ghost<R>());
-    EXPECT_TRUE(accepts_div  <R>());
-    EXPECT_TRUE(accepts_st   <R>());
-    EXPECT_TRUE(accepts_all  <R>());
+    EXPECT_TRUE(accepts_div<R>());
+    EXPECT_TRUE(accepts_st<R>());
+    EXPECT_TRUE(accepts_all<R>());
 }
 
 void test_strictness_at_each_lattice_step() {
-    // Each upper level genuinely admits strictly more rows than the
-    // prior — none of the chain has accidentally collapsed.  Compile-
-    // time witness is in the header's static_assert wall; this runtime
-    // test mirrors the cells via the templated-caller surface.
-
     using A = fx::PureRow;
     using B = fx::DivRow;
     using C = fx::STRow;
     using D = fx::AllRow;
 
     EXPECT_TRUE(accepts_pure<A>() && accepts_div<A>() && accepts_st<A>() && accepts_all<A>());
-    EXPECT_TRUE(                    accepts_div<B>() && accepts_st<B>() && accepts_all<B>());
-    EXPECT_TRUE(                                        accepts_st<C>() && accepts_all<C>());
-    EXPECT_TRUE(                                                           accepts_all<D>());
+    EXPECT_TRUE(accepts_div<B>() && accepts_st<B>() && accepts_all<B>());
+    EXPECT_TRUE(accepts_st<C>() && accepts_all<C>());
+    EXPECT_TRUE(accepts_all<D>());
 }
 
 void test_lattice_size_invariants() {
-    // Compile-time witness from the header, mirrored at runtime to
-    // catch any future regression in the lattice layout.
-    EXPECT_TRUE(fx::row_size_v<fx::PureRow>  == 0);
-    EXPECT_TRUE(fx::row_size_v<fx::TotRow>   == 0);
+    EXPECT_TRUE(fx::row_size_v<fx::PureRow> == 0);
+    EXPECT_TRUE(fx::row_size_v<fx::TotRow> == 0);
     EXPECT_TRUE(fx::row_size_v<fx::GhostRow> == 0);
-    EXPECT_TRUE(fx::row_size_v<fx::DivRow>   == 1);
-    EXPECT_TRUE(fx::row_size_v<fx::STRow>    == 3);
-    EXPECT_TRUE(fx::row_size_v<fx::AllRow>   == fx::effect_count);
+    EXPECT_TRUE(fx::row_size_v<fx::DivRow> == 1);
+    EXPECT_TRUE(fx::row_size_v<fx::STRow> == 3);
+    EXPECT_TRUE(fx::row_size_v<fx::AllRow> == fx::effect_count);
 }
 
 void test_row_order_independence() {
-    // EffectRow.h's design note: row order is NOT canonicalized
-    // (`Row<A, B>` and `Row<B, A>` are distinct types).  But the
-    // Subrow concept is semantic — it's a membership check, not a
-    // structural-equality check.  Therefore both orderings must be
-    // admitted equivalently by every alias predicate.  This pins the
-    // semantic-vs-structural distinction at the IsX call site.
+    // Row order is not canonicalized, so Row<A, B> and Row<B, A> are distinct
+    // types. The Subrow relation is a membership test rather than a
+    // structural-equality test, so every predicate must admit both spellings.
+    // This is where that semantic-versus-structural split is pinned.
     using R_ai = fx::Row<fx::Effect::Alloc, fx::Effect::IO>;
-    using R_ia = fx::Row<fx::Effect::IO,    fx::Effect::Alloc>;
+    using R_ia = fx::Row<fx::Effect::IO, fx::Effect::Alloc>;
 
-    // Distinct types — sanity check on the EffectRow.h non-
-    // canonicalization rule.
     static_assert(!std::is_same_v<R_ai, R_ia>);
 
-    // But semantically equivalent under every predicate.
-    EXPECT_TRUE((accepts_st <R_ai>()));
-    EXPECT_TRUE((accepts_st <R_ia>()));
+    EXPECT_TRUE((accepts_st<R_ai>()));
+    EXPECT_TRUE((accepts_st<R_ia>()));
     EXPECT_TRUE((accepts_all<R_ai>()));
     EXPECT_TRUE((accepts_all<R_ia>()));
 
-    // Three-atom permutation also semantically equivalent.
-    using R_aib = fx::Row<fx::Effect::Alloc, fx::Effect::IO,    fx::Effect::Block>;
-    using R_iab = fx::Row<fx::Effect::IO,    fx::Effect::Alloc, fx::Effect::Block>;
-    using R_bia = fx::Row<fx::Effect::Block, fx::Effect::IO,    fx::Effect::Alloc>;
+    using R_aib = fx::Row<fx::Effect::Alloc, fx::Effect::IO, fx::Effect::Block>;
+    using R_iab = fx::Row<fx::Effect::IO, fx::Effect::Alloc, fx::Effect::Block>;
+    using R_bia = fx::Row<fx::Effect::Block, fx::Effect::IO, fx::Effect::Alloc>;
     EXPECT_TRUE((accepts_st<R_aib>()));
     EXPECT_TRUE((accepts_st<R_iab>()));
     EXPECT_TRUE((accepts_st<R_bia>()));
 }
 
 void test_pure_tot_ghost_runtime_equivalence() {
-    // Header asserts these are the same type (no Ghost atom yet).
-    // Confirm the equivalence at the call-site predicate boundary too —
-    // a stronger guarantee than is_same_v alone, because it would
-    // catch any future divergence in concept-body specialization.
-    static_assert(std::is_same_v<fx::PureRow,  fx::TotRow>);
-    static_assert(std::is_same_v<fx::PureRow,  fx::GhostRow>);
+    // Checking the three predicates separately is stronger than the type
+    // identity above, because a per-concept body specialization could make
+    // them diverge while the rows stay the same type.
+    static_assert(std::is_same_v<fx::PureRow, fx::TotRow>);
+    static_assert(std::is_same_v<fx::PureRow, fx::GhostRow>);
 
     using R = fx::Row<fx::Effect::Alloc>;
-    EXPECT_TRUE(!fx::IsPure <R>);
-    EXPECT_TRUE(!fx::IsTot  <R>);
+    EXPECT_TRUE(!fx::IsPure<R>);
+    EXPECT_TRUE(!fx::IsTot<R>);
     EXPECT_TRUE(!fx::IsGhost<R>);
 
-    EXPECT_TRUE(fx::IsPure <fx::PureRow>);
-    EXPECT_TRUE(fx::IsTot  <fx::PureRow>);
+    EXPECT_TRUE(fx::IsPure<fx::PureRow>);
+    EXPECT_TRUE(fx::IsTot<fx::PureRow>);
     EXPECT_TRUE(fx::IsGhost<fx::PureRow>);
 
-    // Symmetric: PureRow → IsTot, TotRow → IsPure, GhostRow → IsTot.
-    EXPECT_TRUE(fx::IsTot  <fx::TotRow>);
-    EXPECT_TRUE(fx::IsPure <fx::TotRow>);
+    EXPECT_TRUE(fx::IsTot<fx::TotRow>);
+    EXPECT_TRUE(fx::IsPure<fx::TotRow>);
     EXPECT_TRUE(fx::IsGhost<fx::GhostRow>);
-    EXPECT_TRUE(fx::IsPure <fx::GhostRow>);
+    EXPECT_TRUE(fx::IsPure<fx::GhostRow>);
 }
 
 void test_all_row_contains_every_effect_atom() {
-    // The header static_assert wall checks per-atom membership at
-    // compile time.  Mirror it at runtime so reflection-based or
-    // template-instantiated callers actually exercise the check
-    // through the predicate surface.  This is the audit complement
-    // to the count-only check (which would miss a rename regression).
+    // Per-atom membership, not a count. A renamed or replaced atom leaves the
+    // cardinality check above satisfied and only reddens here.
     EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Alloc>>()));
     EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::IO>>()));
     EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Block>>()));
@@ -231,26 +203,24 @@ void test_all_row_contains_every_effect_atom() {
     EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Init>>()));
     EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Test>>()));
 
-    // The full universe row goes through too.
     EXPECT_TRUE(accepts_all<fx::AllRow>());
 }
 
 void test_runtime_consistency() {
-    // Verify the predicate evaluates identically across 50 invocations
-    // — pure compile-time predicates should be invariant, but the
-    // volatile-anchored cap pattern catches consteval/inline-body
-    // regressions where a constexpr accessor accidentally degrades.
+    // The loop bound is volatile, so the predicates are evaluated outside a
+    // constant-evaluated context. A concept that is only ever reached from
+    // static_assert can degrade without any translation unit noticing.
     constexpr bool pure_ok = fx::IsPure<fx::PureRow>;
-    constexpr bool div_ok  = fx::IsDiv <fx::DivRow>;
-    constexpr bool st_ok   = fx::IsST  <fx::STRow>;
+    constexpr bool div_ok = fx::IsDiv<fx::DivRow>;
+    constexpr bool st_ok = fx::IsST<fx::STRow>;
     EXPECT_TRUE(pure_ok && div_ok && st_ok);
 
     volatile std::size_t const cap = 50;
     for (std::size_t i = 0; i < cap; ++i) {
         EXPECT_TRUE(fx::IsPure<fx::PureRow>);
-        EXPECT_TRUE(fx::IsDiv <fx::DivRow>);
-        EXPECT_TRUE(fx::IsST  <fx::STRow>);
-        EXPECT_TRUE(fx::IsAll <fx::AllRow>);
+        EXPECT_TRUE(fx::IsDiv<fx::DivRow>);
+        EXPECT_TRUE(fx::IsST<fx::STRow>);
+        EXPECT_TRUE(fx::IsAll<fx::AllRow>);
     }
 }
 
@@ -258,30 +228,18 @@ void test_runtime_consistency() {
 
 int main() {
     std::fprintf(stderr, "test_fx_aliases:\n");
-    run_test("test_pure_alias_admits_empty_row_only",
-             test_pure_alias_admits_empty_row_only);
-    run_test("test_div_alias_admits_block_only",
-             test_div_alias_admits_block_only);
-    run_test("test_st_alias_admits_block_alloc_io",
-             test_st_alias_admits_block_alloc_io);
-    run_test("test_all_alias_admits_every_row",
-             test_all_alias_admits_every_row);
-    run_test("test_refinement_chain_at_call_site",
-             test_refinement_chain_at_call_site);
-    run_test("test_strictness_at_each_lattice_step",
-             test_strictness_at_each_lattice_step);
-    run_test("test_lattice_size_invariants",
-             test_lattice_size_invariants);
-    run_test("test_row_order_independence",
-             test_row_order_independence);
-    run_test("test_pure_tot_ghost_runtime_equivalence",
-             test_pure_tot_ghost_runtime_equivalence);
-    run_test("test_all_row_contains_every_effect_atom",
-             test_all_row_contains_every_effect_atom);
-    run_test("test_runtime_consistency",
-             test_runtime_consistency);
-    std::fprintf(stderr, "\n%d passed, %d failed\n",
-                 total_passed, total_failed);
+    run_test("test_pure_alias_admits_empty_row_only", test_pure_alias_admits_empty_row_only);
+    run_test("test_div_alias_admits_block_only", test_div_alias_admits_block_only);
+    run_test("test_st_alias_admits_block_alloc_io", test_st_alias_admits_block_alloc_io);
+    run_test("test_all_alias_admits_every_row", test_all_alias_admits_every_row);
+    run_test("test_refinement_chain_at_call_site", test_refinement_chain_at_call_site);
+    run_test("test_strictness_at_each_lattice_step", test_strictness_at_each_lattice_step);
+    run_test("test_lattice_size_invariants", test_lattice_size_invariants);
+    run_test("test_row_order_independence", test_row_order_independence);
+    run_test("test_pure_tot_ghost_runtime_equivalence", test_pure_tot_ghost_runtime_equivalence);
+    run_test("test_all_row_contains_every_effect_atom", test_all_row_contains_every_effect_atom);
+    run_test("test_runtime_consistency", test_runtime_consistency);
+    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
     return EXIT_SUCCESS;

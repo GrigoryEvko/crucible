@@ -1,26 +1,11 @@
 #pragma once
 
-// ── crucible::safety::extract::is_opaque_lifetime_v ─────────────────
-//
-// FOUND-D23 — wrapper-detection predicate for `OpaqueLifetime<Scope, T>`.
-// Mechanical extension of D21/D22 — partial-spec captures the
-// Lifetime_v NTTP enum value alongside the wrapped type.
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   is_opaque_lifetime_v<T>      Variable template; cv-ref-stripped.
-//   IsOpaqueLifetime<T>           Concept form.
-//   opaque_lifetime_value_t<T>    Wrapped element type; constrained.
-//   opaque_lifetime_scope_v<T>    Pinned Lifetime_v scope; constrained.
-
 #include <crucible/safety/OpaqueLifetime.h>
 
 #include <type_traits>
 
 namespace crucible::safety::extract {
 
-// Re-export Lifetime_v so dispatcher call sites don't need to spell
-// `algebra::lattices::Lifetime::PER_FLEET`.
 using ::crucible::safety::Lifetime_v;
 
 namespace detail {
@@ -53,8 +38,6 @@ using opaque_lifetime_value_t = typename detail::is_opaque_lifetime_impl<std::re
 template <typename T>
     requires is_opaque_lifetime_v<T>
 inline constexpr Lifetime_v opaque_lifetime_scope_v = detail::is_opaque_lifetime_impl<std::remove_cvref_t<T>>::scope;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_opaque_lifetime_self_test {
 

@@ -1,12 +1,12 @@
 #pragma once
 
-// CNT-P socket pacing + fq/qdisc verification.
+// BBR paces from its own rate estimate, so the throughput claim holds only
+// when the root qdisc paces as well.  That is why only fq and fq_codel count
+// as compatible.
 //
-// GAPS-121 pairs with CongestionControl.h: BBR selections are only
-// throughput-sound when the NIC root qdisc is fq or fq_codel. This
-// header owns typed qdisc classification, bounded fq config, live
-// qdisc query, and SO_MAX_PACING_RATE. Privileged qdisc replacement is
-// intentionally deferred to the NicConfig operator-policy task.
+// Nothing here installs a qdisc.  ensure_fq_active reads the live one and
+// reports whether it matches.  allow_auto_config only selects which error
+// comes back, and the fq parameters are declared values that nothing applies.
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/safety/Refined.h>

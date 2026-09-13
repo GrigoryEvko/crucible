@@ -1,80 +1,5 @@
 #pragma once
 
-// ── crucible::fixy — Reject.h — the IsAccepted engagement gate ─────
-//
-// Clean reimplementation per misc/16_05_2026_fixy.md §4.
-//
-// THIS IS THE LOAD-BEARING FIXY HEADER.  Every fixy:: binding gates
-// through `IsAccepted<Type, Grants...>` which combines:
-//
-//   (a) every grant in `Grants...` is an `IsGrantTag` (final-class +
-//       inherits grant_base — defends against trait-spec injection)
-//
-//   (b) every DimensionAxis enumerator (the 22 axes from
-//       safety::DimensionAxis) is engaged via at least one grant —
-//       i.e., the author has read the discipline and made a choice
-//       on every dim
-//
-//   (c) the (Type, Grants...) pair does not match any §30.14
-//       theory-corpus pattern (Theory.h NotInTheoryCorpus).
-//
-// `IsAccepted` is the ENGAGEMENT-LEVEL gate.  §6.8 ValidComposition
-// (the 20 collision rules in safety/CollisionCatalog.h) is enforced
-// ONE LAYER DOWN: `fixy::fn<Type, Grants...>` instantiates
-// `safety::fn::Fn<Type, ...>` whose class-body
-// `static_assert(ValidComposition<Fn>, ...)` (safety/Fn.h §421) fires
-// the rule-specific diagnostic.  Reject.h does NOT route through
-// ValidComposition itself — that would couple this header to the
-// substrate's full Fn<...> resolver and offer no diagnostic the
-// substrate doesn't already surface at wrapper-instantiation time.
-//
-// ── Substrate consumed ─────────────────────────────────────────────
-//
-//   safety/Diagnostic.h::tag_base                    — diag-tag base
-//   safety/diag/Insights.h::insight_provider         — per-tag Why/
-//                                                       Symptom/etc.
-//
-// ── Substrate added by this header ─────────────────────────────────
-//
-// `kFixyCatalogDocstringCardinality` `FixyNotEngaged_<Axis>` diagnostic
-// tags, one per dimension.  The current value of that constexpr (see
-// the static_asserts after the FixyCatalog tuple) IS the cardinality
-// every count in this doc-block refers to — when DIMENSION_AXIS_COUNT
-// grows, update `kFixyCatalogDocstringCardinality` and the prose
-// citations stay structurally pinned via the static_assert.
-// These inherit `safety::diag::tag_base` (so they participate in the
-// substrate's structural diagnostic surface) but do NOT enter the
-// closed `safety::diag::Category` enum (which is reserved for
-// substrate-axis violations per FOUND-E01's Catalog discipline).
-//
-// User-defined diagnostic tags follow the same pattern (per
-// `safety/Diagnostic.h:96-99`); fixy:: diagnostic tags participate in
-// `diagnostic_name_v` / `Diagnostic<TagType, Ctx...>` accessors
-// without occupying a foundation Category slot.
-//
-// ── Diagnostic surface ─────────────────────────────────────────────
-//
-// When IsAccepted rejects a grant pack, the FIRST missing-engagement
-// dimension fires the structured diagnostic.  Compiler error message
-// names the specific dim (e.g., "FixyNotEngaged_Effect") + carries a
-// remediation message pointing at the relevant grants.  The other
-// `kFixyCatalogDocstringCardinality - 1` dims surface in a single
-// summary line to keep the diagnostic tight (R4 of misc/16_05_2026_fixy.md
-// §9).  The exact count tracks DimensionAxis growth via static_assert.
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   TypeSafe — every concept gate is a structural concept; no
-//              implicit conversion path exists.
-//   InitSafe — no state; pure compile-time computation.
-//   DetSafe  — same `Grants...` → same `IsAccepted` outcome → same
-//              cache key (relevant for federation cache, GAPS-028).
-//
-// ── Runtime cost ───────────────────────────────────────────────────
-//
-// Zero.  Every concept evaluates at template instantiation; the
-// fixy::fn<> wrapper carries no runtime state.
-
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
@@ -92,19 +17,6 @@
 
 namespace crucible::fixy {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Per-dim diagnostic tags ────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// One tag per DimensionAxis enumerator.  Each inherits
-// safety::diag::tag_base + ships the 3 string_view fields the
-// foundation expects.  Users querying via
-// `safety::diag::diagnostic_name_v<FixyNotEngaged_Effect>` see the
-// structured surface.
-//
-// Naming convention: `FixyNotEngaged_<AxisName>`.  Grep-discoverable;
-// matches FOUND-E01's local-tag pattern.
-
 namespace diag {
 
 #define CRUCIBLE_FIXY_NOT_ENGAGED_TAG(AxisName, AxisDesc)                                     \
@@ -112,20 +24,20 @@ namespace diag {
         static constexpr ::std::string_view name = "FixyNotEngaged_" #AxisName;               \
         static constexpr ::std::string_view description =                                     \
             "Dimension '" #AxisName "' (" AxisDesc ") has no engagement marker "              \
-            "or relaxation tag in the binding's Grants pack.  Per misc/"                      \
-            "16_05_2026_fixy.md §3, every fixy:: binding MUST engage with every "             \
-            "dimension in the DimensionAxis universe (cardinality is the "                    \
-            "reflection-derived `safety::DIMENSION_AXIS_COUNT`, mirrored by "                 \
+            "or relaxation tag in the binding's Grants pack.  Every fixy:: "                  \
+            "binding MUST engage with every dimension in the DimensionAxis "                  \
+            "universe (cardinality is the reflection-derived "                                \
+            "`safety::DIMENSION_AXIS_COUNT`, mirrored by "                                    \
             "`fixy::diag::kFixyCatalogDocstringCardinality` — never hard-code "               \
-            "this number in prose, per FIXY-FOUND-029 + FIXY-V-007 drift policy) "            \
-            "either via an explicit relaxation tag or via "                                   \
+            "this number in prose) either via an explicit relaxation tag or "                 \
+            "via "                                                                            \
             "`grant::accept_default_strict_for<dim::DimensionAxis::" #AxisName ">`.";         \
         static constexpr ::std::string_view remediation =                                     \
             "Add `grant::accept_default_strict_for<dim::DimensionAxis::" #AxisName            \
             ">` to the Grants pack if the binding's behavior on this "                        \
             "axis is the strict default, OR add the appropriate per-axis "                    \
-            "relaxation tag (see fixy/Grant.h's `crucible::fixy::grant` "                     \
-            "namespace for the catalog).";                                                    \
+            "relaxation tag (the `crucible::fixy::grant` namespace holds the "                \
+            "catalog).";                                                                      \
     };                                                                                        \
     static_assert(::crucible::safety::diag::is_diagnostic_class_v<FixyNotEngaged_##AxisName>, \
                   "FixyNotEngaged_" #AxisName " must inherit safety::diag::tag_base.")
@@ -178,44 +90,15 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(MemoryScope, "memory-visibility scope (Thread / Wa
 
 #undef CRUCIBLE_FIXY_NOT_ENGAGED_TAG
 
-// ─── FixyDuplicate_<Axis> tag family — fixy-H-02 ───────────────────
-//
-// Companion to FixyNotEngaged_<Axis>.  Fires when an axis is engaged
-// by MORE THAN ONE grant in the pack (UniqueEngagementPerAxis
-// rejection path).  Distinct from FixyNotEngaged_<Axis> so the
-// diagnostic surface tells the author which failure mode tripped:
-// missing-axis ⇒ "add a grant"; duplicate-axis ⇒ "remove a grant".
-// Per fixy-H-02: the single static_assert in fixy::fn<>'s class body
-// was misleading — it always said "axis not engaged" even when the
-// real failure was UniqueEngagementPerAxis (or AllGrantsWellFormed).
-
-// FIXY-FOUND-031: split the macro into a generic 2-arg form + an _EX
-// form that accepts axis-specific extra remediation.  Pre-FOUND-031,
-// the macro's `remediation` field embedded Type-axis-specific advice
-// ("explicitly writing accept_default_strict_for<Type> is FORBIDDEN
-// because fixy::fn implicitly engages Type") inside the prose for
-// EVERY axis — readers of FixyDuplicate_Refinement, FixyDuplicate_
-// MemoryScope, etc. saw the Type-marker auto-injection note as
-// remediation advice, which is at best confusing and at worst
-// misleading (those axes have no auto-injection, so the "drop the
-// explicit Type marker" advice doesn't apply).
-//
-// Closure shape: keep the simple 2-arg macro identical (most axes
-// need no extra remediation), introduce the 3-arg _EX form that
-// concatenates ExtraRemediation to the universal "remove all but one"
-// prose.  Type's CRUCIBLE_FIXY_DUPLICATE_TAG invocation switches to
-// _EX with the auto-injection note; the other 32 stay on the 2-arg
-// form unchanged.
-
 #define CRUCIBLE_FIXY_DUPLICATE_TAG_EX(AxisName, AxisDesc, ExtraRemediation)                 \
     struct FixyDuplicate_##AxisName final : ::crucible::safety::diag::tag_base {             \
         static constexpr ::std::string_view name = "FixyDuplicate_" #AxisName;               \
         static constexpr ::std::string_view description =                                    \
             "Dimension '" #AxisName "' (" AxisDesc ") is engaged by MORE THAN "              \
-            "ONE grant in the binding's Grants pack.  Per misc/16_05_2026_"                  \
-            "fixy.md §3, every fixy:: binding MUST engage with every dimension "             \
-            "EXACTLY ONCE — silent redundant grants hide authorial intent and "              \
-            "bypass any future tag-vs-tag disagreement check (FIXY-AUDIT-A3).";              \
+            "ONE grant in the binding's Grants pack.  Every fixy:: binding "                 \
+            "MUST engage with every dimension EXACTLY ONCE — silent redundant "              \
+            "grants hide authorial intent and bypass any tag-vs-tag "                        \
+            "disagreement check.";                                                           \
         static constexpr ::std::string_view remediation =                                    \
             "Remove all but one of the grants engaging '" #AxisName "' from the "            \
             "Grants pack." ExtraRemediation;                                                 \
@@ -225,13 +108,14 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(MemoryScope, "memory-visibility scope (Thread / Wa
 
 #define CRUCIBLE_FIXY_DUPLICATE_TAG(AxisName, AxisDesc) CRUCIBLE_FIXY_DUPLICATE_TAG_EX(AxisName, AxisDesc, "")
 
-// FIXY-FOUND-031: Type is the only axis with implicit auto-injection,
-// so the Type-marker-conflict advice belongs ONLY here, not in the 32
-// other FixyDuplicate_* tags' remediation.
+// Type is the only axis the wrapper engages implicitly, so the
+// marker-conflict advice is scoped to this one tag.  Folding it into
+// the shared macro would hand every other axis remediation advice that
+// does not apply to it.
 CRUCIBLE_FIXY_DUPLICATE_TAG_EX(Type, "the function type itself",
                                "  Note: explicitly writing `grant::accept_default_strict_for<dim::"
                                "DimensionAxis::Type>` is FORBIDDEN because fixy::fn implicitly "
-                               "engages Type (FIXY-AUDIT-A7) — that explicit Type marker would "
+                               "engages Type — that explicit Type marker would "
                                "trigger a duplicate on the Type axis.  Drop the explicit Type "
                                "marker.");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Refinement, "value-level predicate");
@@ -281,14 +165,8 @@ CRUCIBLE_FIXY_DUPLICATE_TAG(MemoryScope, "memory-visibility scope (Thread / Warp
 
 #undef CRUCIBLE_FIXY_DUPLICATE_TAG
 
-// ─── FixyMalformedGrant — AllGrantsWellFormed rejection tag ────────
-//
-// fixy-H-02: single tag covering the "Grants pack contains a non-grant
-// type" failure mode (a Grant that fails fixy::grant::IsGrantTag —
-// either non-final, doesn't inherit grant_base, or is a foreign type
-// reaching the gate by accident).  No per-axis projection because the
-// failure is at the PACK level (the malformed entry is not a grant at
-// all, so it has no axis to project onto).
+// One tag, not a per-axis family: a malformed entry is not a grant at
+// all, so there is no axis to project it onto.
 struct FixyMalformedGrant final : ::crucible::safety::diag::tag_base {
     static constexpr ::std::string_view name = "FixyMalformedGrant";
     static constexpr ::std::string_view description =
@@ -304,18 +182,14 @@ struct FixyMalformedGrant final : ::crucible::safety::diag::tag_base {
                                                       "ghost`, `grant::with<effects::Effect::IO>`, "
                                                       "`grant::declassify<Policy>`), or (b) an explicit acceptance "
                                                       "marker `grant::accept_default_strict_for<dim::DimensionAxis::"
-                                                      "<Axis>>` (except the Type axis — see FIXY-AUDIT-A7).  Substrate "
+                                                      "<Axis>>` (except the Type axis, which the wrapper engages "
+                                                      "implicitly).  Substrate "
                                                       "types reaching this gate are typically the result of a "
                                                       "copy-paste error, a misspelled grant name, or a typo in the "
                                                       "`fixy::fn<Type, ...>` parameter list.";
 };
 static_assert(::crucible::safety::diag::is_diagnostic_class_v<FixyMalformedGrant>,
               "FixyMalformedGrant must inherit safety::diag::tag_base.");
-
-// ─── tag_for_axis<D> — DimensionAxis → diag tag ────────────────────
-//
-// Used by IsAccepted's failure reporter to surface the structured
-// diagnostic for the FIRST unengaged dim.
 
 template <dim::DimensionAxis D>
 struct tag_for_axis;
@@ -456,14 +330,6 @@ struct tag_for_axis<dim::DimensionAxis::MemoryScope> {
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
 
-// ─── dup_tag_for_axis<D> — DimensionAxis → duplicate-engagement tag ─
-//
-// fixy-H-02: companion lookup to tag_for_axis<D>.  Surfaces the
-// FixyDuplicate_<Axis> diagnostic tag when UniqueEngagementPerAxis
-// rejects.  Same 20-entry partial specialization map, separate type
-// family because the failure semantics (missing-vs-duplicate) drives
-// different remediation messages.
-
 template <dim::DimensionAxis D>
 struct dup_tag_for_axis;
 
@@ -603,29 +469,9 @@ struct dup_tag_for_axis<dim::DimensionAxis::MemoryScope> {
 template <dim::DimensionAxis D>
 using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
 
-// ═══════════════════════════════════════════════════════════════════
-// FIXY-FOUND-138 — newest-axes hygiene completion
-// ═══════════════════════════════════════════════════════════════════
-//
-// `every_axis_has_insight_provider` (fixy/Insights.h:735) already
-// reflection-checks the `tag_for_axis<D>::type` family — adding a
-// DimensionAxis enumerator without a tag_for_axis<> specialization
-// reddens loudly there.
-//
-// The PEER family `dup_tag_for_axis<D>::type` had no analogous
-// sentinel pre-FOUND-138: a future axis without a dup_tag_for_axis
-// specialization would compile clean until the first `dup_tag_for_axis_t<>`
-// use-site (typically the tier-4 duplicate-engagement diagnostic
-// path), surfacing as a confusing "no type named 'type'" template
-// error instead of an actionable cardinality-pin failure.
-//
-// This is precisely the "newest axes hygiene" gap — FpMode (V-088),
-// SyscallSurface (V-097), ControlFlow / CallShape / StackUse /
-// GlobalState / Stdio (V-238), HwInstruction / BarrierStrength /
-// SimdIsa (V-253), MemoryScope (V-266) all currently ship explicit
-// dup_tag_for_axis<> specializations above, but the closure
-// invariant — that EVERY DimensionAxis enumerator has one — was
-// convention-only.  This sentinel makes it structural.
+// Without this sentinel a missing dup_tag_for_axis specialization
+// compiles clean until the first use site and surfaces there as a
+// "no type named 'type'" template error rather than a cardinality gap.
 
 namespace detail::reject_dup_tag_self_test {
 
@@ -636,14 +482,8 @@ namespace detail::reject_dup_tag_self_test {
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr auto axis = ([:en:]);
-        // SFINAE: requires-expression yields false when the primary
-        // template `dup_tag_for_axis<axis>` lacks `::type` (i.e., no
-        // specialization shipped for this axis).
         constexpr bool has_dup_tag = requires { typename dup_tag_for_axis<axis>::type; };
         if (!has_dup_tag) return false;
-        // Type must inherit safety::diag::tag_base — guards against
-        // a specialization that ships `using type = SomeUnrelatedType`
-        // by mistake.
         using DupT = typename dup_tag_for_axis<axis>::type;
         if (!::crucible::safety::diag::is_diagnostic_class_v<DupT>) {
             return false;
@@ -653,53 +493,25 @@ namespace detail::reject_dup_tag_self_test {
     return true;
 }
 
-static_assert(every_axis_has_dup_tag(), "FIXY-FOUND-138: a DimensionAxis enumerator has no corresponding "
-                                        "dup_tag_for_axis<D>::type specialization in fixy/Reject.h (or "
-                                        "the specialization names a type that doesn't inherit "
+static_assert(every_axis_has_dup_tag(), "a DimensionAxis enumerator has no corresponding "
+                                        "dup_tag_for_axis<D>::type specialization (or the "
+                                        "specialization names a type that does not inherit "
                                         "safety::diag::tag_base).  Add a CRUCIBLE_FIXY_DUP_TAG(...) "
                                         "invocation for the new axis followed by a template <> struct "
                                         "dup_tag_for_axis<dim::DimensionAxis::NewAxis> { using type = "
-                                        "FixyDuplicate_NewAxis; }; specialization.  Peers the "
-                                        "`every_axis_has_insight_provider` sentinel in fixy/Insights.h "
-                                        "that closes the same gap for the tag_for_axis<> family.");
+                                        "FixyDuplicate_NewAxis; }; specialization.");
 
 }  // namespace detail::reject_dup_tag_self_test
 
-// ═══════════════════════════════════════════════════════════════════
-// ── FixyCatalog — closed enumeration of fixy diagnostic tags ───────
-// ═══════════════════════════════════════════════════════════════════
+// Fixy tags are enumerated here rather than in the substrate's closed
+// diagnostic Catalog, which is reserved for substrate-axis violations.
+// The runtime category for a fixy diagnostic is the DimensionAxis
+// itself, so no separate category enum is minted: a second enum would
+// duplicate the axis universe and give it its own drift surface.
 //
-// FIXY-AUDIT-C8 reconciliation surface.  Mirrors the substrate's
-// `safety::diag::Catalog` pattern (one tuple, APPEND-ONLY, indexed in
-// stable order) but lives entirely on the fixy side because per
-// `safety/Diagnostic.h:96-99` user-defined tags MUST NOT enter the
-// substrate's closed Category/Catalog — those are reserved for the
-// foundation's 31 axis violations.  Fixy's `kFixyCatalogDocstringCardinality`
-// `FixyNotEngaged_*` tags (one per DimensionAxis enumerator) still need
-// to be enumerable as a closed set so callers can:
-//
-//   (a) discriminate fixy tags from substrate tags via
-//       `is_fixy_diag_v<T>`;
-//   (b) iterate the fixy tag set at compile time for diagnostic
-//       formatters, federation cache hashing, and reflection-driven
-//       UX layers;
-//   (c) close the bijection `tag_for_axis_t<D>` already opens by
-//       providing the reverse `axis_for_tag_v<Tag>`.
-//
-// The runtime category for fixy diagnostics is `dim::DimensionAxis`
-// itself — every fixy diagnostic IS a "this axis went wrong" claim.
-// We deliberately do NOT mint a separate Category-style enum: that
-// would duplicate the canonical axis universe and force a second
-// APPEND-ONLY discipline that could drift.
-//
-// Discipline (mirrors safety::diag::Catalog):
-//   1. APPEND-ONLY in DimensionAxis enumerator order.
-//   2. Adding a new DimensionAxis enumerator requires (a) the matching
-//      `FixyNotEngaged_<Axis>` tag via `CRUCIBLE_FIXY_NOT_ENGAGED_TAG`
-//      above, (b) the matching `tag_for_axis<>` specialization, (c)
-//      appending here, and (d) the matching `axis_for_tag<>`
-//      specialization below.  The bijection self-test fires if any
-//      step is skipped.
+// The tuple is append-only in DimensionAxis enumerator order.  The
+// bijection self-test below fires if an append lands out of order or
+// misses one of the paired lookups.
 
 using FixyCatalog = ::std::tuple<FixyNotEngaged_Type,  //  0
                                  FixyNotEngaged_Refinement,  //  1
@@ -721,46 +533,24 @@ using FixyCatalog = ::std::tuple<FixyNotEngaged_Type,  //  0
                                  FixyNotEngaged_Size,  // 17
                                  FixyNotEngaged_Version,  // 18
                                  FixyNotEngaged_Staleness,  // 19
-                                 FixyNotEngaged_Synchronization,  // 20  (fixy-A3-008, 2026-05-18)
-                                 FixyNotEngaged_Regime,  // 21  (fixy-A3-009, 2026-05-18)
-                                 FixyNotEngaged_FpMode,  // 22  (FIXY-V-088, 2026-05-22)
-                                 FixyNotEngaged_SyscallSurface,  // 23  (FIXY-V-097, 2026-05-22)
-                                 FixyNotEngaged_ControlFlow,  // 24  (FIXY-V-238, 2026-05-23)
-                                 FixyNotEngaged_CallShape,  // 25  (FIXY-V-238, 2026-05-23)
-                                 FixyNotEngaged_StackUse,  // 26  (FIXY-V-238, 2026-05-23)
-                                 FixyNotEngaged_GlobalState,  // 27  (FIXY-V-238, 2026-05-23)
-                                 FixyNotEngaged_Stdio,  // 28  (FIXY-V-238, 2026-05-23)
-                                 FixyNotEngaged_HwInstruction,  // 29  (FIXY-V-253, 2026-05-23)
-                                 FixyNotEngaged_BarrierStrength,  // 30  (FIXY-V-253, 2026-05-23)
-                                 FixyNotEngaged_SimdIsa,  // 31  (FIXY-V-253, 2026-05-23)
-                                 FixyNotEngaged_MemoryScope  // 32  (FIXY-V-266, 2026-05-23)
+                                 FixyNotEngaged_Synchronization,  // 20
+                                 FixyNotEngaged_Regime,  // 21
+                                 FixyNotEngaged_FpMode,  // 22
+                                 FixyNotEngaged_SyscallSurface,  // 23
+                                 FixyNotEngaged_ControlFlow,  // 24
+                                 FixyNotEngaged_CallShape,  // 25
+                                 FixyNotEngaged_StackUse,  // 26
+                                 FixyNotEngaged_GlobalState,  // 27
+                                 FixyNotEngaged_Stdio,  // 28
+                                 FixyNotEngaged_HwInstruction,  // 29
+                                 FixyNotEngaged_BarrierStrength,  // 30
+                                 FixyNotEngaged_SimdIsa,  // 31
+                                 FixyNotEngaged_MemoryScope  // 32
                                  >;
 
 inline constexpr ::std::size_t fixy_catalog_size = ::std::tuple_size_v<FixyCatalog>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FixyDuplicateCatalog — closed enumeration of duplicate tags ────
-// ═════════════════════════════════════════════════════════════════════
-//
-// FIXY-FOUND-028 reconciliation surface.  The `FixyDuplicate_<Axis>`
-// tag family (one tag per DimensionAxis enumerator, defined by the
-// `CRUCIBLE_FIXY_DUPLICATE_TAG` macro above) IS shipped — every
-// `UniqueEngagementPerAxis` violation routes through one of them via
-// `DiagnoseAxisDuplicate<Tag>`.  But pre-FOUND-028 these tags were
-// NOT in any catalog, so `is_fixy_diag_v<FixyDuplicate_X>` returned
-// FALSE — generic diagnostic dispatchers checking that predicate
-// would route a real fixy diagnostic into the substrate-side surface
-// (or worse, the "not a fixy diagnostic" fallback).
-//
-// The closure: a parallel APPEND-ONLY catalog mirroring FixyCatalog's
-// ordering — index I ↔ `dim::DimensionAxis(I)` ↔ `FixyDuplicate_<X>`.
-// The bijection self-test below walks this catalog with the
-// `dup_tag_for_axis<>` family declared earlier in this header to
-// guarantee 1:1 correspondence with DimensionAxis enumerators.
-//
-// `is_fixy_diag_v<T>` (rewritten below) unions FixyCatalog +
-// FixyDuplicateCatalog + FixyMalformedCatalog so callers get
-// uniform "is this a fixy-emitted diagnostic?" semantics.
+// Append-only, in the same index order as FixyCatalog.
 
 using FixyDuplicateCatalog = ::std::tuple<FixyDuplicate_Type,  //  0
                                           FixyDuplicate_Refinement,  //  1
@@ -799,41 +589,9 @@ using FixyDuplicateCatalog = ::std::tuple<FixyDuplicate_Type,  //  0
 
 inline constexpr ::std::size_t fixy_duplicate_catalog_size = ::std::tuple_size_v<FixyDuplicateCatalog>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FixyMalformedCatalog — single-entry malformed-grant catalog ────
-// ═════════════════════════════════════════════════════════════════════
-//
-// FIXY-FOUND-028 reconciliation surface.  `FixyMalformedGrant` (the
-// `AllGrantsWellFormed` rejection tag, defined earlier in this
-// header) was shipped but un-catalogued — same gap as the duplicate
-// family.  A single-entry catalog is structurally appropriate (the
-// malformed-grant tag has no per-axis variants; the violation is
-// "some grant in the pack isn't IsGrantTag-shaped"), giving
-// `is_fixy_diag_v<FixyMalformedGrant>` the correct TRUE result via
-// the same tuple-membership predicate.
-
 using FixyMalformedCatalog = ::std::tuple<FixyMalformedGrant>;
 
 inline constexpr ::std::size_t fixy_malformed_catalog_size = ::std::tuple_size_v<FixyMalformedCatalog>;
-
-// ─── is_fixy_diag_v — fixy-tag discriminator (FOUND-028 union) ────
-//
-// True iff T appears in ANY of the three fixy catalogs (FixyCatalog
-// for FixyNotEngaged_* + FixyDuplicateCatalog for FixyDuplicate_* +
-// FixyMalformedCatalog for FixyMalformedGrant).  Lets generic
-// diagnostic machinery route ALL fixy-emitted tags through the
-// fixy-side surface and leave substrate Catalog tags to the substrate
-// (the two enumerations remain disjoint by design per FOUND-E01).
-//
-// Substrate `safety::diag::HotPathViolation` and friends MUST return
-// false here.
-//
-// FOUND-028 closes the gap where `FixyDuplicate_*` (33 axis-violation
-// tags) and `FixyMalformedGrant` (the well-formedness rejection tag)
-// existed but were structurally invisible to `is_fixy_diag_v`,
-// causing the `DiagnoseAxisDuplicate<Tag>` / `DiagnoseMalformedGrant
-// <Tag>` rails to emit tags that downstream dispatchers couldn't
-// recognize as fixy-originated.
 
 namespace detail::fixy_catalog {
 
@@ -850,14 +608,8 @@ inline constexpr bool is_fixy_diag_v = detail::fixy_catalog::in_tuple_impl<T, Fi
                                     || detail::fixy_catalog::in_tuple_impl<T, FixyDuplicateCatalog>::value
                                     || detail::fixy_catalog::in_tuple_impl<T, FixyMalformedCatalog>::value;
 
-// ─── axis_for_tag — reverse lookup (Tag → DimensionAxis) ──────────
-//
-// Closes the bijection with `tag_for_axis<D>` above.  Specialized for
-// every entry in FixyCatalog.  The bijection self-test (below) walks
-// every catalog index and asserts the round-trip holds.
-
 template <typename Tag>
-struct axis_for_tag;  // primary undefined
+struct axis_for_tag;
 
 template <>
 struct axis_for_tag<FixyNotEngaged_Type> {
@@ -995,15 +747,8 @@ struct axis_for_tag<FixyNotEngaged_MemoryScope> {
 template <typename Tag>
 inline constexpr dim::DimensionAxis axis_for_tag_v = axis_for_tag<Tag>::value;
 
-// ═══════════════════════════════════════════════════════════════════
-// ── Bijection self-test — FixyCatalog ↔ DimensionAxis ──────────────
-// ═══════════════════════════════════════════════════════════════════
-
 namespace detail::fixy_catalog {
 
-// FixyCatalog cardinality must match DimensionAxis cardinality.  If a
-// new DimensionAxis enumerator is added without the matching tag /
-// catalog entry / reverse lookup, this fires first.
 inline constexpr ::std::size_t kDimAxisCount = []() consteval {
     return ::std::meta::enumerators_of(^^::crucible::safety::DimensionAxis).size();
 }();
@@ -1015,38 +760,20 @@ static_assert(fixy_catalog_size == kDimAxisCount, "FixyCatalog cardinality drift
                                                   "tag_for_axis specialization, and (d) the matching axis_for_tag "
                                                   "specialization.");
 
-// FIXY-V-007 — Reject.h doc-block cardinality pin.
-//
-// Every prose count in this header's doc-block (search for
-// "kFixyCatalogDocstringCardinality") refers to this constant.  The
-// `static_assert` immediately below pins it to the reflection-derived
-// `kDimAxisCount`, so when a new DimensionAxis enumerator lands the
-// build fires HERE and the contributor updates BOTH the constant AND
-// the prose in lockstep.  Replaces the historically-stale prose
-// drifts ("Twenty"/"twenty-two") with a single source of truth.
-//
-// Discipline:
-//   * Update this constant ONLY when DimensionAxis grows.
-//   * Use the constant by NAME in every doc-block citation, never a
-//     hard-coded number — that's exactly the drift this pins.
-//   * The cross-check below is reflection-driven via kDimAxisCount,
-//     so the FixyCatalog cardinality, the DimensionAxis cardinality,
-//     and the doc-block prose all share one structural witness.
+// The diagnostic strings above cite this constant by name instead of
+// spelling an axis count.  A literal count in a string would go stale
+// the moment a new axis lands and nothing would catch it.
 inline constexpr ::std::size_t kFixyCatalogDocstringCardinality = kDimAxisCount;
 
 static_assert(kFixyCatalogDocstringCardinality == kDimAxisCount,
-              "Reject.h kFixyCatalogDocstringCardinality drifted from the "
+              "kFixyCatalogDocstringCardinality drifted from the "
               "reflection-derived DimensionAxis enumerator count.  If you added "
               "a DimensionAxis enumerator (and the matching FixyNotEngaged_* tag "
               "+ FixyCatalog entry + tag_for_axis / axis_for_tag specs), update "
               "kFixyCatalogDocstringCardinality to match AND search this header's "
-              "doc-block for any human-readable count words (e.g., 'twenty-four') "
-              "that need to grow in lockstep.  This pin closes the drift caught "
-              "in fixy-A3-008/A3-009 + FIXY-V-088/097 audits where the prose "
-              "count lagged the catalog cardinality by 2+ enumerators.");
+              "doc-block for any human-readable count words (for example, "
+              "'twenty-four') that need to grow in lockstep.");
 
-// Round-trip: for every catalog index I, both lookups agree and the
-// catalog ordering follows DimensionAxis value ordering.
 template <::std::size_t I>
 [[nodiscard]] consteval bool catalog_bijection_at() noexcept {
     using TagAtI = ::std::tuple_element_t<I, FixyCatalog>;
@@ -1068,12 +795,6 @@ static_assert(catalog_bijection_holds(::std::make_index_sequence<fixy_catalog_si
 
 }  // namespace detail::fixy_catalog
 
-// ─── is_fixy_diag_v / axis_for_tag_v compile-time witnesses ───────
-//
-// These ride next to the catalog definition so a regression in the
-// substrate-vs-fixy discrimination fires at the definition site
-// instead of at a distant call site.
-
 static_assert(is_fixy_diag_v<FixyNotEngaged_Type>, "FixyNotEngaged_Type must be recognized as a fixy diagnostic.");
 static_assert(is_fixy_diag_v<FixyNotEngaged_Staleness>,
               "FixyNotEngaged_Staleness must be recognized as a fixy diagnostic.");
@@ -1083,52 +804,23 @@ static_assert(!is_fixy_diag_v<::crucible::safety::diag::tag_base>,
               "appear in FixyCatalog.");
 static_assert(!is_fixy_diag_v<::crucible::safety::diag::HotPathViolation>,
               "Substrate diagnostic tags MUST NOT register as fixy diagnostics. "
-              "The substrate Catalog and FixyCatalog are disjoint by design "
-              "(FOUND-E01 + FIXY-AUDIT-C8 reconciliation).");
+              "The substrate Catalog and FixyCatalog are disjoint by design.");
 static_assert(!is_fixy_diag_v<::crucible::safety::diag::EffectRowMismatch>,
               "Substrate diagnostic tags MUST NOT register as fixy diagnostics.");
 
-// ── FIXY-FOUND-028 witnesses ───────────────────────────────────────
-//
-// Pre-FOUND-028, `is_fixy_diag_v<T>` only recognized `FixyNotEngaged_*`
-// tags.  The `FixyDuplicate_*` family (33 tags emitted by
-// `DiagnoseAxisDuplicate<Tag>` for `UniqueEngagementPerAxis` violations)
-// and the singleton `FixyMalformedGrant` (emitted by
-// `DiagnoseMalformedGrant<Tag>` for `AllGrantsWellFormed` violations)
-// would return FALSE — a real fixy-emitted diagnostic was structurally
-// indistinguishable from a non-fixy type at the dispatcher boundary.
-//
-// FOUND-028 closure: `is_fixy_diag_v<T>` now unions FixyCatalog +
-// FixyDuplicateCatalog + FixyMalformedCatalog.  Spot-check witnesses
-// at every category boundary; the exhaustive per-entry verification
-// rides on the catalog-membership predicate so any drift between a
-// catalog tuple and the union predicate auto-reds.
-
-static_assert(is_fixy_diag_v<FixyDuplicate_Type>, "FOUND-028: FixyDuplicate_Type must be recognized as a fixy "
+static_assert(is_fixy_diag_v<FixyDuplicate_Type>, "FixyDuplicate_Type must be recognized as a fixy "
                                                   "diagnostic (FixyDuplicateCatalog entry).");
-static_assert(is_fixy_diag_v<FixyDuplicate_Staleness>,
-              "FOUND-028: FixyDuplicate_Staleness must be recognized as a fixy "
-              "diagnostic.");
+static_assert(is_fixy_diag_v<FixyDuplicate_Staleness>, "FixyDuplicate_Staleness must be recognized as a fixy "
+                                                       "diagnostic.");
 static_assert(is_fixy_diag_v<FixyDuplicate_MemoryScope>,
-              "FOUND-028: FixyDuplicate_MemoryScope (newest axis dup tag) must "
+              "FixyDuplicate_MemoryScope (newest axis dup tag) must "
               "be recognized as a fixy diagnostic — sentinel for the FixyDuplicate "
               "tail growing in lockstep with DimensionAxis appends.");
-static_assert(is_fixy_diag_v<FixyMalformedGrant>, "FOUND-028: FixyMalformedGrant must be recognized as a fixy "
+static_assert(is_fixy_diag_v<FixyMalformedGrant>, "FixyMalformedGrant must be recognized as a fixy "
                                                   "diagnostic (FixyMalformedCatalog entry).");
 
-// ── FIXY-FOUND-028 cardinality pins ────────────────────────────────
-//
-// FixyDuplicateCatalog must have EXACTLY the same cardinality as
-// FixyCatalog (and therefore as DimensionAxis), because there is one
-// FixyDuplicate_<X> tag per FixyNotEngaged_<X> tag (the duplicate
-// tag family is generated by the CRUCIBLE_FIXY_DUPLICATE_TAG macro
-// alongside the not-engaged family).  Drift here means an axis
-// got a NotEngaged tag without the matching Duplicate tag (or vice
-// versa) — fixy::IsAccepted's duplicate-engagement check would
-// silently route through a missing tag rail.
-
 static_assert(fixy_duplicate_catalog_size == fixy_catalog_size,
-              "FOUND-028: FixyDuplicateCatalog cardinality drifted from "
+              "FixyDuplicateCatalog cardinality drifted from "
               "FixyCatalog.  Adding a new DimensionAxis enumerator requires "
               "(a) the matching FixyNotEngaged_<Axis> tag (via "
               "CRUCIBLE_FIXY_NOT_ENGAGED_TAG), (b) the matching FixyDuplicate_"
@@ -1138,20 +830,11 @@ static_assert(fixy_duplicate_catalog_size == fixy_catalog_size,
               "axis_for_tag specialization.  This assertion fires when (c) was "
               "skipped on the FixyDuplicate side.");
 
-static_assert(fixy_malformed_catalog_size == 1, "FOUND-028: FixyMalformedCatalog must contain exactly the "
+static_assert(fixy_malformed_catalog_size == 1, "FixyMalformedCatalog must contain exactly the "
                                                 "singleton FixyMalformedGrant tag.  Adding additional malformed-"
                                                 "grant tags is a deliberate redesign — update the catalog AND "
                                                 "either route through a richer Diagnose* family or extend "
                                                 "AllGrantsWellFormed to discriminate them.");
-
-// ── FIXY-FOUND-028 fold-style discipline ──────────────────────────
-//
-// Every entry of FixyDuplicateCatalog must satisfy `is_fixy_diag_v`.
-// The fold below walks the tuple via index sequence and asserts the
-// predicate per entry — guarantees the predicate definition above
-// stays in sync with the catalog tuple itself (an entry added to the
-// catalog but accidentally omitted from the predicate union would
-// silently fail on that entry; the fold fires immediately).
 
 namespace detail::fixy_catalog {
 
@@ -1163,35 +846,18 @@ template <::std::size_t... Is>
 }  // namespace detail::fixy_catalog
 
 static_assert(detail::fixy_catalog::all_duplicate_fixy_diag(::std::make_index_sequence<fixy_duplicate_catalog_size>{}),
-              "FOUND-028: every FixyDuplicateCatalog entry must satisfy "
+              "every FixyDuplicateCatalog entry must satisfy "
               "is_fixy_diag_v.  If this fires, an entry was added to the "
               "catalog but the predicate union was not extended — keep them "
               "in sync at the definition site.");
 
-// ── fixy-A4-030: exhaustive substrate-catalog disjointness sentinel
-//
-// The two hand-picked spot-checks above witness HotPathViolation and
-// EffectRowMismatch specifically.  Pre-A4-030 that was the entire
-// disjointness proof — substrate-side renames (or new diagnostic
-// additions) were silently uncovered.  The fold below walks EVERY
-// `safety::diag::Catalog` entry via `std::make_index_sequence<
-// safety::diag::catalog_size>` and asserts `!is_fixy_diag_v<...>`
-// for each.  Adding a new substrate diagnostic now auto-extends the
-// witness; renaming an existing one still produces a clean
-// not-found diagnostic at the disjointness check rather than
-// silently passing.
-//
-// FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling split: the
-// EXACT ceiling pin (`== 31`) lives in safety/Diagnostic.h:1562
-// colocated with the source-of-truth `catalog_size` constant; THIS
-// fixy-side header only holds the FLOOR pin (`>= 31`) catching the
-// inverse direction — an accidental REMOVAL of a substrate Catalog
-// entry.  Per FOUND-E01 closure discipline + adaptive fold below
-// (which uses `make_index_sequence<catalog_size>` and walks however
-// many entries exist), the prior `== 31` lockstep here was vestigial.
+// A floor, not an equality.  The exact ceiling sits beside the
+// substrate constant itself, and the fold below adapts to the number
+// of entries that exist.  What this catches is the inverse direction,
+// an accidental removal of a substrate catalog entry.
 
 static_assert(::crucible::safety::diag::catalog_size >= 31,
-              "fixy-A4-030 floor: safety::diag::catalog_size regressed below "
+              "safety::diag::catalog_size regressed below "
               "31 — a Catalog entry was removed without updating both "
               "Diagnostic.h's colocated ceiling pin AND this floor witness.");
 
@@ -1206,24 +872,15 @@ inline constexpr bool no_substrate_in_fixy_catalog(::std::index_sequence<Is...>)
 
 static_assert(detail::substrate_disjointness::no_substrate_in_fixy_catalog(
                   ::std::make_index_sequence<::crucible::safety::diag::catalog_size>{}),
-              "fixy-A4-030: at least one substrate diagnostic in "
+              "at least one substrate diagnostic in "
               "safety::diag::Catalog ALSO registers as a fixy diagnostic. "
-              "Substrate Catalog and FixyCatalog are disjoint by design "
-              "(FOUND-E01 + FIXY-AUDIT-C8).  The fold walks every entry; a "
+              "Substrate Catalog and FixyCatalog are disjoint by design.  "
+              "The fold walks every entry; a "
               "fixy-side dual-export of a substrate tag would trip here.");
 
-// ── fixy-M-12: exhaustive positive-direction in-tuple sentinel ─────
-//
-// fixy-A4-030 walks substrate → fixy (every substrate entry rejects).
-// The forward direction was hand-picked: only FixyNotEngaged_Type and
-// FixyNotEngaged_Staleness had explicit `is_fixy_diag_v<X>` witnesses
-// — the other 20 axis-engagement tags were covered only by the
-// bijection walk at line 475, which tests round-trip but NOT in-tuple
-// membership.  M-12 closes the gap with an exhaustive fold over
-// FixyCatalog: EVERY entry must register as a fixy diagnostic.  A
-// regression in `is_fixy_diag_v`'s impl that silently misses one
-// entry fires here at the definition site rather than at a distant
-// production call site.
+// The fold above walks substrate to fixy.  This one walks fixy to
+// itself.  The bijection self-test checks round-trip, not in-tuple
+// membership, so neither subsumes the other.
 
 namespace detail::fixy_positive_witness {
 
@@ -1249,39 +906,18 @@ static_assert(axis_for_tag_v<FixyNotEngaged_Staleness> == dim::DimensionAxis::St
 
 }  // namespace diag
 
-// ═════════════════════════════════════════════════════════════════════
-// ── engaged_for<D, Grants...>() — per-axis engagement helpers ──────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `detail::engagement::engaged_for<D, Grants...>()` is true iff at
-// least one grant in `Grants...` has `grant::which_dim_v<G> == D`.
-// Folded over every DimensionAxis enumerator by `every_axis_engaged`,
-// `first_missing_axis`, and `first_duplicate_axis`.
-//
-// Concept form: AllDimsEngaged is derived from the reflection fold
-// directly — no per-axis public concept ships (fixy-H-04).
-
 namespace detail::engagement {
 
-// FIXY-AUDIT-CR-08: per-grant engagement probe.
-//
-// The fold form
+// The inline fold
 //
 //     ((grant::IsGrantTag_v<G> && grant::which_dim_v<G> == D) || ...)
 //
-// substitutes `grant::which_dim_v<G>` for every G in the pack BEFORE
-// the consteval `&&` short-circuit runs.  `which_dim`'s primary
-// template is intentionally left undefined (per-tag specialization
-// only), so a non-grant G in the pack — e.g. a user-defined struct,
-// `int`, or anything reaching `engaged_for` before `IsAccepted` has
-// gated it — produces a hard substitution error inside the fold
-// rather than a clean rejection at the IsAccepted boundary.
-//
-// This was exactly the failure mode FIXY-AUDIT-A1 fixed for
-// `find_grant_impl` (Fn.h:338-347): there, the fix was constraint
-// partial-ordering across two partial specializations.  Folds cannot
-// use that mechanism, so we extract a per-grant helper and use
-// `if constexpr` to gate the `which_dim_v` lookup.
+// substitutes `which_dim_v<G>` for every G in the pack before the
+// `&&` short-circuits.  `which_dim`'s primary template is undefined,
+// so a non-grant G that reaches here ahead of the acceptance gate
+// turns a clean rejection into a hard substitution error.  A fold cannot be
+// rescued by constraint partial-ordering, so the probe is extracted
+// and the lookup gated behind `if constexpr`.
 template <dim::DimensionAxis D, typename G>
 [[nodiscard]] consteval bool engages_dim_one() noexcept {
     if constexpr (grant::IsGrantTag_v<G>) {
@@ -1300,13 +936,6 @@ template <dim::DimensionAxis D, typename... Grants>
     }
 }
 
-// ─── all_grants_well_formed — every Grant must satisfy IsGrantTag ──
-//
-// Defends against:
-//   1. User-defined non-grant types in the pack
-//   2. Inheriting `grant_base` without being final (subclass attempt)
-// Both are caught at the structural concept level.
-
 template <typename... Grants>
 [[nodiscard]] consteval bool all_grants_well_formed() noexcept {
     if constexpr (sizeof...(Grants) == 0) {
@@ -1316,16 +945,9 @@ template <typename... Grants>
     }
 }
 
-// ─── axis-enumerator splice cache ──────────────────────────────────
-//
-// fixy-H-09: the four per-axis fold helpers below (`first_missing_axis`,
-// `every_axis_engaged`, `every_axis_engaged_at_most_once`, and
-// `first_duplicate_axis`) all need to enumerate every `DimensionAxis`
-// value at consteval.  Materialize the reflected enumerator span ONCE
-// into static constexpr storage and let each helper splice the I-th
-// axis through `axis_at_v<I>` — no per-helper `define_static_array`
-// recomputation, no `template for` body that instantiates
-// `engaged_for<>` for axes past the first match.
+// The reflected enumerator span is materialized once and spliced per
+// index so the four walks below share it, and no walk has to build a
+// static array of its own.
 
 inline constexpr auto kAxisEnumerators =
     std::define_static_array(std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
@@ -1334,27 +956,6 @@ inline constexpr std::size_t kAxisCount = kAxisEnumerators.size();
 
 template <std::size_t I>
 inline constexpr auto axis_at_v = [:kAxisEnumerators[I]:];
-
-// ─── first_missing_axis — diagnostic helper ────────────────────────
-//
-// Returns the DimensionAxis whose engagement is missing, wrapped in
-// `std::optional<>`; `std::nullopt` means every axis is engaged.
-// Used by IsAccepted's failure tag selector.
-//
-// fixy-H-08: the prior shape returned `dim::DimensionAxis` directly
-// with `0xFF` as an out-of-band sentinel — a type-system leak (the
-// returned value was NOT a valid DimensionAxis enumerator and the
-// burden of the guard fell on every caller).  Switching to
-// `std::optional<>` makes the "no missing axis" case a first-class
-// type-level distinction.
-//
-// fixy-H-09: the prior shape used `template for` which unconditionally
-// instantiated `engaged_for<axis_v, Grants...>()` for ALL 22 axes even
-// after the first miss was observed.  The recursive `if constexpr`
-// form below stops instantiating the engagement check at the first
-// miss — algorithm shape now matches the doc-block claim ("returns
-// the FIRST unengaged axis") and the discarded branches don't bloat
-// the substitution context.
 
 template <std::size_t I, typename... Grants>
 [[nodiscard]] consteval std::optional<dim::DimensionAxis> first_missing_axis_impl() noexcept {
@@ -1372,9 +973,6 @@ template <typename... Grants>
     return first_missing_axis_impl<0, Grants...>();
 }
 
-// fixy-H-09: recursive short-circuit form — stop instantiating
-// `engaged_for<>` for the remaining axes at the first miss.
-
 template <std::size_t I, typename... Grants>
 [[nodiscard]] consteval bool every_axis_engaged_impl() noexcept {
     if constexpr (I >= kAxisCount) {
@@ -1391,17 +989,9 @@ template <typename... Grants>
     return every_axis_engaged_impl<0, Grants...>();
 }
 
-// ─── count_engagements_for — per-axis engagement multiplicity ──────
-//
-// FIXY-AUDIT-A3: silent redundant grants on the same axis hide
-// authorial intent ("did I mean to engage twice?") and bypass any
-// future tag-vs-tag disagreement check.  We need an explicit duplicate
-// count so callers cannot accidentally over-engage an axis.
-
-// FIXY-AUDIT-CR-08: same eager-substitution hazard as `engaged_for`
-// above — `which_dim_v<G>` would be instantiated for every G in the
-// pack before the consteval `?:` runs.  Route through the gated
-// `engages_dim_one<D, G>()` helper instead.
+// Routed through the gated probe for the same reason `engaged_for` is:
+// an inline `which_dim_v<G>` would be substituted for every G in the
+// pack before the `?:` runs.
 template <dim::DimensionAxis D, typename... Grants>
 [[nodiscard]] consteval std::size_t count_engagements_for() noexcept {
     if constexpr (sizeof...(Grants) == 0) {
@@ -1410,10 +1000,6 @@ template <dim::DimensionAxis D, typename... Grants>
         return ((engages_dim_one<D, Grants>() ? 1u : 0u) + ...);
     }
 }
-
-// fixy-H-09: recursive short-circuit form — stop instantiating
-// `count_engagements_for<>` for the remaining axes at the first
-// duplicate engagement.
 
 template <std::size_t I, typename... Grants>
 [[nodiscard]] consteval bool every_axis_engaged_at_most_once_impl() noexcept {
@@ -1430,23 +1016,6 @@ template <typename... Grants>
 [[nodiscard]] consteval bool every_axis_engaged_at_most_once() noexcept {
     return every_axis_engaged_at_most_once_impl<0, Grants...>();
 }
-
-// ─── first_duplicate_axis — diagnostic helper (fixy-H-02) ──────────
-//
-// Returns the FIRST DimensionAxis whose engagement count exceeds 1,
-// wrapped in `std::optional<>`; `std::nullopt` means every axis is
-// engaged at most once.  Mirror of first_missing_axis: same
-// DimensionAxis ordering, same `std::optional<>` discipline, same
-// template-for-over-reflected-enumerators scan.  Used by
-// fixy::fn<>'s branched static_assert to surface a duplicate-
-// engagement diagnostic distinct from the missing-axis case.
-//
-// fixy-H-08: see first_missing_axis above — same type-system leak
-// (0xFF cast to DimensionAxis) eliminated the same way.
-
-// fixy-H-09: recursive short-circuit form — stop instantiating
-// `count_engagements_for<>` for the remaining axes at the first
-// duplicate.
 
 template <std::size_t I, typename... Grants>
 [[nodiscard]] consteval std::optional<dim::DimensionAxis> first_duplicate_axis_impl() noexcept {
@@ -1466,105 +1035,33 @@ template <typename... Grants>
 
 }  // namespace detail::engagement
 
-// fixy-H-04: the public `EngagedFor<D, Grants...>` concept was removed
-// (defined here through 2026-05-18, never consumed by any caller).  The
-// per-axis engagement check lives in `detail::engagement::engaged_for<>()`
-// and is folded over reflection by `every_axis_engaged<>` /
-// `first_missing_axis<>` / `first_duplicate_axis<>` — `AllDimsEngaged`
-// derives from the reflection fold directly, not from a 20-fold
-// conjunction of `EngagedFor` instantiations.  Reintroduce if (and only
-// if) a real consumer needs single-axis constraint expression.
-
-// ─── AllDimsEngaged<Grants...> concept ─────────────────────────────
-
 template <typename... Grants>
 concept AllDimsEngaged = detail::engagement::every_axis_engaged<Grants...>();
-
-// ─── AllGrantsWellFormed<Grants...> concept ────────────────────────
 
 template <typename... Grants>
 concept AllGrantsWellFormed = detail::engagement::all_grants_well_formed<Grants...>();
 
-// ─── UniqueEngagementPerAxis<Grants...> concept ────────────────────
-//
-// FIXY-AUDIT-A3.  Per-axis engagement count must be ≤ 1.  Duplicates
-// (same axis engaged by multiple grants — even by identical strict
-// markers) signal author confusion and silently lose information
-// under the resolver's "first matching grant wins" rule.  Reject
-// at the gate.
-//
-// Side-benefit: covers FIXY-AUDIT-A7 (ban explicit user-spelling of
-// `accept_default_strict_for<Type>`).  The wrapper injects the Type
-// marker implicitly; a user that also writes it explicitly produces
-// a duplicate on the Type axis, which fires UniqueEngagementPerAxis.
+// A second grant on an axis is silently discarded downstream, where the
+// first matching grant wins, so a duplicate loses information without
+// saying so.  The rejection here also bans an explicitly written Type
+// marker: the wrapper injects that marker itself, so a hand-written one
+// arrives as a duplicate on the Type axis.
 
 template <typename... Grants>
 concept UniqueEngagementPerAxis = detail::engagement::every_axis_engaged_at_most_once<Grants...>();
-
-// ═════════════════════════════════════════════════════════════════════
-// ── IsAcceptedGrants<Grants...> — the engagement gate ──────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// True iff:
-//   (a) every Grant satisfies `IsGrantTag` (well-formed),
-//   (b) every DimensionAxis is engaged by at least one Grant.
-//
-// This is the GRANT-LEVEL gate.  The full `IsAccepted<Type, Grants...>`
-// concept (defined below) adds Type-axis validation and the
-// theory-corpus check.  §6.8 ValidComposition is enforced at
-// `safety::fn::Fn<...>`'s class body (safety/Fn.h §421) when
-// `fixy::fn` instantiates the substrate via `resolved_fn_t`; it is
-// NOT a constituent of `IsAccepted`.
 
 template <typename... Grants>
 concept IsAcceptedGrants =
     AllGrantsWellFormed<Grants...> && AllDimsEngaged<Grants...> && UniqueEngagementPerAxis<Grants...>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── IsAccepted<Type, Grants...> — the full gate ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Adds Type-axis well-formedness + theory-corpus check on top of
-// IsAcceptedGrants.  The Type axis is caller-supplied via
-// fixy::fn<Type, ...>'s first template parameter; the strict-default
-// machinery rejects it as a caller-supplied axis (no relaxation
-// possible — Type IS the parameter).
-//
-// ValidComposition (§6.8 collision rules) is enforced ONE LAYER DOWN
-// at `safety::fn::Fn<...>`'s class body (safety/Fn.h §421); a binding
-// that passes `IsAccepted` but violates a collision rule fires the
-// substrate's rule-specific diagnostic when `fixy::fn` instantiates
-// `resolved_fn_t`.  `IsAccepted` deliberately does NOT route through
-// ValidComposition because (a) it would couple this header to the
-// substrate's full resolver, and (b) the substrate's class-body
-// check already catches every collision at the same instantiation
-// point that fires `IsAccepted`.
-
 namespace detail::accept {
 
-// fixy-H-10: name now matches semantics.  Prior name `type_is_object_or_
-// function` LIED — `std::is_object_v<F>` is FALSE for function types, so
-// the body has always excluded bare functions even though the name read
-// as "accepts objects OR functions."  A reviewer scanning the IsAccepted
-// composition reasonably thought function types were accepted; they
-// weren't.  The new name mirrors the `IsAccepted` / `IsAcceptedGrants` /
-// `IsAcceptedDirect` family and says exactly what the body checks: is
-// T an accepted payload for safety::fn::Fn<T, ...>?
-//
-// fixy-L-07: invariant block below documents the standard exclusions
-// `std::is_object_v` already provides — pinning the assumption so a
-// future C++ language change (loosening is_object_v to admit refs /
-// void / functions) reddens HERE, not at 40 downstream call sites.
-
-// ── fixy-L-07 invariant block ─────────────────────────────────────
-//
-// `std::is_object_v<T>` is defined by C++ [meta.unary.cat] as
-// "T is an object type", which excludes (a) reference types, (b)
-// function types, (c) cv-qualified void.  The composition below
-// relies on that exclusion to keep the body short — there is no
-// explicit `!std::is_reference_v<T>` line because `is_object_v`
-// already rejects references.  Pin the standard's guarantee at
-// compile time so the simplification is self-defending.
+// [meta.unary.cat] defines `is_object_v<T>` to exclude reference types,
+// function types and cv-qualified void.  The payload predicate below
+// leans on that and carries no `!is_reference_v` term of its own.  The
+// four asserts pin the standard's guarantee here, so a language change
+// that loosened `is_object_v` would redden at this one site instead of
+// at every call that trusts the predicate.
 
 static_assert(!std::is_object_v<int&>, "fixy-L-07 invariant: is_object_v must exclude lvalue references "
                                        "(C++ [meta.unary.cat]).  Body of type_is_accepted_payload below "
@@ -1582,29 +1079,14 @@ static_assert(!std::is_object_v<int(int)>, "fixy-L-07 invariant: is_object_v mus
 
 template <typename T>
 [[nodiscard]] consteval bool type_is_accepted_payload() noexcept {
-    // Mirror of safety/Fn.h's Type constraints:
-    //   - object type (excludes void, references, bare function types),
-    //   - non-cv-qualified (top-level const/volatile silently deletes
-    //     defaulted copy/move-assign on Fn<T, ...>),
-    //   - non-array (Fn(Type v) would decay arrays to pointers — silent
-    //     pointer alias instead of value copy).
-    // Function POINTERS / callables are accepted (they are object types).
-    // Bare function types are not — wrap them as pointers or callables
-    // before instantiating fixy::fn.
-    //
-    // fixy-L-07: `!std::is_reference_v<T>` is structurally subsumed by
-    // `std::is_object_v<T>` (see C++ [meta.unary.cat] and the invariant
-    // block above).  Removed from the AND chain — every reference type
-    // still rejects via is_object_v, and the `int&` / `int&&` self-test
-    // rows below still hit on the same false-from-is_object path.
+    // A top-level cv-qualifier silently deletes the wrapper's defaulted
+    // copy-assign and move-assign.  An array decays in the wrapper's
+    // by-value constructor, so it would alias a pointer where the caller
+    // asked for a value copy.  Function pointers and callables are object
+    // types and pass.  A bare function type does not.
     return std::is_object_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T> && !std::is_array_v<T>;
 }
 
-// fixy-H-10 self-tests: pin the rejection set at the definition site so
-// a future edit that loosens any branch fires immediately.  Function
-// types, void, references, cv-qualifiers, and arrays must all be
-// rejected; scalars, classes, unions, and function POINTERS must be
-// accepted.
 static_assert(type_is_accepted_payload<int>(), "scalars must be accepted payloads.");
 static_assert(type_is_accepted_payload<int*>(), "object pointers must be accepted payloads.");
 static_assert(type_is_accepted_payload<int (*)(int)>(),
@@ -1621,99 +1103,35 @@ static_assert(!type_is_accepted_payload<const int>(), "top-level const must be r
 static_assert(!type_is_accepted_payload<volatile int>(), "top-level volatile must be rejected.");
 static_assert(!type_is_accepted_payload<int[5]>(), "arrays must be rejected — Fn(Type) would decay array to pointer.");
 
-// fixy-H-05: Canonical home for the implicit Type-axis engagement
-// marker.  Defined here (not in Fn.h's detail::resolve) so the
-// wrapper-discipline `IsAccepted` concept below can reference it
-// without taking a dependency on Fn.h.  Fn.h's
-// `detail::resolve::ImplicitTypeMarker` is an alias of this canonical
-// definition.
+// The marker lives here, beside the concept that injects it, so this
+// header does not have to depend on the wrapper that resolves it.
 using ImplicitTypeMarker = grant::accept_default_strict_for<dim::DimensionAxis::Type>;
 
 }  // namespace detail::accept
 
-// ═════════════════════════════════════════════════════════════════════
-// ── IsAcceptedDirect<Type, Grants...> — low-level acceptance gate ──
-// ═════════════════════════════════════════════════════════════════════
-//
-// THE LOW-LEVEL FORM.  Callers MUST include the Type-axis engagement
-// marker (`grant::accept_default_strict_for<dim::DimensionAxis::Type>`)
-// in the `Grants...` pack.  This is the concept the wrapper's class
-// body and the H-02/H-03 tier static_assert chain consume internally;
-// production fixy::fn user code does NOT call this directly because
-// FIXY-AUDIT-A7 forbids user-spelling of the Type marker.
-//
-// For production-style "user passes grants for the 19 non-Type axes
-// and the wrapper supplies the Type marker for you" discipline, use
-// `IsAccepted<Type, Grants...>` below (renamed from `IsAcceptedFn`
-// per fixy-H-05; the simpler name denotes the safer, marker-injecting
-// form).
-//
-// The fixy-H-05 rename eliminates the public-name footgun: previously
-// a user grep-ing for "IsAccepted" found the LOW-LEVEL form (named
-// `IsAccepted`) and was tempted to call it directly with raw grants,
-// then hit a confusing "Type axis not engaged" failure.  After H-05,
-// the simpler name `IsAccepted` is the user-facing form that injects
-// the marker; the qualified `IsAcceptedDirect` name signals "you must
-// know what you're doing — this expects a complete pack."
+// The direct form expects the Type-axis marker already present in the
+// pack.  `IsAccepted` below is the form user code writes, and it
+// injects that marker, because a hand-written one would land as a
+// duplicate on the Type axis.
 
 template <typename Type, typename... Grants>
 concept IsAcceptedDirect = detail::accept::type_is_accepted_payload<Type>()
                         && IsAcceptedGrants<Grants...> && theory::NotInTheoryCorpus<Type, Grants...>;
 
-// ─── IsAcceptedDirect_v — variable-template form (public API) ──────
-//
-// fixy-L-08: public-API surface, paired with the `IsAcceptedDirect`
-// concept for ergonomic SFINAE / `if constexpr` use.  No in-tree
-// consumer; equivalence to the concept is witnessed below the
-// `IsAccepted_v` definition (the two variable templates share the
-// same closure rationale).
-
 template <typename Type, typename... Grants>
 inline constexpr bool IsAcceptedDirect_v = IsAcceptedDirect<Type, Grants...>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── IsAccepted<Type, Grants...> — the wrapper-discipline gate ──────
-// ═════════════════════════════════════════════════════════════════════
-//
-// THE USER-FACING FORM.  Auto-injects the implicit Type-axis marker
-// so callers pass grants for the 19 non-Type axes only.  This is what
-// `fn<>`'s `requires`-clause and `mint_fn`'s gate consume; it is also
-// the recommended name for any out-of-tree code writing acceptance
-// constraints (per fixy-H-05).
-//
-// Renamed from `IsAcceptedFn` (which used to live in Fn.h) so the
-// simpler public name denotes the safer behavior; the previous public
-// `IsAccepted` (the low-level form) is now `IsAcceptedDirect` above.
+// Composition-collision rules are deliberately not part of this gate.
+// The wrapper's own class body checks them when it instantiates the
+// substrate, at the same instantiation point that fires this concept.
+// Folding them in here would pull the substrate's whole resolver into
+// this header and surface no diagnostic the wrapper does not give.
 
 template <typename Type, typename... Grants>
 concept IsAccepted = IsAcceptedDirect<Type, detail::accept::ImplicitTypeMarker, Grants...>;
 
-// ─── IsAccepted_v — variable-template form (public API) ────────────
-//
-// Companion to the `IsAccepted` concept.  Variable-template shape so
-// callers can write `if constexpr (IsAccepted_v<T, G...>)` or
-// `static_assert(IsAccepted_v<T, G...>, "...")` without dragging the
-// concept-name spelling through `requires`-clauses.  fixy-L-08: no
-// in-tree consumer ships today; the variable-template is exported as
-// part of the public API surface for downstream metaprogramming
-// (every fixy concept already pairs with a `_v` variable form per the
-// Is.h convention — keep the surface complete here too).  The
-// equivalence witness below pins the variable-template ↔ concept
-// relationship so a refactor of the variable's definition cannot
-// silently diverge from the concept.
-
 template <typename Type, typename... Grants>
 inline constexpr bool IsAccepted_v = IsAccepted<Type, Grants...>;
-
-// ─── fixy-L-08: variable-template ↔ concept equivalence witnesses ──
-//
-// Both `IsAccepted_v` and `IsAcceptedDirect_v` are defined as
-// `inline constexpr bool name_v = ConceptName<...>;` so on every type
-// pack the variable agrees with the concept by construction.  Pin
-// that relationship structurally on a bare-int pack (everything
-// rejects) — a refactor that decouples the variable from its concept
-// (e.g. forgetting to update one shape after a rename) fires here at
-// the definition site, not at a distant umbrella consumer.
 
 static_assert(IsAccepted_v<int> == IsAccepted<int>, "fixy-L-08: IsAccepted_v must equal IsAccepted on every pack — "
                                                     "the variable-template is the public-API mirror of the concept.");
@@ -1724,64 +1142,17 @@ static_assert(IsAcceptedDirect_v<int> == IsAcceptedDirect<int>,
               "low-level concept (IsAcceptedDirect expects a complete pack; both "
               "variable and concept correctly reject the bare-int probe here).");
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Failure inspection — for downstream diagnostic emission ────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `first_missing_axis_v<Grants...>` returns the DimensionAxis of the
-// FIRST unengaged dim, wrapped in `std::optional<>`; `std::nullopt`
-// means every axis is engaged.  `first_missing_tag_t<Grants...>`
-// aliases the corresponding safety::diag::tag for that axis —
-// usable in a downstream static_assert that wants to surface the
-// FOUND-E01 structured diagnostic.
-//
-// fixy-H-08: the prior shape returned bare `dim::DimensionAxis`
-// with `0xFF` as an out-of-band sentinel — a type-system leak
-// (the value was NOT a valid enumerator and every caller had to
-// guard before using).  Switching to `std::optional<>` makes the
-// "no missing axis" case a first-class type-level distinction.
-// `optional<T>::operator==(const U&)` lets existing equality-
-// against-axis-enumerator checks (e.g.,
-// `first_missing_axis_v<...> == D::Type`) compile unchanged.
-
 template <typename... Grants>
 inline constexpr std::optional<dim::DimensionAxis> first_missing_axis_v =
     detail::engagement::first_missing_axis<Grants...>();
 
-// fixy-L-08: `every_axis_engaged_v<Grants...>` deleted — fully
-// subsumed by the `AllDimsEngaged<Grants...>` concept above (both
-// delegate to the same `detail::engagement::every_axis_engaged<>()`
-// consteval).  In C++26, concepts ARE booleans usable in
-// `if constexpr` / `static_assert` / variable-template contexts, so
-// the redundant `_v` variable shipped zero ergonomic value and zero
-// callers.  Use `AllDimsEngaged<Grants...>` directly.
-
-// ─── fixy-A4-026: Observability-is-alive structural witness ────────
-//
-// Pre-audit hypothesis: `diag::FixyNotEngaged_Observability` is "dead
-// because Observability is a derived axis (HasDerivedDefault per
-// Default.h:299) — Effect's engagement must auto-engage it."
-//
-// REJECTED.  `every_axis_engaged()` (line 705) walks every
-// `DimensionAxis` enumerator uniformly via `kAxisEnumerators` (line
-// 643) with no derived-axis short-circuit.  `HasDerivedDefault` only
-// affects how the strict-default RESOLVES (through Effect), NOT
-// whether the engagement marker is required in the Grants pack.
-// `accept_default_strict_for<Observability>` remains the ONLY legal
-// engagement and IS the only structural proof that the author has
-// considered the axis.
-//
-// The witness below pins that property STRUCTURALLY at consteval:
-// `first_missing_axis_v<...>` MUST return Observability when handed a
-// pack engaging all 21 axes EXCEPT Observability.  A future "audit
-// optimization" that skips derived axes in the engagement walk would
-// trip this sentinel right next to the engagement-trait definition,
-// before the runtime fixture `neg_fixy_unengaged_observability.cpp`
-// would observe the regression at test time.
-//
-// Complementary to that fixture: the fixture proves the diagnostic
-// surfaces in compile-error output; this sentinel proves the
-// engagement walk itself observes the gap.
+// Observability derives its strict default from Effect, which invites
+// the conclusion that an engagement of Effect engages Observability too.  It
+// does not: the derived default governs how the axis resolves, not
+// whether the pack has to say something about it, and the engagement
+// walk treats every axis alike.  The two witnesses below pin that in
+// both directions so an optimization that skips derived axes in the
+// walk reddens next to the walk itself.
 
 namespace detail::observability_witness {
 
@@ -1790,10 +1161,9 @@ using S = ::crucible::fixy::grant::accept_default_strict_for<A>;
 
 using D = dim::DimensionAxis;
 
-// Engage all 31 axes EXCEPT Observability.  Type axis is implicitly
-// engaged through fixy::fn<T, ...>; we still pass strict<Type> here
-// because this witness exercises engagement::first_missing_axis<>
-// directly (not through fn<>), which treats every axis uniformly.
+// The Type marker is spelled out here because this witness calls the
+// engagement walk directly rather than through the wrapper that would
+// inject it.
 inline constexpr bool observability_diagnostic_is_alive_v =
     detail::engagement::first_missing_axis<
         S<D::Type>, S<D::Refinement>, S<D::Usage>, S<D::Effect>, S<D::Security>, S<D::Protocol>, S<D::Lifetime>,
@@ -1805,11 +1175,6 @@ inline constexpr bool observability_diagnostic_is_alive_v =
         S<D::BarrierStrength>, S<D::SimdIsa>, S<D::MemoryScope>>()
     == D::Observability;
 
-// Companion: the inverse witness — engaging every axis (including
-// Observability) yields std::nullopt.  Together, the two witnesses
-// nail the property: Observability participates in the engagement
-// walk like every other axis (alive when omitted, absent from the
-// "first missing" list when present).
 inline constexpr bool every_axis_pack_engages_observability_v =
     !detail::engagement::first_missing_axis<
          S<D::Type>, S<D::Refinement>, S<D::Usage>, S<D::Effect>, S<D::Security>, S<D::Protocol>, S<D::Lifetime>,
@@ -1842,49 +1207,17 @@ static_assert(detail::observability_witness::every_axis_pack_engages_observabili
               "Observability is silently rejected even when engaged, breaking "
               "every production stance alias (Fn.h:1002+, 1514, 1601).");
 
-// Helper to surface the per-axis tag at the offending site.  Callers
-// can write:
-//
-//   if constexpr (!IsAccepted_v<T, Grants...>) {
-//       static_assert(false,
-//           "fixy: not accepted — see diagnostic tag below");
-//       // tag is fixy::diag::tag_for_axis_t<*first_missing_axis_v<Grants...>>
-//   }
-//
-// The `!AllDimsEngaged<Grants...>` requires-clause guarantees the
-// optional is engaged at the point of `*first_missing_axis_v<...>`
-// dereference (fixy-H-08).
+// The requires-clause is what makes the dereference safe: the alias is
+// only nameable on a pack that has a missing axis, so the optional is
+// engaged wherever this alias resolves.
 
 template <typename... Grants>
     requires(!AllDimsEngaged<Grants...>)
 using first_missing_tag_t = diag::tag_for_axis_t<*first_missing_axis_v<Grants...>>;
 
-// ─── first_missing_tag_name_v — fixy-H-15 dynamic-message bridge ──
-//
-// Returns the `std::string_view` NAME of the FixyNotEngaged_<Axis>
-// tag that `first_missing_tag_t<Grants...>` aliases (or an empty
-// string when every axis is engaged).  Carries the resolved tag's
-// `safety::diag::diagnostic_name_v<>` value as a constexpr
-// string_view — usable as a P2741R3 (user-generated) static_assert
-// message so the diagnostic literally contains the failing tag's
-// class name (e.g. "FixyNotEngaged_Effect") instead of a prose
-// pointer at the symbol.
-//
-// fixy-H-15: prior to this helper, `first_missing_tag_t<Grants...>`
-// was dead architectural plumbing — defined and documented but never
-// referenced from production code.  The H-03 mechanism surfaces the
-// tag name in the compiler's instantiation-context trail via
-// `DiagnoseAxisNotEngaged<Tag>`, but the tier-3 static_assert MESSAGE
-// itself remained a static string that only mentioned the helper by
-// name.  Wiring `first_missing_tag_name_v` into the tier-3 P2741R3
-// message makes the tag name LOAD-BEARING in the user-facing
-// diagnostic line.
-//
-// The `if constexpr (AllDimsEngaged<...>)` guard inside the consteval
-// lambda is required: `first_missing_tag_t<Grants...>` has a
-// `requires (!AllDimsEngaged<Grants...>)` clause and is ill-formed
-// when every axis is engaged.  The lambda's `if constexpr` selects
-// only the well-formed branch at each instantiation.
+// The `if constexpr` is not an optimization.  `first_missing_tag_t` is
+// ill-formed on a fully engaged pack, so only the guarded branch may be
+// instantiated there.
 
 template <typename... Grants>
 inline constexpr std::string_view first_missing_tag_name_v = []() consteval -> std::string_view {
@@ -1895,20 +1228,9 @@ inline constexpr std::string_view first_missing_tag_name_v = []() consteval -> s
     }
 }();
 
-// ─── tier3_missing_tag_message_v — fixy-H-15 P2741R3 dynamic message ──
-//
-// Concatenates the tier-3 prose framing with the resolved missing-axis
-// tag name (from `first_missing_tag_name_v`) into a single static-
-// storage `std::string_view`, suitable as a P2741R3 user-generated
-// `static_assert` message argument.  When every axis is engaged the
-// variable evaluates to an empty string_view (the tier-3 assert is
-// satisfied and the message is unused).
-//
-// Routes through `std::define_static_string` (P3491R3, `<meta>`) to
-// promote the consteval-built std::string into static storage so the
-// returned string_view's data pointer remains valid after the
-// consteval lambda returns.  Reject.h already includes <meta> for the
-// reflection-driven engagement fold.
+// `define_static_string` promotes the consteval-built string into
+// static storage, so the returned view still points at live bytes once
+// the lambda has returned.
 
 template <typename... Grants>
 inline constexpr std::string_view tier3_missing_tag_message_v = []() consteval -> std::string_view {
@@ -1932,16 +1254,6 @@ inline constexpr std::string_view tier3_missing_tag_message_v = []() consteval -
     }
 }();
 
-// ─── first_duplicate_axis_v / first_duplicate_tag_t (fixy-H-02) ────
-//
-// Public-surface companions to first_missing_axis_v / first_missing_
-// tag_t.  Surface the FIRST axis that is engaged MORE THAN ONCE and
-// its matching FixyDuplicate_<Axis> diagnostic tag.  Same
-// `std::optional<DimensionAxis>` shape as first_missing_axis_v
-// (fixy-H-08); `first_duplicate_tag_t<>` is guarded by
-// `!UniqueEngagementPerAxis<Grants...>` so the dereference
-// `*first_duplicate_axis_v<...>` is safe by construction.
-
 template <typename... Grants>
 inline constexpr std::optional<dim::DimensionAxis> first_duplicate_axis_v =
     detail::engagement::first_duplicate_axis<Grants...>();
@@ -1949,16 +1261,6 @@ inline constexpr std::optional<dim::DimensionAxis> first_duplicate_axis_v =
 template <typename... Grants>
     requires(!UniqueEngagementPerAxis<Grants...>)
 using first_duplicate_tag_t = diag::dup_tag_for_axis_t<*first_duplicate_axis_v<Grants...>>;
-
-// ─── first_duplicate_tag_name_v + tier4_duplicate_tag_message_v ─────
-//
-// FIXY-FOUND-130: bring tier-4 (UniqueEngagementPerAxis) static_assert
-// message to P2741R3 dynamic-routing parity with tier-3 / tier-5.
-// Prior tier-4 message named only the generic FixyDuplicate_* concept,
-// not the specific FixyDuplicate_<Axis> tag the failure resolved to.
-// The helpers below close the diagnostic-surface symmetry gap.  Pair
-// with tier2_malformed_grant_message_v below for the symmetric tier-2
-// fix on the malformed-grant rejection path.
 
 template <typename... Grants>
 inline constexpr std::string_view first_duplicate_tag_name_v = []() consteval -> std::string_view {
@@ -1978,30 +1280,20 @@ inline constexpr std::string_view tier4_duplicate_tag_message_v = []() consteval
         std::string msg;
         msg += "fixy::fn<Type, Grants...> [tier 4: IsAccepted gate / "
                "UniqueEngagementPerAxis]: at least one DimensionAxis "
-               "is engaged MORE THAN ONCE by the Grants pack (FIXY-"
-               "AUDIT-A3).  Duplicate-axis diagnostic tag: ";
+               "is engaged MORE THAN ONCE by the Grants pack.  "
+               "Duplicate-axis diagnostic tag: ";
         msg.append(tagname.data(), tagname.size());
         msg += ".  Remove the redundant grant(s).  See "
                "fixy::first_duplicate_axis_v<Grants...> for the axis "
                "enum and fixy::first_duplicate_tag_t<Grants...> for "
                "the resolved FixyDuplicate_<Axis> type.  Note: "
                "explicitly writing `grant::accept_default_strict_for"
-               "<dim::DimensionAxis::Type>` is FORBIDDEN (FIXY-"
-               "AUDIT-A7) — fixy::fn implicitly engages Type, so an "
+               "<dim::DimensionAxis::Type>` is FORBIDDEN — fixy::fn "
+               "implicitly engages Type, so an "
                "explicit Type marker would trigger this duplicate.";
         return std::string_view{std::define_static_string(msg)};
     }
 }();
-
-// ─── first_malformed_grant_index_v + tier2_malformed_grant_message_v ─
-//
-// FIXY-FOUND-130: tier-2 (AllGrantsWellFormed) static_assert symmetry.
-// Locates the first pack element that fails grant::IsGrantTag (0-based
-// position) and surfaces "position N of M" inside the static_assert
-// message via std::to_chars + std::define_static_string, mirroring the
-// dynamic-routing pattern tier-3 / tier-5 already use.  Position alone
-// is actionable (user counts grants); reflection-based type-name lookup
-// could augment later but is not load-bearing for the symmetry premise.
 
 template <typename... Grants>
 inline constexpr std::size_t first_malformed_grant_index_v = []() consteval -> std::size_t {
@@ -2045,39 +1337,26 @@ inline constexpr std::string_view tier2_malformed_grant_message_v = []() constev
     }
 }();
 
-// ═════════════════════════════════════════════════════════════════════
-// ── fixy-H-03 — Surface diagnostic tags in compiler error trail ────
-// ═════════════════════════════════════════════════════════════════════
+// A static_assert message is a string literal, so a tag named inside
+// one never puts the resolved tag's class name in front of the reader.
+// Instantiating the tag as a template argument does: the helper's name,
+// with the tag spelled out in it, lands in the compiler's "required
+// from" trail.  Each helper pairs a primary template that fires with
+// an empty `void` specialization, and the wrapper instantiates it on a
+// type that resolves to `void` when the tier passes.
 //
-// H-02 cited first_missing_axis_v / first_duplicate_axis_v / Fixy*
-// tags in static_assert message strings.  But static_assert messages
-// are STRING LITERALS — the compiler does not substitute template
-// parameters into them.  A user reading the error sees the cite text
-// but the SPECIFIC tag class name (e.g. FixyNotEngaged_Effect) never
-// appears in the diagnostic context.
-//
-// H-03 fixes this by instantiating the tag in a templated diagnostic
-// helper whose name surfaces in the compiler instantiation chain.
-// Each Diagnose<Tag> helper has a static_assert in its primary
-// template (fires on any non-void Tag) plus an empty <void>
-// specialization (silent OK sentinel).  fixy::fn<> instantiates
-// Diagnose<lazy_tag_or_void_t<...>> as a class-body member.  When
-// the tier passes, the resolved type is `void` — matches the empty
-// spec, no diagnostic.  When the tier fails, the type resolves to
-// the real Fixy* tag — fires the inner static_assert AND surfaces
-// the tag class name in the compiler's "required from" trail.
-//
-// Tier chaining: each Diagnose only fires if prior tiers passed
-// (avoids cascade diagnostics — a malformed-grant doesn't ALSO
-// trigger missing-axis since AllDimsEngaged is meaningless then).
+// The tier conditions are chained so that a later tier stays silent
+// while an earlier one still fails.  Missing-axis is meaningless on a
+// pack that does not consist of grants in the first place.
 
 namespace detail::diagnose {
 
 template <typename T>
 inline constexpr bool always_false_v = false;
 
-// Lazy partial-spec dispatcher — selects void when Failed=false
-// without substituting the (possibly-ill-formed) failure branch.
+// A partial specialization rather than `conditional_t`: the failure
+// branch is ill-formed when the tier passes, and `conditional_t` would
+// substitute it anyway.
 
 template <bool Failed, typename... Grants>
 struct select_missing_tag {
@@ -2086,11 +1365,8 @@ struct select_missing_tag {
 
 template <typename... Grants>
 struct select_missing_tag<true, Grants...> {
-    // fixy-H-08: the consteval helper now returns
-    // `std::optional<DimensionAxis>`.  `Failed == true` is the
-    // load-bearing precondition that at least one axis is missing,
-    // so the optional is guaranteed engaged; deref via `.value()`
-    // is constant-expression-valid and self-documenting.
+    // Failed is true only when an axis is missing, so the optional is
+    // engaged and `.value()` stays a constant expression.
     using type = diag::tag_for_axis_t<detail::engagement::first_missing_axis<Grants...>().value()>;
 };
 
@@ -2101,26 +1377,12 @@ struct select_duplicate_tag {
 
 template <typename... Grants>
 struct select_duplicate_tag<true, Grants...> {
-    // fixy-H-08: same `std::optional<>` discipline as
-    // select_missing_tag.  `Failed == true` ↔ at least one axis is
-    // engaged more than once, so the optional is engaged here.
+    // Failed is true only when an axis is engaged more than once, so
+    // the optional is engaged and `.value()` stays a constant expression.
     using type = diag::dup_tag_for_axis_t<detail::engagement::first_duplicate_axis<Grants...>().value()>;
 };
 
 }  // namespace detail::diagnose
-
-// Public tag-or-void evaluators (per-tier guarded).
-//
-// `malformed_grant_or_void_t<Grants...>` resolves to FixyMalformedGrant
-// when AllGrantsWellFormed fails; void otherwise.
-//
-// `missing_tag_or_void_t<Grants...>` resolves to FixyNotEngaged_<Axis>
-// when AllGrantsWellFormed PASSED but AllDimsEngaged failed; void
-// otherwise (tier-2 catches the malformed-grant case first).
-//
-// `duplicate_tag_or_void_t<Grants...>` resolves to FixyDuplicate_<Axis>
-// when tiers 2+3 PASSED but UniqueEngagementPerAxis failed; void
-// otherwise.
 
 template <typename... Grants>
 using malformed_grant_or_void_t = std::conditional_t<AllGrantsWellFormed<Grants...>, void, diag::FixyMalformedGrant>;
@@ -2135,10 +1397,6 @@ using duplicate_tag_or_void_t =
     typename detail::diagnose::select_duplicate_tag<AllGrantsWellFormed<Grants...> && AllDimsEngaged<Grants...>
                                                         && !UniqueEngagementPerAxis<Grants...>,
                                                     Grants...>::type;
-
-// Diagnose<Tag> helpers — primary template fires static_assert with
-// Tag name in the compiler's instantiation context; <void>
-// specialization is silent OK.
 
 template <typename Tag>
 struct DiagnoseAxisNotEngaged {
@@ -2180,26 +1438,11 @@ struct DiagnoseMalformedGrant {
 template <>
 struct DiagnoseMalformedGrant<void> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test — compile-time witnesses ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// 1. Empty pack rejects (no dims engaged).
-// 2. Accept-all-strict pack accepts.
-// 3. Single-relaxation pack rejects (other 19 dims unengaged).
-// 4. Replacing one accept-strict with a relaxation on the same axis
-//    still accepts (relaxation IS engagement).
-// 5. Replacing one accept-strict with a relaxation on a DIFFERENT
-//    axis rejects (the original axis becomes unengaged again).
-
 namespace detail::reject_self_test {
 
 template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
 
-// All 33 axes accepted-strict (post-V-266 MemoryScope addition, on top
-// of V-253's HwInstruction / BarrierStrength / SimdIsa and V-238's
-// ControlFlow / CallShape / StackUse / GlobalState / Stdio).
 using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>, strict<dim::DimensionAxis::Refinement>, strict<dim::DimensionAxis::Usage>,
     strict<dim::DimensionAxis::Effect>, strict<dim::DimensionAxis::Security>, strict<dim::DimensionAxis::Protocol>,
@@ -2215,7 +1458,6 @@ using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::HwInstruction>, strict<dim::DimensionAxis::BarrierStrength>,
     strict<dim::DimensionAxis::SimdIsa>, strict<dim::DimensionAxis::MemoryScope>>;
 
-// Apply Grants pack from a tuple to a template — helper.
 template <template <typename...> class Tmpl, typename Tuple>
 struct apply_tuple;
 template <template <typename...> class Tmpl, typename... Ts>
@@ -2223,12 +1465,9 @@ struct apply_tuple<Tmpl, std::tuple<Ts...>> {
     using type = Tmpl<Ts...>;
 };
 
-// `accepts_pack_v` exercises the LOW-LEVEL `IsAcceptedDirect` form because
-// the test packs (AllStrictPack, CopyForUsagePack, MinusEffectPack)
-// explicitly include `strict<dim::DimensionAxis::Type>`.  Routing them
-// through the wrapper-discipline `IsAccepted` would double-engage the
-// Type axis (via ImplicitTypeMarker injection) and trip the
-// UniqueEngagementPerAxis gate.
+// The direct form, because the packs below spell the Type marker out.
+// Routing them through the injecting form would engage Type twice and
+// trip the uniqueness gate instead of the intended test.
 template <typename T, typename Tuple>
 inline constexpr bool accepts_pack_v = []() {
     return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
@@ -2236,22 +1475,12 @@ inline constexpr bool accepts_pack_v = []() {
     }(static_cast<Tuple*>(nullptr));
 }();
 
-// 1. Empty pack rejects.
-//    `IsAccepted<int>` (wrapper-discipline) auto-injects the Type marker
-//    so the pack has 1 axis engaged but 21 missing → rejects.
 static_assert(!IsAccepted<int>, "Empty Grants pack must reject (only Type engaged via injection).");
-// Witnessed at the dim level too:
 static_assert(!IsAcceptedGrants<>, "IsAcceptedGrants<> must reject the empty pack.");
 
-// fixy-M-06: pin the rejection CAUSE.  The two asserts above could
-// fire for multiple reasons — bad payload type, Type-marker injection
-// failure, OR axes 2..22 unengaged.  These two diagnostic-surface
-// witnesses pin the actual cause: `first_missing_axis_v<>` reports
-// Type for an empty-empty pack (proves rejection is "no axis
-// engaged"), and after the implicit Type-marker injection that
-// `IsAccepted` performs, the first-missing shifts to Refinement
-// (proves rejection of `IsAccepted<int>` specifically is from axes
-// 2..22, not from the Type axis or the int payload).
+// The two asserts above would also hold if the payload type or the
+// marker injection were broken.  The next two pin the cause to the
+// unengaged axes.
 static_assert(first_missing_axis_v<> == dim::DimensionAxis::Type,
               "fixy-M-06: empty Grants pack must miss Type FIRST — pins the "
               "IsAcceptedGrants<> rejection cause as 'no axis engaged'.");
@@ -2262,17 +1491,13 @@ static_assert(first_missing_axis_v<detail::accept::ImplicitTypeMarker> == dim::D
               "NOT 'Type axis' or 'int payload'.  A change to the Type-axis "
               "logic that silently shifts the cause fires this static_assert.");
 
-// 2. All-strict pack accepts (low-level form — pack includes strict<Type>).
 static_assert(accepts_pack_v<int, AllStrictPack>, "AllStrict pack must accept — every dim has an engagement marker.");
 
-// 3. Single-relaxation pack rejects (under wrapper-discipline IsAccepted,
-//    20 dims still unengaged after auto-injection of Type marker).
 static_assert(!IsAccepted<int, grant::copy>, "Single Usage relaxation must reject — 20 other dims unengaged.");
 
-// 4. Replacing Usage's accept-strict with `grant::copy` still accepts.
 using CopyForUsagePack = std::tuple<
     strict<dim::DimensionAxis::Type>, strict<dim::DimensionAxis::Refinement>,
-    grant::copy,  // <-- relaxation replaces accept-strict on Usage
+    grant::copy,  // relaxation in place of accept-strict on Usage
     strict<dim::DimensionAxis::Effect>, strict<dim::DimensionAxis::Security>, strict<dim::DimensionAxis::Protocol>,
     strict<dim::DimensionAxis::Lifetime>, strict<dim::DimensionAxis::Provenance>, strict<dim::DimensionAxis::Trust>,
     strict<dim::DimensionAxis::Representation>, strict<dim::DimensionAxis::Observability>,
@@ -2289,8 +1514,6 @@ using CopyForUsagePack = std::tuple<
 static_assert(accepts_pack_v<int, CopyForUsagePack>, "Replacing accept-strict<Usage> with `grant::copy` must still "
                                                      "accept — `copy` engages the Usage axis.");
 
-// 5. Removing one accept-strict (without replacement) rejects.
-//    AllStrictPack minus Effect's accept-strict.
 using MinusEffectPack = std::tuple<
     strict<dim::DimensionAxis::Type>, strict<dim::DimensionAxis::Refinement>, strict<dim::DimensionAxis::Usage>,
     // Effect removed
@@ -2309,44 +1532,13 @@ using MinusEffectPack = std::tuple<
 
 static_assert(!accepts_pack_v<int, MinusEffectPack>, "Removing accept-strict<Effect> without replacement must reject.");
 
-// ── FIXY-FOUND-041 — Type-marker injection structural witness ──────
-//
-// THE ASYMMETRY: `IsAccepted<T, Grants...>` auto-injects the implicit
-// Type-axis marker (`detail::accept::ImplicitTypeMarker`) into the
-// pack before delegating to the low-level `IsAcceptedDirect`; the
-// low-level form expects ALL engagement markers — including Type —
-// to be explicit.  The fixy-H-05 rename eliminated the public-name
-// footgun but left the asymmetry STRUCTURALLY UNPINNED — a future
-// refactor that injects a different marker (or none) would silently
-// change the semantics of every fixy::fn binding because the
-// wrapper's tier sequence (Fn.h §815) consumes `IsAccepted` through
-// the auto-injecting concept.
-//
-// The L-08 witnesses above pin the `_v` ↔ concept agreement WITHIN
-// each form, but NOT the wrapper-vs-direct equivalence under
-// `+ImplicitTypeMarker`.  The static_asserts below close that gap:
-//
-//   (1) Structural identity — pin the marker IS the Type-axis
-//       deferred form.  A refactor that swaps in another axis or a
-//       non-strict-default tag fires this assert at the
-//       definition site.
-//
-//   (2) Axis identity — pin the marker engages the Type axis
-//       specifically.  Defense-in-depth against a hidden re-tag
-//       (e.g., the marker silently routed to a renamed axis).
-//
-//   (3) Functional asymmetry — the LOAD-BEARING witness.  On a pack
-//       that engages all 32 non-Type axes via strict defaults:
-//         - `IsAccepted<int, ...>` MUST accept (wrapper injects Type)
-//         - `IsAcceptedDirect<int, ...>` (no marker) MUST reject
-//         - `IsAcceptedDirect<int, accept_default_strict_for<Type>,
-//            ...>` MUST accept (explicit marker)
-//       This catches "IsAccepted refactored to inject a DIFFERENT
-//       marker" — case 1 would then accept (some marker injected)
-//       but case 3 (explicit Type marker) would reject (Type
-//       engaged twice via dup), and the asserts diverge.
+// The five asserts below pin the injecting form against the direct one
+// on a pack that omits Type.  Taken together they distinguish "some
+// marker is injected" from "the Type marker is injected": if the
+// injected marker were swapped for another, the injecting form would
+// still accept, but the direct form handed an explicit Type marker
+// would start rejecting on a duplicate, and the two would disagree.
 
-// MinusTypePack: all 32 non-Type axes engaged via strict default.
 using MinusTypePack = std::tuple<
     // Type removed
     strict<dim::DimensionAxis::Refinement>, strict<dim::DimensionAxis::Usage>, strict<dim::DimensionAxis::Effect>,
@@ -2363,8 +1555,6 @@ using MinusTypePack = std::tuple<
     strict<dim::DimensionAxis::HwInstruction>, strict<dim::DimensionAxis::BarrierStrength>,
     strict<dim::DimensionAxis::SimdIsa>, strict<dim::DimensionAxis::MemoryScope>>;
 
-// Wrapper-discipline counterpart to `accepts_pack_v` — exercises
-// `IsAccepted` (auto-injecting) instead of `IsAcceptedDirect`.
 template <typename T, typename Tuple>
 inline constexpr bool accepts_through_wrapper_v = []() {
     return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
@@ -2372,9 +1562,6 @@ inline constexpr bool accepts_through_wrapper_v = []() {
     }(static_cast<Tuple*>(nullptr));
 }();
 
-// Wrapper-discipline counterpart that takes an EXPLICIT extra marker
-// inserted at the head of the pack (used to witness that the
-// IsAcceptedDirect + explicit-Type-marker form matches IsAccepted).
 template <typename T, typename Marker, typename Tuple>
 inline constexpr bool accepts_pack_with_marker_v = []() {
     return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
@@ -2382,58 +1569,47 @@ inline constexpr bool accepts_pack_with_marker_v = []() {
     }(static_cast<Tuple*>(nullptr));
 }();
 
-// (1) Structural identity — ImplicitTypeMarker IS the canonical
-// Type-axis deferred form.  A refactor that uses a different
-// relaxation tag (or routes through a different axis) fires here.
 static_assert(
     std::is_same_v<detail::accept::ImplicitTypeMarker, grant::accept_default_strict_for<dim::DimensionAxis::Type>>,
-    "FIXY-FOUND-041: detail::accept::ImplicitTypeMarker MUST be the "
+    "detail::accept::ImplicitTypeMarker MUST be the "
     "canonical accept_default_strict_for<Type>.  The IsAccepted "
     "wrapper-discipline relies on this identity — if the marker is "
     "swapped to another type, every IsAccepted call site silently "
     "shifts which axis the auto-injection engages.");
 
-// (2) Axis identity — defense-in-depth.  Even if (1) holds, pin
-// that `which_dim_v` projects the marker to the Type axis (catches
-// a hypothetical refactor of `which_dim` specializations).
 static_assert(grant::which_dim_v<detail::accept::ImplicitTypeMarker> == dim::DimensionAxis::Type,
-              "FIXY-FOUND-041: ImplicitTypeMarker MUST project to DimensionAxis"
+              "ImplicitTypeMarker MUST project to DimensionAxis"
               "::Type via which_dim.  A change to either the marker's "
               "underlying type OR the which_dim specialization for "
               "accept_default_strict_for<Type> fires this assert.");
 
-// (3) Functional asymmetry — the load-bearing witness.
 static_assert(accepts_through_wrapper_v<int, MinusTypePack>,
-              "FIXY-FOUND-041: IsAccepted MUST accept a 32-non-Type-axis pack "
+              "IsAccepted MUST accept a 32-non-Type-axis pack "
               "because the wrapper auto-injects the Type marker.  If this "
               "fires, the wrapper's Type-marker injection is broken OR a new "
               "axis was added without updating MinusTypePack.");
 
-static_assert(!accepts_pack_v<int, MinusTypePack>, "FIXY-FOUND-041: IsAcceptedDirect MUST REJECT a 32-non-Type-axis "
+static_assert(!accepts_pack_v<int, MinusTypePack>, "IsAcceptedDirect MUST REJECT a 32-non-Type-axis "
                                                    "pack — Type is missing.  If this fires, IsAcceptedDirect "
                                                    "is silently injecting a marker (defeating its 'you must know "
                                                    "what you're doing' contract).");
 
 static_assert(accepts_pack_with_marker_v<int, detail::accept::ImplicitTypeMarker, MinusTypePack>,
-              "FIXY-FOUND-041: IsAcceptedDirect WITH an explicit Type marker "
+              "IsAcceptedDirect WITH an explicit Type marker "
               "MUST accept the same pack — proves IsAccepted's auto-injection "
               "produces a result IDENTICAL to manual marker placement.  If "
               "this fires, the marker's structural identity diverged from the "
               "wrapper's injection path.");
 
-// Type-axis well-formedness:
 static_assert(!IsAccepted<void, grant::accept_default_strict_for<dim::DimensionAxis::Usage>>,
               "Type=void must reject (Fn requires complete object type).");
 static_assert(!IsAccepted<int&>, "Type=int& must reject (no reference types).");
 static_assert(!IsAccepted<int[4]>, "Type=int[4] must reject (array decay would corrupt copy ctor).");
 static_assert(!IsAccepted<const int>, "Type=const int must reject (silent deletion of assignment).");
 
-// Failure inspection — first_missing_axis_v returns the FIRST
-// unengaged dim, which for an empty pack is Type (index 0).
 static_assert(first_missing_axis_v<> == dim::DimensionAxis::Type,
               "An empty Grants pack reports Type as the first missing axis.");
 
-// Skipping just Refinement reports Refinement.
 using MinusRefinementPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
     // Refinement removed
@@ -2460,14 +1636,6 @@ inline constexpr std::optional<dim::DimensionAxis> first_missing_for_minus_refin
 static_assert(first_missing_for_minus_refinement == dim::DimensionAxis::Refinement,
               "first_missing_axis_v points at Refinement when only that axis "
               "is omitted from an otherwise full strict pack.");
-
-// fixy-H-08 sentinel: a fully engaged 32-axis pack yields `nullopt`
-// — proves the type-system leak (0xFF cast to DimensionAxis) is
-// eliminated.  Reuses MinusRefinementPack minus its omission by
-// re-adding the Refinement strict marker inline.  Post-V-253 the
-// pack extends to 32 entries with the 5 V-238 hazard axes (ControlFlow,
-// CallShape, StackUse, GlobalState, Stdio) plus the 3 V-253 hardware
-// axes (HwInstruction, BarrierStrength, SimdIsa).
 
 using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>, strict<dim::DimensionAxis::Refinement>, strict<dim::DimensionAxis::Usage>,

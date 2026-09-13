@@ -1,100 +1,5 @@
 #pragma once
 
-// ── crucible::algebra::lattices::FpModeLattice ──────────────────────
-//
-// SCAFFOLDING header for FIXY-V-088.  Ships the 11 sub-axis enum
-// declarations that V-089 will populate with per-axis ChainLattice
-// algebras and V-090 will combine into a `FpModeProductLattice`
-// composite.  V-088 itself ships NO lattice algebra — only the
-// enumerator vocabulary + sanity asserts that the catalog is
-// internally consistent.
-//
-// ── Why a dedicated FpMode axis (DimensionAxis::FpMode, dim 22) ─────
-//
-// The Precision axis (dim 12, FX dim 14) tracks ELEMENT-TYPE precision
-// — FP32 / FP16 / BF16 / E4M3 / E5M2 / TF32 — i.e. the bit-width and
-// mantissa layout of each tensor element.  FpMode is structurally
-// ORTHOGONAL: two ops with identical FP32 element type produce bit-
-// different results under different EVALUATION POLICIES:
-//
-//   * Rounding direction (RTE / RTZ / RTN / RTP / RTNA).
-//   * Subnormal handling (gradual / flush-to-zero / denormals-are-zero).
-//   * Operator contraction (allow FMA across `+` / `*` boundaries or not).
-//   * Trap masks (overflow / underflow / inexact / div-by-zero / invalid).
-//   * NaN policy (signalling / quiet / non-IEEE fast-NaN).
-//   * Infinity policy (IEEE-compliant / flush / saturate).
-//   * Complex layout (interleaved / split-arrays / Re-major / Im-major).
-//   * Libm policy (vector-libm / per-vendor approximations / scalar).
-//   * Reassociation (allow algebraic rewrite / forbid / partial-with-bound).
-//   * Compile-time FP constant rounding (RTE / RTZ / RTN).
-//   * Per-lane vs per-vector mode application (uniform / per-lane).
-//
-// Folding these onto Precision would make Merkle-hash-safe FP
-// canonicalization (FIXY-V-093) intractable — two ops with identical
-// IR001 nodes + identical Precision but different FpMode would hash
-// equal under `row_hash` even though they cannot share a kernel-cache
-// slot.  Pinning FpMode at the AXIS level (with its own per-wrapper
-// `row_hash_contribution` once V-090 ships the wrappers) keeps the
-// federation cache slots correctly distinguished.
-//
-// ── Tier classification (Tier-S Semiring with par=join) ─────────────
-//
-// FpMode is `TierKind::Semiring` per `tier_of_axis(FpMode)`.  The par-
-// composition reading is "strictest-wins":
-//
-//   * Two call sites composing in parallel admit ONLY the
-//     INTERSECTION of their FP-mode tolerances.  If site A pins
-//     Rounding::RTE and site B pins Rounding::RTZ, the parallel
-//     composition is REJECTED — neither tolerance subsumes the other.
-//   * Two call sites composing in sequence admit the JOIN of their
-//     FP-modes — but the join is well-defined ONLY along a chain
-//     within each sub-axis; cross-sub-axis composition uses the
-//     ProductLattice machinery V-090 will ship.
-//
-// This matches the par=join discipline pioneered by Synchronization
-// (Wait + MemOrder, fixy-A3-008) and Regime (HotPath, fixy-A3-009):
-// every Crucible-extension Tier-S axis follows the same composition
-// reading.  Forge phase E.RecipeSelect consumes the FpMode row
-// constraint when selecting a NumericalRecipe — pinning FpMode at
-// IR001 lets phase E reject incompatible (recipe, FpMode) pairs at
-// compile time.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe  — every sub-axis is a strong scoped enum (`enum class :
-//                uint8_t`); cross-sub-axis mixing requires
-//                `std::to_underlying` and surfaces at the call site.
-//   InitSafe  — every enum has explicit enumerators with no implicit
-//                "default" arm; reflection-driven coverage tests fire
-//                automatically as V-089/V-090 ship per-sub-axis name
-//                functions.
-//   DetSafe   — operations (when V-089 ships them) will be
-//                `constexpr` (not `consteval`) so Graded's runtime
-//                `pre (L::leq(...))` precondition can fire under the
-//                `enforce` contract semantic.
-//   LeakSafe  — zero-state enums; no resources.
-//
-// ── Runtime cost ────────────────────────────────────────────────────
-//
-// V-088 scaffolding: zero cost (the enums compile to a single uint8_t
-// per value, EBO-collapsed when wrapped via the `At<T>` singleton
-// pattern V-089 will ship).
-//
-// ── Forward references ─────────────────────────────────────────────
-//
-//   FIXY-V-089 — Per-sub-axis ChainLattice algebras (11 lattices).
-//                Each sub-axis enum below grows a peer
-//                `<SubAxis>Lattice` struct extending ChainLatticeOps.
-//   FIXY-V-090 — `FpModeProductLattice` composite via ProductLattice
-//                + 11 `safety/Fp*.h` wrappers (one per sub-axis).
-//   FIXY-V-091 — CollisionCatalog F101-F105 cross-axis rules
-//                (FpMode × Precision, FpMode × Vendor, FpMode ×
-//                NumericalRecipe, FpMode × DetSafe, FpMode × HotPath).
-//   FIXY-V-092 — `fixy/Fp.h` ships 12 FP-mode grant tags + per-tag
-//                `which_dim` metafunction routing to FpMode.
-//   FIXY-V-093 — `fixy::fp::canonicalize` for Merkle-hash-safe FP
-//                canonicalization at IR001 nodes.
-
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 #include <crucible/algebra/lattices/ChainLattice.h>
@@ -107,153 +12,98 @@
 
 namespace crucible::algebra::lattices {
 
-// ── Sub-axis 1: Rounding direction ───────────────────────────────────
-// IEEE 754 §4.3 rounding-direction attributes plus the
-// nearest-magnitude-away tie-break used by some GPU ISAs (NV "RNA").
-// Chain order (V-089 will pin): RTZ ⊏ RTN ⊏ RTP ⊏ RTE ⊏ RTNA — STRICT
-// is the topmost ("most-IEEE-compliant"); RTZ is the bottom (cheapest
-// but loses guarantees).
+// The five IEEE 754 rounding-direction attributes.  RoundToNearestEven is the
+// IEEE 754 default.  RoundToNearestAwayZero is the tie-break some GPU ISAs
+// spell RNA.
 enum class FpRounding : std::uint8_t {
-    RoundToZero = 0,  // truncate toward zero
-    RoundToNegativeInf = 1,  // floor
-    RoundToPositiveInf = 2,  // ceiling
-    RoundToNearestEven = 3,  // IEEE 754 default (RTE)
-    RoundToNearestAwayZero = 4,  // tie-break away from zero (RTNA / RNA)
+    RoundToZero = 0,
+    RoundToNegativeInf = 1,
+    RoundToPositiveInf = 2,
+    RoundToNearestEven = 3,
+    RoundToNearestAwayZero = 4,
 };
 
-// ── Sub-axis 2: Flush-to-zero (subnormal output handling) ───────────
-// Whether the result of an arithmetic op that would produce a
-// subnormal is flushed to zero.  Composes with DenormalsAreZero
-// (sub-axis 5) which controls INPUT subnormal handling.
+// Subnormal handling for arithmetic RESULTS.  Subnormal INPUTS are governed
+// separately by FpDenormalInput.
 enum class FpFtz : std::uint8_t {
-    PreserveSubnormals = 0,  // gradual underflow (IEEE 754 default)
-    FlushToZero = 1,  // subnormal outputs → ±0.0
+    PreserveSubnormals = 0,
+    FlushToZero = 1,
 };
 
-// ── Sub-axis 3: Operator contraction (FMA-fusion across `+`/`*`) ────
-// Whether the compiler is allowed to contract `a * b + c` into a
-// single FMA instruction.  Tracks GCC `-ffp-contract=on/off/fast`.
+// Whether `a * b + c` may contract into a single FMA.  Mirrors the GCC
+// `-ffp-contract=off/on/fast` surface.  OnInExpr is the IEEE 754-2008 default.
 enum class FpContract : std::uint8_t {
-    Off = 0,  // never contract — every `+` / `*` is a separate rounding boundary
-    OnInExpr = 1,  // contract within a single expression (IEEE 754-2008 default)
-    Fast = 2,  // contract across statements / arbitrary distances
+    Off = 0,
+    OnInExpr = 1,  // contract within a single expression
+    Fast = 2,  // contract across statements
 };
 
-// ── Sub-axis 4: Trap masks (FE_OVERFLOW / FE_UNDERFLOW / etc.) ──────
-// IEEE 754 trap-enable bits.  Default-masked means traps are
-// SILENCED — the FP env records the flag but no SIGFPE is raised.
-// Crucible's DetSafe discipline pins TrapMaskedAll (the silent
-// default) for hot paths; UnmaskedInvalid is admissible only in
-// Forge phase A.Probe.
+// IEEE 754 trap-enable bits.  A masked trap still records its flag in the
+// floating-point environment.  Only the SIGFPE is suppressed.
 enum class FpTrapMask : std::uint8_t {
-    AllMasked = 0,  // silent (Crucible default — DetSafe-safe)
+    AllMasked = 0,
     UnmaskedInvalid = 1,  // SIGFPE on invalid (NaN-from-NaN, 0/0)
     UnmaskedDivZero = 2,  // SIGFPE on finite÷0
-    UnmaskedOverflow = 3,  // SIGFPE on overflow
-    UnmaskedUnderflow = 4,  // SIGFPE on underflow
-    UnmaskedInexact = 5,  // SIGFPE on any inexact op (rarely used; perf killer)
+    UnmaskedOverflow = 3,
+    UnmaskedUnderflow = 4,
+    UnmaskedInexact = 5,
 };
 
-// ── Sub-axis 5: Denormal-input handling (DAZ) ───────────────────────
-// Whether subnormal INPUTS are treated as ±0.0 (paired with FTZ for
-// outputs).  x86 MXCSR.DAZ bit; ARM FPCR.FZ bit.
+// Subnormal handling for arithmetic INPUTS.  x86 spells this MXCSR.DAZ, ARM
+// spells it FPCR.FZ.
 enum class FpDenormalInput : std::uint8_t {
-    HonorDenormals = 0,  // subnormal inputs participate (IEEE 754 default)
-    DenormalsAreZero = 1,  // subnormal inputs → ±0.0 (faster, lossy)
+    HonorDenormals = 0,
+    DenormalsAreZero = 1,
 };
 
-// ── Sub-axis 6: NaN policy (signalling / quiet / fast-NaN) ──────────
-// Composes with Rounding to determine whether NaN payloads are
-// preserved through arithmetic.  Fast-NaN is the non-IEEE shortcut
-// where NaN propagation is dropped (e.g. `min(NaN, 0) = 0`).
 enum class FpNanPolicy : std::uint8_t {
     PropagateQuiet = 0,  // qNaN survives every op (IEEE 754 default)
-    PropagateSignalling = 1,  // sNaN raises trap on consume; payload survives if masked
-    FastNaN = 2,  // non-IEEE: `min(NaN, x) = x`, `max(NaN, x) = x` (GPU fast-min/max)
+    PropagateSignalling = 1,  // sNaN traps on consume; payload survives if masked
+    FastNaN = 2,  // non-IEEE: `min(NaN, x) = x`, `max(NaN, x) = x`
 };
 
-// ── Sub-axis 7: Infinity policy ─────────────────────────────────────
-// Whether infinities are IEEE-compliant or flushed/saturated.  GPU
-// "fast-math" mode often saturates ±Inf to the max finite value.
 enum class FpInfPolicy : std::uint8_t {
-    PropagateInfinity = 0,  // ±Inf survives (IEEE 754 default)
+    PropagateInfinity = 0,  // IEEE 754 default
     FlushInfToFinite = 1,  // ±Inf → ±FLT_MAX (non-IEEE saturation)
 };
 
-// ── Sub-axis 8: Complex layout (interleaved / split / Re-major) ─────
-// How complex tensors are laid out in memory.  Interleaved is the
-// stdlib convention (`std::complex<float>`); split is the
-// AMD-rocFFT / NV-cuFFT convention; Re-major / Im-major are NumPy
-// fortran/C order variants.
 enum class FpComplexLayout : std::uint8_t {
-    Interleaved = 0,  // [Re0, Im0, Re1, Im1, ...] (std::complex)
+    Interleaved = 0,  // [Re0, Im0, Re1, Im1, ...] — the std::complex layout
     SplitRealImag = 1,  // [Re0, Re1, ..., Re_n, Im0, Im1, ..., Im_n]
     SplitImagReal = 2,  // [Im0, Im1, ..., Im_n, Re0, Re1, ..., Re_n]
 };
 
-// ── Sub-axis 9: Libm policy (per-vendor approximations) ─────────────
-// Which transcendental implementation is used.  ScalarLibm calls
-// system glibc; VectorLibmSleef calls SLEEF; FastApprox is the
-// per-vendor low-precision approximation (CUDA `__sinf`, AMD
-// `v_sin_f32` etc.).
+// Which transcendental implementation evaluates sin, cos and friends.
 enum class FpLibmPolicy : std::uint8_t {
     ScalarLibm = 0,  // scalar glibc / musl libm
-    VectorLibmSleef = 1,  // SLEEF cross-platform vector libm
+    VectorLibmSleef = 1,
     VectorLibmSvml = 2,  // Intel SVML
     VectorLibmLibmvec = 3,  // GCC libmvec
     FastApproxNv = 4,  // CUDA `__sinf` / `__cosf` (relaxed ULP bound)
     FastApproxAm = 5,  // AMD `v_sin_f32` instruction
-    // FIXY-V-095 (append-only per FOUND-I04 Universe extension rule):
-    // Polynomial — Crucible-source polynomial approximation evaluated
-    // strictly in IEEE 754 arithmetic, NO libm call.  This is the
-    // BIT-STABLE choice — result depends only on (a) the polynomial
-    // coefficients (constants pinned in source) and (b) IEEE 754 ops
-    // (portable per the FP-strict floor, V-094).  Ordinal placement
-    // here is INDEX-only: this is an off-chain axis-orthogonal
-    // enumerator that production discipline references via the
-    // grant tag `fixy::with_fp_libm_policy<Polynomial>` at call
-    // sites, NOT via leq/meets/joins.  BITEXACT_TC/STRICT recipes
-    // REQUIRE Polynomial; libm variants are admissible only at
-    // ORDERED-or-weaker recipe tiers.
-    Polynomial = 6,  // Crucible polynomial — IEEE 754 bit-stable
+    // A source-pinned polynomial evaluated in strict IEEE 754 arithmetic with
+    // no libm call.  The result depends only on the coefficient constants and
+    // on IEEE 754 semantics, so it is the one bit-stable choice across
+    // platforms.  Bit-exact recipe tiers require it.
+    Polynomial = 6,
 };
 
-// ── Sub-axis 10: Reassociation (algebraic rewrite eligibility) ──────
-// Whether the compiler / Forge phase REWRITE may reassociate
-// FP additions.  GCC `-fassociative-math`.  Crucible DetSafe pins
-// `Forbidden` for BITEXACT recipes; `BoundedTreeDepth` admits a
-// log-N reduction tree but no arbitrary tree.
+// Whether floating-point additions may be reassociated.  UnrestrictedRewrite
+// is the GCC `-fassociative-math` behaviour.
 enum class FpReassociate : std::uint8_t {
-    Forbidden = 0,  // no rewrite (IEEE 754 default; required for BITEXACT)
-    BoundedTreeDepth = 1,  // log-N tree only (well-defined topology)
-    UnrestrictedRewrite = 2,  // -fassociative-math (perf-only; breaks DetSafe)
+    Forbidden = 0,
+    BoundedTreeDepth = 1,  // log-N tree only, so the topology stays pinned
+    UnrestrictedRewrite = 2,
 };
 
-// ── Sub-axis 11: Compile-time FP constant rounding ──────────────────
-// Rounding applied to FP literals at constant folding.  Composes
-// with Rounding (sub-axis 1) which controls RUNTIME rounding;
-// FpConstant controls compile-time / NumericalRecipe-baked-in
-// constant rounding for the (rare) cases where they diverge.
+// Rounding applied to floating-point literals during constant folding, for the
+// rare cases where it must differ from the runtime FpRounding mode.
 enum class FpConstantRounding : std::uint8_t {
-    SameAsRuntime = 0,  // FpConstant follows the runtime Rounding enum
+    SameAsRuntime = 0,
     AlwaysRTE = 1,  // pin RoundToNearestEven for all literals
     AlwaysRTZ = 2,  // pin RoundToZero for all literals
 };
 
-// ════════════════════════════════════════════════════════════════════
-// ── V-089: Per-sub-axis ChainLattice algebras (11 lattices) ─────────
-// ════════════════════════════════════════════════════════════════════
-//
-// One ChainLatticeOps-based lattice per sub-axis.  Bottom = ordinal-0
-// (weakest / least-constraining per the V-088 docblock convention).
-// Top = topmost enumerator (strongest / most-IEEE-compliant).
-//
-// `<axis>_name()` provides reflection-coverage-checked diagnostic
-// strings.  Each lattice exposes the standard surface (bottom, top,
-// leq, join, meet, name, At<T> singleton) and is covered by an
-// exhaustive triple-fold lattice-axiom verifier.
-//
-// ── Sub-axis 1: Rounding ────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_rounding_name(FpRounding t) noexcept {
     switch (t) {
         case FpRounding::RoundToZero:
@@ -308,7 +158,6 @@ struct FpRoundingLattice : ChainLatticeOps<FpRounding> {
     };
 };
 
-// ── Sub-axis 2: Ftz ─────────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_ftz_name(FpFtz t) noexcept {
     switch (t) {
         case FpFtz::PreserveSubnormals:
@@ -351,7 +200,6 @@ struct FpFtzLattice : ChainLatticeOps<FpFtz> {
     };
 };
 
-// ── Sub-axis 3: Contract ────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_contract_name(FpContract t) noexcept {
     switch (t) {
         case FpContract::Off:
@@ -398,7 +246,6 @@ struct FpContractLattice : ChainLatticeOps<FpContract> {
     };
 };
 
-// ── Sub-axis 4: TrapMask ────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_trap_mask_name(FpTrapMask t) noexcept {
     switch (t) {
         case FpTrapMask::AllMasked:
@@ -457,7 +304,6 @@ struct FpTrapMaskLattice : ChainLatticeOps<FpTrapMask> {
     };
 };
 
-// ── Sub-axis 5: DenormalInput ───────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_denormal_input_name(FpDenormalInput t) noexcept {
     switch (t) {
         case FpDenormalInput::HonorDenormals:
@@ -500,7 +346,6 @@ struct FpDenormalInputLattice : ChainLatticeOps<FpDenormalInput> {
     };
 };
 
-// ── Sub-axis 6: NanPolicy ───────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_nan_policy_name(FpNanPolicy t) noexcept {
     switch (t) {
         case FpNanPolicy::PropagateQuiet:
@@ -547,7 +392,6 @@ struct FpNanPolicyLattice : ChainLatticeOps<FpNanPolicy> {
     };
 };
 
-// ── Sub-axis 7: InfPolicy ───────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_inf_policy_name(FpInfPolicy t) noexcept {
     switch (t) {
         case FpInfPolicy::PropagateInfinity:
@@ -590,7 +434,6 @@ struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
     };
 };
 
-// ── Sub-axis 8: ComplexLayout ───────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_complex_layout_name(FpComplexLayout t) noexcept {
     switch (t) {
         case FpComplexLayout::Interleaved:
@@ -604,28 +447,12 @@ struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
     }
 }
 
-// FIXY-FOUND-094 (#2249): SEMANTIC NOTE.  FpComplexLayout enumerators
-// are MUTUALLY EXCLUSIVE memory-layout alternatives (Interleaved /
-// SplitRealImag / SplitImagReal), not strictness tiers.  Picking
-// SplitImagReal is NOT "stronger" than picking Interleaved — they are
-// orthogonal file-format choices analogous to big-endian vs
-// little-endian.  This struct extends ChainLatticeOps because the
-// substrate `algebra/Graded.h` expects a Lattice satisfying leq, but
-// the leq ordering here is VALUE-BASED (ordinal comparison on the
-// underlying uint8_t), NOT SEMANTIC.  In production, the wrapper
-// `FpComplexLayoutPinned<Mode, T>` (safety/FpMode.h) admits NO cross-
-// mode conversion (no relax / no widen / no satisfies surface — see
-// safety/FpMode.h §"Why NO relax<>/satisfies<> conversion API") —
-// the chain ordering is invisible to user code by construction.
-//
-// The static_asserts below (`leq(Interleaved, SplitImagReal) == true`)
-// pin the INDEX-only ordering for substrate composition (Graded /
-// FpModeProductLattice) but carry no semantic weight — readers must
-// not interpret them as "Interleaved is admissible-where-SplitImagReal
-// is-required".  Two distinct FpComplexLayoutPinned<...> values are
-// strictly incompatible at the wrapper level.
-//
-// Same pattern applies to FpLibmPolicyLattice below.
+// The three layouts are mutually exclusive alternatives, not strictness tiers,
+// so no semantic ordering exists between them.  This lattice nonetheless
+// extends ChainLatticeOps because the carrier substrate requires a leq, and
+// that leq compares the underlying ordinals only.  A leq that holds here does
+// not mean one layout is admissible where the other is required.  The wrappers
+// built on this lattice admit no cross-layout conversion at all.
 struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
     [[nodiscard]] static constexpr FpComplexLayout bottom() noexcept { return FpComplexLayout::Interleaved; }
     [[nodiscard]] static constexpr FpComplexLayout top() noexcept { return FpComplexLayout::SplitImagReal; }
@@ -659,7 +486,6 @@ struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
     };
 };
 
-// ── Sub-axis 9: LibmPolicy ──────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_libm_policy_name(FpLibmPolicy t) noexcept {
     switch (t) {
         case FpLibmPolicy::ScalarLibm:
@@ -675,41 +501,18 @@ struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
         case FpLibmPolicy::FastApproxAm:
             return "FastApproxAm";
         case FpLibmPolicy::Polynomial:
-            return "Polynomial";  // FIXY-V-095
+            return "Polynomial";
         default:
             return std::string_view{"<unknown FpLibmPolicy>"};
     }
 }
 
-// FIXY-FOUND-094 (#2249): SEMANTIC NOTE.  FpLibmPolicy enumerators are
-// MUTUALLY EXCLUSIVE vendor/implementation alternatives (ScalarLibm /
-// VectorLibmSleef / VectorLibmSvml / VectorLibmLibmvec / FastApproxNv /
-// FastApproxAm / Polynomial), not strictness tiers.  SVML is NOT
-// "stronger" than Libmvec; they are orthogonal SIMD-libm choices that
-// dispatch by vendor.  Polynomial is axis-orthogonal bit-stable per
-// the Polynomial enum-line docblock — its ordinal placement here is
-// INDEX-only.
-//
-// Same INDEX-only / VALUE-BASED chain ordering caveat as
-// FpComplexLayoutLattice (see comment-block above) applies: the
-// wrapper `FpLibmPolicyPinned<Mode, T>` admits NO cross-mode
-// conversion (no relax / no widen / no satisfies), and production
-// discipline never uses leq()/join()/meet() to reason about libm
-// policies — recipe-tier eligibility lives at the call site via
-// grant tag `fixy::with_fp_libm_policy<Polynomial>` and the recipe
-// registry, NOT in this lattice's chain order.  The static_assert
-// `leq(ScalarLibm, FastApproxAm) == true` pins the value-based order
-// for substrate composition only; readers must not interpret it as
-// "ScalarLibm satisfies a FastApproxAm requirement".
+// The libm policies are mutually exclusive vendor choices, not strictness
+// tiers, so the leq below compares the underlying ordinals only and carries no
+// semantic weight.  Recipe-tier eligibility is decided at the call site, never
+// by asking this lattice whether one policy is below another.
 struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
     [[nodiscard]] static constexpr FpLibmPolicy bottom() noexcept { return FpLibmPolicy::ScalarLibm; }
-    // FIXY-V-095: top() bumped to Polynomial after append-only universe
-    // extension (FOUND-I04 rule).  Lattice's leq() is value-based so the
-    // largest ordinal IS the chain top; semantic interpretation
-    // ("Polynomial is axis-orthogonal bit-stable") lives in the
-    // enumerator's docblock + production discipline (grant-tag at call
-    // site requires BITEXACT_TC/STRICT recipes use Polynomial), NOT in
-    // the chain ordering.
     [[nodiscard]] static constexpr FpLibmPolicy top() noexcept { return FpLibmPolicy::Polynomial; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpLibmPolicyLattice"; }
 
@@ -741,7 +544,7 @@ struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
                 case FpLibmPolicy::FastApproxAm:
                     return "FpLibmPolicyLattice::At<FastApproxAm>";
                 case FpLibmPolicy::Polynomial:
-                    return "FpLibmPolicyLattice::At<Polynomial>";  // FIXY-V-095
+                    return "FpLibmPolicyLattice::At<Polynomial>";
                 default:
                     return "FpLibmPolicyLattice::At<?>";
             }
@@ -749,7 +552,6 @@ struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
     };
 };
 
-// ── Sub-axis 10: Reassociate ────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_reassociate_name(FpReassociate t) noexcept {
     switch (t) {
         case FpReassociate::Forbidden:
@@ -796,7 +598,6 @@ struct FpReassociateLattice : ChainLatticeOps<FpReassociate> {
     };
 };
 
-// ── Sub-axis 11: ConstantRounding ───────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_constant_rounding_name(FpConstantRounding t) noexcept {
     switch (t) {
         case FpConstantRounding::SameAsRuntime:
@@ -843,57 +644,17 @@ struct FpConstantRoundingLattice : ChainLatticeOps<FpConstantRounding> {
     };
 };
 
-// ── FIXY-V-090 — FpModeProductLattice composite ─────────────────────
-//
-// 11-way componentwise product over the per-axis chain lattices.  The
-// canonical "FP-mode" state of a value is the 11-tuple
-//   (Rounding, Ftz, Contract, TrapMask, Denormal, NanPolicy, InfPolicy,
-//    ComplexLayout, LibmPolicy, Reassociate, ConstantRounding)
-// — each component independently ordered by its per-axis ⊑.  Operations
-// (leq / join / meet / bottom / top) lift pointwise through
-// `ProductLattice<Ls...>`'s N-ary primary (ProductLattice.h ALGEBRA-15
-// extension).  Bottom is the 11-tuple of weakest tiers (each axis's
-// bottom() — typically the most-permissive policy); top is the 11-tuple
-// of strongest tiers (each axis's top() — typically the most-restrictive
-// policy).
-//
-// USAGE: this composite is the algebraic foundation for the V-090
-// `safety::FpModePinned<auto Mode, T>` wrapper family.  Production code
-// does NOT instantiate `Graded<Absolute, FpModeProductLattice, T>`
-// directly; per CLAUDE.md §XVI canonical wrapper-nesting order, the
-// 11-deep composite is built via the `FpModeComposite<...>` type alias
-// in safety/FpMode.h that NESTS 11 single-axis `FpModePinned<Mode_i, _>`
-// wrappers outer-to-inner.  Reason: nested-wrapper composition gives
-// each axis its own row_hash salt (0x21..0x2B per FOUND-I02), which
-// preserves the federation-cache slot disjointness the product-lattice
-// composite cannot express on its own.
-//
-// The composite IS, however, the canonical answer for any consumer
-// that needs to reason about the 11-axis algebra AS A LATTICE — e.g.
-// computing the meet of two recipe-pinned FP modes, or asking whether
-// recipe A ⊑ recipe B componentwise.  The 11-way join/meet via the
-// N-ary primary is `O(11) compile + 11 constexpr comparisons runtime`
-// — same shape as any other ProductLattice consumer.
-//
-// Axiom coverage:
-//   TypeSafe — `ProductLattice<...>` validates each component via the
-//              Lattice concept; non-FP-axis lattices fail at template
-//              substitution.
-//   DetSafe  — every op is constexpr (NOT consteval) so a runtime
-//              Graded carrier can enforce its `pre (L::leq(...))`
-//              precondition.
-//   MemSafe  — element_type uses ProductLattice's [[no_unique_address]]
-//              componentwise carrier; no per-instance heap.
+// Pinning a value's floating-point mode does not go through this composite.
+// The wrappers nest one single-axis carrier per sub-axis instead, because that
+// gives each axis a distinct hash contribution and so keeps the cache slots
+// disjoint.  A single product-lattice carrier collapses all eleven axes into
+// one contribution and cannot express that.  The composite is still the right
+// answer for a consumer that must reason about the eleven axes as a lattice,
+// such as taking the meet of two pinned modes.
 using FpModeProductLattice = ::crucible::algebra::lattices::ProductLattice<
     FpRoundingLattice, FpFtzLattice, FpContractLattice, FpTrapMaskLattice, FpDenormalInputLattice, FpNanPolicyLattice,
     FpInfPolicyLattice, FpComplexLayoutLattice, FpLibmPolicyLattice, FpReassociateLattice, FpConstantRoundingLattice>;
 
-// Composite-lattice concept-gate witnesses.  The N-ary ProductLattice
-// primary template is gated through the Lattice concept on every
-// component; verify here that the composite IS itself a Lattice and a
-// BoundedLattice (since every component ChainLattice is bounded).  The
-// !Semiring check mirrors the per-axis lattice discipline — the
-// composite carries no ⊕/⊗ structure independent of join/meet.
 static_assert(::crucible::algebra::Lattice<FpModeProductLattice>,
               "FpModeProductLattice must satisfy the Lattice concept "
               "(componentwise lift of 11 BoundedLattice chains).");
@@ -903,14 +664,10 @@ static_assert(::crucible::algebra::BoundedLattice<FpModeProductLattice>,
 static_assert(!::crucible::algebra::Semiring<FpModeProductLattice>,
               "FpModeProductLattice carries no ⊕/⊗ structure independent of "
               "join/meet — Semiring would be a falsehood at the type level.");
-static_assert(FpModeProductLattice::arity == 11, "FpModeProductLattice must have arity 11 — one slot per FP sub-axis "
-                                                 "ordinal of the V-088 enum split.");
+static_assert(FpModeProductLattice::arity == 11, "FpModeProductLattice must have arity 11 — one slot per FP sub-axis.");
 
-// ── Self-test (V-088 scaffolding sanity) ────────────────────────────
 namespace detail::fp_mode_lattice_self_test {
 
-// Catalog cardinality assertions — every sub-axis carries at least
-// 2 enumerators (a chain lattice with <2 elements is degenerate).
 inline constexpr std::size_t rounding_count = std::meta::enumerators_of(^^FpRounding).size();
 inline constexpr std::size_t ftz_count = std::meta::enumerators_of(^^FpFtz).size();
 inline constexpr std::size_t contract_count = std::meta::enumerators_of(^^FpContract).size();
@@ -937,19 +694,14 @@ static_assert(nan_policy_count == 3, "FpNanPolicy diverged from {PropagateQuiet,
 static_assert(inf_policy_count == 2, "FpInfPolicy must be {PropagateInfinity, FlushInfToFinite}.");
 static_assert(complex_layout_count == 3, "FpComplexLayout diverged from {Interleaved, SplitRealImag, "
                                          "SplitImagReal}.");
-static_assert(libm_policy_count == 7,
-              "FpLibmPolicy diverged from {ScalarLibm, VectorLibmSleef, "
-              "VectorLibmSvml, VectorLibmLibmvec, FastApproxNv, FastApproxAm, "
-              "Polynomial}.");  // FIXY-V-095 appended Polynomial
+static_assert(libm_policy_count == 7, "FpLibmPolicy diverged from {ScalarLibm, VectorLibmSleef, "
+                                      "VectorLibmSvml, VectorLibmLibmvec, FastApproxNv, FastApproxAm, "
+                                      "Polynomial}.");
 static_assert(reassociate_count == 3, "FpReassociate diverged from {Forbidden, BoundedTreeDepth, "
                                       "UnrestrictedRewrite}.");
 static_assert(fp_constant_count == 3, "FpConstantRounding diverged from {SameAsRuntime, AlwaysRTE, "
                                       "AlwaysRTZ}.");
 
-// Distinctness — every sub-axis is a structurally separate enum type;
-// the type system guarantees `FpRounding` and `FpFtz` cannot be
-// implicitly converted to each other (strong scoped enums).  This
-// witnesses the "11 sub-axes are orthogonal" claim at the type level.
 static_assert(!std::is_same_v<FpRounding, FpFtz>);
 static_assert(!std::is_same_v<FpRounding, FpContract>);
 static_assert(!std::is_same_v<FpFtz, FpDenormalInput>);
@@ -960,10 +712,6 @@ static_assert(!std::is_same_v<FpComplexLayout, FpLibmPolicy>);
 static_assert(!std::is_same_v<FpLibmPolicy, FpReassociate>);
 static_assert(!std::is_same_v<FpRounding, FpConstantRounding>);
 
-// Bottom-element pin — every sub-axis's zero ordinal is the
-// "weakest / least-constraining" element.  V-089 will turn this into
-// a `bottom()` lattice operation; V-088 just asserts the encoding
-// convention is uniform so V-089 can derive `bottom()` mechanically.
 static_assert(std::to_underlying(FpRounding::RoundToZero) == 0);
 static_assert(std::to_underlying(FpFtz::PreserveSubnormals) == 0);
 static_assert(std::to_underlying(FpContract::Off) == 0);
@@ -975,18 +723,6 @@ static_assert(std::to_underlying(FpComplexLayout::Interleaved) == 0);
 static_assert(std::to_underlying(FpLibmPolicy::ScalarLibm) == 0);
 static_assert(std::to_underlying(FpReassociate::Forbidden) == 0);
 static_assert(std::to_underlying(FpConstantRounding::SameAsRuntime) == 0);
-
-// ════════════════════════════════════════════════════════════════════
-// ── V-089: Per-lattice self-tests (lattice axioms + reflection) ─────
-// ════════════════════════════════════════════════════════════════════
-
-// ── Reflection-driven name coverage ─────────────────────────────────
-//
-// For every sub-axis's `<axis>_name(enumerator)` switch, walk the
-// reflection-discovered enumerator catalog and assert no arm leaks
-// the "<unknown ...>" sentinel.  This auto-extends when a sub-axis
-// gains a new enumerator — V-089 ships the coverage check; whoever
-// extends the enum auto-detects the missing switch arm at compile time.
 
 #define CRUCIBLE_FP_NAME_COVERAGE(SubAxis, NameFn, UnknownLit)                                              \
     [[nodiscard]] consteval bool every_##NameFn##_has_arm() noexcept {                                      \
@@ -1014,13 +750,6 @@ CRUCIBLE_FP_NAME_COVERAGE(FpConstantRounding, fp_constant_rounding_name, "<unkno
 
 #undef CRUCIBLE_FP_NAME_COVERAGE
 
-// ── Per-lattice concept conformance + exhaustive axiom verifier ─────
-//
-// Every per-sub-axis chain lattice satisfies `Lattice` and
-// `BoundedLattice`; the exhaustive verifier walks (axis)³ triples and
-// confirms lattice axioms + distributivity.  Chain orders are always
-// distributive — failure indicates a leq/join/meet defect.
-
 #define CRUCIBLE_FP_LATTICE_VERIFY(L)                                                                             \
     static_assert(Lattice<L>);                                                                                    \
     static_assert(BoundedLattice<L>);                                                                             \
@@ -1043,12 +772,6 @@ CRUCIBLE_FP_LATTICE_VERIFY(FpConstantRoundingLattice);
 
 #undef CRUCIBLE_FP_LATTICE_VERIFY
 
-// ── Bottom / top pins (V-089 surface contract) ──────────────────────
-//
-// Every sub-axis lattice's bottom == enum ordinal 0 (matching the
-// V-088 self-test pins above) and top == topmost ordinal.  These
-// asserts catch the "someone reordered the enum and the lattice
-// failed to follow" drift class.
 static_assert(FpRoundingLattice::bottom() == FpRounding::RoundToZero);
 static_assert(FpRoundingLattice::top() == FpRounding::RoundToNearestAwayZero);
 static_assert(FpFtzLattice::bottom() == FpFtz::PreserveSubnormals);
@@ -1072,7 +795,6 @@ static_assert(FpReassociateLattice::top() == FpReassociate::UnrestrictedRewrite)
 static_assert(FpConstantRoundingLattice::bottom() == FpConstantRounding::SameAsRuntime);
 static_assert(FpConstantRoundingLattice::top() == FpConstantRounding::AlwaysRTZ);
 
-// ── Lattice top-level diagnostic name pins ──────────────────────────
 static_assert(FpRoundingLattice::name() == std::string_view{"FpRoundingLattice"});
 static_assert(FpFtzLattice::name() == std::string_view{"FpFtzLattice"});
 static_assert(FpContractLattice::name() == std::string_view{"FpContractLattice"});
@@ -1085,11 +807,6 @@ static_assert(FpLibmPolicyLattice::name() == std::string_view{"FpLibmPolicyLatti
 static_assert(FpReassociateLattice::name() == std::string_view{"FpReassociateLattice"});
 static_assert(FpConstantRoundingLattice::name() == std::string_view{"FpConstantRoundingLattice"});
 
-// ── Strict-chain order pin (lattice ⊥ ⊏ top witness) ────────────────
-//
-// Each sub-axis chain has a `leq(bottom, top)` true / `leq(top, bottom)`
-// false witness — pins the chain direction.  Together with
-// verify_chain_lattice_exhaustive the chain is structurally locked.
 static_assert(FpRoundingLattice::leq(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero));
 static_assert(!FpRoundingLattice::leq(FpRounding::RoundToNearestAwayZero, FpRounding::RoundToZero));
 static_assert(FpFtzLattice::leq(FpFtz::PreserveSubnormals, FpFtz::FlushToZero));
@@ -1113,145 +830,71 @@ static_assert(!FpReassociateLattice::leq(FpReassociate::UnrestrictedRewrite, FpR
 static_assert(FpConstantRoundingLattice::leq(FpConstantRounding::SameAsRuntime, FpConstantRounding::AlwaysRTZ));
 static_assert(!FpConstantRoundingLattice::leq(FpConstantRounding::AlwaysRTZ, FpConstantRounding::SameAsRuntime));
 
-// ── FIXY-FOUND-076 audit pin: FpMode sub-lattice convention sweep ────
+// Chain polarity differs from the rest of the tree, and the difference is
+// load-bearing.  Elsewhere the strictest element sits at the top, so composing
+// two claims with join yields the strictest.  On nine of these eleven chains
+// the bit-exact-safe element sits at the BOTTOM, so join yields the loosest
+// behaviour of the two operands.  A consumer enforcing a bit-exact floor must
+// compose those nine with meet, or compare against the floor with leq
+// directly.  The two exceptions are FpRounding, whose strict element is the
+// top, and FpComplexLayout, which has no strictness reading at all.
 //
-// FpModeLattice is a PRODUCT of 11 sub-lattices, each its own
-// ChainLatticeOps<...> struct (no top-level join/meet on FpModeLattice
-// itself).  Each sub-axis carries its own chain direction; this audit
-// pins each one's relationship to the cross-tree "par=join,
-// strictest-wins" contract (DimensionTraits.h L231-235).
-//
-// "Strictest" here uses the FOUND-076 / FOUND-009 / FOUND-010 lens:
-// the most-restrictive admission policy = the IEEE-strict / BITEXACT-
-// compatible / DetSafe-safe choice.  Forge phase E.RecipeSelect uses
-// these sub-lattices to gate NumericalRecipe selection — BITEXACT
-// recipes require the strictest claim on each sub-axis.
-//
-// AUDIT SUMMARY (2026-05-25):
-//
-//   ALIGNED (strictest at chain-top — JOIN returns strictest):
-//     1. FpRounding — local doc claims RoundToNearestAwayZero is "most-
-//        IEEE-compliant" at chain-top (debatable; canonical IEEE default
-//        is RoundToNearestEven, ordinal 3 mid-chain).  Per LOCAL doc
-//        claim ALIGNED; per canonical IEEE reading the chain has no
-//        clean "strictest" anchor and the cross-tree contract is
-//        misleading.  Pinned both directions.
-//
-//   N/A (no strictness ordering — independent enumeration):
-//     8. FpComplexLayout — Interleaved / SplitRealImag / SplitImagReal
-//        are orthogonal memory-layout choices, not a strictness ladder.
-//        The chain pin (Interleaved ⊏ SplitImagReal) is ordinal-only;
-//        no semantic strictness reading applies.
-//
-//   INVERTED (strictest at chain-bottom — MEET returns strictest):
-//     2. FpFtz — PreserveSubnormals (bottom, IEEE-strict) → FlushToZero
-//        (top, lossy).  BITEXACT requires PreserveSubnormals.
-//     3. FpContract — Off (bottom, no contraction) → Fast (top, fused).
-//        BITEXACT requires Off.
-//     4. FpTrapMask — AllMasked (bottom, DetSafe-safe) → UnmaskedInexact
-//        (top, signals).  Crucible default is AllMasked (silent).
-//     5. FpDenormalInput — HonorDenormals (bottom, IEEE) → DenormalsAreZero
-//        (top, lossy).  BITEXACT requires HonorDenormals.
-//     6. FpNanPolicy — PropagateQuiet (bottom, IEEE) → FastNaN (top,
-//        non-IEEE).  BITEXACT requires PropagateQuiet.
-//     7. FpInfPolicy — PropagateInfinity (bottom, IEEE) → FlushInfToFinite
-//        (top, non-IEEE).  BITEXACT requires PropagateInfinity.
-//     9. FpLibmPolicy — ScalarLibm (bottom) → FastApproxAm (top).  Most
-//        bit-stable choice is Polynomial (off-chain ordinal 6) per
-//        V-095; among chain elements ScalarLibm is the strict choice.
-//    10. FpReassociate — Forbidden (bottom) → UnrestrictedRewrite (top).
-//        BITEXACT requires Forbidden.
-//    11. FpConstantRounding — SameAsRuntime (bottom) → AlwaysRTZ (top).
-//        BITEXACT requires SameAsRuntime (consistent with runtime).
-//
-// SAME family of defect as FOUND-009/010 + FOUND-076 PART A/B/C —
-// Forge phase E.RecipeSelect aggregating two ops' FP-mode contributions
-// via JOIN silently inherits the LOOSEST FP behavior across 9 of 11
-// sub-axes.  Strictest-floor reading requires MEET on these 9 sub-axes.
-// BITEXACT_STRICT / BITEXACT_TC recipes MUST gate via MEET on each
-// inverted sub-axis (or compose via the leq check against the strict
-// floor directly).
-//
-// Polarity-witness pins per sub-lattice — a refactor inverting any
-// chain direction reds the corresponding assert.
-
-// FpRounding — ALIGNED per local doc; pin both directions.
+// The pins below witness the polarity of each chain, so a refactor that
+// inverts one turns its assertion red.
 static_assert(FpRoundingLattice::join(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero)
                   == FpRounding::RoundToNearestAwayZero,
-              "FIXY-FOUND-076: FpRoundingLattice's JOIN returns top "
-              "(RoundToNearestAwayZero) — per local doc L113-115 the 'most-IEEE-"
-              "compliant' choice.  Cross-tree 'strictest-wins via JOIN' holds "
-              "under the local interpretation, though the canonical IEEE default "
-              "(RoundToNearestEven) sits mid-chain — readers should consult the "
-              "doc-block for the rationale.");
+              "FpRoundingLattice JOIN must return the chain top "
+              "(RoundToNearestAwayZero) — this chain is the one whose strictest "
+              "element is the top.");
 static_assert(FpRoundingLattice::meet(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero)
                   == FpRounding::RoundToZero,
-              "FIXY-FOUND-076: FpRoundingLattice's MEET returns bottom "
-              "(RoundToZero) — cheapest rounding mode, loses IEEE guarantees.");
+              "FpRoundingLattice MEET must return the chain bottom (RoundToZero).");
 
-// FpFtz / FpContract / FpTrapMask / FpDenormalInput / FpNanPolicy /
-// FpInfPolicy / FpLibmPolicy / FpReassociate / FpConstantRounding —
-// all INVERTED.  Strictest = chain-bottom.  Pin polarity on each.
 static_assert(FpFtzLattice::meet(FpFtz::PreserveSubnormals, FpFtz::FlushToZero) == FpFtz::PreserveSubnormals,
-              "FIXY-FOUND-076: FpFtzLattice INVERTED — MEET returns "
-              "PreserveSubnormals (bottom = IEEE-strict).  Forge phase E.RecipeSelect "
-              "MUST call MEET to enforce BITEXACT's PreserveSubnormals floor.");
+              "FpFtzLattice MEET must return PreserveSubnormals — the chain bottom "
+              "is the bit-exact-safe element, so only MEET enforces the floor.");
 static_assert(FpContractLattice::meet(FpContract::Off, FpContract::Fast) == FpContract::Off,
-              "FIXY-FOUND-076: FpContractLattice INVERTED — MEET returns Off "
-              "(bottom = no contraction).  BITEXACT recipes MUST gate via MEET.");
+              "FpContractLattice MEET must return Off — the chain bottom is the "
+              "bit-exact-safe element, so only MEET enforces the floor.");
 static_assert(FpTrapMaskLattice::meet(FpTrapMask::AllMasked, FpTrapMask::UnmaskedInexact) == FpTrapMask::AllMasked,
-              "FIXY-FOUND-076: FpTrapMaskLattice INVERTED — MEET returns AllMasked "
-              "(bottom = Crucible DetSafe-safe default).");
+              "FpTrapMaskLattice MEET must return AllMasked — the chain bottom is "
+              "the deterministic-execution-safe element.");
 static_assert(FpDenormalInputLattice::meet(FpDenormalInput::HonorDenormals, FpDenormalInput::DenormalsAreZero)
                   == FpDenormalInput::HonorDenormals,
-              "FIXY-FOUND-076: FpDenormalInputLattice INVERTED — MEET returns "
-              "HonorDenormals (bottom = IEEE-strict).");
+              "FpDenormalInputLattice MEET must return HonorDenormals — the chain "
+              "bottom is the IEEE-strict element.");
 static_assert(FpNanPolicyLattice::meet(FpNanPolicy::PropagateQuiet, FpNanPolicy::FastNaN)
                   == FpNanPolicy::PropagateQuiet,
-              "FIXY-FOUND-076: FpNanPolicyLattice INVERTED — MEET returns "
-              "PropagateQuiet (bottom = IEEE NaN propagation).");
+              "FpNanPolicyLattice MEET must return PropagateQuiet — the chain "
+              "bottom is IEEE NaN propagation.");
 static_assert(FpInfPolicyLattice::meet(FpInfPolicy::PropagateInfinity, FpInfPolicy::FlushInfToFinite)
                   == FpInfPolicy::PropagateInfinity,
-              "FIXY-FOUND-076: FpInfPolicyLattice INVERTED — MEET returns "
-              "PropagateInfinity (bottom = IEEE Inf propagation).");
+              "FpInfPolicyLattice MEET must return PropagateInfinity — the chain "
+              "bottom is IEEE infinity propagation.");
 static_assert(FpLibmPolicyLattice::meet(FpLibmPolicy::ScalarLibm, FpLibmPolicy::FastApproxAm)
                   == FpLibmPolicy::ScalarLibm,
-              "FIXY-FOUND-076: FpLibmPolicyLattice INVERTED on the chain — MEET "
-              "returns ScalarLibm (chain-bottom).  NOTE: most bit-stable is the "
-              "OFF-CHAIN Polynomial (ordinal 6) per V-095; chain MEET captures "
-              "only chain-bound participants.");
+              "FpLibmPolicyLattice MEET must return ScalarLibm, the chain bottom.  "
+              "The bit-stable policy is Polynomial, which sits at the chain top and "
+              "is therefore not reachable by MEET.");
 static_assert(FpReassociateLattice::meet(FpReassociate::Forbidden, FpReassociate::UnrestrictedRewrite)
                   == FpReassociate::Forbidden,
-              "FIXY-FOUND-076: FpReassociateLattice INVERTED — MEET returns "
-              "Forbidden (bottom = BITEXACT requires).");
+              "FpReassociateLattice MEET must return Forbidden — the chain bottom "
+              "is the bit-exact-safe element.");
 static_assert(FpConstantRoundingLattice::meet(FpConstantRounding::SameAsRuntime, FpConstantRounding::AlwaysRTZ)
                   == FpConstantRounding::SameAsRuntime,
-              "FIXY-FOUND-076: FpConstantRoundingLattice INVERTED — MEET returns "
-              "SameAsRuntime (bottom = consistent with runtime Rounding).");
+              "FpConstantRoundingLattice MEET must return SameAsRuntime — the chain "
+              "bottom is the element consistent with the runtime rounding mode.");
 
-// FpComplexLayout — N/A.  The chain (Interleaved < SplitRealImag <
-// SplitImagReal) is ordinal-only; semantic readings DO NOT line up
-// with strictness.  Pin both extremes so a refactor inverting the
-// ordinal order reds atomically.
 static_assert(FpComplexLayoutLattice::join(FpComplexLayout::Interleaved, FpComplexLayout::SplitImagReal)
                   == FpComplexLayout::SplitImagReal,
-              "FIXY-FOUND-076: FpComplexLayoutLattice is N/A for the strictness "
-              "reading — the chain (Interleaved < SplitRealImag < SplitImagReal) "
-              "is ordinal-only; Interleaved/Split layouts are independent "
-              "memory-layout choices, NOT a strictness ladder.  Cross-tree "
-              "'strictest-wins via JOIN' does not apply.  Use leq for ordinal "
-              "comparison only.");
+              "FpComplexLayoutLattice JOIN must return the ordinal maximum "
+              "(SplitImagReal).  The order is ordinal-only, so this pins the "
+              "encoding and carries no strictness reading.");
 static_assert(FpComplexLayoutLattice::meet(FpComplexLayout::Interleaved, FpComplexLayout::SplitImagReal)
                   == FpComplexLayout::Interleaved,
-              "FIXY-FOUND-076: FpComplexLayoutLattice MEET — ordinal-min "
-              "(Interleaved).  Polarity pin only; no strictness reading.");
+              "FpComplexLayoutLattice MEET must return the ordinal minimum "
+              "(Interleaved).  Polarity pin only, with no strictness reading.");
 
-// ── At<T> singleton — empty element_type for EBO collapse ───────────
-//
-// V-090 will use these singletons inside `Graded<Absolute, At<T>, P>`
-// to type-pin each sub-axis at fixed call sites.  V-089's contract:
-// every singleton's element_type is empty (so `[[no_unique_address]]`
-// collapses to 0 bytes at the use site).
 static_assert(std::is_empty_v<FpRoundingLattice::At<FpRounding::RoundToZero>::element_type>);
 static_assert(std::is_empty_v<FpFtzLattice::At<FpFtz::PreserveSubnormals>::element_type>);
 static_assert(std::is_empty_v<FpContractLattice::At<FpContract::Off>::element_type>);
@@ -1264,16 +907,6 @@ static_assert(std::is_empty_v<FpLibmPolicyLattice::At<FpLibmPolicy::ScalarLibm>:
 static_assert(std::is_empty_v<FpReassociateLattice::At<FpReassociate::Forbidden>::element_type>);
 static_assert(std::is_empty_v<FpConstantRoundingLattice::At<FpConstantRounding::SameAsRuntime>::element_type>);
 
-// ── Cross-sub-axis lattice structural separation ────────────────────
-//
-// All 11 sub-axis lattices are STRUCTURALLY DISTINCT C++ types.  The
-// type system guarantees that a function expecting `FpRoundingLattice`
-// cannot silently consume an `FpFtzLattice` argument; a Graded
-// instantiated over one cannot be implicitly converted to a Graded
-// over another.  Together with the V-088 `is_same_v` enum-distinctness
-// witnesses, this pins the 11 sub-axes as orthogonal at the algebra
-// layer — V-090's ProductLattice composite will then combine them in
-// a single Graded carrier without cross-axis confusion.
 static_assert(!std::is_same_v<FpRoundingLattice, FpFtzLattice>);
 static_assert(!std::is_same_v<FpFtzLattice, FpContractLattice>);
 static_assert(!std::is_same_v<FpContractLattice, FpTrapMaskLattice>);
@@ -1285,78 +918,57 @@ static_assert(!std::is_same_v<FpComplexLayoutLattice, FpLibmPolicyLattice>);
 static_assert(!std::is_same_v<FpLibmPolicyLattice, FpReassociateLattice>);
 static_assert(!std::is_same_v<FpReassociateLattice, FpConstantRoundingLattice>);
 
-// ── Runtime smoke test (per feedback_algebra_runtime_smoke_test) ────
-//
-// Per feedback_algebra_runtime_smoke_test_discipline memory: every
-// algebra header MUST ship `inline void runtime_smoke_test()` with
-// non-constant arguments + concept-based capability checks.  Pure
-// static_asserts mask consteval/SFINAE/inline-body bugs.
+// Calling each operation on runtime operands catches the defects the
+// compile-time assertions above cannot see, such as an inline body that only
+// ever instantiates in a consteval context.
 inline void fp_mode_lattice_runtime_smoke_test() {
-    // Full-lattice ops at runtime for each sub-axis.  Pin operands
-    // to the chain's bottom and top, then call leq/join/meet so the
-    // optimizer cannot collapse to a compile-time fold.
-
-    // Rounding (5-element).
     FpRounding ra = FpRounding::RoundToZero;
     FpRounding rb = FpRounding::RoundToNearestAwayZero;
     [[maybe_unused]] bool rl1 = FpRoundingLattice::leq(ra, rb);
     [[maybe_unused]] FpRounding rj1 = FpRoundingLattice::join(ra, rb);
     [[maybe_unused]] FpRounding rm1 = FpRoundingLattice::meet(ra, rb);
 
-    // Ftz (2-element).
     FpFtz fa = FpFtz::PreserveSubnormals;
     FpFtz fb = FpFtz::FlushToZero;
     [[maybe_unused]] FpFtz fj1 = FpFtzLattice::join(fa, fb);
     [[maybe_unused]] FpFtz fm1 = FpFtzLattice::meet(fa, fb);
 
-    // Contract (3-element).
     FpContract ca = FpContract::Off;
     FpContract cb = FpContract::Fast;
     [[maybe_unused]] FpContract cj1 = FpContractLattice::join(ca, cb);
 
-    // TrapMask (6-element).
     FpTrapMask ta = FpTrapMask::AllMasked;
     FpTrapMask tb = FpTrapMask::UnmaskedInexact;
     [[maybe_unused]] FpTrapMask tj1 = FpTrapMaskLattice::join(ta, tb);
 
-    // DenormalInput (2-element).
     FpDenormalInput da = FpDenormalInput::HonorDenormals;
     FpDenormalInput db = FpDenormalInput::DenormalsAreZero;
     [[maybe_unused]] FpDenormalInput dj1 = FpDenormalInputLattice::join(da, db);
 
-    // NanPolicy (3-element).
     FpNanPolicy na = FpNanPolicy::PropagateQuiet;
     FpNanPolicy nb = FpNanPolicy::FastNaN;
     [[maybe_unused]] FpNanPolicy nj1 = FpNanPolicyLattice::join(na, nb);
 
-    // InfPolicy (2-element).
     FpInfPolicy ia = FpInfPolicy::PropagateInfinity;
     FpInfPolicy ib = FpInfPolicy::FlushInfToFinite;
     [[maybe_unused]] FpInfPolicy ij1 = FpInfPolicyLattice::join(ia, ib);
 
-    // ComplexLayout (3-element).
     FpComplexLayout xa = FpComplexLayout::Interleaved;
     FpComplexLayout xb = FpComplexLayout::SplitImagReal;
     [[maybe_unused]] FpComplexLayout xj1 = FpComplexLayoutLattice::join(xa, xb);
 
-    // LibmPolicy (7-element).  FIXY-V-095 appended Polynomial at top.
     FpLibmPolicy la = FpLibmPolicy::ScalarLibm;
     FpLibmPolicy lb = FpLibmPolicy::Polynomial;
     [[maybe_unused]] FpLibmPolicy lj1 = FpLibmPolicyLattice::join(la, lb);
 
-    // Reassociate (3-element).
     FpReassociate ea = FpReassociate::Forbidden;
     FpReassociate eb = FpReassociate::UnrestrictedRewrite;
     [[maybe_unused]] FpReassociate ej1 = FpReassociateLattice::join(ea, eb);
 
-    // ConstantRounding (3-element).
     FpConstantRounding ka = FpConstantRounding::SameAsRuntime;
     FpConstantRounding kb = FpConstantRounding::AlwaysRTZ;
     [[maybe_unused]] FpConstantRounding kj1 = FpConstantRoundingLattice::join(ka, kb);
 
-    // At<T>::element_type round-trip — verify the singleton's
-    // operator->element-type conversion materializes the right tier
-    // at runtime (not just consteval).
     FpRoundingLattice::At<FpRounding::RoundToNearestEven>::element_type rte_pin{};
     [[maybe_unused]] FpRounding rte_recovered = rte_pin;
 

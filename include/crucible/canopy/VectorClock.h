@@ -1,12 +1,5 @@
 #pragma once
 
-// Operational vector clock for Canopy protocols.
-//
-// The algebraic partial-order substrate already lives in
-// algebra/lattices/HappensBefore.h.  This header is the mutable
-// per-node clock: atomic slot storage, local/send/receive event
-// updates, snapshot comparison, and compact sparse-delta transport.
-
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/effects/Capabilities.h>
@@ -294,15 +287,13 @@ static_assert(!std::is_copy_constructible_v<VectorClock<1>>);
 static_assert(!std::is_move_constructible_v<VectorClock<1>>);
 static_assert(alignof(VectorClock<1>) == 64);
 
-// fixy-A5-029: VectorClock entries are RMW'd concurrently from every peer's
-// gossip handler — they MUST be lock-free.  libstdc++ silently substitutes
-// mutex-backed atomic ops on ISAs lacking the required intrinsic; a hidden
-// mutex on the per-entry fetch_max / store path would serialize every peer
-// against every other peer, defeating the entire CRDT-merge design.  Refuse
-// to build instead of regressing silently.
+// Every peer handler reads and writes these entries at the same time.  On an
+// ISA that lacks the required instruction the standard library substitutes a
+// mutex-backed atomic without saying so, and that mutex would serialize every
+// peer against every other peer, which defeats the merge design.  The build
+// refuses such a target instead of regressing quietly.
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-              "std::atomic<uint64_t> must be lock-free on this target — "
-              "fixy-A5-029");
+              "std::atomic<uint64_t> must be lock-free on this target");
 static_assert(std::is_trivially_copyable_v<VectorClockSnapshot<4>>);
 static_assert(std::is_trivially_destructible_v<VectorClockSnapshot<4>>);
 static_assert(sizeof(VectorClockSnapshot<4>) == 4 * sizeof(std::uint64_t));

@@ -1,27 +1,5 @@
 #pragma once
 
-// ── ChaseLevDequeSession.h — typed-session facade for work stealing ─
-//
-// PermissionedChaseLevDeque already enforces the raw CSL discipline:
-// one linear owner may push/pop the bottom, many fractional thieves may
-// steal from the top.  This header adds the session-shaped surface that
-// SpscSession.h and SwmrSession.h provide for their substrates.
-//
-// Owner protocol:
-//   Loop<Select<Send<T, Continue>, Recv<T, Continue>>>
-//
-// The owner chooses branch 0 to push work and branch 1 to pop work.
-// The choice is local by default for in-process work-stealing pools;
-// callers that need a wire-visible branch signal can call select<I>(tx)
-// on the returned PermissionedSessionHandle directly.
-//
-// Thief protocol:
-//   Loop<Recv<Borrowed<T, ThiefTag>, Continue>>
-//
-// A thief observes borrowed work.  The deque remains the authority for
-// the work item; the Borrowed marker records the read-share discipline
-// without changing the session PermSet.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/permissions/Permission.h>
@@ -69,30 +47,23 @@ concept ChaseLevSessionSurface =
     && std::is_same_v<typename Deque::owner_tag, typename Deque::OwnerHandle::tag_type>
     && std::is_same_v<typename Deque::thief_tag, typename Deque::ThiefHandle::tag_type>;
 
+// §XXI carve-out: cx=alloc — the deque owner holds a runtime refcount.
 template <ChaseLevSessionSurface Deque>
 [[nodiscard]] constexpr auto
 mint_chaselev_owner(Deque& deque, ::crucible::safety::Permission<typename Deque::owner_tag>&& perm) noexcept {
     return deque.owner(std::move(perm));
 }
 
-// §XXI carve-out: cx=alloc — Chase-Lev thief steal performs runtime CAS
-// on the deque's top index (the canonical Chase-Lev stealer arbitration
-// loop) plus a fractional-permission refcount bump via Pool's atomic_ref.
-// Neither is constexpr-eligible: CAS uses runtime atomic primitives,
-// and the SharedPermissionPool refcount is a `std::atomic<uint32_t>`
-// that constexpr cannot evaluate.  Adding `constexpr` would lie about
-// the runtime cost.  The inventory's `cx: - (alloc)` cell reflects
-// this carve-out; reviewers must NOT "fix" the absence by adding
-// constexpr (the body would reject at compile time).
+// Not constexpr, deliberately. A steal runs a compare-exchange on the top index
+// of the deque and bumps an atomic refcount for the fractional share. Neither
+// step is constant-evaluable, so constexpr here would misstate the cost.
+// §XXI carve-out: cx=alloc — a steal performs a runtime compare-exchange.
 template <ChaseLevSessionSurface Deque>
 [[nodiscard]] auto mint_chaselev_thief(Deque& deque) noexcept {
     return deque.thief();
 }
 
-// §XXI carve-out: cx=alloc — same Chase-Lev CAS + refcount rationale
-// as the no-proof overload above.  The FractionalProof parameter is a
-// runtime token threaded through; consuming it via `deque.thief()`
-// is the constexpr-incompatible step.
+// Not constexpr, for the same reason as the overload above.
 template <ChaseLevSessionSurface Deque>
 [[nodiscard]] auto mint_chaselev_thief(Deque& deque,
                                        ::crucible::safety::SharedPermission<typename Deque::thief_tag> proof) noexcept {
@@ -121,15 +92,9 @@ template <ChaseLevSessionSurface Deque, ::crucible::effects::IsExecCtx Ctx = ::c
 using ThiefSessionHandle =
     decltype(mint_thief_session<Deque>(std::declval<Ctx const&>(), std::declval<typename Deque::ThiefHandle&>()));
 
-// Fused one-iteration hot helpers for the infinite EmptyPermSet Loop
-// protocols above.  Each helper commits to one branch internally:
-// owner_session_try_push = Select branch 0 + Send<T, Continue>,
-// owner_session_try_pop  = Select branch 1 + Recv<T, Continue>,
-// thief_session_steal_borrowed = Recv<Borrowed<T, ThiefTag>, Continue>.
-// Because every path returns to the same loop head with the same PermSet,
-// the external PSH object remains at that stable head.  These helpers are
-// deliberately narrower than the general PSH API; callers needing explicit
-// per-step protocol values should use select_local()/send()/recv().
+// These helpers take the session by reference instead of consuming it. Every
+// branch of one iteration returns to the same loop head with the same
+// permission set, so a single iteration leaves the handle type unchanged.
 template <ChaseLevSessionSurface Deque>
 [[nodiscard, gnu::always_inline]] inline bool owner_session_try_push(OwnerSessionHandle<Deque>& session,
                                                                      typename Deque::value_type value) noexcept {

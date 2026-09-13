@@ -1,30 +1,8 @@
 #pragma once
 
-// ── crucible::safety::SwissTableBuffer ────────────────────────────
-//
-// Move-only RAII wrapper over a single aligned heap allocation that
-// holds a Swiss-table's coupled control-byte array + slot-pointer
-// array in one contiguous backing region.  Replaces hand-rolled
-// patterns like:
-//
-//   void* backing = std::aligned_alloc(64, ctrl_bytes + slot_bytes);
-//   int8_t*       ctrl  = static_cast<int8_t*>(backing);
-//   const Expr**  slots = static_cast<const Expr**>(... offset ...);
-//   ...
-//   std::free(backing);
-//
-// The capacity is a `Refined<is_power_of_two_le, uint32_t>`-shape
-// invariant: at construction we contract-check pow-2 bounds.  Slot
-// type is parameterized via `SlotPtr` so the same template serves
-// ExprPool (`const Expr*`) and forge::RecipePool (`Slot*`).
-//
-//   Axiom coverage: MemSafe, LeakSafe, TypeSafe (capacity invariant).
-//   Runtime cost:   one void* + ctrl/slots projections + capacity.
-//                   Reads of ctrl()/slots() are constant-time.
-//
-// Discipline: SwissTableBuffer is OWNED.  rebuild() is destructive +
-// returns the new buffer; the caller assigns and the old buffer's
-// dtor frees.
+// One allocation carries both of an open-addressing table's arrays: the control
+// bytes first, the slots after them.  Growing means allocating a second buffer
+// and assigning over the first, whose destructor frees it.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
@@ -50,21 +28,13 @@ public:
 
     constexpr SwissTableBuffer() noexcept = default;
 
-    // Allocate ctrl[capacity] + slots[capacity] in one aligned region.
-    // capacity MUST be a power of two and ≤ 2^30 (matches the same
-    // invariant used by ExprPool::grow_to_).  Caller is expected to
-    // provide a capacity that satisfies the contract; we use an
-    // invariant assumption rather than throwing (Crucible has no
-    // exceptions).
-    //
-    //   Layout: [ctrl: capacity bytes] [slots: capacity * sizeof(slot)]
-    //
-    // The slot array begins at offset `capacity` from backing_, which
-    // is always a multiple of kGroupWidth (≥16) → always 8-byte aligned.
+    // A non-zero capacity must be a power of two, at least the table's group
+    // width of 16 and at most 2^30.  Nothing here checks it.  The lower bound is
+    // what aligns the slot array: the slots begin at an offset of `capacity`
+    // bytes, so a capacity that is a multiple of 16 keeps them 8-byte aligned.
     [[nodiscard]] static SwissTableBuffer allocate(size_type capacity) {
         if (capacity == 0) [[unlikely]]
             return SwissTableBuffer{};
-        // Caller-side discipline: capacity must be power-of-two.
         const size_type slot_bytes = capacity * sizeof(SlotPtr);
         const size_type total = capacity + slot_bytes;
         const size_type rounded = (total + 63) & ~size_type{63};

@@ -1,126 +1,26 @@
 #pragma once
 
-// ── crucible::effects::Effect — named capability atoms ──────────────
+// What each atom covers:
 //
-// Six effect atoms parameterizing the Met(X) row algebra per
-// 25_04_2026.md §3.3 and Tang-Lindley POPL 2026 (arXiv:2507.10301).
-// The legacy crucible/Effects.h fx::* tree was deleted in
-// FOUND-B07 / METX-5 — this header IS the production capability surface.
+//   Alloc  heap allocation and arena allocation
+//   IO     file and socket traffic
+//   Block  mutex, sleep, futex, spin-wait
+//   Bg     the background-thread context, which holds the three above
+//   Init   the initialization context
+//   Test   the test-driver context
 //
-//   Effect    | Underlying value | Carried by
-//   ----------+------------------+-------------------------------------
-//   Alloc     | 0                | heap allocation, arena alloc, push_back
-//   IO        | 1                | file/network I/O (fprintf, send, recv)
-//   Block     | 2                | mutex, sleep, futex, spin-wait
-//   Bg        | 3                | background thread context (Alloc + IO + Block)
-//   Init      | 4                | initialization context (Alloc + IO)
-//   Test      | 5                | test context (Alloc + IO + Block — NOT Bg / Init thread tags)
+// The catalog is closed at these six.  Three further atoms were
+// considered and rejected:
 //
-//   Axiom coverage: TypeSafe — strong enum with explicit underlying
-//                   type; reflection traversal sees all atoms.
-//                   DetSafe — underlying values are FROZEN; row_hash
-//                   federation depends on bit-for-bit value stability
-//                   (see "Append-only Universe extension" below).
-//   Runtime cost:   zero — atoms are compile-time tags only.  The
-//                   companion cap::* value-level tag types and the
-//                   Bg / Init / Test context structs collapse to one
-//                   byte each via [[no_unique_address]] EBO.
-//
-// Foreground hot-path code holds an empty row; the type system rejects
-// every effectful call.  See Computation.h for the carrier and
-// EffectRow.h for the set algebra (Subrow / row_union_t / etc.).
-//
-// ── Append-only Universe extension (FOUND-I04) ──────────────────────
-//
-// **Existing atom values are immutable.**  A change to any value
-// already shipped (re-numbering Bg from 3 to anything else, deleting
-// Test, swapping Alloc and IO) is a wire-format-breaking event for
-// row_hash (safety/diag/RowHashFold.h) federation cache keys.  All
-// Family-A persistent hashes (CDAG_VERSION, Types.h taxonomy) tied
-// to those rows would silently re-key, invalidating every published
-// L1 / L2 / L3 cache entry across every fleet that consumed those
-// rows.
-//
-// **New atoms append only.**  An additional capability (e.g. a
-// hypothetical `Refute = 6`) joins at the next free underlying value;
-// existing atom values stay pinned.  This bounds federation-cache
-// invalidation to entries that mention the new atom — pre-existing
-// `Row<Bg>` keeps the same row_hash forever because `Effect::Bg`
-// keeps underlying value 3 forever.
-//
-// **Enforcement.**  The self-test block at file end pins each
-// underlying value with an explicit `static_assert`.  A re-numbering
-// fires the static_assert at the offending atom, naming the value
-// drift.  An additional sentinel block in
-// `safety/diag/RowHashFold.h` pins the resulting `row_hash` for
-// every singleton row plus EmptyRow plus the full-Universe row to
-// hex literals — that catches both enum-value drift AND any change
-// to the fold algorithm itself.  Cardinality `effect_count` is
-// derived via reflection (P2996R13) and pinned at six.
-//
-// **Major-version event procedure.**  If a change to an existing
-// value is genuinely required (e.g., reflection-driven re-codification
-// of the catalog), bump CDAG_VERSION (Types.h Family-A taxonomy),
-// flush every L1/L2/L3 cache entry, document the wire-format break
-// in MIMIC.md / FORGE.md / CRUCIBLE.md, and re-pin the canonical
-// hashes in RowHashFold.h's self-test block to the new values.
-// Until that ceremony lands, the static_asserts in this header
-// MUST stay green.
-//
-// Self-test block at file end proves the atom catalog is exhaustive,
-// underlying values are pinned, and diagnostic-name emission covers
-// every atom.
-//
-// ── Why no Async / Network / CT atoms (FIXY-AUDIT-B4) ───────────────
-//
-// The fixy stance design considered three additional capability atoms
-// — `Async` (coroutine reentrancy), `Network` (socket IO), and
-// `CT` (constant-time discipline) — and explicitly rejected adding
-// any of them to the Effect enum.  The 6-atom closed set
-// {Alloc, IO, Block, Bg, Init, Test} is the production hot-path
-// effect surface; the rejected three are downstream concerns the hot
-// path does NOT track per-call.
-//
-// Rationale, per axis the concern actually belongs on:
-//
-//   Async (coroutine reentrancy) — already expressed by the fixy
-//     Reentrancy axis (`fixy::stance::AsyncEndpoint` resolves
-//     Reentrancy=Coroutine via `safety::fn::ReentrancyMode`).
-//     Coroutine reentrancy is a CONTROL-FLOW property of how a
-//     function suspends and resumes, NOT a capability the function
-//     exercises — adding `Async` to Effect would conflate the two.
-//     The hot path cannot suspend; the Reentrancy axis already
-//     rejects coroutine bodies at substitution time.
-//
-//   Network (socket IO) — already covered by the existing `IO`
-//     atom plus the `Bg` context (background-thread aggregate that
-//     bundles Alloc + IO + Block).  Distinguishing "file IO" from
-//     "network IO" at the capability level requires per-call
-//     bookkeeping the hot path cannot afford; the runtime's CNT-P
-//     transport layer carries the network-vs-disk distinction
-//     downstream via its own typestate (sessions::, cipher::Tier).
-//     Adding `Network` to Effect would force every IO-bearing
-//     signature to choose between two atoms that the substrate
-//     treats identically at the row-algebra layer.
-//
-//   CT (constant-time crypto) — expressed by the fixy
-//     `stance::CtCrypto` composite stance combining Security=Secret
-//     (via `as_secret`), Effect=Row<> (empty via `with<>` —
-//     constant-time paths MUST NOT exercise IO/Alloc/Block because
-//     any such trip is a timing-observable side channel), and the
-//     `safety::ConstantTime<T>` wrapper for branch-free primitives.
-//     The §30.14 implicit-flow detector enforces the discipline
-//     structurally.  Promoting CT to an Effect atom would imply
-//     constant-time bodies could opt into Alloc/IO/Block — exactly
-//     the discipline the stance forbids.  The empty row is the
-//     correct representation; an explicit CT atom would weaken it.
-//
-// The closed-set assertion in the self-test block below pins the
-// catalog at six.  Adding any of {Async, Network, CT} requires the
-// "Major-version event procedure" ceremony above — bumping
-// CDAG_VERSION, flushing federation caches, re-pinning canonical
-// row_hash values in RowHashFold.h — and would not buy anything the
-// current axis decomposition does not already deliver.
+//   Async — coroutine reentrancy is a property of how a function
+//     suspends, not a capability it exercises.  It is tracked on the
+//     reentrancy axis instead.
+//   Network — the IO atom already covers socket traffic.  Splitting it
+//     would cost per-call bookkeeping to distinguish two atoms that the
+//     row algebra treats identically.
+//   CT — constant-time code must hold the EMPTY row, because any trip
+//     through IO, Alloc or Block is a timing-observable side channel.
+//     An atom for it would imply such code may opt into those three.
 
 #include <cstdint>
 #include <meta>
@@ -129,7 +29,12 @@
 
 namespace crucible::effects {
 
-// ── Effect atom ─────────────────────────────────────────────────────
+// The underlying values are frozen.  Each one is a bit position in the
+// row masks that key the federation cache, so renumbering an atom
+// silently re-keys every cache entry already published by every fleet
+// that consumed the affected rows.  A new atom takes the next free
+// value and leaves the existing ones alone, which confines cache
+// invalidation to entries that mention the new atom.
 enum class Effect : std::uint8_t {
     Alloc = 0,
     IO = 1,
@@ -139,37 +44,14 @@ enum class Effect : std::uint8_t {
     Test = 5,
 };
 
-// Cardinality derived via reflection (P2996R13).  Adding a new atom
-// auto-bumps this constant — no manual maintenance.  The name-
-// coverage assertion in detail::capabilities_self_test then catches
-// any new atom that lacks an `effect_name()` switch arm.
 inline constexpr std::size_t effect_count = std::meta::enumerators_of(^^Effect).size();
 
-// ── Underlying-value distinctness (FIXY-FOUND-051) ─────────────────
-//
-// `effect_count` counts enumerator NAMES via reflection.  It does NOT
-// guarantee that the names map to distinct underlying values — a
-// duplicate-value attack
-//
-//     enum class Effect : std::uint8_t {
-//         Alloc = 0, ..., Test = 5,
-//         Crash = 0,                     // ← aliases Alloc silently
-//     };
-//
-// would bump effect_count to 7 while leaving only 6 distinct
-// underlying values.  Downstream consumers that treat the underlying
-// integer as a bit position — `OsUniverse::bit_position`, the row-
-// mask compute in EffectRowLattice, the federation row_hash slot
-// table — would collapse the two atoms into the SAME slot.  Concrete
-// blast radius: kernel substitution across the federation cache
-// (two distinct vendor/recipe pairs hash to one cache key); rows
-// claiming `Alloc` silently satisfy a `Crash`-required gate.
-//
-// Defense: a consteval witness that tracks each observed underlying
-// value in a uint64_t bitmask.  Setting an already-set bit aborts the
-// fold — the static_assert below fires with a structured diagnostic.
-// Also catches `u >= 64` (would shift past the bitmask carrier) as
-// defense-in-depth on OsUniverse's separate `cardinality <= 64` pin.
+// `effect_count` counts enumerator NAMES.  Two names can still share
+// one underlying value, which would raise the count while leaving the
+// atoms indistinguishable as bit positions: rows claiming one atom
+// would silently satisfy a gate that demands the other, and two
+// federation cache keys would collide.  This witness tracks each
+// observed value in a bitmask and refuses a repeat.
 namespace detail {
 
 [[nodiscard]] consteval bool every_effect_underlying_distinct_() noexcept {
@@ -181,11 +63,11 @@ namespace detail {
     template for (constexpr auto en : enumerators) {
         constexpr auto u = static_cast<U>([:en:]);
         if constexpr (static_cast<unsigned>(u) >= 64u) {
-            return false;  // would shift past uint64_t row-mask carrier
+            return false;
         } else {
             const std::uint64_t bit = std::uint64_t{1} << static_cast<unsigned>(u);
             if (seen & bit) {
-                return false;  // duplicate underlying value detected
+                return false;
             }
             seen |= bit;
         }
@@ -197,25 +79,13 @@ namespace detail {
 }  // namespace detail
 
 static_assert(detail::every_effect_underlying_distinct_(),
-              "FIXY-FOUND-051: two Effect enumerators share an underlying value "
-              "(or one is >= 64, exceeding the uint64_t row-mask carrier).  Each "
-              "atom MUST occupy a distinct bit position [0, 64) — duplicates "
-              "collapse rows in EffectRowLattice, federation row_hash slots "
-              "collide, and kernel substitution across the federation cache "
-              "becomes silent.  Defense-in-depth on top of `effect_count` "
-              "(name-cardinality pin) and `OsUniverse::cardinality <= 64` "
-              "(count-overflow pin) — this gate closes the value-aliasing gap "
-              "that neither catches.  Fix: assign the new atom the next free "
-              "underlying value (currently 6) explicitly in the enum.");
+              "Two Effect enumerators share an underlying value, or one is >= 64 and so exceeds the "
+              "uint64_t row-mask carrier.  Each atom must occupy a distinct bit position below 64.  "
+              "Duplicates collapse two atoms into one row bit and make federation cache keys collide.  "
+              "Give the new atom the next free underlying value explicitly in the enum.");
 
-// ── Diagnostic name emitter ─────────────────────────────────────────
-//
-// constexpr (not consteval) so the runtime smoke-test discipline can
-// drive every Effect atom through this accessor with non-constant
-// arguments — per feedback_algebra_runtime_smoke_test_discipline.
-// Constant-evaluated when called from consteval contexts (e.g.,
-// every_effect_has_name() below) — the demotion costs nothing at
-// compile time and unblocks runtime probing.
+// constexpr rather than consteval so the runtime smoke test can call
+// this with a non-constant argument.  Consteval contexts still fold it.
 [[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept {
     switch (e) {
         case Effect::Alloc:
@@ -235,19 +105,9 @@ static_assert(detail::every_effect_underlying_distinct_(),
     }
 }
 
-// ── Concept gate ────────────────────────────────────────────────────
-//
-// IsEffect<E> rejects template-parameter typos at substitution time,
-// not at use site.
-//
-// FIXY-FOUND-101: the prior hand-rolled `||`-disjunction silently
-// rejected any future Effect atom (e.g., Effect::Crash, Effect::Network)
-// because the chain didn't auto-extend — a forward-compat trap.  The
-// reflection-driven body below iterates `enumerators_of(^^Effect)` so
-// every catalog atom satisfies the concept by construction, and adding
-// a new atom to the enum auto-extends the gate without touching this
-// file.  Mirrors the eval_concurrently_schedulable_ pattern in
-// effects/Concurrent.h.
+// The gate reads the catalog through reflection so that a new atom
+// satisfies it without an edit here.  A hand-written disjunction would
+// reject every future atom until someone remembered to extend it.
 namespace detail {
 
 template <Effect E>
@@ -267,47 +127,20 @@ template <Effect E>
 template <Effect E>
 concept IsEffect = detail::is_effect_atom_<E>();
 
-// ── Observability classification (FIXY-FOUND-133, closes FIXY-FOUND-017) ──
-//
-// Each Effect atom carries an "observable" property — whether ghost-code
-// elision is allowed to silently drop a binding tagged with that effect.
-// Alloc / IO / Block / Bg are observable (ghost-with-observable is a
-// runtime contradiction the §30.14 corpus detects); Init / Test are
-// non-observable (compile-time / test-harness scoped per fixy-M-11).
-//
-// Pattern B reflection-driven gate (FIXY-FOUND-101 precedent):
-//   - per-atom switch with NO default branch → -Werror=switch reddens
-//     on any new Effect enumerator that isn't explicitly classified;
-//   - reflection-driven cardinality witness forces instantiation of the
-//     classifier for every atom in `enumerators_of(^^Effect)` so a new
-//     atom can't be left dormant by an under-used template.
-//
-// The combination closes the FIXY-FOUND-017 forward-compat cliff:
-// adding `Effect::Crash` or `Effect::Network` REQUIRES the contributor
-// to land here with an IN/OUT decision rather than silently inheriting
-// the "not observable" default that the prior hardcoded `||`-chain
-// (Theory.h is_observable_effect_grant) gave new atoms.
+// An atom is observable when ghost-code elision may not silently drop
+// a binding tagged with it.  Alloc, IO, Block and Bg reach the outside
+// world; Init and Test are scoped to compile time and to the test
+// harness.
 namespace detail {
 
-// FIXY-FOUND-133 cardinality pin: the project compiles with
-// -Werror=switch-default, so the switch below MUST carry a default arm
-// — and the default arm cannot serve as the "new atom = not observable"
-// trap (it would silently default new atoms to false, defeating the
-// FOUND-017 forward-compat premise).  Instead we pin `effect_count`
-// here so adding a new enumerator reddens the build with a structured
-// message; the contributor then lands a deliberate IN/OUT classification
-// in the switch + bumps this assertion to the new count.
-static_assert(effect_count == 6, "FIXY-FOUND-133: when adding a new Effect enumerator, classify it "
-                                 "IN/OUT under is_observable_effect_atom_'s switch below AND bump "
-                                 "this cardinality pin.  Forward-compat trap closes FIXY-FOUND-017 "
-                                 "(\"Effect::Crash/Network forward-compat cliff\").");
+// The build requires a default arm on every switch, so the switch
+// below cannot itself trap an unclassified new atom: it would quietly
+// answer "not observable".  This cardinality pin is the trap instead.
+static_assert(effect_count == 6, "A new Effect enumerator needs a deliberate observable-or-not decision in "
+                                 "is_observable_effect_atom_ below, and this count raised to match.");
 
 template <Effect E>
 [[nodiscard]] consteval bool is_observable_effect_atom_() noexcept {
-    // Exhaustive over every Effect enumerator.  default arm satisfies
-    // -Werror=switch-default but the cardinality pin above is the
-    // real forward-compat gate: a new atom MUST bump that count, and
-    // the bump invariably draws the contributor's eye to this switch.
     switch (E) {
         case Effect::Alloc:
         case Effect::IO:
@@ -322,16 +155,10 @@ template <Effect E>
     }
 }
 
-// Force instantiation of is_observable_effect_atom_<E> for every atom
-// reachable through reflection.  FIXY-FOUND-133-AUDIT: this witness
-// alone does NOT trigger -Werror=switch — the project's
-// -Werror=switch-default mandate forces a default arm in the
-// classifier's switch, so per-atom instantiation by itself simply
-// returns the default-arm value (false) without warning.  The real
-// forward-compat trap is the cardinality pin above; this witness
-// provides defense-in-depth by exercising every atom through the
-// classifier (catches a future contributor adding partial-coverage
-// case arms with disjoint default semantics).
+// Instantiating the classifier for every atom catches a contributor
+// who adds case arms whose default semantics disagree with the rest.
+// It does not catch an unclassified atom on its own; the cardinality
+// pin above does that.
 consteval bool every_effect_observability_classified_() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
 #pragma GCC diagnostic push
@@ -340,41 +167,24 @@ consteval bool every_effect_observability_classified_() noexcept {
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_effect_observability_classified_(), "FIXY-FOUND-133: every Effect atom must be CLASSIFIED in "
-                                                        "is_observable_effect_atom_ — adding a new enumerator without "
-                                                        "extending the switch reddens the build via -Werror=switch.");
+static_assert(every_effect_observability_classified_(),
+              "Every Effect atom must reach a case arm of is_observable_effect_atom_.");
 
 }  // namespace detail
 
-// Public-surface predicate consumed by Theory.h is_observable_effect_grant
-// and any future ghost-elision-boundary site.
 template <Effect E>
 [[nodiscard]] consteval bool is_observable() noexcept {
     return detail::is_observable_effect_atom_<E>();
 }
 
-// ── Capability tag types (cap::*) ───────────────────────────────────
-//
-// The Effect enum is the abstract atom catalog used by the Met(X) row
-// algebra; these `cap::*` types are the concrete value-level proof
-// tokens carried at function-parameter sites.  A function declared
+// The Effect enum is the atom catalog for the row algebra.  These
+// types are the value-level markers that route the same distinction
+// through function parameters, as in
 //
 //   void* alloc(cap::Alloc, size_t n);
 //
-// can only be called from a context that synthesises a `cap::Alloc`
-// value — and only the `Bg` / `Init` / `Test` context types below
-// expose them as members.  Foreground hot-path code holds no context
-// and therefore cannot construct any `cap::*` token; the type system
-// rejects any attempt to do so.
-//
-// Layout: every cap::* is one byte (default-constructible, copyable,
-// trivially-destructible empty struct).  Marked `[[no_unique_address]]`
-// in containing contexts collapses them to zero bytes via EBO.
-//
-// noexcept on every special member: capability tokens are empty
-// structs and must never throw — explicit noexcept documents intent
-// AND fires a compile-time contradiction if a future body adds a
-// throwing expression.
+// The explicit noexcept on each special member turns a future throwing
+// body into a compile error rather than a silent change of contract.
 namespace cap {
 
 struct Alloc {
@@ -406,117 +216,46 @@ struct Block {
 
 }  // namespace cap
 
-// ── FIXY-FOUND-104 no-state invariant pin ───────────────────────────
-//
-// Bg / Init / Test (below) carry the cap atoms as PUBLIC NSDMI fields
-// (`[[no_unique_address]] cap::Alloc alloc{};` and friends).  The
-// public surface lets production call sites name the cap tag through
-// the context — `arena.alloc(bg.alloc, ...)` — without minting a
-// freestanding `cap::Alloc{}` at every call.  That convenience is
-// SOUND today ONLY because cap::Alloc / cap::IO / cap::Block are
-// stateless empty structs — a copy out of `bg.alloc` is observationally
-// indistinguishable from `cap::Alloc{}` direct construction, so the
-// public field grants no privilege that wasn't already universally
-// available via the empty default ctor.
-//
-// The structural enforcement of capability-gated authorization lives
-// elsewhere: `Capability<E, S>` (FOUND-102) is the linear proof token
-// minted via `mint_from_ctx<E>(ctx)` and consumed at the API boundary.
-// The bare cap atoms are TYPE MARKERS for parameter routing; the
-// Capability<E, S> is the LINEAR PROOF.  Two complementary surfaces
-// with explicit tradeoffs — neither replaces the other.
-//
-// If a future PR adds runtime state to ANY cap atom, the design
-// premise breaks: `bg.alloc` would now carry observable state that
-// callers could copy out, store, and use outside Bg's intended scope
-// — a privilege escalation that the public field wouldn't catch but
-// the Capability<E, S> linear discipline would.  The static_asserts
-// below are the regression tripwire: a cap atom gaining state reds
-// the build with the FOUND-104 tag and the exact remediation:
-// privatize the Bg/Init/Test field whose type just became stateful.
-static_assert(std::is_empty_v<cap::Alloc>, "FIXY-FOUND-104: cap::Alloc must remain a stateless empty struct.  "
-                                           "Bg / Init / Test below carry public NSDMI fields of this type "
-                                           "(`[[no_unique_address]] cap::Alloc alloc{};`); the public surface "
-                                           "is sound ONLY because copies out of those fields are observationally "
-                                           "indistinguishable from `cap::Alloc{}` direct construction.  Adding "
-                                           "state to cap::Alloc makes `bg.alloc` carry that state, and a "
-                                           "caller can `cap::Alloc a = bg.alloc;` to capture a freestanding "
-                                           "stateful capability — bypassing the ctx-scoped lifetime intent.  "
-                                           "Fix: either (a) privatize the corresponding fields on Bg/Init/Test "
-                                           "and gate access through a passkey-friended accessor, OR (b) keep "
-                                           "the state out of cap::Alloc and add it to Capability<Alloc, S> "
-                                           "instead (the linear-proof surface where lifecycle is structurally "
-                                           "enforced).");
-static_assert(std::is_empty_v<cap::IO>, "FIXY-FOUND-104: cap::IO must remain stateless — see cap::Alloc "
-                                        "diagnostic.  Bg / Init / Test below carry `cap::IO io{};`.");
-static_assert(std::is_empty_v<cap::Block>, "FIXY-FOUND-104: cap::Block must remain stateless — see cap::Alloc "
-                                           "diagnostic.  Bg / Test below carry `cap::Block block{};` (Init "
-                                           "omits Block per its non-blocking context contract).");
+// Bg, Init and Test hold these atoms as public fields, so a caller can
+// write `arena.alloc(bg.alloc, ...)` instead of minting a tag at each
+// call.  That is sound only while the atoms are stateless: a copy out
+// of `bg.alloc` is then indistinguishable from `cap::Alloc{}`, which
+// anyone can already write, so the public field grants nothing.  Give
+// an atom state and the copy becomes an escape from the context's
+// intended scope.
+static_assert(std::is_empty_v<cap::Alloc>,
+              "cap::Alloc must remain a stateless empty struct.  Bg, Init and Test expose public fields of "
+              "this type, and a caller can copy one out.  Either privatize those fields behind a friended "
+              "accessor, or carry the state on the linear capability token instead.");
+static_assert(std::is_empty_v<cap::IO>, "cap::IO must remain stateless.  Bg, Init and Test expose a public "
+                                        "field of this type.");
+static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain stateless.  Bg and Test expose a public "
+                                           "field of this type.  Init omits it because an init context must "
+                                           "not block.");
 
-// ── Top-level effects:: aliases for the cap tags ────────────────────
-//
-// Production call sites use the short form (`effects::Alloc`); the
-// `cap::` namespace exists for diagnostic clarity when the surrounding
-// code is doing something unusual with the tags directly.
 using Alloc = cap::Alloc;
 using IO = cap::IO;
 using Block = cap::Block;
 
-// ── Context types — Bg / Init / Test ────────────────────────────────
+// A context names the atoms a thread or scope may exercise.  Init
+// omits Block because an initialization scope must never wait on a
+// synchronization primitive.  Test is not a superset of Bg or Init: a
+// fixture that must drive a background or initialization path
+// constructs that context explicitly rather than passing a Test one.
 //
-// A context aggregates the cap::* tokens a particular thread or
-// scope is allowed to exercise.  Members are `[[no_unique_address]]`
-// so the whole context collapses to one byte under -O3.
+// Each context has a private default constructor and a mint factory
+// that takes a passkey.  The passkey's own default constructor is
+// private too, friended only to the entry points allowed to start a
+// context and to the test scaffolding.  A translation unit that holds
+// neither cannot forge a context.  Adding a privileged entry point is
+// one friend declaration on the relevant passkey.
 //
-//   Bg    — background thread: alloc + io + block
-//   Init  — initialization scope: alloc + io (no block — init must
-//           never block on a synchronisation primitive)
-//   Test  — test driver: alloc + io + block (CANNOT mint Effect::Bg
-//           or Effect::Init — see FIXY-FOUND-102; Test's
-//           cap_permitted_row is Row<Effect::Test, Alloc, IO, Block>,
-//           NOT a superset of Bg's or Init's rows.  A test fixture
-//           that needs to exercise a Bg- or Init-tagged code path
-//           must construct the matching context type explicitly via
-//           its own mint factory — the type system refuses to let
-//           Test masquerade as either.)
-//
-// ── fixy-A3-005 — private default ctor + passkey-via-passkey ────────
-//
-// Each context's default ctor is **private**, friending only the
-// canonical mint factory.  Each factory takes a passkey type whose
-// own default ctor is private and friended only to authorized
-// production entry points (`Vigil`, `BackgroundThread`) plus the
-// test-witness scaffolding (`effects::testing::TestWitness`).
-//
-// Mirrors the H-25 `crash_witness_key` ↔ `WrapCrashReturnKey` layered
-// gate from permissions/PermissionInherit.h: production code holds
-// the upstream passkey by construction; user TUs cannot forge a
-// context without holding ONE of the friended entry points' identity,
-// closing the "any TU can mint a cross-tier capability" hole.
-//
-// Production:                         | Tests + bench:
-//   void Vigil::ctor() {              |   auto init = effects::testing
-//       auto k = detail::ctx_mint::   |              ::TestWitness::init();
-//                    init_key{};      |   // or shorter:
-//       auto init = mint_init_context(|   auto init = effects::testing::init();
-//                    k);              |
-//   }                                 |
-//
-// Hot-path code holds NO context, holds NO passkey, therefore cannot
-// construct any cap::* token, therefore cannot call any cap::*-taking
-// function.  The discipline scales: adding a new privileged entry
-// point means adding a single friend declaration to the relevant
-// passkey type — discoverable by grep on `detail::ctx_mint::`.
-//
-// fixy-A3-015: each context's mint factory is `constexpr noexcept`
-// so the context can be aggregated at compile time within friended
-// callers (`Vigil::Vigil(...)` ctor body, perf-loader templates).
+// The factories are constexpr so a friended caller can build a context
+// during constant evaluation.
 
-// Forward declarations for friend lists.  Briefly close
-// crucible::effects (a nested-namespace-declaration closes both
-// crucible AND crucible::effects in one `}`) so we can forward-declare
-// the host classes Vigil + BackgroundThread that friend the passkeys
-// below.  Then reopen.
+// The following closes both crucible::effects and crucible in one
+// brace, which is what lets the host classes named in the passkey
+// friend lists be declared at namespace crucible scope.
 }  // namespace crucible::effects
 
 namespace crucible {
@@ -530,17 +269,14 @@ namespace testing {
 struct TestWitness;
 }  // namespace testing
 
-// Forward-declare ExecCtx so the contexts can friend it (ExecCtx
-// aggregate-inits its Cap member via NSDMI, which requires access to
-// the Cap's default ctor — friending ExecCtx grants that access
-// without leaking the default ctor to user TUs).
+// An execution context default-initializes its capability member, so
+// it needs access to that member's private default constructor.  The
+// contexts below friend this template to grant exactly that.
 template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
-class ExecCtx;  // FIXY-FOUND-103: class-not-struct hides cap_ etc. as private.
+class ExecCtx;
 
 namespace detail::ctx_mint {
 
-// Bg minter key.  Private default ctor friended only to authorized
-// production entry points + the test-witness namespace.
 class bg_key {
 private:
     constexpr bg_key() noexcept = default;
@@ -567,34 +303,19 @@ private:
 
 }  // namespace detail::ctx_mint
 
-// Forward-declare the three context classes so the §XXI mint-validity
-// concepts (next) can name them in their `is_nothrow_default_constructible_v`
-// clauses.  Trait instantiation is deferred until the concept is checked
-// (call site), at which point the full class definitions are visible.
 class Bg;
 class Init;
 class Test;
 
-// ── §XXI mint-validity concepts ──────────────────────────────────────
+// Each concept pins one passkey to one context, so handing the wrong
+// key to a factory is a concept violation rather than a deeper
+// instantiation error.
 //
-// FIXY-V-017/018/019: each context-mint factory is a function template
-// gated on a single concept (§XXI: "single composite concept" rule)
-// that pins the passkey-to-context pairing at concept-evaluation time
-// — surfaces wrong-key mistakes (e.g. handing bg_key to mint_init_context)
-// as a concept-violation diagnostic before overload resolution finishes
-// burning instantiation budget.
-//
-// **Why no nothrow check here**: `std::is_nothrow_default_constructible_v<Bg>`
-// would evaluate at concept-substitution scope, which lacks friend access
-// to Bg's private default ctor and reports `false` regardless of NSDMI
-// noexcept-ness.  The body-level `static_assert(noexcept(Bg{}))` is the
-// authoritative noexcept gate (it runs inside the friended scope where
-// access is granted); the concept's job is the key-type pairing alone.
-//
-// These are token mints (passkey authority chain established at the
-// key's friend list, not threaded through a Ctx parameter), so the
-// concept signature is `<Key>` not `<Context, Ctx>`.
-
+// The concepts deliberately check nothing else.  A nothrow-constructible
+// check would be evaluated at concept-substitution scope, which has no
+// friend access to the private default constructor and would report
+// false whatever the constructor says.  The factory bodies carry that
+// check instead, because they run inside the friended scope.
 template <class Key>
 concept CanMintBgContext = std::same_as<Key, detail::ctx_mint::bg_key>;
 
@@ -606,21 +327,16 @@ concept CanMintTestContext = std::same_as<Key, detail::ctx_mint::test_key>;
 
 class Bg {
 private:
-    // fixy-A3-005 (CLAUDE.md §XXI Universal Mint Pattern): the only
-    // path to a Bg context is `mint_bg_context(detail::ctx_mint::bg_key)`,
-    // and the only path to a bg_key is through a friended class.
     constexpr Bg() noexcept = default;
 
     template <class Key>
         requires CanMintBgContext<Key>
     friend constexpr Bg mint_bg_context(Key) noexcept;
 
-    // ExecCtx<Bg, ...> aggregate-inits its Cap member via NSDMI
-    // (`[[no_unique_address]] Cap cap_{};` in ExecCtx.h).  NSDMI
-    // access is checked in the member's containing-class context per
-    // [class.base.init]/9, so friending the ExecCtx template grants
-    // ExecCtx's class body access to Bg's private default ctor while
-    // keeping it private from every other TU.
+    // Access to a default member initializer is checked in the context
+    // of the class that contains the member, so this friendship is what
+    // lets an execution context default-initialize a Bg member while
+    // every other translation unit stays locked out.
     template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
     friend class ::crucible::effects::ExecCtx;
 
@@ -663,71 +379,36 @@ public:
     [[no_unique_address]] cap::Block block{};
 };
 
-// ── Mint factories (§XXI Universal Mint Pattern) ─────────────────────
-//
-// Each factory takes the corresponding passkey by value (sizeof == 1
-// each — EBO-collapsed; zero runtime cost).  The factory body just
-// trades the key for a fresh context — the type-level check has
-// already happened at the passkey's construction site.
-
-// fixy-A3-015 (#1622): each factory body holds a friend-scope
-// `static_assert(noexcept(Context{}))` pin.  Bg/Init/Test's default
-// constructors are private; the only places `Context{}` is a valid
-// expression are inside the friended mint factory bodies (and ExecCtx,
-// via NSDMI).  Pinning the noexcept-ness HERE catches the moment any
-// cap::* atom's NSDMI becomes throwing — the regression localizes to
-// the broken context AND to the cap atom (cf. the cap::*-level pins
-// in detail::capabilities_self_test below).  Defense-in-depth chain:
-//
-//   cap::*  ── noexcept default ctor  (atom level)
-//      │
-//      ▼
-//   Bg/Init/Test  ── noexcept aggregate-init via NSDMI  (context level)
-//      │
-//      ▼
-//   TestWitness::bg/init/test()  ── noexcept call  (mint level, pinned
-//                                     at lines 580-585 of the self-test)
-//
-// All three layers fire on a throwing-NSDMI regression.  The factory-
-// body pin is the middle layer — it sits in the only scope where the
-// private default ctor is accessible.
-
+// A factory body is one of the few scopes where the private default
+// constructor is a valid expression, so it is where the noexcept
+// property can be pinned at all.
 template <class Key>
     requires CanMintBgContext<Key>
 [[nodiscard]] inline constexpr Bg mint_bg_context(Key) noexcept {
-    static_assert(noexcept(Bg{}), "fixy-A3-015: Bg default ctor MUST be noexcept — a cap::* "
-                                  "token's NSDMI must never throw.");
+    static_assert(noexcept(Bg{}), "The Bg default constructor must be noexcept.  A capability tag's "
+                                  "default member initializer must never throw.");
     return Bg{};
 }
 
 template <class Key>
     requires CanMintInitContext<Key>
 [[nodiscard]] inline constexpr Init mint_init_context(Key) noexcept {
-    static_assert(noexcept(Init{}), "fixy-A3-015: Init default ctor MUST be noexcept — a cap::* "
-                                    "token's NSDMI must never throw.");
+    static_assert(noexcept(Init{}), "The Init default constructor must be noexcept.  A capability tag's "
+                                    "default member initializer must never throw.");
     return Init{};
 }
 
 template <class Key>
     requires CanMintTestContext<Key>
 [[nodiscard]] inline constexpr Test mint_test_context(Key) noexcept {
-    static_assert(noexcept(Test{}), "fixy-A3-015: Test default ctor MUST be noexcept — a cap::* "
-                                    "token's NSDMI must never throw.");
+    static_assert(noexcept(Test{}), "The Test default constructor must be noexcept.  A capability tag's "
+                                    "default member initializer must never throw.");
     return Test{};
 }
 
-// ── effects::testing — scaffolding entry point ──────────────────────
-//
-// Tests + bench harnesses construct contexts via this namespace.  The
-// `TestWitness` struct is friended on every passkey type, so its
-// static accessors can produce a key and immediately trade it in for
-// the corresponding context.
-//
-// **Production-code discipline**: `effects::testing::` in production
-// code (anywhere outside `test/`, `bench/`, or test-only headers) is
-// a review-rejected smell — the entire point of the namespace is
-// grep-discoverability for "this TU is exercising the test path".
-
+// Naming this namespace outside test and bench code is a review
+// rejection.  Its whole purpose is that a grep for it finds every
+// translation unit taking the test path.
 namespace testing {
 
 struct TestWitness {
@@ -736,40 +417,29 @@ struct TestWitness {
     [[nodiscard]] static constexpr Test test() noexcept { return mint_test_context(detail::ctx_mint::test_key{}); }
 };
 
-// Free-function aliases for terse call sites.
 [[nodiscard]] inline constexpr Bg bg() noexcept { return TestWitness::bg(); }
 [[nodiscard]] inline constexpr Init init() noexcept { return TestWitness::init(); }
 [[nodiscard]] inline constexpr Test test() noexcept { return TestWitness::test(); }
 
 }  // namespace testing
 
-static_assert(sizeof(Bg) == 1, "Bg context must be 1 byte (EBO over empty cap::* members)");
-static_assert(sizeof(Init) == 1, "Init context must be 1 byte");
-static_assert(sizeof(Test) == 1, "Test context must be 1 byte");
+static_assert(sizeof(Bg) == 1, "The Bg context must be 1 byte.  Its capability members are empty and "
+                               "collapse into the object's own byte.");
+static_assert(sizeof(Init) == 1, "The Init context must be 1 byte");
+static_assert(sizeof(Test) == 1, "The Test context must be 1 byte");
 static_assert(sizeof(cap::Alloc) == 1);
 static_assert(sizeof(cap::IO) == 1);
 static_assert(sizeof(cap::Block) == 1);
 
-// ── Self-test block ─────────────────────────────────────────────────
 namespace detail::capabilities_self_test {
 
-// Cardinality.  Held at six for the original Alloc/IO/Block/Bg/Init/
-// Test catalog — if a future revision adds a seventh atom, this guard
-// fires AND the name-coverage assertion below independently fires
-// (the latter is the load-bearing one because it pinpoints the
-// missing switch arm in effect_name()).
-static_assert(effect_count == 6, "Effect catalog diverged from the original sextet — confirm the "
-                                 "addition is intentional and the name-coverage assertion below "
-                                 "still fires for the new atom.");
+static_assert(effect_count == 6, "The Effect catalog has grown or shrunk.  Confirm the change is "
+                                 "intended, and check that the name-coverage assertion below still "
+                                 "reaches every atom.");
 
-// Name coverage via reflection — every Effect atom MUST have a
-// non-sentinel name from effect_name().  Adding a new atom without
-// updating the switch fires this assertion at header-inclusion time.
 [[nodiscard]] consteval bool every_effect_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
-    // -Wshadow on `template for` body's induction variable is the
-    // canonical false-positive across iterations; suppress locally.
-    // See feedback_gcc16_c26_reflection_gotchas memory rule.
+    // -Wshadow fires spuriously on the expansion-statement induction variable.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -780,45 +450,31 @@ static_assert(effect_count == 6, "Effect catalog diverged from the original sext
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_effect_has_name(), "effect_name() switch is missing an arm for at least one Effect "
-                                       "atom — add the arm or the new atom leaks the '<unknown Effect>' "
-                                       "sentinel into diagnostics.");
+static_assert(every_effect_has_name(), "The effect_name switch is missing an arm for at least one Effect "
+                                       "atom, so that atom reports the unknown-atom sentinel in "
+                                       "diagnostics.");
 
-// ── Append-only Universe pin (FOUND-I04) ────────────────────────────
-//
-// Underlying values are FROZEN.  A change here is a federation-cache
-// wire-format break — see the "Append-only Universe extension" block
-// at the file head for the audit / migration ceremony.  These
-// assertions fire instantly on any drift, naming the offending atom.
-//
-// A new atom (e.g. Refute) MUST land at the next free value (6, 7,
-// ...) without disturbing the existing pin lines below.  Adding a
-// new `static_assert(... == 6)` line below this block at the same
-// time keeps the pin set complete.
+// A new atom takes the next free value and adds one pin below.
 static_assert(static_cast<std::uint8_t>(Effect::Alloc) == 0,
-              "Effect::Alloc value drifted — federation row_hash invalidated.  "
-              "Restore Alloc=0 or follow the major-version migration ceremony "
-              "documented at file head.");
+              "The value of Effect::Alloc changed, which invalidates every federation cache key that "
+              "mentions it.  Restore the value, or run the major-version migration.");
 static_assert(static_cast<std::uint8_t>(Effect::IO) == 1,
-              "Effect::IO value drifted — federation row_hash invalidated.");
+              "The value of Effect::IO changed, which invalidates federation cache keys.");
 static_assert(static_cast<std::uint8_t>(Effect::Block) == 2,
-              "Effect::Block value drifted — federation row_hash invalidated.");
+              "The value of Effect::Block changed, which invalidates federation cache keys.");
 static_assert(static_cast<std::uint8_t>(Effect::Bg) == 3,
-              "Effect::Bg value drifted — federation row_hash invalidated.");
+              "The value of Effect::Bg changed, which invalidates federation cache keys.");
 static_assert(static_cast<std::uint8_t>(Effect::Init) == 4,
-              "Effect::Init value drifted — federation row_hash invalidated.");
+              "The value of Effect::Init changed, which invalidates federation cache keys.");
 static_assert(static_cast<std::uint8_t>(Effect::Test) == 5,
-              "Effect::Test value drifted — federation row_hash invalidated.");
+              "The value of Effect::Test changed, which invalidates federation cache keys.");
 
-// Underlying type pinned at uint8_t — a future widen to uint16_t or
-// uint32_t silently changes ABI of any struct that uses Effect by
-// value.  Federation row_hash sees only the underlying value (cast
-// to uint64_t inside fmix64_fold) so type widening is invisible to
-// the hash, but still ABI-breaking for transport structs.
+// Widening the underlying type is invisible to the row hash, which
+// reads only the value, but it changes the layout of every struct that
+// holds an Effect by value.
 static_assert(std::is_same_v<std::underlying_type_t<Effect>, std::uint8_t>,
-              "Effect underlying type drifted from uint8_t — ABI change.");
+              "The Effect underlying type is no longer uint8_t, which changes the ABI.");
 
-// Every atom satisfies the concept gate.
 static_assert(IsEffect<Effect::Alloc>);
 static_assert(IsEffect<Effect::IO>);
 static_assert(IsEffect<Effect::Block>);
@@ -826,16 +482,6 @@ static_assert(IsEffect<Effect::Bg>);
 static_assert(IsEffect<Effect::Init>);
 static_assert(IsEffect<Effect::Test>);
 
-// ── FIXY-FOUND-101: reflection-derived count witness ───────────────
-//
-// Iterates `enumerators_of(^^Effect)` and counts how many satisfy
-// IsEffect.  Post-fix this equals effect_count by construction (the
-// concept body IS that iteration).  Pre-fix, the hand-rolled `||`
-// disjunction could silently drop an atom — a future contributor
-// adding `Effect::Crash = 6` without extending the disjunction would
-// have produced count_accepted_effects() == 6 while effect_count == 7,
-// failing this assertion at the source of truth.  Post-fix the
-// assertion is structural and tautological by design.
 [[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
     static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^Effect));
     std::size_t n = 0;
@@ -848,22 +494,14 @@ static_assert(IsEffect<Effect::Test>);
 #pragma GCC diagnostic pop
     return n;
 }
-static_assert(count_accepted_effects_() == effect_count, "IsEffect rejects an Effect-catalog atom — reflection drift.");
+static_assert(count_accepted_effects_() == effect_count, "IsEffect rejects an atom that is in the Effect catalog.");
 
-// ── Out-of-range rejection ─────────────────────────────────────────
-//
-// `static_cast<Effect>(99)` is a well-formed Effect value (uint8_t
-// underlying admits 0..255) but is NOT a named enumerator.  IsEffect
-// must reject it — both before and after the reflection migration.
-// Pre-existing hand-rolled `||` did so accidentally (only 6 cases);
-// post-fix the reflection loop does so structurally (atom not in
-// enumerators_of result).
+// A cast from an unnamed value is a well-formed Effect, because the
+// underlying type admits 0 through 255.  The gate must still reject it.
 static_assert(!IsEffect<static_cast<Effect>(99)>);
-static_assert(!IsEffect<static_cast<Effect>(255)>);  // boundary
-static_assert(!IsEffect<static_cast<Effect>(6)>);  // immediately past last named (Test=5)
+static_assert(!IsEffect<static_cast<Effect>(255)>);
+static_assert(!IsEffect<static_cast<Effect>(6)>);
 
-// Diagnostic names are non-empty AND distinct AND none falls through
-// to the "<unknown Effect>" sentinel.
 static_assert(!effect_name(Effect::Alloc).empty());
 static_assert(!effect_name(Effect::IO).empty());
 static_assert(!effect_name(Effect::Block).empty());
@@ -878,7 +516,6 @@ static_assert(effect_name(Effect::Bg) != "<unknown Effect>");
 static_assert(effect_name(Effect::Init) != "<unknown Effect>");
 static_assert(effect_name(Effect::Test) != "<unknown Effect>");
 
-// Pairwise distinctness — every atom has a unique name.
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::IO));
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Block));
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Bg));
@@ -888,11 +525,6 @@ static_assert(effect_name(Effect::IO) != effect_name(Effect::Block));
 static_assert(effect_name(Effect::Bg) != effect_name(Effect::Init));
 static_assert(effect_name(Effect::Init) != effect_name(Effect::Test));
 
-// ── Cap-tag layout invariants ───────────────────────────────────────
-//
-// Every cap::* token is a default-constructible empty struct.  Bg /
-// Init / Test contexts hold them as [[no_unique_address]] members and
-// collapse to one byte total.
 static_assert(std::is_default_constructible_v<cap::Alloc>);
 static_assert(std::is_default_constructible_v<cap::IO>);
 static_assert(std::is_default_constructible_v<cap::Block>);
@@ -903,15 +535,9 @@ static_assert(std::is_trivially_destructible_v<cap::Alloc>);
 static_assert(std::is_trivially_destructible_v<cap::IO>);
 static_assert(std::is_trivially_destructible_v<cap::Block>);
 
-// fixy-A3-015 (#1622): cap::* atom-level noexcept pins.  Every cap::*
-// is the source of an NSDMI inside Bg/Init/Test (`[[no_unique_address]]
-// cap::Alloc alloc{};`).  If a future change to cap::* adds a throwing
-// default ctor or NSDMI, this assertion fires AT THE ATOM — naming the
-// exact cap that broke before the chain reaches Bg/Init/Test's friended
-// factory bodies (which carry their own pins per A3-015) and the
-// outermost TestWitness pins above.  Three-layer defense in depth: atom
-// → context → mint.  A regression at the atom layer fires all three;
-// the atom pin pinpoints the cause.
+// A throwing default constructor on an atom would also break the
+// contexts that hold it and the factories that mint them.  Pinning it
+// here names the atom that caused it.
 static_assert(noexcept(cap::Alloc{}));
 static_assert(noexcept(cap::IO{}));
 static_assert(noexcept(cap::Block{}));
@@ -919,17 +545,12 @@ static_assert(std::is_nothrow_default_constructible_v<cap::Alloc>);
 static_assert(std::is_nothrow_default_constructible_v<cap::IO>);
 static_assert(std::is_nothrow_default_constructible_v<cap::Block>);
 
-// Top-level aliases really do refer to the cap::* originals.
 static_assert(std::is_same_v<Alloc, cap::Alloc>);
 static_assert(std::is_same_v<IO, cap::IO>);
 static_assert(std::is_same_v<Block, cap::Block>);
 
-// fixy-A3-005: Bg / Init / Test contexts default-construct without
-// throwing — but only through their friended mint factory.  We assert
-// the property at the mint-factory level via the static accessors on
-// effects::testing::TestWitness (which has friend access to every
-// passkey type), confirming the (a) constexpr noexcept (b) zero-cost
-// EBO-collapsed shape (c) lvalue-callable contract.
+// The contexts can only be built through a friended factory, so the
+// nothrow property is asserted through the witness that holds a key.
 static_assert(noexcept(::crucible::effects::testing::TestWitness::bg()));
 static_assert(noexcept(::crucible::effects::testing::TestWitness::init()));
 static_assert(noexcept(::crucible::effects::testing::TestWitness::test()));
@@ -937,31 +558,18 @@ static_assert(noexcept(::crucible::effects::testing::bg()));
 static_assert(noexcept(::crucible::effects::testing::init()));
 static_assert(noexcept(::crucible::effects::testing::test()));
 
-// fixy-A3-005: direct default construction MUST be rejected — the
-// whole point of the privatization is that user TUs cannot forge a
-// context.  Use the negation here so the property is visible in the
-// header self-tests; the load-bearing reject lives in the HS14
-// neg-compile fixtures at test/effects_neg/.
-static_assert(!std::is_default_constructible_v<Bg>, "fixy-A3-005: Bg default ctor must be private — use "
-                                                    "effects::testing::TestWitness::bg() in tests or the friended "
-                                                    "production entry point (BackgroundThread).");
-static_assert(!std::is_default_constructible_v<Init>, "fixy-A3-005: Init default ctor must be private — use "
-                                                      "effects::testing::TestWitness::init() in tests or the friended "
-                                                      "production entry point (Vigil, BackgroundThread).");
-static_assert(!std::is_default_constructible_v<Test>, "fixy-A3-005: Test default ctor must be private — use "
-                                                      "effects::testing::TestWitness::test().");
+static_assert(!std::is_default_constructible_v<Bg>,
+              "The Bg default constructor must stay private.  Build one through the friended "
+              "background-thread entry point, or through the test witness.");
+static_assert(!std::is_default_constructible_v<Init>,
+              "The Init default constructor must stay private.  Build one through a friended "
+              "production entry point, or through the test witness.");
+static_assert(!std::is_default_constructible_v<Test>,
+              "The Test default constructor must stay private.  Build one through the test witness.");
 
-// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
-//
-// Drive every constexpr accessor through a NON-constant argument so
-// the front-end type-checks the inline body against runtime semantics
-// — the bug class that pure-static_assert coverage misses.  All work
-// is `inline` (one-definition rule) and almost certainly elided under
-// -O3, but the parse + body type-check is the load-bearing step.
+// Every accessor is called here with a non-constant argument.  The
+// static_assert wall above only proves the constant-evaluated path.
 inline void runtime_smoke_test() {
-    // `e` is intentionally NOT constexpr — drives effect_name() through
-    // the runtime path, exercising the constexpr-not-consteval demotion
-    // that the discipline comment at file head asserts (line 151).
     Effect e = Effect::Alloc;
     [[maybe_unused]] std::string_view n1 = effect_name(e);
     e = Effect::IO;
@@ -975,15 +583,10 @@ inline void runtime_smoke_test() {
     e = Effect::Test;
     [[maybe_unused]] std::string_view n6 = effect_name(e);
 
-    // cap::* tag default construction at runtime — the [[no_unique_address]]
-    // EBO discipline only holds if these ctors are runtime-callable.
     [[maybe_unused]] cap::Alloc a_tag{};
     [[maybe_unused]] cap::IO i_tag{};
     [[maybe_unused]] cap::Block b_tag{};
 
-    // Bg/Init/Test mint through the testing-witness facade at runtime
-    // — fixy-A3-005 made the direct default ctor private; the witness
-    // is the only sanctioned path and MUST be runtime-callable.
     [[maybe_unused]] auto bg_ctx = ::crucible::effects::testing::bg();
     [[maybe_unused]] auto init_ctx = ::crucible::effects::testing::init();
     [[maybe_unused]] auto test_ctx = ::crucible::effects::testing::test();

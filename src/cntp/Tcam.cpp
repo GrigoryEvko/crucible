@@ -74,10 +74,6 @@ std::expected<void, TcamError> force_tcam_backend_boundary(DeclaredTcamTable tab
     if (!table.value().backend_ready) {
         return std::unexpected(TcamError::VendorBackendUnavailable);
     }
-    // fixy-A5-025: success fallthrough — both predicates hold, the
-    // boundary work (currently a no-op until the vendor backend ships)
-    // is "done".  Pre-fix this returned VendorBackendUnavailable on the
-    // happy path, indistinguishable from the genuine not-ready case.
     return {};
 }
 

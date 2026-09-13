@@ -1,72 +1,22 @@
-// crucible::perf::SchedSwitch — libbpf binding implementation.
-//
-// First per-program facade in the GAPS-004 BPF series (sibling to
-// the keystone SenseHub aggregator).  Mirrors SenseHub.cpp's loader
-// shape as closely as possible:
-//   • 7-step Phase loop (parse ELF → rewrite .rodata → disable
-//     unavailable programs → bpf_object__load → register our_tids →
-//     attach programs → mmap timeline) maps 1:1 to SenseHub's
-//     numbered phases, ordered identically.
-//   • Same WriteOnce/WriteOnceNonNull/Tagged/Monotonic/NonMovable
-//     wrapper toolkit, same anon-namespace source tags, same
-//     env-var conventions.
-//   • Same `report()` lambda shape, same libbpf_log_cb gate,
-//     same install_libbpf_log_cb_once() once-flag.
-//
-// This duplication is INTENTIONAL — Promote-First architecture
-// (CLAUDE.md / Mike Acton: generalize from ≥2 real cases).  When
-// GAPS-004c (PmuSample) lands as the SECOND per-program facade,
-// the duplication between the two loaders becomes informational
-// for the GAPS-004x BpfLoader extraction.  Today we have ONE
-// production loader (SenseHub) + ONE not-quite-twin (this one);
-// the right number of skeletons before extracting an abstraction
-// is two, not one.
-//
-// Design points specific to SchedSwitch (vs SenseHub):
-//   • `cs_count` is a 1-element BPF_MAP_TYPE_ARRAY map, NOT
-//     BPF_F_MMAPABLE.  Reading it is one bpf_map_lookup_elem
-//     syscall (~1 µs).  The header documents the cost; future
-//     work (or a kernel-side bytecode update) could promote it.
-//   • `our_tids` is populated with the current TID at load time
-//     (same as SenseHub).  A future GAPS-004x can iterate
-//     /proc/self/task/* to populate ALL TIDs of our process.
-//     Today: main thread only.
-//   • `sched_timeline` IS BPF_F_MMAPABLE.  We mmap it read-only,
-//     hand the events array out via Borrowed<>.  The 64-byte
-//     header sits before events[]; readers grab the header
-//     separately via timeline_write_index().
-
 #include <crucible/perf/SchedSwitch.h>
 
-// detail::BpfLoader brings the shared anonymous-namespace helpers
-// (Tagged provenance typedefs, env-var caches, libbpf log control,
-// .rodata + tracepoint discovery, libbpf_errno).  Pulling them via
-// using-declarations below keeps every call site syntactically
-// unchanged but eliminates the cross-facade duplication that 5 audit
-// rounds repeatedly found drift in.  GAPS-004x context block in the
-// header explains why this lives in `detail/` (TU-internal helpers,
-// not a public API).
 #include <crucible/perf/detail/BpfLoader.h>
 
-#include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
-#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
-#include <crucible/safety/Pinned.h>  // safety::NonMovable<T>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
 
-#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>
 
-// 8 slots — sched_switch.bpf.c contains exactly one program today,
-// but the cap stays at the inplace_vector<...,8> shape used by
-// SenseHub for uniformity.  GCC 16 ships std::inplace_vector
-// unconditionally.
 #include <inplace_vector>
-#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>
 
 extern "C" {
 extern const unsigned char sched_switch_bpf_bytecode[];
@@ -77,12 +27,9 @@ namespace crucible::perf {
 
 namespace {
 
-// All shared helpers live in ::crucible::perf::detail (BpfLoader.h).
-// Pull them into the anonymous namespace so call sites below remain
-// syntactically identical to the pre-extraction code.  Anon-namespace
-// using-declarations have an implicit using-directive into the
-// enclosing namespace (per [basic.namespace]/4) so members of struct
-// State below also see Fd / Tgid / Tid via name lookup.
+// These using-declarations sit in an anonymous namespace, whose implicit
+// using-directive into the enclosing namespace is what lets the members of
+// State below find Fd, Tgid and Tid by name lookup.
 namespace source = ::crucible::perf::detail::source;
 using ::crucible::perf::detail::Tgid;
 using ::crucible::perf::detail::Tid;
@@ -99,41 +46,23 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
-// FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
-// ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
+// The distinct phantom tag makes one facade's ring buffer mapping unusable
+// as another facade's mapping at compile time.
 namespace {
 struct SchedSwitchRingbufTag {};
 struct ReadOnlyProt {};
 struct SharedShare {};
 }  // namespace
 
-// State CRTP-inherits NonMovable for the same reason SenseHub::State
-// does — exclusive resources (bpf_object*, bpf_link*, mmap region)
-// must not be duplicated.  Subsumes 4 explicit `= delete` lines into
-// the empty base class; EBO collapses the base.
 struct SchedSwitch::State : crucible::safety::NonMovable<SchedSwitch::State> {
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
-    // <volatile uint8_t*>, WriteOnce<size_t>} pair.  std::optional's
-    // engaged-state doubles as the "loaded yet" marker (engaged iff
-    // Phase 7 ran to completion); ~State no longer carries an explicit
-    // munmap clause — OwnedMmap's dtor handles it.
     using TimelineMmap = ::crucible::safety::OwnedMmap<SchedSwitchRingbufTag, ReadOnlyProt, SharedShare>;
     std::optional<TimelineMmap> timeline_mmap{};
 
-    // FD of the cs_count map, captured during load() and kept for
-    // the lifetime of the SchedSwitch.  context_switches() uses it
-    // for bpf_map_lookup_elem.  Tagged with source::BpfMap to
-    // distinguish from arbitrary FDs at the type level.  Sentinel
-    // value is -1 (the canonical "unset FD" Linux convention);
-    // context_switches() short-circuits on `< 0` rather than issuing
-    // a syscall on an invalid FD.
     Fd cs_count_fd{-1};
 
-    // Monotonic counter — only ever .bump()s on attach failures,
-    // never resets.  Same discipline as SenseHub::State.
     safety::Monotonic<size_t> attach_fail_cnt{0};
 
     State() = default;
@@ -141,7 +70,6 @@ struct SchedSwitch::State : crucible::safety::NonMovable<SchedSwitch::State> {
     ~State() {
         for (struct bpf_link* l : links)
             if (l != nullptr) bpf_link__destroy(l);
-        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -165,7 +93,6 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
 
     auto state = std::make_unique<State>();
 
-    // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
     opts.sz = sizeof(opts);
     opts.object_name = "crucible_sched_switch";
@@ -179,7 +106,6 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
     }
     state->obj = obj;
 
-    // ── 2. Rewrite target_tgid in .rodata to our PID ───────────────
     if (struct bpf_map* rodata = find_rodata(state->obj); rodata != nullptr) {
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
@@ -192,10 +118,8 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
         }
     }
 
-    // ── 3. Skip programs whose tracepoints aren't on this kernel ──
     disable_unavailable_programs(state->obj);
 
-    // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
                "verifier rejected, missing CAP_BPF, or kernel too old)",
@@ -203,14 +127,9 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
         return std::nullopt;
     }
 
-    // ── 5. Register our main TID in our_tids ───────────────────────
-    //
-    // The sched_switch tracepoint fires in PREV-task context, so
-    // the BPF program looks up next_pid in our_tids to recognise
-    // "this is one of our threads switching IN".  A first-ship
-    // facade only registers the loader's main TID; multi-thread
-    // workloads will miss off-CPU events for their other threads
-    // until GAPS-004x adds /proc/self/task/* iteration.
+    // The sched_switch tracepoint fires in the context of the previous task,
+    // so the BPF program looks up next_pid in this map to recognise one of
+    // our own threads switching in.
     if (struct bpf_map* m = bpf_object__find_map_by_name(state->obj, "our_tids"); m != nullptr) {
         const Fd fd = map_fd(m);
         const Tid tid = current_tid();
@@ -220,7 +139,6 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
         (void)bpf_map_update_elem(fd_raw, &tid_raw, &one, BPF_ANY);
     }
 
-    // ── 6. Attach every autoload-enabled program ───────────────────
     struct bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
@@ -252,7 +170,6 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
         return std::nullopt;
     }
 
-    // ── 7. mmap the sched_timeline ring buffer ─────────────────────
     struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "sched_timeline");
     if (timeline_map == nullptr) {
         report("sched_timeline map not found in object (bytecode/header out of sync — rebuild)");
@@ -266,10 +183,6 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
         return std::nullopt;
     }
     const size_t page = static_cast<size_t>(page_l);
-    // sizeof(TimelineHeader) + sizeof(events[TIMELINE_CAPACITY])
-    //   = 64 + (4096 * 24)
-    //   = 98368 bytes
-    // Round up to page granularity (24 pages of 4 KB on x86_64).
     const size_t bytes = sizeof(TimelineHeader) + TIMELINE_CAPACITY * sizeof(TimelineSchedEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
     void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
@@ -279,20 +192,13 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
                errno);
         return std::nullopt;
     }
-    // FIXY-V-236: single atomic commit via OwnedMmap.emplace — the
-    // (addr, len) pair is captured together; the old paired-single-set
-    // ordering hazard is gone because there is only ONE field now.
     state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
-    // Capture the cs_count FD for context_switches() lookups.  The
-    // map is a 1-element ARRAY map (not mmap-able as currently
-    // declared in sched_switch.bpf.c), so reads require a syscall.
+    // The count map is a one-element array map and is not declared
+    // mmap-able, so every read of it costs a syscall through this fd.
     if (struct bpf_map* cs = bpf_object__find_map_by_name(state->obj, "cs_count"); cs != nullptr) {
         state->cs_count_fd = map_fd(cs);
     } else {
-        // Soft failure — the timeline still works without cs_count,
-        // and context_switches() returns 0 when fd is -1.  Print
-        // the warning if the user asked for verbose output.
         if (verbose()) {
             std::fprintf(stderr, "[crucible::perf] sched_switch cs_count map missing — "
                                  "context_switches() will return 0\n");
@@ -313,10 +219,8 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
 
 uint64_t SchedSwitch::context_switches() const noexcept {
     if (state_ == nullptr || state_->cs_count_fd.value() < 0) return 0;
-    // bpf_map_lookup_elem on an ARRAY map with key=0 returns the
-    // single u64 counter the BPF program __sync_fetch_and_add's
-    // every sched_switch event whose prev_pid is in our process.
-    // Cost: one syscall, ~1 µs on most kernels.
+    // The map is a one-element array, so key 0 addresses the single counter
+    // that the BPF program adds to on every matching event.
     const uint32_t key = 0;
     uint64_t value = 0;
     if (bpf_map_lookup_elem(state_->cs_count_fd.value(), &key, &value) != 0) {
@@ -329,25 +233,17 @@ safety::Borrowed<const TimelineSchedEvent, SchedSwitch> SchedSwitch::timeline_vi
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSchedEvent, SchedSwitch>{};
     }
-    // The mmap'd region starts with the 64-byte header, then
-    // TIMELINE_CAPACITY events.  Hand out a span of just the
-    // events portion — the header is accessed separately via
-    // timeline_write_index().  bit_cast handles the volatile→
-    // non-volatile pointer reinterp atomically (no const_cast
-    // required) — std::span<const volatile T> is unimplementable
-    // for non-scalar T in libstdc++ today (the span impl
-    // instantiates element copy/move ctors that fail under
-    // volatile); consumers are expected to do volatile / atomic
-    // loads at the field-access site (see header docblock for
-    // the canonical __atomic_load_n(&events[slot].ts_ns,
-    // __ATOMIC_ACQUIRE) idiom).  start_lifetime_as_array begins
-    // the typed array's lifetime in the BPF mmap'd byte storage
-    // (CLAUDE.md §III sanctioned alternative to reinterpret_cast).
-    // FIXY-V-236: OwnedMmap void* data() bit_cast to typed volatile ptr.
+    // The mapped region starts with the header and the events follow it, so
+    // the returned view covers only the events.  The mapping is untyped byte
+    // storage, so start_lifetime_as_array begins the typed array lifetime
+    // inside it.  The bit_cast drops volatile, because libstdc++ has no
+    // span<const volatile T> for a non-scalar T: its span instantiates
+    // element copy and move constructors, which fail under volatile.  A
+    // consumer performs its own atomic load at each field access.
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // _Tp non-const: const-void* overload returns const _Tp*; passing
-    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
-    // through a const-qualified array location.
+    // The element type stays non-const.  The const-void* overload already
+    // returns a const pointer, and a const element type makes libstdc++ emit
+    // an asm clobber that writes through a const-qualified array location.
     auto* events = std::start_lifetime_as_array<TimelineSchedEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSchedEvent, SchedSwitch>{events, TIMELINE_CAPACITY};
@@ -356,25 +252,17 @@ safety::Borrowed<const TimelineSchedEvent, SchedSwitch> SchedSwitch::timeline_vi
 uint64_t SchedSwitch::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: implicit qualification adds const to the volatile uint8_t*
-    // pointee (volatile→const volatile is a permitted qualification convert);
-    // start_lifetime_as<H>(const volatile void*) returns const volatile H*.
+    // The added const selects the overload taking const volatile void*, which
+    // returns a const volatile pointer to the header.
     const volatile uint8_t* qbase = base;
     auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
-    // Volatile load of write_idx — the BPF program updates it via
-    // __sync_fetch_and_add (a full memory barrier on x86 / a
-    // release on aarch64 via STLXR), so a plain volatile load on
-    // x86 reads a value that's at most one event behind real-time.
-    // No acquire fence needed: ts_ns is the per-event completion
-    // marker; reader checks ts_ns != 0 before trusting other event
-    // fields.
+    // This volatile load needs no acquire fence.  The BPF program updates
+    // write_idx with a barriered add, and ts_ns is the per-event completion
+    // marker, so a reader checks ts_ns for a non-zero value before trusting
+    // the rest of an event.
     return hdr->write_idx;
 }
 
-// fixy-V-171: returns the §XVI parameterised alias
-// fixy::wrap::MaxBounded<8, std::size_t> — type-identical to the
-// pre-V-171 `safety::Refined<safety::bounded_above<8>, std::size_t>`
-// spelling (it IS that type via using-re-export; zero ABI change).
 fixy::wrap::MaxBounded<8, std::size_t> SchedSwitch::attached_programs() const noexcept {
     using R = fixy::wrap::MaxBounded<8, std::size_t>;
     return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};

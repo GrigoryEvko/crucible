@@ -15,7 +15,6 @@ namespace crucible::cntp {
 
 namespace {
 
-// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
 using LocalFd = ::crucible::safety::FileHandle;
 
 [[nodiscard]] bool is_space(char c) noexcept { return c == ' ' || c == '\n' || c == '\t' || c == '\r'; }
@@ -175,23 +174,17 @@ std::string_view dcqcn_state_name(DcqcnState state) noexcept {
 }
 
 DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept {
-    // fixy-A5-042: vendor-specific probes (Mellanox `/sys/class/
-    // infiniband/<dev>/tc/<n>/cnp_dscp`, etc.) land here as they
-    // ship.  Until a backend is wired, the honest answer is
-    // BackendUnavailable — NOT a fabricated Inactive that pretends
-    // the NIC reported off.
+    // No vendor sysfs probe is wired, so the only honest answer is
+    // BackendUnavailable.  Returning Inactive would be indistinguishable from
+    // a NIC that genuinely reported the feature off.
     static_cast<void>(iface);
     return DcqcnState::BackendUnavailable;
 }
 
 std::expected<bool, RoceError> verify_dcqcn_active(NicInterfaceName iface) noexcept {
-    // Pure mapping lives in the header so the back-compat contract
-    // is static_assert-coverable at every include site.
-    // FIXY-U-087: substrate-internal stub call — query_dcqcn_state is
-    // deprecated-as-stub; the back-compat chain is part of the substrate
-    // boundary, so we suppress the warning at exactly this composition
-    // site.  External callers still observe the warning when they call
-    // either function from outside the substrate.
+    // query_dcqcn_state is declared deprecated.  The suppression is scoped to
+    // this one call so that callers outside this file still observe the
+    // warning at their own call sites.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     return dcqcn_state_to_bool(query_dcqcn_state(iface));

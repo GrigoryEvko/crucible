@@ -1,12 +1,5 @@
 #pragma once
 
-// Topology worker ownership for TCP congestion telemetry.
-//
-// topology/CongestionTelemetry.h owns socket harvesting and deterministic
-// aggregation.  topology owns the bounded worker state and observation
-// publication rail because congestion drift is a routing-admission input, not
-// a topology fact by itself.
-
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>

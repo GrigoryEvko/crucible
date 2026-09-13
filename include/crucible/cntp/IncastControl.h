@@ -1,14 +1,8 @@
 #pragma once
 
-// GAPS-124.  CNT-P incast-control substrate.
-//
-// This header owns socket-local incast mitigations that can be applied
-// without inventing a collective runtime: DCTCP selection, TCP_RTO_MIN_US
-// tuning where the kernel exposes it, and declared receiver-issued credit
-// pacing config. Bounded credit state lives in cntp/IncastControlRuntime.h. This
-// header deliberately does not mutate sysctls, install qdiscs, write Cipher
-// events, or auto-wire collectives; those are owned by NicConfig, Pacing,
-// Cipher, and CollectiveCatalog tasks.
+// Applying a config sets socket options only: it mutates no sysctl, installs
+// no qdisc and starts no collective runtime.  The ECN and credit-pacing fields
+// are declared state for a caller to act on, not settings this header applies.
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/safety/Refined.h>
@@ -33,12 +27,8 @@ enum class IncastError : std::uint8_t {
     TooManyFlows,
     FlowNotStarted,
     CreditOverflow,
-    // fixy-A5-005: this error means "no credit currently issued for this
-    // flow" — try_consume_credit polls once and returns immediately.  It
-    // is NOT a timeout (the controller never blocks); the previous name
-    // CreditTimeout falsely implied a wait that the design rejects.  The
-    // BG drain thread is the sole credit consumer per flow, so a wait
-    // would be a single-threaded self-deadlock.
+    // A poll result, not a timeout.  A blocking acquire would deadlock: the
+    // sole credit consumer for a flow is also the thread that issues it.
     CreditUnavailable,
 };
 

@@ -1,80 +1,18 @@
 #pragma once
 
-// ── crucible::algebra::lattices::StdioLattice ───────────────────────
+// Four-tier chain over the console-I/O surface a function touches.
+// Declaring a tier asserts that the actual surface is contained in the
+// set that tier allows.
 //
-// SCAFFOLDING header for FIXY-V-241 (3/3).  Ships the `Stdio` sub-axis
-// enum + its `ChainLatticeOps`-based lattice + `At<T>` singleton +
-// reflection-driven self-test for the `DimensionAxis::Stdio` axis (dim
-// 28, Tier-S Semiring, 2026-05-23).  V-242 wraps it as a
-// `safety/Stdio.h` Graded carrier; V-243 adds the CollisionCatalog
-// rules; V-246 (fixy/grant/Stdio.h) routes the stdio grants here.
+// The tiers climb by what each one adds: a format parse, then a forced
+// flush and its write syscall, then an unbounded wait on whoever is at
+// the terminal.
 //
-// ── Why a dedicated Stdio axis (DimensionAxis::Stdio, dim 28) ────────
-//
-// CLAUDE.md §XII bans stdio on the hot path ("No fprintf / std::cout /
-// std::printf / std::format on hot path — format parsing ≥100 ns,
-// output syscalls flush buffers, noise pollutes measurement").  That
-// rule was prose-only; this axis makes it a type-level admission gate.
-// Gates it drives:
-//
-//   1. Forge phase E.RecipeSelect hot-path admission `stdio ⊑ NoStdio`:
-//      a kernel that writes to a console stream cannot run on the
-//      foreground path.
-//   2. The cost gradient (no-cost → format-cost → syscall-cost →
-//      unbounded-block) lets Observe attribute per-call latency to the
-//      declared stdio tier.
-//   3. DetSafe / bench discipline: an `UnbufferedWrite` or
-//      `InteractiveRead` on a measured path invalidates timing.
-//
-// ── Tier classification (Tier-S Semiring with par=join) ─────────────
-//
-// Stdio is `TierKind::Semiring` per `tier_of_axis(Stdio)`.  The
-// composition reading is "stdio-surface union": two sites composing
-// admit the JOIN (the more-disruptive stdio surface).
-//
-// ── Chain order — subset-inclusion of stdio surface / disruptiveness ─
-//
-//   NoStdio ⊏ BufferedWrite ⊏ UnbufferedWrite ⊏ InteractiveRead
-//
-// Ordinal 0 = NoStdio (no console I/O); ordinal 3 = InteractiveRead
-// (blocks on user input — the most disruptive).  A function declaring
-// `Stdio = X` ASSERTS its actual stdio surface ⊆ X's allowed set;
-// hot-path admission `stdio ⊑ NoStdio` requires the bottom tier exactly.
-// Per-tier rationale (each strictly more disruptive than the one below):
-//
-//   NoStdio         = 0 — performs no stdio at all.  Hot-path target;
-//                          required tier for foreground code.
-//   BufferedWrite   = 1 — writes to a BUFFERED stream (stdout to a pipe
-//                          / full-buffered sink): format-parse cost
-//                          (~100 ns+) but flush is deferred.  Cold /
-//                          debug paths only.
-//   UnbufferedWrite = 2 — writes to an UNBUFFERED / flushed stream
-//                          (stderr, std::endl, explicit fflush): a write
-//                          SYSCALL per call.  Above BufferedWrite by the
-//                          forced flush transition.
-//   InteractiveRead = 3 — reads stdin / blocks on interactive console
-//                          input: UNBOUNDED blocking on an external
-//                          actor.  Top of the chain; the most disruptive
-//                          stdio surface, never permissible on any
-//                          bounded-latency path.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe — strong scoped enum (`enum class : uint8_t`).
-//   InitSafe — explicit ordinals; reflection-driven name coverage.
-//   DetSafe  — `constexpr` lattice ops.
-//   LeakSafe — zero-state enum.
-//
-// ── Runtime cost ────────────────────────────────────────────────────
-//
-// Zero.  One uint8_t; empty `At<T>` element_type EBO-collapses.
-//
-// ── Forward references ─────────────────────────────────────────────
-//
-//   FIXY-V-242 — safety/Stdio.h: Graded<Absolute, At<T>, P> carrier.
-//   FIXY-V-243 — safety/CollisionCatalog.h: HotPath × Stdio rules.
-//   FIXY-V-246 — fixy/grant/Stdio.h: buffered_write / unbuffered_write /
-//                interactive_read grant tags.
+// Disruptiveness grows upward, which inverts the usual reading of the
+// operators.  A join returns the more disruptive of two tiers, which is
+// right for propagation.  It is wrong for admission.  A gate that wants
+// the no-stdio floor must call meet, because join hands back the most
+// permissive party's surface.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -87,10 +25,6 @@
 
 namespace crucible::algebra::lattices {
 
-// ── Stdio — console-I/O surface taxonomy ────────────────────────────
-//
-// Chain ordering: each tier is a strictly more disruptive stdio surface
-// than the one below it.  Ordinal 0 = NoStdio; 3 = InteractiveRead.
 enum class Stdio : std::uint8_t {
     NoStdio = 0,  // bottom — no console I/O
     BufferedWrite = 1,  // write to a buffered stream (deferred flush; format cost)
@@ -148,15 +82,13 @@ struct StdioLattice : ChainLatticeOps<Stdio> {
     };
 };
 
-// ── Self-test (V-241 scaffolding sanity) ────────────────────────────
 namespace detail::stdio_lattice_self_test {
 
 inline constexpr std::size_t stdio_count = std::meta::enumerators_of(^^Stdio).size();
 
-static_assert(stdio_count == 4, "Stdio diverged from {NoStdio, BufferedWrite, UnbufferedWrite, "
-                                "InteractiveRead} per V-241 §taxonomy.  Adding a new tier requires "
-                                "(a) appending at the next free ordinal (append-only per FOUND-I04), "
-                                "(b) the matching stdio_name() arm, (c) the matching At<T> name() arm.");
+static_assert(stdio_count == 4, "Stdio must hold exactly the four tiers NoStdio, BufferedWrite, "
+                                "UnbufferedWrite and InteractiveRead.  A new tier appends at the next free "
+                                "ordinal and needs an arm in stdio_name and in At<T>'s name().");
 
 static_assert(std::to_underlying(Stdio::NoStdio) == 0);
 static_assert(std::to_underlying(Stdio::InteractiveRead) == 3);
@@ -174,16 +106,19 @@ static_assert(std::is_same_v<std::underlying_type_t<Stdio>, std::uint8_t>);
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_stdio_has_name(), "stdio_name() switch missing an arm for at least one Stdio enumerator.");
+static_assert(every_stdio_has_name(), "stdio_name() has no arm for at least one tier, so that tier reports "
+                                      "the '<unknown Stdio>' sentinel.");
 
 static_assert(::crucible::algebra::Lattice<StdioLattice>);
 static_assert(::crucible::algebra::BoundedLattice<StdioLattice>);
 static_assert(!::crucible::algebra::Semiring<StdioLattice>);
 
 static_assert(verify_chain_lattice_exhaustive<StdioLattice>(),
-              "StdioLattice chain-order lattice axioms failed — leq/join/meet defect.");
+              "StdioLattice's chain-order lattice axioms must hold at every "
+              "(Stdio)³ triple.");
 static_assert(verify_chain_lattice_distributive_exhaustive<StdioLattice>(),
-              "StdioLattice chain failed distributivity — leq/join/meet defect.");
+              "StdioLattice's chain order must satisfy distributivity at every "
+              "(Stdio)³ triple.");
 
 static_assert(StdioLattice::bottom() == Stdio::NoStdio);
 static_assert(StdioLattice::top() == Stdio::InteractiveRead);
@@ -199,43 +134,22 @@ static_assert(StdioLattice::leq(Stdio::UnbufferedWrite, Stdio::InteractiveRead))
 static_assert(!StdioLattice::leq(Stdio::BufferedWrite, Stdio::NoStdio));
 static_assert(!StdioLattice::leq(Stdio::InteractiveRead, Stdio::UnbufferedWrite));
 
-// par=join (more-disruptive dominates); NoStdio is the join identity.
 static_assert(StdioLattice::join(Stdio::BufferedWrite, Stdio::UnbufferedWrite) == Stdio::UnbufferedWrite);
 static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::BufferedWrite) == Stdio::BufferedWrite);
-// and=meet (less-disruptive floor).
 static_assert(StdioLattice::meet(Stdio::InteractiveRead, Stdio::BufferedWrite) == Stdio::BufferedWrite);
 
-// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
-//
-// AUDIT RESULT for StdioLattice (2026-05-25): INVERTED.
-//   * chain direction: NoStdio (bottom, most restrictive — "no stdio
-//     surface allowed") → BufferedWrite → UnbufferedWrite →
-//     InteractiveRead (top, most disruptive / loosest)
-//   * "strictest" in cross-tree contract = most-restrictive admission
-//     policy = NoStdio = chain-min = MEET, NOT JOIN
-//   * join(low, high) returns InteractiveRead = MOST-disruptive (looser)
-//   * meet(low, high) returns NoStdio = NO-STDIO floor (stricter)
-//   * cross-tree reading: "par=join, strictest-wins" ✗ — JOIN returns
-//     the most-disruptive stdio surface, NOT the strictest
-//
-// SAME family of defect as FOUND-009/010 + FOUND-076 PART A.  A
-// hot-path admission gate calling join() to enforce "no stdio" minimum
-// on a region would silently admit InteractiveRead.  Gates wanting the
-// no-stdio floor MUST call MEET.
-//
-// Polarity-witness pin: a refactor inverting the chain would red these
-// asserts.
+// The two assertions below pin the polarity.  Inverting the chain reds
+// them in lockstep and stops a gate from being written against the wrong
+// operator.
 static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::InteractiveRead) == Stdio::InteractiveRead,
-              "FIXY-FOUND-076: StdioLattice's JOIN gives MOST-disruptive "
-              "(top=InteractiveRead).  A consumer treating compose as "
-              "'strictest-wins stdio-surface minimization' would silently admit "
-              "InteractiveRead.  Gates wanting NoStdio floor MUST call MEET — "
-              "SAME defect family as FOUND-009/010/076 PART A.");
+              "StdioLattice's join returns the more disruptive stdio surface of "
+              "the two operands.  A gate that treats composition as "
+              "strictest-wins would silently admit InteractiveRead.  Use meet "
+              "for the no-stdio floor.");
 static_assert(StdioLattice::meet(Stdio::NoStdio, Stdio::InteractiveRead) == Stdio::NoStdio,
-              "FIXY-FOUND-076: StdioLattice's MEET gives strictest-stdio-floor "
-              "(bottom=NoStdio).  Hot-path admission gates MUST call MEET — "
-              "calling JOIN silently admits the most-permissive participant's "
-              "stdio surface.");
+              "StdioLattice's meet returns the least disruptive stdio surface of "
+              "the two operands.  A hot-path admission gate must call meet, not "
+              "join.");
 
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::NoStdio>::element_type>);
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::BufferedWrite>::element_type>);
@@ -243,7 +157,6 @@ static_assert(std::is_empty_v<StdioLattice::At<Stdio::UnbufferedWrite>::element_
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::InteractiveRead>::element_type>);
 static_assert(StdioLattice::At<Stdio::UnbufferedWrite>::tier == Stdio::UnbufferedWrite);
 
-// Runtime smoke — non-constant operands.
 inline void stdio_lattice_runtime_smoke_test() {
     Stdio a = Stdio::NoStdio;
     Stdio b = Stdio::InteractiveRead;

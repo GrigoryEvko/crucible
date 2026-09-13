@@ -1,70 +1,15 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — typed append-only session event log
+// A typed append-only record of the operations a session performed, in
+// the order it performed them, so a run can be replayed step for step.
 //
-// Task #404 SAFEINT-B15 from misc/24_04_2026_safety_integration.md
-// §15.  Promotes the bit-exact-replay discipline from an ad-hoc
-// trace to a typed structure.  The log records the original L1
-// combinators (Send / Recv / Select / Offer / Close), explicit
-// non-terminal detaches, and the GAPS-050..052 extension set:
-// Stop, Checkpoint_Base, Checkpoint_Rollback, Delegate, and Accept.
-// OrderedAppendOnly gives every event a monotonic step_id and
-// structurally forbids in-place rewrite of past events.
+// Every identifier here is a distinct type over a plain integer, which
+// is what stops a caller from silently swapping the two role fields.
 //
-// Two pieces ship in this header:
-//
-//   * `SessionEvent` — the per-operation record (POD, 72 bytes,
-//     TriviallyCopyable for fast bulk-drain to Cipher).  Carries
-//     step_id, session, from_role, to_role, op kind, two typed 64-bit
-//     payload lanes interpreted by the selected SessionOp
-//     (payload schema/hash for Send/Recv, checkpoint ids, delegated
-//     protocol hashes, crash recovery hashes, etc.), and two dedicated
-//     epoch_threshold / generation_threshold lanes used by the
-//     fixy-A2-005 EpochedDelegate / EpochedAccept variants.
-//
-//   * `SessionEventLog` — the log primitive.  Wraps an
-//     OrderedAppendOnly<SessionEvent, StepIdKeyFn> (step monotonicity
-//     enforced by Mutation.h's contract).  Owns a session identifier
-//     and a step-counter (AtomicMonotonic) so multiple writers can
-//     synthesise step_ids without colliding.  Pinned: the atomic
-//     counter and the log storage IS the log identity; movement
-//     would fork it.
-//
-// The recording-handle wrapper that USES this log lives in a
-// sibling header (safety/RecordingSessionHandle.h, also #404) — the
-// log primitive is reusable independently for any code that wants
-// to record protocol events manually.
-//
-// ─── Strong-ID convention ──────────────────────────────────────────
-//
-// Each ID is a thin TypeSafe wrapper around uint64_t with no
-// implicit conversions and no arithmetic.  `value` is the only
-// observable; comparison + ordering are defaulted via <=>.  Inhabits
-// the same TypeSafe discipline as OpIndex / SchemaHash / etc.
-// Strong typing prevents the canonical "swapped from_role and
-// to_role" bug at the call site.
-//
-// ─── Determinism contract ──────────────────────────────────────────
-//
-// step_id is monotonically non-decreasing within a single
-// SessionEventLog (enforced by OrderedAppendOnly's contract).
-// `record(ev)` does NOT auto-stamp the step_id — the caller computes
-// it via `next_step()`.  This separation lets the recording wrapper
-// stamp the step_id atomically per-op without serialising the log
-// itself behind a lock.  The step counter is AtomicMonotonic so
-// multiple recording threads see strictly-increasing values.
-//
-// ─── References ────────────────────────────────────────────────────
-//
-//   misc/24_04_2026_safety_integration.md §15 — design rationale
-//   safety/Mutation.h — OrderedAppendOnly + AtomicMonotonic
-//   bridges/RecordingSessionHandle.h — the wrapper that emits events
-//   safety/Pinned.h — Pinned constraint
-//   GAPS-050 — Stop event representation
-//   GAPS-051 — Checkpoint_Base / Checkpoint_Rollback events
-//   GAPS-052 — Delegate / Accept handoff events
-// ═══════════════════════════════════════════════════════════════════
+// A step identifier is non-decreasing inside one log.  Recording does
+// not stamp the step itself: the caller mints one first.  Splitting the
+// two lets a writer take its step number atomically without holding the
+// log while it does so.
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
@@ -84,61 +29,48 @@
 
 namespace crucible::safety::proto {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Strong IDs ───────────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
-// Identifier for a logical session — typically derived from the
-// participating roles' tag types or assigned at channel-establishment
-// time.  Distinct sessions logged to the same physical event log
-// remain separable via this field.
+// Several sessions may share one physical log, and this field is what
+// keeps them separable.
 struct SessionTagId {
     uint64_t value = 0;
     constexpr auto operator<=>(const SessionTagId&) const noexcept = default;
     constexpr bool operator==(const SessionTagId&) const noexcept = default;
 };
 
-// Identifier for a participant role — typically derived from the
-// role tag type (Client / Server / Coord / Follower / etc.) by a
-// role-tag-to-id mapping.  No semantic interpretation at the log
-// level; the consumer interprets.
+// The log assigns no meaning to a role identifier.  The consumer maps
+// it back to the role tag it came from.
 struct RoleTagId {
     uint64_t value = 0;
     constexpr auto operator<=>(const RoleTagId&) const noexcept = default;
     constexpr bool operator==(const RoleTagId&) const noexcept = default;
 };
 
-// Hash of the payload's compile-time type — typically derived from a
-// __PRETTY_FUNCTION__-style identifier, so identical payload types
-// across TUs produce identical SchemaHashes.  `default_schema_hash<T>`
-// below is the canonical computation.
+// Hash of the payload's compile-time type.  The same payload type
+// hashes identically in every translation unit of one build.
 struct SchemaHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const SchemaHash&) const noexcept = default;
     constexpr bool operator==(const SchemaHash&) const noexcept = default;
 };
 
-// Hash of the payload value — opt-in.  The recording wrapper defaults
-// to `PayloadHash{0}` for types that don't expose a hashing function;
-// users with strict replay-determinism requirements provide their own
-// hash.  Zero is a sentinel meaning "not hashed".
+// Hash of the payload value.  Zero is the sentinel for a payload that
+// was not hashed, so hashing is opt in.
 struct PayloadHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const PayloadHash&) const noexcept = default;
     constexpr bool operator==(const PayloadHash&) const noexcept = default;
 };
 
-// Hash of the recovery path chosen after a Stop event.  Zero is the
-// sentinel for "no recovery path was selected or recorded".
+// Hash of the recovery path chosen after a crash.  Zero means no
+// recovery path was selected or recorded.
 struct RecoveryPathHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const RecoveryPathHash&) const noexcept = default;
     constexpr bool operator==(const RecoveryPathHash&) const noexcept = default;
 };
 
-// Identifier for an application-level checkpoint.  The event log does
-// not interpret it; replay code uses it to match a transition against
-// the saved state selected by the application/Cipher layer.
+// The log does not interpret a checkpoint identifier.  Replay uses it
+// to match a transition against the saved state the application kept.
 struct CheckpointId {
     uint64_t value = 0;
     constexpr auto operator<=>(const CheckpointId&) const noexcept = default;
@@ -146,49 +78,43 @@ struct CheckpointId {
 };
 
 // Hash of the permission set transferred with a delegated session.
-// Zero means "no inner permission set recorded" and is the correct
-// default for plain SessionHandle delegation.
+// Zero means none was recorded, which is right for a delegation that
+// moves no permissions.
 struct InnerPermSetHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const InnerPermSetHash&) const noexcept = default;
     constexpr bool operator==(const InnerPermSetHash&) const noexcept = default;
 };
 
-// Monotonic per-log step counter.  Strictly non-decreasing within a
-// SessionEventLog (enforced by OrderedAppendOnly's contract).  Distinct
-// SessionEventLogs maintain separate StepId sequences.
+// Non-decreasing inside one log.  Two logs keep independent sequences.
 struct StepId {
     uint64_t value = 0;
     constexpr auto operator<=>(const StepId&) const noexcept = default;
     constexpr bool operator==(const StepId&) const noexcept = default;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── SessionOp — what kind of operation produced this event ──────────
-// ═════════════════════════════════════════════════════════════════════
-
 namespace event_detail {
 
 enum class SessionOp : uint8_t {
-    Send = 1,  // Send<T, K>::send() — payload sent to peer
-    Recv = 2,  // Recv<T, K>::recv() — payload received from peer
-    Select = 3,  // Select<Bs...>::select<I>() — branch chosen by self
-    Offer = 4,  // Offer<Bs...>::pick<I>() — branch chosen by peer
-    Close = 5,  // End::close() — terminal, session completed
-    Detach = 6,  // SessionHandle::detach(reason) — abandoned at non-terminal
-    Stop = 7,  // Stop_g<C>::close() — crash-stop terminal observed
-    Checkpoint_Base = 8,  // CheckpointedSession::base()
-    Checkpoint_Rollback = 9,  // CheckpointedSession::rollback()
-    Delegate = 10,  // Delegate<T, K>::delegate()
-    Accept = 11,  // Accept<T, K>::accept()
-    StorePending = 12,  // Cipher store observed before durable commit
-    StoreCommitted = 13,  // Cipher HEAD/log commit
-    LoadFromTier = 14,  // Cipher load from hot/warm/cold tier
-    TierPromote = 15,  // Cipher tier promotion boundary
-    TierDemote = 16,  // Cipher tier demotion boundary
-    TierRestore = 17,  // Cipher cold restore into warm/hot tier
-    EpochedDelegate = 18,  // EpochedDelegate<T, K, MinEpoch, MinGen>::delegate()
-    EpochedAccept = 19,  // EpochedAccept<T, K, MinEpoch, MinGen>::accept()
+    Send = 1,
+    Recv = 2,
+    Select = 3,  // branch chosen by this side
+    Offer = 4,  // branch chosen by the peer
+    Close = 5,  // terminal, session completed
+    Detach = 6,  // abandoned at a non-terminal position
+    Stop = 7,  // crash-stop terminal observed
+    Checkpoint_Base = 8,
+    Checkpoint_Rollback = 9,
+    Delegate = 10,
+    Accept = 11,
+    StorePending = 12,  // store observed before durable commit
+    StoreCommitted = 13,
+    LoadFromTier = 14,
+    TierPromote = 15,
+    TierDemote = 16,
+    TierRestore = 17,  // cold restore into a warmer tier
+    EpochedDelegate = 18,
+    EpochedAccept = 19,
 };
 
 }  // namespace event_detail
@@ -266,8 +192,7 @@ using SessionOp = event_detail::SessionOp;
     }
 }
 
-// Reason classifier for SessionOp::Stop.  Kept as a one-byte enum so
-// the fixed-size SessionEvent layout survives the Stop extension.
+// One byte, so that adding it left the fixed record size unchanged.
 enum class StopReasonKind : uint8_t {
     Unknown = 0,
     PeerCrashed = 1,
@@ -275,33 +200,28 @@ enum class StopReasonKind : uint8_t {
     Recovery = 3,
 };
 
-// Choice classifier for CheckpointedSession events.  Stored in the
-// same one-byte control slot as StopReasonKind; the SessionOp selects
-// which interpretation is valid.
+// Shares the one-byte control slot with the crash reason.  The
+// operation kind decides which reading is valid.
 enum class CheckpointChoice : uint8_t {
     Base = 1,
     Rollback = 2,
 };
 
-// fixy-A2-025: kind classifier for SessionOp::Detach.  Mirrors the five
-// well-known detach_reason::* tags so replay can recover *why* the
-// handle was detached without consulting the original source TU.
-// User-defined DetachReason tags (extensions inheriting from
-// detach_reason::tag_base outside the framework) resolve to Unknown=0;
-// the matching `payload_schema` lane (default_schema_hash<Reason>)
-// still identifies the exact type for offline audit.
+// Replay recovers why a handle was detached from this classifier alone.
+// A reason tag defined outside the framework lands on Unknown, and the
+// schema lane still identifies its exact type for offline audit.
 enum class DetachReasonKind : uint8_t {
     Unknown = 0,
-    InfiniteLoopProtocol = 1,  // detach_reason::InfiniteLoopProtocol
-    TransportClosedOutOfBand = 2,  // detach_reason::TransportClosedOutOfBand
-    TestInstrumentation = 3,  // detach_reason::TestInstrumentation
-    AsyncCancellation = 4,  // detach_reason::AsyncCancellation
-    OwnerLifetimeBoundEarlyExit = 5,  // detach_reason::OwnerLifetimeBoundEarlyExit
+    InfiniteLoopProtocol = 1,
+    TransportClosedOutOfBand = 2,
+    TestInstrumentation = 3,
+    AsyncCancellation = 4,
+    OwnerLifetimeBoundEarlyExit = 5,
 };
 
-// Cipher uses the same SessionEvent record.  These payload structs
-// name the per-kind interpretation of the two 64-bit lanes and two
-// one-byte control lanes; they do not add storage to SessionEvent.
+// Persistence events share the same record.  This names how the two
+// payload lanes and the two control bytes read for those events, and
+// adds no storage of its own.
 struct CipherEventPayload {
     ::crucible::ContentHash content_hash{};
     uint64_t timestamp_ns = 0;
@@ -309,48 +229,12 @@ struct CipherEventPayload {
     uint8_t to_tier = 0;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── SessionEvent — the per-operation record ─────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Layout: 72 bytes.  TriviallyCopyable for memcpy-bulk-drain into
-// the Cipher's cold tier.  Field ordering minimises padding while
-// keeping the most-queried fields (step_id, session, op) at the head.
-//
-// Stop events reuse the two generic payload lanes to preserve the
-// fixed-size record:
-//   payload_schema.value -> peer_tag
-//   payload_hash.value   -> recovery_path_hash
-//   reason_kind          -> StopReasonKind
-//   pad[0]               -> CrashClass tier (fixy-A2-008)
-//
-// fixy-A2-008: the four-tier crash-class lattice (Abort / Throw /
-// ErrorReturn / NoThrow — algebra/lattices/CrashLattice.h) is the
-// soundness-bearing axis for crash-stop sessions.  Recording must
-// preserve C from Stop_g<C> losslessly so replay can reconstruct
-// which tier was in force.  Encoding it as a single byte in pad[0]
-// keeps the 72-byte layout unchanged.
-//
-// Checkpoint events reuse the same lanes:
-//   payload_schema.value -> checkpoint_id
-//   payload_hash.value   -> saved_state_content_hash.raw()
-//   reason_kind          -> CheckpointChoice
-//
-// Delegate/Accept events reuse the role fields plus the payload lanes:
-//   from_role/to_role    -> sender/recipient role
-//   payload_schema.value -> delegated_proto_hash.raw()
-//   payload_hash.value   -> inner_perm_set_hash
-//
-// EpochedDelegate/EpochedAccept events extend Delegate/Accept with two
-// dedicated full-fidelity lanes (16-byte epoch_threshold / generation_
-// threshold pair).  These lanes are zero for every non-Epoched op kind
-// — fixy-A2-005 mandates lossless preservation of the Cipher-reshard
-// guard (`session_epoch_threshold_valid_v` at SessionDelegate.h) so
-// replay can re-validate the (MinEpoch, MinGeneration) NTTPs that drove
-// the original handoff.
-//
-// The typed helpers below make that variant payload explicit without
-// adding storage or runtime dispatch.
+// The record is one fixed size for every operation kind, which is what
+// lets a whole log drain to durable storage as a block of bytes.  Each
+// kind therefore reinterprets the two general payload lanes and the two
+// control bytes rather than growing the record.  The factories and
+// accessors below spell out each reading, and no runtime dispatch or
+// extra storage is involved.
 
 struct SessionEvent {
     StepId step_id{};
@@ -359,22 +243,16 @@ struct SessionEvent {
     RoleTagId to_role{};
     SchemaHash payload_schema{};
     PayloadHash payload_hash{};
-    uint64_t epoch_threshold = 0;  // Epoched*: MinEpoch NTTP; else 0
-    uint64_t generation_threshold = 0;  // Epoched*: MinGen NTTP;   else 0
+    uint64_t epoch_threshold = 0;  // zero for every non-epoched kind
+    uint64_t generation_threshold = 0;  // zero for every non-epoched kind
     SessionOp op = SessionOp::Send;
-    uint8_t branch_index = 0;  // Select/Offer: chosen index; else 0
-    uint8_t reason_kind = 0;  // Stop: StopReasonKind; else 0
-    uint8_t pad[5]{};  // explicit zero-init padding
+    uint8_t branch_index = 0;  // chosen branch on a choice, else zero
+    uint8_t reason_kind = 0;
+    uint8_t pad[5]{};
 
-    // fixy-A2-008: `crash_class` defaults to Abort to preserve source
-    // compatibility with pre-A2-008 callers (the original four-arg
-    // shape).  New call sites that have type-level CrashClass info
-    // (the two RecordingSessionHandle<Stop_g<C>, ...> specializations
-    // and the peer-crash detour in detail::record_crash_stop_) MUST
-    // pass it through so replay can distinguish the four tiers — see
-    // BSYZ22 §3 for why losing the tier silently breaks recovery
-    // semantics (NoThrow rejects CrashWatchedHandle outright per
-    // CrashTransport.h while Abort/Throw require unwind-aware paths).
+    // A call site that knows the crash class at compile time passes it
+    // through, because replay must be able to tell the tiers apart:
+    // recovery that unwinds is only valid for some of them.
     [[nodiscard]] static constexpr SessionEvent stop(RoleTagId self, RoleTagId peer, RoleTagId stopped_peer,
                                                      StopReasonKind reason = StopReasonKind::PeerCrashed,
                                                      RecoveryPathHash recovery_path = {},
@@ -416,30 +294,11 @@ struct SessionEvent {
         };
     }
 
-    // fixy-A2-025: SessionOp::Detach factory.  Records a typed
-    // abandonment of a non-terminal protocol position; replay sees
-    // exactly which DetachReasonKind closed the handle and which
-    // exact reason-tag type (via reason_schema = default_schema_hash
-    // <Reason>) so audit can distinguish e.g. an InfiniteLoopProtocol
-    // detach (clean — protocol is unbounded by design) from a
-    // TransportClosedOutOfBand detach (transport already gone) from
-    // an OwnerLifetimeBoundEarlyExit detach (bridge teardown).
-    //
-    // The factory is invoked by `PersistedSessionHandle::detach()`
-    // (bridges/SessionPersistence.h) — the only audit-tracking
-    // wrapper that needs an audit-visible detach trail.  Plain
-    // `SessionHandleBase::detach()` (Session.h:1641) does NOT call
-    // this — it only marks the consumed tracker; the framework
-    // contract is that handles wrapped by a recording / persisted
-    // bridge get audit entries, plain handles do not.
-    //
-    // self / peer default to RoleTagId{0} because PSH does not
-    // currently track role identity through the bridge chain; the
-    // payload_schema lane carries the Reason type identity which
-    // is the load-bearing audit datum.  When PSH later threads
-    // role information through (similar to RecordingSessionHandle's
-    // self_role_/peer_role_ fields), call sites can supply real
-    // RoleTagId values.
+    // Only a handle wrapped by a recording or persisting bridge emits
+    // this event.  A plain handle records nothing and merely marks
+    // itself consumed.  A caller that does not track role identity
+    // passes zero for the roles, since the schema lane carries the
+    // reason type, which is the datum an audit reads.
     [[nodiscard]] static constexpr SessionEvent detach(RoleTagId self, RoleTagId peer, DetachReasonKind reason_kind,
                                                        SchemaHash reason_schema = {}) noexcept {
         return SessionEvent{
@@ -475,12 +334,9 @@ struct SessionEvent {
         };
     }
 
-    // fixy-A2-005: EpochedDelegate handoff carries the (MinEpoch,
-    // MinGeneration) reshard-guard NTTPs alongside the inner protocol's
-    // hash + perm set.  The two thresholds occupy dedicated lanes so
-    // replay reconstructs them losslessly — replay can re-validate
-    // `session_epoch_threshold_valid_v` against the live Cipher epoch
-    // chain without consulting the original source TU.
+    // The two reshard-guard thresholds get lanes of their own, so replay
+    // can re-validate the handoff against the live epoch chain without
+    // reading the source the handoff came from.
     [[nodiscard]] static constexpr SessionEvent
     epoched_delegate_handoff(RoleTagId sender, RoleTagId recipient, ::crucible::ContentHash delegated_proto_hash,
                              std::uint64_t min_epoch, std::uint64_t min_generation,
@@ -496,7 +352,6 @@ struct SessionEvent {
         };
     }
 
-    // fixy-A2-005: symmetric peer-side accept of an EpochedDelegate.
     [[nodiscard]] static constexpr SessionEvent epoched_accept_handoff(RoleTagId recipient, RoleTagId sender,
                                                                        ::crucible::ContentHash accepted_proto_hash,
                                                                        std::uint64_t min_epoch,
@@ -572,10 +427,8 @@ struct SessionEvent {
         return RecoveryPathHash{payload_hash.value};
     }
 
-    // fixy-A2-008: full-fidelity accessor for the Stop_g<C> CrashClass
-    // tier preserved in pad[0].  Replay consults `op == Stop` first;
-    // for non-Stop events the byte is zero-initialised (= Abort) and
-    // the accessor is not meaningful.
+    // Meaningful only once the operation kind is known to be a crash.
+    // On any other kind the byte is zero, which reads as the first tier.
     [[nodiscard]] constexpr ::crucible::algebra::lattices::CrashClass stop_crash_class() const noexcept {
         return static_cast<::crucible::algebra::lattices::CrashClass>(pad[0]);
     }
@@ -602,11 +455,8 @@ struct SessionEvent {
         return InnerPermSetHash{payload_hash.value};
     }
 
-    // fixy-A2-005: full-fidelity accessors for the Cipher-reshard guard
-    // NTTPs preserved by EpochedDelegate / EpochedAccept events.  Both
-    // return 0 on plain Delegate/Accept (and on every non-Epoched op)
-    // because the lanes are zero-initialised — replay code must consult
-    // `op` first when threshold semantics matter.
+    // Both read zero on any kind that carries no thresholds, so a caller
+    // that cares about threshold meaning checks the operation kind first.
     [[nodiscard]] constexpr std::uint64_t epoched_min_epoch() const noexcept { return epoch_threshold; }
 
     [[nodiscard]] constexpr std::uint64_t epoched_min_generation() const noexcept { return generation_threshold; }
@@ -635,21 +485,14 @@ struct SessionEvent {
     }
 };
 
-static_assert(sizeof(SessionEvent) == 72, "SessionEvent layout must be exactly 72 bytes — Cipher cold-tier "
-                                          "serialisation depends on the fixed size.  The fixy-A2-005 "
-                                          "EpochedDelegate/EpochedAccept extension added two dedicated 64-bit "
-                                          "threshold lanes; if a field changes again, bump the layout version "
-                                          "and update the deserialiser.");
+static_assert(sizeof(SessionEvent) == 72,
+              "SessionEvent must be exactly 72 bytes, because durable serialisation depends on the fixed record "
+              "size.  A change to any field also needs a layout-version bump and a matching deserialiser.");
 static_assert(std::is_trivially_copyable_v<SessionEvent>,
               "SessionEvent must be TriviallyCopyable for fast bulk drain.");
 
-// ═════════════════════════════════════════════════════════════════════
-// ── KeyFn / Cmp for OrderedAppendOnly<SessionEvent, ...> ────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// OrderedAppendOnly requires stateless KeyFn + Cmp (so the contract
-// can construct them per-call).  Project step_id and compare on its
-// underlying value.
+// The ordering check constructs these per call, so both must be
+// stateless.
 
 struct StepIdKeyFn {
     constexpr StepId operator()(const SessionEvent& e) const noexcept { return e.step_id; }
@@ -659,19 +502,13 @@ struct StepIdLess {
     constexpr bool operator()(StepId a, StepId b) const noexcept { return a.value < b.value; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── default_schema_hash<T> — compile-time type identifier ───────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// FNV-1a over __PRETTY_FUNCTION__ — same type across TUs hashes
-// identically (the function-name stamp is a function of T's spelling
-// in the GCC mangling, which is stable per (T, target-triple)).
-// Cross-target stability is a non-goal here; replay determinism
-// within a fixed build is the contract.
+// The hash is taken over the compiler's own spelling of the type, which
+// is stable for one type on one target and identical across translation
+// units.  Stability across targets is not promised, because the
+// contract is replay determinism inside a single build.
 
 namespace detail {
 
-// FNV-1a over a string view at consteval.
 [[nodiscard]] inline consteval uint64_t fnv1a_64(std::string_view s) noexcept {
     constexpr uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
     constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
@@ -697,34 +534,17 @@ template <typename T>
 inline constexpr ::crucible::ContentHash default_proto_hash =
     ::crucible::ContentHash::from_raw(default_schema_hash<T>.value);
 
-// ═════════════════════════════════════════════════════════════════════
-// ── default_payload_hash<T> — opt-in payload hashing ────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Default is the sentinel PayloadHash{0} ("not hashed").  Users with
-// strict-replay-audit requirements specialise this template for their
-// payload type:
-//
-//   template <>
-//   inline constexpr auto crucible::safety::proto::default_payload_hash_fn<MyPayload> =
-//       [](const MyPayload& p) noexcept -> PayloadHash {
-//           return PayloadHash{my_hasher(p)};
-//       };
-//
-// The recording wrapper consults this function template at compile
-// time; the cost per record is whatever the user's hasher costs
-// (defaulted to a sentinel that does no work).
+// Payload hashing is opt in: the default returns the not-hashed
+// sentinel and does no work.  A caller that wants replay audit over
+// payload values specialises this for its own payload type and pays
+// whatever its hasher costs.
 
 template <typename T>
 inline constexpr auto default_payload_hash_fn = [](const T& /*v*/) noexcept -> PayloadHash { return PayloadHash{0}; };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── SessionEventLog — the append-only log ───────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Pinned: the atomic step counter IS the log's identity for ordering.
-// Movement would fork the counter across two distinct objects,
-// breaking the monotone-step invariant downstream consumers rely on.
+// The atomic step counter is the log's ordering identity.  Moving the
+// log would fork that counter across two objects and break the
+// monotonic-step invariant consumers depend on.
 
 class [[nodiscard]] SessionEventLog : Pinned<SessionEventLog> {
     OrderedAppendOnly<SessionEvent, StepIdKeyFn, StepIdLess> log_{};
@@ -735,21 +555,15 @@ public:
     using event_type = SessionEvent;
     using storage_type = std::vector<SessionEvent>;
 
-    // Construct with an explicit session identifier — typically derived
-    // by the user from the role-tag types or supplied by the channel-
-    // establishment site.  Default (SessionTagId{0}) is permitted for
-    // single-session test code where the identifier carries no
-    // information.
+    // The default identifier suits a single-session log, where the field
+    // carries no information.
     constexpr explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
-    // Mint the next monotonic step_id.  Safe to call concurrently from
-    // multiple recording threads — AtomicMonotonic guarantees strictly-
-    // increasing values across threads via fetch_max on x86-64 / ARM.
+    // Safe to call from several recording threads at once.
     [[nodiscard]] StepId next_step() noexcept {
-        // AtomicMonotonic doesn't expose a fetch-and-bump primitive
-        // directly (try_advance returns bool); compose from the get +
-        // try_advance pair.  The CAS loop is implicit in try_advance's
-        // fast path on integral T + std::less<T>.
+        // The counter offers no fetch-and-bump operation, only a
+        // conditional advance, so the read and the advance are composed
+        // here into a retry loop.
         for (;;) {
             const uint64_t prev = step_counter_.get();
             if (prev == std::numeric_limits<uint64_t>::max()) [[unlikely]] {
@@ -759,30 +573,23 @@ public:
             if (step_counter_.try_advance(next)) {
                 return StepId{next};
             }
-            // Another thread bumped past us; retry from the new value.
+            // Another thread advanced past this value, so retry from
+            // the new one.
             CRUCIBLE_SPIN_PAUSE;
         }
     }
 
-    // Record an event.  step_id MUST be non-decreasing relative to
-    // the last appended event (OrderedAppendOnly's contract).  Use
-    // next_step() to mint a fresh step_id; manual step_ids are
-    // permitted for replay-from-snapshot scenarios where the caller
-    // controls ordering.
+    // The step identifier must not go backwards against the last
+    // appended event.  A caller that controls ordering itself, such as
+    // one replaying from a snapshot, supplies its own.
     void record(SessionEvent ev) { log_.append(std::move(ev)); }
 
-    // Convenience: stamp + record in one call.  Most callers want
-    // this; the manual `next_step() + record` split exists for
-    // replay-style use cases.
     void record_now(SessionEvent ev) {
         ev.step_id = next_step();
         ev.session = session_id_;
         log_.append(std::move(ev));
     }
 
-    // Canonical event append entrypoint used by replay-facing wrappers.
-    // It preserves the same stamping semantics as record_now while
-    // making the call site read in protocol-event vocabulary.
     void append_event(SessionEvent ev) { record_now(std::move(ev)); }
 
     struct ReplayRange {
@@ -797,7 +604,6 @@ public:
 
     [[nodiscard]] ReplayRange replay_iter() const noexcept { return ReplayRange{log_.begin(), log_.end()}; }
 
-    // Read-only accessors.
     [[nodiscard]] SessionTagId session() const noexcept { return session_id_; }
     [[nodiscard]] std::size_t size() const noexcept { return log_.size(); }
     [[nodiscard]] bool empty() const noexcept { return log_.empty(); }
@@ -809,11 +615,8 @@ public:
     [[nodiscard]] auto begin() const noexcept { return log_.begin(); }
     [[nodiscard]] auto end() const noexcept { return log_.end(); }
 
-    // Consuming drain — yield the underlying storage and leave *this
-    // empty.  Used at end-of-session to ship the log to durable
-    // storage (Cipher cold tier).  The Pinned constraint forbids
-    // moving the log itself, but draining yields the backing vector,
-    // which is freely movable.
+    // The log itself cannot move, but its backing storage can, so a
+    // drain is how an ended session ships its events to durable storage.
     [[nodiscard]] storage_type drain() && noexcept(std::is_nothrow_move_constructible_v<storage_type>) {
         return std::move(log_).drain();
     }

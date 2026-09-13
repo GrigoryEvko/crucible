@@ -1,13 +1,5 @@
 #pragma once
 
-// GAPS-129.  PTP clock substrate.
-//
-// This header owns typed PTP facts and admission gates.  It does not
-// start ptp4l/phc2sys or claim daemon health; those lifecycle decisions
-// remain operator/Warden policy.  The Linux boundary here is deliberately
-// narrow: bounded /dev/ptpN paths, clock reads/caps, socket timestamping,
-// and hardware timestamp extraction into source::Ptp values.
-
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cntp/Pacing.h>
 #include <crucible/effects/Capabilities.h>
@@ -367,19 +359,15 @@ private:
     std::atomic<bool> has_timestamp_{false};
 };
 
-// fixy-A5-029: cross-thread atomics on the PTP control path must be lock-free
-// on every supported target.  libstdc++ silently substitutes mutex-backed
-// atomic ops on ISAs lacking the required intrinsic — a hidden mutex inside
-// status snapshot publication would serialize every Senses reader against the
-// servo update loop.  Refuse to build instead of regressing silently.
-static_assert(std::atomic<std::uint8_t>::is_always_lock_free,
-              "std::atomic<uint8_t> must be lock-free on this target — fixy-A5-029");
+// On an ISA that lacks the required instruction the standard library
+// substitutes a mutex-backed atomic without saying so.  A hidden mutex inside
+// the status publication would serialize every reader against the servo update
+// loop, so the build refuses such a target instead of regressing quietly.
+static_assert(std::atomic<std::uint8_t>::is_always_lock_free, "std::atomic<uint8_t> must be lock-free on this target");
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-              "std::atomic<uint64_t> must be lock-free on this target — fixy-A5-029");
-static_assert(std::atomic<std::int64_t>::is_always_lock_free,
-              "std::atomic<int64_t> must be lock-free on this target — fixy-A5-029");
-static_assert(std::atomic<bool>::is_always_lock_free,
-              "std::atomic<bool> must be lock-free on this target — fixy-A5-029");
+              "std::atomic<uint64_t> must be lock-free on this target");
+static_assert(std::atomic<std::int64_t>::is_always_lock_free, "std::atomic<int64_t> must be lock-free on this target");
+static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> must be lock-free on this target");
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsPtpMint<Ctx>

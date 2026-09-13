@@ -1,15 +1,7 @@
-// fixy-A1-016 — Sentinel TU exercising the per-header `runtime_smoke_test()`
-// hook on the nine core safety wrappers.
-//
-// Each header ships `inline void runtime_smoke_test()` inside a nested
-// `detail::<wrapper>_self_test` namespace, exercising every named op with
-// non-constant input plus a move-only T witness where applicable.  Pure
-// `static_assert` tests cannot catch consteval/SFINAE/inline-body bugs that
-// only surface when the header is compiled under project warning flags and
-// linked into a real TU; this sentinel closes that blind spot.
-//
-// Discipline reference: feedback_algebra_runtime_smoke_test_discipline +
-// feedback_header_only_static_assert_blind_spot.
+// Sentinel TU: calls the per-header runtime_smoke_test hook on the core safety
+// wrappers.  A static_assert cannot catch a consteval-versus-constexpr
+// regression, an SFINAE path that never instantiates its inline body, or a
+// warning that fires only when the project flags run over the body tokens.
 
 #include <crucible/handles/Once.h>
 #include <crucible/safety/Affine.h>
@@ -44,8 +36,6 @@ int main() {
 
     ct::detail::ct_self_test::runtime_smoke_test();
 
-    // fixy-A1-017: Lazy<T> get_or_init / no-arg get split.  Witnesses
-    // that the renamed surface preserves "f runs exactly once".
     detail::lazy_self_test::runtime_smoke_test();
 
     return 0;

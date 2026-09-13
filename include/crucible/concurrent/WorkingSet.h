@@ -1,11 +1,5 @@
 #pragma once
 
-// ── crucible::concurrent working-set facts ─────────────────────────
-//
-// Shared cache-line and per-call working-set helpers for permissioned
-// queues, endpoints, stages, and pipelines.  These are compile-time
-// facts only: no probing, no allocation, no runtime checks.
-
 #include <cstddef>
 #include <limits>
 #include <type_traits>

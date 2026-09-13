@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P AF_XDP redirect stub.
- *
- * Future role: redirect selected admitted flows into zero-copy AF_XDP queues.
- * Current behavior: pass every packet through the kernel stack.
- */
-
 #include "common.h"
 
 #ifndef XDP_PASS

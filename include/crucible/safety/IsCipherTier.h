@@ -1,19 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_cipher_tier_v ─────────────────────
-//
-// FOUND-D30 (first of batch) — wrapper-detection predicate for
-// `CipherTier<Tier, T>`.  Mechanical extension of the D21-D24
-// template — partial-spec captures the CipherTierTag_v NTTP enum
-// alongside the wrapped type.
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   is_cipher_tier_v<T>      Variable template; cv-ref-stripped.
-//   IsCipherTier<T>           Concept form.
-//   cipher_tier_value_t<T>    Wrapped element type; constrained.
-//   cipher_tier_tag_v<T>      Pinned CipherTierTag_v; constrained.
-
 #include <crucible/safety/CipherTier.h>
 
 #include <type_traits>
@@ -52,8 +38,6 @@ using cipher_tier_value_t = typename detail::is_cipher_tier_impl<std::remove_cvr
 template <typename T>
     requires is_cipher_tier_v<T>
 inline constexpr CipherTierTag_v cipher_tier_tag_v = detail::is_cipher_tier_impl<std::remove_cvref_t<T>>::tier;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_cipher_tier_self_test {
 

@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * Canopy gossip XDP_TX stub.
- *
- * Future role: XDP_TX replication for admitted mesh/gossip packets.
- * Current behavior: pass every packet; no replication.
- */
-
 #include "common.h"
 
 #ifndef XDP_PASS

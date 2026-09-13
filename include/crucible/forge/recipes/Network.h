@@ -1,14 +1,5 @@
 #pragma once
 
-// GAPS-174. Network-kernel recipe constraints for Forge RecipeSelect.
-//
-// This header is deliberately only the admission/equivalence substrate.
-// It does not implement Forge phases, collective kernels, SHARP, QUIC,
-// RDMA, or cross-vendor CI. It records the recipe-tier facts that those
-// layers must consume: which collective classes are admissible, whether
-// participant order is load-bearing, and which equivalence class a
-// network-kernel result is allowed to claim.
-
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Refined.h>

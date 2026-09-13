@@ -1,11 +1,6 @@
 #pragma once
 
-// GAPS-180. Silent data corruption detection substrate.
-//
-// This header owns deterministic redundant-compute comparison over an admitted,
-// fixed-size Cog set. It does not schedule remote work, write Cipher audit
-// records, or quarantine Cogs by itself; those policy/action layers consume the
-// bounded events emitted here.
+// SDC is silent data corruption.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
@@ -133,12 +128,11 @@ template <typename T>
 [[nodiscard]] bool tolerance_equal(T const& a, T const& b, std::uint64_t tolerance) noexcept {
     if constexpr (std::integral<T>) {
         using U = std::make_unsigned_t<T>;
-        // Explicit U return + static_cast keeps the abs-diff in the unsigned
-        // domain for sub-int widths: int8/int16 operands promote to int for
-        // the subtraction, and the modular truncation back to U is the
-        // intended magnitude (|a-b| mod 2^bits).  The cast documents that
-        // intent AND keeps the path -Werror=conversion-clean, so the template
-        // compiles for EVERY integral width, not only those ≥ int.
+        // Sub-int operands promote to int for the subtraction. Casting back
+        // to U is the intended magnitude, the absolute difference modulo
+        // 2^bits, and keeps the path clean under -Werror=conversion. The
+        // template then compiles at every integral width, not only at int
+        // and wider.
         U const delta = [&]() -> U {
             if constexpr (std::signed_integral<T>) {
                 return a >= b ? static_cast<U>(static_cast<U>(a) - static_cast<U>(b))

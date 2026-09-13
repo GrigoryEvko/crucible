@@ -1,13 +1,7 @@
 #pragma once
 
-// Reflect.h: Auto-generated struct hashing and debug printing via
-// P2996 static reflection (GCC 16 with -freflection).
-//
-// GCC 16 is the only supported compiler and always provides reflection
-// when built via the project presets.
-
 #include <crucible/Platform.h>
-#include <crucible/Expr.h>  // detail::fmix64
+#include <crucible/Expr.h>
 
 #include <bit>
 #include <cstdint>
@@ -18,114 +12,47 @@
 
 namespace crucible {
 
-// ═══════════════════════════════════════════════════════════════════
-// WRAP-Reflect-4 #985: explicit allow-list of types Reflect supports.
-//
-// `detail_reflect::IsReflectFieldSupported<T>` is the single source of
-// truth for what type categories Reflect's three field-helpers
-// (hash_field / pack_field / print_field) can dispatch on:
-//
-//   * enum types          — via std::to_underlying + fmix64
-//   * integral types      — direct fmix64 of the bit pattern
-//   * floating-point      — std::bit_cast → uint then fmix64
-//   * pointer types       — std::bit_cast<uintptr_t>
-//   * C array types       — element-wise hash + fmix64 fold
-//   * class types         — recursive reflect_hash (the structural
-//                           recursion that closes the universe)
-//
-// Each of the three field-helpers below carries an `if constexpr`
-// chain matching this concept's disjuncts; the trailing
-// `static_assert(false, …)` in each helper points BACK to this
-// concept name so a future contributor adding a new branch sees the
-// allow-list in one place.
-//
-// Adding a new type category requires THREE coordinated edits:
-//   1. Add a new disjunct here (the load-bearing source of truth).
-//   2. Add the matching branch to hash_field / pack_field /
-//      print_field below.
-//   3. Update test/test_reflect.cpp to exercise the new branch.
-//
-// The discipline catches half-shipped extensions: if only one helper
-// gains the branch but the concept doesn't, the static_assert(false)
-// fires with a clear name pointing at the missing concept disjunct.
-// ═══════════════════════════════════════════════════════════════════
-
 namespace detail_reflect {
 
+// The three field helpers below each carry an `if constexpr` chain whose
+// arms must cover exactly this concept. Their trailing static_assert names
+// the concept so a half-finished extension is reported against it.
 template <typename T>
 concept IsReflectFieldSupported = std::is_enum_v<T> || std::is_integral_v<T> || std::is_floating_point_v<T>
                                || std::is_pointer_v<T> || std::is_array_v<T> || std::is_class_v<T>;
 
-// ── WRAP-Reflect-4 #985 sentinel: canonical-type membership pins ──
-// Each disjunct above must admit at least one canonical example.
-// A future regression that accidentally narrows the concept (e.g.
-// drops `std::is_floating_point_v<T>` while extending another arm)
-// trips at every TU including Reflect.h.
-static_assert(IsReflectFieldSupported<int>, "WRAP-Reflect-4 #985: integral types must satisfy "
-                                            "IsReflectFieldSupported (load-bearing for reflect_hash).");
-static_assert(IsReflectFieldSupported<double>, "WRAP-Reflect-4 #985: floating-point types must satisfy "
-                                               "IsReflectFieldSupported.");
-static_assert(IsReflectFieldSupported<void*>, "WRAP-Reflect-4 #985: pointer types must satisfy "
-                                              "IsReflectFieldSupported.");
-static_assert(IsReflectFieldSupported<int[4]>, "WRAP-Reflect-4 #985: C array types must satisfy "
-                                               "IsReflectFieldSupported.");
+static_assert(IsReflectFieldSupported<int>, "integral types must satisfy IsReflectFieldSupported");
+static_assert(IsReflectFieldSupported<double>, "floating-point types must satisfy IsReflectFieldSupported");
+static_assert(IsReflectFieldSupported<void*>, "pointer types must satisfy IsReflectFieldSupported");
+static_assert(IsReflectFieldSupported<int[4]>, "C array types must satisfy IsReflectFieldSupported");
 struct ReflectFieldSentinel {
     int x;
-};  // class probe
+};
 static_assert(IsReflectFieldSupported<ReflectFieldSentinel>,
-              "WRAP-Reflect-4 #985: class types must satisfy "
-              "IsReflectFieldSupported (closes the recursion universe).");
+              "class types must satisfy IsReflectFieldSupported, which is what closes the recursion");
 
-// Cross-lane separation: unsupported categories must NOT satisfy
-// the concept.  If a future contributor accidentally widens the
-// allow-list to include void or function types, the
-// static_assert(false) fall-through arms below would become
-// unreachable in a misleading way — these sentinels catch that.
-static_assert(!IsReflectFieldSupported<void>, "WRAP-Reflect-4 #985: `void` is not a reflectable type "
-                                              "category — the allow-list must remain bounded.");
-static_assert(!IsReflectFieldSupported<int(int)>, "WRAP-Reflect-4 #985: function types are not reflectable — "
-                                                  "function POINTERS are (covered by is_pointer_v).");
+static_assert(!IsReflectFieldSupported<void>, "void is not a reflectable type category");
+static_assert(!IsReflectFieldSupported<int(int)>, "function types are not reflectable, but function pointers are");
 
 }  // namespace detail_reflect
 
-// ═══════════════════════════════════════════════════════════════════
-// reflect_hash<T>: Automatic struct hashing via reflection
-//
-// Iterates all non-static data members, hashes each field with
-// fmix64, and combines via multiplicative mixing. Handles:
-//   - Integral types + enums → static_cast<uint64_t>
-//   - Floating point → bit_cast to uint of same size
-//   - Pointers → std::bit_cast<uintptr_t>
-//   - C arrays → hash each element
-//   - Nested structs → recursive reflect_hash
-//
-// Usage:
-//   uint64_t h = crucible::reflect_hash(my_guard);
-// ═══════════════════════════════════════════════════════════════════
-
-// Forward declaration for recursive nested struct hashing.
-// gnu::pure: no side effects, reads only the argument (and nested
-// sub-objects via member access).  noexcept: every hash_field branch is
-// integer math, bit_cast, or pointer-to-integer — none can throw.
+// Declared ahead of the field helpers because they recurse back into it.
 template <typename T>
     requires std::is_class_v<T>
 [[nodiscard, gnu::pure]] uint64_t reflect_hash(const T& obj) noexcept;
 
 namespace detail_reflect {
 
-// Count non-static data members of T.
 template <typename T>
 consteval size_t member_count() {
     return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
 }
 
-// Get the I-th non-static data member info.
 template <typename T, size_t I>
 consteval auto member_info() {
     return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I];
 }
 
-// Hash a single field value. Dispatches on type.
 template <typename T>
 [[nodiscard, gnu::pure]] constexpr uint64_t hash_field(const T& val) noexcept {
     if constexpr (std::is_enum_v<T>) {
@@ -145,21 +72,13 @@ template <typename T>
             h = h * 0x100000001b3ULL ^ hash_field(val[i]);
         return detail::fmix64(h);
     } else if constexpr (std::is_class_v<T>) {
-        return reflect_hash(val);  // recursive
+        return reflect_hash(val);
     } else {
-        // WRAP-Reflect-4 #985: the fall-through must remain unreachable
-        // for every T satisfying detail_reflect::IsReflectFieldSupported.
-        // If it fires, T is outside the explicit allow-list — extend the
-        // concept (above) AND add a matching branch to BOTH pack_field
-        // and print_field below.  Half-extensions are caught by the
-        // concept's per-branch sentinel pins.
-        static_assert(false, "WRAP-Reflect-4 #985: T not in "
-                             "detail_reflect::IsReflectFieldSupported allow-list "
-                             "(enum / integral / floating_point / pointer / array / class).");
+        static_assert(false, "T is outside IsReflectFieldSupported: hash_field handles enum, integral, "
+                             "floating-point, pointer, array and class types only");
     }
 }
 
-// Fold over all members via index_sequence.
 template <typename T, size_t... Is>
 [[nodiscard, gnu::pure]] uint64_t hash_impl(const T& obj, std::index_sequence<Is...>) noexcept {
     uint64_t h = 0x9E3779B97F4A7C15ULL;
@@ -176,36 +95,8 @@ template <typename T>
     return detail_reflect::hash_impl(obj, std::make_index_sequence<N>{});
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// has_reflected_hash<T> — consteval trait reporting whether T can be
-// hashed via reflect_hash.  True for any class type whose every
-// non-static data member is itself reflect_hash-supported (enums,
-// integrals, floats, pointers, arrays, nested classes meeting the
-// same constraint).
-//
-// Use this to gate generic code paths that opt into reflection-driven
-// hashing — callers that don't satisfy the constraint fall back to a
-// manual hash.  Example:
-//
-//   if constexpr (has_reflected_hash<MyType>) {
-//       return reflect_hash(obj);
-//   } else {
-//       return manual_hash(obj);
-//   }
-//
-// Implementation: probe `reflect_hash(declval<const T&>())` in an
-// unevaluated context.  If substitution succeeds, the trait is true.
-//
-// Safety: zero runtime cost (consteval); zero ODR risk (template
-// detection idiom is header-stable).
-// ═══════════════════════════════════════════════════════════════════
-
 namespace detail_reflect {
 
-// Detection helper: SFINAE-friendly invocation of reflect_hash.
-// requires-expression returns true iff reflect_hash<T>() is callable
-// in an unevaluated context.  Wrapped in a consteval to make the
-// trait usable at compile time without instantiation.
 template <typename T>
 consteval bool detect_reflected_hash() noexcept {
     if constexpr (std::is_class_v<T>) {
@@ -220,40 +111,10 @@ consteval bool detect_reflected_hash() noexcept {
 template <typename T>
 inline constexpr bool has_reflected_hash = detail_reflect::detect_reflected_hash<T>();
 
-// ═══════════════════════════════════════════════════════════════════
-// reflect_fmix_fold<T,Seed> — fmix64-based reflection fold helper.
-//
-// reflect_hash uses a multiplicative wymix-like mixing scheme; some
-// callers (feedback_signature, loopterm_hash) need a different
-// mixing pattern: seed-then-fmix64-per-field, with the seed acting
-// as a domain separator.  This helper provides that pattern over
-// reflected fields.
-//
-// Compared to reflect_hash:
-//   - reflect_hash:        h0 = 0x9E37...; for each f: h = h*0x9E37 ^ hash_field(f); h = fmix64(h)
-//   - reflect_fmix_fold:   h0 = Seed;     for each f: h = fmix64(h ^ packed_field(f))
-//
-// The fmix64-fold pattern preserves the "domain-separated, no
-// cross-field algebraic collapse" property the manual hashes were
-// designed for: a per-field fmix64 ensures bit avalanche before the
-// next XOR, so two structs differing in a low-entropy field produce
-// hashes differing across the whole word.
-//
-// Used in MerkleDag.h's feedback_signature / loopterm_hash via
-// reflect-based refactors that preserve the call-site semantics
-// (Family-A persistence safe per their documented contract — the
-// hash differs from the prior manual one in BIT pattern but the
-// uniqueness/avalanche properties are equivalent).
-// ═══════════════════════════════════════════════════════════════════
-
 namespace detail_reflect {
 
-// Pack a field value into a uint64_t for XOR-into-accumulator
-// folding.  Trivial cases (≤8B integral / enum / float / pointer)
-// pack directly; arrays are byte-summed; nested classes recurse via
-// reflect_hash.  Distinct from hash_field above (which applies
-// fmix64 PER field): pack_field is the LINEAR step before the
-// outer fmix64 in the fold loop.
+// Unlike hash_field, this does no mixing. The fold that consumes it applies
+// fmix64 once per field after the xor, so the avalanche happens there.
 template <typename T>
 [[nodiscard, gnu::pure]] constexpr uint64_t pack_field(const T& val) noexcept {
     if constexpr (std::is_enum_v<T>) {
@@ -268,12 +129,10 @@ template <typename T>
     } else if constexpr (std::is_pointer_v<T>) {
         return std::bit_cast<uintptr_t>(val);
     } else if constexpr (std::is_class_v<T>) {
-        return reflect_hash(val);  // recursive
+        return reflect_hash(val);
     } else {
-        // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
-        static_assert(false, "WRAP-Reflect-4 #985: T not in "
-                             "detail_reflect::IsReflectFieldSupported allow-list "
-                             "(enum / integral / floating_point / pointer / array / class).");
+        static_assert(false, "T is outside IsReflectFieldSupported: pack_field handles enum, integral, "
+                             "floating-point, pointer and class types only");
     }
 }
 
@@ -286,6 +145,10 @@ template <typename T, uint64_t Seed, size_t... Is>
 
 }  // namespace detail_reflect
 
+// A second mixing scheme alongside reflect_hash. The seed is a domain
+// separator, and the per-field fmix64 forces a full avalanche before the next
+// xor, so two objects differing only in a low-entropy field still differ
+// across the whole word.
 template <uint64_t Seed, typename T>
     requires std::is_class_v<T>
 [[nodiscard, gnu::pure]] constexpr uint64_t reflect_fmix_fold(const T& obj) noexcept {
@@ -293,31 +156,14 @@ template <uint64_t Seed, typename T>
     return detail_reflect::fmix_fold_impl<T, Seed>(obj, std::make_index_sequence<N>{});
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// reflect_print<T>: Auto-generated debug printing via reflection
-//
-// Prints "TypeName { field0 = val, field1 = val, ... }\n" to stderr.
-// Handles the same type categories as reflect_hash.
-//
-// Usage:
-//   crucible::reflect_print(my_guard);
-// ═══════════════════════════════════════════════════════════════════
-
-// Forward declaration for recursive nested struct printing.
-//
-// Not gnu::pure: fprintf mutates the FILE* stream.  noexcept: Crucible
-// compiles with -fno-exceptions, and fprintf is C-linkage so its error
-// path is an errno set rather than an exception.  The FILE* argument
-// itself is the side-effect channel — callers that pass a valid stream
-// get output; a null FILE* is undefined behavior at the libc level and
-// outside Reflect's contract.
+// Declared ahead of print_field because it recurses back into it. noexcept
+// holds because fprintf has C linkage and reports failure through errno.
 template <typename T>
     requires std::is_class_v<T>
 void reflect_print(const T& obj, FILE* out = stderr) noexcept;
 
 namespace detail_reflect {
 
-// Print a single field value.
 template <typename T>
 void print_field(const T& val, FILE* out) noexcept {
     if constexpr (std::is_enum_v<T>) {
@@ -340,26 +186,21 @@ void print_field(const T& val, FILE* out) noexcept {
         }
         std::fprintf(out, "]");
     } else if constexpr (std::is_class_v<T>) {
-        reflect_print(val, out);  // recursive
+        reflect_print(val, out);
     } else {
-        // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
-        static_assert(false, "WRAP-Reflect-4 #985: T not in "
-                             "detail_reflect::IsReflectFieldSupported allow-list "
-                             "(enum / integral / floating_point / pointer / array / class).");
+        static_assert(false, "T is outside IsReflectFieldSupported: print_field handles enum, integral, "
+                             "floating-point, pointer, array and class types only");
     }
 }
 
-// Get the name of the I-th member as a compile-time string.
 template <typename T, size_t I>
 consteval auto member_name() {
     return std::meta::identifier_of(member_info<T, I>());
 }
 
-// Print one "name = value" pair.
 template <typename T, size_t I>
 void print_member(const T& obj, FILE* out, bool first) noexcept {
     if (!first) std::fprintf(out, ", ");
-    // identifier_of returns a string_view usable at runtime via expansion
     constexpr auto name = member_name<T, I>();
     std::fprintf(out, "%.*s = ", static_cast<int>(name.size()), name.data());
     print_field(obj.[:member_info<T, I>():], out);

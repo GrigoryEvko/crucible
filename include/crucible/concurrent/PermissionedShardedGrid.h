@@ -1,121 +1,23 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// PermissionedShardedGrid<T, M, N, Capacity, UserTag, Routing>
-// — M producers × N consumers worked example
+// A grid of independent SPSC rings behind one linear permission per
+// producer slot and per consumer slot.  Every permission descends from
+// a single whole-tag root.  No pool is needed, since each slot has a
+// unique owner.
 //
-// Wraps ShardedSpscGrid<T, M, N, Capacity, Routing> (M×N independent
-// SpscRings) with the FOUND-A22 2D auto-permission-tree:
+// A handle's slot index lives in its type, so pushing takes no index
+// argument.  The rejected alternative is a runtime index, which looks
+// more flexible and gives up the discipline entirely: two threads can
+// pass the same producer index at once with no diagnostic, and a
+// consumer index passed where a producer index belongs is just another
+// integer.  With the index in the type, each slot has its own handle
+// type, the linear permission stops a second handle for that slot, and
+// no index can be supplied at the call.
 //
-//   * M Producer slots   — each LINEAR (one owner per producer index).
-//                           Permission<Producer<UserTag, I>> for I in [0, M).
-//   * N Consumer slots   — each LINEAR (one owner per consumer index).
-//                           Permission<Consumer<UserTag, J>> for J in [0, N).
-//
-// All permissions are derived from a single Whole<UserTag> root via
-// the FOUND-A22 mint_grid_permissions factory:
-//
-//   auto whole = mint_permission_root<grid_tag::Whole<UserTag>>();
-//   auto grid  = mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(whole);
-//   //                                                            ^^ M+N tokens
-//
-// Each handle is STATICALLY INDEXED at compile time — ProducerHandle<I>
-// knows at type-level that it serves shard I, and try_push() takes no
-// id parameter.  Two distinct slot indices yield distinct handle types,
-// so the type system enforces "this thread serves exactly one slot"
-// structurally.
-//
-//   sizeof(ProducerHandle<I>) == sizeof(Channel*)  (Permission EBO)
-//   sizeof(ConsumerHandle<J>) == sizeof(Channel*)  (Permission EBO)
-//
-// Per-operation cost (steady state):
-//   try_push(item) : ~5-8 ns  (single SpscRing acq/rel)
-//   try_pop()     : ~5-8 ns × M (round-robin scan across producers
-//                                  in the consumer's column)
-//   producer<I>() / consumer<J>() : 0 ns (pure move semantics)
-//
-// ─── The cell of the channel-permission family ─────────────────────
-//
-//   linear × linear         = PermissionedSpscChannel    (1×1)
-//   linear × fractional     = PermissionedSnapshot       (1 writer × N readers)
-//   fractional × linear     = PermissionedMpscChannel    (N producers × 1 cons)
-//   fractional × fractional = PermissionedMpmcChannel    (N producers × N cons)
-//   linear-grid × linear-grid = PermissionedShardedGrid  (M slots × N slots)
-//
-// ShardedGrid is the FIFTH cell — both axes are LINEAR but
-// MULTI-INSTANCE, indexed at compile time.  No Pool needed because
-// each slot has a unique linear owner; the type system tracks slot
-// identity via the Slice<Side<UserTag>, I> phantom index.
-//
-// ─── Why STATIC indexing (not runtime) ─────────────────────────────
-//
-// Runtime indexing (try_push(producer_id, item)) sounds flexible but
-// gives up the type-system role discipline:
-//
-//   * Two threads holding ProducerHandle could call try_push with the
-//     SAME producer_id at the same time — silent data race; no compile
-//     error.
-//   * One thread holding a "ProducerHandle" could pass a consumer_id
-//     by mistake — silent type confusion (id is just size_t); no
-//     compile error.
-//
-// Static indexing (try_push(item) on ProducerHandle<I>) forbids both:
-//
-//   * Type ProducerHandle<I> is unique per I.  The type system's
-//     linearity discipline (deleted copy on the embedded Permission)
-//     forbids two coexisting handles for the same slot.
-//   * The handle's I is fixed at construction.  No dynamic id can be
-//     supplied to try_push; the slot is structurally part of the type.
-//
-// ─── Constraints ────────────────────────────────────────────────────
-//
-//   * T satisfies SpscValue (trivially-copyable, trivially-
-//     destructible).  Inherited from ShardedSpscGrid.
-//   * M ≥ 1, N ≥ 1, Capacity > 0 and a power of two.
-//   * Each PermissionedShardedGrid uses a distinct UserTag.  Per
-//     Permission.h's grep-discoverable rule, mint each Whole<UserTag>
-//     EXACTLY ONCE per program, then split via mint_grid_permissions.
-//   * ProducerHandle<I> and ConsumerHandle<J> are move-only via their
-//     embedded Linear Permission.
-//
-// ─── Worked example ─────────────────────────────────────────────────
-//
-//   struct WorkChannel {};
-//   PermissionedShardedGrid<int, 4, 3, 256, WorkChannel> grid;
-//
-//   // Mint root + split via FOUND-A22 generator.
-//   auto whole = mint_permission_root<
-//       safety::grid_whole<WorkChannel>>();
-//   auto perms = safety::mint_grid_permissions<
-//       safety::grid_whole<WorkChannel>, 4, 3>(std::move(whole));
-//
-//   // Construct producers (M=4) — each statically indexed.
-//   auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
-//   auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
-//   auto p2 = grid.template producer<2>(std::move(std::get<2>(perms.producers)));
-//   auto p3 = grid.template producer<3>(std::move(std::get<3>(perms.producers)));
-//
-//   // Construct consumers (N=3) — each statically indexed.
-//   auto c0 = grid.template consumer<0>(std::move(std::get<0>(perms.consumers)));
-//   auto c1 = grid.template consumer<1>(std::move(std::get<1>(perms.consumers)));
-//   auto c2 = grid.template consumer<2>(std::move(std::get<2>(perms.consumers)));
-//
-//   // Producers emit to round-robin-routed consumer.  Consumers
-//   // round-robin across M producers in their column.
-//   p0.try_push(42);              // → routed to consumer 0..2 by Routing
-//   auto v = c0.try_pop();       // ← reads from any p0..p3 in column 0
-//
-//   // p0.try_pop()  is a COMPILE ERROR — no such method on ProducerHandle
-//   // c0.try_push() is a COMPILE ERROR — no such method on ConsumerHandle
-//   // grid.producer<0>(...) twice is a COMPILE ERROR — Permission consumed
-//
-// ─── References ─────────────────────────────────────────────────────
-//
-//   THREADING.md §5.5      — Tier 4 queue facade design
-//   PermissionGridGenerator.h (FOUND-A22) — the 2D auto-permission tree
-//   safety/PermissionTreeGenerator.h (FOUND-A21) — the 1D Slice<>
-//   concurrent/ShardedGrid.h — underlying M×N SpscRing primitive
-// ═══════════════════════════════════════════════════════════════════
+// Each grid needs a UserTag of its own.  Two grids sharing a tag share
+// Permission types, and their endpoints become interchangeable.  Mint
+// each whole tag's root once per program: nothing checks that at
+// runtime.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ShardedGrid.h>
@@ -131,13 +33,9 @@
 
 namespace crucible::concurrent {
 
-// ── Tag tree for PermissionedShardedGrid ───────────────────────────
-//
-// Reuses the FOUND-A22 generator's tag types DIRECTLY — Producer<I>,
-// Consumer<J> aliases over Slice<ProducerSide<UserTag>, I> and
-// Slice<ConsumerSide<UserTag>, J>.  No per-channel tag declaration
-// needed; mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(whole) yields
-// the matching tuples of permissions automatically.
+// The slot tags come straight from the permission-grid generator, so a
+// user tag takes no per-tag boilerplate and the generator hands back
+// tuples that already match these types.
 
 namespace grid_tag {
 
@@ -151,8 +49,6 @@ template <typename UserTag, std::size_t J>
 using Consumer = safety::Consumer<Whole<UserTag>, J>;
 
 }  // namespace grid_tag
-
-// ── PermissionedShardedGrid<T, M, N, Capacity, UserTag, Routing> ───
 
 template <SpscValue T, std::size_t M, std::size_t N, std::size_t Capacity, typename UserTag = void,
           typename Routing = RoundRobinRouting>
@@ -168,22 +64,15 @@ public:
 
     PermissionedShardedGrid() noexcept = default;
 
-    // ── ProducerHandle<I> ─────────────────────────────────────────
-    //
-    // Statically indexed by producer slot I.  Holds the linear
-    // Permission<Producer<UserTag, I>> token for its slot.  Move-only
-    // via Permission's deleted copy.  EXPOSES try_push only; the
-    // slot index is part of the type, so try_push takes only the
-    // payload.
-
     template <std::size_t I>
     class ProducerHandle {
         static_assert(I < M, "Producer slot index out of range");
 
-        // Reference: channel is Pinned, address stable for life.
-        // Reference forbids reassign + default-construct, and
-        // implicitly deletes move-assign — same rationale as
-        // PermissionedSpscChannel::ConsumerHandle.
+        // A reference rather than a pointer, because a handle binds to
+        // one grid for life.  The reference also deletes move
+        // assignment, which matters: a defaulted move of an empty
+        // Permission is a no-op, so the source and the target would
+        // both go on claiming the linear token.
         PermissionedShardedGrid& grid_;
         [[no_unique_address]] safety::Permission<grid_tag::Producer<UserTag, I>> perm_;
 
@@ -203,14 +92,12 @@ public:
 
         static constexpr std::size_t shard_index = I;
 
-        // Push to producer slot I — Routing picks consumer column.
-        // Per ShardedSpscGrid::send: ~5-8 ns uncontended.
+        // The routing policy picks the consumer column.
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return grid_.grid_.try_push(I, item); }
 
-        // Per-handle diagnostics (snapshot, NOT exact).  Producer-row
-        // view: sum of size across the N consumer columns this handle's
-        // shard row feeds.  See PermissionedSpscChannel for the
-        // documented Permissioned* surface contract.
+        // Snapshots over this slot's row.  Sound for telemetry and for
+        // deciding whether to keep retrying, never for a correctness
+        // invariant.
         [[nodiscard]] std::size_t size_approx() const noexcept {
             std::size_t total = 0;
             for (std::size_t j = 0; j < N; ++j) {
@@ -226,13 +113,6 @@ public:
         }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
-
-    // ── ConsumerHandle<J> ─────────────────────────────────────────
-    //
-    // Statically indexed by consumer slot J.  Holds the linear
-    // Permission<Consumer<UserTag, J>> token.  Move-only.  EXPOSES
-    // try_pop only; slot index is part of the type, so try_pop
-    // takes no parameters.
 
     template <std::size_t J>
     class ConsumerHandle {
@@ -257,13 +137,11 @@ public:
 
         static constexpr std::size_t shard_index = J;
 
-        // Round-robin pop across all M producers in column J.
-        // Per ShardedSpscGrid::try_pop.
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return grid_.grid_.try_pop(J); }
 
-        // Per-handle diagnostics (snapshot, NOT exact).  Consumer-column
-        // view: sum of size across the M producer rows that feed this
-        // handle's shard column.
+        // Snapshots over this slot's column.  Sound for telemetry and
+        // for deciding whether to keep retrying, never for a
+        // correctness invariant.
         [[nodiscard]] std::size_t size_approx() const noexcept {
             std::size_t total = 0;
             for (std::size_t i = 0; i < M; ++i) {
@@ -280,12 +158,6 @@ public:
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
-    // ── Factories ─────────────────────────────────────────────────
-    //
-    // Caller obtains the M+N permission tokens via the FOUND-A22
-    // mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(whole)
-    // factory and hands one to each producer<I>/consumer<J>.
-
     template <std::size_t I>
     [[nodiscard]] constexpr ProducerHandle<I>
     producer(safety::Permission<grid_tag::Producer<UserTag, I>>&& perm) noexcept {
@@ -300,17 +172,12 @@ public:
         return ConsumerHandle<J>{*this, std::move(perm)};
     }
 
-    // ── Mode transition: scoped exclusive access ──────────────────
-    //
-    // ShardedGrid has linear (move-only) Permissions on every
-    // producer slot AND every consumer slot — no atomic refcounted
-    // pool to drain.  Unified mode-transition matches Spsc's
-    // signature: caller surrenders the recombined whole permission
-    // as type-level proof that no handle is alive on any shard.
-    //
-    // Cost: ZERO atomic ops — the Permission move is purely
-    // type-level.  Body runs with exclusive access to the entire
-    // M×N grid; whole permission is returned for re-split.
+    // Scoped exclusive access to the whole grid.  Every slot holds a
+    // linear token and there is no refcount to drain, so surrendering
+    // the recombined whole permission is itself the proof that no
+    // handle is alive on any shard.  The whole permission comes back so
+    // the caller can split it again, and the exchange is type-level
+    // with no atomic operation.
     template <typename Body>
         requires std::is_invocable_v<Body>
     [[nodiscard]] safety::Permission<whole_tag>
@@ -320,28 +187,22 @@ public:
         return std::move(whole);
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────
-
-    // Per-shard size — the M×N grid has M*N independent SpscRings,
-    // so a global size is meaningless on the hot path.  Caller passes
-    // the (producer, consumer) cell indices for per-shard inquiry.
+    // The cells are independent rings, so a single global size means
+    // little.  This form reads one cell.
     [[nodiscard]] std::size_t size_approx(std::size_t producer_id, std::size_t consumer_id) const noexcept {
         return grid_.size_approx(producer_id, consumer_id);
     }
 
-    // Channel-level diagnostics — universal Permissioned* surface.
-    // size_approx() walks all M×N cells; for hot-path use prefer the
-    // per-shard variant above.
+    // These walk every cell, so a hot path wants the per-cell form.
     [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(); }
     [[nodiscard]] bool empty_approx() const noexcept { return grid_.empty_approx(); }
 
-    // Channel-level capacity = total cells across M×N shards.
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return M * N * Capacity; }
 
-    // ShardedGrid has no atomic exclusivity flag — the linear
-    // Permissions on all M+N endpoints ARE the proof of single-
-    // handle ownership.  Always returns false for API uniformity
-    // with the pool-based wrappers.
+    // Always false, and present only so this grid matches the shape of
+    // the pool-backed channels.  There is no exclusivity flag to read:
+    // the linear permissions on every slot are what prove single
+    // ownership.
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
 private:

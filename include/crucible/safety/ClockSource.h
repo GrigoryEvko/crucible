@@ -1,82 +1,21 @@
 #pragma once
 
-// ── crucible::safety::ClockSource<ClockSource_v Source, typename T> ──
+// Pins which clock produced a time reading, so a consumer that needs a
+// particular kind of clock can turn away the others at compile time.
 //
-// FIXY-V-185 (Agent 6 §3.3 item 1): value-level Graded carrier for the
-// V-184 ClockSource axis (ClockSourceLattice — a PRODUCT composite over
-// DetSafe × SuspendBehavior × Pinning).  Pins, at the TYPE level, WHICH
-// clock produced a time read — so a consumer that needs a suspend-
-// inclusive monotonic clock can reject a wall-clock or a pause-on-suspend
-// read at compile time.  The provenance sibling of ScopedFence (V-267).
-//
-//   Substrate: Graded<ModalityKind::Absolute, ClockSourceLattice::At<Source>, T>
-//   Regime:    1 (zero-cost EBO collapse — At<Source>::element_type is
-//              empty, sizeof(ClockSource<Source, T>) == sizeof(T) at -O3).
-//
-// ── Provenance, NOT relaxation ──────────────────────────────────────
-//
-// Unlike ScopedFence — where a wider fence genuinely publishes at every
-// narrower scope it dominates, so `relax<Narrower>()` is sound — a clock
-// SOURCE is a physical provenance fact.  A CLOCK_BOOTTIME read cannot be
-// soundly re-labelled as a CLOCK_MONOTONIC read (they tick differently
-// across suspend), so ClockSource ships NO `relax`.  The source is fixed
-// at construction and travels with the value.
-//
-// What it DOES expose is the projected (DetSafe, Suspend, Pinning) tuple
-// the V-184 lattice assigns each source, so a consumer can gate on the
-// exact axis it cares about:
-//   - `det_safe_tier`        — DetSafeTier (WallClockRead vs MonotonicClockRead)
-//   - `suspend_behavior`     — SuspendBehavior (PausesOnSuspend vs KeepsTicking)
-//   - `pinning_requirement`  — PinningRequirement (NotRequired vs PerCore)
-//   - `satisfies<Required>`  — whole-point PRODUCT subsumption: TRUE iff
-//                              Required's projected point ⊑ this source's
-//                              projected point on ALL THREE axes.
-//
-// ── The load-bearing consumer gate (V-194 DeadlineWatchdog) ─────────
-//
-//   BootClockBytes<uint64_t>::satisfies<ClockSource::Boot>      == TRUE
-//   MonotonicClockBytes<uint64_t>::satisfies<ClockSource::Boot> == FALSE
-//
-// because Boot projects to KeepsTicking and Monotonic to PausesOnSuspend,
-// and PausesOnSuspend ⋣ KeepsTicking on the suspend axis.  V-194's deadline
-// watchdog requires a clock that keeps ticking through suspend; it admits
-// BootClockBytes and rejects MonotonicClockBytes via exactly this gate.
-//
-// ── §XVI canonical wrapper-nesting position ─────────────────────────
-//
-// ClockSource is a Representation-neighborhood wrapper (Tier-L Lattice,
-// peer to Vendor / NumaPlacement / SimdWidthPinned / ScopedFence), sitting
-// between the Representation cluster and ResidencyHeat in the canonical
-// outer→inner order.  The row_hash_contribution<ClockSource<Source, Inner>>
-// federation-cache discriminator (salt 0x30) ships in
-// safety/diag/RowHashFold.h — the row_hash key is the WRAPPER, never the
-// lattice At<> (FIXY-V-184 deferred its row_hash here for exactly this
-// reason).
-//
-//   Axiom coverage:
-//     TypeSafe — ClockSource is a strong scoped enum; two different-source
-//                wrappers are DISTINCT types (BootClockBytes ≠
-//                MonotonicClockBytes), so a cross-source assignment is a
-//                compile error (neg_clock_source_cross_source_assign.cpp).
-//     MemSafe — defaulted copy/move; T's move semantics carry through.
-//     InitSafe — NSDMI on impl_ via Graded's substrate.
-//     DetSafe — the source pin is the type-level WITNESS of a time read's
-//                provenance; NO ClockSource projects to DetSafeTier::Pure
-//                (a clock read is never a pure function of declared
-//                inputs), which a Pure-requiring context rejects.
-//   Runtime cost: sizeof(ClockSource<Source, T>) == sizeof(T); verified by
-//     CRUCIBLE_GRADED_LAYOUT_INVARIANT below.
-//
-// §XXI: `mint_clock_source<Source, T>(args...)`.  HS14 neg fixtures:
-// neg_clock_source_cross_source_assign.cpp +
-// neg_clock_source_suspend_gate_rejects_monotonic.cpp.
+// There is no widening or relabelling operation.  A source is a physical
+// fact about where the reading came from, and two clocks that tick
+// differently across a suspend cannot stand in for one another.  What
+// the wrapper does expose is the tier each source projects to on the
+// determinism, suspend and pinning axes, so a consumer can gate on the
+// one property it actually depends on.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/ClockSourceLattice.h>
 
 #include <concepts>
-#include <cstdlib>  // std::abort in the runtime smoke test
+#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -92,22 +31,13 @@ using PinningRequirement_v = ::crucible::algebra::lattices::PinningRequirement;
 template <ClockSource_v Source, typename T>
 class [[nodiscard]] ClockSource {
 public:
-    // ── Public type aliases (GradedWrapper uniform surface) ─────────
     using value_type = T;
     using lattice_type = ClockSourceLattice::At<Source>;
     using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
     static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
-    // The pinned clock source — exposed for source-aware dispatch without
-    // instantiating the wrapper.
     static constexpr ClockSource_v source = Source;
 
-    // ── Projected (DetSafe, Suspend, Pinning) axes ──────────────────
-    //
-    // The V-184 lattice point this source pins, broken out per axis so a
-    // consumer gates on the one it cares about (e.g. V-194 reads
-    // suspend_behavior).  Computed via the constexpr projection — folds
-    // away entirely at -O3.
     static constexpr DetSafeTier_v det_safe_tier =
         ClockSourceLattice::get<0>(::crucible::algebra::lattices::clock_source_project(Source));
     static constexpr SuspendBehavior_v suspend_behavior =
@@ -119,7 +49,6 @@ private:
     graded_type impl_;
 
 public:
-    // ── Construction ────────────────────────────────────────────────
     constexpr ClockSource() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
@@ -138,8 +67,6 @@ public:
     constexpr ClockSource& operator=(ClockSource&&) = default;
     ~ClockSource() = default;
 
-    // Equality: compares value bytes within the SAME clock source.
-    // Cross-source comparison rejected at overload resolution.
     [[nodiscard]] friend constexpr bool operator==(ClockSource const& a,
                                                    ClockSource const& b) noexcept(noexcept(a.peek() == b.peek()))
         requires requires(T const& x, T const& y) {
@@ -149,39 +76,28 @@ public:
         return a.peek() == b.peek();
     }
 
-    // ── Diagnostic names (forwarded from Graded substrate) ─────────
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
     [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
-    // ── Read-only / mutable access ──────────────────────────────────
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
     [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
-    // ── swap ────────────────────────────────────────────────────────
     constexpr void swap(ClockSource& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
     friend constexpr void swap(ClockSource& a, ClockSource& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
-    // ── satisfies<Required> — whole-point PRODUCT subsumption ───────
-    //
-    // TRUE iff this source's projected point SUBSUMES the Required source's
-    // projected point (Required ⊑ Source on ALL THREE axes in the
-    // ClockSourceLattice partial order).  The DeadlineWatchdog gate is
-    // `satisfies<Boot>` — admits Boot/TscRaw/TscSerialized/PmuCounter
-    // (KeepsTicking), rejects Realtime/Monotonic/ThreadCpu (PausesOnSuspend).
+    // True when this source covers the required one on all three axes at
+    // once, not on any single axis alone.
     template <ClockSource_v Required>
     static constexpr bool satisfies =
         ClockSourceLattice::leq(::crucible::algebra::lattices::clock_source_project(Required),
                                 ::crucible::algebra::lattices::clock_source_project(Source));
 };
 
-// ── §XXI mint factory ───────────────────────────────────────────────
-//
-// Token mint: wraps a value in a clock-source provenance carrier.
 template <ClockSource_v Source, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr ClockSource<Source, T>
@@ -189,7 +105,6 @@ mint_clock_source(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Ar
     return ClockSource<Source, T>{std::in_place, std::forward<Args>(args)...};
 }
 
-// ── Convenience aliases (Agent 6 §3.3 enumerated) ───────────────────
 template <typename T>
 using RealtimeClockBytes = ClockSource<ClockSource_v::Realtime, T>;
 template <typename T>
@@ -208,15 +123,12 @@ template <typename T>
 using TscSerializedBytes = ClockSource<ClockSource_v::TscSerialized, T>;
 template <typename T>
 using PmuBytes = ClockSource<ClockSource_v::PmuCounter, T>;
-// FIXY-V-201: /dev/ptpN PHC — per-NIC silicon clock, monotonic counter
-// that keeps ticking through host suspend (the NIC oscillator runs
-// independently), read via fd/ioctl (no CPU pin required).  Lattice
-// projection matches Boot's tuple, but the source identity is distinct
-// at the V-185 federation-cache key.
+// A clock on the network adapter itself.  Its oscillator runs
+// independently of the host, so it keeps ticking through a host suspend,
+// and reading it needs no CPU pin.
 template <typename T>
 using PtpHwClockBytes = ClockSource<ClockSource_v::PtpHwClock, T>;
 
-// ── Layout invariants — regime-1 EBO collapse ───────────────────────
 namespace detail::clock_source_layout {
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RealtimeClockBytes, int);
@@ -225,7 +137,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockBytes, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockBytes, unsigned long long);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TscBytes, unsigned long long);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PmuBytes, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PtpHwClockBytes, unsigned long long);  // FIXY-V-201
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(PtpHwClockBytes, unsigned long long);
 
 }  // namespace detail::clock_source_layout
 
@@ -235,10 +147,9 @@ static_assert(sizeof(BootClockBytes<unsigned long long>) == sizeof(unsigned long
 static_assert(sizeof(TscBytes<unsigned long long>) == sizeof(unsigned long long));
 static_assert(sizeof(PmuBytes<int>) == sizeof(int));
 static_assert(sizeof(PtpHwClockBytes<unsigned long long>) == sizeof(unsigned long long),
-              "FIXY-V-201: PtpHwClockBytes<u64> must regime-1 EBO-collapse to sizeof(u64) — "
-              "the empty At<PtpHwClock> singleton carries no per-instance grade.");
+              "PtpHwClockBytes<u64> is the size of a bare u64.  The source grade is an "
+              "empty singleton and carries nothing per instance.");
 
-// ── Self-test ───────────────────────────────────────────────────────
 namespace detail::clock_source_self_test {
 
 using BootU64 = BootClockBytes<unsigned long long>;
@@ -247,7 +158,6 @@ using RealU64 = RealtimeClockBytes<unsigned long long>;
 using TscU64 = TscBytes<unsigned long long>;
 using ThreadU64 = ThreadCpuBytes<unsigned long long>;
 
-// ── Construction paths ─────────────────────────────────────────────
 inline constexpr BootU64 b_default{};
 static_assert(b_default.peek() == 0);
 static_assert(BootU64::source == ClockSource_v::Boot);
@@ -260,7 +170,6 @@ static_assert(b_in_place.peek() == 7);
 
 static_assert(BootU64::modality == ::crucible::algebra::ModalityKind::Absolute);
 
-// ── Projected axes — the V-184 lattice points, per source ───────────
 static_assert(BootU64::det_safe_tier == DetSafeTier_v::MonotonicClockRead);
 static_assert(BootU64::suspend_behavior == SuspendBehavior_v::KeepsTicking);
 static_assert(BootU64::pinning_requirement == PinningRequirement_v::NotRequired);
@@ -270,52 +179,38 @@ static_assert(RealU64::det_safe_tier == DetSafeTier_v::WallClockRead);
 static_assert(TscU64::pinning_requirement == PinningRequirement_v::PerCore);
 static_assert(TscU64::suspend_behavior == SuspendBehavior_v::KeepsTicking);
 
-// ── NO ClockSource is DetSafe::Pure — the Pure-context rejection ────
-//
-// A clock read is never a pure function of declared inputs; every source
-// projects to WallClockRead or MonotonicClockRead, NEVER Pure.  A context
-// requiring DetSafeTier::Pure rejects every clock-sourced value.
+// A clock read is never a pure function of its declared inputs, so no
+// source reaches the pure tier and a context demanding it turns away
+// every clock-sourced value.
 static_assert(BootU64::det_safe_tier != DetSafeTier_v::Pure);
 static_assert(MonoU64::det_safe_tier != DetSafeTier_v::Pure);
 static_assert(RealU64::det_safe_tier != DetSafeTier_v::Pure);
 static_assert(TscU64::det_safe_tier != DetSafeTier_v::Pure);
 static_assert(ThreadU64::det_safe_tier != DetSafeTier_v::Pure);
 
-// ── satisfies<Required> — the V-194 DeadlineWatchdog gate ───────────
-//
-// Boot keeps ticking through suspend ⇒ subsumes a Boot requirement; the
-// pause-on-suspend clocks do NOT.
 static_assert(BootU64::satisfies<ClockSource_v::Boot>,
-              "FIXY-V-185: BootClockBytes MUST satisfy a Boot requirement — it keeps "
-              "ticking through suspend (the V-194 DeadlineWatchdog gate admits it).");
+              "BootClockBytes satisfies a Boot requirement.  A boot-time read keeps "
+              "ticking through suspend.");
 static_assert(!MonoU64::satisfies<ClockSource_v::Boot>,
-              "FIXY-V-185: MonotonicClockBytes MUST NOT satisfy a Boot requirement — "
-              "CLOCK_MONOTONIC pauses on suspend (PausesOnSuspend ⋣ KeepsTicking).  "
-              "This is the V-194 rejection that the deadline watchdog depends on.");
+              "MonotonicClockBytes does not satisfy a Boot requirement.  A monotonic "
+              "read pauses on suspend, and a paused clock does not cover a "
+              "keeps-ticking one.");
 static_assert(TscU64::satisfies<ClockSource_v::Boot>,
-              "TscRaw keeps ticking through suspend ⇒ subsumes a Boot requirement on "
-              "the suspend + det-safe axes (PerCore ⊒ NotRequired on pinning).");
+              "A raw timestamp-counter read keeps ticking through suspend, and its "
+              "per-core pinning requirement is above the no-pin requirement.");
 static_assert(!RealU64::satisfies<ClockSource_v::Boot>);
-// Boot subsumes Monotonic (Boot is weaker-or-equal on every axis below it):
-// Monotonic ⊑ Boot ⇒ Boot satisfies a Monotonic requirement.
 static_assert(BootU64::satisfies<ClockSource_v::Monotonic>);
 static_assert(!MonoU64::satisfies<ClockSource_v::TscRaw>,
               "Monotonic does NOT subsume TscRaw — PerCore ⋣ NotRequired on pinning.");
 
-// ── Distinct types per source — the V-194 static-distinction basis ──
-static_assert(!std::is_same_v<BootU64, MonoU64>, "FIXY-V-185: BootClockBytes and MonotonicClockBytes MUST be DISTINCT "
-                                                 "types so V-194 can statically require one and reject the other.");
+static_assert(!std::is_same_v<BootU64, MonoU64>, "BootClockBytes and MonotonicClockBytes are distinct types, which is "
+                                                 "what lets a consumer require one and reject the other statically.");
 static_assert(!std::is_same_v<TscBytes<int>, PmuBytes<int>>);
 static_assert(!std::is_convertible_v<MonoU64, BootU64>);
 
-// ── FIXY-V-201: PtpHwClock — Boot's projection twin, distinct identity ─
-//
-// PtpHwClockBytes shares the (MonotonicClockRead, KeepsTicking, NotRequired)
-// projected tuple with BootClockBytes (both are monotonic + suspend-inclusive
-// + no-pin), but the types and the V-185 federation-cache row_hash MUST be
-// distinct so PHC reads can't silently fold into Boot reads at the typeck or
-// the cache key.  This mirrors the Monotonic/MonotonicRaw same-projection-
-// distinct-identity discipline.
+// The adapter clock projects to the same three tiers as the boot clock,
+// yet the two stay distinct types so a reading from one cannot fold into
+// the other at a type check or a cache key.
 using PtpHwU64 = PtpHwClockBytes<unsigned long long>;
 static_assert(PtpHwU64::source == ClockSource_v::PtpHwClock);
 static_assert(PtpHwU64::det_safe_tier == DetSafeTier_v::MonotonicClockRead);
@@ -323,28 +218,26 @@ static_assert(PtpHwU64::suspend_behavior == SuspendBehavior_v::KeepsTicking);
 static_assert(PtpHwU64::pinning_requirement == PinningRequirement_v::NotRequired);
 static_assert(PtpHwU64::det_safe_tier != DetSafeTier_v::Pure);
 static_assert(PtpHwU64::satisfies<ClockSource_v::Boot>,
-              "FIXY-V-201: PtpHwClockBytes shares Boot's tuple (MonoRead, KeepsTicking, "
-              "NotRequired) — it MUST satisfy a Boot requirement on the order-theoretic "
-              "leq, even though source identity differs.");
+              "PtpHwClockBytes projects to the same three tiers as the boot clock, so "
+              "it satisfies a Boot requirement even though the source identity "
+              "differs.");
 static_assert(PtpHwU64::satisfies<ClockSource_v::Monotonic>);
 static_assert(!std::is_same_v<PtpHwU64, BootU64>,
-              "FIXY-V-201: PtpHwClockBytes and BootClockBytes MUST be DISTINCT types — "
-              "they project to the same tuple but encode different source identities; "
-              "the V-185 federation-cache row_hash discriminates them.");
+              "PtpHwClockBytes and BootClockBytes are distinct types.  They project to "
+              "the same tiers but name different sources, and the federation cache key "
+              "keeps them apart.");
 static_assert(!std::is_convertible_v<PtpHwU64, BootU64>);
 static_assert(!std::is_convertible_v<BootU64, PtpHwU64>);
 
-// ── Diagnostic forwarders ──────────────────────────────────────────
 static_assert(BootU64::lattice_name() == "ClockSourceLattice::At<Boot>");
 static_assert(MonoU64::lattice_name() == "ClockSourceLattice::At<Monotonic>");
 static_assert(TscU64::lattice_name() == "ClockSourceLattice::At<TscRaw>");
-// GCC reflection renders `unsigned long long` as `long long unsigned int`,
-// so check containment, not a specific suffix; the int witness pins a
-// concrete suffix.
+// Reflection renders `unsigned long long` as `long long unsigned int`, so
+// this matches on containment.  The int witness below pins an exact
+// suffix.
 static_assert(BootU64::value_type_name().find("long") != std::string_view::npos);
 static_assert(BootClockBytes<int>::value_type_name().ends_with("int"));
 
-// ── swap / peek_mut / operator== ───────────────────────────────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_source() noexcept {
     BootU64 a{10};
     BootU64 b{20};
@@ -368,31 +261,25 @@ static_assert(peek_mut_works());
 }
 static_assert(equality_compares_value_bytes());
 
-// ── mint_clock_source factory ──────────────────────────────────────
 inline constexpr auto minted = mint_clock_source<ClockSource_v::Boot, unsigned long long>(99);
 static_assert(minted.peek() == 99 && minted.source == ClockSource_v::Boot);
 
-// ── Deadline-watchdog gate simulation (V-194 shape) ────────────────
-//
-// A deadline watchdog admits only a clock that keeps ticking through
-// suspend — i.e. one that subsumes a Boot requirement.
 template <typename Clock>
 concept keeps_ticking_through_suspend = Clock::template satisfies<ClockSource_v::Boot>;
 
-static_assert(keeps_ticking_through_suspend<BootU64>, "A CLOCK_BOOTTIME read MUST pass the deadline-watchdog gate.");
+static_assert(keeps_ticking_through_suspend<BootU64>, "A boot-time read passes the deadline gate.");
 static_assert(keeps_ticking_through_suspend<TscU64>,
-              "A TSC read MUST pass the deadline-watchdog gate (keeps ticking).");
+              "A timestamp-counter read passes the deadline gate, because it keeps "
+              "ticking.");
 static_assert(!keeps_ticking_through_suspend<MonoU64>,
-              "A CLOCK_MONOTONIC read MUST be REJECTED at the deadline-watchdog gate "
-              "— it pauses on suspend, so a deadline computed against it under-counts "
-              "wall time across a suspend/resume cycle.");
+              "A monotonic read is rejected at the deadline gate.  It pauses on "
+              "suspend, so a deadline measured against it under-counts the wall time "
+              "spent across a suspend and resume.");
 static_assert(!keeps_ticking_through_suspend<RealU64>);
 
-// ── Runtime smoke test ─────────────────────────────────────────────
-//
-// Per feedback_algebra_runtime_smoke_test_discipline: pure static_asserts
-// can mask consteval/SFINAE/inline-body bugs; runtime ops with
-// non-constant arguments catch them.
+// The arguments here are non-constant on purpose.  A pure static_assert
+// suite masks bugs that only appear when the body is instantiated for
+// runtime evaluation.
 inline void runtime_smoke_test() {
     unsigned long long seed = 21;
     BootU64 n{seed * 2};
@@ -411,7 +298,6 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] bool g2 = MonoU64::satisfies<ClockSource_v::Boot>;
     if (!g1 || g2) std::abort();
 
-    // Alias instantiation across sources.
     RealtimeClockBytes<unsigned long long> rt{123};
     PmuBytes<unsigned long long> pmu{456};
     if (rt.peek() != 123 || pmu.peek() != 456) std::abort();

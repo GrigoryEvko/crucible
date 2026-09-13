@@ -1,11 +1,8 @@
 #pragma once
 
-// GAPS-111 substrate: deterministic topology discovery facts and parsers.
-//
-// Live OS harvesters are intentionally separated from this bounded substrate.
-// TopologyGraph is a non-owning span carrier; returning it from a function
-// backed by local vectors would dangle. Discovery therefore fills an owning
-// DiscoverySnapshot<N,E>, then mints a TopologyGraph view over that storage.
+// The graph that graph() returns holds non-owning spans.  A snapshot owns the
+// node and edge storage, and the graph is only a view over it.  A graph built
+// over storage local to a function would dangle at the return.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>

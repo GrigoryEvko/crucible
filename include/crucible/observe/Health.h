@@ -1,12 +1,5 @@
 #pragma once
 
-// Bridge topology health facts onto the observation rail.
-//
-// topology::Health owns deterministic scoring over supplied telemetry facts.
-// observe owns latest-value runtime publication. Keeping the bridge here prevents
-// consumers from inventing local metric IDs or a parallel recommendations
-// layer for health state.
-
 #include <crucible/observe/Observation.h>
 #include <crucible/topology/Health.h>
 

@@ -1,27 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_recipe_spec_v ─────────────────────
-//
-// FOUND-D30 (eighth and FINAL of batch — fourth product wrapper).
-// Wrapper-detection predicate for `RecipeSpec<T>`.
-//
-// Mechanical extension of the IsBudgeted/IsEpochVersioned/
-// IsNumaPlacement product-wrapper template.  RecipeSpec carries a
-// (Tolerance, RecipeFamily) runtime grade pair where both axes are
-// 1-byte enums — total grade overhead = 2 bytes (no alignment pad).
-// This is the SMALLEST product wrapper in the D30 batch (compared to
-// 16-byte Budgeted/EpochVersioned and 40-byte NumaPlacement).
-//
-// Production semantics: Forge Phase E pins each compiled kernel's
-// numerical recipe at lower-time so consumers can route through the
-// matching reduction path (Linear / Pairwise / Kahan / BlockStable).
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   is_recipe_spec_v<T>          Variable template; cv-ref-stripped.
-//   IsRecipeSpec<T>              Concept form.
-//   recipe_spec_value_t<T>       Wrapped element type; constrained.
-
 #include <crucible/safety/RecipeSpec.h>
 
 #include <type_traits>
@@ -51,8 +29,6 @@ concept IsRecipeSpec = is_recipe_spec_v<T>;
 template <typename T>
     requires is_recipe_spec_v<T>
 using recipe_spec_value_t = typename detail::is_recipe_spec_impl<std::remove_cvref_t<T>>::value_type;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_recipe_spec_self_test {
 
@@ -89,8 +65,6 @@ static_assert(std::is_same_v<recipe_spec_value_t<RS_int>, int>);
 static_assert(std::is_same_v<recipe_spec_value_t<RS_double>, double>);
 static_assert(std::is_same_v<recipe_spec_value_t<RS_uint64>, std::uint64_t>);
 
-// Layout invariant — SMALLEST product wrapper grade in the D30 batch.
-// 2-byte runtime grade pair (1 byte Tolerance + 1 byte RecipeFamily).
 static_assert(sizeof(RS_int) >= sizeof(int) + 2);
 static_assert(sizeof(RS_double) >= sizeof(double) + 2);
 

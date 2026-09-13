@@ -1,62 +1,19 @@
 #pragma once
 
-// ── crucible::algebra::lattices::EpochLattice ───────────────────────
+// Bounded chain over the fleet epoch: the cluster-wide, consensus-
+// committed membership generation that advances whenever a peer joins,
+// a peer is evicted, or the fleet reshards.
 //
-// Bounded total-order lattice over a uint64_t MONOTONIC counter
-// representing the Canopy fleet epoch — the cluster-wide Raft-
-// committed membership generation.  One of two component sub-
-// lattices for the EpochVersioned product wrapper from
-// 28_04_2026_effects.md §4.4.2 (FOUND-G67).
+// The order is numeric, so an older view sits below a newer one and the
+// join of two views is the more recent.  A gate asking for at least
+// epoch N then admits exactly the values at or above it.
 //
-// Citation: CRUCIBLE.md §L13 (Canopy Raft-committed membership
-// epoch); §L14 (Cipher reincarnation across topology changes).
-//
-// THE LOAD-BEARING USE CASE: every Canopy collective; every
-// reshard event.  The Canopy mesh advances its fleet epoch ONLY
-// via Raft-committed membership changes (peer join, peer eviction,
-// reshard).  A value tagged with epoch=5 is admissible at any
-// gate requiring epoch ≥ 5; tagging at older epochs is rejected
-// (because the cluster's view of "who participates" has changed).
-//
-// ── Algebraic shape ─────────────────────────────────────────────────
-//
-// Carrier:  Epoch = strong-typed uint64_t.
-// Order:    natural ≤ on uint64_t.
-// Bottom:   Epoch{0}             (genesis epoch — fleet initial state.)
-// Top:      Epoch{UINT64_MAX}    (saturating cap.)
-// Join:     max                  (the MORE RECENT of two views.)
-// Meet:     min                  (the older of two views.)
-//
-// ── Direction convention ────────────────────────────────────────────
-//
-// Same as the Budgeted axes' BitsBudget / PeakBytes (FOUND-G63):
-// ordered by NUMERIC ≤, NOT by claim strength.  Rationale:
-//
-//   - The grade carries an ACTUAL committed-epoch number, not a
-//     claim CAP.  Composing two values' epochs takes the MAX
-//     (the value with more-recent membership view subsumes the
-//     older one).
-//
-//   - Admission gates downstream read "is this value at least at
-//     epoch N?" — admission requires source.epoch ≥ gate.  With
-//     leq = ≤, the natural reading is "old ⊑ new" — older epochs
-//     are below newer ones in the lattice.
-//
-// THE FORWARD-PROGRESS DISCIPLINE: monotone counters NEVER regress.
-// A reshard ADVANCES the epoch; a peer joining ADVANCES the epoch.
-// The lattice does NOT enforce this at the type level (you can
-// construct Epoch{3} after constructing Epoch{5} — the lattice
-// only knows about ordering, not history); the wrapper's
-// production call sites must enforce the forward-progress rule
-// at construction sites (typically by deriving the new epoch from
-// the Raft commit log, not from arbitrary inputs).
-//
-//   Axiom coverage:
-//     TypeSafe — Epoch is a strong-tagged uint64_t; mixing with
-//                Generation (the sister axis) is a compile error.
-//     DetSafe — leq / join / meet are all `constexpr`.
-//   Runtime cost:
-//     element_type = Epoch = uint64_t + 0 phantom bytes.
+// The order knows nothing about history.  Nothing here stops a caller
+// constructing an older epoch after a newer one, because the lattice
+// sees two numbers and not a sequence of events.  Forward progress is a
+// property of where the number comes from, and every construction site
+// must derive it from the commit log rather than from an argument it was
+// handed.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -70,12 +27,9 @@
 
 namespace crucible::algebra::lattices {
 
-// ── Epoch — strong-typed uint64_t fleet-epoch counter ─────────────
-//
-// Phantom-typed wrapper around uint64_t.  Distinct from Generation
-// (the sister axis) AND distinct from BitsBudget / PeakBytes (the
-// Budgeted axes) — all four are uint64_t-backed but each is a
-// distinct C++ struct, so cross-axis assignment is a compile error.
+// A distinct type, not a bare integer.  Several unrelated axes are also
+// 64-bit unsigned counters, and separate types are what keep one from
+// being assigned into another.
 struct Epoch {
     std::uint64_t value{0};
 
@@ -85,7 +39,6 @@ struct Epoch {
     [[nodiscard]] constexpr operator std::uint64_t() const noexcept { return value; }
 };
 
-// ── EpochLattice — bounded chain over Epoch ────────────────────────
 struct EpochLattice {
     using element_type = Epoch;
 
@@ -104,7 +57,6 @@ struct EpochLattice {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "EpochLattice"; }
 };
 
-// ── Self-test ───────────────────────────────────────────────────────
 namespace detail::epoch_lattice_self_test {
 
 static_assert(Lattice<EpochLattice>);
@@ -118,37 +70,30 @@ static_assert(std::is_standard_layout_v<Epoch>);
 
 static_assert(!std::is_same_v<Epoch, std::uint64_t>);
 
-// Cross-axis disjointness — EpochLattice is included WHEREVER
-// EpochVersioned is, so this header pulls Generation into scope
-// transitively only when GenerationLattice.h is also included.
-// The cross-axis assertion lives at the wrapper layer (safety/
-// EpochVersioned.h) where both component newtypes are guaranteed
-// in scope.
+// There is no assertion here that this counter differs from the sibling
+// axis, because the sibling type is not in scope in this header.  That
+// assertion belongs where both types are guaranteed present.
 
-// Ordering witnesses.
 static_assert(EpochLattice::leq(Epoch{0}, Epoch{1}));
-static_assert(EpochLattice::leq(Epoch{42}, Epoch{42}));  // reflexive
+static_assert(EpochLattice::leq(Epoch{42}, Epoch{42}));
 static_assert(!EpochLattice::leq(Epoch{99}, Epoch{42}));
 static_assert(EpochLattice::leq(EpochLattice::bottom(), EpochLattice::top()));
 
-// Bounds.
 static_assert(EpochLattice::bottom().value == 0);
 static_assert(EpochLattice::top().value == std::numeric_limits<std::uint64_t>::max());
 
-// Join / meet.
 static_assert(EpochLattice::join(Epoch{3}, Epoch{7}).value == 7);
-static_assert(EpochLattice::join(Epoch{7}, Epoch{3}).value == 7);  // commutative
+static_assert(EpochLattice::join(Epoch{7}, Epoch{3}).value == 7);
 static_assert(EpochLattice::meet(Epoch{3}, Epoch{7}).value == 3);
 
-// Bound identities.
 static_assert(EpochLattice::join(Epoch{42}, EpochLattice::bottom()) == Epoch{42});
 static_assert(EpochLattice::meet(Epoch{42}, EpochLattice::top()) == Epoch{42});
 
-// Idempotence.
 static_assert(EpochLattice::join(Epoch{99}, Epoch{99}).value == 99);
 static_assert(EpochLattice::meet(Epoch{99}, Epoch{99}).value == 99);
 
-// Distributivity witness.
+// The interior witnesses matter: bottom and top satisfy distributivity
+// for reasons that have nothing to do with the order between them.
 [[nodiscard]] consteval bool distributive_witness() noexcept {
     Epoch a{2};
     Epoch b{5};
@@ -159,10 +104,6 @@ static_assert(EpochLattice::meet(Epoch{99}, Epoch{99}).value == 99);
 }
 static_assert(distributive_witness());
 
-// fixy-H-20: invoke central Lattice.h verifier on representative
-// witnesses (bottom, mid, top + adjacent triples).  Chain lattice ⇒
-// distributive (every chain is distributive — meet/join distribute
-// trivially when ordered).
 static_assert(verify_bounded_lattice_axioms_at<EpochLattice>(EpochLattice::bottom(), Epoch{1024}, EpochLattice::top()));
 static_assert(verify_bounded_lattice_axioms_at<EpochLattice>(Epoch{0}, Epoch{42}, Epoch{99}));
 static_assert(verify_bounded_lattice_axioms_at<EpochLattice>(Epoch{1}, Epoch{2}, Epoch{3}));
@@ -170,7 +111,6 @@ static_assert(verify_distributive_lattice<EpochLattice>(EpochLattice::bottom(), 
 static_assert(verify_distributive_lattice<EpochLattice>(Epoch{2}, Epoch{5}, Epoch{8}));
 static_assert(verify_distributive_lattice<EpochLattice>(Epoch{7}, Epoch{7}, Epoch{42}));
 
-// Implicit conversion DOWN to uint64_t.
 static_assert([] consteval {
     Epoch e{42};
     std::uint64_t n = e;
@@ -185,18 +125,15 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] Epoch j = EpochLattice::join(mid, topv);
     [[maybe_unused]] Epoch m = EpochLattice::meet(mid, bot);
 
-    // Forward progression: each Raft commit advances the epoch.
     Epoch e_at_genesis{0};
     Epoch e_after_join{1};
     Epoch e_after_reshard{2};
     Epoch most_recent = EpochLattice::join(EpochLattice::join(e_at_genesis, e_after_join), e_after_reshard);
     if (most_recent.value != 2u) std::abort();
 
-    // Implicit unwrap.
     std::uint64_t total = mid;
     if (total != 1024u) std::abort();
 
-    // Lattice over Graded substrate.
     using EpochGraded = Graded<ModalityKind::Absolute, EpochLattice, int>;
     EpochGraded v{42, Epoch{16}};
     [[maybe_unused]] auto g = v.grade();

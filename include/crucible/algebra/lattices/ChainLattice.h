@@ -1,80 +1,14 @@
 #pragma once
 
-// ── crucible::algebra::lattices::ChainLatticeOps<EnumT> ─────────────
+// Chain-order lattice ops over a scoped enum.  Only the ops are shared.
+// A derived lattice supplies its own bottom(), top(), name() and any
+// per-tier nested templates.  Folding the whole lattice into one
+// `template <typename EnumT> ChainLattice` would give every lattice over
+// the same enum a single type identity, and each lattice must stay
+// distinct.
 //
-// Helper base class extracting the leq/join/meet ops shared by every
-// chain-order lattice over a strong enum.  Three current callers —
-// LifetimeLattice (3 tiers), ConsistencyLattice (5 tiers),
-// ToleranceLattice (7 tiers) — independently re-implemented these
-// three identical static methods; this base centralizes them.
-//
-// ── What it provides ────────────────────────────────────────────────
-//
-// For any `EnumT` satisfying `std::is_enum_v<EnumT>`, exposes:
-//
-//   using element_type = EnumT
-//   static constexpr bool   leq(EnumT a, EnumT b)   noexcept
-//   static constexpr EnumT  join(EnumT a, EnumT b)  noexcept   (max)
-//   static constexpr EnumT  meet(EnumT a, EnumT b)  noexcept   (min)
-//
-// Implementation pattern: cast to the underlying integer via
-// std::to_underlying, then compare.  Identical bytes across every
-// per-tier chain lattice.
-//
-// ── What it does NOT provide ────────────────────────────────────────
-//
-// Per-lattice-specific bottom() / top() / name() and per-tier At<L>
-// nested templates remain in the derived lattice struct — these
-// vary per enum (different bottom/top values, different name strings,
-// different At<L>::name() switch arms) and can't be sensibly factored.
-//
-// The expected per-lattice header pattern is:
-//
-//   struct LifetimeLattice : ChainLatticeOps<Lifetime> {
-//       [[nodiscard]] static constexpr Lifetime bottom() noexcept {
-//           return Lifetime::PER_REQUEST;
-//       }
-//       [[nodiscard]] static constexpr Lifetime top() noexcept {
-//           return Lifetime::PER_FLEET;
-//       }
-//       [[nodiscard]] static consteval std::string_view name() noexcept {
-//           return "LifetimeLattice";
-//       }
-//
-//       template <Lifetime L>
-//       struct At { ...singleton sub-lattice... };
-//   };
-//
-// ── Why static-method inheritance, not template parameterization ────
-//
-// We extract the OPS into a base, not the WHOLE lattice into a
-// `template <typename EnumT, ...> ChainLattice` template, for three
-// reasons:
-//
-//   1. Each per-lattice struct STAYS A DISTINCT TYPE.  The
-//      neg-compile cross-lattice tests (Lifetime × Consistency
-//      etc.) depend on the per-lattice enum being structurally
-//      different; if we used a template alias, the wrapper types
-//      could end up sharing identity in surprising ways.
-//   2. Public API surface is UNCHANGED.  Callers still write
-//      `LifetimeLattice::leq(...)` and `LifetimeLattice::At<L>`
-//      exactly as before — qualified-name lookup walks the base.
-//   3. Concept gates (`Lattice<LifetimeLattice>`) still satisfy via
-//      static-method inheritance: the concept's `L::leq(a, b)` probe
-//      finds the inherited method through normal name lookup.
-//
-//   Axiom coverage:
-//     TypeSafe — strong-enum constraint (std::is_enum_v) prevents
-//                accidental instantiation over ints/floats.
-//     DetSafe  — every operation is `constexpr` (NOT `consteval`)
-//                so Graded's runtime `pre (L::leq(...))` precondition
-//                can fire under enforce semantic.
-//   Runtime cost: zero — static methods, EBO base (sizeof empty base
-//                  collapses).
-//
-// See ALGEBRA-14 (#459, Lifetime/Consistency/Tolerance lattices) for
-// the three callers; the audit Tier-2 sweep (this commit) for the
-// extraction motivation.
+// The ops are constexpr and not consteval, so a consumer's runtime
+// precondition can call them under the enforce contract semantic.
 
 #include <crucible/algebra/Lattice.h>
 
@@ -86,14 +20,9 @@
 
 namespace crucible::algebra::lattices {
 
-// ── Constraint: SCOPED enum, not plain ──────────────────────────────
-//
-// std::is_scoped_enum_v (C++23) accepts only `enum class : T { ... }`
-// declarations — strong enums that don't implicitly convert to their
-// underlying integer type.  Plain `enum E : int { ... }` is rejected
-// at the concept gate (defeats Crucible's strong-enum discipline:
-// implicit-int-convertibility lets `if (lifetime + 1) ...` compile,
-// which is precisely what the strong enum was meant to forbid).
+// A plain `enum E : int` satisfies std::is_enum_v but converts implicitly
+// to its underlying integer, which would let arithmetic on a tier value
+// compile.  Scoped enums only.
 template <typename EnumT>
     requires std::is_scoped_enum_v<EnumT>
 struct ChainLatticeOps {
@@ -102,34 +31,16 @@ struct ChainLatticeOps {
     [[nodiscard]] static constexpr bool leq(EnumT a, EnumT b) noexcept {
         return std::to_underlying(a) <= std::to_underlying(b);
     }
-    [[nodiscard]] static constexpr EnumT join(EnumT a, EnumT b) noexcept {
-        return leq(a, b) ? b : a;  // max — strengthen
-    }
-    [[nodiscard]] static constexpr EnumT meet(EnumT a, EnumT b) noexcept {
-        return leq(a, b) ? a : b;  // min — weaken
-    }
+    [[nodiscard]] static constexpr EnumT join(EnumT a, EnumT b) noexcept { return leq(a, b) ? b : a; }
+    [[nodiscard]] static constexpr EnumT meet(EnumT a, EnumT b) noexcept { return leq(a, b) ? a : b; }
 };
-
-// ── Exhaustive verifiers — one consteval helper per check ──────────
-//
-// Each chain lattice's self-test independently re-implemented the
-// triple-nested `template for (constexpr auto e : enumerators)` fold
-// over the lattice's enum, calling either verify_bounded_lattice_
-// axioms_at or verify_distributive_lattice for every (a, b, c) triple.
-// Audit Tier-2 dedup: factor those two helpers here, parameterized
-// over the ChainLattice itself.
-//
-// The reflection-driven enumeration (P2996R13 + P3491R3
-// define_static_array) auto-extends coverage when the underlying
-// enum gains a new variant — no per-lattice update needed.
 
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
-    // -Wshadow fires on `template for` bodies because GCC 16 unrolls
-    // the loop into successive scopes that each declare the same
-    // induction variable; suppress locally for the loop body only.
+    // `template for` unrolls into successive scopes that each declare the
+    // induction variable, so -Wshadow fires on the body.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -164,17 +75,8 @@ template <typename ChainLattice>
     return true;
 }
 
-// ── Runtime smoke test ─────────────────────────────────────────────
-//
-// Per feedback_algebra_runtime_smoke_test_discipline: ChainLatticeOps was
-// EXTRACTED from Lifetime / Consistency / Tolerance during an audit Tier-2
-// sweep (see the header doc-block) and shipped WITHOUT its own smoke test —
-// the only algebra/lattices/ header with runtime-evaluable ops lacking one.
-// Exercise leq / join / meet over a FRESH chain enum (independent of the
-// three production callers, so the base is verified for an arbitrary
-// scoped-enum ordinal layout) and instantiate the two
-// verify_chain_lattice_* consteval helpers over it — previously reachable
-// only through the production lattices' static_asserts.
+// The self-test enum is independent of every production caller, so the
+// base is verified for an arbitrary scoped-enum ordinal layout.
 namespace detail::chain_lattice_self_test {
 
 enum class SmokeTier : std::uint8_t {
@@ -189,9 +91,6 @@ struct SmokeChainLattice : ChainLatticeOps<SmokeTier> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "SmokeChainLattice"; }
 };
 
-// Compile-time: the two consteval verifiers (defined above) over the fresh
-// enum.  A regression that breaks bounded- or distributive-lattice axioms
-// for an arbitrary chain surfaces here, not only via the production enums.
 static_assert(verify_chain_lattice_exhaustive<SmokeChainLattice>(),
               "ChainLatticeOps must satisfy bounded-lattice axioms for an "
               "arbitrary scoped enum");
@@ -199,9 +98,8 @@ static_assert(verify_chain_lattice_distributive_exhaustive<SmokeChainLattice>(),
               "ChainLatticeOps must satisfy distributive-lattice axioms for "
               "an arbitrary scoped enum");
 
-// Runtime: drive the inline leq / join / meet bodies with a NON-CONSTANT
-// operand (the discipline's purpose — exercise the runtime path under
-// ASan/UBSan, which the compile-time static_asserts above cannot).
+// The volatile operand keeps the call out of constant evaluation, so the
+// runtime bodies reach the sanitizers.
 inline void runtime_smoke_test() {
     volatile std::uint8_t raw_hi = 2;
     const SmokeTier lo = SmokeTier::Lo;

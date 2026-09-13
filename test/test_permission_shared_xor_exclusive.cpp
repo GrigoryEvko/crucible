@@ -1,27 +1,12 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_permission_shared_xor_exclusive — fix-06 regression
+// The pool exists to keep shared access and exclusive access mutually
+// exclusive. The attack on that invariant is to copy a shared token out of
+// a guard, stash it past the guard's scope, and then upgrade: an exclusive
+// permission is handed out while a shared token is still live.
 //
-// Pins the shared-XOR-exclusive invariant that SharedPermissionPool
-// exists to enforce, and the fix-06 resolution of the "stashed token
-// outlives its Guard" exploit.
-//
-// The exploit framing was: lend() → Guard (count = 1) → copy
-// guard.token() and stash it → destroy the Guard (count → 0) →
-// try_upgrade() succeeds and hands out the EXCLUSIVE Permission while a
-// copied SharedPermission token is still live, "defeating shared-XOR-
-// exclusive".
-//
-// fix-06 resolution (option c, made explicit):
-//   * SharedPermission CONFERS NO RUNTIME ACCESS
-//     (confers_runtime_access == false) — a stashed token is a pure
-//     type-level witness, not a live read-proof.
-//   * The shared-XOR-exclusive invariant is enforced over GUARDS (the
-//     access carriers): a Guard live ⟺ count > 0 ⟺ try_upgrade fails.
-//
-// These tests prove the Guard-refcount invariant directly: try_upgrade
-// is BLOCKED while any Guard is live (even if a token copy is stashed),
-// and SUCCEEDS only once every Guard is gone.
-// ═══════════════════════════════════════════════════════════════════
+// The resolution is that a shared token confers no runtime access at all.
+// It is a type-level witness. The invariant is enforced over guards, which
+// are the access carriers: a guard is live exactly while the count is
+// above zero, and the upgrade fails exactly then. These tests pin that.
 
 #include <crucible/permissions/Permission.h>
 
@@ -35,13 +20,12 @@ namespace {
 
 struct TestFailure {};
 
-#define CRUCIBLE_TEST_REQUIRE(...)                                          \
-    do {                                                                    \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                  \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n",                      \
-                         #__VA_ARGS__, __FILE__, __LINE__);                 \
-            throw TestFailure{};                                            \
-        }                                                                   \
+#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
+    do {                                                                                  \
+        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
+            throw TestFailure{};                                                          \
+        }                                                                                 \
     } while (0)
 
 int total_passed = 0;
@@ -62,16 +46,12 @@ void run_test(const char* name, F&& body) {
 
 struct Region {};
 
-// fix-06 structural marker: the token confers no runtime access.
 static_assert(SharedPermission<Region>::confers_runtime_access == false,
-              "fix-06: SharedPermission must confer no runtime access");
+              "SharedPermission must confer no runtime access");
 
-// ── The exploit sequence, neutralized ────────────────────────────────
-//
-// Reproduce the exploit verbatim and show that, because the access
-// carrier is the Guard (not the token), try_upgrade is blocked exactly
-// while a Guard is live — independent of how many tokens were copied
-// out and stashed.
+// The attack run verbatim. Because the access carrier is the guard and not
+// the token, the upgrade is blocked exactly while a guard is live, however
+// many tokens were copied out and stashed.
 void test_stashed_token_does_not_unblock_upgrade() {
     auto exc = mint_permission_root<Region>();
     SharedPermissionPool<Region> pool{std::move(exc)};
@@ -85,43 +65,36 @@ void test_stashed_token_does_not_unblock_upgrade() {
         CRUCIBLE_TEST_REQUIRE(guard.has_value());
         CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
 
-        // Step of the exploit: copy the token out and stash it past the
-        // Guard's scope.
+        // The attack step: copy the token out, past the guard's scope.
         stashed_token = guard->token();
 
-        // While the Guard is live, try_upgrade MUST fail (count > 0).
         auto blocked = pool.try_upgrade();
         CRUCIBLE_TEST_REQUIRE(!blocked.has_value());
         CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
     }
-    // Guard destroyed → count → 0.  The stashed token is STILL alive,
-    // but it confers no access, so the shared-XOR-exclusive invariant
-    // over the access carriers is intact: no Guard is live now.
+    // The guard is gone and the count is back to zero. The stashed token is
+    // still alive, but it carries no access, so no shared reader survives
+    // and the upgrade below is sound.
     CRUCIBLE_TEST_REQUIRE(stashed_token.has_value());
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
 
-    // try_upgrade now succeeds — and that is SOUND precisely because the
-    // stashed token grants nothing.  No live shared READ (= Guard) and
-    // the exclusive Permission coexist for region Region.
     auto upgraded = pool.try_upgrade();
     CRUCIBLE_TEST_REQUIRE(upgraded.has_value());
     CRUCIBLE_TEST_REQUIRE(pool.is_exclusive_out());
 
-    // The exclusive is now out; further lend() must fail until it is
-    // deposited back — confirming the other half of the XOR.
+    // The other half of the invariant: while the exclusive permission is
+    // out, lending must fail until it is deposited back.
     auto cannot_lend = pool.lend();
     CRUCIBLE_TEST_REQUIRE(!cannot_lend.has_value());
 
     pool.deposit_exclusive(std::move(*upgraded));
     CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
 
-    // After deposit, lending works again.
     auto relent = pool.lend();
     CRUCIBLE_TEST_REQUIRE(relent.has_value());
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
 }
 
-// ── Multiple live Guards all block upgrade ────────────────────────────
 void test_multiple_guards_block_upgrade() {
     auto exc = mint_permission_root<Region>();
     SharedPermissionPool<Region> pool{std::move(exc)};
@@ -131,7 +104,8 @@ void test_multiple_guards_block_upgrade() {
     CRUCIBLE_TEST_REQUIRE(g1.has_value() && g2.has_value());
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 2);
 
-    // Stash a token from each — still no effect on the carrier count.
+    // A token from each guard, to show that copying one out does not move
+    // the carrier count.
     [[maybe_unused]] auto t1 = g1->token();
     [[maybe_unused]] auto t2 = g2->token();
 
@@ -152,10 +126,8 @@ void test_multiple_guards_block_upgrade() {
 
 int main() {
     std::fprintf(stderr, "test_permission_shared_xor_exclusive:\n");
-    run_test("stashed_token_does_not_unblock_upgrade",
-             test_stashed_token_does_not_unblock_upgrade);
-    run_test("multiple_guards_block_upgrade",
-             test_multiple_guards_block_upgrade);
+    run_test("stashed_token_does_not_unblock_upgrade", test_stashed_token_does_not_unblock_upgrade);
+    run_test("multiple_guards_block_upgrade", test_multiple_guards_block_upgrade);
 
     std::fprintf(stderr, "  passed=%d failed=%d\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;

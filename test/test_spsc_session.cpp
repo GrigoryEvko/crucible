@@ -1,70 +1,15 @@
-// SpscSession.h integration test (SEPLOG-INT-1 / SAFEINT-R31, #384/#413).
+// The typed-session API driven end to end over the real channel primitive,
+// rather than over a stand-in.
 //
-// First production-shaped exercise of the FOUND-C v1 PermissionedSession-
-// Handle stack composed with the existing concurrent/Permissioned-
-// SpscChannel primitive.  Closes the IX.2 critique that "no production
-// caller exists for SessionHandle / PermissionedSpscChannel" — this
-// test is the first wired-in end-to-end exercise.
+// What is in scope: round-trip integrity through the session API, size
+// equality between a permissioned handle and the bare one under this target's
+// build flags, and cross-thread use of the session type.
 //
-// Three tiers of evidence:
-//
-//   Tier A — STRUCTURAL (load-bearing):
-//     File-scope sizeof asserts in SpscSession.h verify PSH-over-handle-
-//     pointer is byte-identical to bare SessionHandle wrapping the same
-//     pointer.  That assertion fires at compile time even without this
-//     TU — but this TU pulls SpscSession.h under project warning flags,
-//     forcing the full template instantiation and exercising every
-//     constexpr path.
-//
-//   Tier B — RUNTIME ROUND-TRIP:
-//     Two jthreads exchange N items through a real PermissionedSpsc-
-//     Channel via the typed-session API.  Producer side uses
-//     mint_producer_session<Channel> + blocking_push; consumer side uses
-//     mint_consumer_session<Channel> + blocking_pop.  Verifies (a) PSH's
-//     send/recv compose with the Permission-typed handles, (b) the
-//     Loop<Send|Recv, Continue> protocol shape iterates correctly,
-//     (c) detach_reason::TestInstrumentation cleanly drops both PSHs.
-//
-//   Tier C — DETACH POLICY:
-//     Verifies that producer + consumer can be detached at shutdown
-//     without the abandonment-tracker firing (Loop without exit branch
-//     requires explicit detach; the documented infinite-loop pattern).
-//
-// ─── What this test PROVES vs DOES NOT PROVE ──────────────────────
-//
-// PROVES:
-//   * Round-trip data integrity (in-order, no corruption) under the
-//     typed-session API end-to-end on the real production primitive.
-//   * sizeof equality between PSH<End, EmptyPermSet, Handle*> and
-//     bare SessionHandle<End, Handle*> under the test TU's build
-//     flags (catches ABI drift between header witness and target).
-//   * Cross-thread typed-session usage works (jthread move + PSH
-//     reassignment via Loop pattern).
-//   * Immediate-detach pattern is well-formed.
-//
-// DOES NOT PROVE:
-//   * PermSet evolution.  We use EmptyPermSet throughout — vacuously
-//     stays empty.  Real evolution paths (Send<Transferable<T, Tag>>
-//     consuming the Tag, Recv<Transferable<T, Tag>> producing it,
-//     Loop body PS-balance enforcement) are exercised in
-//     test/test_permissioned_session_handle.cpp.
-//   * Branch convergence.  No Select/Offer in the streaming protocol
-//     — Decision D4's structural convergence enforcement isn't
-//     exercised here.  See test_permissioned_session_handle.cpp's
-//     test_select_local_pick_branch.
-//   * Permission-balance enforcement.  Trivial empty-set case only.
-//     The non-trivial enforcement (Continue with mismatched PS)
-//     fires the [PermissionImbalance] static_assert exercised in
-//     test/sessions_neg/loop_iteration_drains_permission.cpp.
-//   * Crash transport composition.  This wiring uses unconditional
-//     blocking transports; OneShotFlag-driven shutdown is exercised
-//     in test_permissioned_session_handle.cpp's test_crash_transport_*.
-//
-// This test is essentially a regression test for the new wiring —
-// "PSH wrapping a handle pointer doesn't corrupt the data stream
-//  and matches sizeof of bare." Framework capabilities are exercised
-// elsewhere; this test confirms they compose with the production
-// primitive.
+// What is deliberately out of scope: the permission set stays empty
+// throughout, so nothing here exercises permission evolution across send and
+// recv, branch convergence, or the balance check on a loop iteration. The
+// streaming protocol has no choice point and the transports block
+// unconditionally, so crash-driven shutdown is not reached either.
 
 #include <atomic>
 #include <cstdio>
@@ -77,25 +22,22 @@
 
 namespace {
 
-// Test fixture tag — mints a dedicated channel-tag tree so this test
-// doesn't collide with any other PermissionedSpscChannel instantiation.
+// A tag of its own, so the channel-tag tree cannot collide with another
+// instantiation elsewhere.
 struct TestChannelTag {};
 
-using Channel = ::crucible::concurrent::PermissionedSpscChannel<int, 1024,
-                                                                 TestChannelTag>;
+using Channel = ::crucible::concurrent::PermissionedSpscChannel<int, 1024, TestChannelTag>;
 
-int  total_passed = 0;
-int  total_failed = 0;
+int total_passed = 0;
+int total_failed = 0;
 
-#define CRUCIBLE_TEST_REQUIRE(cond)                                  \
-    do {                                                              \
-        if (!(cond)) {                                                \
-            std::fprintf(stderr,                                      \
-                "  REQUIRE FAILED: %s @ %s:%d\n",                     \
-                #cond, __FILE__, __LINE__);                           \
-            ++total_failed;                                           \
-            return;                                                   \
-        }                                                             \
+#define CRUCIBLE_TEST_REQUIRE(cond)                                                            \
+    do {                                                                                       \
+        if (!(cond)) {                                                                         \
+            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
+            ++total_failed;                                                                    \
+            return;                                                                            \
+        }                                                                                      \
     } while (0)
 
 template <typename Body>
@@ -111,13 +53,8 @@ void run_test(const char* name, Body body) {
     }
 }
 
-// ── Tier B: round-trip ──────────────────────────────────────────────
-//
-// 1024 items pushed by producer thread, popped by consumer thread.
-// Both threads use the typed-session API (PSH over handle pointer)
-// rather than the bare ProducerHandle.try_push / ConsumerHandle.try_pop.
-// Final invariant: every item arrived in order, every PSH detached
-// cleanly, no abandonment diagnostic.
+// Both threads drive the session type rather than calling try_push and
+// try_pop on the handles directly, which is the whole point of the exercise.
 
 void test_typed_session_round_trip() {
     namespace ses = ::crucible::safety::proto::spsc_session;
@@ -128,42 +65,35 @@ void test_typed_session_round_trip() {
     Channel ch;
 
     auto whole = mint_permission_root<Channel::whole_tag>();
-    auto [pp, cp] = mint_permission_split<Channel::producer_tag,
-                                      Channel::consumer_tag>(std::move(whole));
+    auto [pp, cp] = mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
 
     auto prod_handle = ch.producer(std::move(pp));
     auto cons_handle = ch.consumer(std::move(cp));
 
     constexpr int kCount = 1024;
     std::atomic<bool> producer_done{false};
-    std::vector<int>  received;
+    std::vector<int> received;
     received.reserve(kCount);
 
-    std::jthread producer{
-        [&prod_handle, &producer_done](auto) mutable {
-            auto psh = ses::mint_producer_session<Channel>(
-                ::crucible::effects::HotFgCtx{}, prod_handle);
-            for (int i = 0; i < kCount; ++i) {
-                auto next = std::move(psh).send(i, ses::blocking_push);
-                psh = std::move(next);
-            }
-            std::move(psh).detach(TestInstrumentation{});
-            producer_done.store(true, std::memory_order_release);
+    std::jthread producer{[&prod_handle, &producer_done](auto) mutable {
+        auto psh = ses::mint_producer_session<Channel>(::crucible::effects::HotFgCtx{}, prod_handle);
+        for (int i = 0; i < kCount; ++i) {
+            auto next = std::move(psh).send(i, ses::blocking_push);
+            psh = std::move(next);
         }
-    };
+        std::move(psh).detach(TestInstrumentation{});
+        producer_done.store(true, std::memory_order_release);
+    }};
 
-    std::jthread consumer{
-        [&cons_handle, &received](auto) mutable {
-            auto psh = ses::mint_consumer_session<Channel>(
-                ::crucible::effects::HotFgCtx{}, cons_handle);
-            for (int i = 0; i < kCount; ++i) {
-                auto [v, next] = std::move(psh).recv(ses::blocking_pop);
-                received.push_back(v);
-                psh = std::move(next);
-            }
-            std::move(psh).detach(TestInstrumentation{});
+    std::jthread consumer{[&cons_handle, &received](auto) mutable {
+        auto psh = ses::mint_consumer_session<Channel>(::crucible::effects::HotFgCtx{}, cons_handle);
+        for (int i = 0; i < kCount; ++i) {
+            auto [v, next] = std::move(psh).recv(ses::blocking_pop);
+            received.push_back(v);
+            psh = std::move(next);
         }
-    };
+        std::move(psh).detach(TestInstrumentation{});
+    }};
 
     producer.join();
     consumer.join();
@@ -175,12 +105,10 @@ void test_typed_session_round_trip() {
     }
 }
 
-// ── Tier C: detach-on-construction ─────────────────────────────────
-//
-// Verifies that establishing a session and immediately detaching it
-// (without sending/receiving anything) is well-formed.  This is the
-// canonical shutdown pattern when production code wants to wire a
-// session-typed view but no payload is available yet.
+// A loop protocol has no exit branch, so a session on one is ended by an
+// explicit detach rather than by close. Establishing a session and detaching
+// it without moving any payload has to be well-formed, because that is the
+// shape a caller wires up before any payload exists.
 
 void test_typed_session_immediate_detach() {
     namespace ses = ::crucible::safety::proto::spsc_session;
@@ -191,47 +119,40 @@ void test_typed_session_immediate_detach() {
     Channel ch;
 
     auto whole = mint_permission_root<Channel::whole_tag>();
-    auto [pp, cp] = mint_permission_split<Channel::producer_tag,
-                                      Channel::consumer_tag>(std::move(whole));
+    auto [pp, cp] = mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
 
     auto prod_handle = ch.producer(std::move(pp));
     auto cons_handle = ch.consumer(std::move(cp));
 
-    auto prod_psh = ses::mint_producer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, prod_handle);
-    auto cons_psh = ses::mint_consumer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, cons_handle);
+    auto prod_psh = ses::mint_producer_session<Channel>(::crucible::effects::HotFgCtx{}, prod_handle);
+    auto cons_psh = ses::mint_consumer_session<Channel>(::crucible::effects::HotFgCtx{}, cons_handle);
 
     std::move(prod_psh).detach(TestInstrumentation{});
     std::move(cons_psh).detach(TestInstrumentation{});
 
-    // Reaching here without abort proves both detach calls were well-
-    // formed and the abandonment-tracker did not fire.  Sentinel pass:
+    // The assertion is trivially true on purpose. Arriving here at all is the
+    // claim: both detach calls are well-formed and the abandonment tracker
+    // stays quiet.
     CRUCIBLE_TEST_REQUIRE(true);
 }
 
-// ── Tier A: file-scope sizeof witness ──────────────────────────────
+// The header makes the same size claim, but against its own instantiations.
+// Repeating it here under the real channel tag pins it to this target's build
+// flags, where a layout drift would actually matter.
 //
-// SpscSession.h carries its own sizeof_witness namespace with the
-// load-bearing static_asserts on the concrete CONSTRUCTED head types
-// (End, Send<int, End>) — Loop<...> is a shape-only template that
-// has no SessionHandle / PSH specialisation (it unrolls to its body's
-// head at mint_permissioned_session).  Re-asserting under the
-// production-tagged channel here pins the witness to THIS TU's build
-// flags, catching any silent ABI drift between the header's witness
-// and the production-target instantiation.
+// The types named are the constructed heads rather than the loop. A loop is a
+// shape-only template with no handle specialisation of its own, because it
+// unrolls to its body's head when the session is minted.
 
 namespace witness {
 namespace proto = ::crucible::safety::proto;
-using PSH_End_Prod = proto::PermissionedSessionHandle<
-    proto::End, proto::EmptyPermSet, Channel::ProducerHandle*>;
+using PSH_End_Prod = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Channel::ProducerHandle*>;
 using SH_End_Prod = proto::SessionHandle<proto::End, Channel::ProducerHandle*>;
 static_assert(sizeof(PSH_End_Prod) == sizeof(SH_End_Prod),
-              "spsc_session test TU: PSH<End> vs bare SH<End> "
-              "size-equality must hold under production-target channel tag.");
+              "a permissioned session handle over End must be the same size "
+              "as the bare session handle over End.");
 
-using PSH_End_Cons = proto::PermissionedSessionHandle<
-    proto::End, proto::EmptyPermSet, Channel::ConsumerHandle*>;
+using PSH_End_Cons = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Channel::ConsumerHandle*>;
 using SH_End_Cons = proto::SessionHandle<proto::End, Channel::ConsumerHandle*>;
 static_assert(sizeof(PSH_End_Cons) == sizeof(SH_End_Cons));
 }  // namespace witness
@@ -240,8 +161,8 @@ static_assert(sizeof(PSH_End_Cons) == sizeof(SH_End_Cons));
 
 int main() {
     std::fprintf(stderr, "[test_spsc_session]\n");
-    run_test("typed_session_round_trip",         test_typed_session_round_trip);
-    run_test("typed_session_immediate_detach",   test_typed_session_immediate_detach);
+    run_test("typed_session_round_trip", test_typed_session_round_trip);
+    run_test("typed_session_immediate_detach", test_typed_session_immediate_detach);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P WIP BBR-family model sample stub.
- *
- * Future role: collect low-latency socket model evidence for userspace
- * BBRv3-shaped control loops. Current behavior: observe no callbacks.
- */
-
 #include "../../dataplane/bpf/net_common.h"
 
 struct {

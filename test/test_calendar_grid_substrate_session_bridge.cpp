@@ -1,10 +1,7 @@
-// GAPS-083: indexed SubstrateSessionBridge support for CalendarGrid.
-//
-// PermissionedCalendarGrid is a producer-row indexed priority calendar
-// queue with one drain consumer.  This test verifies the bridge maps
-// CalendarProducerId<P> / CalendarConsumerId onto the real handle types
-// and preserves the queue's present-vs-empty observation through the
-// existing std::optional<T> consumer surface.
+// The grid is a priority calendar queue indexed by producer row, with one
+// drain consumer. What is under test is that the bridge maps each indexed
+// identity onto the real handle type, and that the queue's present-versus-
+// empty observation survives the optional-returning consumer surface.
 
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/permissions/Permission.h>
@@ -35,50 +32,30 @@ struct Job {
 };
 
 struct DeadlineKey {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
 
-using Grid = cc::PermissionedCalendarGrid<
-    Job,
-    2,
-    64,
-    8,
-    DeadlineKey,
-    1ULL,
-    BridgeTag>;
+using Grid = cc::PermissionedCalendarGrid<Job, 2, 64, 8, DeadlineKey, 1ULL, BridgeTag>;
 
 static_assert(cgs::CalendarGridSessionSurface<Grid>);
-static_assert(cc::IsBridgeableShardDirection<Grid, cc::CalendarProducerId<0>,
-                                             cc::Direction::Producer>);
-static_assert(cc::IsBridgeableShardDirection<Grid, cc::CalendarConsumerId,
-                                             cc::Direction::Consumer>);
+static_assert(cc::IsBridgeableShardDirection<Grid, cc::CalendarProducerId<0>, cc::Direction::Producer>);
+static_assert(cc::IsBridgeableShardDirection<Grid, cc::CalendarConsumerId, cc::Direction::Consumer>);
 static_assert(!cc::IsBridgeableDirection<Grid, cc::Direction::Producer>);
 static_assert(!cc::IsBridgeableDirection<Grid, cc::Direction::Consumer>);
 
-static_assert(std::is_same_v<
-    cc::handle_for_t<Grid, cc::Direction::Producer,
-                     cc::CalendarProducerId<1>>,
-    Grid::ProducerHandle<1>>);
-static_assert(std::is_same_v<
-    cc::handle_for_t<Grid, cc::Direction::Consumer,
-                     cc::CalendarConsumerId>,
-    Grid::ConsumerHandle>);
-static_assert(std::is_same_v<
-    cc::default_proto_for_t<Grid, cc::Direction::Producer,
-                            cc::CalendarProducerId<0>>,
-    cgs::ProducerProto<Job>>);
-static_assert(std::is_same_v<
-    cc::default_proto_for_t<Grid, cc::Direction::Consumer,
-                            cc::CalendarConsumerId>,
-    cgs::ConsumerProto<Job>>);
+static_assert(std::is_same_v<cc::handle_for_t<Grid, cc::Direction::Producer, cc::CalendarProducerId<1>>,
+                             Grid::ProducerHandle<1>>);
+static_assert(
+    std::is_same_v<cc::handle_for_t<Grid, cc::Direction::Consumer, cc::CalendarConsumerId>, Grid::ConsumerHandle>);
+static_assert(std::is_same_v<cc::default_proto_for_t<Grid, cc::Direction::Producer, cc::CalendarProducerId<0>>,
+                             cgs::ProducerProto<Job>>);
+static_assert(std::is_same_v<cc::default_proto_for_t<Grid, cc::Direction::Consumer, cc::CalendarConsumerId>,
+                             cgs::ConsumerProto<Job>>);
 
 template <typename UserTag, std::size_t M>
 auto fresh_calendar_perms() {
     auto whole = safety::mint_permission_root<cc::calendar_tag::Whole<UserTag>>();
-    return safety::mint_grid_permissions<cc::calendar_tag::Whole<UserTag>, M, 1>(
-        std::move(whole));
+    return safety::mint_grid_permissions<cc::calendar_tag::Whole<UserTag>, M, 1>(std::move(whole));
 }
 
 template <typename Session>
@@ -94,14 +71,11 @@ int test_bridge_64_bucket_half_present() {
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
     auto consumer = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
-    auto ps0 = cc::mint_substrate_session<Grid, cc::CalendarProducerId<0>,
-                                          cc::Direction::Producer>(
+    auto ps0 = cc::mint_substrate_session<Grid, cc::CalendarProducerId<0>, cc::Direction::Producer>(
         ::crucible::effects::HotFgCtx{}, p0);
-    auto ps1 = cc::mint_substrate_session<Grid, cc::CalendarProducerId<1>,
-                                          cc::Direction::Producer>(
+    auto ps1 = cc::mint_substrate_session<Grid, cc::CalendarProducerId<1>, cc::Direction::Producer>(
         ::crucible::effects::HotFgCtx{}, p1);
-    auto cs = cc::mint_substrate_session<Grid, cc::CalendarConsumerId,
-                                         cc::Direction::Consumer>(
+    auto cs = cc::mint_substrate_session<Grid, cc::CalendarConsumerId, cc::Direction::Consumer>(
         ::crucible::effects::HotFgCtx{}, consumer);
 
     for (std::uint64_t slot = 0; slot < Grid::num_buckets; slot += 2) {
@@ -139,23 +113,17 @@ int test_bridge_64_bucket_half_present() {
 }
 
 int test_session_header_factories() {
-    using HeaderGrid = cc::PermissionedCalendarGrid<
-        Job, 1, 8, 4, DeadlineKey, 1ULL, HeaderTag>;
+    using HeaderGrid = cc::PermissionedCalendarGrid<Job, 1, 8, 4, DeadlineKey, 1ULL, HeaderTag>;
 
     HeaderGrid grid;
     auto perms = fresh_calendar_perms<HeaderTag, 1>();
-    auto producer = cgs::mint_calendar_grid_producer<HeaderGrid, 0>(
-        grid, std::move(std::get<0>(perms.producers)));
-    auto consumer = cgs::mint_calendar_grid_consumer<HeaderGrid>(
-        grid, std::move(std::get<0>(perms.consumers)));
+    auto producer = cgs::mint_calendar_grid_producer<HeaderGrid, 0>(grid, std::move(std::get<0>(perms.producers)));
+    auto consumer = cgs::mint_calendar_grid_consumer<HeaderGrid>(grid, std::move(std::get<0>(perms.consumers)));
 
-    auto ps = cgs::mint_producer_session<HeaderGrid, 0>(
-        ::crucible::effects::HotFgCtx{}, producer);
-    auto cs = cgs::mint_consumer_session<HeaderGrid>(
-        ::crucible::effects::HotFgCtx{}, consumer);
+    auto ps = cgs::mint_producer_session<HeaderGrid, 0>(::crucible::effects::HotFgCtx{}, producer);
+    auto cs = cgs::mint_consumer_session<HeaderGrid>(::crucible::effects::HotFgCtx{}, consumer);
 
-    auto next_ps = std::move(ps).send(
-        Job{.deadline_ns = 3, .payload = 42}, cgs::blocking_push);
+    auto next_ps = std::move(ps).send(Job{.deadline_ns = 3, .payload = 42}, cgs::blocking_push);
     auto [job, next_cs] = std::move(cs).recv(cgs::blocking_pop);
     assert(job.payload == 42);
     assert(!cgs::consumer_session_try_pop<HeaderGrid>(next_cs).has_value());

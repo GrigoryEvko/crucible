@@ -1,19 +1,8 @@
 #pragma once
 
-// ── CipherTier promotion / demotion mint sites ─────────────────────
-//
-// CipherTier<Tier, T> deliberately forbids arbitrary strengthening:
-// a Cold value cannot call `relax<Hot>()` and claim RAM-replicated
-// residency.  Real tier movement therefore needs named mint sites.
-// These factories are the compile-time boundary for that movement:
-//
-//   mint_promote<Cold, Warm/Hot>(...)  — backend materialized a hotter tier.
-//   mint_demote<Hot/Warm, Cold>(...)   — eviction or archive path downgraded.
-//   mint_restore(...)                  — cold handle restored into Warm.
-//
-// Phase 5 still owns the actual peer-RAM RAID and S3/GCS backends; this
-// header ships the type-level API now so callers cannot hand-roll tier
-// casts while those backends are being wired.
+// A tier wrapper refuses to strengthen itself, so a cold value cannot
+// relabel itself as replicated in memory. Every real movement between
+// tiers goes through one of the factories below.
 
 #include <crucible/Types.h>
 #include <crucible/safety/CipherTier.h>
@@ -31,20 +20,12 @@ using ::crucible::safety::CipherTier;
 using ::crucible::safety::CipherTierLattice;
 using ::crucible::safety::CipherTierTag_v;
 
-// CONTRACT-117 (Cipher tier-transition cite): promote/demote admission VC
-// is discharged via `decide::tier_replaces(stronger, weaker)` —
-// "stronger candidate is at-least-as-strong as the weaker required tier."
-// CipherTierLattice's chain ordinal convention (Cold=0 < Warm=1 < Hot=2,
-// per algebra/lattices/CipherTierLattice.h §"Direction convention") makes
-// this a single integer compare on the underlying type.
-//
-// Promote (From → stronger To): "To replaces From" ≡ tier_replaces(To, From).
-// Demote (From → weaker To):    "From replaces To" ≡ tier_replaces(From, To).
-//
-// Cite-pair contributed under the project-wide convention so a single
-// review-discoverable VC discharges every chain-lattice replacement
-// (KernelCache promote, Cipher publish_hot/warm/cold, Forge Phase E
-// recipe admission, BackgroundThread phase promotion).
+// The two argument orders differ, and that difference is the whole
+// content of the pair. The tiers form a chain from cold through warm
+// to hot, and the predicate asks whether its first argument is at
+// least as strong as its second. A promotion therefore asks whether
+// the destination is strong enough to replace the source. A demotion
+// asks the reverse.
 template <CipherTierTag_v From, CipherTierTag_v To>
 inline constexpr bool can_promote_tier_v = ::crucible::decide::tier_replaces(To, From);
 
@@ -57,34 +38,15 @@ concept PromotableTier = can_promote_tier_v<From, To> && std::move_constructible
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
 concept DemotableTier = can_demote_tier_v<From, To> && std::move_constructible<T>;
 
-// ── Verification-scope honesty (fixy-CR-10) ─────────────────────────
+// A restorable payload specializes this trait, and the concept below
+// refuses any type that does not. The restore gate therefore runs for
+// every payload rather than for the hash type alone.
 //
-// Pre-CR-10, `mint_restore` ran the supplied `content_hash` against
-// `cold_handle.peek()` only inside an `if constexpr (same_as<T,
-// ContentHash>)` branch.  For any T != ContentHash (every production
-// payload — TraceRing buffer, KernelCache entry, weight tensor, ...)
-// the supplied hash was accepted blindly and the cold-to-warm
-// promotion succeeded WITHOUT verifying that the cold blob's bytes
-// actually hashed to the claimed value.
-//
-// The closure is a customization point:
-// `content_hash_projection<T>::project(const T&) -> ContentHash`.
-// Any restorable T MUST specialize this trait (or ship an
-// equivalently-named static accessor).  The built-in specialization
-// for `T = ContentHash` returns the value itself.  mint_restore now
-// gates uniformly on this projection: the cold-payload-projected
-// hash MUST equal the supplied `content_hash` argument, or the mint
-// returns `RestoreError::ContentHashMismatch`.  T types without a
-// projection fail at the `RestorableHashed` concept gate.
-//
-// What the projection cannot replace: BYTE-LEVEL integrity of the
-// cold blob coming off durable storage.  The projection is an
-// in-memory consistency check between the supplied caller-claimed
-// hash and what the cold handle's in-memory representation reports.
-// The byte-level "did the disk lie to us" check belongs in the
-// Phase-5 backend that materializes `ColdTierHandle<T>` from S3/GCS
-// before mint_restore is ever called.  That layer is the byte-hash
-// authority; mint_restore is the post-materialization gate.
+// The gate compares the hash the caller claims against the one the
+// cold handle reports in memory. It says nothing about the bytes that
+// came off durable storage. Whoever materializes a cold handle out of
+// that storage is the byte-level authority, and this runs after that
+// step, not instead of it.
 
 template <typename T>
 struct content_hash_projection;
@@ -156,9 +118,6 @@ mint_restore(ColdTierHandle<T> cold_handle,
         return std::unexpected(RestoreError::EmptyContentHash);
     }
 
-    // fixy-CR-10: uniform projection — fires for EVERY restorable T,
-    // not only T = ContentHash.  Production payloads must opt in via
-    // `content_hash_projection<T>::project` (see header doc-block).
     const ContentHash cold_projected = content_hash_projection<T>::project(cold_handle.peek());
     if (!static_cast<bool>(cold_projected)) {
         return std::unexpected(RestoreError::EmptyColdHandle);

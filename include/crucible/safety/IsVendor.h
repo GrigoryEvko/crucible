@@ -1,18 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_vendor_v ──────────────────────────
-//
-// FOUND-D30 (third of batch) — wrapper-detection predicate for
-// `Vendor<Backend, T>`.  Mechanical extension of D21-D24/D30
-// CipherTier/ResidencyHeat — partial-spec captures the
-// VendorBackend_v NTTP enum alongside the wrapped type.
-//
-// VendorBackend is the largest enum in the D30 batch (8 values:
-// None / CPU / NV / AMD / TPU / TRN / CER / Portable, where Portable=255
-// is non-contiguous with the 0-6 range).  The detector itself is
-// indifferent to enum cardinality or underlying-int spacing — partial
-// spec keys on the wrapper class identity, not the underlying value.
-
 #include <crucible/safety/Vendor.h>
 
 #include <type_traits>
@@ -51,8 +38,6 @@ using vendor_value_t = typename detail::is_vendor_impl<std::remove_cvref_t<T>>::
 template <typename T>
     requires is_vendor_v<T>
 inline constexpr VendorBackend_v vendor_backend_v = detail::is_vendor_impl<std::remove_cvref_t<T>>::backend;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_vendor_self_test {
 
@@ -106,9 +91,8 @@ static_assert(vendor_backend_v<V_int_trn> == VendorBackend_v::TRN);
 static_assert(vendor_backend_v<V_int_cer> == VendorBackend_v::CER);
 static_assert(vendor_backend_v<V_int_portable> == VendorBackend_v::Portable);
 
-// Non-contiguous-underlying-value invariant: Portable underlies as
-// 255 while the middle vendors are 1-6.  The detector must NOT
-// silently lose this distinction.
+// The underlying values are not contiguous: Portable sits at 255 while the
+// named vendors run from 1 to 6. The detector must keep that gap visible.
 static_assert(static_cast<std::uint8_t>(VendorBackend_v::Portable) == 255);
 static_assert(static_cast<std::uint8_t>(VendorBackend_v::CER) == 6);
 static_assert(vendor_backend_v<V_int_portable> != vendor_backend_v<V_int_cer>);

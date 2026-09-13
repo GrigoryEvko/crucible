@@ -1,7 +1,7 @@
-// Direct tests for IterationDetector's state machine.  The detector
-// is covered indirectly via bench/end-to-end tests, but its subtle
-// paths (mid-match break with overlap, two-match confirmation, K=5
-// signature build) deserve explicit coverage.
+// End-to-end tests drive the detector, but only along its ordinary
+// path.  What needs direct coverage is the awkward part of the state
+// machine: a break in the middle of a match, an overlapping restart,
+// and the two-match confirmation before a boundary fires.
 
 #include <crucible/IterationDetector.h>
 #include <crucible/IterationDetectorState.h>
@@ -16,8 +16,8 @@ using crucible::SchemaHash;
 
 static SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
-// Feed a sequence; return the index at which check() first returned true,
-// or UINT32_MAX if never.
+// Returns the index at which check() first returns true, or UINT32_MAX
+// if it never does.
 template <std::size_t N>
 static uint32_t first_boundary(IterationDetector& d, const SchemaHash (&seq)[N]) {
     for (uint32_t i = 0; i < N; i++) {
@@ -28,7 +28,7 @@ static uint32_t first_boundary(IterationDetector& d, const SchemaHash (&seq)[N])
 
 static void test_signature_build_requires_K_ops() {
     IterationDetector d;
-    // Feed K-1 ops; detector is still building signature.
+    // Four ops is one short of a full signature.
     assert(!d.check(H(1)));
     assert(!d.check(H(2)));
     assert(!d.check(H(3)));
@@ -41,15 +41,16 @@ static void test_signature_build_requires_K_ops() {
 
 static void test_first_match_is_candidate_not_boundary() {
     IterationDetector d;
-    // K=5 ops build the signature.
+    // Five ops make one signature.
     SchemaHash sig[5] = {H(10), H(20), H(30), H(40), H(50)};
-    for (auto h : sig) assert(!d.check(h));
-    // Repeating the signature → first match → candidate, NOT boundary.
+    for (auto h : sig)
+        assert(!d.check(h));
+    // The first repeat only proposes a candidate.  No boundary yet.
     assert(!d.check(H(10)));
     assert(!d.check(H(20)));
     assert(!d.check(H(30)));
     assert(!d.check(H(40)));
-    assert(!d.check(H(50)));  // K-th match — confirm candidate, return false
+    assert(!d.check(H(50)));  // the fifth match confirms and still returns false
     assert(d.confirmed);
     std::printf("  test_first_match_candidate:   PASSED\n");
 }
@@ -57,17 +58,18 @@ static void test_first_match_is_candidate_not_boundary() {
 static void test_second_match_is_boundary() {
     IterationDetector d;
     SchemaHash sig[5] = {H(100), H(200), H(300), H(400), H(500)};
-    for (auto h : sig) assert(!d.check(h));
-    // First repeat → candidate.
-    for (auto h : sig) assert(!d.check(h));
+    for (auto h : sig)
+        assert(!d.check(h));
+    for (auto h : sig)
+        assert(!d.check(h));
     assert(d.confirmed);
     assert(d.boundaries_detected.get() == 0);
-    // Second repeat → BOUNDARY (return true on K-th op).
+    // The second repeat is what fires a boundary, on its last op.
     assert(!d.check(sig[0]));
     assert(!d.check(sig[1]));
     assert(!d.check(sig[2]));
     assert(!d.check(sig[3]));
-    assert(d.check(sig[4]));   // ← true
+    assert(d.check(sig[4]));
     assert(d.boundaries_detected.get() == 1);
     std::printf("  test_second_match_boundary:   PASSED\n");
 }
@@ -75,53 +77,56 @@ static void test_second_match_is_boundary() {
 static void test_mid_match_break_resets_cleanly() {
     IterationDetector d;
     SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
-    for (auto h : sig) assert(!d.check(h));
-    // Build confirmed state.
-    for (auto h : sig) assert(!d.check(h));
+    for (auto h : sig)
+        assert(!d.check(h));
+    for (auto h : sig)
+        assert(!d.check(h));
     assert(d.confirmed);
 
-    // Mid-match break: match 3 ops of signature, then feed a stranger.
+    // Three ops of the signature, then a stranger.
     assert(!d.check(H(1)));
     assert(!d.check(H(2)));
     assert(!d.check(H(3)));
-    assert(!d.check(H(999)));  // break
-    // Now must resume matching from zero; restart if next op is sig[0].
+    assert(!d.check(H(999)));  // the break
+    // Matching resumes from zero, so a full signature is needed again.
     assert(!d.check(H(1)));
     assert(!d.check(H(2)));
     assert(!d.check(H(3)));
     assert(!d.check(H(4)));
-    assert(d.check(H(5)));   // boundary after full match from scratch
+    assert(d.check(H(5)));  // boundary after full match from scratch
     std::printf("  test_mid_match_break:         PASSED\n");
 }
 
 static void test_overlap_at_boundary() {
-    // Signature [a, b, c, d, e].  If we're mid-match at position 3
-    // and see 'a' instead of 'd', the detector must start a fresh
-    // match at position 1 (the 'a' we just saw counts toward the
-    // next attempt).
+    // Seeing the first signature op where the fourth was expected must
+    // start a fresh match at position one, because the op just seen
+    // counts towards the new attempt rather than being discarded.
     IterationDetector d;
     SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
-    for (auto h : sig) assert(!d.check(h));
-    for (auto h : sig) assert(!d.check(h));   // confirm
+    for (auto h : sig)
+        assert(!d.check(h));
+    for (auto h : sig)
+        assert(!d.check(h));
     assert(d.confirmed);
 
-    // Consume sig[0..2], then feed sig[0] again — must not reset fully.
     assert(!d.check(H(1)));
     assert(!d.check(H(2)));
     assert(!d.check(H(3)));
-    assert(!d.check(H(1)));  // overlapping restart — match_pos_ → 1
+    assert(!d.check(H(1)));  // the overlapping restart, leaving position one
     assert(!d.check(H(2)));
     assert(!d.check(H(3)));
     assert(!d.check(H(4)));
-    assert(d.check(H(5)));   // boundary fires after clean match
+    assert(d.check(H(5)));  // and only four more ops are needed, not five
     std::printf("  test_overlap_at_boundary:     PASSED\n");
 }
 
 static void test_reset_clears_everything() {
     IterationDetector d;
     SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
-    for (auto h : sig) (void)d.check(h);
-    for (auto h : sig) (void)d.check(h);
+    for (auto h : sig)
+        (void)d.check(h);
+    for (auto h : sig)
+        (void)d.check(h);
     assert(d.confirmed);
 
     d.reset();
@@ -130,8 +135,9 @@ static void test_reset_clears_everything() {
     assert(d.boundaries_detected.get() == 0);
     assert(d.ops_since_boundary.get() == 0);
     assert(d.last_completed_len == 0);
-    // Detector is fresh: must rebuild signature.
-    for (uint32_t i = 0; i < 4; i++) assert(!d.check(H(100 + i)));
+    // A fresh detector has to rebuild its signature from nothing.
+    for (uint32_t i = 0; i < 4; i++)
+        assert(!d.check(H(100 + i)));
     assert(d.signature_len.get() == 4);
     std::printf("  test_reset:                   PASSED\n");
 }
@@ -139,39 +145,35 @@ static void test_reset_clears_everything() {
 static void test_ops_since_boundary_counts_correctly() {
     IterationDetector d;
     SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
-    for (auto h : sig) (void)d.check(h);
-    for (auto h : sig) (void)d.check(h);   // candidate
-    // After candidate confirmation, counter reset to K.
+    for (auto h : sig)
+        (void)d.check(h);
+    for (auto h : sig)
+        (void)d.check(h);
+    // Confirming a candidate rewinds the counter to the signature length.
     assert(d.ops_since_boundary.get() == IterationDetector::K);
-    // Feed 10 more ops, then boundary fires.
-    for (uint64_t i = 0; i < 10; i++) (void)d.check(H(1000 + i));
+    for (uint64_t i = 0; i < 10; i++)
+        (void)d.check(H(1000 + i));
     assert(d.ops_since_boundary.get() == IterationDetector::K + 10);
-    // Trigger second match — last_completed_len = ops_since_boundary - K
-    // at fire time (= iteration length including the K signature ops).
-    for (auto h : sig) (void)d.check(h);
+    // When the boundary fires, the completed length is the counter minus
+    // the signature, which is the iteration length with its own
+    // signature ops included.
+    for (auto h : sig)
+        (void)d.check(h);
     assert(d.ops_since_boundary.get() == IterationDetector::K);
     assert(d.last_completed_len == 10 + IterationDetector::K);
     std::printf("  test_ops_since_boundary:      PASSED\n");
 }
 
 static void test_typestate_witness_minting() {
-    // WRAP-IterDet-4 (#930) — positive-case witness minting at the use
-    // site.  Walks Building → Steady → reset → Building and mints a
-    // ScopedView<IterationDetector, Tag> at each phase.  Each mint
-    // pays one `view_ok` precondition check; success at -O3 lowers
-    // to a single uint32_t comparison against IterationDetector::K.
-    //
-    // The neg-compile fixtures
-    //   neg_iter_det_view_steady_on_building.cpp  (mint-time pre fire)
-    //   neg_iter_det_view_in_field.cpp            (Tier-2 audit fire)
-    // pin the WRONG-state cases.  This test pins the RIGHT-state
-    // cases — together they bracket WRAP-IterDet-4's soundness gates.
+    // Minting a view in the state that matches the detector's phase must
+    // succeed.  The mismatched cases are pinned by negative-compile
+    // fixtures, and the two halves together bracket the mint's gate.
     using crucible::iter_det_state::Building;
     using crucible::iter_det_state::Steady;
     using crucible::safety::mint_view;
 
     IterationDetector d;
-    // Default-construct → signature_len.get() == 0 < K → Building.
+    // A signature shorter than K puts the detector in Building.
     assert(d.signature_len.get() == 0);
     {
         auto building_view = mint_view<Building>(d);
@@ -179,9 +181,10 @@ static void test_typestate_witness_minting() {
         assert(building_view->signature_len.get() == 0);
     }
 
-    // Feed K=5 hashes → signature_len.get() == K → Steady.
+    // A full signature puts it in Steady.
     SchemaHash sig[5] = {H(11), H(22), H(33), H(44), H(55)};
-    for (auto h : sig) (void)d.check(h);
+    for (auto h : sig)
+        (void)d.check(h);
     assert(d.signature_len.get() == IterationDetector::K);
     {
         auto steady_view = mint_view<Steady>(d);
@@ -189,7 +192,6 @@ static void test_typestate_witness_minting() {
         assert(steady_view->signature_len.get() == IterationDetector::K);
     }
 
-    // reset() rewinds → Building again.
     d.reset();
     assert(d.signature_len.get() == 0);
     {
@@ -201,11 +203,9 @@ static void test_typestate_witness_minting() {
 }
 
 static void test_cache_line_layout_is_stable() {
-    // Load-bearing claim: IterationDetector is exactly 2 cache lines,
-    // hot fields on line 0.  Codegen tests would break silently
-    // without this static_assert.
-    static_assert(sizeof(IterationDetector) == 128,
-                  "IterationDetector must be 2 cache lines (128 B)");
+    // The detector occupies exactly two cache lines with its hot fields
+    // on the first.  Nothing else would fail loudly if that changed.
+    static_assert(sizeof(IterationDetector) == 128, "IterationDetector must be 2 cache lines (128 B)");
     static_assert(offsetof(IterationDetector, expected_hash_) == 0);
     static_assert(offsetof(IterationDetector, signature) == 8);
     static_assert(offsetof(IterationDetector, match_pos_) == 48);

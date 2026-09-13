@@ -1,29 +1,17 @@
 #pragma once
 
-// ── crucible::safety::GlobalStatePinned<GlobalState Tier, typename T> ─
+// The tier records how the value's producer touches global state: Stateless
+// touches none and replays trivially, ConstGlobal reads constant-initialized
+// tables only, MutableGlobal reaches mutable global state and so breaks
+// content-addressed determinism, and InitOrderHazard additionally depends on
+// static-initialization or lazy-initialization order.  It is a ceiling on
+// hazard, not a floor on proof, so the bottom tier is the safe one and a
+// consumer admits a value whose tier is at or below the ceiling it imposes.
+// Widening up the chain is sound because over-stating the hazard is safe.
 //
-// FIXY-V-242 (4/5): value-level Graded carrier for the V-241
-// GlobalState axis (Stateless ⊏ ConstGlobal ⊏ MutableGlobal ⊏
-// InitOrderHazard).  Pins a function's global/static-mutable-state
-// interaction hazard into the type.
-//
-//   Substrate: Graded<ModalityKind::Absolute, GlobalStateLattice::At<Tier>, T>
-//   Regime:    1 (zero-cost EBO collapse — sizeof == sizeof(T)).
-//
-// Absolute modality.  CAPABILITY-CEILING semantics: bottom (Stateless)
-// is the safest (no global interaction, trivially replay-safe); top
-// (InitOrderHazard) is the worst (static-init-order / Meyers-singleton
-// lazy-init hazard — what V-248's S004 detector keys on).
-//
-//   satisfies<C> := GlobalStateLattice::leq(Tier, C)
-//   widen<Higher>()                                  — UP the chain only
-//
-// Forge hot-path admission imposes ceiling ConstGlobal (may read
-// constinit tables; must not touch mutable global state, which would
-// defeat content-addressed determinism).
-//
-// §XXI: `mint_global_state<Tier, T>(args...)`.  HS14 neg fixtures:
-// neg_global_state_widen_to_lower.cpp + neg_global_state_mint_wrong_arg.cpp.
+// The modality is Absolute because the tier describes the producer, not the
+// content.  Mutating the wrapped value cannot change what its producer touched,
+// so mutable access needs no re-check.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>

@@ -17,7 +17,6 @@ namespace {
 
 constexpr char available_cc_path[] = "/proc/sys/net/ipv4/tcp_available_congestion_control";
 
-// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
 using LocalFd = ::crucible::safety::FileHandle;
 
 [[nodiscard]] bool is_space(char c) noexcept { return c == ' ' || c == '\n' || c == '\t' || c == '\r'; }
@@ -31,12 +30,9 @@ using LocalFd = ::crucible::safety::FileHandle;
 }
 
 void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept {
-    // fixy-A5-018: BBR variants do NOT imply each other.  BBRv3 patches
-    // typically REPLACE the in-tree "bbr" module rather than coexisting
-    // — a kernel that registers "bbr3" usually does not also expose
-    // "bbr" as BBRv1, and vice versa.  Each enum value reflects exactly
-    // one kernel-registered name; the recommendation engine handles
-    // cross-variant fallback in recommend_cc.
+    // Each enum value reflects exactly one kernel-registered name.  A BBRv3
+    // patch set replaces the in-tree "bbr" module rather than coexisting with
+    // it, so no BBR variant implies any other.
     availability.algorithms.set(algorithm);
 }
 
@@ -83,11 +79,9 @@ std::string_view link_class_name(LinkClass link) noexcept {
 }
 
 std::expected<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept {
-    // fixy-A5-018: upstream Linux registers BBRv1 as "bbr".  BBRv2 and
-    // BBRv3 are out-of-tree (Google-maintained) and register under their
-    // own distinct names "bbr2" and "bbr3".  Mapping "bbr" → Bbr3 was a
-    // misread: a kernel that exposes plain "bbr" is running BBRv1 in the
-    // overwhelming majority of production fleets.
+    // Upstream Linux registers BBRv1 under the plain name "bbr".  BBRv2 and
+    // BBRv3 are out-of-tree and register under their own distinct names
+    // "bbr2" and "bbr3".  A kernel that exposes "bbr" is running BBRv1.
     if (name == "bbr") {
         return CcAlgorithm::Bbr1;
     }

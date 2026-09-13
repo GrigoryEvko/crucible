@@ -1,14 +1,7 @@
-// FOUND-G27-AUDIT — Cipher Wait-pinned production surface.
-//
-// Verifies the store_pinned() surface added to Cipher:
-//   - store_pinned(OpenView, ContentAddressedRegionPayload, meta_log)
-//       → Wait<Block, ContentHash>
-//
-// The blocking f.write() on the warm-tier NVMe shard is Block-class —
-// it may invoke kernel writeback, taking tens-of-μs to milliseconds.
-// store_pinned pins this classification so hot-path consumers
-// (declaring requires Wait::satisfies<SpinPause>) reject the value
-// at compile time.
+// Storing to the warm tier writes to disk, and that write can block on
+// kernel writeback.  The pinned form of the call carries that fact in its
+// return type, so a hot-path consumer that will only accept a spin-class
+// wait refuses the value at compile time instead of stalling on it.
 
 #include <crucible/Cipher.h>
 #include <crucible/effects/Capabilities.h>
@@ -22,9 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-// FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using crucible::Cipher;
 using crucible::ContentHash;
@@ -41,13 +32,12 @@ using crucible::safety::WaitStrategy_v;
 
 static auto g_test = crucible::effects::testing::test();
 
-// Build a minimal RegionNode (mirrors test_cipher.cpp's helper).
 static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
     auto* ops = arena.alloc_array<TraceEntry>(g_test.alloc, NUM_OPS);
     std::uninitialized_value_construct_n(ops, NUM_OPS);
     ops[0].schema_hash = SchemaHash{0xDEADBEEF00000000ULL + seed};
-    ops[0].num_inputs  = 1;
+    ops[0].num_inputs = 1;
     ops[0].num_outputs = 1;
     ops[0].input_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
     ops[0].input_metas[0] = {};
@@ -66,7 +56,6 @@ static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
     return crucible::make_region(g_test.alloc, arena, ops, NUM_OPS);
 }
 
-// ── T01 — store_pinned bit-equality vs raw store ────────────────
 static void test_store_pinned_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
@@ -80,7 +69,6 @@ static void test_store_pinned_bit_equality(const char* dir) {
     assert(raw == via_wrapper);
 }
 
-// ── T02 — type-identity ──────────────────────────────────────────
 static void test_store_pinned_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
@@ -90,16 +78,14 @@ static void test_store_pinned_type_identity(const char* dir) {
 
     using Got = decltype(cipher.store_pinned(view, payload, nullptr));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
-    static_assert(std::is_same_v<Got, Want>,
-        "store_pinned must return Wait<Block, ContentHash>");
+    static_assert(std::is_same_v<Got, Want>, "store_pinned must return Wait<Block, ContentHash>");
     static_assert(Got::strategy == WaitStrategy_v::Block);
 
-    // Consume so the value isn't discarded.
+    // The result must not be discarded.
     auto p = cipher.store_pinned(view, payload, nullptr);
     (void)std::move(p).consume();
 }
 
-// ── T03 — typed payload route returns the Wait-pinned type ───────
 static void test_store_pinned_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
@@ -116,12 +102,11 @@ static void test_store_pinned_payload_route(const char* dir) {
     assert(static_cast<bool>(h));
 }
 
-// ── T04 — fence simulation: Block satisfies only Block-or-weaker
-//         (degenerate — Block IS bottom; satisfies only itself) ──
+// Block sits at the bottom of the wait lattice, so it satisfies only
+// itself and no stronger requirement.
 static void test_block_fence_simulation() {
     using B = Wait<WaitStrategy_v::Block, ContentHash>;
-    // Block (bottom) satisfies only itself.
-    static_assert( B::satisfies<WaitStrategy_v::Block>);
+    static_assert(B::satisfies<WaitStrategy_v::Block>);
     static_assert(!B::satisfies<WaitStrategy_v::Park>);
     static_assert(!B::satisfies<WaitStrategy_v::AcquireWait>);
     static_assert(!B::satisfies<WaitStrategy_v::UmwaitC01>);
@@ -129,15 +114,12 @@ static void test_block_fence_simulation() {
     static_assert(!B::satisfies<WaitStrategy_v::SpinPause>);
 }
 
-// ── T05 — layout invariant ───────────────────────────────────────
 static void test_layout_invariant() {
-    static_assert(sizeof(Wait<WaitStrategy_v::Block, ContentHash>)
-        == sizeof(ContentHash));
+    static_assert(sizeof(Wait<WaitStrategy_v::Block, ContentHash>) == sizeof(ContentHash));
 }
 
-// ── T06 — end-to-end Block-fence consumer (production-like) ─────
 template <typename W>
-    requires (W::template satisfies<WaitStrategy_v::Block>)
+    requires(W::template satisfies<WaitStrategy_v::Block>)
 static ContentHash block_fence_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -166,7 +148,6 @@ int main() {
     test_layout_invariant();
     test_e2e_block_fence_consumer(dir);
 
-    // Clean up tmp dir.
     std::filesystem::remove_all(dir);
     std::puts("ok");
     return 0;

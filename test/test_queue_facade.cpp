@@ -1,15 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_queue_facade — Queue<T, Kind> compile-time routing facade
-//
-// Coverage:
-//   Tier 1: structural — sizeof checks (already in header static_asserts);
-//                        pick_kind dispatch (already in header static_asserts);
-//                        concept compliance via templated functions
-//   Tier 2: single-thread correctness for each Kind via the facade
-//   Tier 3: multi-thread stress for SPSC, MPSC, Sharded, WorkStealing
-//   Tier 4: auto_queue_t deduction + handing it to generic code
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/concurrent/Queue.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
@@ -29,19 +17,16 @@ using crucible::safety::mint_permission_fork;
 using crucible::safety::mint_permission_root;
 using crucible::safety::mint_permission_split;
 
-// ── Test harness ─────────────────────────────────────────────────
-
 struct TestFailure {};
 
 // Variadic so the macro accepts expressions containing template-arg commas
 // like `Queue<T, kind::sharded<2, 2, 16>>::capacity() == 2`.
-#define CRUCIBLE_TEST_REQUIRE(...)                                         \
-    do {                                                                   \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                 \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n",                     \
-                         #__VA_ARGS__, __FILE__, __LINE__);                \
-            throw TestFailure{};                                           \
-        }                                                                  \
+#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
+    do {                                                                                  \
+        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
+            throw TestFailure{};                                                          \
+        }                                                                                 \
     } while (0)
 
 namespace {
@@ -62,11 +47,9 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-// ── Tier 1: concept compliance via templated drivers ────────────
-//
-// These functions accept a producer/consumer/owner/thief handle by
-// concept; if the facade is correctly shaped, all relevant handles
-// satisfy the concepts and these compile.
+// These forwarders take their handle by concept rather than by type.
+// Instantiating one is the test: a handle the facade shapes wrongly
+// will not satisfy the concept and the call will not compile.
 
 template <QueueProducer P>
 bool drive_producer(P producer, std::uint64_t value) {
@@ -83,8 +66,6 @@ std::optional<std::uint64_t> drive_thief(T thief) {
     return thief.try_steal();
 }
 
-// ── Tier 2: single-thread correctness ────────────────────────────
-
 void test_spsc_single_thread() {
     Queue<std::uint64_t, kind::spsc<16>> q;
     auto p = q.producer_handle();
@@ -94,7 +75,6 @@ void test_spsc_single_thread() {
     CRUCIBLE_TEST_REQUIRE(q.size_approx() == 0);
     CRUCIBLE_TEST_REQUIRE(Queue<std::uint64_t, kind::spsc<16>>::capacity() == 16);
 
-    // Push three; pop three.
     CRUCIBLE_TEST_REQUIRE(drive_producer(p, 100u));
     CRUCIBLE_TEST_REQUIRE(drive_producer(p, 200u));
     CRUCIBLE_TEST_REQUIRE(drive_producer(p, 300u));
@@ -109,14 +89,14 @@ void test_spsc_single_thread() {
     CRUCIBLE_TEST_REQUIRE(v2 && *v2 == 300u);
 
     auto v3 = drive_consumer(c);
-    CRUCIBLE_TEST_REQUIRE(!v3);  // empty
+    CRUCIBLE_TEST_REQUIRE(!v3);
     CRUCIBLE_TEST_REQUIRE(q.empty_approx());
 
-    // Wrap-around: push 16, pop 16, push 5, pop 5 — should still work.
+    // Fill the ring, drain it, then refill across the wrap point.
     for (std::uint64_t i = 0; i < 16; ++i) {
         CRUCIBLE_TEST_REQUIRE(drive_producer(p, i));
     }
-    CRUCIBLE_TEST_REQUIRE(!drive_producer(p, 999u));  // full
+    CRUCIBLE_TEST_REQUIRE(!drive_producer(p, 999u));
 
     for (std::uint64_t i = 0; i < 16; ++i) {
         auto v = drive_consumer(c);
@@ -167,14 +147,16 @@ void test_sharded_single_thread() {
     CRUCIBLE_TEST_REQUIRE(Queue<std::uint64_t, kind::sharded<2, 2, 16>>::producer_count() == 2);
     CRUCIBLE_TEST_REQUIRE(Queue<std::uint64_t, kind::sharded<2, 2, 16>>::consumer_count() == 2);
 
-    // RoundRobinRouting: each producer's seq starts at 0 → consumer 0
-    // gets even-seq items, consumer 1 gets odd-seq items.
-    CRUCIBLE_TEST_REQUIRE(drive_producer(p0, 1000u));  // p0 seq=0 → c0
-    CRUCIBLE_TEST_REQUIRE(drive_producer(p0, 1001u));  // p0 seq=1 → c1
-    CRUCIBLE_TEST_REQUIRE(drive_producer(p1, 2000u));  // p1 seq=0 → c0
-    CRUCIBLE_TEST_REQUIRE(drive_producer(p1, 2001u));  // p1 seq=1 → c1
+    // Round-robin routing starts each producer's sequence at zero, so
+    // a producer's even-numbered items go to consumer 0 and its
+    // odd-numbered items to consumer 1.
+    CRUCIBLE_TEST_REQUIRE(drive_producer(p0, 1000u));
+    CRUCIBLE_TEST_REQUIRE(drive_producer(p0, 1001u));
+    CRUCIBLE_TEST_REQUIRE(drive_producer(p1, 2000u));
+    CRUCIBLE_TEST_REQUIRE(drive_producer(p1, 2001u));
 
-    // Drain c0 (should have 1000 and 2000 in some order).
+    // A consumer's two items can arrive in either order, hence the
+    // membership checks rather than positional ones.
     std::array<std::uint64_t, 2> from_c0{};
     std::size_t c0_count = 0;
     while (auto v = drive_consumer(c0)) {
@@ -187,7 +169,6 @@ void test_sharded_single_thread() {
     CRUCIBLE_TEST_REQUIRE(got_1000);
     CRUCIBLE_TEST_REQUIRE(got_2000);
 
-    // Drain c1 (should have 1001 and 2001).
     std::array<std::uint64_t, 2> from_c1{};
     std::size_t c1_count = 0;
     while (auto v = drive_consumer(c1)) {
@@ -208,7 +189,8 @@ void test_work_stealing_single_thread() {
 
     CRUCIBLE_TEST_REQUIRE(Queue<std::uint64_t, kind::work_stealing<16>>::capacity() == 16);
 
-    // Owner pushes [1, 2, 3], pops LIFO: 3, 2, 1.
+    // The owner pops from its own end, so it sees its pushes in
+    // reverse.
     CRUCIBLE_TEST_REQUIRE(owner.try_push(1u));
     CRUCIBLE_TEST_REQUIRE(owner.try_push(2u));
     CRUCIBLE_TEST_REQUIRE(owner.try_push(3u));
@@ -222,7 +204,8 @@ void test_work_stealing_single_thread() {
     auto empty = owner.try_pop();
     CRUCIBLE_TEST_REQUIRE(!empty);
 
-    // Thief steal: push three again, thief takes from top (FIFO).
+    // A thief takes from the far end, so it sees the same pushes in
+    // order.
     CRUCIBLE_TEST_REQUIRE(owner.try_push(10u));
     CRUCIBLE_TEST_REQUIRE(owner.try_push(20u));
     CRUCIBLE_TEST_REQUIRE(owner.try_push(30u));
@@ -237,8 +220,6 @@ void test_work_stealing_single_thread() {
     CRUCIBLE_TEST_REQUIRE(!s_empty);
 }
 
-// ── Tier 3: multi-thread stress ──────────────────────────────────
-
 void test_spsc_multi_thread() {
     Queue<std::uint64_t, kind::spsc<1024>> q;
     constexpr std::uint64_t N = 50'000;
@@ -251,7 +232,7 @@ void test_spsc_multi_thread() {
         auto p = q.producer_handle();
         for (std::uint64_t i = 1; i <= N; ++i) {
             while (!p.try_push(i)) {
-                // Spin — consumer will catch up.
+                // The consumer drains, so a full queue is temporary.
             }
         }
         producer_done.store(true, std::memory_order_release);
@@ -259,16 +240,15 @@ void test_spsc_multi_thread() {
 
     std::jthread consumer_t([&q, &producer_done, &received_sum, &received_count](std::stop_token) {
         auto c = q.consumer_handle();
-        std::uint64_t local_sum   = 0;
+        std::uint64_t local_sum = 0;
         std::uint64_t local_count = 0;
         while (true) {
             auto v = c.try_pop();
             if (v) {
-                local_sum   += *v;
+                local_sum += *v;
                 local_count += 1;
                 if (local_count == N) break;
-            } else if (producer_done.load(std::memory_order_acquire) &&
-                       q.empty_approx()) {
+            } else if (producer_done.load(std::memory_order_acquire) && q.empty_approx()) {
                 break;
             }
         }
@@ -287,13 +267,13 @@ void test_spsc_multi_thread() {
 
 void test_mpsc_multi_thread() {
     Queue<std::uint64_t, kind::mpsc<2048>> q;
-    constexpr int          NUM_PRODUCERS    = 4;
-    constexpr std::uint64_t PER_PRODUCER     = 25'000;
-    constexpr std::uint64_t TOTAL            = NUM_PRODUCERS * PER_PRODUCER;
+    constexpr int NUM_PRODUCERS = 4;
+    constexpr std::uint64_t PER_PRODUCER = 25'000;
+    constexpr std::uint64_t TOTAL = NUM_PRODUCERS * PER_PRODUCER;
 
-    std::atomic<int>            producers_done{0};
-    std::atomic<std::uint64_t>  received_sum{0};
-    std::atomic<std::uint64_t>  received_count{0};
+    std::atomic<int> producers_done{0};
+    std::atomic<std::uint64_t> received_sum{0};
+    std::atomic<std::uint64_t> received_count{0};
 
     std::vector<std::jthread> producers;
     for (int t = 0; t < NUM_PRODUCERS; ++t) {
@@ -302,7 +282,7 @@ void test_mpsc_multi_thread() {
             const std::uint64_t base = static_cast<std::uint64_t>(t) * PER_PRODUCER;
             for (std::uint64_t i = 1; i <= PER_PRODUCER; ++i) {
                 while (!p.try_push(base + i)) {
-                    // Spin on full.
+                    // The consumer drains, so a full queue is temporary.
                 }
             }
             producers_done.fetch_add(1, std::memory_order_acq_rel);
@@ -311,16 +291,15 @@ void test_mpsc_multi_thread() {
 
     std::jthread consumer_t([&q, &producers_done, &received_sum, &received_count](std::stop_token) {
         auto c = q.consumer_handle();
-        std::uint64_t local_sum   = 0;
+        std::uint64_t local_sum = 0;
         std::uint64_t local_count = 0;
         while (true) {
             auto v = c.try_pop();
             if (v) {
-                local_sum   += *v;
+                local_sum += *v;
                 local_count += 1;
                 if (local_count == TOTAL) break;
-            } else if (producers_done.load(std::memory_order_acquire) == NUM_PRODUCERS &&
-                       q.empty_approx()) {
+            } else if (producers_done.load(std::memory_order_acquire) == NUM_PRODUCERS && q.empty_approx()) {
                 break;
             }
         }
@@ -328,7 +307,8 @@ void test_mpsc_multi_thread() {
         received_count.store(local_count, std::memory_order_release);
     });
 
-    for (auto& t : producers) t.join();
+    for (auto& t : producers)
+        t.join();
     consumer_t.join();
 
     // Each producer sends base+1..base+PER_PRODUCER, base = t*PER_PRODUCER.
@@ -337,8 +317,7 @@ void test_mpsc_multi_thread() {
     //           = NUM_PRODUCERS * PER*(PER+1)/2 + PER*PER*(0+1+...+(NUM-1))
     //           = TOTAL*(PER+1)/2 + PER*PER*NUM*(NUM-1)/2
     const std::uint64_t per_producer_sum = PER_PRODUCER * (PER_PRODUCER + 1) / 2;
-    const std::uint64_t base_offsets_sum =
-        PER_PRODUCER * PER_PRODUCER * (NUM_PRODUCERS * (NUM_PRODUCERS - 1) / 2);
+    const std::uint64_t base_offsets_sum = PER_PRODUCER * PER_PRODUCER * (NUM_PRODUCERS * (NUM_PRODUCERS - 1) / 2);
     const std::uint64_t expected_sum = NUM_PRODUCERS * per_producer_sum + base_offsets_sum;
 
     CRUCIBLE_TEST_REQUIRE(received_count.load() == TOTAL);
@@ -351,9 +330,9 @@ void test_sharded_multi_thread() {
     Queue<std::uint64_t, kind::sharded<M, N, 256>> q;
 
     constexpr std::uint64_t PER_PRODUCER = 10'000;
-    constexpr std::uint64_t TOTAL        = M * PER_PRODUCER;
+    constexpr std::uint64_t TOTAL = M * PER_PRODUCER;
 
-    std::atomic<int>           producers_done{0};
+    std::atomic<int> producers_done{0};
     std::atomic<std::uint64_t> received_count{0};
     std::atomic<std::uint64_t> received_sum{0};
 
@@ -361,11 +340,11 @@ void test_sharded_multi_thread() {
     for (std::size_t shard = 0; shard < M; ++shard) {
         producers.emplace_back([&q, &producers_done, shard](std::stop_token) {
             auto p = q.producer_handle(shard);
-            const std::uint64_t base =
-                static_cast<std::uint64_t>(shard) * PER_PRODUCER;
+            const std::uint64_t base = static_cast<std::uint64_t>(shard) * PER_PRODUCER;
             for (std::uint64_t i = 1; i <= PER_PRODUCER; ++i) {
                 while (!p.try_push(base + i)) {
-                    // Spin.
+                    // This shard's consumer drains, so a full shard is
+                    // temporary.
                 }
             }
             producers_done.fetch_add(1, std::memory_order_acq_rel);
@@ -376,24 +355,24 @@ void test_sharded_multi_thread() {
     for (std::size_t shard = 0; shard < N; ++shard) {
         consumers.emplace_back([&q, &producers_done, &received_count, &received_sum, shard](std::stop_token) {
             auto c = q.consumer_handle(shard);
-            std::uint64_t local_sum   = 0;
+            std::uint64_t local_sum = 0;
             std::uint64_t local_count = 0;
-            // Exit when all producers finished AND a final try_pop returns
-            // empty (drains any in-flight item that landed between the
-            // try_pop above and the producers_done check).  Using
-            // received_count here would deadlock — peers' counts are only
-            // published post-loop, so each consumer would see 0 and spin
-            // forever when its local share is < TOTAL.  This per-shard
-            // pattern matches the SPSC/MPSC tests above.
+            // Exit once every producer has finished and one further
+            // try_pop comes back empty.  The second pop collects an
+            // item that landed between the first pop and the read of
+            // the producer count.  Testing the shared received_count
+            // instead would deadlock: peers publish their counts only
+            // after their loops end, so a consumer whose own share is
+            // below the total would wait forever.
             while (true) {
                 auto v = c.try_pop();
                 if (v) {
-                    local_sum   += *v;
+                    local_sum += *v;
                     local_count += 1;
                 } else if (producers_done.load(std::memory_order_acquire) == static_cast<int>(M)) {
                     auto last = c.try_pop();
                     if (!last) break;
-                    local_sum   += *last;
+                    local_sum += *last;
                     local_count += 1;
                 }
             }
@@ -402,14 +381,15 @@ void test_sharded_multi_thread() {
         });
     }
 
-    for (auto& t : producers) t.join();
-    for (auto& t : consumers) t.join();
+    for (auto& t : producers)
+        t.join();
+    for (auto& t : consumers)
+        t.join();
 
-    // Same expected-sum derivation as MPSC but with M producers each
-    // sending 1..PER_PRODUCER offset by base = shard*PER_PRODUCER.
+    // The same derivation as the multi-producer test above, with M
+    // producers each sending 1..PER_PRODUCER offset by their shard.
     const std::uint64_t per_producer_sum = PER_PRODUCER * (PER_PRODUCER + 1) / 2;
-    const std::uint64_t base_offsets_sum =
-        PER_PRODUCER * PER_PRODUCER * (M * (M - 1) / 2);
+    const std::uint64_t base_offsets_sum = PER_PRODUCER * PER_PRODUCER * (M * (M - 1) / 2);
     const std::uint64_t expected_sum = M * per_producer_sum + base_offsets_sum;
 
     CRUCIBLE_TEST_REQUIRE(received_count.load() == TOTAL);
@@ -420,30 +400,30 @@ void test_work_stealing_multi_thread() {
     Queue<std::uint64_t, kind::work_stealing<1024>> q;
     constexpr std::uint64_t N = 20'000;
 
-    std::atomic<bool>          owner_done{false};
+    std::atomic<bool> owner_done{false};
     std::atomic<std::uint64_t> taken_count{0};
     std::atomic<std::uint64_t> taken_sum{0};
 
     std::jthread owner_t([&q, &owner_done, &taken_count, &taken_sum](std::stop_token) {
         auto owner = q.owner_handle();
         std::uint64_t local_taken_count = 0;
-        std::uint64_t local_taken_sum   = 0;
+        std::uint64_t local_taken_sum = 0;
         for (std::uint64_t i = 1; i <= N; ++i) {
             while (!owner.try_push(i)) {
-                // Spin until thieves drain.
+                // The thieves drain, so a full deque is temporary.
             }
-            // Periodically pop to keep the deque from filling.
+            // Pop now and then, or the owner outruns the thieves and
+            // the deque stays full.
             if (i % 4 == 0) {
                 if (auto v = owner.try_pop()) {
                     local_taken_count += 1;
-                    local_taken_sum   += *v;
+                    local_taken_sum += *v;
                 }
             }
         }
-        // Drain the rest.
         while (auto v = owner.try_pop()) {
             local_taken_count += 1;
-            local_taken_sum   += *v;
+            local_taken_sum += *v;
         }
         owner_done.store(true, std::memory_order_release);
         taken_count.fetch_add(local_taken_count, std::memory_order_acq_rel);
@@ -456,18 +436,19 @@ void test_work_stealing_multi_thread() {
         thieves.emplace_back([&q, &owner_done, &taken_count, &taken_sum](std::stop_token) {
             auto thief = q.thief_handle();
             std::uint64_t local_taken_count = 0;
-            std::uint64_t local_taken_sum   = 0;
+            std::uint64_t local_taken_sum = 0;
             while (true) {
                 auto v = thief.try_steal();
                 if (v) {
                     local_taken_count += 1;
-                    local_taken_sum   += *v;
+                    local_taken_sum += *v;
                 } else if (owner_done.load(std::memory_order_acquire)) {
-                    // Final sweep — owner is done, deque should be drained.
+                    // One further steal collects an item the owner
+                    // pushed between the failed steal and this read.
                     auto last = thief.try_steal();
                     if (!last) break;
                     local_taken_count += 1;
-                    local_taken_sum   += *last;
+                    local_taken_sum += *last;
                 }
             }
             taken_count.fetch_add(local_taken_count, std::memory_order_acq_rel);
@@ -476,14 +457,13 @@ void test_work_stealing_multi_thread() {
     }
 
     owner_t.join();
-    for (auto& t : thieves) t.join();
+    for (auto& t : thieves)
+        t.join();
 
     const std::uint64_t expected_sum = N * (N + 1) / 2;
     CRUCIBLE_TEST_REQUIRE(taken_count.load() == N);
     CRUCIBLE_TEST_REQUIRE(taken_sum.load() == expected_sum);
 }
-
-// ── Tier 4: auto_queue_t deduction + generic code ─────────────────
 
 template <typename Q>
 void scenario_drive_spsc(Q& q) {
@@ -498,22 +478,20 @@ void scenario_drive_spsc(Q& q) {
 }
 
 void test_auto_queue_t_deduction() {
-    // Hint says (1, 1) → spsc.
     constexpr WorkloadHint h_spsc{
         .producer_count = 1,
         .consumer_count = 1,
-        .capacity       = 32,
+        .capacity = 32,
     };
     using AutoSpsc = auto_queue_t<std::uint64_t, h_spsc>;
     static_assert(std::is_same_v<AutoSpsc, Queue<std::uint64_t, kind::spsc<32>>>);
     AutoSpsc q_spsc;
     scenario_drive_spsc(q_spsc);
 
-    // Hint says (4, 1) → mpsc.
     constexpr WorkloadHint h_mpsc{
         .producer_count = 4,
         .consumer_count = 1,
-        .capacity       = 256,
+        .capacity = 256,
     };
     using AutoMpsc = auto_queue_t<std::uint64_t, h_mpsc>;
     static_assert(std::is_same_v<AutoMpsc, Queue<std::uint64_t, kind::mpsc<256>>>);
@@ -524,16 +502,13 @@ void test_auto_queue_t_deduction() {
     auto v = c_mpsc.try_pop();
     CRUCIBLE_TEST_REQUIRE(v && *v == 7u);
 
-    // Hint says (3, 5) → sharded with RoundRobinRouting.
     constexpr WorkloadHint h_sharded{
         .producer_count = 3,
         .consumer_count = 5,
-        .capacity       = 16,
+        .capacity = 16,
     };
     using AutoSharded = auto_queue_t<std::uint64_t, h_sharded>;
-    static_assert(std::is_same_v<
-                      AutoSharded,
-                      Queue<std::uint64_t, kind::sharded<3, 5, 16, RoundRobinRouting>>>);
+    static_assert(std::is_same_v<AutoSharded, Queue<std::uint64_t, kind::sharded<3, 5, 16, RoundRobinRouting>>>);
     AutoSharded q_sharded;
     auto p_sh = q_sharded.producer_handle(0);
     auto c_sh = q_sharded.consumer_handle(0);
@@ -541,12 +516,11 @@ void test_auto_queue_t_deduction() {
     auto vsh = c_sh.try_pop();
     CRUCIBLE_TEST_REQUIRE(vsh && *vsh == 99u);
 
-    // Hint says work_stealing → ChaseLevDeque.
     constexpr WorkloadHint h_ws{
         .producer_count = 1,
         .consumer_count = 1,
-        .capacity       = 64,
-        .work_stealing  = true,
+        .capacity = 64,
+        .work_stealing = true,
     };
     using AutoWs = auto_queue_t<std::uint64_t, h_ws>;
     static_assert(std::is_same_v<AutoWs, Queue<std::uint64_t, kind::work_stealing<64>>>);
@@ -558,46 +532,21 @@ void test_auto_queue_t_deduction() {
     CRUCIBLE_TEST_REQUIRE(stolen && *stolen == 11u);
 }
 
-// ── Permission-driven SPSC test ──────────────────────────────────
-//
-// Demonstrates the full SEPLOG integration: Permission<Tag> + mint_permission_fork
-// + Queue's PermissionedProducerHandle/PermissionedConsumerHandle.
-//
-// Compare to test_spsc_multi_thread above — that version uses raw
-// std::jthread + std::atomic<bool> producer_done + std::atomic<uint64_t>
-// received_sum + spin loop on a stale-condition exit predicate.  Total
-// of THREE atomic synchronization points and ONE spin-coordination loop,
-// each of which is a potential bug surface.  We caught one such bug
-// in the SHARDED variant — the exit condition deadlocked.
-//
-// This Permission-driven version uses ZERO atomic counters and ZERO
-// spin-coordination loops.  Synchronization is entirely structural:
-//
-//   * Producer body counts pushes → returns when N pushed
-//   * Consumer body counts pops → returns when N popped
-//   * mint_permission_fork's array<jthread> RAII destructor joins both
-//   * The join provides happens-before, so plain reads of the result
-//     after fork return are well-defined per the C++ memory model
-//
-// Bugs this style structurally prevents:
-//   * "consumer never sees done flag" — there's no flag to miss
-//   * "producer-done atomic load order wrong" — there's no atomic
-//   * "spin loop never exits because exit condition computed wrong" —
-//     there's no spin loop
-//   * "double-producer push because two threads got the same handle" —
-//     PermissionedProducerHandle owns a linear Permission; you can't
-//     mint two for the same UserTag without re-splitting (which the
-//     compiler would catch)
-//
-// The result is a test that's clearer, shorter, and provably correct
-// by the type-system + RAII-join invariants alone.
+// The same exercise as the multi-threaded test above, driven by a
+// permission fork instead of atomic flags and a spin on a peer's
+// signal.  The producer stops after N pushes and the consumer after N
+// pops, so neither waits on the other's state, and the fork's join
+// supplies the ordering the atomics were there to provide.  There is
+// no done-flag to miss, no memory order to get wrong, and no exit
+// predicate to compute incorrectly.  A second producer handle for the
+// same tag cannot be built either: the permission is linear and the
+// first handle consumed it.
 
 namespace permissioned_test {
-    // User discriminator — one tag per logical channel.  Different
-    // discriminators give distinct (Whole, Producer, Consumer) triples,
-    // so multiple Queues can coexist without tag collisions.
-    struct SpscChannel {};
-}
+// One tag per logical channel.  Distinct tags give distinct
+// ownership triples, so several queues coexist without colliding.
+struct SpscChannel {};
+}  // namespace permissioned_test
 
 void test_spsc_mint_permission_fork() {
     using namespace crucible::concurrent::queue_tag;
@@ -605,96 +554,60 @@ void test_spsc_mint_permission_fork() {
     Queue<std::uint64_t, kind::spsc<1024>> q;
     constexpr std::uint64_t N = 50'000;
 
-    // Plain (non-atomic) result slot.  Synchronization with the
-    // consumer thread comes from mint_permission_fork's jthread join,
-    // which provides happens-before per C++ memory model.  No atomic
-    // needed — this is the structural-sync win.
-    std::uint64_t received_sum   = 0;
+    // These slots are plain, not atomic.  The fork joins both threads
+    // before it returns, and that join is what orders the consumer's
+    // writes before the reads further down.
+    std::uint64_t received_sum = 0;
     std::uint64_t received_count = 0;
 
-    // Mint root permission for this channel.
     auto whole = mint_permission_root<Whole<permissioned_test::SpscChannel>>();
 
-    // Fork into producer + consumer threads.  mint_permission_fork:
-    //   1. splits whole into Producer<...> + Consumer<...>
-    //   2. spawns a jthread per child, passing it the consumed Permission
-    //   3. joins both jthreads (RAII via std::array<jthread> destructor)
-    //   4. rebuilds and returns Permission<Whole<...>>
-    auto rebuilt = mint_permission_fork<
-        Producer<permissioned_test::SpscChannel>,
-        Consumer<permissioned_test::SpscChannel>>(
-        ::crucible::safety::PermissionForkSpawnCtx{},
-        std::move(whole),
-        // Producer body — consumes its child Permission.
-        [&q](
-            Permission<Producer<permissioned_test::SpscChannel>>&& p,
-            ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
-            // The handle takes ownership of the Permission; lifetime
-            // mirrors the lambda body's scope.  No way to construct a
-            // second handle for this UserTag — the Permission is gone
-            // after this call.
-            auto handle = q.producer_handle(std::move(p));
-            for (std::uint64_t i = 1; i <= N; ++i) {
-                while (!handle.try_push(i)) {
-                    // Spin only on backpressure (queue full); not on a
-                    // peer's signal.  Bounded by consumer's drain rate.
+    auto rebuilt =
+        mint_permission_fork<Producer<permissioned_test::SpscChannel>, Consumer<permissioned_test::SpscChannel>>(
+            ::crucible::safety::PermissionForkSpawnCtx{}, std::move(whole),
+            [&q](Permission<Producer<permissioned_test::SpscChannel>>&& p,
+                 ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
+                auto handle = q.producer_handle(std::move(p));
+                for (std::uint64_t i = 1; i <= N; ++i) {
+                    while (!handle.try_push(i)) {
+                        // This waits on backpressure alone, never on a
+                        // peer's signal, and the consumer's drain rate
+                        // bounds it.
+                    }
                 }
-            }
-            // handle destructs; embedded Permission destructs.
-        },
-        // Consumer body — consumes its child Permission.
-        [&q, &received_sum, &received_count]
-        (Permission<Consumer<permissioned_test::SpscChannel>>&& c,
-         ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
-            auto handle = q.consumer_handle(std::move(c));
-            std::uint64_t local_sum   = 0;
-            std::uint64_t local_count = 0;
-            while (local_count < N) {
-                if (auto v = handle.try_pop()) {
-                    local_sum   += *v;
-                    local_count += 1;
+            },
+            [&q, &received_sum, &received_count](Permission<Consumer<permissioned_test::SpscChannel>>&& c,
+                                                 ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
+                auto handle = q.consumer_handle(std::move(c));
+                std::uint64_t local_sum = 0;
+                std::uint64_t local_count = 0;
+                while (local_count < N) {
+                    if (auto v = handle.try_pop()) {
+                        local_sum += *v;
+                        local_count += 1;
+                    }
                 }
-                // No "is producer done?" check needed — consumer KNOWS
-                // it expects N items.  When local_count == N, exit.
-            }
-            // Plain stores — synchronized to the joining thread by
-            // jthread::~jthread (which calls pthread_join), per C++
-            // memory model.  No atomic required.
-            received_sum   = local_sum;
-            received_count = local_count;
-            // handle destructs; embedded Permission destructs.
-        }
-    );
+                received_sum = local_sum;
+                received_count = local_count;
+            });
 
-    // After mint_permission_fork returns, both jthreads have joined.
-    // happens-before: worker writes happen-before join() returns;
-    // join() happens-before this point.  Plain reads are safe.
     const std::uint64_t expected_sum = N * (N + 1) / 2;
     CRUCIBLE_TEST_REQUIRE(received_count == N);
     CRUCIBLE_TEST_REQUIRE(received_sum == expected_sum);
 
-    // The rebuilt Permission is back in our scope — explicitly drop
-    // it (or let it go out of scope; either signals "done with this
-    // region forever").
+    // Dropping the rebuilt permission says the region is finished
+    // with.  Letting it leave scope says the same thing.
     crucible::safety::permission_drop(std::move(rebuilt));
 }
 
-// Compile-time tests of the integrated stack — verify that the
-// Permissioned handle types are move-only, sizeof-collapsed via EBO,
-// and correctly typed.
 void test_permission_integration_compile_time() {
     using SpscQ = Queue<std::uint64_t, kind::spsc<16>>;
     using PProd = SpscQ::PermissionedProducerHandle<permissioned_test::SpscChannel>;
     using PCons = SpscQ::PermissionedConsumerHandle<permissioned_test::SpscChannel>;
 
-    // EBO: Permission is empty; handle stores Queue* + Permission and
-    // collapses to sizeof(Queue*).
-    static_assert(sizeof(PProd) == sizeof(void*),
-                  "PermissionedProducerHandle must collapse to sizeof(Queue*) via EBO");
-    static_assert(sizeof(PCons) == sizeof(void*),
-                  "PermissionedConsumerHandle must collapse to sizeof(Queue*) via EBO");
+    static_assert(sizeof(PProd) == sizeof(void*), "PermissionedProducerHandle must collapse to sizeof(Queue*) via EBO");
+    static_assert(sizeof(PCons) == sizeof(void*), "PermissionedConsumerHandle must collapse to sizeof(Queue*) via EBO");
 
-    // Move-only.
     static_assert(!std::is_copy_constructible_v<PProd>);
     static_assert(!std::is_copy_assignable_v<PProd>);
     static_assert(std::is_move_constructible_v<PProd>);
@@ -703,21 +616,17 @@ void test_permission_integration_compile_time() {
     static_assert(!std::is_copy_constructible_v<PCons>);
     static_assert(std::is_move_constructible_v<PCons>);
 
-    // Concept compliance.
     static_assert(QueueProducer<PProd>);
     static_assert(QueueConsumer<PCons>);
 
-    // The bare ProducerHandle still works alongside (different type).
     static_assert(!std::is_same_v<PProd, SpscQ::ProducerHandle>);
 }
 
-// Compile-time assertion that the concept-driven generic functions
-// accept handles from each Kind.  Pure compile-time; no runtime body.
 void test_concept_compliance_compile_time() {
-    using SpscQ    = Queue<std::uint64_t, kind::spsc<16>>;
-    using MpscQ    = Queue<std::uint64_t, kind::mpsc<16>>;
+    using SpscQ = Queue<std::uint64_t, kind::spsc<16>>;
+    using MpscQ = Queue<std::uint64_t, kind::mpsc<16>>;
     using ShardedQ = Queue<std::uint64_t, kind::sharded<2, 2, 16>>;
-    using WsQ      = Queue<std::uint64_t, kind::work_stealing<16>>;
+    using WsQ = Queue<std::uint64_t, kind::work_stealing<16>>;
 
     static_assert(QueueProducer<SpscQ::ProducerHandle>);
     static_assert(QueueConsumer<SpscQ::ConsumerHandle>);
@@ -728,11 +637,9 @@ void test_concept_compliance_compile_time() {
     static_assert(QueueProducer<ShardedQ::ProducerHandle>);
     static_assert(QueueConsumer<ShardedQ::ConsumerHandle>);
 
-    // Owner satisfies BOTH push and pop concepts.
     static_assert(QueueProducer<WsQ::OwnerHandle>);
     static_assert(QueueConsumer<WsQ::OwnerHandle>);
 
-    // Thief is Stealable (and only Stealable — try_pop and try_push absent).
     static_assert(Stealable<WsQ::ThiefHandle>);
     static_assert(!QueueProducer<WsQ::ThiefHandle>);
     static_assert(!QueueConsumer<WsQ::ThiefHandle>);
@@ -743,24 +650,22 @@ void test_concept_compliance_compile_time() {
 int main() {
     std::fprintf(stderr, "test_queue_facade:\n");
 
-    test_concept_compliance_compile_time();      // pure compile-time
-    test_permission_integration_compile_time();  // pure compile-time
+    test_concept_compliance_compile_time();
+    test_permission_integration_compile_time();
 
-    run_test("test_spsc_single_thread",          test_spsc_single_thread);
-    run_test("test_mpsc_single_thread",          test_mpsc_single_thread);
-    run_test("test_sharded_single_thread",       test_sharded_single_thread);
+    run_test("test_spsc_single_thread", test_spsc_single_thread);
+    run_test("test_mpsc_single_thread", test_mpsc_single_thread);
+    run_test("test_sharded_single_thread", test_sharded_single_thread);
     run_test("test_work_stealing_single_thread", test_work_stealing_single_thread);
 
-    run_test("test_spsc_multi_thread",           test_spsc_multi_thread);
-    run_test("test_mpsc_multi_thread",           test_mpsc_multi_thread);
-    run_test("test_sharded_multi_thread",        test_sharded_multi_thread);
-    run_test("test_work_stealing_multi_thread",  test_work_stealing_multi_thread);
+    run_test("test_spsc_multi_thread", test_spsc_multi_thread);
+    run_test("test_mpsc_multi_thread", test_mpsc_multi_thread);
+    run_test("test_sharded_multi_thread", test_sharded_multi_thread);
+    run_test("test_work_stealing_multi_thread", test_work_stealing_multi_thread);
 
-    run_test("test_auto_queue_t_deduction",      test_auto_queue_t_deduction);
+    run_test("test_auto_queue_t_deduction", test_auto_queue_t_deduction);
 
-    // Permission-driven test: replaces the entire atomic-counter +
-    // spin-loop coordination pattern with mint_permission_fork's RAII join.
-    run_test("test_spsc_mint_permission_fork",        test_spsc_mint_permission_fork);
+    run_test("test_spsc_mint_permission_fork", test_spsc_mint_permission_fork);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

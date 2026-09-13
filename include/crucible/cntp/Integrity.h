@@ -1,11 +1,8 @@
 #pragma once
 
-// End-to-end CNT-P payload integrity.
-//
-// Link CRCs are per-hop.  This header owns the payload-layer check:
-// sender computes xxHash64 over the payload bytes, receiver recomputes
-// the same platform-independent value, and successful unwrap returns a
-// source::IntegrityVerified payload.
+// A link CRC covers one hop.  This check covers the payload end to end, and
+// the hash is platform-independent so a receiver on other hardware recomputes
+// the same value.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Linear.h>
@@ -184,9 +181,8 @@ CRUCIBLE_HOT void process_stripe(std::byte const* ptr, std::uint64_t& v1, std::u
     alignas(32) std::array<std::uint64_t, 4> acc_values{v1, v2, v3, v4};
     auto acc = ::crucible::simd::load_aligned<u64x4>(acc_values.data());
 
-    // The crucible::simd facade exposes only binary operators (no
-    // compound-assignment forms); `acc = acc + ...` is bit-identical to
-    // the prior `acc += ...` per lane.
+    // The simd facade offers binary operators only, so these are written out
+    // rather than as compound assignments.
     acc = acc + load_stripe_le64(ptr) * u64x4(xxh_prime64_2);
     acc = rotl64(acc, 31);
     acc = acc * u64x4(xxh_prime64_1);
@@ -225,9 +221,6 @@ template <ByteContiguousPayload Payload>
 [[nodiscard]] inline std::span<const std::byte> payload_bytes(Payload const& payload) noexcept {
     auto const* ptr = std::data(payload);
     auto const count = static_cast<std::size_t>(std::size(payload));
-    // FIXY-U-082 / fixy-A5-028: std::as_bytes is the C++20 idiom for
-    // typed-span → byte-span — strict-aliasing-safe, zero-cost, no cast
-    // required.  Drops the reinterpret_cast entirely.
     return std::as_bytes(std::span{ptr, count});
 }
 

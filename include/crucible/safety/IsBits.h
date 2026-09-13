@@ -1,28 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_bits_v ────────────────────────────
-//
-// Wrapper-detection predicate for `safety::Bits<EnumType>` (#1079).
-// Mechanical extension of the established 24-header `safety/Is*.h`
-// family; same template shape as `IsHotPath.h:1-90`.
-//
-// Surface:
-//
-//   is_bits_v<W>            constexpr bool — true iff W is a
-//                           Bits<E> instantiation (cvref-stripped).
-//   IsBits<W>               concept gate.
-//   bits_enum_t<W>          extracts E from Bits<E> when is_bits_v<W>.
-//   bits_underlying_t<W>    extracts std::underlying_type_t<E>.
-//
-// LookalikeBits witness asserts the pattern-match is template-spec-
-// based (NOT duck-typing on member names).
-//
-// Why this lives in safety/.  Per the existing Is*.h convention —
-// trait helpers accompanying their wrapper sit alongside it (see
-// IsHotPath.h, IsConsumerHandle.h, etc.).
-//
-// References: WRAP-Bits-Integration-1 (#1085).
-
 #include <crucible/safety/Bits.h>
 
 #include <cstdlib>
@@ -60,8 +37,6 @@ template <typename T>
     requires is_bits_v<T>
 using bits_underlying_t = typename detail::is_bits_impl<std::remove_cvref_t<T>>::underlying_type;
 
-// ── Self-test ───────────────────────────────────────────────────────
-
 namespace detail::is_bits_self_test {
 
 enum class TestEnum8 : std::uint8_t {
@@ -81,48 +56,39 @@ using B8 = ::crucible::safety::Bits<TestEnum8>;
 using B16 = ::crucible::safety::Bits<TestEnum16>;
 using B32 = ::crucible::safety::Bits<TestEnum32>;
 
-// Positive cases — every Bits<E> instantiation is detected.
 static_assert(is_bits_v<B8>);
 static_assert(is_bits_v<B16>);
 static_assert(is_bits_v<B32>);
 
-// cvref strip — references and const-qualifications also detect.
 static_assert(is_bits_v<B8&>);
 static_assert(is_bits_v<B8 const&>);
 static_assert(is_bits_v<B8&&>);
 
-// Negative cases — non-Bits types rejected.
 static_assert(!is_bits_v<int>);
-static_assert(!is_bits_v<TestEnum8>);  // bare enum
-static_assert(!is_bits_v<std::uint8_t>);  // bare underlying
+static_assert(!is_bits_v<TestEnum8>);
+static_assert(!is_bits_v<std::uint8_t>);
 static_assert(!is_bits_v<void>);
-static_assert(!is_bits_v<B8*>);  // pointer-to-Bits
-static_assert(!is_bits_v<B8[3]>);  // array-of-Bits
+static_assert(!is_bits_v<B8*>);
+static_assert(!is_bits_v<B8[3]>);
 
-// Lookalike rejection — pattern-match is template-spec-based, NOT
-// duck-typing on member names.  A struct that happens to have a
-// `bits_` member must NOT satisfy is_bits_v.
 struct LookalikeBits {
     std::uint8_t bits_;
     TestEnum8 enum_value;
 };
-static_assert(!is_bits_v<LookalikeBits>, "is_bits_v MUST reject lookalikes that share the Bits<E> "
-                                         "internal-member shape but aren't actually Bits<E> instantiations. "
-                                         "If this fires, the partial spec has been weakened to duck-typing "
-                                         "and downstream concept overloads will misfire on user types.");
+static_assert(!is_bits_v<LookalikeBits>,
+              "is_bits_v must reject lookalikes that share the internal member shape of Bits<E> "
+              "without being an instantiation of it. If this fires, the partial specialization "
+              "has weakened to duck-typing and downstream concept overloads will misfire on user "
+              "types.");
 
-// Concept gate parity with the variable.
 static_assert(IsBits<B8>);
 static_assert(!IsBits<int>);
 
-// Extractor types resolve correctly.
 static_assert(std::is_same_v<bits_enum_t<B8>, TestEnum8>);
 static_assert(std::is_same_v<bits_enum_t<B16>, TestEnum16>);
 static_assert(std::is_same_v<bits_underlying_t<B8>, std::uint8_t>);
 static_assert(std::is_same_v<bits_underlying_t<B16>, std::uint16_t>);
 static_assert(std::is_same_v<bits_underlying_t<B32>, std::uint32_t>);
-
-// ── Runtime smoke test ──────────────────────────────────────────────
 
 inline void runtime_smoke_test() {
     if (!is_bits_v<B8>) std::abort();

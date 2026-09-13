@@ -1,7 +1,5 @@
 #pragma once
 
-// Wrapper-detection predicate for safety::Tagged<T, Tag>.
-
 #include <crucible/safety/Tagged.h>
 
 #include <type_traits>

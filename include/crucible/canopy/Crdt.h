@@ -1,12 +1,5 @@
 #pragma once
 
-// State-based CRDT substrate for Canopy.
-//
-// The protocol layer (Scuttlebutt, federation gossip, topology
-// distribution) is intentionally outside this header.  This file
-// provides bounded, deterministic merge kernels with explicit
-// Local/Gossiped provenance at every mutation boundary.
-
 #include <crucible/Platform.h>
 #include <crucible/canopy/Hlc.h>
 #include <crucible/canopy/VectorClock.h>
@@ -56,20 +49,11 @@ namespace detail {
     return a > max - b ? max : a + b;
 }
 
-// fixy-A5-003: MurmurHash3 64-bit finalizer.  std::hash<T> is
-// implementation-defined — its bit-pattern varies across libstdc++ ABI
-// revisions, libc++/MSVC vendors, and ASLR-seeded implementations.  A
-// BoundedHashSetState serialized on Relay R1 (libstdc++ N) and re-
-// inspected on Relay R2 (libstdc++ N+1) would place each value at a
-// slot determined by R1's std::hash; R2's contains() / merge() would
-// probe slots determined by R2's std::hash and answer wrong — silently
-// corrupting CRDT cross-process convergence.
-//
-// fmix64 is a closed-form integer mix with documented avalanche
-// (Appleby 2011) — bit-identical on every platform, every compiler,
-// every libstdc++ version.  Open-addressing positions computed via
-// fmix64 → stable_hash<T> are part of the CRDT wire format from now
-// on; changing the constants breaks every persisted state.
+// Open-addressing slot positions are part of the persisted CRDT state, so this
+// mix has to produce the same bits on every platform and every build.  A
+// standard library hash is implementation-defined and varies across versions,
+// so a state written by one process would probe different slots in another and
+// answer wrong.  Changing these constants invalidates every persisted state.
 [[nodiscard]] constexpr std::uint64_t crdt_fmix64(std::uint64_t k) noexcept {
     k ^= k >> 33;
     k *= 0xff51afd7ed558ccdULL;
@@ -79,11 +63,6 @@ namespace detail {
     return k;
 }
 
-// Platform-stable hash for HashableValue T.  Enum / integer / floating
-// / pointer are dispatched directly via fmix64.  Class types must
-// supply an explicit specialization (no such call site exists today;
-// adding one is the gate that forces the author to think about cross-
-// process stability for that T).
 template <typename T>
 [[nodiscard]] constexpr std::uint64_t stable_hash(T const& value) noexcept {
     if constexpr (std::is_enum_v<T>) {
@@ -95,18 +74,18 @@ template <typename T>
             return crdt_fmix64(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(value)));
         } else {
             static_assert(sizeof(T) == 8, "stable_hash<T> floating-point dispatch requires "
-                                          "4- or 8-byte T (fixy-A5-003)");
+                                          "a 4-byte or 8-byte T");
             return crdt_fmix64(std::bit_cast<std::uint64_t>(value));
         }
     } else if constexpr (std::is_pointer_v<T>) {
         return crdt_fmix64(std::bit_cast<std::uintptr_t>(value));
     } else {
-        static_assert(false, "stable_hash<T> requires T to be enum, integer, floating-"
-                             "point, or pointer.  Class types must supply an explicit "
-                             "specialization that defines a cross-process-stable bit "
-                             "pattern (fixy-A5-003).  std::hash is intentionally NOT "
-                             "used because its output varies across libstdc++ versions "
-                             "and would silently corrupt CRDT convergence.");
+        static_assert(false, "stable_hash<T> requires T to be an enum, an integer, a "
+                             "floating-point type, or a pointer.  A class type supplies an "
+                             "explicit specialization that defines a cross-process-stable "
+                             "bit pattern.  A standard library hash is not used because its "
+                             "output varies across library versions and would silently "
+                             "corrupt CRDT convergence.");
     }
 }
 

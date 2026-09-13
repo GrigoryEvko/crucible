@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-172 substrate slice. CNT-P XDP_TX gossip multicast plans.
-//
-// This header does not emit verifier bytecode, clone packets in kernel, or
-// attach programs to a live NIC. It pins the userspace contract first:
-// source-tagged multicast plans, source-tagged topic IDs, bounded neighbor
-// tables, XDP program/map descriptors, and deterministic in-process
-// replication planning over dataplane::BpfMapImage.
+// Nothing here emits verifier bytecode, clones a packet in the kernel or
+// attaches a program to a NIC.  The neighbor table is a process-local map
+// image and plan_packet only describes the replication a dataplane would do.
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/Integrity.h>

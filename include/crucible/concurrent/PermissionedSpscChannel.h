@@ -1,138 +1,14 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// PermissionedSpscChannel<T, Capacity, UserTag> — SPSC worked example
+// An SPSC ring behind one linear Permission per endpoint.  The handle
+// types carry the role, so pushing from the consumer side or popping
+// from the producer side does not compile, and the move-only Permission
+// keeps a channel to one producer and one consumer at a time.
 //
-// Combines SpscRing<T, Capacity> (lock-free single-producer single-
-// consumer ring) with two Permission<Tag> tokens (one per endpoint).
-// The result: TraceRing-style channel where the type system
-// distinguishes Producer from Consumer at compile time, AND the
-// Permission discipline enforces that exactly ONE producer and ONE
-// consumer endpoint can exist per channel instance.
-//
-//   sizeof(ProducerHandle) == sizeof(PermissionedSpscChannel*)  (Permission EBO)
-//   sizeof(ConsumerHandle) == sizeof(PermissionedSpscChannel*)  (Permission EBO)
-//
-// Per-operation cost (steady state):
-//   try_push() : ~5-8 ns  (SpscRing's acquire/release atomics)
-//   try_pop()  : ~5-8 ns  (SpscRing's acquire/release atomics)
-//   handle construction: 0 ns (move semantics, no allocation)
-//
-// ─── The two-piece architecture ─────────────────────────────────────
-//
-//   SpscRing<T, Capacity>      — handles the LOCK-FREE WIRE
-//                                  (head/tail acquire-release on
-//                                   power-of-two-sized cell array)
-//   Permission<Producer<Tag>>  — handles the TYPE-LEVEL ROLE
-//   Permission<Consumer<Tag>>     enforcement (linear tokens, no two
-//                                  producers nor two consumers per
-//                                  channel can exist simultaneously)
-//   PermissionedSpscChannel    — composes the two with type-system
-//                                  endpoint discrimination
-//
-// Why both layers?  SpscRing alone is sound for SPSC (head/tail
-// happen-before establishes the slot ownership invariant).  But it
-// offers no API-level distinction between producer and consumer — any
-// thread can call try_push or try_pop because both are methods on
-// the ring.  Wrapping with Permission<Producer/Consumer> adds:
-//
-//   1. Compile-time role discrimination (ProducerHandle has only
-//      try_push; ConsumerHandle has only try_pop)
-//   2. Linearity tracking (Permission move-only ensures no two
-//      producer endpoints coexist for the same channel)
-//   3. Grep-able audit trail (every endpoint construction goes
-//      through producer()/consumer() factory; every handoff is a
-//      visible Permission move into a jthread or function param)
-//
-// ─── The TraceRing use case (SEPLOG-INT-1, task #384) ──────────────
-//
-// TraceRing's Vessel-dispatch / bg-drain pair is the canonical
-// SPSC channel in Crucible (CRUCIBLE.md §IV.2).  PermissionedSpsc-
-// Channel gives:
-//
-//   * Type system enforces that bg-drain cannot accidentally push
-//     into the ring (no .try_push() on ConsumerHandle)
-//   * Type system enforces that Vessel-dispatch cannot accidentally
-//     drain from the ring (no .try_pop() on ProducerHandle)
-//   * Permission discipline prevents two Vessel threads from ever
-//     constructing producer endpoints for the same TraceRing (one
-//     Permission<Producer> token per channel, linear, must be
-//     surrendered to producer() to construct the handle)
-//
-// All without touching the SpscRing's hot-path bytes — the typed
-// wrapper is purely compile-time (release-mode handles are
-// sizeof(Channel*) via [[no_unique_address]] EBO; the Permission
-// collapses to 0 bytes since it's an empty class).
-//
-// ─── The two-linear-permissions pattern (vs SWMR's hybrid) ─────────
-//
-// PermissionedSnapshot.h's SWMR pattern uses ONE linear Permission
-// (Writer) + N fractional SharedPermission (Reader) backed by a Pool
-// with refcount + mode-transition CAS.
-//
-// PermissionedSpscChannel uses TWO LINEAR Permissions (Producer +
-// Consumer) — both endpoints are unique, neither is fractional.
-// Consequence: no Pool, no refcount, no mode transition, simpler
-// machinery.  Each endpoint's lifetime is the lifetime of the
-// owning ProducerHandle / ConsumerHandle.
-//
-// ─── Constraints ────────────────────────────────────────────────────
-//
-//   * T satisfies SpscValue (trivially-copyable, trivially-
-//     destructible).  Inherited from SpscRing.
-//   * Capacity is a power of two, > 0.  Inherited from SpscRing.
-//   * Each PermissionedSpscChannel instance must use a distinct
-//     UserTag (or different (T, Capacity)) so its Permission tags
-//     don't collide.  In practice: define a tag-class per logical
-//     channel (TraceRingChannel, MetaLogChannel, etc.).
-//   * ProducerHandle / ConsumerHandle are move-only via embedded
-//     Permission's deleted copy.
-//   * Per Permission.h's grep-discoverable rule, mint each Whole<Tag>
-//     root EXACTLY ONCE per program.  No runtime check enforces this.
-//
-// ─── Worked example ─────────────────────────────────────────────────
-//
-//   struct MyChannel {};
-//   PermissionedSpscChannel<int, 1024, MyChannel> channel;
-//
-//   auto whole = mint_permission_root<spsc_tag::Whole<MyChannel>>();
-//   auto [prod_perm, cons_perm] = mint_permission_split<
-//       spsc_tag::Producer<MyChannel>,
-//       spsc_tag::Consumer<MyChannel>>(std::move(whole));
-//
-//   auto producer = channel.producer(std::move(prod_perm));
-//   auto consumer = channel.consumer(std::move(cons_perm));
-//
-//   // Cross-thread handoff via jthread move:
-//   std::jthread producer_thread{
-//       [p = std::move(producer)](auto) mutable {
-//           for (int i = 0; i < 1000; ++i) {
-//               while (!p.try_push(i)) CRUCIBLE_SPIN_PAUSE;
-//           }
-//       }
-//   };
-//
-//   std::jthread consumer_thread{
-//       [c = std::move(consumer)](auto) mutable {
-//           for (;;) {
-//               if (auto v = c.try_pop()) { /* use *v */ }
-//               else                       CRUCIBLE_SPIN_PAUSE;
-//           }
-//       }
-//   };
-//
-//   // producer.try_pop()  is a COMPILE ERROR — no such method
-//   // consumer.try_push() is a COMPILE ERROR — no such method
-//
-// ─── References ─────────────────────────────────────────────────────
-//
-//   THREADING.md §5.5 — Tier 4 queue facade design
-//   PermissionedSnapshot.h — sibling SWMR worked example
-//   safety/Permission.h — Permission/mint_permission_split machinery
-//   concurrent/SpscRing.h — underlying lock-free ring primitive
-//   session_types.md §IV.2 — TraceRing as a typed session
-//   CRUCIBLE.md §IV.2 — TraceRing runtime spec
-// ═══════════════════════════════════════════════════════════════════
+// Each channel needs a UserTag of its own.  Two channels sharing a tag
+// share Permission types, and their endpoints become interchangeable.
+// Mint each whole tag's root once per program: nothing checks that at
+// runtime.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/WorkingSet.h>
@@ -147,11 +23,8 @@
 
 namespace crucible::concurrent {
 
-// ── Tag tree for PermissionedSpscChannel ───────────────────────────
-//
-// Each logical channel picks its own UserTag (a phantom type, typically
-// an empty struct).  The (Whole, Producer, Consumer) triple is
-// auto-specialized for splits_into below — no per-tag boilerplate.
+// The triple is specialized for splitting at the foot of this file, so
+// a user tag takes no per-tag boilerplate.
 
 namespace spsc_tag {
 
@@ -164,8 +37,6 @@ struct Consumer {};
 
 }  // namespace spsc_tag
 
-// ── PermissionedSpscChannel<T, Capacity, UserTag> ──────────────────
-
 template <SpscValue T, std::size_t Capacity, typename UserTag = void>
 class PermissionedSpscChannel : public safety::Pinned<PermissionedSpscChannel<T, Capacity, UserTag>> {
 public:
@@ -177,35 +48,17 @@ public:
 
     static constexpr std::size_t channel_capacity = Capacity;
 
-    // ── Construction ──────────────────────────────────────────────
-    //
-    // Default-constructed channel; user mints + splits Permission
-    // separately and hands the halves to producer() / consumer().
-    // Pinned (per CRTP base): no copy, no move — the channel's
-    // identity IS its memory address (the SpscRing's atomics depend
-    // on a stable address).
+    // The channel's identity is its address, since the ring's atomics
+    // depend on a stable one.
 
     PermissionedSpscChannel() noexcept = default;
 
-    // ── ProducerHandle ────────────────────────────────────────────
-    //
-    // Move-only via the embedded Permission's deleted copy.  Constructed
-    // ONLY through producer() factory (private ctor + friend).
-    // sizeof(ProducerHandle) == sizeof(PermissionedSpscChannel*) via
-    // EBO (the Permission is an empty class; [[no_unique_address]]
-    // collapses it to 0 bytes; in DEBUG with the future tracker it
-    // grows by 1 byte + alignment).
-    //
-    // EXPOSES try_push only — try_pop is structurally impossible.
-
     class ProducerHandle {
-        // Reference (not pointer): the channel is Pinned, its address
-        // is stable for life, and a handle is bound to ONE channel
-        // permanently.  Reference forbids reassign + default-construct;
-        // implicitly deletes move-assignment which would otherwise
-        // silently violate Permission linearity (defaulted move on an
-        // empty Permission is a no-op, leaving BOTH source and target
-        // claiming the linear token).
+        // A reference rather than a pointer, because a handle binds to
+        // one channel for life.  The reference also deletes move
+        // assignment, which matters: a defaulted move of an empty
+        // Permission is a no-op, so the source and the target would
+        // both go on claiming the linear token.
         PermissionedSpscChannel& ch_;
         [[no_unique_address]] safety::Permission<producer_tag> perm_;
 
@@ -221,37 +74,23 @@ public:
         ProducerHandle& operator=(const ProducerHandle&) =
             delete("ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        // Move-assignment is implicitly deleted by the reference member
-        // (reference can't be rebound).  Explicit `= delete` here makes
-        // the intent visible at the API surface; without it, the
-        // diagnostic on attempted move-assign points at the implicitly-
-        // deleted special member which is harder to grep.
+        // The reference member already deletes this implicitly.  Saying
+        // so explicitly puts the reason in the diagnostic instead of
+        // pointing at an implicitly-deleted special member.
         ProducerHandle& operator=(ProducerHandle&&) = delete(
             "ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second producer to coexist");
 
-        // Push — ~5-8 ns uncontended per SpscRing's contract.  Returns
-        // false iff the ring is full; caller decides backpressure
-        // (yield + retry, drop, log, etc.).  Inlined to single SpscRing
-        // call by the optimizer.
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_.ring_.try_push(item); }
 
-        // Diagnostics — snapshot reads, NOT exact (use for telemetry
-        // and "should we keep retrying?" decisions only, NEVER for
-        // correctness invariants).
+        // Snapshots.  Sound for telemetry and for deciding whether to
+        // keep retrying, never for a correctness invariant.
         [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
-    // ── ConsumerHandle ────────────────────────────────────────────
-    //
-    // Move-only mirror of ProducerHandle.  EXPOSES try_pop only —
-    // try_push is structurally impossible.
-
     class ConsumerHandle {
-        // Reference (not pointer): same rationale as ProducerHandle.
-        // Forbids move-assign which would silently violate the
-        // Consumer Permission's linearity.
+        // A reference for the same reason as in ProducerHandle.
         PermissionedSpscChannel& ch_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
@@ -270,68 +109,28 @@ public:
         ConsumerHandle& operator=(ConsumerHandle&&) = delete(
             "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second consumer to coexist");
 
-        // Pop — ~5-8 ns uncontended per SpscRing's contract.  Returns
-        // nullopt iff the ring is empty; caller decides whether to
-        // yield/spin/sleep.  Inlined to single SpscRing call.
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_.ring_.try_pop(); }
 
-        // Diagnostics — snapshot reads, NOT exact.
         [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
-    // ── Factories ─────────────────────────────────────────────────
-
-    // Producer endpoint — consumes the Producer Permission token.
-    // Caller mints via `mint_permission_root<whole_tag>()` then
-    // `mint_permission_split<producer_tag, consumer_tag>(whole)` at startup,
-    // moves the producer half into producer().  Returns the unique
-    // ProducerHandle for this channel.
     [[nodiscard]] ProducerHandle producer(safety::Permission<producer_tag>&& perm) noexcept {
         return ProducerHandle{*this, std::move(perm)};
     }
 
-    // Consumer endpoint — symmetric to producer().
     [[nodiscard]] ConsumerHandle consumer(safety::Permission<consumer_tag>&& perm) noexcept {
         return ConsumerHandle{*this, std::move(perm)};
     }
 
-    // ── Mode transition: scoped exclusive access ──────────────────
-    //
-    // SPSC has linear (move-only, single-token) Permissions on both
-    // sides — there is no atomic refcount to drain.  The unified
-    // Permissioned* mode-transition pattern adapts to that reality:
-    // the caller surrenders the *recombined* whole permission as
-    // type-level proof that no handle is alive, body runs with
-    // exclusive access, and the whole permission is returned so the
-    // caller can re-split for the next session.
-    //
-    // Relationship to the pool-based variants:
-    //   * Mpsc / Mpmc / ChaseLevDeque / Snapshot use
-    //         with_drained_access(Body) -> bool
-    //     — the pool's atomic state is the proof of quiescence.
-    //   * Spsc uses
-    //         with_recombined_access(Permission<whole_tag>&&, Body)
-    //                 -> Permission<whole_tag>
-    //     — the Permission move is the proof of quiescence.
-    //
-    // The body always runs with exclusive access to the channel's
-    // underlying ring; what differs is the proof mechanism.
-    //
-    // Usage:
-    //   auto whole = safety::mint_permission_root<channel_t::whole_tag>();
-    //   auto [pp, cp] = safety::mint_permission_split<
-    //       channel_t::producer_tag, channel_t::consumer_tag>(std::move(whole));
-    //   /* ... handles do work, then drop ... */
-    //   auto recombined = safety::mint_permission_combine<channel_t::whole_tag>(
-    //       std::move(pp), std::move(cp));
-    //   recombined = ch.with_recombined_access(
-    //       std::move(recombined),
-    //       [&]() noexcept { /* exclusive access here */ });
-    //   /* re-split recombined as needed */
-    //
-    // Cost: ZERO atomic ops — the Permission move is purely type-level.
+    // Scoped exclusive access to the ring.  Both endpoints here hold
+    // linear tokens and there is no refcount to drain, so surrendering
+    // the recombined whole permission is itself the proof that no
+    // handle is alive.  The pool-backed channels instead drain their
+    // atomic state and take no permission.  The whole permission comes
+    // back so the caller can split it again for the next session, and
+    // the whole exchange is type-level with no atomic operation.
     template <typename Body>
         requires std::is_invocable_v<Body>
     [[nodiscard]] safety::Permission<whole_tag>
@@ -341,16 +140,13 @@ public:
         return std::move(whole);
     }
 
-    // ── Channel-level diagnostics (any thread, NOT exact) ─────────
-
     [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
     [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
-    // SPSC has no atomic exclusivity flag — the linear Permissions ARE
-    // the proof of single-handle ownership.  This query exists for API
-    // uniformity with the pool-based wrappers; it always returns false
-    // because there is no in-flight upgrade state to observe.
+    // Always false, and present only so this channel matches the shape
+    // of the pool-backed ones.  There is no exclusivity flag to read:
+    // the linear permissions are what prove single ownership.
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
 private:
@@ -359,14 +155,8 @@ private:
 
 }  // namespace crucible::concurrent
 
-// ── splits_into auto-specialization ─────────────────────────────────
-//
-// User declares Permission<Whole<MyTag>> at startup; framework does
-// the rest.  splits_into binary form supports the canonical
-// (Whole → Producer + Consumer) decomposition without per-tag
-// boilerplate.  Both forms (binary splits_into and N-ary
-// splits_into_pack) are specialized so users can use either
-// mint_permission_split (binary) or mint_permission_split_n (variadic).
+// Both the binary and the variadic split forms are specialized, so a
+// caller can reach for either one.
 
 namespace crucible::safety {
 
@@ -378,7 +168,6 @@ template <typename UserTag>
 struct splits_into_pack<concurrent::spsc_tag::Whole<UserTag>, concurrent::spsc_tag::Producer<UserTag>,
                         concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
-// fixy-M-29 authoring witnesses (paired with the specs above).
 template <typename UserTag>
 struct splits_into_authoring_witness<concurrent::spsc_tag::Whole<UserTag>, concurrent::spsc_tag::Producer<UserTag>,
                                      concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};

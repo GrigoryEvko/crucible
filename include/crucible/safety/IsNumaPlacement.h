@@ -1,29 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_numa_placement_v ──────────────────
-//
-// FOUND-D30 (seventh of batch — third product wrapper).  Wrapper-
-// detection predicate for `NumaPlacement<T>`.
-//
-// Mechanical extension of the IsBudgeted product-wrapper template,
-// with a distinguishing layout invariant.  NumaPlacement carries a
-// (NumaNodeId, AffinityMask) runtime grade pair where:
-//   - NumaNodeId is a 1-byte enum
-//   - AffinityMask is a 32-byte array<uint64_t, 4> (256 CPU bits)
-// Total grade overhead = kAffinityBytes + 1 (≥ 33 bytes), packed
-// to kPlacementBytes (40 bytes) due to alignment of the 8-byte
-// AffinityMask words.
-//
-// The detector is indifferent to the size — partial spec keys on
-// the wrapper class.  But layout assertions in tests differ from
-// Budgeted/EpochVersioned (16-byte grade) — pinned distinctly.
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   is_numa_placement_v<T>          Variable template; cv-ref-stripped.
-//   IsNumaPlacement<T>              Concept form.
-//   numa_placement_value_t<T>       Wrapped element type; constrained.
-
 #include <crucible/safety/NumaPlacement.h>
 
 #include <type_traits>
@@ -53,8 +29,6 @@ concept IsNumaPlacement = is_numa_placement_v<T>;
 template <typename T>
     requires is_numa_placement_v<T>
 using numa_placement_value_t = typename detail::is_numa_placement_impl<std::remove_cvref_t<T>>::value_type;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_numa_placement_self_test {
 
@@ -91,9 +65,7 @@ static_assert(std::is_same_v<numa_placement_value_t<NP_int>, int>);
 static_assert(std::is_same_v<numa_placement_value_t<NP_double>, double>);
 static_assert(std::is_same_v<numa_placement_value_t<NP_uint64>, std::uint64_t>);
 
-// Layout invariant — DISTINGUISHED from Budgeted/EpochVersioned.
-// NumaPlacement carries 33-byte grade (1 byte NumaNodeId + 32 byte
-// AffinityMask), packed to 40 bytes with alignment.
+// The grade is a one-byte node id plus a 32-byte affinity mask.
 static_assert(sizeof(NP_int) >= sizeof(int) + 33);
 static_assert(sizeof(NP_double) >= sizeof(double) + 33);
 

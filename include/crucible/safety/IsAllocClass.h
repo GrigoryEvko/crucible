@@ -1,7 +1,5 @@
 #pragma once
 
-// FOUND-D29 — wrapper-detection predicate for `AllocClass<Tag, T>`.
-
 #include <crucible/safety/AllocClass.h>
 
 #include <type_traits>

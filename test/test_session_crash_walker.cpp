@@ -1,20 +1,5 @@
-// Runtime + compile-time harness for the protocol-tree crash-branch
-// walker added in #368 (SEPLOG-BUG-4): every_offer_has_crash_branch_for_peer_v
-// and assert_every_offer_has_crash_branch_for<Proto, PeerTag>().
-//
-// Coverage:
-//   * Compile-time: the walker recurses through every local-protocol
-//     combinator head (End / Stop / Continue / Send / Recv / Select /
-//     Offer / Loop / Delegate / Accept) with positive and negative
-//     cases per shape.  Critically: a tree that is locally-OK at the
-//     first Offer but has a deeper Offer with no crash branch MUST
-//     fail the aggregate predicate (the shortcut that #368 addresses).
-//   * Structural witness: the consteval assertion fires the framework-
-//     controlled "[CrashBranch_Missing_In_Tree]" diagnostic at the
-//     call site (not buried in a template instantiation tree).
-//
-// The test is pure compile-time; main() just prints a confirmation
-// string so the test harness records "PASSED".
+// Every claim here is a static_assert.  main() only prints, so that the
+// harness records a pass.
 
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
@@ -25,163 +10,119 @@ namespace {
 
 using namespace crucible::safety::proto;
 
-// ── Fixtures ─────────────────────────────────────────────────────
-
 struct UnreliablePeer {};
-struct ReliablePeer   {};
+struct ReliablePeer {};
 struct Msg {};
 struct Ping {};
 struct Pong {};
 
-using Rec = Recv<Crash<UnreliablePeer>, End>;     // recovery body
+using Rec = Recv<Crash<UnreliablePeer>, End>;
 
-// ── 1. Terminals and atoms ───────────────────────────────────────
-
-// End / Stop / Continue have no Offers — trivially all-covered for
-// any peer (vacuous truth).
-static_assert(every_offer_has_crash_branch_for_peer_v<End,      UnreliablePeer>);
-static_assert(every_offer_has_crash_branch_for_peer_v<Stop,     UnreliablePeer>);
+// End, Stop and Continue contain no Offer, so the predicate holds
+// vacuously for any peer.
+static_assert(every_offer_has_crash_branch_for_peer_v<End, UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<Stop, UnreliablePeer>);
 static_assert(every_offer_has_crash_branch_for_peer_v<Continue, UnreliablePeer>);
 
-// Send / Recv without any Offer — still vacuously true.
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    Send<Msg, End>, UnreliablePeer>);
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    Recv<Msg, Send<Msg, End>>, UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<Send<Msg, End>, UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<Recv<Msg, Send<Msg, End>>, UnreliablePeer>);
 
-// ── 2. Single Offer — positive case ───────────────────────────────
-
-// An Offer with a Recv<Crash<Peer>, _> branch passes for that peer.
 using OfferWithCrash = Offer<Recv<Ping, End>, Recv<Crash<UnreliablePeer>, End>>;
 static_assert(every_offer_has_crash_branch_for_peer_v<OfferWithCrash, UnreliablePeer>);
 
-// But DOES NOT pass for a different peer — the same check against
-// ReliablePeer fails because the Offer has no Recv<Crash<ReliablePeer>, _>.
-// (In practice, ReliablePeer would be in ReliableSet<> and skipped
-// at the aggregate-check level; the walker itself is per-peer.)
+// The walker is per-peer, so the same Offer fails for a peer it has no
+// crash branch for.  A peer declared reliable is skipped one level up,
+// at the aggregate check, rather than here.
 static_assert(!every_offer_has_crash_branch_for_peer_v<OfferWithCrash, ReliablePeer>);
-
-// ── 3. Single Offer — negative case ───────────────────────────────
 
 using OfferWithoutCrash = Offer<Recv<Ping, End>, Recv<Pong, End>>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<OfferWithoutCrash, UnreliablePeer>);
 
-// ── 4. Nested Offer within a branch's continuation ─────────────────
-//
-// The "gotcha" case: the outer Offer has a crash branch, but a
-// non-crash branch's continuation contains ANOTHER Offer that
-// lacks one.  The aggregate predicate must catch this.
+// The case a shallow check misses: the outer Offer has a crash branch,
+// but the continuation of one of its other branches holds a second
+// Offer that has none.  The aggregate predicate must descend and catch
+// that.
 
-using InnerBadOffer = Offer<Recv<Pong, End>>;     // no crash branch
-using OuterWithBadInner = Offer<
-    Recv<Ping, InnerBadOffer>,                    // branch continuation has a bad inner Offer
-    Recv<Crash<UnreliablePeer>, End>>;
-// Outer HAS a crash branch → has_crash_branch_for_peer_v is true on outer.
-static_assert( has_crash_branch_for_peer_v<OuterWithBadInner, UnreliablePeer>);
-// But the aggregate walker DESCENDS and sees InnerBadOffer's lack.
+using InnerBadOffer = Offer<Recv<Pong, End>>;  // no crash branch
+using OuterWithBadInner = Offer<Recv<Ping, InnerBadOffer>, Recv<Crash<UnreliablePeer>, End>>;
+// The shallow predicate sees the outer crash branch and is satisfied.
+static_assert(has_crash_branch_for_peer_v<OuterWithBadInner, UnreliablePeer>);
+// The walking predicate descends and sees what the inner Offer lacks.
 static_assert(!every_offer_has_crash_branch_for_peer_v<OuterWithBadInner, UnreliablePeer>);
 
-// The "fix" — inner Offer also gets a crash branch.
+// The same tree with the inner Offer repaired.
 using InnerGoodOffer = Offer<Recv<Pong, End>, Recv<Crash<UnreliablePeer>, End>>;
-using OuterWithGoodInner = Offer<
-    Recv<Ping, InnerGoodOffer>,
-    Recv<Crash<UnreliablePeer>, End>>;
-static_assert( every_offer_has_crash_branch_for_peer_v<OuterWithGoodInner, UnreliablePeer>);
+using OuterWithGoodInner = Offer<Recv<Ping, InnerGoodOffer>, Recv<Crash<UnreliablePeer>, End>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<OuterWithGoodInner, UnreliablePeer>);
 
-// ── 5. Select does NOT demand a crash branch — the choice is OURS ──
-//
-// Select<Bs...> is INTERNAL choice; branches are our Sends.  The peer
-// can't crash during a Select (no Recv happens).  The walker recurses
-// into each branch but doesn't require a Crash branch on Select itself.
+// Select is an internal choice whose branches are our own sends.  No
+// receive happens at a Select, so there is no point for the peer to
+// crash at, and the walker requires no crash branch on the Select
+// itself.  It still recurses into each branch.
 
-using SelectOverCrashOffers = Select<
-    Send<Ping, InnerGoodOffer>,         // branch 0: send, then bad/good-less inner
-    Send<Pong, End>>;
-static_assert( every_offer_has_crash_branch_for_peer_v<SelectOverCrashOffers, UnreliablePeer>);
+using SelectOverCrashOffers = Select<Send<Ping, InnerGoodOffer>, Send<Pong, End>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<SelectOverCrashOffers, UnreliablePeer>);
 
-// But if Select's branch contains a bad inner Offer, the walker fails.
-using SelectOverBadOffer = Select<
-    Send<Ping, InnerBadOffer>,
-    Send<Pong, End>>;
+using SelectOverBadOffer = Select<Send<Ping, InnerBadOffer>, Send<Pong, End>>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<SelectOverBadOffer, UnreliablePeer>);
 
-// ── 6. Loop — walker recurses into body ─────────────────────────────
-
-// Loop body contains a crash-safe Offer — passes.
 using LoopCrashSafe = Loop<Offer<Recv<Ping, Continue>, Recv<Crash<UnreliablePeer>, End>>>;
-static_assert( every_offer_has_crash_branch_for_peer_v<LoopCrashSafe, UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<LoopCrashSafe, UnreliablePeer>);
 
-// Loop body Offer missing the crash branch — fails.
 using LoopCrashUnsafe = Loop<Offer<Recv<Ping, Continue>>>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<LoopCrashUnsafe, UnreliablePeer>);
 
-// ── 7. Delegate / Accept — continuation + delegated crash bonding ──
-//
-// Continuation K is executed by us; walker recurses into it.  Delegate
-// also checks the delegated protocol T's recipient-crash propagation:
-// receive-only T can be cleanly abandoned, while outbound T requires
-// K to expose an immediate Crash<Recipient> recovery branch.
+// We run the continuation ourselves, so the walker recurses into it.
+// Delegate also decides whether a recipient crash must propagate: a
+// receive-only delegated protocol can be abandoned cleanly, while an
+// outbound one demands an immediate recovery branch in the continuation.
 
-// Delegate with a crash-safe continuation — passes.
 using DelegateCrashSafe = Delegate<Recv<Msg, End>, OfferWithCrash>;
-static_assert( every_offer_has_crash_branch_for_peer_v<DelegateCrashSafe, UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<DelegateCrashSafe, UnreliablePeer>);
 
-// Delegate with a crash-unsafe continuation — fails.
 using DelegateCrashUnsafe = Delegate<Recv<Msg, End>, OfferWithoutCrash>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<DelegateCrashUnsafe, UnreliablePeer>);
 
-// Notably: the DELEGATED protocol T (the `Recv<Msg, End>` above) is
-// still not walked as OUR local protocol — even if T contained a bad
-// Offer, that Offer belongs to the recipient-side endpoint.  The
-// delegated-crash classifier separately decides whether recipient
-// failure must be propagated back through K.
-using TWithBadOffer = OfferWithoutCrash;                   // bad at T
-using DelegateSkipsT = Delegate<TWithBadOffer, End>;       // K is End (safe)
-static_assert( every_offer_has_crash_branch_for_peer_v<DelegateSkipsT, UnreliablePeer>);
+// The delegated protocol is not walked as our own.  An Offer inside it
+// belongs to the recipient's endpoint, and whether the recipient's
+// failure reaches us is the separate question the classifier answers.
+using TWithBadOffer = OfferWithoutCrash;  // the defect sits here
+using DelegateSkipsT = Delegate<TWithBadOffer, End>;  // and our continuation is safe
+static_assert(every_offer_has_crash_branch_for_peer_v<DelegateSkipsT, UnreliablePeer>);
 
-// If the delegated recipient can emit before finishing, the carrier
-// continuation must expose a recovery branch for that recipient.
+// Once the delegated recipient can emit before finishing, the carrier
+// continuation must expose a recovery branch for it.
 using DelegateRecipientCrashRecovered = Delegate<Send<Msg, End>, OfferWithCrash>;
-static_assert( every_offer_has_crash_branch_for_peer_v<
-    DelegateRecipientCrashRecovered, UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<DelegateRecipientCrashRecovered, UnreliablePeer>);
 
 using DelegateRecipientCrashUnrecovered = Delegate<Send<Msg, End>, End>;
-static_assert(!every_offer_has_crash_branch_for_peer_v<
-    DelegateRecipientCrashUnrecovered, UnreliablePeer>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<DelegateRecipientCrashUnrecovered, UnreliablePeer>);
 
-// Accept: same recursion pattern.
+// Accept recurses the same way.
 using AcceptCrashSafe = Accept<Recv<Msg, End>, OfferWithCrash>;
 using AcceptCrashUnsafe = Accept<Recv<Msg, End>, OfferWithoutCrash>;
-static_assert( every_offer_has_crash_branch_for_peer_v<AcceptCrashSafe,   UnreliablePeer>);
+static_assert(every_offer_has_crash_branch_for_peer_v<AcceptCrashSafe, UnreliablePeer>);
 static_assert(!every_offer_has_crash_branch_for_peer_v<AcceptCrashUnsafe, UnreliablePeer>);
 
-// ── 8. Deeply nested mixed shape — stress test ────────────────────
+using DeeplyNestedSafe = Loop<Select<Send<Ping, OfferWithCrash>, Send<Pong, Loop<Recv<Msg, OfferWithCrash>>>, End>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<DeeplyNestedSafe, UnreliablePeer>);
 
-using DeeplyNestedSafe = Loop<Select<
-    Send<Ping, OfferWithCrash>,                            // crash-safe Offer in Select branch
-    Send<Pong, Loop<Recv<Msg, OfferWithCrash>>>,           // nested Loop + Recv + safe Offer
-    End>>;
-static_assert( every_offer_has_crash_branch_for_peer_v<DeeplyNestedSafe, UnreliablePeer>);
-
-using DeeplyNestedUnsafe = Loop<Select<
-    Send<Ping, OfferWithCrash>,
-    Send<Pong, Loop<Recv<Msg, OfferWithoutCrash>>>,        // ← bad inner Offer
-    End>>;
+using DeeplyNestedUnsafe = Loop<
+    Select<Send<Ping, OfferWithCrash>, Send<Pong, Loop<Recv<Msg, OfferWithoutCrash>>>,  // the only line that differs
+           End>>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<DeeplyNestedUnsafe, UnreliablePeer>);
 
-// ── 9. Consteval assertion fires at the call site ──────────────────
-//
-// assert_every_offer_has_crash_branch_for<Proto, PeerTag>() is a
-// one-line discipline tool.  For a crash-safe proto it compiles
-// silently; for a crash-unsafe one it fires the
-// [CrashBranch_Missing_In_Tree] diagnostic.
+// The assertion compiles silently for a crash-safe protocol and fires
+// the [CrashBranch_Missing_In_Tree] diagnostic at the call site for an
+// unsafe one, rather than deep inside an instantiation tree.
 
 consteval void compile_time_check() {
-    assert_every_offer_has_crash_branch_for<LoopCrashSafe,    UnreliablePeer>();
+    assert_every_offer_has_crash_branch_for<LoopCrashSafe, UnreliablePeer>();
     assert_every_offer_has_crash_branch_for<DeeplyNestedSafe, UnreliablePeer>();
-    assert_every_offer_has_crash_branch_for<OfferWithCrash,   UnreliablePeer>();
-    // Intentionally NOT asserting on the Unsafe variants — the neg-
-    // compile test below exercises that rejection path.
+    assert_every_offer_has_crash_branch_for<OfferWithCrash, UnreliablePeer>();
+    // The unsafe variants are deliberately absent.  Naming one here
+    // would fail the build, which is the behaviour a negative-compile
+    // fixture exercises instead.
 }
 
 }  // anonymous namespace

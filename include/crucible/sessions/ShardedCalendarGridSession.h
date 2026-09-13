@@ -1,13 +1,5 @@
 #pragma once
 
-// ShardedCalendarGridSession.h - typed-session facade for per-shard
-// calendar queues.
-//
-// PermissionedShardedCalendarGrid exposes one ProducerHandle<S> and one
-// ConsumerHandle<S> for each shard S.  Each pair owns an independent
-// priority-bucket calendar queue.  Slot identity is encoded by the
-// item's key and the queue's bucket math, not by a separate handle type.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/permissions/Permission.h>

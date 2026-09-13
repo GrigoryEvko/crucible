@@ -1,171 +1,24 @@
 #pragma once
 
-// ── crucible::concurrent::Pipeline<Stages...> ────────────────────────
+// Running the stages one after another on the calling thread would deadlock.
+// Each stage body is a drain loop: it keeps taking from the channel behind it
+// until that channel closes, so the first stage never returns, and the stage
+// that would close its channel never starts.  A thread per stage is therefore
+// the normal path, and the threads are joined by the array that holds them
+// when run returns.
 //
-// Tier 3 commit 2 — composes N Stage<auto FnPtr_i, Ctx_i>'s into a
-// chain where the output payload type of stage_i equals the input
-// payload type of stage_{i+1}.  Built on Stage (Tier 3 commit 1,
-// concurrent/Stage.h); together they ship the integration substrate's
-// Tier 3 row per CLAUDE.md §XXI.
+// A stage can opt out of that, but only if its body is a single bounded call
+// rather than a drain loop, and only if the working sets are known and small
+// enough to stay in one core's private cache.  Splitting bounded work across
+// threads at that size costs more than it saves.
 //
-// ── What this header ships ──────────────────────────────────────────
+// This suits a few long-lived stages.  Many short tasks want a work queue
+// instead, since each run here pays for creating and joining the threads.
 //
-//   IsStage<T>                      — recognizer for Stage<FnPtr, Ctx>
-//                                     specializations.
-//
-//   stages_chain<S1, S2>            — pairwise compatibility: output
-//                                     value of S1 == input value of S2
-//                                     (after cv-ref strip, via
-//                                     Stage::input_value_type /
-//                                     Stage::output_value_type).
-//
-//   pipeline_chain<Stages...>       — N-ary fold of stages_chain over
-//                                     adjacent pairs.  Vacuously true
-//                                     for N ≤ 1.
-//
-//   CtxFitsPipeline<Ctx, Stages...> — single concept gate for
-//                                     mint_pipeline.  Conjunction of
-//                                     IsExecCtx<Ctx>,
-//                                     (IsStage<Stages> && ...), and
-//                                     pipeline_chain<Stages...>, and
-//                                     pipeline_row_union_t<Stages...>
-//                                     admitted by Ctx::row_type.
-//
-//   aggregate_per_call_ws_v<...>    — sum of each stage's handle-level
-//                                     per-call working set.
-//
-//   Pipeline<Stages...>             — value-typed bundle of N stages,
-//                                     held in a std::tuple.
-//                                     Move-only.  &&-qualified .run()
-//                                     uses a cache-tier dispatch rule:
-//                                     inline only for explicitly
-//                                     inline-safe stages with aggregate
-//                                     WS ≤ private L2; otherwise one
-//                                     std::jthread per stage.
-//
-//   mint_pipeline<>(ctx, stages...) — Universal Mint Pattern factory;
-//                                     ctx-bound flavor; single-concept
-//                                     gate; [[nodiscard]] noexcept;
-//                                     consumes each stage by move.
-//
-//   StageGraph<StagePack<...>, EdgePack<...>>
-//                                  — GAPS-086 DAG surface.  Edges are
-//                                    StageEdge<From, To, FromOutput,
-//                                    ToInput> over StagePack index
-//                                    positions.  StagePack order is
-//                                    the topological order; a back-edge
-//                                    is rejected as a cycle witness.
-//
-//   PipelineDag<Graph> / mint_pipeline_dag(ctx, graph, stages...)
-//                                  — non-linear fan-in/fan-out
-//                                    composition.  Runtime still runs
-//                                    one worker per stage unless every
-//                                    node explicitly opts into the
-//                                    finite inline path and the
-//                                    aggregate working set fits the
-//                                    private-cache gate.
-//
-// ── Why .run() usually spawns threads ────────────────────────────────
-//
-// Each Stage's body (the FnPtr the user wrote) IS the drain loop —
-// it spins on try_pop until upstream closes its channel, processes
-// each message, and writes downstream via try_push.  Sequential
-// invocation of N stages would deadlock: stage_0's drain loop blocks
-// waiting for stage_1 to consume from the channel between them, but
-// stage_1 hasn't started yet.
-//
-// Pipeline.run() therefore keeps the thread-per-stage path as the
-// default.  A stage may opt into inline execution by specializing
-// stage_inline_safe<Stage>; this is for bounded micro-stages whose
-// body is a single finite call, NOT a channel drain loop.  Opt-in is
-// ignored unless both handles expose static per_call_working_set facts
-// and the aggregate working set fits in the probed private L2.
-// PipelineDag follows the same execution rule; its graph edges are a
-// compile-time compatibility/placement contract, not a runtime scheduler
-// queue.  Stages communicate through their already-minted endpoint
-// handles.
-//
-// The spawned path joins via the std::array<jthread, N> destructor at
-// fn epilogue.  This is identical in shape to permission_fork
-// (safety/PermissionFork.h); the only difference is what's being
-// forked: there it's permissions over disjoint regions, here it's
-// already-bundled stages over already-connected channels.
-//
-// Cost:
-//   inline path: N direct FnPtr calls, no thread creation.
-//   spawned path: N pthread_create + N pthread_join per .run() call;
-//                 each worker is best-effort pinned to one probed
-//                 L3/cache cluster to keep the pipeline NUMA-local.
-// For long-lived pipelines (the typical Crucible shape — a Vigil's
-// background drain pipeline, a kernel-compile pool's stage chain) the
-// thread spawn cost amortizes to zero.
-//
-// ── Stage-level fit checks happen at Stage mint ─────────────────────
-//
-// Each Stage was minted via mint_stage<FnPtr_i>(ctx_i, in_i, out_i),
-// at which point CtxFitsStage<FnPtr_i, Ctx_i> validated the per-stage
-// invariants.  The endpoint handles in_i and out_i themselves came
-// from Endpoint mints (Tier 2) that already validated
-// SubstrateFitsCtxResidency.  Pipeline's remaining jobs are:
-//   * verify the CHAIN invariant (output_i ≡ input_{i+1}); and
-//   * verify coordinator row admission.  The union of all stage rows,
-//     pipeline_row_union_t<Stages...>, must be admitted by the
-//     coordinator Ctx::row_type.
-//
-// The row-union gate is pinned by
-// test/effects_neg/neg_mint_pipeline_{row_union_exceeds_ctx,
-// chain_payload_compat_ok_row_mismatch,capability_propagation}.cpp and
-// emits safety::diag::EffectRowMismatch at the mint boundary.
-//
-// ── Universal Mint Pattern compliance ───────────────────────────────
-//
-//   * Name: mint_pipeline (mint_<noun>, §XXI rule).
-//   * First parameter: Ctx const& (ctx-bound mint flavor, §XXI).
-//   * Single authorization boundary: ctx + pipeline_chain in the
-//     requires clause; coordinator row admission via EffectRowMismatch
-//     static assertion before constructing the Pipeline.
-//   * [[nodiscard]] constexpr noexcept (no allocation in mint itself;
-//     the jthread allocations happen at .run() time).
-//   * Returns concrete Pipeline<Stages...> — never type-erased.
-//   * Discoverable via `grep "mint_pipeline"`.
-//   * HS14 negative-compile fixtures alongside.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe — chain-compatibility checked structurally; mismatched
-//              payload types fail at the requires-clause boundary.
-//   InitSafe — pure type-level construction; tuple of moved-in stages.
-//   MemSafe  — Pipeline owns the N stages by value; jthread array on
-//              the stack joins via dtor; no heap allocation by
-//              Pipeline itself (jthreads are themselves heap-backed
-//              but managed by std::jthread).
-//   BorrowSafe — Pipeline is move-only; each Stage in the tuple is
-//              also move-only; copies would duplicate the linear
-//              Permission tokens carried by Stage's handles.
-//   ThreadSafe — channels between stages are responsible for
-//              cross-thread ordering (PermissionedSpscChannel et al.);
-//              Pipeline only orchestrates the spawn/join.
-//   LeakSafe — RAII jthread join at .run() epilogue guarantees no
-//              orphan threads; std::array destructor joins in reverse
-//              order (immaterial to correctness — bodies must all
-//              complete before .run() returns).
-//   DetSafe  — same (FnPtr_i, Ctx_i, handle pairings) → same
-//              Pipeline type and same body invocations.
-//
-// Runtime cost: sizeof(Pipeline<S1, S2, ...>) ≈ sum of sizeof(S_i).
-// Per .run() call: N pthread_create + N pthread_join (Linux ~5-15 μs
-// each).  Right primitive for "N stages, long bodies" — NOT for
-// "thousands of micro-stages" (use ChaseLevDeque + ThreadPool then).
-//
-// ── References ──────────────────────────────────────────────────────
-//
-//   concurrent/Stage.h             — Tier 3 commit 1 (the unit being
-//                                    composed)
-//   safety/PipelineStage.h         — FOUND-D19 (the FnPtr shape)
-//   safety/PermissionFork.h        — analogous RAII fork-join pattern
-//   CLAUDE.md §XXI                 — Universal Mint Pattern
-//   CLAUDE.md §IX                  — concurrency cost ordering
-//   CLAUDE.md §XVIII HS14          — neg-compile fixture requirement
+// Every stage settled its own fit with its own context when it was minted, and
+// each of its endpoints did the same before that.  What is left to check here
+// is that consecutive payload types agree, and that the coordinating context
+// admits the effects of all the stage contexts it is about to start.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
@@ -188,20 +41,13 @@
 #if __has_include(<pthread.h>) && __has_include(<sched.h>)
 #include <pthread.h>
 #include <sched.h>
-#include <crucible/fixy/Sched.h>  // FIXY-V-192: ctx-gated apply_affinity_to_cpu
+#include <crucible/fixy/Sched.h>
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
 #else
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
 #endif
 
 namespace crucible::concurrent {
-
-// ═════════════════════════════════════════════════════════════════════
-// ── IsStage<T> ─────────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Class-template specialization recognizer for Stage<FnPtr, Ctx>.
-// Detail-namespaced trait + user-facing concept.
 
 namespace detail {
 
@@ -285,34 +131,16 @@ template <class Stage, std::size_t I>
     requires IsStage<Stage>
 using stage_output_value_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template output_value_type<I>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── stages_chain<S1, S2> ───────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Pairwise compatibility: stage S1's output payload type equals
-// stage S2's input payload type.  Both must be IsStage; the equality
-// uses Stage's exposed input_value_type / output_value_type aliases
-// (cv-ref-stripped at extraction time per FOUND-D19's
-// pipeline_stage_input_value_t / pipeline_stage_output_value_t).
-
 template <class S1, class S2>
 concept stages_chain = IsStage<S1> && IsStage<S2> && stage_output_count_v<S1> == 1 && stage_input_count_v<S2> == 1
                     && std::is_same_v<stage_output_value_t<S1, 0>, stage_input_value_t<S2, 0>>;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── pipeline_chain<Stages...> ──────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// N-ary fold over adjacent stage pairs.  Empty pack and single-stage
-// pack are vacuously chain-compatible (no adjacent pairs to check).
-// For N ≥ 2: every adjacent (i, i+1) must satisfy stages_chain.
 
 namespace detail {
 
 template <class Tuple, std::size_t... Is>
 consteval bool pipeline_chain_check(std::index_sequence<Is...>) noexcept {
     if constexpr (sizeof...(Is) == 0) {
-        return true;  // ≤ 1 stage — vacuously chained
+        return true;  // one stage: no adjacent pair to check
     } else {
         return ((stages_chain<std::tuple_element_t<Is, Tuple>, std::tuple_element_t<Is + 1, Tuple>>) && ...);
     }
@@ -325,25 +153,8 @@ concept pipeline_chain = sizeof...(Stages) >= 1 && (IsStage<Stages> && ...)
                       && detail::pipeline_chain_check<std::tuple<std::remove_cvref_t<Stages>...>>(
                              std::make_index_sequence<(sizeof...(Stages) > 0 ? sizeof...(Stages) - 1 : 0)>{});
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CtxFitsPipeline<Ctx, Stages...> ────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Soundness gate for mint_pipeline.  Conjunction of:
-//
-//   1. IsExecCtx<Ctx> — Ctx is a well-formed ExecCtx with the four
-//      static facts.  (Ctx is the COORDINATOR ctx for Pipeline, not
-//      a per-stage ctx — those live inside each Stage.)
-//
-//   2. pipeline_chain<Stages...> — IsStage on each, plus adjacent-pair
-//      payload-type compatibility folded across the pack.
-//
-//   3. pipeline_row_union_t<Stages...> ⊆ Ctx::row_type — the
-//      coordinator must admit every effect row represented by the
-//      staged execution contexts it is about to run.
-//
-// Per-stage CtxFitsStage was checked at each Stage's mint boundary;
-// re-checking payload rows here would be redundant.
+// The context here is the one that starts the stages, not the one any stage
+// runs under.  It has to admit the effects of all of them together.
 
 namespace detail {
 
@@ -372,10 +183,6 @@ using pipeline_row_union_t = typename detail::pipeline_row_union_impl<std::remov
 template <class Ctx, class... Stages>
 concept CtxFitsPipeline = ::crucible::effects::IsExecCtx<Ctx> && pipeline_chain<Stages...>
                        && ::crucible::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
-
-// ═════════════════════════════════════════════════════════════════════
-// ── StageGraph / PipelineDag — GAPS-086 non-linear composition ─────
-// ═════════════════════════════════════════════════════════════════════
 
 template <class... Stages>
 struct StagePack {};
@@ -542,10 +349,6 @@ template <class Ctx, class Graph>
 concept CtxFitsPipelineDag = ::crucible::effects::IsExecCtx<Ctx> && StageGraphWellFormed<Graph>
                           && ::crucible::decide::row_subset<stage_graph_row_union_t<Graph>, typename Ctx::row_type>();
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Pipeline working-set and inline-safety traits ──────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <class Stage>
 struct stage_inline_safe : std::false_type {};
 
@@ -655,13 +458,10 @@ template <std::size_t N>
     return cpus;
 }
 
-// FIXY-V-192: route the stage-worker thread-pin through the ctx-gated
-// fixy::sched surface rather than a raw pthread_setaffinity_np.  A pipeline
-// stage worker IS a background thread, so it presents a BgDrainCtx — and
-// fixy::sched::apply_affinity_to_cpu admits only a Bg/Init context, so a
-// Fg hot-path context could never re-pin a thread mid-flight (the Scenario-3
-// invariant).  cpu < 0 is a no-op; the pin is best-effort (a restricted
-// cpuset is tolerated, exactly as before).
+// The pin goes through the context-gated surface rather than the raw system
+// call, and a stage worker presents a background context.  Only a background
+// or startup context is admitted there, so nothing on the hot path can repin a
+// running thread.  A negative cpu does nothing, and a refused pin is tolerated.
 inline void pin_current_pipeline_thread_(int cpu) noexcept {
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
     (void)::crucible::fixy::sched::apply_affinity_to_cpu(::crucible::effects::BgDrainCtx{}, cpu);
@@ -671,10 +471,6 @@ inline void pin_current_pipeline_thread_(int cpu) noexcept {
 }
 
 }  // namespace detail
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Pipeline<Stages...> ────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <class... Stages>
     requires pipeline_chain<Stages...>
@@ -689,18 +485,12 @@ public:
                   "Pipeline inline opt-in requires both stage handles to expose "
                   "static constexpr per_call_working_set");
 
-    // ── Move-only (held Stages are move-only) ──────────────────────
     Pipeline(Pipeline const&) = delete(
         "Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
     Pipeline& operator=(Pipeline const&) = delete(
         "Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
     Pipeline(Pipeline&&) noexcept = default;
     Pipeline& operator=(Pipeline&&) noexcept = default;
-
-    // ── run() — cache-tier dispatch, consuming the pipeline ───────
-    //
-    // Inline path is only available for finite, explicitly opted-in
-    // stages.  Default drain-loop stages stay on the jthread path.
 
     void run() && noexcept {
         if (will_run_inline()) {
@@ -717,36 +507,12 @@ public:
 
     [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
 
-    // ── Consteval inline-dispatch witness (FIXY-V-218) ────────────
-    //
-    // `will_run_inline_v<L1dBytes, L2Bytes>()` is the compile-time
-    // sibling of `will_run_inline()`.  Same logic — aggregate working
-    // set ≤ cache size implies inline dispatch — but the cache sizes
-    // come from NTTPs instead of the runtime `Topology::instance()`
-    // probe.  A band-3 site can write
-    //
-    //     static_assert(Pipeline<S0, S1, S2>::
-    //         template will_run_inline_v<32 * 1024>(),
-    //         "this pipeline must run inline on a 32K-L1d target");
-    //
-    // and the assertion is decidable at compile time without any
-    // hardware probe.  The runtime path (`compute_dispatch_kind_`)
-    // remains the authoritative dispatch: it consults the actual
-    // topology, so a stance whose L1dBytes assumption is too
-    // optimistic gracefully falls back to thread-per-stage (no
-    // crash, no silent semantic violation — just the documented
-    // claim is wrong, which the runtime corrects).
-    //
-    // Defense-in-depth: the band-3 stance
-    // `fixy::pipe::stance::HotPathInline` wraps this witness as a
-    // `requires`-clause so producing a mismatched stance is a
-    // compile error at the consumer site, not a silent runtime
-    // regression.
-    //
-    // The check accepts the inline path if the aggregate fits in
-    // L1d OR L2 (matching `compute_dispatch_kind_`'s cascade), so
-    // an L2-fitting pipeline still witnesses inline-dispatch even
-    // if it exceeds L1d.
+    // The same question as will_run_inline, asked of a stated cache size
+    // instead of the probed one, so a caller can assert at compile time that
+    // its pipeline runs inline on the target it is built for.  The runtime
+    // answer stays authoritative: on a host smaller than the assertion
+    // assumed, dispatch quietly falls back to a thread per stage and only the
+    // claim was wrong.
     template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
     [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
         if constexpr (!inline_safe || !aggregate_working_set_known) {
@@ -756,7 +522,6 @@ public:
         }
     }
 
-    // ── Accessor (introspection only — does not consume) ───────────
     template <std::size_t I>
         requires(I < sizeof...(Stages))
     [[nodiscard]] constexpr auto& stage() & noexcept {
@@ -770,18 +535,11 @@ public:
     }
 
 private:
-    // ── Construction (used by mint_pipeline; not user-facing) ─────
-    //
-    // Private per CLAUDE.md §XXI — mint_pipeline is the single
-    // load-bearing authorization point.  A direct call site like
-    // `Pipeline<S1, S2>{s1, s2}` would bypass the
-    // `CtxFitsPipeline<Ctx, Stages...>` admission check and emit a
-    // pipeline whose effect row never sees `Subrow<required, ctx>`.
+    // Private because direct construction would skip the row admission and
+    // produce a pipeline whose effects were never weighed against the context
+    // that starts it.
     [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept : stages_{std::forward<Stages>(stages)...} {}
 
-    // mint_pipeline is the sole authorized constructor — friend the
-    // entire template family so any (Ctx, Stages...) instantiation
-    // can reach the private ctor.
     template <::crucible::effects::IsExecCtx MintCtx, class... MintStages>
         requires pipeline_chain<std::remove_cvref_t<MintStages>...>
     friend constexpr auto mint_pipeline(MintCtx const&, MintStages&&...) noexcept;
@@ -808,28 +566,21 @@ private:
     void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
         const auto& affinity_cpus = detail::pipeline_affinity_cpus_<sizeof...(Is)>();
 
-        // Build N jthreads in-place; each captures-by-move its stage
-        // and invokes std::move(stage).run() in its body.  The array's
-        // destructor (at this fn's epilogue) joins all threads.
+        // Each thread takes its stage by move.  The array destructor at the
+        // end of this function joins them all.
         [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
             [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
                 detail::pin_current_pipeline_thread_(cpu);
                 std::move(stage).run();
             }}...};
-        // ~std::array runs here, joining each jthread.
     }
 
     std::tuple<Stages...> stages_;
 };
 
-// ── pipeline_dag_mint_gate / CtxFitsPipelineDagMint ─────────────────
-//
-// Hoisted above the PipelineDag class body so the in-class friend
-// declaration for mint_pipeline_dag can reference the same concept
-// the free-function template definition uses below.  Without this
-// hoist the friend declaration cannot see the concept and the
-// signatures fail to match — the mint factory then cannot reach
-// PipelineDag's private constructor.
+// Declared ahead of the class below because the friend declaration inside it
+// has to name this same concept.  Out of order, the friend declaration and the
+// factory would not match and the factory could not reach the constructor.
 namespace detail {
 
 template <class Ctx, class Graph, class... Stages>
@@ -895,19 +646,9 @@ public:
 
     [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
 
-    // ── Consteval inline-dispatch witness (FIXY-V-218) ────────────
-    //
-    // Mirror of Pipeline::will_run_inline_v: same logic, same NTTP
-    // signature, same defense-in-depth role for PipelineDag.  See
-    // the Pipeline class block for the full rationale.
-    //
-    // Branching pipelines (PipelineDag's StageGraph) still report
-    // an aggregate working set as the sum over `Stages...`, which
-    // is the worst-case per-call cost (every stage in the DAG might
-    // fire on a single token).  A DAG that fans out 5 stages and
-    // joins back contributes 5× the per-stage working set to the
-    // witness — conservative but correct (PipelineDag's runtime
-    // dispatch uses the same aggregate in compute_dispatch_kind_).
+    // As for a linear pipeline.  A branching graph still sums the working
+    // set over every stage, which is the worst case of one token reaching all
+    // of them, so a wide fan-out counts each branch.
     template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
     [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
         if constexpr (!inline_safe || !aggregate_working_set_known) {
@@ -924,20 +665,12 @@ public:
     }
 
 private:
-    // ── Construction (used by mint_pipeline_dag; not user-facing) ──
-    //
-    // Private per CLAUDE.md §XXI — `mint_pipeline_dag` is the sole
-    // authorization point.  A direct `PipelineDag<Graph>{stages...}`
-    // call site would bypass `CtxFitsPipelineDagMint`'s row admission
-    // (`Subrow<stage_graph_row_union_t<Graph>, ctx_row>`) and emit a
-    // DAG whose effect row never sees the gate.
+    // Private because direct construction would skip the row admission and
+    // produce a graph whose effects were never weighed against the context
+    // that starts it.
     [[nodiscard]] explicit constexpr PipelineDag(Stages&&... stages) noexcept
         : stages_{std::forward<Stages>(stages)...} {}
 
-    // mint_pipeline_dag is the sole authorized constructor.  Friend the
-    // entire template family so any (Ctx, Graph, Stages...) instantiation
-    // matching the same CtxFitsPipelineDagMint constraint can reach the
-    // private ctor.
     template <::crucible::effects::IsExecCtx MintCtx, class MintGraph, class... MintStages>
         requires CtxFitsPipelineDagMint<MintCtx, MintGraph, MintStages...>
     friend constexpr auto mint_pipeline_dag(MintCtx const&, MintGraph, MintStages&&...) noexcept;
@@ -975,16 +708,6 @@ private:
     std::tuple<Stages...> stages_;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── mint_pipeline<>(ctx, stages...) — Universal Mint Pattern ───────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Ctx-bound mint factory per CLAUDE.md §XXI.  Each stage is consumed
-// by move into the constructed Pipeline.  The single concept gate
-// CtxFitsPipeline<Ctx, Stages...> validates IsExecCtx + IsStage-pack
-// + chain-compatibility; failure produces a substitution diagnostic
-// at the call site.
-
 template <::crucible::effects::IsExecCtx Ctx, class... Stages>
     requires pipeline_chain<std::remove_cvref_t<Stages>...>
 [[nodiscard]] constexpr auto mint_pipeline(Ctx const& /*ctx*/, Stages&&... stages) noexcept {
@@ -1014,74 +737,59 @@ template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
     return PipelineDag<graph_type>{std::forward<Stages>(stages)...};
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block ────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Pin admit/reject behavior across canonical Stage compositions:
-// matched chains admit, mismatched chains reject; non-Stage elements
-// reject; non-IsExecCtx ctx rejects.
-
 namespace detail::pipeline_self_test {
 
 namespace eff = ::crucible::effects;
 namespace saf = ::crucible::safety::extract;
 
-// Reuse Stage's self-test fixtures (FakeConsumer/FakeProducer +
-// stage_pass_through / stage_transform_int_to_float).
 using namespace ::crucible::concurrent::detail::stage_self_test;
 
-// Additional fixture: a float-to-double transform stage to chain
-// after the int-to-float one.
 inline void stage_transform_float_to_double(FakeConsumer<float>&&, FakeProducer<double>&&) noexcept {}
 static_assert(saf::PipelineStage<&stage_transform_float_to_double>);
 
-// Fixture stages of distinct shapes for chain checks.
 using S_int_to_int = Stage<&stage_pass_through, eff::HotFgCtx>;
 using S_int_to_float = Stage<&stage_transform_int_to_float, eff::HotFgCtx>;
 using S_float_to_double = Stage<&stage_transform_float_to_double, eff::HotFgCtx>;
 using S_bg_int_to_int = Stage<&stage_pass_through, eff::BgDrainCtx>;
 using S_init_int_to_int = Stage<&stage_pass_through, eff::ColdInitCtx>;
 
-// IsStage admits / rejects appropriately.
 static_assert(IsStage<S_int_to_int>);
 static_assert(IsStage<S_int_to_float>);
 static_assert(IsStage<S_float_to_double>);
 static_assert(!IsStage<int>);
 static_assert(!IsStage<eff::HotFgCtx>);
 
-// stages_chain admits matched pairs, rejects mismatched.
-static_assert(stages_chain<S_int_to_int, S_int_to_int>);  // int→int, int→int
-static_assert(stages_chain<S_int_to_float, S_float_to_double>);  // int→float, float→double
-static_assert(!stages_chain<S_int_to_int, S_float_to_double>);  // int→int, float→double (mismatch)
-static_assert(!stages_chain<S_int_to_float, S_int_to_int>);  // int→float, int→int (mismatch)
-static_assert(!stages_chain<int, S_int_to_int>);  // non-Stage
-static_assert(!stages_chain<S_int_to_int, int>);  // non-Stage
+static_assert(stages_chain<S_int_to_int, S_int_to_int>);
+static_assert(stages_chain<S_int_to_float, S_float_to_double>);
+static_assert(!stages_chain<S_int_to_int, S_float_to_double>);
+static_assert(!stages_chain<S_int_to_float, S_int_to_int>);
+static_assert(!stages_chain<int, S_int_to_int>);
+static_assert(!stages_chain<S_int_to_int, int>);
 
-// pipeline_chain folds correctly.
-static_assert(pipeline_chain<S_int_to_int>);  // N=1, vacuous
-static_assert(pipeline_chain<S_int_to_int, S_int_to_int>);  // N=2, matched
-static_assert(pipeline_chain<S_int_to_int, S_int_to_float, S_float_to_double>);  // N=3, transforms align
-static_assert(pipeline_chain<S_bg_int_to_int, S_int_to_int>);  // context row is separate from payload chain
-static_assert(!pipeline_chain<S_int_to_int, S_float_to_double>);  // N=2, mismatch
-static_assert(!pipeline_chain<S_int_to_int, S_int_to_int, S_float_to_double>);  // N=3, last pair mismatch
-static_assert(!pipeline_chain<int>);  // non-Stage
-static_assert(!pipeline_chain<>);  // empty pack
+static_assert(pipeline_chain<S_int_to_int>);
+static_assert(pipeline_chain<S_int_to_int, S_int_to_int>);
+static_assert(pipeline_chain<S_int_to_int, S_int_to_float, S_float_to_double>);
+// The stages run under different contexts; only the payload types have to meet.
+static_assert(pipeline_chain<S_bg_int_to_int, S_int_to_int>);
+static_assert(!pipeline_chain<S_int_to_int, S_float_to_double>);
+static_assert(!pipeline_chain<S_int_to_int, S_int_to_int, S_float_to_double>);
+static_assert(!pipeline_chain<int>);
+static_assert(!pipeline_chain<>);
 
 static_assert(eff::Subrow<pipeline_row_union_t<S_int_to_int>, eff::Row<>>);
 static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int>, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int, S_init_int_to_int>,
                           eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Init, eff::Effect::IO>>);
 
-// CtxFitsPipeline conjunction.
 static_assert(CtxFitsPipeline<eff::HotFgCtx, S_int_to_int>);
 static_assert(CtxFitsPipeline<eff::BgDrainCtx, S_int_to_float, S_float_to_double>);
 static_assert(CtxFitsPipeline<eff::BgDrainCtx, S_bg_int_to_int, S_int_to_int>);
-static_assert(!CtxFitsPipeline<int, S_int_to_int>);  // non-Ctx
-static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_int_to_int, S_float_to_double>);  // mismatch
-static_assert(!CtxFitsPipeline<eff::HotFgCtx, int>);  // non-Stage
-static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_bg_int_to_int>);  // coordinator row too narrow
-static_assert(!CtxFitsPipeline<eff::ColdInitCtx, S_bg_int_to_int>);  // Init ctx does not admit Bg
+static_assert(!CtxFitsPipeline<int, S_int_to_int>);
+static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_int_to_int, S_float_to_double>);
+static_assert(!CtxFitsPipeline<eff::HotFgCtx, int>);
+// The coordinating context admits fewer effects than the stage needs.
+static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_bg_int_to_int>);
+static_assert(!CtxFitsPipeline<eff::ColdInitCtx, S_bg_int_to_int>);
 
 using FanOutGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
                                EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<0, 3>>>;
@@ -1103,7 +811,6 @@ static_assert(!CtxFitsPipelineDag<eff::HotFgCtx, CycleGraph>);
 static_assert(!CtxFitsPipelineDag<eff::HotFgCtx, UnreachableGraph>);
 static_assert(eff::Subrow<stage_graph_row_union_t<FanOutGraph>, eff::Row<>>);
 
-// Pipeline<...> type-level invariants.
 using P1 = Pipeline<S_int_to_int>;
 using P2 = Pipeline<S_int_to_int, S_int_to_int>;
 using P3 = Pipeline<S_int_to_int, S_int_to_float, S_float_to_double>;
@@ -1121,7 +828,6 @@ static_assert(P3::aggregate_per_call_working_set == 384);
 static_assert(!stage_inline_safe_v<S_int_to_int>);
 static_assert(!P3::inline_safe);
 
-// Move-only enforcement.
 static_assert(!std::is_copy_constructible_v<P1>);
 static_assert(!std::is_copy_assignable_v<P1>);
 static_assert(std::is_move_constructible_v<P1>);

@@ -1,89 +1,29 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto::Transferable / Borrowed / Returned —
-// session-payload markers signalling permission flow at the message
-// level.
+// Payload markers that say what a message does to the sender's and the
+// recipient's permission sets.  A protocol handle reads the marker on
+// each payload and evolves its own set accordingly, so ownership moves
+// at the message rather than through bookkeeping around the protocol.
 //
-// Phase 2 of FOUND-C (#607 + #608 + #609).  See `misc/27_04_csl_
-// permission_session_wiring.md` §7 for the full spec.
+//   Transferable      the sender gives up the token and the recipient
+//                     takes it.
+//   Borrowed          the sender keeps the token and the recipient gets
+//                     a read view of it, so neither set changes.
+//   Returned          a token that was lent out goes home.  The sender
+//                     gives it up and the recipient takes it, the same
+//                     way a transfer moves, but the type records that
+//                     this closes a round trip.  Without it the return
+//                     leg would be a second transfer and the pairing
+//                     would live in whatever code tracks the two.
+//   DelegatedSession  the payload is an endpoint of another protocol,
+//                     and every token that endpoint holds moves with it.
+//   anything else     no permission moves.
 //
-// ─── What this header is ───────────────────────────────────────────
-//
-// Four payload wrappers + their per-marker permission-flow dispatch
-// metafunctions.  PermissionedSessionHandle (Phase 3) reads the
-// payload's marker shape and evolves its PermSet accordingly:
-//
-//   Transferable<T, X>  sender LOSES Permission<X>;  recipient GAINS it.
-//   Borrowed<T, X>      sender LENDS read access scoped to recipient's
-//                       next protocol step (recipient gets ReadView<X>).
-//   Returned<T, X>      sender RETURNS a previously-borrowed Permission
-//                       to its origin; recipient GAINS it.
-//   DelegatedSession<P, PS>
-//                       sender LOSES every token in inner PermSet PS;
-//                       recipient GAINS that inner PermSet with the
-//                       delegated endpoint.
-//   Plain T             no permission flow (the default).
-//
-// PermSet evolution table (the central dispatch — wiring plan §7.2):
-//
-//   Send/Recv shape                             PermSet evolution
-//   --------------------------------------------------------------------
-//   Send<Plain T, K>                            PS' = PS
-//   Send<Transferable<T, X>, K>                 PS' = remove<PS, X>
-//   Send<Borrowed<T, X>, K>                     PS' = PS  (borrow scoped)
-//   Send<Returned<T, X>, K>                     PS' = remove<PS, X>
-//   Send<DelegatedSession<P, InnerPS>, K>       PS' = PS \ InnerPS
-//   Recv<Plain T, K>                            PS' = PS
-//   Recv<Transferable<T, X>, K>                 PS' = insert<PS, X>
-//   Recv<Borrowed<T, X>, K>                     PS' = PS  (ReadView only)
-//   Recv<Returned<T, X>, K>                     PS' = insert<PS, X>
-//   Recv<DelegatedSession<P, InnerPS>, K>       PS' = PS ∪ InnerPS
-//
-// ─── Why three markers, not just one ───────────────────────────────
-//
-// Transferable covers the common case: producer sends a permission to
-// consumer, consumer gains exclusive access.  Two real-world patterns
-// need richer payloads:
-//
-//   * Borrowed: Vessel dispatch lends the bg drainer a *read-only
-//     view* of TraceEntry data; the borrow is scoped to the recipient's
-//     next step.  Encoded as Borrowed<TraceEntry, TraceRingTag> — the
-//     recipient gets ReadView<TraceRingTag> for the duration.
-//     Composes with the existing permissions/ReadView.h discipline.
-//
-//   * Returned: Cipher tier promotion — hot-tier delegates the entry's
-//     session to warm-tier with Permission<HotEntry>.  Once warm-tier
-//     finishes, it Returned<DurabilityAck, HotEntry> the permission
-//     back.  Without Returned, the round-trip would require two
-//     separate Transferables and PS bookkeeping at the protocol level
-//     rather than the message level.
-//
-// DelegatedSession extends the marker family for Honda 1998
-// throw/catch: the payload is a session endpoint, and the endpoint's
-// own PermSet moves with it.  This header ships the marker and pure
-// PermSet evolution; PermissionedSessionHandle's Delegate / Accept
-// heads use the same marker for higher-order handoff.
-//
-// ─── Composition with SessionPayloadSubsort.h ──────────────────────
-//
-// The two layers compose orthogonally:
-//
-//   * Permission flow (this header) dispatches on payload SHAPE
-//     (Transferable / Borrowed / Returned / plain).  Independent of
-//     the carried T's grade.
-//   * Subsumption rules (SessionPayloadSubsort.h) determine which
-//     payload TYPES are interchangeable through Send's covariance /
-//     Recv's contravariance.  Independent of permission flow.
-//
-// PermissionedSessionHandle weaves both: the wrapper applies
-// permission-flow rules to evolve PS at every step; subsumption rules
-// already apply to the inner Send/Recv combinators it wraps.  Both
-// rule sets see disjoint information; neither sees the other's tags;
-// the composition is correct by construction.  See
-// SessionPayloadSubsort.h:90-99 for the integration anticipation
-// comment from before this header shipped.
-// ═══════════════════════════════════════════════════════════════════
+// The markers dispatch on the shape of a payload and say nothing about
+// the type carried inside it.  Payload subsumption is the reverse: it
+// inspects the carried type and ignores the shape.  The two rule sets
+// read disjoint information, which is why both can apply to the same
+// payload without either needing to know about the other.
 
 #include <crucible/Platform.h>
 #include <crucible/permissions/PermSet.h>
@@ -95,14 +35,8 @@
 
 namespace crucible::safety::proto {
 
-// ── Transferable<T, Tag> ─────────────────────────────────────────────
-//
-// Send<Transferable<T, X>, K>:   sender loses Permission<X>.
-// Recv<Transferable<T, X>, K>:   recipient gains Permission<X>.
-//
-// The token field is [[no_unique_address]] so sizeof(Transferable<T, X>)
-// == sizeof(T) when T is not also empty.  Move-only — copying would
-// violate Permission's linearity.
+// Move-only, because a copy would leave two holders of a token that
+// names exclusive access.
 
 template <typename T, typename Tag>
 struct [[nodiscard]] Transferable {
@@ -122,14 +56,8 @@ struct [[nodiscard]] Transferable {
     ~Transferable() = default;
 };
 
-// ── Borrowed<T, Tag> ────────────────────────────────────────────────
-//
-// Send<Borrowed<T, X>, K>:   sender keeps Permission<X>; recipient gets
-//                            a ReadView<X> scoped to the next protocol
-//                            step (PS unchanged on both sides).
-// Recv<Borrowed<T, X>, K>:   recipient receives the ReadView; PS unchanged.
-//
-// Copyable because ReadView is — multiple borrowers may coexist freely.
+// Copyable, since a read view neither excludes another reader nor takes
+// anything away from the holder.
 
 template <typename T, typename Tag>
 struct [[nodiscard]] Borrowed {
@@ -147,18 +75,6 @@ struct [[nodiscard]] Borrowed {
     constexpr Borrowed& operator=(Borrowed&&) noexcept = default;
     ~Borrowed() = default;
 };
-
-// ── Returned<T, Tag> ────────────────────────────────────────────────
-//
-// Send<Returned<T, X>, K>:   sender returns a previously-borrowed
-//                            Permission<X> to its origin;
-//                            sender loses Permission<X>.
-// Recv<Returned<T, X>, K>:   recipient gains Permission<X>.
-//
-// Symmetric to Transferable in PermSet evolution; semantically
-// distinct because the type system tracks the round-trip pattern at
-// the protocol level (see CipherTierPromotion in `SessionPatterns.h`
-// for the canonical use case once Phase 6 of the integration ships).
 
 template <typename T, typename Tag>
 struct [[nodiscard]] Returned {
@@ -178,22 +94,15 @@ struct [[nodiscard]] Returned {
     ~Returned() = default;
 };
 
-// ── DelegatedSession<InnerProto, InnerPS> ──────────────────────────
-//
-// Payload marker for higher-order session handoff with permissions.
-// Send<DelegatedSession<P, PS>, K> transfers an existing endpoint of
-// protocol P together with every permission token in PS.  The marker
-// is type-only: the runtime endpoint resource is moved by Delegate /
-// Accept transport code, while this wrapper tells the type-level
-// PermSet evolution how authority moves across the same handoff.
+// The marker carries no storage.  The endpoint itself is moved by the
+// transport that performs the handoff, and this type exists only to
+// tell the permission sets on both sides how authority moves with it.
 
 template <typename InnerProto, typename InnerPS>
 struct [[nodiscard]] DelegatedSession {
     using inner_proto = InnerProto;
     using inner_perm_set = InnerPS;
 };
-
-// ── Marker recognisers ──────────────────────────────────────────────
 
 namespace detail {
 
@@ -244,17 +153,13 @@ template <typename T>
 inline constexpr bool is_plain_payload_v =
     !is_transferable_v<T> && !is_borrowed_v<T> && !is_returned_v<T> && !is_delegated_session_v<T>;
 
-// ── Tag extraction ──────────────────────────────────────────────────
-//
-// payload_perm_tag_t<T>: the Tag the payload affects, or `void` if T
-// is a plain payload.  Used by PermissionedSessionHandle's per-step
-// PermSet evolution.
+// A payload that moves no permission yields void for its tag.
 
 namespace detail {
 
 template <typename T, bool IsTransferable, bool IsBorrowed, bool IsReturned>
 struct payload_perm_tag_branch {
-    using type = void;  // plain payload
+    using type = void;
 };
 
 template <typename T, bool IsBorrowed, bool IsReturned>
@@ -299,38 +204,28 @@ struct delegated_session_perm_set {
 template <typename T>
 using delegated_session_perm_set_t = typename delegated_session_perm_set<T>::type;
 
-// ── compute_perm_set_after_send / _after_recv ───────────────────────
-//
-// The central dispatch table from §7.2 of the wiring plan, encoded as
-// metafunctions over (PS, T).  Every case in the table returns the
-// resulting PermSet type.
-
 namespace detail {
 
 template <typename PS, typename T, bool IsTransferable = is_transferable_v<T>, bool IsBorrowed = is_borrowed_v<T>,
           bool IsReturned = is_returned_v<T>>
 struct send_evolve;
 
-// Plain payload: PS unchanged.
 template <typename PS, typename T>
 struct send_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/false, /*Returned=*/false> {
     using type = PS;
 };
 
-// Transferable: sender LOSES the perm.
 template <typename PS, typename T, bool IsBorrowed, bool IsReturned>
 struct send_evolve<PS, T, /*Transferable=*/true, IsBorrowed, IsReturned> {
     using tag = typename is_transferable_impl<std::remove_cvref_t<T>>::transferred_perm;
     using type = perm_set_remove_t<PS, tag>;
 };
 
-// Borrowed: PS unchanged (scoped lend).
 template <typename PS, typename T, bool IsReturned>
 struct send_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/true, IsReturned> {
     using type = PS;
 };
 
-// Returned: sender RETURNS the perm (loses it).
 template <typename PS, typename T>
 struct send_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/false, /*Returned=*/true> {
     using tag = typename is_returned_impl<std::remove_cvref_t<T>>::returned;
@@ -341,26 +236,22 @@ template <typename PS, typename T, bool IsTransferable = is_transferable_v<T>, b
           bool IsReturned = is_returned_v<T>>
 struct recv_evolve;
 
-// Plain: unchanged.
 template <typename PS, typename T>
 struct recv_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/false, /*Returned=*/false> {
     using type = PS;
 };
 
-// Transferable: recipient GAINS the perm.
 template <typename PS, typename T, bool IsBorrowed, bool IsReturned>
 struct recv_evolve<PS, T, /*Transferable=*/true, IsBorrowed, IsReturned> {
     using tag = typename is_transferable_impl<std::remove_cvref_t<T>>::transferred_perm;
     using type = perm_set_insert_t<PS, tag>;
 };
 
-// Borrowed: PS unchanged (recipient gets ReadView only).
 template <typename PS, typename T, bool IsReturned>
 struct recv_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/true, IsReturned> {
     using type = PS;
 };
 
-// Returned: recipient GAINS the returning perm.
 template <typename PS, typename T>
 struct recv_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/false, /*Returned=*/true> {
     using tag = typename is_returned_impl<std::remove_cvref_t<T>>::returned;
@@ -397,12 +288,9 @@ struct compute_perm_set_after_recv<PS, DelegatedSession<InnerProto, InnerPS>> {
 template <typename PS, typename T>
 using compute_perm_set_after_recv_t = typename compute_perm_set_after_recv<PS, T>::type;
 
-// ── apply_payload_permission<Payload, SenderPS, RecipientPS> ───────
-//
-// Pair-form dispatch used by handoff code that wants both sides'
-// PermSet evolution at once.  The per-side compute_* aliases above are
-// still the single-source rules; this wrapper only packages the two
-// results under stable names.
+// A convenience for handoff code that wants both sides at once.  The
+// per-side rules above stay the single source, and this only packages
+// their two results.
 
 template <typename SenderPS, typename RecipientPS>
 struct PayloadPermissionResult {
@@ -427,25 +315,18 @@ template <typename Payload, typename SenderPS, typename RecipientPS>
 using apply_payload_permission_recipient_t =
     typename apply_payload_permission_t<Payload, SenderPS, RecipientPS>::recipient_perm_set;
 
-// ── SendablePayload concept ─────────────────────────────────────────
+// A payload may be sent only when the sender already holds what the
+// payload gives away.
 //
-// Send precondition: the payload's permission demand is satisfied by
-// the handle's current PermSet.
+// A borrow is the exception and is accepted unconditionally.  A read
+// view can only have come from a holder, so the sender does hold the
+// token, but a view does not record where it came from and the type
+// system has nothing to check against.  The guarantee here rests on how
+// views are created, not on this concept.
 //
-//   * Plain payloads:        always sendable (no permission demand).
-//   * Borrowed<T, X>:        always sendable (the lend creates the view
-//                            from the holder's permission, so the sender
-//                            inherently holds X — but the type system
-//                            cannot inspect ReadView's source, so we
-//                            accept and rely on the borrow's runtime
-//                            origin discipline).
-//   * Transferable<T, X>:    sendable iff X ∈ PS.
-//   * Returned<T, X>:        sendable iff X ∈ PS (same as Transferable).
-//   * DelegatedSession<P, InnerPS>: sendable iff InnerPS ⊆ PS.
-//
-// The Recv-side has no analogous gate: receiving a payload always
-// succeeds at the type-system level; the PermSet evolution captures
-// the resulting permission acquisition.
+// There is no matching gate on the receiving side.  Taking a payload
+// always type-checks, and what the recipient gains is recorded by the
+// set evolution rather than demanded up front.
 
 template <typename T, typename PS>
 concept SendablePayload = is_plain_payload_v<T> || is_borrowed_v<T>
@@ -457,10 +338,6 @@ template <typename T, typename PS>
 concept ReceivablePayload = true;
 
 }  // namespace crucible::safety::proto
-
-// ═══════════════════════════════════════════════════════════════════
-// Embedded smoke test — fires at every TU include.
-// ═══════════════════════════════════════════════════════════════════
 
 namespace crucible::safety::proto::detail::session_perm_payloads_smoke {
 
@@ -475,7 +352,6 @@ using PS_hot = PermSet<HotPerm>;
 using PS_both = PermSet<WorkPerm, HotPerm>;
 using DelegatedWork = DelegatedSession<RequestResponseProto, PS_work>;
 
-// ── Marker recognisers — positive ──────────────────────────────────
 static_assert(is_transferable_v<Transferable<int, WorkPerm>>);
 static_assert(is_transferable_v<const Transferable<int, WorkPerm>&>);
 static_assert(!is_transferable_v<int>);
@@ -501,7 +377,6 @@ static_assert(!is_plain_payload_v<Borrowed<int, WorkPerm>>);
 static_assert(!is_plain_payload_v<Returned<int, WorkPerm>>);
 static_assert(!is_plain_payload_v<DelegatedWork>);
 
-// ── Tag extraction ─────────────────────────────────────────────────
 static_assert(std::is_same_v<payload_perm_tag_t<int>, void>);
 static_assert(std::is_same_v<payload_perm_tag_t<Transferable<int, WorkPerm>>, WorkPerm>);
 static_assert(std::is_same_v<payload_perm_tag_t<Borrowed<int, HotPerm>>, HotPerm>);
@@ -509,57 +384,41 @@ static_assert(std::is_same_v<payload_perm_tag_t<Returned<int, CfgPerm>>, CfgPerm
 static_assert(std::is_same_v<delegated_session_inner_proto_t<DelegatedWork>, RequestResponseProto>);
 static_assert(perm_set_equal_v<delegated_session_perm_set_t<DelegatedWork>, PS_work>);
 
-// ── compute_perm_set_after_send ────────────────────────────────────
-//
-// Plain: PS unchanged.
 static_assert(std::is_same_v<compute_perm_set_after_send_t<PS_work, int>, PS_work>);
 static_assert(std::is_same_v<compute_perm_set_after_send_t<PS_empty, int>, PS_empty>);
 
-// Transferable: removes the tag.
 static_assert(std::is_same_v<compute_perm_set_after_send_t<PS_work, Transferable<int, WorkPerm>>, PS_empty>);
 static_assert(std::is_same_v<compute_perm_set_after_send_t<PS_both, Transferable<int, WorkPerm>>, PermSet<HotPerm>>);
 
-// Borrowed: PS unchanged.
 static_assert(std::is_same_v<compute_perm_set_after_send_t<PS_work, Borrowed<int, WorkPerm>>, PS_work>);
 
-// Returned: removes the tag.
 static_assert(std::is_same_v<compute_perm_set_after_send_t<PS_hot, Returned<int, HotPerm>>, PS_empty>);
 
-// DelegatedSession: removes the entire inner PermSet from sender.
 static_assert(perm_set_equal_v<compute_perm_set_after_send_t<PS_work, DelegatedWork>, PS_empty>);
 static_assert(perm_set_equal_v<compute_perm_set_after_send_t<PS_both, DelegatedWork>, PS_hot>);
 
-// ── compute_perm_set_after_recv ────────────────────────────────────
-//
-// Plain: PS unchanged.
 static_assert(std::is_same_v<compute_perm_set_after_recv_t<PS_empty, int>, PS_empty>);
 
-// Transferable: inserts the tag.
 static_assert(std::is_same_v<compute_perm_set_after_recv_t<PS_empty, Transferable<int, WorkPerm>>, PermSet<WorkPerm>>);
 static_assert(perm_set_equal_v<compute_perm_set_after_recv_t<PS_work, Transferable<int, HotPerm>>, PS_both>);
 
-// Borrowed: PS unchanged (recipient gets ReadView only).
 static_assert(std::is_same_v<compute_perm_set_after_recv_t<PS_empty, Borrowed<int, WorkPerm>>, PS_empty>);
 
-// Returned: inserts the tag.
 static_assert(std::is_same_v<compute_perm_set_after_recv_t<PS_empty, Returned<int, HotPerm>>, PermSet<HotPerm>>);
 
-// DelegatedSession: inserts the whole inner PermSet into recipient.
 static_assert(perm_set_equal_v<compute_perm_set_after_recv_t<PS_empty, DelegatedWork>, PS_work>);
 static_assert(perm_set_equal_v<compute_perm_set_after_recv_t<PS_hot, DelegatedWork>, PS_both>);
 
-// Pair-form dispatch mirrors per-side evolution.
 using DelegatedApplied = apply_payload_permission_t<DelegatedWork, PS_both, PS_empty>;
 static_assert(perm_set_equal_v<typename DelegatedApplied::sender_perm_set, PS_hot>);
 static_assert(perm_set_equal_v<typename DelegatedApplied::recipient_perm_set, PS_work>);
 
-// ── SendablePayload concept ────────────────────────────────────────
-static_assert(SendablePayload<int, PS_empty>);  // plain always OK
+static_assert(SendablePayload<int, PS_empty>);
 static_assert(SendablePayload<int, PS_work>);
-static_assert(SendablePayload<Borrowed<int, WorkPerm>, PS_empty>);  // borrow always OK at type level
-static_assert(SendablePayload<Transferable<int, WorkPerm>, PS_work>);  // hold WorkPerm → can transfer
-static_assert(!SendablePayload<Transferable<int, WorkPerm>, PS_empty>);  // missing perm
-static_assert(!SendablePayload<Transferable<int, HotPerm>, PS_work>);  // wrong tag
+static_assert(SendablePayload<Borrowed<int, WorkPerm>, PS_empty>);
+static_assert(SendablePayload<Transferable<int, WorkPerm>, PS_work>);
+static_assert(!SendablePayload<Transferable<int, WorkPerm>, PS_empty>);
+static_assert(!SendablePayload<Transferable<int, HotPerm>, PS_work>);
 static_assert(SendablePayload<Returned<int, HotPerm>, PS_hot>);
 static_assert(!SendablePayload<Returned<int, HotPerm>, PS_empty>);
 static_assert(SendablePayload<DelegatedWork, PS_work>);
@@ -569,14 +428,11 @@ static_assert(!SendablePayload<DelegatedWork, PS_empty>);
 static_assert(ReceivablePayload<int, PS_empty>);
 static_assert(ReceivablePayload<Transferable<int, HotPerm>, PS_empty>);
 
-// ── sizeof discipline (EBO must fire) ──────────────────────────────
-//
-// Transferable<T, X> stores T plus a [[no_unique_address]] empty
-// Permission<X>; under GCC 16's empty-base-optimisation the empty
-// member shares offset with T's storage, so sizeof equals sizeof(T)
-// exactly.  Asserting `==` (not `<=`) catches a future regression
-// where a non-empty member sneaks in or [[no_unique_address]] gets
-// dropped.  Verified on GCC 16.0.1 rawhide for int/char/double T.
+// A marker is expected to cost exactly what its payload costs, since
+// the token beside it is empty and shares the payload's storage.  The
+// comparison is equality rather than an upper bound so that a member
+// gaining size, or the address-sharing attribute going missing, fails
+// here instead of quietly inflating every message.
 static_assert(sizeof(Transferable<int, WorkPerm>) == sizeof(int));
 static_assert(sizeof(Transferable<char, WorkPerm>) == sizeof(char));
 static_assert(sizeof(Transferable<double, WorkPerm>) == sizeof(double));
@@ -588,37 +444,29 @@ static_assert(sizeof(Returned<char, WorkPerm>) == sizeof(char));
 static_assert(sizeof(Returned<double, WorkPerm>) == sizeof(double));
 static_assert(sizeof(DelegatedWork) == 1);
 
-// Move-only discipline for permission-carrying markers.
 static_assert(!std::is_copy_constructible_v<Transferable<int, WorkPerm>>);
 static_assert(std::is_move_constructible_v<Transferable<int, WorkPerm>>);
 static_assert(!std::is_copy_constructible_v<Returned<int, WorkPerm>>);
 static_assert(std::is_move_constructible_v<Returned<int, WorkPerm>>);
 
-// Borrowed is freely copyable (multiple borrowers OK).
 static_assert(std::is_copy_constructible_v<Borrowed<int, WorkPerm>>);
 static_assert(std::is_move_constructible_v<Borrowed<int, WorkPerm>>);
 
-// ── runtime_smoke_test (per the discipline) ────────────────────────
 inline void runtime_smoke_test() noexcept {
-    // Round-trip a Transferable to make sure construction + move-only
-    // chain compiles and links at runtime.
     auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
     Transferable<int, WorkPerm> t{42, std::move(perm)};
     Transferable<int, WorkPerm> t2 = std::move(t);
     (void)t2.value;
 
-    // Borrowed: default-construct ReadView via aggregate init.
     Borrowed<int, CfgPerm> b{7};
-    auto b_copy = b;  // copyable
+    auto b_copy = b;
     (void)b_copy.value;
 
-    // Returned: same move-only shape as Transferable.
     auto perm2 = ::crucible::safety::mint_permission_root<HotPerm>();
     Returned<double, HotPerm> r{3.14, std::move(perm2)};
     auto r2 = std::move(r);
     (void)r2.value;
 
-    // Concept checks at non-template-arg sites.
     static_assert(SendablePayload<int, PS_empty>);
     static_assert(SendablePayload<Transferable<int, WorkPerm>, PS_work>);
 }

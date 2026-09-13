@@ -1,90 +1,33 @@
 #pragma once
 
-// ── crucible::cipher::ComputationCacheFederation ────────────────────
+// The wire key carries two axes, and the row hash appears in both.
+// That is deliberate. The content axis folds the row in, which is what
+// makes an in-process slot row-aware. The row axis carries the same
+// hash on its own, so a receiver can route an entry, or refuse it by
+// policy, without decoding the content axis.
 //
-// FOUND-F12.  The bridge between F11's row-aware ComputationCache
-// (per-(FnPtr, Row, Args...) atomic-slot in-process cache) and I08's
-// federation wire-format (32-byte FederationEntryHeader + opaque
-// payload).  When a ComputationCache hit becomes a federation
-// candidate (cross-process / cross-org sharing of compiled bodies),
-// this header projects the cache's 64-bit `computation_cache_key_in_row`
-// into the federation `KernelCacheKey { ContentHash, RowHash }` shape
-// and threads it through the I08 serialize/deserialize codec.
+// The row axis folds enumerator values alone and comes out the same
+// on any toolchain. The content axis folds rendered names, which are
+// implementation-specific, so two peers built with different
+// compilers can compute different content hashes for one computation,
+// or land two computations on one slot. The bare key is a safe join
+// only among peers built on one toolchain. Peers that may differ have
+// to fold a toolchain discriminator into the key, which makes the two
+// sides disjoint by construction.
 //
-// ── Key projection contract ─────────────────────────────────────────
-//
-//   federation_content_hash<FnPtr, Row, Args...> :=
-//       ContentHash{ computation_cache_key_in_row<FnPtr, Row, Args...> }
-//
-//   federation_row_hash<Row> :=
-//       RowHash{ row_hash_contribution_v<Row> }
-//
-//   federation_key<FnPtr, Row, Args...> :=
-//       KernelCacheKey{ federation_content_hash, federation_row_hash }
-//
-// The content axis bundles function-name + function-type +
-// row-hash-contribution + args-type-hashes (per F11's
-// computation_cache_key_in_row fold).  The row axis ALSO carries
-// the row hash separately — the I08 receiver uses the row axis to
-// route entries by effect-row independent of the content axis.
-//
-// This double-counting (row hash appears in BOTH axes) is intentional:
-//   * The content axis's row contribution makes ComputationCache slot
-//     identity row-aware in the in-process cache (F11 invariant).
-//   * The row axis's row hash lets a federation receiver route entries
-//     to the correct cache shard / accept-reject by row policy
-//     WITHOUT decoding the full content hash.
-//
-// ── CompiledBody payload opacity ────────────────────────────────────
-//
-// CompiledBody is forward-declared in ComputationCache.h; its
-// concrete representation is owned by the dispatcher.  Federation
-// cannot serialize CompiledBody directly (the protocol doesn't know
-// what's inside).  Instead the dispatcher provides byte-serialized
-// payload AHEAD OF the federation call:
-//
-//     auto bytes = dispatcher_serialize(my_compiled_body);
-//     auto local = mint_permission_root<permissions::tag::LocalCipherTag>();
-//     auto written = serialize_computation_cache_federation_entry<
-//         &fn, Row<>, int>(local, out_buf, bytes);
-//
-// The federation header pins the (FnPtr, Row, Args...) identity at
-// the wire level; the receiver's dispatcher_deserialize() reads the
-// payload bytes and reconstructs its own CompiledBody.
-//
-// ── 8-axiom audit (per the wrapper-policy template) ─────────────────
-//
-//   InitSafe   — every constexpr returns a fully-specified value;
-//                no NSDMI gaps.
-//   TypeSafe   — strong-typed ContentHash + RowHash + KernelCacheKey;
-//                Row is concept-fenced via IsEffectRow; FnPtr is
-//                concept-fenced via IsCacheableFunction.
-//   NullSafe   — no pointer fields; std::span at the codec boundary.
-//   MemSafe    — no allocations; codec is std::memcpy through caller-
-//                owned buffers.
-//   BorrowSafe — view returned from deserialize aliases the input
-//                buffer (documented lifetime contract from I08).
-//   ThreadSafe — N/A (value-semantic codec).
-//   LeakSafe   — no resources held by the federation primitives.
-//   DetSafe    — same (FnPtr, Row, Args...) → same federation key,
-//                bit-stable within one build (inherited from F11
-//                computation_cache_key_in_row + I02 row_hash_fold).
-//                The §XVI canonical-order gate (fix-08, below) also
-//                enforces that semantically-identical-but-differently-
-//                ordered wrapper stacks cannot reach distinct slots:
-//                an out-of-order stack is rejected at the publish
-//                boundary, so two parties' canonical stacks always
-//                project to the same KernelCacheKey.  The gate adds NO
-//                runtime work and moves NO existing hash value — bare
-//                payloads and flat rows are vacuously canonical.
+// The payload stays opaque to this layer. A compiled body is
+// serialized by the dispatcher before the call and rebuilt by the
+// receiving dispatcher afterwards, and the protocol never learns what
+// is inside. The header pins only the identity the two sides must
+// agree on.
 
-#include <crucible/Types.h>  // KernelCacheKey, ContentHash, RowHash
-#include <crucible/cipher/ComputationCache.h>  // computation_cache_key_in_row, IsCacheableFunction, IsEffectRow
-#include <crucible/cipher/FederationProtocol.h>  // FederationEntryHeader, codec, FederationError
+#include <crucible/Types.h>
+#include <crucible/cipher/ComputationCache.h>
+#include <crucible/cipher/FederationProtocol.h>
 #include <crucible/permissions/FederationPermission.h>
-#include <crucible/safety/diag/CanonicalOrder.h>  // CanonicallyOrdered — §XVI publish-boundary gate
-#include <crucible/safety/diag/RowHashFold.h>  // row_hash_contribution_v
-#include <crucible/sessions/FederationProtocol.h>  // typed Sender/Receiver/Coord MPST facade
+#include <crucible/safety/diag/CanonicalOrder.h>
+#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/sessions/FederationProtocol.h>
 
 #include <cstdint>
 #include <expected>
@@ -146,74 +89,42 @@ template <auto FnPtr, typename Row, typename... Args>
 using ComputationCacheFederationContentAddressedPayload =
     ContentAddressedFederationPayload<ComputationCacheFederationPayload<FnPtr, Row, Args...>>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── §XVI canonical-order publish-boundary gate (fix-08) ─────────────
-// ═════════════════════════════════════════════════════════════════════
+// The key is the cache-slot identity shared between parties. Two
+// parties that compute the same thing must project it to the same
+// key, or each publishes into a slot only it can find and the cache
+// stops being shared.
 //
-// The federation key is the cross-org cache-slot identity: two parties
-// computing the SAME kernel must project it to the SAME
-// KernelCacheKey, or the L16 computation genome fragments (each party
-// publishes to a private slot and the network effect evaporates).
+// The row axis is canonical already. It is fenced to an effect row,
+// and the fold over a row sorts and deduplicates, so two spellings of
+// one row meet in a single slot.
 //
-// The `Row` axis is already canonical by construction — it is fenced
-// to `effects::Row<Es...>` (IsEffectRow), and RowHashFold.h's
-// Row<Es...> specialization is a sort+dedup fold, so `Row<Bg, IO>` and
-// `Row<IO, Bg>` map to one slot.
-//
-// The `Args...` axis is the OPEN door.  A safety-wrapper STACK
-// (HotPath ⊃ DetSafe ⊃ … ⊃ Computation, CLAUDE.md §XVI) presented as
-// an Arg type is NOT auto-canonicalized: `combine_ids` in
-// row_hash_contribution is order-sensitive, so `Stale<Tagged<T>>` and
-// `Tagged<Stale<T>>` are semantically identical but fold to DIFFERENT
-// hashes — and even the name-based `stable_type_id<Args>` fold (which
-// the content axis uses for Args) splits them by spelling.  Either
-// way, an out-of-order wrapper stack lands in a DIFFERENT federation
-// cache slot than a canonical-order peer's identical stack.
-//
-// FIXY-FOUND-048 shipped `CanonicallyOrdered<W>` (CanonicalOrder.h) as
-// the compile-time predicate for exactly this §XVI nesting order, but
-// left it OPT-IN — no production publish path constrained on it, so it
-// was dead.  This boundary is where it becomes load-bearing: every
-// federation key projection REQUIRES each Arg type to be in §XVI
-// canonical order.  Bare payload types (`int`, `double`, …) and flat
-// effect rows are vacuously canonical (CanonicalOrder.h self-test (3)),
-// so existing call sites are unaffected; only a genuinely inverted
-// wrapper stack is rejected — at the publish/lookup site, naming the
-// offending Arg, rather than silently fragmenting the cache downstream.
+// The argument axis is the open door. A stack of safety wrappers is
+// not canonicalized for free. The hash combiner is order-sensitive,
+// so two stacks that nest the same wrappers in opposite order fold to
+// different values, and the name-based fold that the content axis
+// uses for arguments splits them by spelling as well. Either way an
+// out-of-order stack lands in a different slot from a peer's
+// identical one. Every key projection below therefore requires each
+// argument type to be in canonical nesting order. A bare payload type
+// and a flat row are vacuously canonical, so only a genuinely
+// inverted stack is refused, and it is refused here, naming the
+// argument, rather than fragmenting the cache later.
 
 template <typename... Args>
 concept ArgsCanonicallyOrdered = (::crucible::safety::diag::canonical_order::CanonicallyOrdered<Args> && ...);
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Per-axis projections ────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
-// Content axis — F11's 64-bit cache key projected into ContentHash.
-// Inherits all F11 invariants:
-//   * function-name + function-type + row-hash + args-types fold
-//   * order-sensitive in Args
-//   * permutation-invariant in Row's effect pack (sort-fold)
-//   * non-zero by construction (hash_name seed is non-zero)
-//   * distinct from row-blind cache key (slot isolation invariant)
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline constexpr ContentHash federation_content_hash() noexcept {
     return ContentHash{computation_cache_key_in_row<FnPtr, Row, Args...>};
 }
 
-// Row axis — I02's row hash contribution lifted into RowHash.
-// Inherits all I02 invariants:
-//   * sort-fold over Effect underlying values (permutation-invariant)
-//   * cardinality-seeded (Row<> ≠ 0; F11 invariant)
-//   * monotone in row content (adding atoms changes the hash)
 template <typename Row>
     requires IsEffectRow<Row>
 [[nodiscard]] inline constexpr RowHash federation_row_hash() noexcept {
     return RowHash{::crucible::safety::diag::row_hash_contribution_v<Row>};
 }
 
-// Composite federation key.  This is the pair the I08 wire format
-// uses as the (content, row) header field.
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline constexpr KernelCacheKey federation_key() noexcept {
@@ -222,14 +133,6 @@ template <auto FnPtr, typename Row, typename... Args>
         federation_row_hash<Row>(),
     };
 }
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Codec wrappers ──────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Forward to the I08 codec with the projected key.  The payload is
-// the dispatcher-serialized CompiledBody bytes; the federation layer
-// is opaque to its content.
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
@@ -252,34 +155,16 @@ serialize_computation_cache_federation_entry(const ::crucible::permissions::Loca
         ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...>{dispatcher_payload});
 }
 
-// Deserialize is delegated to the I08 codec — the (FnPtr, Row,
-// Args...) identity is pinned at the WRITE site; the receiver
-// reconstructs the entry via header.content_hash + header.row_hash
-// and does its own (FnPtr, Row, Args...) lookup against the local
-// computation_cache_key_in_row table.
-//
-// We re-export the I08 deserializer name into this namespace so
-// callers don't need to mix `cipher::federation::` and
-// `cipher::federation::serialize_computation_cache_*` styles.
+// The identity is pinned at the write site. A receiver never sees the
+// function or the argument types. It reads the two hashes out of the
+// header and runs its own lookup against them.
 using ::crucible::cipher::federation::deserialize_federation_entry;
 using ::crucible::cipher::federation::deserialize_untrusted_federation_entry;
 using ::crucible::cipher::federation::deserialize_federation_header;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Header byte size constant (re-export for codec callers) ────────
-// ═════════════════════════════════════════════════════════════════════
-
 using ::crucible::cipher::federation::FEDERATION_HEADER_BYTES;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block — invariants asserted at header inclusion ──────
-// ═════════════════════════════════════════════════════════════════════
-
 namespace detail::computation_cache_federation_self_test {
-
-// Reuse fixtures from ComputationCache's self-test namespace.  Both
-// headers ship in the same TU when this file is included; no symbol
-// collision because we declare new in-namespace fixtures.
 
 inline void f12_p_unary(int) noexcept {}
 inline void f12_p_binary(int, double) noexcept {}
@@ -291,18 +176,16 @@ using BgR = eff_local::Row<eff_local::Effect::Bg>;
 using IOR = eff_local::Row<eff_local::Effect::IO>;
 using BgIOR = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
 
-// ── Federation key non-zero ───────────────────────────────────────
-
 static_assert(federation_content_hash<&f12_p_unary, EmptyR, int>().raw() != 0,
-              "F12: federation content hash must be non-zero (inherits F11's "
-              "non-zero-by-construction invariant from hash_name seed).");
-static_assert(federation_row_hash<EmptyR>().raw() != 0, "F12: federation row hash for EmptyRow must be non-zero (I02's "
-                                                        "cardinality-seeded fold ensures Row<> ≠ 0).");
+              "the federation content hash must be non-zero, which the "
+              "non-zero name seed guarantees.");
+static_assert(federation_row_hash<EmptyR>().raw() != 0, "the federation row hash for the empty row must be non-zero, "
+                                                        "which the cardinality-seeded fold guarantees.");
 static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_zero(),
-              "F12: composite federation key must not be the zero-key sentinel.");
+              "the composite federation key must not be the zero-key sentinel.");
 static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_sentinel(),
-              "F12: composite federation key must not be the UINT64_MAX-pair "
-              "sentinel reserved for cache empty-slot probing.");
+              "the composite federation key must not be the all-ones pair "
+              "that marks an empty cache slot.");
 static_assert(
     ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
 static_assert(
@@ -318,107 +201,61 @@ static_assert(::crucible::safety::proto::is_content_addressed_v<
 static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>)
               == sizeof(std::span<const std::uint8_t>));
 
-// ── Same (FnPtr, Row, Args...) → same key (deterministic) ─────────
-
 static_assert(federation_key<&f12_p_unary, EmptyR, int>() == federation_key<&f12_p_unary, EmptyR, int>(),
-              "F12: federation key MUST be deterministic for same inputs.");
-
-// ── Different Row → different key (row-axis distinguishes) ────────
+              "the federation key must be deterministic for the same inputs.");
 
 static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_unary, BgR, int>(),
-              "F12: federation key MUST differ across rows (the load-bearing "
-              "row-axis-distinguishability invariant).");
+              "the federation key must differ across rows, which is what "
+              "makes the row axis able to tell entries apart.");
 
-// Different rows → different ROW axis specifically.
 static_assert(federation_row_hash<EmptyR>() != federation_row_hash<BgR>(),
-              "F12: row hash distinguishes EmptyRow from Row<Bg>.");
+              "the row hash distinguishes the empty row from Row<Bg>.");
 static_assert(federation_row_hash<BgR>() != federation_row_hash<IOR>(),
-              "F12: row hash distinguishes Row<Bg> from Row<IO>.");
+              "the row hash distinguishes Row<Bg> from Row<IO>.");
 static_assert(federation_row_hash<BgR>() != federation_row_hash<BgIOR>(),
-              "F12: row hash distinguishes Row<Bg> from Row<Bg, IO>.");
-
-// ── Different FnPtr → different key (function-axis distinguishes) ─
+              "the row hash distinguishes Row<Bg> from Row<Bg, IO>.");
 
 static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_void, EmptyR>(),
-              "F12: federation key distinguishes different functions.");
-
-// ── Different Args → different key (args-axis distinguishes) ──────
+              "the federation key distinguishes different functions.");
 
 static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_binary, EmptyR, int, double>(),
-              "F12: federation key distinguishes different argument packs.");
-
-// ── Permutation invariance in Row's effect pack ───────────────────
-//
-// row_hash_contribution_v is sort-fold over Effect underlying values.
-// Re-ordering atoms in Row<Es...> produces the SAME hash.  F12's
-// federation_row_hash inherits this; the composite federation_key
-// inherits it too because computation_cache_key_in_row's row
-// contribution is also sort-fold (F11 + I02 alignment).
+              "the federation key distinguishes different argument packs.");
 
 using BgIO_perm1 = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
 using BgIO_perm2 = eff_local::Row<eff_local::Effect::IO, eff_local::Effect::Bg>;
 static_assert(federation_row_hash<BgIO_perm1>() == federation_row_hash<BgIO_perm2>(),
-              "F12: row hash is permutation-invariant in the effect pack.");
+              "the row hash does not change when the effect pack is reordered.");
 static_assert(federation_key<&f12_p_unary, BgIO_perm1, int>() == federation_key<&f12_p_unary, BgIO_perm2, int>(),
-              "F12: composite federation key inherits row-permutation "
-              "invariance from F11 + I02.");
-
-// ── Concept-fence witnesses ───────────────────────────────────────
-//
-// The federation primitives reject types that don't satisfy
-// IsCacheableFunction (FnPtr) or IsEffectRow (Row).  These witnesses
-// are positive — the header doesn't ship neg-compile fixtures
-// because the F09/F11 fences already cover the rejection cases for
-// computation_cache_key_in_row, and federation_key just forwards.
+              "the composite federation key does not change when the effect "
+              "pack is reordered.");
 
 static_assert(IsCacheableFunction<&f12_p_unary>);
 static_assert(IsEffectRow<EmptyR>);
 static_assert(IsEffectRow<BgR>);
 static_assert(IsEffectRow<BgIOR>);
 
-// ── §XVI canonical-order gate witnesses (fix-08) ──────────────────
-//
-// The ArgsCanonicallyOrdered gate accepts bare payload args and
-// canonical wrapper stacks, and rejects inverted wrapper stacks at
-// the federation publish boundary.
+static_assert(ArgsCanonicallyOrdered<>, "an empty argument pack is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<int>, "a bare payload type is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<int, double>, "a pack of bare payload types is vacuously canonical.");
 
-static_assert(ArgsCanonicallyOrdered<>, "fix-08: zero-arg pack is vacuously canonical.");
-static_assert(ArgsCanonicallyOrdered<int>, "fix-08: a bare payload type is vacuously canonical.");
-static_assert(ArgsCanonicallyOrdered<int, double>, "fix-08: a pack of bare payload types is vacuously canonical.");
-
-// Canonical wrapper stack: Stale(10) ⊃ Tagged(11) — strictly
-// increasing §XVI layer indices — is accepted as an Arg.
 static_assert(ArgsCanonicallyOrdered<
                   ::crucible::safety::Stale<::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>,
-              "fix-08: Stale ⊃ Tagged is §XVI-canonical and must be accepted.");
+              "Stale outside Tagged is the canonical nesting order and must be "
+              "accepted as an argument.");
 
-// Inverted wrapper stack: Tagged(11) ⊃ Stale(10) — strictly
-// DECREASING — is rejected.  This is the load-bearing assertion: the
-// previously-dead CanonicallyOrdered predicate now gates the boundary.
 static_assert(!ArgsCanonicallyOrdered<
                   ::crucible::safety::Tagged<::crucible::safety::Stale<int>, ::crucible::safety::source::FromUser>>,
-              "fix-08: Tagged ⊃ Stale is §XVI-INVERTED and must be rejected at "
-              "the federation publish boundary.");
+              "Tagged outside Stale inverts the canonical nesting order and "
+              "must be refused at the publish boundary.");
 
-// A canonical stack passes the WHOLE federation key projection (not
-// just the gate concept): federation_key instantiates for it.
 static_assert(
     !federation_key<&f12_p_unary, EmptyR,
                     ::crucible::safety::Stale<::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>()
          .is_zero(),
-    "fix-08: canonical wrapper-stack Arg projects to a well-formed "
-    "federation key.");
+    "a canonically nested argument projects to a well-formed federation "
+    "key.");
 
 }  // namespace detail::computation_cache_federation_self_test
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Runtime smoke test ─────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Drives the codec at runtime to pin (a) the I08 round-trip works
-// end-to-end with F12 keys, (b) the projection produces non-sentinel
-// keys that the codec accepts, (c) different rows write distinct
-// bytes on the wire.
 
 inline bool computation_cache_federation_smoke_test() noexcept {
     using namespace detail::computation_cache_federation_self_test;
@@ -426,7 +263,6 @@ inline bool computation_cache_federation_smoke_test() noexcept {
     bool ok = true;
     auto local_permission = ::crucible::safety::mint_permission_root<::crucible::permissions::tag::LocalCipherTag>();
 
-    // Encode an entry with EmptyRow and verify round-trip.
     {
         std::array<std::uint8_t, 64> buf{};
         const std::array<std::uint8_t, 4> body = {0x01, 0x02, 0x03, 0x04};
@@ -451,7 +287,6 @@ inline bool computation_cache_federation_smoke_test() noexcept {
         }
     }
 
-    // Different rows produce distinct on-wire bytes.
     {
         std::array<std::uint8_t, 32> buf_empty{};
         std::array<std::uint8_t, 32> buf_bg{};
@@ -461,8 +296,7 @@ inline bool computation_cache_federation_smoke_test() noexcept {
                                                                                        std::span<const std::uint8_t>{});
         ok = ok && wa.has_value() && wb.has_value();
         if (!wa.has_value() || !wb.has_value()) return false;
-        ok = ok && (*wa == *wb);  // same total bytes (header-only)
-        // Byte content differs in the row_hash slot (offset 16..23).
+        ok = ok && (*wa == *wb);
         bool any_diff = false;
         for (std::size_t i = 0; i < *wa; ++i) {
             if (buf_empty[i] != buf_bg[i]) {
@@ -473,8 +307,6 @@ inline bool computation_cache_federation_smoke_test() noexcept {
         ok = ok && any_diff;
     }
 
-    // Content-addressed payload can announce hash-only: the serialized
-    // entry is exactly the 32-byte header and carries zero payload bytes.
     {
         std::array<std::uint8_t, 32> buf{};
         using Payload = ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>;

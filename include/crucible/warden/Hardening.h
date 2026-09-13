@@ -1,25 +1,9 @@
 #pragma once
 
-// Apply a `crucible::warden::Policy` to the current thread / process.
-//
-// Every knob has a graceful-degradation path: if a capability is
-// missing, we log (unless CRUCIBLE_WARDEN_QUIET=1) and continue. The
-// returned `AppliedPolicy` is an RAII handle that remembers what
-// actually changed and reverts it on destruction — critical for the
-// bench harness, which applies a Policy per-Run and then expects the
-// process to return to dev defaults.
-//
-// Usage:
-//     auto applied = crucible::warden::apply(Policy::dev_quiet());
-//     // ... work ...
-//     // `applied` destructs → prior scheduler/affinity/locks restored
-//
-// For the Keeper, the guard is held until shutdown. For bench::Run,
-// it's stack-scoped to measure().
-//
-// Every syscall is inlined; this header is the entire implementation.
-// Linux x86_64 only for now; the file short-circuits on other
-// platforms to an empty AppliedPolicy (policy has no effect).
+// Applying a policy never fails. A knob whose capability is missing is
+// logged and skipped, and the returned handle reports what actually
+// took effect. Destroying the handle undoes exactly those changes and
+// nothing else.
 
 #include "Policy.h"
 #include "Registry.h"
@@ -28,8 +12,8 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/syscall/Per.h>  // FIXY-V-180: SyscallId + per<Id>
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-180: family_tier check
+#include <crucible/fixy/syscall/Per.h>
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 
 #include <bit>
 #include <cerrno>
@@ -37,7 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <tuple>  // FIXY-V-180: mint_hardening_syscall_grants
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -49,27 +33,29 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
-// Kernel-ABI constants. Defined here when toolchain headers lag behind the
-// running kernel (common in glibc packaging). Values come from the upstream
-// Linux UAPI headers and are stable. Comments cite the kernel version that
-// introduced each constant so it's clear what we're feature-gating against.
+// Kernel ABI constants, spelled out because the toolchain headers often
+// lag the running kernel. Each value is fixed by the upstream UAPI
+// header named beside it, and the kernel version says what a build
+// against older headers is gaining.
 #ifndef MADV_COLLAPSE
-#define MADV_COLLAPSE 25  // Linux 6.1 (2022-12). include/uapi/asm-generic/mman-common.h
+#define MADV_COLLAPSE 25  // Linux 6.1, include/uapi/asm-generic/mman-common.h
 #endif
 #ifndef MLOCK_ONFAULT
-#define MLOCK_ONFAULT 0x01  // Linux 4.4 (2016-01). include/uapi/asm-generic/mman.h
+#define MLOCK_ONFAULT 0x01  // Linux 4.4, include/uapi/asm-generic/mman.h
 #endif
 #ifndef SCHED_DEADLINE
-#define SCHED_DEADLINE 6  // Linux 3.14 (2014-03). include/uapi/linux/sched.h
+#define SCHED_DEADLINE 6  // Linux 3.14, include/uapi/linux/sched.h
 #endif
 #ifndef PR_SET_THP_DISABLE
-#define PR_SET_THP_DISABLE 41  // Linux 3.15 (2014-06). include/uapi/linux/prctl.h
+#define PR_SET_THP_DISABLE 41  // Linux 3.15, include/uapi/linux/prctl.h
 #endif
 #endif
 
 namespace crucible::warden {
 
-// ── Linux struct sched_attr (not in glibc) ─────────────────────────
+// glibc declares neither this structure nor the three system calls
+// below, so both the layout and the call wrappers are written out to
+// match the kernel ABI.
 
 #ifdef __linux__
 
@@ -99,8 +85,6 @@ struct sched_attr_t {
 
 #endif  // __linux__
 
-// ── Diagnostics ────────────────────────────────────────────────────
-
 namespace detail {
 
 [[nodiscard]] inline bool warden_quiet() noexcept {
@@ -108,10 +92,9 @@ namespace detail {
     return v != nullptr && v[0] == '1';
 }
 
-// Cold-path diagnostic. Only fires when a capability is missing. The
-// "[warden] " prefix plus "unavailable:" infix is the stable grep anchor for
-// automated log scanners (bench harness, Keeper health monitors, CI).
-// Format: "[warden] <mechanism> unavailable[: <errno-string>]\n"
+// Log scanners match on the "[warden] " prefix and the "unavailable"
+// infix, so the format is fixed:
+//   "[warden] <mechanism> unavailable[: <errno-string>]\n"
 [[gnu::cold]] inline void warn(const char* mechanism, int err) noexcept {
     if (warden_quiet()) return;
     if (err != 0) {
@@ -123,8 +106,6 @@ namespace detail {
 
 }  // namespace detail
 
-// ── AppliedPolicy: RAII revert-on-destroy ──────────────────────────
-
 class AppliedPolicy {
 public:
     struct LockedRegion {
@@ -134,7 +115,6 @@ public:
 
     AppliedPolicy() noexcept = default;
 
-    // Non-copyable, movable.
     AppliedPolicy(const AppliedPolicy&) = delete("AppliedPolicy owns prior-state memory; copying would revert twice");
     AppliedPolicy& operator=(const AppliedPolicy&) = delete("same reason");
     AppliedPolicy(AppliedPolicy&& o) noexcept { swap_(o); }
@@ -148,52 +128,40 @@ public:
 
     ~AppliedPolicy() noexcept { revert(); }
 
-    // Manual early-revert. Idempotent.
+    // Idempotent, and safe to call before destruction.
     //
-    // fixy-A5-017: each tracking flag is cleared IMMEDIATELY after its
-    // syscall runs, not just at the top via `reverted_=true`.  The old
-    // code left `prior_sched_set_` / `prior_affinity_set_` /
-    // `thp_globally_disabled_` / `pinned_cpu_` set after revert; the
-    // operator=(&&) `revert(); swap_(o);` dance then propagated those
-    // stale flags into the moved-from object — so the source reported
-    // `scheduler_applied()==true` AND `affinity_applied()==true` on a
-    // handle that had already undone its work.  The `reverted_` guard
-    // at the top prevents LITERAL double-revert, but observers lied
-    // about the post-revert state.  Self-clearing here means the
-    // post-swap moved-from object is fully disarmed: every observer
-    // returns the disarmed answer.
+    // Each tracking flag clears immediately after its own syscall
+    // rather than relying on the guard at the top. Move-assignment
+    // reverts and then swaps, so a flag left set here would travel
+    // into the moved-from handle and make it claim work it has already
+    // undone.
     void revert() noexcept {
 #ifdef __linux__
         if (reverted_) return;
         reverted_ = true;
 
-        // Undo sched policy / nice in reverse order.
         if (prior_sched_set_) {
             (void)sched_setattr_sys(0, &prior_sched_, 0);
             prior_sched_set_ = false;
         }
-        // sched_setaffinity restore (only if we changed it).
         if (prior_affinity_set_) {
             (void)::sched_setaffinity(0, sizeof(prior_affinity_), &prior_affinity_);
             prior_affinity_set_ = false;
         }
-        // Unlock any regions we locked.
         for (const auto& r : locked_) {
             (void)::munlock(r.addr, r.len);
         }
         locked_.clear();
-        // Re-enable THP if we turned it off.
         if (thp_globally_disabled_) {
             (void)::prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0);
             thp_globally_disabled_ = false;
         }
-        // pinned_cpu_ is a derived observable — once affinity is restored
-        // the "we pinned to CPU N" assertion no longer holds.
+        // Restoring the prior affinity mask retracts the claim that
+        // this thread sits on one named CPU.
         pinned_cpu_ = -1;
 #endif
     }
 
-    // Observers — what actually took effect.
     [[nodiscard]] bool scheduler_applied() const noexcept { return prior_sched_set_; }
     [[nodiscard]] bool affinity_applied() const noexcept { return prior_affinity_set_; }
     [[nodiscard]] size_t regions_locked() const noexcept { return locked_.size(); }
@@ -224,26 +192,21 @@ private:
 #endif
     bool prior_sched_set_ = false;
     bool prior_affinity_set_ = false;
-    bool thp_globally_disabled_ = false;  // we disabled THP and need to re-enable
+    bool thp_globally_disabled_ = false;
     int pinned_cpu_ = -1;
     std::vector<LockedRegion> locked_{};
 };
 
-// ── Hardening: the apply() function + helpers ─────────────────────
-
 class Hardening {
 public:
-    // Apply the policy to the calling thread / process. Returns an
-    // RAII guard; hold it as long as the policy should be in effect.
-    // On failure of any single mechanism, logs a warning (unless
-    // CRUCIBLE_WARDEN_QUIET=1) and continues — the returned guard
-    // reflects what actually took effect.
+    // Hold the returned guard for as long as the policy is to stay in
+    // effect. Setting CRUCIBLE_WARDEN_QUIET to 1 suppresses the
+    // warnings that a skipped knob emits.
     [[nodiscard]] static AppliedPolicy apply(const Policy& p) noexcept {
         AppliedPolicy g;
         if (!p.hot_enabled) return g;
 
 #ifdef __linux__
-        // 1. Pin the current thread to the selected HOT core.
         {
             const int cpu = select_hot_cpu(p.hot_core);
             if (cpu >= 0) {
@@ -268,9 +231,9 @@ public:
             }
         }
 
-        // 2. Scheduler policy. Skip RT on a non-isolated CPU — FIFO/RR
-        // on a shared core starves whatever else lives there (Wayland
-        // compositor → frozen cursor). Override with CRUCIBLE_WARDEN_FORCE=1.
+        // A real-time class on a shared core starves everything else
+        // that runs there, so it is skipped unless the core is
+        // isolated. Setting CRUCIBLE_WARDEN_FORCE to 1 overrides this.
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
             const auto iso = isolated_cpus();
@@ -323,8 +286,10 @@ public:
             }
             if (sched_setattr_sys(0, &attr, 0) != 0) {
                 const int err = errno;
-                // DEADLINE EPERMs when affinity is a strict subset of the
-                // DL root domain (kernel 5.8+); fall back to FIFO.
+                // From Linux 5.8 the deadline class refuses a thread
+                // whose affinity is a strict subset of the deadline
+                // root domain, which is exactly the pinning done
+                // above. Fall back to the first-in-first-out class.
                 if (p.hot_sched == SchedClass::Deadline && err == EPERM) {
                     sched_attr_t fifo{};
                     fifo.size = sizeof(fifo);
@@ -346,7 +311,8 @@ public:
             }
         }
 
-        // 3. THP global disable (process-wide).
+        // This knob is process-wide, unlike the thread-scoped ones
+        // above, and children inherit it.
         if (p.disable_thp_global) {
             if (::prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0) {
                 g.thp_globally_disabled_ = true;
@@ -355,9 +321,9 @@ public:
             }
         }
 
-        // 4. Per registered region: HUGEPAGE hint, mlock, then COLLAPSE.
-        // Order matters: the hint must be set before any fault, and
-        // COLLAPSE only makes `thp_ok` tick after pages are present.
+        // The three steps run in this order for each region. The huge
+        // page hint has to be in place before the first fault, and a
+        // collapse only succeeds once the pages are present.
         if (p.mlock_hot_regions || p.thp_hint_pools || p.thp_collapse_now) {
             const auto regions = HotRegionRegistry::instance().snapshot();
             for (const auto& r : regions) {
@@ -380,21 +346,16 @@ public:
         return g;
     }
 
-    // Register a memory region to be locked under the current (or a
-    // newly-applied) policy. Called from PoolAllocator, MemoryPlan,
-    // TraceRing, KernelCache init paths.
-    //
-    // Returns true on success. Stores the (addr, len) in the provided
-    // guard so it gets unlocked on revert.
     [[nodiscard]] static bool lock_region(AppliedPolicy& g, void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
-        // MLOCK_ONFAULT → lock pages as they fault in, not eagerly.
+        // MLOCK_ONFAULT locks each page as it faults in rather than
+        // faulting the whole region at once.
         if (mlock2_sys(addr, len, MLOCK_ONFAULT) == 0) {
             g.locked_.push_back({addr, len});
             return true;
         }
-        // Fall back to eager mlock for older kernels.
+        // A kernel without mlock2 takes the eager call instead.
         if (::mlock(addr, len) == 0) {
             g.locked_.push_back({addr, len});
             return true;
@@ -409,8 +370,8 @@ public:
 #endif
     }
 
-    // MADV_HUGEPAGE with defense-in-depth PMD rounding (kernel 5.8+
-    // EINVALs non-aligned addresses).
+    // From Linux 5.8 the advice call rejects an address that is not
+    // aligned to a huge page, so the range is rounded inward first.
     [[nodiscard]] static bool hint_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
@@ -434,8 +395,8 @@ public:
 #endif
     }
 
-    // MADV_COLLAPSE (kernel ≥ 6.1) — synchronous; ticks the BPF thp_ok
-    // counter via the mm_collapse_huge_page tracepoint.
+    // Linux 6.1 and later. The collapse happens before the call
+    // returns, and the kernel emits a tracepoint an observer can count.
     [[nodiscard]] static bool collapse_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
@@ -450,7 +411,8 @@ public:
 
         void* const target = std::bit_cast<void*>(aligned);
         if (::madvise(target, aligned_len, MADV_COLLAPSE) == 0) return true;
-        // ENOSYS / EINVAL on older kernels — silent.
+        // A kernel that does not know the advice reports ENOSYS or
+        // EINVAL. That is expected and stays silent.
         if (errno != ENOSYS && errno != EINVAL) {
             detail::warn("madvise(MADV_COLLAPSE)", errno);
         }
@@ -462,10 +424,9 @@ public:
 #endif
     }
 
-    // Prefault: touch one byte per page so page tables are populated.
-    // Called from Meridian's calibration stage. No revert. Cold-marked
-    // because each region is prefaulted exactly once at init time; the
-    // hot path never visits this function.
+    // Touching one byte per page populates the page tables up front.
+    // The read-write through a volatile pointer is what stops the
+    // compiler from discarding the touch. There is nothing to revert.
     [[gnu::cold]] static void prefault(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return;
@@ -480,60 +441,18 @@ public:
     }
 };
 
-// Free-function shorthand matching the CRUCIBLE.md §16 spec.
 [[nodiscard]] inline AppliedPolicy apply(const Policy& p) noexcept { return Hardening::apply(p); }
 
-// ── §XXI Universal Mint Pattern — mint_hardening (FIXY-U-084) ─────────
-//
-// CtxFitsHardeningMint admits only contexts whose effect row carries the
-// Init capability.  Hardening::apply() performs Linux syscalls
-// (sched_setaffinity, sched_setattr, mlock2, mlock, munlock,
-// madvise(MADV_HUGEPAGE/MADV_COLLAPSE), prctl(PR_SET_THP_DISABLE))
-// which are process-wide state mutations belonging to the startup-only
-// Init row.  Hot foreground and background-drain contexts must not
-// engage this surface.
-//
-// The mint is the §XXI authorization point; downstream apply() callers
-// can continue to use the bare free function during the migration period.
+// Applying a policy mutates process-wide state through privileged
+// system calls, which belongs to start-up only. A hot foreground or
+// background context must not reach this surface.
 template <class Ctx>
 concept CtxFitsHardeningMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
-// ── FIXY-V-180 — syscall-grant declaration ────────────────────────────
-//
-// `mint_hardening_syscall_grants` enumerates every privileged Linux
-// syscall Hardening::apply() issues.  It is a type-level audit-trail:
-//
-//   * `grep "mint_hardening_syscall_grants"` finds the canonical
-//     classification of warden's syscall surface (one site, type-level).
-//   * Each grant's `family_tier_v<G>` is locked at compile time via
-//     the static_assert block below — drift between the declared trait
-//     and V-098's per-syscall classifier reds at this header's parse,
-//     before any consumer sees the mint.
-//   * Per Agent 3 Phase Σ4: "mint_hardening is THE ONLY Crucible
-//     function authorized to issue these privileged syscalls" — the
-//     declaration is the grep-discoverable seal on that contract.
-//
-// Family-tier table (V-097 SyscallFamily chain; cross-reference V-100
-// Bridge.h's row-lift map):
-//
-//   sched_setaffinity (27) → ThreadSync      → Row<Block>
-//   sched_setattr     (36) → ThreadSync      → Row<Block>          [V-180]
-//   mlock             (38) → MemoryMapping   → Row<IO>             [V-180]
-//   mlock2            (37) → MemoryMapping   → Row<IO>             [V-180]
-//   munlock           (39) → MemoryMapping   → Row<IO>             [V-180]
-//   madvise           (24) → MemoryMapping   → Row<IO>
-//   prctl             (40) → Privilege       → Row<IO, Block>      [V-180]
-//
-// Row note: ColdInitCtx is `Row<Init, Alloc, IO>` and does NOT include
-// `Block`; the runtime acceptance gate is `CtxOwnsCapability<Ctx,
-// Effect::Init>` (above) — Init is the startup-time pass-through that
-// admits all blocking work without requiring `Block` in the row.  The
-// syscall_grants declaration below is a CLASSIFICATION ANNOTATION, not
-// a row-subrow gate; future tightening lives in V-131 H003 (cross-axis
-// permission<Root> proof gate).
-//
-// The type is a tuple — distinct types per syscall, federation-cache
-// discriminable (V-098 NTTP discipline).
+// The privileged system calls this surface issues, named once at the
+// type level so the set is discoverable and auditable. This is a
+// classification, not a gate: admission is decided by the concept
+// above, which requires only the start-up capability.
 using mint_hardening_syscall_grants =
     std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setaffinity>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setattr>,
@@ -543,10 +462,10 @@ using mint_hardening_syscall_grants =
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::madvise>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::prctl>>;
 
-// Lock the declared family_tier for every grant in the set against
-// V-098's per<Id> classifier — drift here reds at parse, before any
-// consumer reaches the mint.
-namespace detail::v180_hardening_grant_check {
+// Each grant's declared family is checked against the classifier here,
+// so a disagreement fails while this header is parsed rather than at
+// some later call site.
+namespace detail::hardening_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
 
@@ -564,16 +483,12 @@ static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::ma
               == fll::SyscallFamily::MemoryMapping);
 static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::prctl>> == fll::SyscallFamily::Privilege);
 
-// Tuple cardinality pin — adding a syscall to the set must update both
-// the using-decl above AND this sentinel.
 static_assert(std::tuple_size_v<mint_hardening_syscall_grants> == 7,
-              "FIXY-V-180: mint_hardening_syscall_grants drifted from 7 entries.  "
-              "If you added a syscall to Hardening::apply(), append the new "
-              "per<SyscallId::X> to the tuple AND extend SyscallId in "
-              "fixy/syscall/Per.h (append-only) AND add a family_tier_v check "
-              "below.  If you removed a syscall, the federation-cache key drifts; "
-              "audit before committing.");
-}  // namespace detail::v180_hardening_grant_check
+              "mint_hardening_syscall_grants no longer holds 7 entries. A syscall "
+              "added to Hardening::apply() needs an entry in the tuple and a family "
+              "check beside it. A syscall removed from the set changes the cache key "
+              "derived from it, so audit the removal first.");
+}  // namespace detail::hardening_grant_check
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>

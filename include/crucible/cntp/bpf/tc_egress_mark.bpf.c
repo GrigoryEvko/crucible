@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P TC egress marking stub.
- *
- * Future role: apply typed DSCP/ECN/classid decisions for admitted flows.
- * Current behavior: TC_ACT_OK for every skb.
- */
-
 #include "common.h"
 
 #ifndef TC_ACT_OK

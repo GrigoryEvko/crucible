@@ -1,15 +1,5 @@
 #pragma once
 
-// ── crucible::concurrent::Pool<Policy> ─────────────────────────────
-//
-// Policy-parametric jthread pool for Crucible background work.
-//
-// The shipped scheduler policy catalog already defines the queue
-// topology and priority intent.  This header is the first runnable
-// consumer: callers submit generic invocable jobs, the pool stores
-// them in a small type-erased task table, and workers dispatch the
-// table tickets through Policy::queue_template.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/concurrent/SpinLock.h>
@@ -97,10 +87,9 @@ struct DispatchWithWorkloadResult {
 
 namespace adaptive_detail {
 
-// Queue payload stays pointer-sized so every policy backend, including
-// Chase-Lev's atomic cells, remains lock-free. The pointed-to metadata
-// lives inside Pool::TaskSlot and is stable for the lifetime of the
-// queued ticket.
+// The queued payload stays pointer-sized so that every queue backend can hold
+// it in a lock-free atomic cell.  What it points at lives in the pool's task
+// table and outlives the ticket that names it.
 struct ticket_metadata {
     std::uint64_t key_value = 0;
     std::size_t slot_index = 0;
@@ -162,9 +151,8 @@ public:
              && std::is_nothrow_move_constructible_v<std::decay_t<Fn>> && std::is_invocable_r_v<bool, std::decay_t<Fn>&>
     explicit InlineTask(Fn&& fn) noexcept(std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>) {
         using F = std::decay_t<Fn>;
-        // §III-clean type-erasure: cast through void* (storage_ decays to
-        // std::byte*; static_cast<void*> is a qualified-void conversion).
-        // The void* lambda parameters cast directly via static_cast<F*>.
+        // Going through void* keeps this a well-defined conversion rather than
+        // a reinterpretation of the byte array.
         std::construct_at(static_cast<F*>(static_cast<void*>(storage_)), std::forward<Fn>(fn));
         run_ = [](void* ptr) noexcept -> bool { return (*std::launder(static_cast<F*>(ptr)))(); };
         move_ = [](void* dst, void* src) noexcept {
@@ -411,19 +399,12 @@ private:
     std::optional<consumer_tuple_type> consumers_;
     std::array<SpinLock, M> producer_locks_{};
     std::array<SpinLock, N> consumer_locks_{};
-    // FIXY-FOUND-120: next_producer_ is a SHARED counter (multiple
-    // producers fetch_add).  Without alignas(64), its placement depends
-    // on the trailing layout of consumer_locks_ — currently each
-    // SpinLock is alignas(64) so consumer_locks_ ends on a 64-byte
-    // boundary and next_producer_ naturally lands at the start of a
-    // fresh line.  That positioning is INCIDENTAL, not load-bearing —
-    // a future field reorder could pack next_producer_ onto a shared
-    // line, causing every producer's fetch_add to ping-pong MESI
-    // against whatever shares the line.  Explicit alignas(64) makes
-    // the discipline structural: next_producer_ is GUARANTEED on its
-    // own cache line regardless of preceding layout.  Same defense
-    // applied to the sibling router classes (MpmcRouter, ShardedRouter)
-    // below — three structurally-identical fix sites.
+    // Every producer increments this counter, so it gets a cache line to
+    // itself.  The preceding locks happen to leave it on a line boundary
+    // already, but that is an accident of their layout: reorder a field and
+    // the counter shares a line, and each increment then invalidates that line
+    // for whatever else sits on it.  The alignment makes the isolation a
+    // property of the declaration instead.
     alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
@@ -495,8 +476,7 @@ private:
     std::optional<typename queue_type::ConsumerHandle> consumer_;
     std::array<SpinLock, M> producer_locks_{};
     SpinLock consumer_lock_;
-    // FIXY-FOUND-120: see MpscRouter above — explicit cache-line
-    // isolation for the shared producer-selection counter.
+    // A line to itself, for the reason given on the first of these queues.
     alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
@@ -609,8 +589,7 @@ private:
     std::optional<consumer_tuple_type> consumers_;
     std::array<SpinLock, NumShards> producer_locks_{};
     std::array<SpinLock, NumShards> consumer_locks_{};
-    // FIXY-FOUND-120: see MpscRouter above — explicit cache-line
-    // isolation for the shared producer-selection counter.
+    // A line to itself, for the reason given on the first of these queues.
     alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
@@ -1046,23 +1025,12 @@ private:
     adaptive_detail::QueuePortal<policy_queue_type> queue_{};
     std::unique_ptr<TaskSlot[]> task_slots_;
     std::vector<int> selected_cores_;
-    // FIXY-FOUND-120-AUDIT: cache-line isolation by access pattern.
-    // Producer threads (submit path) and worker threads write
-    // DIFFERENT subsets of these counters.  Without alignment, all 7
-    // fit on ~1 cache line and every producer increment ping-pongs
-    // MESI against every worker increment — 40x latency penalty per
-    // counter touch.  Three groups, three cache lines:
-    //
-    //   line A (producer-writes): next_sequence_, submitted_,
-    //                             queued_tickets_
-    //   line B (worker-writes):   completed_, failed_, running_workers_
-    //   line C (init/migration):  affinity_applied_ (rare; own line so
-    //                             init-side bursts don't invalidate
-    //                             either hot line)
-    //
-    // alignas(64) on the FIRST member of each group; the trailing
-    // members of the group pack into the same line via natural layout
-    // (3 × 8 bytes = 24 bytes used, 40 bytes trailing padding per line).
+    // Grouped by who writes them, one cache line each.  Submitting threads
+    // write the first three, worker threads the next three, and the last is
+    // touched only while workers start up.  Left unaligned they would share a
+    // line, and then every submit would invalidate the line the workers are
+    // updating.  Aligning the first member of each group is enough: the rest
+    // of the group follows it onto the same line.
     alignas(64) std::atomic<std::uint64_t> next_sequence_{0};
     std::atomic<std::uint64_t> submitted_{0};
     std::atomic<std::size_t> queued_tickets_{0};

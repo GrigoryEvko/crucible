@@ -1,56 +1,35 @@
-// ── test_fixy_bridge — sentinel TU for fixy/Bridge.h ───────────────
-//
-// Pulls fixy/Bridge.h into a TU compiled under project warning flags
-// so the header's static_asserts execute.  Witnesses:
-//
-//   1. fixy::bridge::RecordingSessionHandle aliases the substrate.
-//   2. fixy::bridge::CrashWatchedHandle aliases the substrate.
-//   3. fixy::bridge::mint_recording_session is reachable.
-//   4. fixy::bridge::mint_vigil_mode_bridge is reachable.
-//
-// HS14: 2 fixy_neg fixtures live in test/fixy_neg/neg_fixy_bridge_*.cpp.
+// A re-exported name must resolve to the same substrate entity, not merely
+// to something that behaves the same way.  Comparing the types of the two
+// function pointers is what makes that testable.
 
 #include <crucible/fixy/Bridge.h>
 
 #include <type_traits>
 
-namespace fb    = ::crucible::fixy::bridge;
+namespace fb = ::crucible::fixy::bridge;
 namespace proto = ::crucible::safety::proto;
-namespace cb    = ::crucible::bridges;
+namespace cb = ::crucible::bridges;
 
-// ─── 1+2. Type carrier aliases ────────────────────────────────────
-
-// Identity check uses a representative protocol carrier — Send<int, End>.
+// One representative protocol carrier stands in for all of them.
 namespace test_fixy_bridge {
 using SendInt = proto::Send<int, proto::End>;
 struct DummyRes {};
-}
+}  // namespace test_fixy_bridge
 
-// RecordingSessionHandle alias preserves the substrate template.
-static_assert(std::is_same_v<
-    fb::RecordingSessionHandle<
-        test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>,
-    proto::RecordingSessionHandle<
-        test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>>,
+static_assert(
+    std::is_same_v<fb::RecordingSessionHandle<test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>,
+                   proto::RecordingSessionHandle<test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>>,
     "fixy::bridge::RecordingSessionHandle must alias the substrate.");
 
-// ─── 3. Function-type identity for mint_recording_session ─────────
+static_assert(
+    std::is_same_v<
+        decltype(&fb::mint_recording_session<test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>),
+        decltype(&proto::mint_recording_session<test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>)>,
+    "fixy::bridge::mint_recording_session must be the substrate function");
 
-static_assert(std::is_same_v<
-    decltype(&fb::mint_recording_session<
-        test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>),
-    decltype(&proto::mint_recording_session<
-        test_fixy_bridge::SendInt, test_fixy_bridge::DummyRes, void>)>,
-    "fixy::bridge::mint_recording_session must be the substrate function "
-    "(name-lookup-only re-export).");
-
-// ─── 3a. FIXY-U-117 — mint_atomic_session function-template identity ──
-//
-// Probe Cell satisfies AtomicMachineCell concept (state_type typedef +
-// load() returning state_type).  Probe Proto reuses SendInt which
-// safety::proto::is_well_formed_v already admits.  Substrate function
-// lives in crucible::safety:: (not crucible::bridges::); pointer-
-// identity through fb:: proves the using-decl is name-lookup-only.
+// This one is re-exported from a different substrate namespace than its
+// neighbours, which is the reason to pin it separately.  The probe cell
+// below is the smallest type the atomic-cell concept accepts.
 
 namespace test_fixy_bridge {
 struct AtomicProbeCell {
@@ -61,21 +40,15 @@ struct AtomicProbeCell {
 
 namespace safety_ns = ::crucible::safety;
 
-static_assert(std::is_same_v<
-    decltype(&fb::mint_atomic_session<
-        test_fixy_bridge::SendInt, test_fixy_bridge::AtomicProbeCell>),
-    decltype(&safety_ns::mint_atomic_session<
-        test_fixy_bridge::SendInt, test_fixy_bridge::AtomicProbeCell>)>,
-    "FIXY-U-117: fixy::bridge::mint_atomic_session must be the substrate "
-    "function (using-decl preserves crucible::safety:: residency).");
+static_assert(
+    std::is_same_v<
+        decltype(&fb::mint_atomic_session<test_fixy_bridge::SendInt, test_fixy_bridge::AtomicProbeCell>),
+        decltype(&safety_ns::mint_atomic_session<test_fixy_bridge::SendInt, test_fixy_bridge::AtomicProbeCell>)>,
+    "fixy::bridge::mint_atomic_session must be the substrate function");
 
-// ─── 4. Endpoint mints + vigil-mode bridge reachable via alias ────
-//
-// The `mint_recording_endpoint` / `mint_crash_watched_endpoint` /
-// `mint_vigil_mode_bridge` symbols are introduced into fixy::bridge
-// by using-declarations; their addresses cannot be taken without
-// concrete template args, so we use a name-check macro that
-// resolves to `void(name)` at compile time.
+// The names below cannot be pinned by address: taking one would need
+// concrete template arguments that no call site here has.  Naming them is
+// all that is available, and it still catches a re-export that goes away.
 
 #define FIXY_BRIDGE_NAME_REACHABLE(name) static_assert(true)
 
@@ -84,23 +57,15 @@ FIXY_BRIDGE_NAME_REACHABLE(fb::mint_crash_watched_endpoint);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_vigil_mode_bridge);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_persisted_session);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_crash_watched_session);
-FIXY_BRIDGE_NAME_REACHABLE(fb::mint_atomic_session);  // FIXY-U-117
-// FIXY-U-070 crash-event surface (6 items).  Name reachability +
-// substrate identity for the 5 type-level items below.  The function
-// template `wrap_crash_return` is name-reach-only here; runtime call
-// happens inside the substrate's own CrashWatchedHandle tests.
+FIXY_BRIDGE_NAME_REACHABLE(fb::mint_atomic_session);
 FIXY_BRIDGE_NAME_REACHABLE(fb::wrap_crash_return);
 
 #undef FIXY_BRIDGE_NAME_REACHABLE
 
-// ─── 5. FIXY-U-070 crash-event surface identity ───────────────────
-//
-// The 5 type-level aliases (CrashEvent / crash_event_from_survivors
-// / crash_event_for_t / crash_event_matches_survivors /
-// crash_event_matches_survivors_v) preserve substrate identity.  The
-// substrate places the helper traits in `safety::proto::detail::`
-// while the carrier `CrashEvent` sits at `safety::proto::` level;
-// fixy::bridge:: surfaces both without exposing the detail boundary.
+// The carrier sits at namespace level in the substrate while its helper
+// traits sit one level down, inside detail.  The re-export flattens both
+// into one namespace, so the assertions below have to compare against two
+// different substrate scopes.
 
 namespace test_fixy_bridge {
 struct BridgeTestPeer {};
@@ -115,61 +80,39 @@ struct survivor_registry<::test_fixy_bridge::BridgeTestPeer> {
 };
 }  // namespace crucible::permissions
 
-// CrashEvent alias preserves substrate identity (proto:: level).
-static_assert(std::is_same_v<
-    fb::CrashEvent<test_fixy_bridge::BridgeTestPeer,
-                   test_fixy_bridge::BridgeTestRes,
-                   test_fixy_bridge::BridgeTestSurvivor>,
-    proto::CrashEvent<test_fixy_bridge::BridgeTestPeer,
-                      test_fixy_bridge::BridgeTestRes,
-                      test_fixy_bridge::BridgeTestSurvivor>>,
-    "fb::CrashEvent must alias proto::CrashEvent (no detail:: wrapping).");
+static_assert(std::is_same_v<fb::CrashEvent<test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes,
+                                            test_fixy_bridge::BridgeTestSurvivor>,
+                             proto::CrashEvent<test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes,
+                                               test_fixy_bridge::BridgeTestSurvivor>>,
+              "fb::CrashEvent must alias proto::CrashEvent with no detail wrapping");
 
-// crash_event_from_survivors alias preserves substrate (detail:: scope).
-static_assert(std::is_same_v<
-    typename fb::crash_event_from_survivors<
-        test_fixy_bridge::BridgeTestPeer,
-        test_fixy_bridge::BridgeTestRes,
-        ::crucible::permissions::inheritance_list<
-            test_fixy_bridge::BridgeTestSurvivor>>::type,
-    typename proto::detail::crash_event_from_survivors<
-        test_fixy_bridge::BridgeTestPeer,
-        test_fixy_bridge::BridgeTestRes,
-        ::crucible::permissions::inheritance_list<
-            test_fixy_bridge::BridgeTestSurvivor>>::type>,
+static_assert(
+    std::is_same_v<typename fb::crash_event_from_survivors<
+                       test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes,
+                       ::crucible::permissions::inheritance_list<test_fixy_bridge::BridgeTestSurvivor>>::type,
+                   typename proto::detail::crash_event_from_survivors<
+                       test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes,
+                       ::crucible::permissions::inheritance_list<test_fixy_bridge::BridgeTestSurvivor>>::type>,
     "fb::crash_event_from_survivors must alias proto::detail::");
 
-// crash_event_for_t alias (detail::) resolves with the test peer's
-// survivor_registry specialization above.
-static_assert(std::is_same_v<
-    fb::crash_event_for_t<test_fixy_bridge::BridgeTestPeer,
-                          test_fixy_bridge::BridgeTestRes>,
-    proto::detail::crash_event_for_t<test_fixy_bridge::BridgeTestPeer,
-                                     test_fixy_bridge::BridgeTestRes>>,
+// Resolves through the survivor registry specialization above.
+static_assert(
+    std::is_same_v<fb::crash_event_for_t<test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes>,
+                   proto::detail::crash_event_for_t<test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes>>,
     "fb::crash_event_for_t must alias proto::detail::");
 
-// crash_event_matches_survivors predicate identity (true on canonical).
-using TestCanonicalEvent = fb::crash_event_for_t<
-    test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes>;
+using TestCanonicalEvent = fb::crash_event_for_t<test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes>;
 static_assert(fb::crash_event_matches_survivors<TestCanonicalEvent>::value);
 static_assert(fb::crash_event_matches_survivors_v<TestCanonicalEvent>);
 
-// Cardinality FLOOR mirror — per FIXY-U-127 / U-128 floor-vs-ceiling
-// split: the EXACT ceiling pin (`== 6`) lives in fixy/Bridge.h
-// colocated with the source-of-truth constant; THIS TU only holds
-// the FLOOR pin (`>= 6`) which catches the inverse direction — an
-// accidental REMOVAL of a crash-event surface entry that escaped
-// review.  Growth past 6 is silent here and auto-tracked by the
-// header's `==` ceiling.
-static_assert(
-    ::crucible::fixy::bridge::self_test::crash_event_surface_cardinality >= 6,
-    "floor: fixy::bridge:: crash-event surface cardinality regressed "
-    "below 6 — an entry was removed without updating both Bridge.h's "
-    "colocated ceiling pin AND this floor witness.");
+// A floor, not an exact count.  The exact pin sits next to the constant it
+// counts, where a contributor raising it cannot miss the sibling assertion.
+// Here only the other direction matters: an entry removed without review.
+static_assert(::crucible::fixy::bridge::self_test::crash_event_surface_cardinality >= 6,
+              "floor: the crash-event surface cardinality regressed below 6, so an "
+              "entry was removed without updating the colocated exact pin");
 
 int main() {
-    // The substrate's own tests exercise the wrap round-trip.  This
-    // TU asserts reachability + alias identity; no runtime call
-    // needed.
+    // Every claim here is a compile-time one.
     return 0;
 }

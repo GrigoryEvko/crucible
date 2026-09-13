@@ -1,11 +1,6 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_is_consumer_handle — sentinel TU for safety/IsConsumerHandle.h
-//
-// Mirror of test_is_producer_handle (FOUND-D05).  Forces the header
-// through the project's full warning matrix and cross-checks the
-// trait against REAL PermissionedSpscChannel::ConsumerHandle and
-// ProducerHandle (the latter must be rejected).
-// ═══════════════════════════════════════════════════════════════════
+// A header that ships its own static_asserts is never compiled under the
+// project warning flags unless some translation unit includes it.  This
+// file is that translation unit for the consumer-handle trait.
 
 #include <crucible/safety/IsConsumerHandle.h>
 
@@ -37,21 +32,17 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-#define EXPECT_TRUE(cond)                                                  \
-    do {                                                                   \
-        if (!(cond)) {                                                     \
-            std::fprintf(stderr,                                           \
-                "    EXPECT_TRUE failed: %s (%s:%d)\n",                    \
-                #cond, __FILE__, __LINE__);                                \
-            throw TestFailure{};                                           \
-        }                                                                  \
+#define EXPECT_TRUE(cond)                                                                            \
+    do {                                                                                             \
+        if (!(cond)) {                                                                               \
+            std::fprintf(stderr, "    EXPECT_TRUE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+            throw TestFailure{};                                                                     \
+        }                                                                                            \
     } while (0)
 
 namespace extract = ::crucible::safety::extract;
-namespace concur  = ::crucible::concurrent;
-namespace safety  = ::crucible::safety;
-
-// ── Synthetic witnesses ─────────────────────────────────────────────
+namespace concur = ::crucible::concurrent;
+namespace safety = ::crucible::safety;
 
 struct synth_consumer {
     [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
@@ -62,8 +53,8 @@ struct synth_producer {
 };
 
 struct synth_hybrid {
-    [[nodiscard]] std::optional<int> try_pop() noexcept       { return {}; }
-    [[nodiscard]] bool try_push(int const&) noexcept          { return true; }
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
 struct synth_bool_pop {
@@ -71,18 +62,14 @@ struct synth_bool_pop {
 };
 
 struct synth_overloaded_pop {
-    [[nodiscard]] std::optional<int> try_pop() noexcept    { return {}; }
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
     [[nodiscard]] std::optional<int> try_pop(int) noexcept { return {}; }
 };
-
-// ── Real-world cross-check setup ────────────────────────────────────
 
 struct cross_check_tag {};
 using SpscChannel = concur::PermissionedSpscChannel<int, 16, cross_check_tag>;
 
-void test_runtime_smoke() {
-    EXPECT_TRUE(extract::is_consumer_handle_smoke_test());
-}
+void test_runtime_smoke() { EXPECT_TRUE(extract::is_consumer_handle_smoke_test()); }
 
 void test_synthetic_positive() {
     static_assert(extract::is_consumer_handle_v<synth_consumer>);
@@ -114,12 +101,9 @@ void test_concept_form() {
 }
 
 void test_value_type_extraction() {
-    static_assert(std::is_same_v<
-        extract::consumer_handle_value_t<synth_consumer>, int>);
-    static_assert(std::is_same_v<
-        extract::consumer_handle_value_t<synth_consumer&>, int>);
-    static_assert(std::is_same_v<
-        extract::consumer_handle_value_t<synth_consumer const&>, int>);
+    static_assert(std::is_same_v<extract::consumer_handle_value_t<synth_consumer>, int>);
+    static_assert(std::is_same_v<extract::consumer_handle_value_t<synth_consumer&>, int>);
+    static_assert(std::is_same_v<extract::consumer_handle_value_t<synth_consumer const&>, int>);
 }
 
 void test_pointer_to_handle_rejected() {
@@ -142,16 +126,14 @@ void test_real_spsc_producer_handle_rejected() {
 
 void test_real_spsc_value_type() {
     using ConH = SpscChannel::ConsumerHandle;
-    static_assert(std::is_same_v<
-        extract::consumer_handle_value_t<ConH>, int>);
+    static_assert(std::is_same_v<extract::consumer_handle_value_t<ConH>, int>);
 }
 
 void test_runtime_round_trip() {
     SpscChannel ch;
     auto whole = safety::mint_permission_root<typename SpscChannel::whole_tag>();
-    auto split = safety::mint_permission_split<
-        typename SpscChannel::producer_tag,
-        typename SpscChannel::consumer_tag>(std::move(whole));
+    auto split = safety::mint_permission_split<typename SpscChannel::producer_tag, typename SpscChannel::consumer_tag>(
+        std::move(whole));
     auto prod = ch.producer(std::move(split.first));
     auto cons = ch.consumer(std::move(split.second));
     EXPECT_TRUE(prod.try_push(7));
@@ -163,20 +145,18 @@ void test_runtime_round_trip() {
 
 int main() {
     std::fprintf(stderr, "test_is_consumer_handle:\n");
-    run_test("test_runtime_smoke",                     test_runtime_smoke);
-    run_test("test_synthetic_positive",                test_synthetic_positive);
-    run_test("test_synthetic_negative",                test_synthetic_negative);
-    run_test("test_cvref_stripping",                   test_cvref_stripping);
-    run_test("test_concept_form",                      test_concept_form);
-    run_test("test_value_type_extraction",             test_value_type_extraction);
-    run_test("test_pointer_to_handle_rejected",        test_pointer_to_handle_rejected);
+    run_test("test_runtime_smoke", test_runtime_smoke);
+    run_test("test_synthetic_positive", test_synthetic_positive);
+    run_test("test_synthetic_negative", test_synthetic_negative);
+    run_test("test_cvref_stripping", test_cvref_stripping);
+    run_test("test_concept_form", test_concept_form);
+    run_test("test_value_type_extraction", test_value_type_extraction);
+    run_test("test_pointer_to_handle_rejected", test_pointer_to_handle_rejected);
     run_test("test_real_spsc_consumer_handle_matches", test_real_spsc_consumer_handle_matches);
-    run_test("test_real_spsc_producer_handle_rejected",
-                                                       test_real_spsc_producer_handle_rejected);
-    run_test("test_real_spsc_value_type",              test_real_spsc_value_type);
-    run_test("test_runtime_round_trip",                test_runtime_round_trip);
-    std::fprintf(stderr, "\n%d passed, %d failed\n",
-                 total_passed, total_failed);
+    run_test("test_real_spsc_producer_handle_rejected", test_real_spsc_producer_handle_rejected);
+    run_test("test_real_spsc_value_type", test_real_spsc_value_type);
+    run_test("test_runtime_round_trip", test_runtime_round_trip);
+    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
     return EXIT_SUCCESS;

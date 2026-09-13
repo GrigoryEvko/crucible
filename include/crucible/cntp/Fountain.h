@@ -1,13 +1,5 @@
 #pragma once
 
-// Deterministic LT fountain coding for CNT-P multicast / gossip payloads.
-//
-// This is the bounded, static-storage LT primitive.  It sends the first
-// SourceSymbols packets systematically, then emits Philox-determined repair
-// packets.  Decoding uses the standard peeling algorithm over XOR equations.
-// Raptor10 pre-coding is intentionally not claimed here; it belongs behind a
-// separate algorithm tag once the RFC-5053 matrix machinery lands.
-
 #include <crucible/Philox.h>
 #include <crucible/cntp/Fec.h>
 #include <crucible/effects/Capabilities.h>
@@ -136,13 +128,10 @@ template <std::size_t SourceSymbols>
         const auto rng =
             Philox::generate_det(repair_offset(encoding_id, static_cast<std::uint32_t>(i + 1)), seed).peek();
         const auto span = SourceSymbols - i;
-        // fixy-A5-034: Lemire's nearly-divisionless range — replaces the
-        // biased `% span` on a single 32-bit Philox word.  Concatenates
-        // two Philox words into a 64-bit uniform, multiplies by span,
-        // returns the upper 64 bits.  Worst-case bias is span/2^64 ≈
-        // 2^-58 (span ≤ 64), below double-precision epsilon.  DetSafe
-        // preserved: __uint128_t arithmetic is bit-identical on every
-        // supported platform (x86_64 native, AArch64 native).
+        // Lemire's nearly-divisionless range rather than `% span`, which
+        // is biased.  The residual bias is span/2^64, at most 2^-58 for
+        // span <= 64.  The __uint128_t multiply is bit-identical on every
+        // supported platform, so the draw stays deterministic.
         const auto uniform64 = (static_cast<std::uint64_t>(rng[1]) << 32U) | static_cast<std::uint64_t>(rng[0]);
         const auto product = static_cast<__uint128_t>(uniform64) * static_cast<__uint128_t>(span);
         const auto j = i + static_cast<std::size_t>(product >> 64U);
@@ -394,14 +383,11 @@ private:
             || ((packet.mask & ~fountain_detail::valid_mask<SourceSymbols>()) != 0)) {
             return std::unexpected(FountainError::PacketShapeMismatch);
         }
-        // source_bytes is a Refined<in_range<1, max_source_bytes>> field, but
-        // wire-deserialized packets construct it through the Trusted{} escape
-        // hatch (the value comes from attacker-controlled bytes), so the
-        // refinement invariant is NOT guaranteed here.  Re-check the bound at
-        // this trust boundary: extract_decoded() returns/copies
-        // source_bytes_.value() bytes out of the decoded_ array, which holds
-        // exactly max_source_bytes bytes — an out-of-range source_bytes would
-        // otherwise drive an out-of-bounds read.
+        // A wire-deserialized packet builds source_bytes through the Trusted
+        // escape hatch from attacker-controlled bytes, so the refinement
+        // bound does not hold on arrival.  It is re-checked here because
+        // extract_decoded() hands out source_bytes_ bytes of decoded_, which
+        // is exactly max_source_bytes long.
         const auto claimed_source_bytes = packet.source_bytes.value();
         if (claimed_source_bytes == 0 || claimed_source_bytes > max_source_bytes) {
             return std::unexpected(FountainError::PacketShapeMismatch);

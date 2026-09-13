@@ -1,19 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_crash_v ───────────────────────────
-//
-// FOUND-D30 (fourth of batch) — wrapper-detection predicate for
-// `Crash<Class, T>`.  Mechanical extension of D21-D24/D30
-// CipherTier/ResidencyHeat/Vendor — partial-spec captures the
-// CrashClass_v NTTP enum alongside the wrapped type.
-//
-// CrashClass is a 4-valued chain lattice: Abort=0 (⊥) ... NoThrow=3
-// (⊤).  In a -fno-exceptions tree, Throw is structurally banned at
-// production call sites; the detector itself is symmetric across all
-// four classes so future fleet variants (e.g., a partial -fexceptions
-// island for legacy interop) can flip a class on without changing the
-// detection contract.
-
 #include <crucible/safety/Crash.h>
 
 #include <type_traits>
@@ -52,8 +38,6 @@ using crash_value_t = typename detail::is_crash_impl<std::remove_cvref_t<T>>::va
 template <typename T>
     requires is_crash_v<T>
 inline constexpr CrashClass_v crash_class_v = detail::is_crash_impl<std::remove_cvref_t<T>>::crash_class;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_crash_self_test {
 
@@ -95,10 +79,9 @@ static_assert(crash_class_v<C_int_throw> == CrashClass_v::Throw);
 static_assert(crash_class_v<C_int_error_return> == CrashClass_v::ErrorReturn);
 static_assert(crash_class_v<C_int_no_throw> == CrashClass_v::NoThrow);
 
-// Chain-lattice ordinal invariant.  CrashLattice INVERTS the spec
-// hint (Abort=0 / NoThrow=3 — bottom is weakest).  The detector
-// itself does NOT consult this ordering, but a future refactor that
-// indexes by underlying value MUST preserve the invariant.
+// The detector never consults this ordering. The ordinals are pinned here so
+// that anything indexing the chain by underlying value keeps the weakest class
+// at zero and the strongest at three.
 static_assert(static_cast<std::uint8_t>(CrashClass_v::Abort) == 0);
 static_assert(static_cast<std::uint8_t>(CrashClass_v::Throw) == 1);
 static_assert(static_cast<std::uint8_t>(CrashClass_v::ErrorReturn) == 2);

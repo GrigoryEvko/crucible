@@ -1,10 +1,3 @@
-// Tests for MetaLog SPSC buffer.
-//
-// Covers: empty-buffer state, single/batch append returns MetaIndex,
-// index monotonic, at() / try_contiguous() read-side, tail advance,
-// reset, and overflow → MetaIndex::none() behavior (synthetically
-// exercised by driving head via many appends).
-
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Platform.h>
@@ -39,7 +32,6 @@ static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
 static void test_empty_state() {
     MetaLog log;
     assert(log.size().peek() == 0);
-    // Zero-length append short-circuits to none().
     assert(!log.try_append(nullptr, 0).is_valid());
     std::printf("  test_empty:                     PASSED\n");
 }
@@ -51,7 +43,6 @@ static void test_single_append_returns_index_zero() {
     assert(idx.is_valid());
     assert(idx.raw() == 0);
     assert(log.size().peek() == 1);
-    // Read back the stored meta.
     const auto& got = log.at(0);
     assert(raw_data_ptr(got) == raw_data_ptr(m));
     assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
@@ -72,12 +63,11 @@ static void test_batch_append_and_monotonic() {
     assert(idx2.raw() == 3);
     assert(log.size().peek() == 8);
 
-    // Contiguous span access covers the whole range on a fresh buffer.
+    // A fresh buffer has not wrapped, so the whole range is contiguous.
     const TensorMeta* span = log.try_contiguous(0, 8);
     assert(span != nullptr);
     for (int i = 0; i < 8; ++i) {
-        assert(raw_data_ptr(span[i])
-            == raw_data_ptr(batch[static_cast<size_t>(i)]));
+        assert(raw_data_ptr(span[i]) == raw_data_ptr(batch[static_cast<size_t>(i)]));
     }
     std::printf("  test_batch_monotonic:           PASSED\n");
 }
@@ -89,8 +79,8 @@ static void test_tail_advance_frees_capacity() {
     assert(log.size().peek() == 1);
     log.advance_tail(idx.raw() + 1);
     assert(log.size().peek() == 0);
-    // Buffer is now logically empty; new append returns index 1
-    // (monotonic, not reset).
+    // Freeing capacity does not rewind the index.  Indices keep
+    // counting, so the next append is 1 and not 0.
     auto idx2 = log.try_append(&m, 1);
     assert(idx2.raw() == 1);
     std::printf("  test_tail_advance:              PASSED\n");
@@ -99,11 +89,12 @@ static void test_tail_advance_frees_capacity() {
 static void test_reset_zeroes_both_pointers() {
     MetaLog log;
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x3000)));
-    for (int i = 0; i < 10; ++i) (void)log.try_append(&m, 1);
+    for (int i = 0; i < 10; ++i)
+        (void)log.try_append(&m, 1);
     log.advance_tail(5);
     log.reset();
     assert(log.size().peek() == 0);
-    // Fresh append returns index 0 again.
+    // A reset does rewind the index, where advancing the tail does not.
     auto idx = log.try_append(&m, 1);
     assert(idx.raw() == 0);
     std::printf("  test_reset:                     PASSED\n");
@@ -111,67 +102,57 @@ static void test_reset_zeroes_both_pointers() {
 
 static void test_try_contiguous_wrap_returns_null() {
     MetaLog log;
-    // Drive head close to the wrap boundary.  Append then drain so the
-    // next append starts near the end.
+    // Filling and then draining leaves the head three slots from the
+    // end of the ring, which is the only way to reach the wrap without
+    // holding a full buffer of live entries.
     const uint32_t near_end = MetaLog::CAPACITY - 3;
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x4000)));
-    // Fast-forward head by appending a big batch with sentinel data.
     std::vector<TensorMeta> junk(near_end, m);
     (void)log.try_append(junk.data(), near_end);
-    log.advance_tail(near_end);   // free everything
+    log.advance_tail(near_end);
     assert(log.size().peek() == 0);
 
-    // Now append 5 — wraps past CAPACITY - 3 → 2.
+    // Five entries into three remaining slots: the batch straddles the
+    // end of the ring.
     std::vector<TensorMeta> tail5(5, m);
     auto idx = log.try_append(tail5.data(), 5);
     assert(idx.is_valid());
     assert(idx.raw() == near_end);
 
-    // try_contiguous of the wrapping range → nullptr (caller must copy).
+    // A straddling range has no single pointer, so the caller has to
+    // copy instead.
     const TensorMeta* span = log.try_contiguous(near_end, 5);
     assert(span == nullptr);
 
-    // Non-wrapping range at the start of the buffer → valid pointer.
     const TensorMeta* span2 = log.try_contiguous(0, 2);
     assert(span2 != nullptr);
     std::printf("  test_wrap:                      PASSED\n");
 }
 
-// Concurrent SPSC integrity: a live producer and consumer exchange N
-// distinct TensorMeta records across threads. Verifies ThreadSafe:
+// The producer reads its own head relaxed and publishes with a release
+// store.  On a total-store-order machine a missing release would still
+// appear to work, so this test exists to pin the ordering: a regression
+// reddens here rather than only on a weakly ordered target.
 //
-//   - Every meta the producer appended is eventually observed by the
-//     consumer (no lost events — cached_tail_ fallback path works).
-//   - Observed metas are bit-identical to what was written (no torn
-//     read — release/acquire publishes entries[] before head advances).
-//   - Strict producer-order preservation (data_ptr encodes sequence).
-//
-// Rationale: the hot path uses memory_order_relaxed for the producer's
-// own-head load and memory_order_release for the publish store. On x86
-// (TSO) a buggy relaxed store would still work by accident; this test
-// crystallises the behaviour so a regression on any weakly-ordered
-// platform (ARM, RISC-V) turns red here instead of in production.
+// The producer encodes the sequence number into data_ptr, shifted clear
+// of small sentinel values, so the consumer can check order, loss and
+// duplication from the payload alone.
 static void test_spsc_concurrent_integrity() {
     constexpr uint32_t N = 100'000;
     MetaLog log;
 
-    // Producer and consumer run on distinct OS threads. The producer
-    // encodes the sequence number into data_ptr (i + 1, shifted to
-    // avoid colliding with low-magic values) so the consumer can
-    // verify strict ordering on each slot.
-    std::atomic<bool>     producer_done{false};
-    std::atomic<uint32_t> lost_spin{0};        // diagnostic only
+    std::atomic<bool> producer_done{false};
+    std::atomic<uint32_t> lost_spin{0};  // diagnostic only
 
-    std::jthread producer{[&]{
+    std::jthread producer{[&] {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
-            TensorMeta m = make_meta(
-                std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
+            TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
             auto idx = log.try_append(&m, 1);
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {
-                // Buffer full — yield so the consumer catches up.
-                // 1 M capacity + aggressive drain makes this rare.
+                // The buffer is full, so back off and let the consumer
+                // drain before trying the same index again.
                 CRUCIBLE_SPIN_PAUSE;
                 lost_spin.fetch_add(1, std::memory_order_relaxed);
             }
@@ -179,34 +160,36 @@ static void test_spsc_concurrent_integrity() {
         producer_done.store(true, std::memory_order_release);
     }};
 
-    std::jthread consumer{[&]{
+    std::jthread consumer{[&] {
         uint32_t next = 0;  // next expected sequence number (0-based)
         while (next < N) {
             const uint32_t avail = log.size().peek();
             if (avail == 0) {
-                if (producer_done.load(std::memory_order_acquire) &&
-                    log.size().peek() == 0) {
-                    break;  // producer finished and we drained everything
+                // The size is re-read after observing the flag.  A
+                // producer that appended and then set the flag between
+                // the two reads would otherwise be missed.
+                if (producer_done.load(std::memory_order_acquire) && log.size().peek() == 0) {
+                    break;
                 }
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
-            // Verify each meta in the batch: data_ptr encodes position.
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta& m = log.at(next + k);
-                const uintptr_t expected =
-                    static_cast<uintptr_t>(next + k + 1) << 16;
+                const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
-                // Spot-check non-pointer fields to catch torn reads.
+                // The remaining fields are identical in every record,
+                // so they carry no sequence information.  They are
+                // checked anyway: a torn read shows up here.
                 assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
                 assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
-                assert(m.dtype       == ScalarType::Float);
+                assert(m.dtype == ScalarType::Float);
                 assert(m.device_type == DeviceType::CUDA);
             }
             log.advance_tail(next + avail);
             next += avail;
         }
-        assert(next == N);  // consumer saw every producer append
+        assert(next == N);  // nothing was lost and nothing repeated
     }};
 
     producer.join();
@@ -216,27 +199,13 @@ static void test_spsc_concurrent_integrity() {
                 N, lost_spin.load());
 }
 
-// ── FOUND-I17: try_append_pure row-typed facade ──────────────────
-//
-// Pins the IsPure-constrained facade method behaves bit-identically
-// to try_append for a Row<>-context caller, while the IsPure
-// constraint is verified at substitution time (the neg-compile
-// fixtures cover the rejection legs).
-//
-// Three sub-pins:
-//   (a) Default template arg (Row<>) calls succeed and return the
-//       same MetaIndex as try_append on a fresh buffer.
-//   (b) Explicit template arg <Row<>> calls succeed and produce
-//       the same monotonic index sequence.
-//   (c) Mixed try_append + try_append_pure interleaved produce a
-//       contiguous monotonic sequence (no slot duplication, no
-//       gap) — pinning the facade is a thin forwarder, not a
-//       parallel storage path.
+// Only the accepting legs of the row-typed facade are exercised here.
+// The rejecting legs are negative-compile fixtures, because a caller
+// with an impure row fails to compile rather than failing at runtime.
 
 static void test_try_append_pure_FOUND_I17() {
     namespace eff = crucible::effects;
 
-    // (a) — default template arg.
     {
         MetaLog log;
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
@@ -248,7 +217,6 @@ static void test_try_append_pure_FOUND_I17() {
         assert(raw_data_ptr(got) == raw_data_ptr(m));
     }
 
-    // (b) — explicit Row<> template arg.
     {
         MetaLog log;
         TensorMeta m1 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xB0)));
@@ -261,15 +229,15 @@ static void test_try_append_pure_FOUND_I17() {
         assert(log.size().peek() == 2);
     }
 
-    // (c) — interleave try_append + try_append_pure.  Both must
-    //       contribute to the SAME monotonic sequence, witnessing
-    //       the facade is a forwarder (not a parallel storage path).
+    // Interleaved calls share one index sequence with no gap and no
+    // repeat, which is what shows the facade forwards into the same
+    // storage rather than keeping a second one.
     {
         MetaLog log;
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xD0)));
-        auto i0 = log.try_append(&m, 1);            // index 0
-        auto i1 = log.try_append_pure(&m, 1);       // index 1
-        auto i2 = log.try_append(&m, 1);            // index 2
+        auto i0 = log.try_append(&m, 1);  // index 0
+        auto i1 = log.try_append_pure(&m, 1);  // index 1
+        auto i2 = log.try_append(&m, 1);  // index 2
         auto i3 = log.try_append_pure<eff::Row<>>(&m, 1);  // index 3
         assert(i0.raw() == 0);
         assert(i1.raw() == 1);
@@ -278,52 +246,36 @@ static void test_try_append_pure_FOUND_I17() {
         assert(log.size().peek() == 4);
     }
 
-    // (d) — concept-fence positive witnesses.  Pin the IsPure
-    //       relationship between Row<> and the various F* aliases at
-    //       compile time so a refinement that broke the bottom of
-    //       the lattice would fire here, not just at the neg-compile
-    //       fixtures.
+    // The aliases below are what production callers name, so each is
+    // pinned on the side of the purity fence it belongs on.  A change
+    // that moved one across would otherwise surface only as a
+    // negative-compile fixture flipping.
     static_assert(eff::IsPure<eff::Row<>>);
     static_assert(eff::IsPure<eff::PureRow>);
-    static_assert(eff::IsPure<eff::TotRow>);     // synonym of Pure
-    static_assert(eff::IsPure<eff::GhostRow>);   // synonym of Pure
-    static_assert(!eff::IsPure<eff::DivRow>);    // {Block} ⊄ ∅
+    static_assert(eff::IsPure<eff::TotRow>);  // a synonym of the pure row
+    static_assert(eff::IsPure<eff::GhostRow>);  // a synonym of the pure row
+    static_assert(!eff::IsPure<eff::DivRow>);  // carries Block
     static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
     static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
 
     std::printf("  test_try_append_pure_FOUND_I17: PASSED\n");
 }
 
-// ── FOUND-I17-AUDIT — concurrent SPSC integrity via try_append_pure ─
-//
-// The base FOUND-I17 test (above) covered single-threaded interleaving
-// of try_append + try_append_pure to pin the facade is a forwarder.
-// This audit additionally proves the row-typed facade preserves SPSC
-// integrity under genuine cross-thread contention — same scenario as
-// test_spsc_concurrent_integrity but driving the producer through the
-// row-typed entry point.  If the facade had any hidden synchronization,
-// extra atomic, or different memory ordering, this test would either
-// red the assertions or expose torn reads.
-//
-// PINS:
-//   • Producer uses try_append_pure exclusively; the IsPure constraint
-//     is checked at substitution time (compile-time).
-//   • Consumer uses unchanged at()/advance_tail (the Bg side).
-//   • All N=50_000 producer messages reach the consumer in order, no
-//     loss, no duplication, no torn reads.
+// The interleaving check above is single-threaded, which cannot see a
+// hidden atomic or a weaker ordering inside the facade.  This repeats
+// the concurrent scenario with the producer driven entirely through the
+// row-typed entry point; the consumer side is unchanged.
 
 static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
     constexpr uint32_t N = 50'000;
     MetaLog log;
 
-    std::atomic<bool>     producer_done{false};
+    std::atomic<bool> producer_done{false};
     std::atomic<uint32_t> lost_spin{0};
 
-    std::jthread producer{[&]{
+    std::jthread producer{[&] {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
-            TensorMeta m = make_meta(
-                std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
-            // FOUND-I17: row-typed facade with default Row<>.
+            TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
             auto idx = log.try_append_pure(&m, 1);
             if (idx.is_valid()) [[likely]] {
                 ++i;
@@ -335,13 +287,12 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
         producer_done.store(true, std::memory_order_release);
     }};
 
-    std::jthread consumer{[&]{
+    std::jthread consumer{[&] {
         uint32_t next = 0;
         while (next < N) {
             const uint32_t avail = log.size().peek();
             if (avail == 0) {
-                if (producer_done.load(std::memory_order_acquire) &&
-                    log.size().peek() == 0) {
+                if (producer_done.load(std::memory_order_acquire) && log.size().peek() == 0) {
                     break;
                 }
                 CRUCIBLE_SPIN_PAUSE;
@@ -349,12 +300,11 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
             }
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta& m = log.at(next + k);
-                const uintptr_t expected =
-                    static_cast<uintptr_t>(next + k + 1) << 16;
+                const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
                 assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
-                assert(m.dtype       == ScalarType::Float);
+                assert(m.dtype == ScalarType::Float);
                 assert(m.device_type == DeviceType::CUDA);
             }
             log.advance_tail(next + avail);

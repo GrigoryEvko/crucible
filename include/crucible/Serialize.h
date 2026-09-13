@@ -1,23 +1,20 @@
 #pragma once
 
-// Binary serialization for Merkle DAG nodes.
+// The wire format is a 32-byte header followed by a flat payload. The header
+// is a 4-byte magic, a 4-byte version, a 1-byte node kind, 7 zero pad bytes,
+// an 8-byte merkle hash and an 8-byte content hash.
 //
-// Wire format: CDAG magic (4B) + version (4B) + kind (1B) + pad (7B)
-//              + merkle_hash (8B) + content_hash (8B) + flat payload
-//
-// Position-independent: no raw pointers in the wire format.
-// TensorMeta.data_ptr is written as 0 (runtime address, meaningless persisted).
-// BranchNode arm targets are encoded as merkle_hash references, resolved on load
-// via a caller-supplied callback.
-//
-// Zero external dependencies: C++26 standard library only.
+// Nothing in the format is a raw pointer, so a loaded image is independent of
+// where it was written. A tensor's data pointer is written as zero, and a
+// branch arm's target is written as the target's merkle hash and resolved
+// through a caller-supplied lookup at load time.
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
-#include <crucible/PoolAllocator.h>  // kMaxPoolBytes: the init() pre this load gate mirrors
-#include <crucible/fixy/Source.h>  // FIXY-U-096t: tags::source::* provenance
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096t: Tagged via the fixy umbrella
+#include <crucible/PoolAllocator.h>
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 
 #include <concepts>
 #include <cstdint>
@@ -29,40 +26,33 @@
 
 namespace crucible {
 
-static constexpr uint32_t CDAG_MAGIC = 0x43444147u;  // 'GDAG' LE
+static constexpr uint32_t CDAG_MAGIC = 0x43444147u;  // reads "GDAG" little-endian
 using CdagFormatVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::FormatVersion>;
 using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::External>;
 using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;
 static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
-static constexpr CdagFormatVersion CDAG_VERSION{
-    9u};  // v9 (FOUND-057): ContentHash folds num_scalar_args + iterates all scalars (no 5-clamp); v8 hashes invalid
+static constexpr CdagFormatVersion CDAG_VERSION{9u};
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
 }
 
-// Hard caps on header-declared counts.  Real traces top out around
-// 10^5 ops / 10 inputs per op; the extra order of magnitude is slack.
-// Reject adversarial headers up front so we don't attempt TB-scale
-// allocations before discovering the body is truncated.
-static constexpr uint32_t CDAG_MAX_OPS = 1u << 22;  // 4 M ops
-// SLOTS tracks the allocator's runtime cap, NOT the family's 4 M slack: a
-// loaded plan materializes the replay pool via PoolAllocator::init(), whose
-// pre(in_range(num_slots, 0, kMaxNumSlots)) is `[[assume]]` under release
-// semantic=ignore.  Making the deserialize cap EQUAL init's cap (by deriving
-// it here) means "deserializes ⇒ safe to init" holds by construction — a
-// looser wire cap (formerly 4 M) let num_slots in (kMaxNumSlots, 4 M] pass
-// deserialize yet `[[assume]]`-violate init on a large enough corrupt Cipher.
+// Ceilings on the counts a header may declare, an order of magnitude above
+// anything a real trace reaches. A header is rejected against them before a
+// single byte of the body is trusted, so a fabricated count cannot provoke a
+// terabyte-scale allocation that only fails once the body turns out truncated.
+static constexpr uint32_t CDAG_MAX_OPS = 1u << 22;
+// The slot ceiling is the allocator's own, not a slack figure: a loaded plan
+// goes straight into the allocator, whose matching precondition is only an
+// assumption in a release build. Deriving the two from one constant makes
+// "it deserialised" imply "it is safe to initialise" by construction, where a
+// looser wire ceiling would admit counts the allocator cannot serve.
 static constexpr uint32_t CDAG_MAX_SLOTS = ::crucible::PoolAllocator::kMaxNumSlots;
 static constexpr uint16_t CDAG_MAX_INPUTS = 1024;
 static constexpr uint16_t CDAG_MAX_OUTPUTS = 1024;
 static constexpr uint16_t CDAG_MAX_SCALAR_ARGS = 256;
-static constexpr uint32_t CDAG_MAX_BRANCH_ARMS = 1u << 16;  // 64 K arms
-
-// ═══════════════════════════════════════════════════════════════════
-// Internal Writer/Reader — linear cursor with overflow detection.
-// ═══════════════════════════════════════════════════════════════════
+static constexpr uint32_t CDAG_MAX_BRANCH_ARMS = 1u << 16;
 
 namespace detail_ser {
 
@@ -109,47 +99,31 @@ struct Reader {
         return v;
     }
 
-    // Read a T and HARD-gate it against a deserialize predicate, failing
-    // closed (sets `ok = false`) on a malformed value.
+    // The real runtime branch behind every validated read in this file.
     //
-    // This is the release-safe companion to the typed Refined<> gates that
-    // follow it.  A fixy::wrap::Refined<Pred, T> constructed directly from a
-    // wire byte enforces `pre(Pred(v))` only under contract semantic
-    // enforce/observe (Debug / default presets).  Under the release preset
-    // (-DNDEBUG, semantic=ignore) that pre clause collapses to
-    // `[[assume(Pred(v))]]` — NO runtime branch — so an untrusted byte that
-    // violates the predicate becomes a false promise fed to the optimizer
-    // (downstream `default: std::unreachable()` UB, corrupted content-hash
-    // identity, etc.).  Trust-boundary reads must therefore reject malformed
-    // input through a real runtime branch BEFORE constructing the Refined.
+    // A refinement type constructed straight from a wire byte is not enough
+    // on its own. Its precondition is a genuine check only while contracts
+    // are enforced. In a release build it degrades to a promise handed to the
+    // optimiser, and a byte that breaks the predicate then becomes a lie the
+    // optimiser is entitled to act on. So untrusted input is rejected here
+    // first, by a plain predicate call that no build configuration removes,
+    // and the refinement that follows it is a second, typed check that holds
+    // by construction.
     //
-    // `read_gated` is that branch: it reads the byte through the existing
-    // truncation-checked path, evaluates `pred` unconditionally (the
-    // predicate is a plain constexpr callable, never a contract clause), and
-    // sets `ok = false` on failure — the same soft-fail channel a truncated
-    // read uses, which every deserialize entry point already turns into a
-    // nullptr/LoadedRegionNode{nullptr} return.
-    //
-    // On FAILURE it returns `valid_substitute` (a caller-supplied value the
-    // predicate is known to accept — `T{0}` for every deserialize predicate,
-    // since 0 is the first enumerator / a valid count) RATHER than the
-    // malformed byte.  This is deliberate: the immediate downstream caller
-    // feeds the result into a Refined<Pred, T> ctor, whose `pre(Pred(v))`
-    // would itself ABORT on a malformed value under semantic=enforce
-    // (Debug).  Substituting a predicate-valid sentinel makes the rejection
-    // UNIFORM — a clean nullptr return via `ok=false` in BOTH Debug and
-    // release, rather than abort-in-Debug / silent-pass-in-release.  The
-    // substituted value is never observed: `ok=false` forces the caller to
-    // discard the whole parse.
-    //
-    // On a well-formed value the returned byte is identical to `r<T>()`, so
-    // the success-path bytes and behaviour (DetSafe bit-stable replay) are
-    // unchanged — the gate only ADDS rejection of malformed input.
+    // A rejected read yields the substitute rather than the offending value.
+    // The caller passes the result to a refinement constructor, and handing
+    // that constructor a value its own precondition rejects would abort while
+    // contracts are enforced and pass silently otherwise. Returning a value
+    // the predicate accepts makes the outcome the same either way: the failure
+    // travels through ok, which every entry point already turns into a null
+    // return, and the substituted value is discarded with the rest of the
+    // parse. A value that passes is returned unchanged, so the bytes a good
+    // image produces are untouched.
     template <typename T, typename Pred>
     [[nodiscard]] T read_gated(Pred pred, T valid_substitute = T{0}) {
         const T v = r<T>();
-        // Only judge bytes we actually read; a prior truncation already
-        // set ok=false and v is the zero default — don't double-report.
+        // Judge only a byte that was actually read. After a truncation the
+        // value is the zero default and the failure is already recorded.
         if (ok && !pred(v)) [[unlikely]] {
             ok = false;
             return valid_substitute;
@@ -157,50 +131,31 @@ struct Reader {
         return v;
     }
 
-    // Bytes remaining from the cursor.
     [[nodiscard]] size_t remaining() const noexcept { return (pos <= len) ? (len - pos) : 0; }
 
-    // Pre-flight check for array-of-T deserialization: returns true iff
-    // the reader has at least n * sizeof(T) bytes remaining AND the
-    // product is computable without overflow.
-    //
-    // Use before allocating an arena buffer sized for `n` elements of
-    // type T: adversarial headers claiming counts near CDAG_MAX_* with
-    // a truncated body would otherwise grow the arena by
-    // n * sizeof(T) bytes before the per-element read discovers EOF —
-    // up to ~2 GB on num_ops=4M TraceEntry arrays.  With this check
-    // the arena is left untouched; the caller can bail cleanly.
+    // Ask before growing the arena for n elements. A header can claim a count
+    // near the ceiling with a truncated body, and without this the arena grows
+    // by the full amount before the first element read discovers the end of
+    // the buffer, leaving space only a detach can reclaim.
     template <typename T>
     [[nodiscard]] bool has_remaining(size_t n) const noexcept {
         if (n == 0) return true;
-        // Guard the multiply.  SIZE_MAX / sizeof(T) is the largest n
-        // for which n * sizeof(T) doesn't wrap on size_t.  Any header-
-        // declared count exceeding CDAG_MAX_* is already rejected, but
-        // the multiply check is a belt-and-braces defence for types T
-        // whose sizeof may grow (e.g. TraceEntry extensions).
+        // Largest n for which the product below does not wrap.
         if (n > SIZE_MAX / sizeof(T)) return false;
         const size_t need = n * sizeof(T);
         return pos <= len && (len - pos) >= need;
     }
 };
 
-// Write TensorMeta with process-local fields zeroed. data_ptr is a
-// runtime address; grad_fn_hash is a Family-B autograd identity. Neither
-// is meaningful after reload and neither may enter persistent bytes.
-// Pad bytes are written as zero for deterministic serialization.
-//
-// WRAP-Serialize-5 #1014: the two "MUST be zero" write sites pin their
-// invariant at the type level via fixy::wrap::Refined<fixy::wrap::is_zero, ...>.
-// A future refactor that accidentally feeds m.data_ptr (or any non-zero
-// expression) into either constructor contract-fires immediately at the
-// construction site — the violation surfaces as a clean Refined-ctor
-// failure rather than as silent wire-format corruption that breaks
-// DetSafe bit-stable replay.  Regime-1 EBO collapses the wrapper to
-// sizeof(uint64_t), so write_meta still emits exactly the same 8 bytes.
+// Two fields are process-local and must never reach persisted bytes: the data
+// pointer is a runtime address, and the gradient-function hash is an identity
+// only this process holds. Both are written as zero, and the zero is routed
+// through a type that rejects anything else, so a later edit that feeds the
+// live field in fails at the write instead of quietly producing an image whose
+// bytes differ between runs. Pad bytes are zero for the same reason.
 inline void write_meta(Writer& w, const TensorMeta& m) {
     w.write_bytes(m.sizes.raw_data(), sizeof(m.sizes));
     w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
-    // data_ptr → always 0 on disk (runtime address, meaningless persisted).
     const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_ptr{std::uint64_t{0}};
     w.w(zero_ptr.value());
     w.w(m.ndim);
@@ -214,13 +169,12 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.storage_offset);
     w.w(m.version);
     w.w(m.storage_nbytes);
-    // grad_fn_hash → always 0 on disk (Family-B process-local identity).
     const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_grad_fn_hash{std::uint64_t{0}};
     w.w(zero_grad_fn_hash.value());
 }
 
-// Read TensorMeta: process-local fields are always null/zero after
-// deserialization, even if older or corrupt bytes carry non-zero values.
+// The two process-local fields are reset here whatever the bytes hold, so an
+// older or corrupt image cannot resurrect an address from another process.
 inline TensorMeta read_meta(Reader& r) {
     TensorMeta m{};
     for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
@@ -229,41 +183,19 @@ inline TensorMeta read_meta(Reader& r) {
     for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
         m.strides[d] = tensor_dim(r.r<int64_t>());
     }
-    (void)r.r<uint64_t>();  // data_ptr (discarded)
+    (void)r.r<uint64_t>();  // the persisted data pointer, deliberately dropped
     m.data_ptr = external_data_ptr(nullptr);
-    // ── PROD-WRAP-5 (#534) — typed widening at deserialize boundary ──
-    // The byte on disk could be in [9, 255] under corruption or
-    // version skew (a uint8_t carries no inherent bound, but ndim is
-    // structurally bounded by sizes[8]/strides[8] = kMaxTensorNDim =
-    // 8).  `read_gated` is the HARD (non-contract) runtime branch that
-    // fails closed (sets r.ok=false → deserialize_region returns
-    // LoadedRegionNode{nullptr}) in BOTH Debug and release: ValidNDim's
-    // ctor pre-clause alone collapses to `[[assume]]` under the release
-    // preset (-DNDEBUG, semantic=ignore), so it cannot reject a corrupt
-    // byte there.  The Refined ctor still runs as a typed defense-in-depth
-    // re-check — its pre clause holds by construction because read_gated
-    // already established the bound.  TraceLoader's ndim > 8 guard is a
-    // further independent layer.
+    // The rank is bounded by the fixed width of the size and stride arrays.
     m.ndim = make_ndim(ValidNDim{r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>)});
-    // dtype gate (sibling of #534/#892): a corrupt or skewed byte outside
-    // ScalarType's sparse enumerator set (e.g. 14) would otherwise reach
-    // element_size()'s `default: std::unreachable()` as UB.  read_gated
-    // rejects it at deserialize entry in release too (the ValidScalarType
-    // ctor's pre clause is `[[assume]]`-only under -DNDEBUG).
+    // The scalar-type enumerators are sparse, and a value outside the set
+    // reaches a switch whose default is marked unreachable.
     m.dtype = make_scalar_type(ValidScalarType{r.read_gated<int8_t>(valid_scalar_type)});
-    // device_type gate (sibling of the dtype gate): boundary-validate the
-    // untrusted byte — device_type feeds the content hash (node identity),
-    // so a corrupt/skewed value silently corrupts it.  Fail-closed rather
-    // than admit a node with a corrupted hash.  (Not a UB fix — DeviceType
-    // has no std::unreachable consumer, unlike ScalarType.)  Hard-gated via
-    // read_gated so release rejects it (ctor pre is `[[assume]]`-only).
+    // The device type and the layout both feed the content hash, which is the
+    // node's identity, so an unrecognised value would not fail loudly. It
+    // would produce a node whose identity silently disagrees with the one that
+    // was written.
     m.device_type = make_device_type(ValidDeviceType{r.read_gated<int8_t>(valid_device_type)});
     m.device_idx = r.r<int8_t>();
-    // layout gate (last read_meta enum): boundary-validate the untrusted
-    // byte — layout feeds the content hash (node identity), so a corrupt
-    // value silently corrupts it.  Fail-closed.  (Not a UB fix — Layout
-    // has no std::unreachable consumer.)  Hard-gated via read_gated so
-    // release rejects it (ctor pre is `[[assume]]`-only).
     m.layout = make_layout(ValidLayout{r.read_gated<int8_t>(valid_layout)});
     m.requires_grad = r.r<bool>();
     m.flags = r.r<uint8_t>();
@@ -271,12 +203,11 @@ inline TensorMeta read_meta(Reader& r) {
     m.storage_offset = r.r<int64_t>();
     m.version = r.r<uint32_t>();
     m.storage_nbytes = r.r<uint32_t>();
-    (void)r.r<uint64_t>();  // grad_fn_hash (Family-B, discarded)
+    (void)r.r<uint64_t>();  // the persisted gradient-function hash, dropped
     m.grad_fn_hash = grad_fn_hash(0);
     return m;
 }
 
-// Write the common CDAG header (32B).
 inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);
     w.w(CDAG_VERSION.value());
@@ -290,7 +221,7 @@ inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, 
 struct Header {
     uint32_t magic = 0;
     ExternalCdagVersion version{0};
-    TraceNodeKind kind{};  // strong-typed (was raw uint8_t)
+    TraceNodeKind kind{};
     MerkleHash merkle_hash;
     ContentHash content_hash;
 };
@@ -299,15 +230,6 @@ inline Header read_header(Reader& r) {
     Header h{};
     h.magic = r.r<uint32_t>();
     h.version = ExternalCdagVersion{r.r<uint32_t>()};
-    // ── WRAP-Serialize-6 (#1015) — typed widening at deserialize boundary ──
-    // The byte on disk could be in [4, 255] under corruption or version
-    // skew.  read_gated is the HARD (non-contract) branch that fails
-    // closed (sets r.ok=false → the read_header callers' `if (!r.ok)
-    // return nullptr` fires) in BOTH Debug and release: ValidTraceNodeKindRaw's
-    // ctor pre-clause alone collapses to `[[assume]]` under the release
-    // preset (-DNDEBUG, semantic=ignore) and cannot reject a corrupt byte
-    // there.  The Refined ctor still runs as a typed defense-in-depth
-    // re-check (its pre clause holds by construction).
     h.kind = make_trace_node_kind(ValidTraceNodeKindRaw{
         r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)});
     uint8_t pad7[7]{};
@@ -319,12 +241,8 @@ inline Header read_header(Reader& r) {
 
 }  // namespace detail_ser
 
-// ═══════════════════════════════════════════════════════════════════
-// serialize_region
-// Returns bytes written, or 0 on buffer overflow.
-// meta_log is reserved for future use (metas already inlined in TraceEntry).
-// ═══════════════════════════════════════════════════════════════════
-
+// Returns the byte count written, or zero if the buffer was too small. The
+// meta log is unused: each entry already carries its own tensor metadata.
 [[nodiscard]] inline size_t serialize_region(const RegionNode* region, const MetaLog* /*meta_log*/,
                                              std::span<uint8_t> buf) {
     using namespace detail_ser;
@@ -332,17 +250,11 @@ inline Header read_header(Reader& r) {
 
     write_header(w, TraceNodeKind::REGION, region->merkle_hash, region->content_hash);
 
-    // Region fixed fields
     w.w(region->num_ops);
     w.w(region->first_op_schema.raw());
     w.w(region->measured_ms);
-    // #942 WRAP-MerkleDag-6: variant_id is fixy::wrap::Monotonic<uint32_t>
-    // (regime-2 collapse to sizeof(uint32_t)=4B; on-disk format
-    // unchanged).  .get() projects the underlying uint32_t for the
-    // raw byte writer.
     w.w(region->variant_id.get());
 
-    // MemoryPlan (optional)
     const bool has_plan = (region->plan != nullptr);
     w.w(has_plan);
     if (has_plan) {
@@ -356,13 +268,12 @@ inline Header read_header(Reader& r) {
         w.w(plan->device_capability);
         w.w(plan->rank);
         w.w(plan->world_size);
-        // TensorSlot is 40B with no pointers — verbatim.
+        // A slot holds no pointers, so it goes to disk verbatim.
         for (uint32_t s = 0; s < plan->num_slots; s++) {
             w.write_bytes(&plan->slots[s], sizeof(TensorSlot));
         }
     }
 
-    // TraceEntries
     for (uint32_t i = 0; i < region->num_ops; i++) {
         const TraceEntry& te = region->ops[i];
 
@@ -374,7 +285,7 @@ inline Header read_header(Reader& r) {
         w.w(te.num_outputs);
         w.w(te.num_scalar_args);
         w.w(te.grad_enabled);
-        // Pack all op_flags into one byte (same layout as TraceRing::Entry::op_flags).
+        // One byte, laid out the same way the recording ring lays it out.
         {
             uint8_t flags = 0;
             if (te.inference_mode) flags |= op_flag::INFERENCE_MODE;
@@ -412,12 +323,8 @@ inline Header read_header(Reader& r) {
     return w.ok ? w.pos : 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// deserialize_region
-// Returns a Loaded-tagged null pointer on parse error or version mismatch.
-// All structures are arena-allocated; data_ptr is always null.
-// ═══════════════════════════════════════════════════════════════════
-
+// Returns a tagged null pointer on a parse error or a version mismatch. Every
+// structure it builds lives in the arena.
 [[nodiscard]] inline LoadedRegionNode deserialize_region(effects::Alloc a, std::span<const uint8_t> buf, Arena& arena) {
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
@@ -433,45 +340,28 @@ inline Header read_header(Reader& r) {
     const float measured_ms = r.r<float>();
     const uint32_t variant_id = r.r<uint32_t>();
 
-    // MemoryPlan
     MemoryPlan* plan = nullptr;
     const bool has_plan = r.r<bool>();
     if (has_plan) {
         plan = arena.alloc_obj<MemoryPlan>(a);
         plan->pool_bytes = r.r<uint64_t>();
-        // pool_bytes feeds PoolAllocator::init()'s
-        // pre(in_range(pool_bytes, 0, kMaxPoolBytes)).  Under release
-        // semantic=ignore that clause is `[[assume]]`, so a corrupt or
-        // version-skewed Cipher byte with pool_bytes > kMaxPoolBytes
-        // (256 GB) reaches init as `[[assume]]`-UB — and the body then
-        // feeds the value to aligned_alloc.  Reject at the load boundary
-        // against the SAME constant init checks (single source of truth),
-        // companion to the num_slots / num_external bounds below.  The
-        // bound is inclusive (in_range is closed [0, kMaxPoolBytes]), so
-        // only a strictly-greater value is rejected.
+        // The next three checks all guard the same thing: a loaded plan goes
+        // on to initialise the replay pool, whose own preconditions are only
+        // assumptions in a release build. Each bound is taken from the
+        // allocator's own constant, or is the structural relation the
+        // allocator assumes, so a value that survives here is one the
+        // allocator can serve. The pool size bound is inclusive, so only a
+        // strictly larger value is refused.
         if (plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
             return LoadedRegionNode{nullptr};
         }
         plan->num_slots = r.r<uint32_t>();
         if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
         plan->num_external = r.r<uint32_t>();
-        // External slots are a subset of total slots (num_external counts
-        // how many of num_slots are external), so num_external <= num_slots
-        // is a structural invariant — and it is PoolAllocator::init()'s
-        // `pre(plan->num_external <= plan->num_slots)`.  A corrupt or
-        // version-skewed Cipher byte could deliver num_external > num_slots;
-        // unchecked, that reaches the init precondition where, under
-        // semantic=ignore, the violated clause is `[[assume]]` UB.  Reject
-        // at the boundary, companion to the num_slots bound above.
+        // The external slots are a subset of the slots, so their count cannot
+        // exceed the total.
         if (plan->num_external > plan->num_slots) return LoadedRegionNode{nullptr};
-        // device_type gate (reuses ValidDeviceType): same boundary-
-        // hardening as the read_meta gate — a corrupt/version-skewed
-        // byte would otherwise enter pool selection (== DeviceType::CPU)
-        // unchecked.  Completes DeviceType deserialize coverage across
-        // both boundaries (TensorMeta + MemoryPlan).  Hard-gated via
-        // read_gated so release rejects it too (the ValidDeviceType ctor
-        // pre is `[[assume]]`-only under -DNDEBUG); r.ok=false on a
-        // malformed byte propagates to the `if (!r.ok)` return below.
+        // An unrecognised device type would reach pool selection unchecked.
         plan->device_type = make_device_type(ValidDeviceType{r.read_gated<int8_t>(valid_device_type)});
         plan->device_idx = r.r<int8_t>();
         r.read_bytes(plan->pad0, sizeof(plan->pad0));
@@ -479,15 +369,8 @@ inline Header read_header(Reader& r) {
         plan->rank = r.r<int32_t>();
         plan->world_size = r.r<int32_t>();
         if (plan->num_slots > 0) {
-            // Pre-flight size check: before allocating num_slots * sizeof
-            // TensorSlot bytes in the arena, verify the reader has that
-            // many bytes remaining.  Adversarial input claiming
-            // num_slots = CDAG_MAX_SLOTS with a short buffer would otherwise
-            // succeed at alloc_array (grows the arena) then fail read-by-
-            // read — wasting arena space that only detach() can reclaim.
-            // Multiplication bound: num_slots ≤ CDAG_MAX_SLOTS; sizeof
-            // TensorSlot is a small compile-time constant; product fits
-            // uint64_t.
+            // The product cannot overflow: the count is already bounded by the
+            // slot ceiling and the element size is a small constant.
             const uint64_t slot_bytes = static_cast<uint64_t>(plan->num_slots) * sizeof(TensorSlot);
             if (r.pos + slot_bytes > r.len) return LoadedRegionNode{nullptr};
             plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
@@ -499,12 +382,9 @@ inline Header read_header(Reader& r) {
         }
     }
 
-    // TraceEntries.  Each entry is a variable-size record (input/output
-    // metas + scalar args), but the minimum per-entry wire cost is the
-    // fixed header (hashes + counts + flags ≈ 40 bytes), which we can
-    // pre-flight cheaply.  Adversarial num_ops=CDAG_MAX_OPS (4M) with a
-    // truncated body would otherwise grow the arena by 4M *
-    // sizeof(TraceEntry) (~2 GB) before the first read_meta failure.
+    // An entry is variable-length, but its fixed part of hashes, counts and
+    // flags gives a floor per entry, which is enough to reject a declared op
+    // count that the remaining bytes cannot possibly hold.
     constexpr size_t kTraceEntryMinWireBytes = 40;
     if (num_ops > 0 && r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes) {
         return LoadedRegionNode{nullptr};
@@ -524,7 +404,6 @@ inline Header read_header(Reader& r) {
         if (te.num_outputs > CDAG_MAX_OUTPUTS) return LoadedRegionNode{nullptr};
         if (te.num_scalar_args > CDAG_MAX_SCALAR_ARGS) return LoadedRegionNode{nullptr};
         te.grad_enabled = r.r<bool>();
-        // Unpack op_flags byte (same layout as TraceRing::Entry::op_flags).
         {
             const uint8_t flags = r.r<uint8_t>();
             te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
@@ -532,17 +411,9 @@ inline Header read_header(Reader& r) {
             te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
             te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
         }
-        // Validated uint8_t → CKernelId widening (#892 WRAP-CKernel-4).
-        // A corrupted Cipher file or version-skew can deliver a byte
-        // in [NUM_KERNELS, 255]; the explicit bound check returns
-        // nullptr (matches the deserialize-error policy used for
-        // num_inputs / num_outputs / num_scalar_args above), and the
-        // checked Refined ctor stands as a defense-in-depth re-check
-        // — the bound is established by the if-return, so the ctor's
-        // pre clause holds and never aborts on this path.  The neg-
-        // compile fixtures pin the structural guarantee at the type
-        // level: a constexpr ValidCKernelIdRaw{>= NUM_KERNELS} is
-        // ill-formed regardless of what callers do.
+        // The explicit bound is what rejects an out-of-range byte in every
+        // build. The typed widening that follows it then holds by
+        // construction.
         {
             const uint8_t raw_kernel_id = r.r<uint8_t>();
             if (raw_kernel_id >= static_cast<uint8_t>(CKernelId::NUM_KERNELS)) [[unlikely]] {
@@ -574,25 +445,14 @@ inline Header read_header(Reader& r) {
         te.input_slot_ids = (te.num_inputs > 0) ? arena.alloc_array<SlotId>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
-            // A loaded slot_id indexes ReplayEngine::slot_table_, which
-            // holds exactly the replay pool's num_slots void* entries.
-            // The replay hot path (input_ptr / output_ptr) guards ONLY
-            // sid.is_valid() (the none-sentinel), NOT sid.raw() <
-            // num_slots — by design that bound is a construction-time
-            // invariant the hot path trusts as [[assume]] (single-MOV
-            // slot_table_[sid.raw()]).  For a plan-BEARING region the
-            // replay pool is materialized from THIS plan, so every valid
-            // slot_id must be a real index (< plan->num_slots); the
-            // planner (and external-slot numbering, which shares the
-            // [0,num_slots) index space) guarantees this in trusted flow.
-            // A corrupt/version-skewed Cipher could deliver sid.raw() >=
-            // num_slots with is_valid() true, reaching slot_table_[sid
-            // .raw()] = OUT-OF-BOUNDS heap read.  Reject at the load
-            // boundary, companion to the num_slots / num_external bounds
-            // above; same fail-closed deserialize-error policy.  A plan-
-            // LESS region carries opaque slot_ids that bind no pool until
-            // one is supplied elsewhere, so it has no bound to enforce
-            // here (and is not executable without that pool).
+            // A slot id indexes the replay slot table, and replay checks only
+            // that the id is not the none sentinel: the upper bound is a
+            // construction-time invariant it assumes rather than tests, so
+            // indexing with an out-of-range id reads past the table. When the
+            // region carries a plan the table is built from that plan, so the
+            // bound is known here and enforced here. A region without a plan
+            // binds to no table and cannot execute until one is supplied
+            // elsewhere, so there is no bound to enforce for it.
             if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
                 return LoadedRegionNode{nullptr};
             }
@@ -602,10 +462,7 @@ inline Header read_header(Reader& r) {
         te.output_slot_ids = (te.num_outputs > 0) ? arena.alloc_array<SlotId>(a, te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
-            // Same plan-bearing OOB-index guard as input_slot_ids above:
-            // an untrusted out-of-range slot_id would reach ReplayEngine
-            // output_ptr's slot_table_[sid.raw()] OOB read.  Plan-less
-            // regions are exempt (no pool to bound against).
+            // The same bound as for the input slot ids above.
             if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
                 return LoadedRegionNode{nullptr};
             }
@@ -615,7 +472,7 @@ inline Header read_header(Reader& r) {
 
     if (!r.ok) return LoadedRegionNode{nullptr};
 
-    // Construct RegionNode in arena (atomic field requires placement new).
+    // Placement new rather than a plain cast: the node holds an atomic field.
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->merkle_hash = hdr.merkle_hash;
@@ -625,45 +482,27 @@ inline Header read_header(Reader& r) {
     node->num_ops = num_ops;
     node->first_op_schema = first_op_schema;
     node->measured_ms = measured_ms;
-    // #942 WRAP-MerkleDag-6: variant_id is fixy::wrap::Monotonic<uint32_t>.
-    // The field was already default-constructed to {0u} by the
-    // RegionNode{} placement-new above; re-establish the invariant
-    // from the disk-supplied value via std::construct_at so the
-    // wrapper's Monotonic ctor runs on the new value.  Bypassing
-    // .advance() is deliberate here — the disk value may be 0 (region
-    // never had a variant selected when serialized), which advance's
-    // outer set_variant gate would reject (CONTRACT-106 non-zero).
-    // Same construct_at re-anchor pattern as CKernelTable::clear() and
-    // IterationDetector::reset() — load from a known floor on the
-    // wrapper's terms.
+    // The counter is reconstructed rather than advanced. The value on disk may
+    // be zero, meaning no variant had been selected when the region was
+    // written, and advancing to zero is exactly what the counter forbids.
     std::construct_at(&node->variant_id, RegionNode::VariantCounter{variant_id});
     node->plan = plan;
-    // node->compiled is a PublishOnce<CompiledKernel> — default-
-    // constructed nullptr is the correct "not yet published" state.
-    // No explicit store needed.
     return LoadedRegionNode{node};
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// serialize_branch
-// Encodes arm targets as merkle_hash references (resolved on load).
-// Returns bytes written, or 0 on overflow.
-// ═══════════════════════════════════════════════════════════════════
-
+// Returns the byte count written, or zero if the buffer was too small.
 [[nodiscard]] inline size_t serialize_branch(const BranchNode* branch, std::span<uint8_t> buf) {
     using namespace detail_ser;
     Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 
-    // For BRANCH nodes, the second 8B slot in the header stores the
-    // continuation's merkle_hash (shared suffix after all arms merge).
-    // Note: content_hash slot is repurposed for continuation merkle_hash.
+    // A branch node repurposes the header's content-hash field to hold the
+    // merkle hash of the continuation, the suffix the arms merge back into.
     const MerkleHash cont_hash = branch->next ? branch->next->merkle_hash : MerkleHash{};
     write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
 
-    // Guard (12B verbatim — no pointers)
+    // The guard holds no pointers, so it goes to disk verbatim.
     w.write_bytes(&branch->guard, sizeof(Guard));
 
-    // Arms: value + target merkle_hash
     w.w(branch->num_arms);
     for (uint32_t i = 0; i < branch->num_arms; i++) {
         w.w(branch->arms[i].value);
@@ -674,12 +513,8 @@ inline Header read_header(Reader& r) {
     return w.ok ? w.pos : 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// deserialize_branch
-// resolve(merkle_hash) → TraceNode* reconstructs pointer targets.
-// Returns nullptr on parse error.
-// ═══════════════════════════════════════════════════════════════════
-
+// The resolver turns each persisted merkle hash back into a node pointer.
+// Returns null on a parse error.
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
 [[nodiscard]] inline BranchNode* deserialize_branch(effects::Alloc a, std::span<const uint8_t> buf,
@@ -692,7 +527,7 @@ template <typename Resolve>
     if (!r.ok || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version) || hdr.kind != TraceNodeKind::BRANCH) {
         return nullptr;
     }
-    // hdr.content_hash holds the continuation's merkle_hash (see serialize_branch)
+    // The header's content-hash field holds the continuation's merkle hash.
 
     Guard guard{};
     r.read_bytes(&guard, sizeof(Guard));
@@ -700,15 +535,10 @@ template <typename Resolve>
     const uint32_t num_arms = r.r<uint32_t>();
     if (num_arms > CDAG_MAX_BRANCH_ARMS) return nullptr;
 
-    // Pre-flight: each arm is 16 bytes on the wire (int64 value +
-    // MerkleHash).  Reject truncated bodies before allocating the arms
-    // array — an adversarial num_arms near CDAG_MAX_BRANCH_ARMS (64 K)
-    // with a short body would otherwise grow the arena by 64 K * 16 B
-    // (1 MB) uselessly.  The check runs once, O(1).  Use explicit wire
-    // byte count instead of sizeof(Arm) — wire and in-memory layouts
-    // happen to coincide at 16 bytes today, but in-memory Arm ends up
-    // storing a TraceNode* (not a MerkleHash) post-resolve, so tying
-    // the check to the wire cost decouples from struct changes.
+    // Reject a truncated body before growing the arena for the arms. The wire
+    // cost is spelled out rather than taken from the in-memory arm: the two
+    // sizes coincide today, but the in-memory arm holds a resolved pointer
+    // where the wire holds a hash, so only one of them is the file's business.
     constexpr size_t kArmWireBytes = sizeof(int64_t) + sizeof(uint64_t);
     if (num_arms > 0 && r.remaining() < static_cast<size_t>(num_arms) * kArmWireBytes) {
         return nullptr;
@@ -718,7 +548,7 @@ template <typename Resolve>
     ::new(node) BranchNode{};
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
-    node->next = nullptr;  // caller resolves continuation separately
+    node->next = nullptr;  // the caller resolves the continuation separately
     node->guard = guard;
     node->num_arms = num_arms;
     node->pad1 = 0;

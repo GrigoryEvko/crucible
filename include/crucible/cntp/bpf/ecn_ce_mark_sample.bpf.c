@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P ECN-CE mark sample stub.
- *
- * Future role: feed ECN congestion evidence into CNT-P control loops before
- * userspace TCP_INFO polling catches up. Current behavior: XDP_PASS.
- */
-
 #include "../dataplane/bpf/net_common.h"
 
 #ifndef XDP_PASS

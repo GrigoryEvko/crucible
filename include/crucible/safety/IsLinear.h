@@ -1,11 +1,5 @@
 #pragma once
 
-// Wrapper-detection predicate for safety::Linear<T>.
-//
-// This follows the safety/Is*.h convention: exact template-specialization
-// detection after cv-ref stripping, constrained extractor aliases, local
-// compile-time witnesses, and a runtime smoke hook for the sentinel TU.
-
 #include <crucible/safety/Linear.h>
 
 #include <type_traits>

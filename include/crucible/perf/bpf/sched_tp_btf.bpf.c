@@ -1,35 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * sched_tp_btf.bpf.c — Off-CPU analysis via BTF-typed sched_switch tracepoint.
- *
- * Functionally identical to sched_switch.bpf.c but uses SEC("tp_btf/sched_switch")
- * instead of SEC("tracepoint/sched/sched_switch").
- *
- * Advantages over the legacy tracepoint path:
- *   1. ~30% lower overhead (skips tracepoint format string processing)
- *   2. CO-RE portable: args accessed via BTF, survives kernel struct changes
- *   3. Direct struct task_struct access (prev->pid instead of ctx->prev_pid)
- *   4. Fires in prev's context — bpf_get_stackid captures correct stack
- *
- * BTF signature (from /sys/kernel/btf/vmlinux):
- *   btf_trace_sched_switch(void *, bool preempt, struct task_struct *prev,
- *                          struct task_struct *next, unsigned int prev_state)
- *
- * Requires: CONFIG_DEBUG_INFO_BTF=y, /sys/kernel/btf/vmlinux present.
- * Minimum kernel: 5.5 (BTF raw tracepoints).
- */
-
 #include "common.h"
 
-/* ─── Maps ──────────────────────────────────────────────────────────── */
-
-/* tid → switch-out timestamp.
- *
- * GAPS-004f-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
- * entries (thread switched OUT but never observed switching IN, e.g.
- * non-our_tids threads or threads that exited) auto-evict on insert
- * pressure rather than accumulating to MAX_ENTRIES.  Same fix class
- * as SchedSwitch GAPS-004b-AUDIT. */
+/* A thread switched out and never seen switching back in leaves an orphan
+ * here. LRU_HASH evicts those under insert pressure. A plain HASH would fill
+ * to the entry limit and then reject every new insert. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
@@ -37,7 +11,6 @@ struct {
     __type(value, __u64);
 } switch_start SEC(".maps");
 
-/* tid → stack_id captured at switch-out.  LRU_HASH — same rationale. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
@@ -81,23 +54,19 @@ struct {
     __type(value, struct sched_timeline);
 } sched_timeline SEC(".maps");
 
-/* ─── BTF-typed tracepoint handler ────────────────────────────────────── */
-
 /*
- * tp_btf/sched_switch — BTF raw tracepoint variant.
+ * The raw tracepoint hands over its arguments as an untyped array. Slot 0 is
+ * an unused context pointer, slot 1 the preempt flag, slot 2 the outgoing
+ * task, slot 3 the incoming task and slot 4 the previous state.
  *
- * Args from BTF (typed, CO-RE relocated):
- *   ctx[0]: void *         (unused context pointer)
- *   ctx[1]: bool           preempt flag
- *   ctx[2]: task_struct *  prev task (being switched OUT)
- *   ctx[3]: task_struct *  next task (being switched IN)
- *   ctx[4]: unsigned int   prev_state
+ * It runs in the outgoing task's context, so bpf_get_stackid() below captures
+ * that task's stack.
  *
- * Fires in PREV task's context — bpf_get_stackid() captures prev's stack.
+ * A BTF tracepoint needs a kernel built with CONFIG_DEBUG_INFO_BTF, which is
+ * what puts /sys/kernel/btf/vmlinux in place, and kernel 5.5 or newer.
  */
 SEC("tp_btf/sched_switch")
 int handle_sched_switch_btf(u64* ctx) {
-    /* Extract typed arguments from BTF context */
     struct task_struct* prev = (struct task_struct*)ctx[2];
     struct task_struct* next = (struct task_struct*)ctx[3];
 
@@ -106,23 +75,19 @@ int handle_sched_switch_btf(u64* ctx) {
     __u32 prev_tgid = BPF_CORE_READ(prev, tgid);
     __u32 next_pid = BPF_CORE_READ(next, pid);
 
-    /* ── Switch OUT: prev belongs to our process ─────────────────── */
     if (prev_tgid == target_tgid) {
         bpf_map_update_elem(&switch_start, &prev_pid, &ts, BPF_ANY);
 
-        /* Capture userspace stack — correct because we're in prev's context */
         __s32 sid = bpf_get_stackid(ctx, &stacks, BPF_F_USER_STACK | BPF_F_FAST_STACK_CMP);
         if (sid >= 0) {
             bpf_map_update_elem(&switch_stack, &prev_pid, &sid, BPF_ANY);
         }
 
-        /* Increment context switch counter */
         __u32 zero = 0;
         __u64* cnt = bpf_map_lookup_elem(&cs_count, &zero);
         if (cnt) __sync_fetch_and_add(cnt, 1);
     }
 
-    /* ── Switch IN: next belongs to our process ──────────────────── */
     __u8* is_ours = bpf_map_lookup_elem(&our_tids, &next_pid);
     if (is_ours) {
         __u64* start_ts = bpf_map_lookup_elem(&switch_start, &next_pid);
@@ -151,7 +116,6 @@ int handle_sched_switch_btf(u64* ctx) {
                 bpf_map_update_elem(&offcpu, &key, &new_val, BPF_NOEXIST);
             }
 
-            /* Emit to zero-copy timeline (ts_ns written last for ordering) */
             __u32 tl_zero = 0;
             struct sched_timeline* tl = bpf_map_lookup_elem(&sched_timeline, &tl_zero);
             if (tl) {
@@ -161,11 +125,9 @@ int handle_sched_switch_btf(u64* ctx) {
                     tl->events[slot].off_cpu_ns = delta;
                     tl->events[slot].tid = next_pid;
                     tl->events[slot].on_cpu = bpf_get_smp_processor_id();
-                    /* Compiler barrier — GAPS-004f-AUDIT (2026-05-04).
-                     * Forces clang to emit the prior 3 stores BEFORE
-                     * the ts_ns store; pairs with the userspace reader's
-                     * __atomic_load_n(&ts_ns, ACQUIRE).  Same fix class
-                     * as SchedSwitch GAPS-004b-AUDIT. */
+                    /* The memory clobber stops the compiler from sinking
+                     * the three stores above past the ts_ns store. It pairs
+                     * with the acquire load of ts_ns in the reader. */
                     __asm__ __volatile__("" ::: "memory");
                     tl->events[slot].ts_ns = ts; /* completion marker */
                 }

@@ -27,53 +27,37 @@ int main() {
     static_assert(!std::is_move_constructible_v<Hlc>);
 
     constexpr HlcTimestamp zero{};
-    static_assert(Hlc::local_event(zero, 10) ==
-                  HlcTimestamp{.physical_ns = 10, .counter = 0});
-    static_assert(Hlc::local_event({.physical_ns = 10, .counter = 0}, 9) ==
-                  HlcTimestamp{.physical_ns = 10, .counter = 1});
-    static_assert(Hlc::recv_event(
-                      {.physical_ns = 10, .counter = 3},
-                      {.physical_ns = 10, .counter = 7},
-                      9) == HlcTimestamp{.physical_ns = 10, .counter = 8});
-    static_assert(Hlc::recv_event(
-                      {.physical_ns = 10, .counter = 3},
-                      {.physical_ns = 20, .counter = 7},
-                      9) == HlcTimestamp{.physical_ns = 20, .counter = 8});
-    static_assert(Hlc::recv_event(
-                      {.physical_ns = 10, .counter = 3},
-                      {.physical_ns = 20, .counter = 7},
-                      30) == HlcTimestamp{.physical_ns = 30, .counter = 0});
-    static_assert(Hlc::local_event(
-                      {.physical_ns = 10,
-                       .counter = UINT32_MAX},
-                      9) == HlcTimestamp{.physical_ns = 11, .counter = 0});
+    static_assert(Hlc::local_event(zero, 10) == HlcTimestamp{.physical_ns = 10, .counter = 0});
+    static_assert(Hlc::local_event({.physical_ns = 10, .counter = 0}, 9)
+                  == HlcTimestamp{.physical_ns = 10, .counter = 1});
+    static_assert(Hlc::recv_event({.physical_ns = 10, .counter = 3}, {.physical_ns = 10, .counter = 7}, 9)
+                  == HlcTimestamp{.physical_ns = 10, .counter = 8});
+    static_assert(Hlc::recv_event({.physical_ns = 10, .counter = 3}, {.physical_ns = 20, .counter = 7}, 9)
+                  == HlcTimestamp{.physical_ns = 20, .counter = 8});
+    static_assert(Hlc::recv_event({.physical_ns = 10, .counter = 3}, {.physical_ns = 20, .counter = 7}, 30)
+                  == HlcTimestamp{.physical_ns = 30, .counter = 0});
+    static_assert(Hlc::local_event({.physical_ns = 10, .counter = UINT32_MAX}, 9)
+                  == HlcTimestamp{.physical_ns = 11, .counter = 0});
 
-    // fixy-A5-033 regression: AtomicPackedHlcState::load() on x86_64 uses
-    // `lock cmpxchg16b` as the atomic 128-bit load idiom.  Two invariants
-    // must hold across the cmpxchg-as-load mechanism:
-    //   (a) Pre-write peek(): on a freshly constructed Hlc, peek() must
-    //       observe the initial zero state.  This is the path where
-    //       cmpxchg16b succeeds (expected==cell_==0) and writes 0 to
-    //       cell_ — a literal-zero write that must not corrupt the
-    //       counter or break determinism.
-    //   (b) Post-write idempotency: after a single now() bumps cell_ to
-    //       a non-zero value, repeated peek() calls must return the
-    //       same value.  Pre-fix mishandling could have manifested as
-    //       cell_ being clobbered to 0 by a stray load.
+    // On x86_64 the atomic 128-bit load is a compare-exchange, so a read
+    // also writes. Two invariants follow. On a fresh clock the exchange
+    // succeeds against a zero expected value and writes zero back, which
+    // must leave the counter alone. After a first reading bumps the cell,
+    // repeated readings must return the same value rather than clobbering
+    // it back to zero on the exchange's failure path.
     {
         Hlc fresh_clock;
         const HlcTimestamp zero_peek = fresh_clock.peek();
         assert(zero_peek.physical_ns == 0);
         assert(zero_peek.counter == 0);
-        // Second peek on still-uninitialized state must remain zero.
         assert(fresh_clock.peek().physical_ns == 0);
         assert(fresh_clock.peek().counter == 0);
 
         const HlcTimestamp first = fresh_clock.now();
         const HlcTimestamp peek_after_first = fresh_clock.peek();
         assert(first == peek_after_first);
-        // Repeated peek with no intervening now() returns the same
-        // value — proves cmpxchg16b's failure-path load preserves cell_.
+        // With no reading in between, the failure path of the exchange must
+        // leave the cell exactly as it found it.
         assert(fresh_clock.peek() == peek_after_first);
         assert(fresh_clock.peek() == peek_after_first);
     }
@@ -88,8 +72,7 @@ int main() {
 
     clock.on_recv(HlcTimestamp{.physical_ns = c.physical_ns + 1, .counter = 9});
     const HlcTimestamp after_recv = clock.peek();
-    const HlcTimestamp peer_floor{.physical_ns = c.physical_ns + 1,
-                                  .counter = 9};
+    const HlcTimestamp peer_floor{.physical_ns = c.physical_ns + 1, .counter = 9};
     assert(after_recv > c);
     assert(after_recv >= peer_floor);
 
@@ -120,12 +103,10 @@ int main() {
 
     using Channel = crucible::canopy::HlcTimestampChannel<16, HlcStreamTag>;
     Channel channel;
-    auto whole =
-        crucible::safety::mint_permission_root<typename Channel::whole_tag>();
+    auto whole = crucible::safety::mint_permission_root<typename Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =
-        crucible::safety::mint_permission_split<
-            typename Channel::producer_tag,
-            typename Channel::consumer_tag>(std::move(whole));
+        crucible::safety::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(
+            std::move(whole));
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
 

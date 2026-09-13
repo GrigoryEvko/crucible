@@ -19,10 +19,6 @@ namespace crucible::cntp {
 
 namespace {
 
-// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
-// FileHandle's CRUCIBLE_PRE(Fd::is_valid_pattern) rejects errno-shaped
-// negative fds (e.g. -EBADF == -9), a strictly tighter contract than
-// the pre-shim that silently treated any negative as "closed".
 using LocalFd = ::crucible::safety::FileHandle;
 
 struct QdiscDumpRequest {
@@ -136,12 +132,10 @@ std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noe
         return std::unexpected(PacingError::NetlinkOpenFailed);
     }
 
-    // fixy-A5-004 / fixy-A5-036: explicit bind with nl_pid=0 forces a
-    // unique kernel-assigned PID per socket.  Without this, two threads
-    // sharing getpid() collide on the implicit-bind path and can
-    // observe each other's replies.  nl_pid=0 is the canonical
-    // "kernel pick a free address for me" sentinel; the per-socket PID
-    // is then stable for the lifetime of `nl`.
+    // An explicit bind with nl_pid = 0 asks the kernel to assign a unique
+    // address to this socket.  On the implicit-bind path the kernel derives
+    // the address from getpid(), so two threads collide and can observe each
+    // other's replies.  The assigned address is stable for the life of nl.
     sockaddr_nl bind_addr{};
     bind_addr.nl_family = AF_NETLINK;
     bind_addr.nl_pid = 0;
@@ -153,10 +147,9 @@ std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noe
         return std::unexpected(PacingError::NetlinkOpenFailed);
     }
 
-    // fixy-A5-004: bounded receive — kernel dropping NLMSG_DONE (broken
-    // iface, firewall) would otherwise hang this thread forever.  5 s
-    // upper bound matches the worst-case observed in production NIC
-    // fleets; failure returns NetlinkReceiveFailed.
+    // A kernel that never emits NLMSG_DONE, because the interface is broken
+    // or a firewall drops the reply, would block this thread forever.  The
+    // receive is therefore time-bounded.
     timeval rcv_timeout{};
     rcv_timeout.tv_sec = 5;
     rcv_timeout.tv_usec = 0;
@@ -196,12 +189,10 @@ std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noe
                 return std::unexpected(PacingError::NetlinkReceiveFailed);
             }
 
-            // fixy-A5-036: filter replies that don't carry our request
-            // sequence number.  Multiple threads sharing this codepath
-            // can observe each other's leaked replies under the same
-            // PID even with explicit bind; the seq check makes the
-            // dispatch deterministic.  Skip-rather-than-fail because
-            // benign kernel control messages share the socket.
+            // Replies belonging to another request can reach this socket, so
+            // the dump filters on the request sequence number.  Skipping
+            // rather than failing keeps benign kernel control messages from
+            // aborting the dump.
             if (header->nlmsg_seq != kRequestSeq) {
                 const std::size_t step = align4(header->nlmsg_len);
                 if (step > remaining) {

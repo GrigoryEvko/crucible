@@ -1,9 +1,3 @@
-// GAPS-082: indexed SubstrateSessionBridge support for ShardedGrid.
-//
-// Verifies that ShardId<I> selects the correct statically-indexed
-// ProducerHandle<I> / ConsumerHandle<J>, and that the generic substrate
-// session factory composes with the ShardedGrid session facade.
-
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
@@ -28,30 +22,21 @@ struct HeaderTag {};
 using Grid = cc::PermissionedShardedGrid<int, 4, 8, 64, BridgeTag>;
 
 static_assert(sgs::ShardedGridSessionSurface<Grid>);
-static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<0>,
-                                             cc::Direction::Producer>);
-static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<7>,
-                                             cc::Direction::Consumer>);
+static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<0>, cc::Direction::Producer>);
+static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<7>, cc::Direction::Consumer>);
 static_assert(!cc::IsBridgeableDirection<Grid, cc::Direction::Producer>);
 
-static_assert(std::is_same_v<
-    cc::handle_for_t<Grid, cc::Direction::Producer, cc::ShardId<3>>,
-    Grid::ProducerHandle<3>>);
-static_assert(std::is_same_v<
-    cc::handle_for_t<Grid, cc::Direction::Consumer, cc::ShardId<7>>,
-    Grid::ConsumerHandle<7>>);
-static_assert(std::is_same_v<
-    cc::default_proto_for_t<Grid, cc::Direction::Producer, cc::ShardId<0>>,
-    sgs::ProducerProto<int>>);
-static_assert(std::is_same_v<
-    cc::default_proto_for_t<Grid, cc::Direction::Consumer, cc::ShardId<0>>,
-    sgs::ConsumerProto<int>>);
+static_assert(std::is_same_v<cc::handle_for_t<Grid, cc::Direction::Producer, cc::ShardId<3>>, Grid::ProducerHandle<3>>);
+static_assert(std::is_same_v<cc::handle_for_t<Grid, cc::Direction::Consumer, cc::ShardId<7>>, Grid::ConsumerHandle<7>>);
+static_assert(
+    std::is_same_v<cc::default_proto_for_t<Grid, cc::Direction::Producer, cc::ShardId<0>>, sgs::ProducerProto<int>>);
+static_assert(
+    std::is_same_v<cc::default_proto_for_t<Grid, cc::Direction::Consumer, cc::ShardId<0>>, sgs::ConsumerProto<int>>);
 
 template <typename UserTag, std::size_t M, std::size_t N>
 auto fresh_grid_perms() {
     auto whole = safety::mint_permission_root<cc::grid_tag::Whole<UserTag>>();
-    return safety::mint_grid_permissions<cc::grid_tag::Whole<UserTag>, M, N>(
-        std::move(whole));
+    return safety::mint_grid_permissions<cc::grid_tag::Whole<UserTag>, M, N>(std::move(whole));
 }
 
 template <typename Session>
@@ -96,43 +81,31 @@ int test_bridge_4x8_round_robin_delivery() {
     auto c6 = grid.template consumer<6>(std::move(std::get<6>(perms.consumers)));
     auto c7 = grid.template consumer<7>(std::move(std::get<7>(perms.consumers)));
 
-    auto ps0 = cc::mint_substrate_session<Grid, cc::ShardId<0>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p0);
-    auto ps1 = cc::mint_substrate_session<Grid, cc::ShardId<1>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p1);
-    auto ps2 = cc::mint_substrate_session<Grid, cc::ShardId<2>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p2);
-    auto ps3 = cc::mint_substrate_session<Grid, cc::ShardId<3>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p3);
+    auto ps0 =
+        cc::mint_substrate_session<Grid, cc::ShardId<0>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p0);
+    auto ps1 =
+        cc::mint_substrate_session<Grid, cc::ShardId<1>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p1);
+    auto ps2 =
+        cc::mint_substrate_session<Grid, cc::ShardId<2>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p2);
+    auto ps3 =
+        cc::mint_substrate_session<Grid, cc::ShardId<3>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p3);
 
-    auto cs0 = cc::mint_substrate_session<Grid, cc::ShardId<0>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c0);
-    auto cs1 = cc::mint_substrate_session<Grid, cc::ShardId<1>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c1);
-    auto cs2 = cc::mint_substrate_session<Grid, cc::ShardId<2>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c2);
-    auto cs3 = cc::mint_substrate_session<Grid, cc::ShardId<3>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c3);
-    auto cs4 = cc::mint_substrate_session<Grid, cc::ShardId<4>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c4);
-    auto cs5 = cc::mint_substrate_session<Grid, cc::ShardId<5>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c5);
-    auto cs6 = cc::mint_substrate_session<Grid, cc::ShardId<6>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c6);
-    auto cs7 = cc::mint_substrate_session<Grid, cc::ShardId<7>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c7);
+    auto cs0 =
+        cc::mint_substrate_session<Grid, cc::ShardId<0>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c0);
+    auto cs1 =
+        cc::mint_substrate_session<Grid, cc::ShardId<1>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c1);
+    auto cs2 =
+        cc::mint_substrate_session<Grid, cc::ShardId<2>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c2);
+    auto cs3 =
+        cc::mint_substrate_session<Grid, cc::ShardId<3>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c3);
+    auto cs4 =
+        cc::mint_substrate_session<Grid, cc::ShardId<4>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c4);
+    auto cs5 =
+        cc::mint_substrate_session<Grid, cc::ShardId<5>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c5);
+    auto cs6 =
+        cc::mint_substrate_session<Grid, cc::ShardId<6>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c6);
+    auto cs7 =
+        cc::mint_substrate_session<Grid, cc::ShardId<7>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c7);
 
     push_eight(ps0, 0);
     push_eight(ps1, 100);
@@ -169,15 +142,11 @@ int test_session_header_factories() {
 
     HeaderGrid grid;
     auto perms = fresh_grid_perms<HeaderTag, 1, 1>();
-    auto producer = sgs::mint_sharded_grid_producer<HeaderGrid, 0>(
-        grid, std::move(std::get<0>(perms.producers)));
-    auto consumer = sgs::mint_sharded_grid_consumer<HeaderGrid, 0>(
-        grid, std::move(std::get<0>(perms.consumers)));
+    auto producer = sgs::mint_sharded_grid_producer<HeaderGrid, 0>(grid, std::move(std::get<0>(perms.producers)));
+    auto consumer = sgs::mint_sharded_grid_consumer<HeaderGrid, 0>(grid, std::move(std::get<0>(perms.consumers)));
 
-    auto ps = sgs::mint_producer_session<HeaderGrid, 0>(
-        ::crucible::effects::HotFgCtx{}, producer);
-    auto cs = sgs::mint_consumer_session<HeaderGrid, 0>(
-        ::crucible::effects::HotFgCtx{}, consumer);
+    auto ps = sgs::mint_producer_session<HeaderGrid, 0>(::crucible::effects::HotFgCtx{}, producer);
+    auto cs = sgs::mint_consumer_session<HeaderGrid, 0>(::crucible::effects::HotFgCtx{}, consumer);
 
     auto next_ps = std::move(ps).send(42, sgs::blocking_push);
     auto [value, next_cs] = std::move(cs).recv(sgs::blocking_pop);

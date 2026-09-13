@@ -1,271 +1,98 @@
 #pragma once
 
-// crucible::perf::WorkloadProfiler — runtime telemetry → parallelism
-// decision filter (GAPS-004h, SEPLOG-F3 #322).
-//
-// ─── PURPOSE ──────────────────────────────────────────────────────────
-//
-// `concurrent::ParallelismRule::recommend(budget)` is structurally
-// correct — it picks Sequential when the working set fits in L1/L2,
-// scales up Parallel when DRAM-bound.  But it doesn't see the live
-// system state.  If the kernel is already context-switching the
-// process furiously (futex contention from elsewhere, scheduler
-// pressure from co-tenants, RT-band thrash), spawning parallel
-// workers makes it strictly worse — every worker fights the same
-// scheduler that's already saturating.
-//
-// WorkloadProfiler reads the SenseHub counters between recommend()
-// calls and DEMOTES Parallel→Sequential when telemetry signals the
-// system is already under stress.  It never promotes.  This extends
-// the "never regress" promise from `ParallelismRule` (no regression
-// on small data) to `WorkloadProfiler` (no regression under runtime
-// contention either).
-//
-// ─── DESIGN ───────────────────────────────────────────────────────────
-//
-//   profiler.recommend(budget) →
-//       structural_decision = ParallelismRule::recommend(budget)
-//       if structural_decision.kind == Sequential: return as-is
-//
-//       delta = SenseHub::read() - last_snapshot
-//       last_snapshot = SenseHub::read()
-//
-//       if delta.futex_wait_count    > FUTEX_DEMOTE_THRESHOLD:
-//           return Sequential (demoted, contention)
-//       if delta.sched_ctx_vol        > CTX_VOL_DEMOTE_THRESHOLD:
-//           return Sequential (demoted, scheduler thrash)
-//
-//       return structural_decision
-//
-// The thresholds are per-recommend-call deltas, so callers MUST call
-// recommend() at a predictable cadence (per-iteration of the Keeper
-// tick) for the rates to make sense.  At ~10-100 ms cadence, the
-// defaults represent ~10K futex_waits/sec and ~50K ctx_switches/sec
-// — values typical of "kernel scheduler is overloaded" rather than
-// normal program activity.
-//
-// ─── TELEMETRY-ABSENT FALLBACK ────────────────────────────────────────
-//
-// Construction with `senses=nullptr` is supported and useful: the
-// profiler degrades to a thin pass-through over ParallelismRule.
-// This is the right shape on systems without CAP_BPF, in CI runs,
-// or in tests that want to assert "profiler doesn't regress when
-// telemetry is unavailable."
-//
-// ─── USAGE ────────────────────────────────────────────────────────────
-//
-//     auto senses = crucible::perf::Senses::load_subset(
-//         crucible::effects::testing::init(),
-//         crucible::perf::SensesMask{ .sense_hub = true });
-//     crucible::perf::WorkloadProfiler profiler{
-//         &senses, crucible::effects::testing::init()};
-//
-//     // The dispatch path requires a Bg-row ctx (BgDrainCtx / BgCompileCtx);
-//     // the foreground hot-call site holds no capability and is rejected
-//     // by `CtxFitsWorkloadDecisionDispatch` at the call-site requires-clause.
-//     crucible::effects::BgDrainCtx bg_ctx{};
-//
-//     while (running) {
-//         const auto budget = my_workload.budget();
-//
-//         // `recommend()` returns Tagged<ParallelismDecision, source::WorkloadProfiler>
-//         // — the type-level proof that the decision originated here.
-//         const auto tagged = profiler.recommend(budget);
-//
-//         // `dispatch_workload_decision` consumes the Tagged form, opens
-//         // the phantom tag inside the function body, and routes to the
-//         // sequential or parallel arm.  A hand-crafted bare
-//         // `ParallelismDecision{Sequential, 1, ...}` cannot reach this
-//         // call site — the signature requires the Tagged wrapper.
-//         dispatch_workload_decision(
-//             bg_ctx, tagged,
-//             [&](const auto& dec) noexcept {
-//                 my_workload.run_inline();
-//             },
-//             [&](const auto& dec) noexcept {
-//                 dispatch_parallel(my_workload, dec.factor, dec.numa);
-//             });
-//     }
-//
-// ─── COST ─────────────────────────────────────────────────────────────
-//
-//   Senses present (CAP_BPF):  ParallelismRule::recommend (~5 ns) +
-//                              SenseHub::read (~30 ns mmap copy) +
-//                              SenseHub::Snapshot::operator- (~80 ns
-//                              for 96 sub_sat) ≈ 115 ns per call.
-//
-//   Senses nullptr / un-attached: ParallelismRule::recommend only,
-//                                 ~5 ns.
-//
-// Either way, recommend() is NOT a hot-path per-event call — it's
-// per-iteration / per-Keeper-tick.  Don't put it inside the inner
-// loop of the workload itself; call it once before the dispatch.
-//
-// ─── SAFETY POSTURE ───────────────────────────────────────────────────
-//
-//   • InitSafe:     all fields NSDMI-initialized; first_call_ flag
-//                   discriminates "no prior snapshot to delta against."
-//   • TypeSafe:     thresholds are uint64_t named constants per axis;
-//                   no raw integer parameters.
-//   • NullSafe:     senses_ may legitimately be nullptr; every read
-//                   path checks before dereference.
-//   • MemSafe:      no allocations; Senses is borrowed (caller owns).
-//   • ThreadSafe:   not designed for concurrent recommend() calls;
-//                   the Keeper tick is single-threaded by design.
-//   • LeakSafe:     no resources owned.
-//   • DetSafe:      identical inputs (same prior snapshot, same budget,
-//                   same SenseHub reading) → identical decision.
-
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
-#include <crucible/safety/Tagged.h>  // FIXY-V-074: Tagged + source::WorkloadProfiler
+#include <crucible/safety/Tagged.h>
 
 #include <cstdint>
-#include <utility>  // FIXY-V-074: std::forward for dispatch bodies
+#include <utility>
 
 namespace crucible::perf {
 
-// ── FIXY-V-074: row-typed ParallelismDecision return ─────────────────
-//
-// `WorkloadProfiler::recommend()` is the AUTHORITY on per-call
-// parallelism decisions — it owns the cache-tier reasoning AND the
-// runtime-contention demotion path.  A bare `ParallelismDecision`
-// returned from recommend() could be confused with a hand-crafted
-// `ParallelismDecision{Sequential, 1, ...}` synthesized somewhere
-// downstream, defeating the profiler's gatekeeping role.
-//
-// `TaggedParallelismDecision` makes the profiler's authority visible
-// in the type: every decision routed through `dispatch_workload_decision`
-// MUST originate from a recommend() call.  Phantom tag is
-// `safety::source::WorkloadProfiler` (Tagged.h); zero-cost via EBO
-// (`sizeof(TaggedParallelismDecision) == sizeof(ParallelismDecision)`).
-//
-// Wrapper-nesting per CLAUDE.md §XVI: Tagged sits at the inner half
-// of the canonical stack — provenance is "close to the value".  No
-// other wrapper layered here; the value's federation cache slot is
-// `row_hash({source::WorkloadProfiler}, ParallelismDecision-hash)`.
+// A bare decision can be written by hand anywhere.  The phantom tag
+// records that this one came out of a profiler, and the dispatch
+// below admits nothing else, so the profiler cannot be bypassed.
 using TaggedParallelismDecision = ::crucible::safety::Tagged<::crucible::concurrent::ParallelismDecision,
                                                              ::crucible::safety::source::WorkloadProfiler>;
 
+// The structural rule reasons about the working set alone and cannot
+// see the live machine.  A host already saturating its scheduler makes
+// parallel workers strictly worse, because every worker then fights
+// the same scheduler.  This filter reads the kernel counters between
+// calls and demotes a parallel recommendation to sequential when they
+// say the machine is under stress.  It never promotes.
 class WorkloadProfiler {
 public:
-    // Per-call demote thresholds.  These are deltas observed between
-    // successive recommend() calls; the rate they represent depends
-    // on caller cadence.  At 10 ms cadence:
-    //   FUTEX_DEMOTE_THRESHOLD = 100 → 10K futex_waits/sec
-    //   CTX_VOL_DEMOTE_THRESHOLD = 500 → 50K voluntary ctx_switches/sec
+    // Each threshold is a delta between two successive recommend
+    // calls, so the rate it stands for follows from the caller's
+    // cadence.  A caller that polls irregularly reads them wrong.
     //
-    // Values intentionally conservative: false-positive demotions cost
-    // a parallel speedup; false-negative (parallel under contention)
-    // costs the no-regression promise.  Tune higher (more permissive)
-    // for clean-room systems, lower for noisy multi-tenant hosts.
+    // A demotion that fires needlessly costs one parallel speedup.  A
+    // demotion that fails to fire costs the promise that this filter
+    // never makes a workload slower.  The defaults lean towards the
+    // first, and a quiet host can afford higher ones.
     struct Config {
         uint64_t futex_wait_demote_threshold = 100;
         uint64_t ctx_vol_demote_threshold = 500;
     };
 
-    // Construction.
+    // `senses` may be null.  The profiler then passes the structural
+    // decision through and demotes nothing, which is the shape on a
+    // host without CAP_BPF.
     //
-    // `senses` may be nullptr, in which case the profiler degrades
-    // to a pass-through over ParallelismRule (no demotions).  When
-    // non-null, the profiler reads the underlying SenseHub on every
-    // recommend() call.
-    //
-    // `effects::Init` capability tag — same gate as every other
-    // perf-tree construction.  Hot-path frames hold no Init; this
-    // prevents accidental construction from a hot-call site.
-    // Two-overload form (NOT a defaulted parameter) — GCC 16 rejects
-    // `Config cfg = Config{}` as a default-arg because Config's NSDMIs
-    // can't be evaluated before the enclosing class WorkloadProfiler is
-    // complete.  Delegating constructor sidesteps it: mem-init lists
-    // are parsed after the class definition.
+    // Two overloads rather than one with `Config cfg = Config{}`.  A
+    // default argument there is rejected, because the NSDMIs of Config
+    // cannot be evaluated while the enclosing class is incomplete.  A
+    // delegating constructor avoids that: a member-initializer list is
+    // parsed after the class definition.
     explicit WorkloadProfiler(const Senses* senses, ::crucible::effects::Init init) noexcept
         : WorkloadProfiler(senses, init, Config{}) {}
 
     explicit WorkloadProfiler(const Senses* senses, ::crucible::effects::Init, Config cfg) noexcept
         : senses_{senses}, cfg_{cfg} {}
 
-    // Structurally-correct + telemetry-aware parallelism decision.
-    //
-    // First call captures a baseline snapshot and returns the bare
-    // structural decision (no delta available to gate against).
-    // Subsequent calls compare current SenseHub state against the
-    // last captured snapshot and demote Parallel→Sequential if
-    // either contention metric exceeds its threshold.
-    //
-    // The decision is monotone-down: this method only ever returns
-    // a decision <= the structural recommendation.  Sequential stays
-    // Sequential; Parallel may be demoted to Sequential.
-    //
-    // FIXY-V-074: returns `TaggedParallelismDecision` — Tagged carries
-    // the `safety::source::WorkloadProfiler` phantom tag, marking this
-    // value as authored by the profiler.  Downstream
-    // `dispatch_workload_decision` only admits Tagged-wrapped decisions,
-    // making it a compile error to route a hand-crafted
-    // `ParallelismDecision` through the parallel-dispatch path without
-    // explicit re-mint.  Zero runtime cost — Tagged is EBO-collapsed.
+    // The result never exceeds the structural recommendation.
+    // Sequential stays sequential, and parallel either stays parallel
+    // or falls back to sequential.
     [[nodiscard]] TaggedParallelismDecision recommend(concurrent::WorkBudget budget) noexcept {
         return TaggedParallelismDecision{recommend_raw_(budget)};
     }
 
-    // FIXY-V-074: legacy bare-decision query for callers that genuinely
-    // need to inspect the structural value without committing to a
-    // dispatch (e.g., tests, diagnostics, would-be-parallel reasoning).
-    // The bare form is intentionally NOT routed through Tagged because
-    // its return value is for inspection, not for dispatch.
-    //
-    // Production code that ACTS on the decision MUST use recommend() +
-    // dispatch_workload_decision — the Tagged form is the only one
-    // that the dispatch gate accepts.
+    // The untagged form is for a caller that wants to read the
+    // decision without acting on it.  Code that acts on a decision
+    // goes through the tagged form, which is the only one the dispatch
+    // below accepts.
     [[nodiscard]] concurrent::ParallelismDecision recommend_bare(concurrent::WorkBudget budget) noexcept {
         return recommend_raw_(budget);
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────────
-    //
-    // Inspectors for the most recent recommend() call.  Useful for
-    // logging "why did this Vigil go sequential?" and for tests that
-    // assert demotion behaviour.
-
-    // True iff the last recommend() returned Sequential as a result of
-    // demotion (rather than because the structural rule already said
-    // Sequential).  False on the first call, false when senses is null,
-    // false when SenseHub is unattached.
+    // True when the last call went sequential because the counters
+    // forced it, and false when the structural rule had already
+    // chosen sequential on its own.
     [[nodiscard]] bool last_was_demoted() const noexcept { return was_demoted_; }
 
-    // The per-call delta values that drove the most recent decision.
-    // Both zero before the second call (no delta available) and on
-    // calls where senses/sense_hub were unavailable.
     [[nodiscard]] uint64_t last_futex_wait_delta() const noexcept { return futex_delta_; }
     [[nodiscard]] uint64_t last_ctx_vol_delta() const noexcept { return ctx_vol_delta_; }
 
-    // Inspect the configured thresholds (read-only after construction).
     [[nodiscard]] Config config() const noexcept { return cfg_; }
 
-    // Reset baseline.  After this call, the next recommend() captures
-    // a fresh baseline and returns the structural decision unchanged.
-    // Useful when the workload fundamentally changes (new region
-    // starts) and continuity of telemetry across the boundary would
-    // produce misleading deltas.
+    // Telemetry carried across a change of workload produces a delta
+    // between two unrelated regions.  Reset at such a boundary so the
+    // next call starts a new baseline.
     void reset() noexcept {
         first_call_ = true;
         was_demoted_ = false;
         futex_delta_ = 0;
         ctx_vol_delta_ = 0;
-        // Don't zero last_ — preserve memory layout.  first_call_ flag
-        // is the discriminator.
+        // last_ keeps its contents.  first_call_ gates every read of
+        // it, so nothing observes it before the next call overwrites
+        // it.
     }
 
-    // Move-only — owns no resources, but the senses_ pointer's
-    // borrow contract (caller must keep Senses alive) makes copying
-    // a footgun (two profilers reading the same Senses concurrently
-    // is a benign race in principle, but the per-instance last_
-    // snapshot would diverge unhelpfully).  Move keeps the borrow
-    // single-rooted.
     WorkloadProfiler(const WorkloadProfiler&) = delete("WorkloadProfiler holds a borrowed Senses*; copying would "
                                                        "produce two profilers with diverging last_ snapshots that "
                                                        "race on the same underlying SenseHub state");
@@ -275,19 +102,9 @@ public:
     ~WorkloadProfiler() = default;
 
 private:
-    // FIXY-V-074: structural recommend() body, returning the bare
-    // ParallelismDecision before Tagged wrapping.  Single point of
-    // truth for the cache-tier + telemetry-demotion logic — both
-    // recommend() (Tagged form for dispatch) and recommend_bare()
-    // (inspection form) forward here.  Refactored from the prior
-    // inline body to eliminate the 6 return-statement wrap sites.
     [[nodiscard]] concurrent::ParallelismDecision recommend_raw_(concurrent::WorkBudget budget) noexcept {
-        // Always start from the structural rule.
         auto decision = concurrent::ParallelismRule::recommend(budget);
 
-        // Sequential decisions need no telemetry adjustment, and
-        // skipping the snapshot read on cache-resident workloads
-        // saves ~115 ns per call.
         if (decision.kind == concurrent::ParallelismDecision::Kind::Sequential) {
             was_demoted_ = false;
             futex_delta_ = 0;
@@ -295,7 +112,6 @@ private:
             return decision;
         }
 
-        // No telemetry source → cannot demote, return structural.
         if (senses_ == nullptr) {
             was_demoted_ = false;
             futex_delta_ = 0;
@@ -303,9 +119,8 @@ private:
             return decision;
         }
 
-        // No SenseHub attached (CAP_BPF missing, etc.) → same as no
-        // senses.  Senses::sense_hub() returns nullptr on partial
-        // load failure for this subprogram.
+        // A load that attached only some of its facades still yields a
+        // Senses, so the hub can be absent even here.
         const auto* hub = senses_->sense_hub();
         if (hub == nullptr) {
             was_demoted_ = false;
@@ -316,8 +131,6 @@ private:
 
         const auto current = hub->read();
 
-        // First call: capture baseline, return structural decision
-        // unchanged.  No delta to gate against yet.
         if (first_call_) {
             last_ = current;
             first_call_ = false;
@@ -333,7 +146,6 @@ private:
         futex_delta_ = delta[Idx::FUTEX_WAIT_COUNT];
         ctx_vol_delta_ = delta[Idx::SCHED_CTX_VOL];
 
-        // ── Demote on contention ──────────────────────────────────
         if (futex_delta_ > cfg_.futex_wait_demote_threshold || ctx_vol_delta_ > cfg_.ctx_vol_demote_threshold)
             [[unlikely]] {
             was_demoted_ = true;
@@ -341,7 +153,7 @@ private:
                 .kind = concurrent::ParallelismDecision::Kind::Sequential,
                 .factor = 1,
                 .numa = concurrent::NumaPolicy::NumaIgnore,
-                .tier = decision.tier,  // preserve diagnostic tier
+                .tier = decision.tier,  // the structural tier stays, for diagnostics
             };
         }
 
@@ -358,31 +170,18 @@ private:
     uint64_t ctx_vol_delta_ = 0;
 };
 
-// ── §XXI Universal Mint Pattern — mint_workload_profiler (FIXY-U-083) ─
-//
-// CtxFitsWorkloadProfilerMint admits only contexts whose effect row
-// carries the Init capability.  WorkloadProfiler's ctor takes an
-// effects::Init token because constructing the profiler reads the
-// borrowed Senses* once to capture a baseline snapshot, and the
-// Senses surface is itself an Init-row resource.  Hot foreground
-// and background-drain contexts must not construct this object;
-// the Ctx-fit gate enforces that at the type level.
-//
-// Two overloads mirror the ctor pair: default Config and explicit
-// Config.  Both ride the same concept gate.
+// The profiler borrows a Senses, which exists only after a startup
+// load, so only a context carrying the Init capability may construct
+// one.
 template <class Ctx>
 concept CtxFitsWorkloadProfilerMint = ::crucible::effects::IsExecCtx<Ctx>
                                    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
-// §XXI carve-out: cx=alloc — WorkloadProfiler ctor borrows a
-// Senses* (itself an Init-row resource that performs BPF load +
-// perf_event_open + mmap during its own construction) and may
-// allocate per-class histogram storage on first sample.  CLAUDE.md
-// §XXI: compile-time evaluation would lie about the runtime cost —
-// the transitive Senses dependency forces the carve-out even
-// though this ctor itself looks pure.
+// §XXI carve-out: cx=alloc — the borrowed Senses reaches this factory
+// only through a BPF load, a perf_event_open and an mmap.  Compile-
+// time evaluation would lie about the runtime cost.
 [[nodiscard]] inline WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
                                                              ::crucible::effects::Init init) noexcept {
     return WorkloadProfiler{senses, init};
@@ -390,9 +189,7 @@ template <::crucible::effects::IsExecCtx Ctx>
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
-// §XXI carve-out: cx=alloc — see default-Config overload above.
-// Same transitive Senses dependency + per-class histogram
-// allocation rationale applies.
+// §XXI carve-out: cx=alloc — as for the overload above.
 [[nodiscard]] inline WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
                                                              ::crucible::effects::Init init,
                                                              WorkloadProfiler::Config cfg) noexcept {
@@ -403,56 +200,14 @@ static_assert(CtxFitsWorkloadProfilerMint<::crucible::effects::ColdInitCtx>);
 static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::BgDrainCtx>);
 static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::HotFgCtx>);
 
-// ── FIXY-V-074: dispatch_workload_decision — Tagged-only consumer ────
+// The decision arrives by value.  It proves where it came from and is
+// not an owned resource, so one decision can be dispatched more than
+// once, which a retry path needs.
 //
-// Routes a Tagged<ParallelismDecision, source::WorkloadProfiler> to
-// either a sequential body or a parallel body.  The function takes
-// the Tagged BY VALUE — the Tagged form is the proof-of-origin gate,
-// not transferred linearly; any caller holding a Tagged decision can
-// dispatch it (multiple dispatches against the same decision are
-// legitimate when, e.g., a retry path re-routes after observing the
-// first attempt's outcome).
-//
-// ── CTX GATE ──────────────────────────────────────────────────────────
-//
-// CtxFitsWorkloadDecisionDispatch admits contexts whose effect row
-// carries the Bg capability.  Dispatching to a parallel body launches
-// jthreads (via permission_fork / NumaThreadPool) — that is a
-// Bg-row activity.  Dispatching to the sequential body is uniform
-// with the parallel case so the call site doesn't need to know which
-// arm fired before deciding on the ctx requirement.  HotFgCtx and
-// ColdInitCtx are rejected at compile time.
-//
-// ── PARAMETER SHAPE ───────────────────────────────────────────────────
-//
-//   seq_body(ParallelismDecision)  // invoked on Sequential decisions
-//   par_body(ParallelismDecision)  // invoked on Parallel decisions
-//
-// Bodies receive the BARE ParallelismDecision (via Tagged::value()),
-// not the Tagged itself — once the dispatch gate has fired, the proof
-// has done its job and the inner value is what consumers want.
-//
-// ── RETURN ────────────────────────────────────────────────────────────
-//
-// Returns whatever the invoked body returns; if the bodies have
-// different return types, the common type is deduced.  Most call
-// sites use `void`-returning bodies (the bodies do the work; the
-// dispatch is just routing).
-//
-// ── ANTI-PATTERN ──────────────────────────────────────────────────────
-//
-// Do NOT pass a bare ParallelismDecision constructed in-line:
-//
-//   dispatch_workload_decision(bg_ctx,
-//       ParallelismDecision{Sequential, 1, ...}, seq, par);  // ✗ NO
-//
-// The function signature requires Tagged; the bare form fails to
-// match.  This is exactly the load-bearing discipline V-074 enforces.
-//
-// To dispatch, you MUST own a profiler instance and call recommend():
-//
-//   auto tagged = profiler.recommend(budget);
-//   dispatch_workload_decision(bg_ctx, tagged, seq_body, par_body);
+// The parallel arm starts threads, which is background work, so the
+// gate asks for the Bg capability.  The sequential arm asks for the
+// same one, because the call site chooses its context before it knows
+// which arm will fire.
 template <class Ctx>
 concept CtxFitsWorkloadDecisionDispatch =
     ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>;

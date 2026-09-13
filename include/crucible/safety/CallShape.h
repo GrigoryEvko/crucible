@@ -1,29 +1,17 @@
 #pragma once
 
-// ── crucible::safety::CallShapePinned<CallShape Tier, typename T> ────
+// The tier records the dispatch a producer needs, from a Direct call that is
+// fully static and inlinable, through bounded recursion, an indirect call and a
+// virtual one, up to an Unbounded shape that resists analysis entirely.  It is a
+// ceiling on dispatch freedom, not a floor on proof, so the bottom tier is the
+// analyzable one and a consumer admits a value whose tier is at or below the
+// ceiling it imposes.  Widening up the chain is sound because over-stating what
+// dispatch a producer needs is safe.  The bound on a bounded-recursion producer
+// is not a tier here and is carried separately.
 //
-// FIXY-V-242 (2/5): value-level Graded carrier for the V-240 CallShape
-// axis (Direct ⊏ BoundedRecurses ⊏ Indirect ⊏ Virtual ⊏ Unbounded).
-// Pins a function-result's dispatch / call-shape into the type.
-//
-//   Substrate: Graded<ModalityKind::Absolute, CallShapeLattice::At<Tier>, T>
-//   Regime:    1 (zero-cost EBO collapse — sizeof == sizeof(T)).
-//
-// Absolute modality (the dispatch shape is a static property of how the
-// value was produced; mutating T cannot change it).  CAPABILITY-CEILING
-// semantics, mirror image of Witness: bottom (Direct) is the safest /
-// most-analyzable; top (Unbounded) the least.
-//
-//   satisfies<C> := CallShapeLattice::leq(Tier, C)   — within ceiling C
-//   widen<Higher>()                                   — UP the chain only
-//
-// Forge hot-path admission imposes ceiling Direct (fully static,
-// inlinable); only a CallShapePinned<Direct, T> satisfies it.  The
-// BoundedRecurses recursion bound N (see V-240) is carried separately
-// by the V-245 recurses<N> grant — it is NOT a chain tier here.
-//
-// §XXI: `mint_call_shape<Tier, T>(args...)` (token mint).  HS14 neg
-// fixtures: neg_call_shape_widen_to_lower.cpp + neg_call_shape_mint_wrong_arg.cpp.
+// The modality is Absolute because the tier describes the producer, not the
+// content.  Mutating the wrapped value cannot change how it was reached, so
+// mutable access needs no re-check.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>

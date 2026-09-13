@@ -1,113 +1,27 @@
 #pragma once
 
-// ── crucible::safety::diag — stable name + type/function ID ─────────
+// These ids key a cache that installations share, so the stability they
+// carry is the whole contract, and it is narrow. The same T yields the
+// same id within one build, across the translation units of that build,
+// and across rebuilds with the same compiler version and the same
+// include order.
 //
-// Federation foundation for cache row_hash + structured diagnostic
-// names.  Ships four primitives in one header (they share the
-// underlying P2996R13 reflection mechanism + the FNV-1a hash):
+// The id is not stable across compilers, nor across a compiler major
+// version. Each implementation phrases a reflected name its own way, and
+// the hash amplifies any difference. Wrapping an existing type in a new
+// inline namespace moves the id the same way. Two installations that
+// share these ids must first agree on the toolchain, or one silently
+// reads another's entry as its own.
 //
-//   * stable_name_of<T>          — canonical type display name
-//   * stable_type_id<T>          — 64-bit FNV-1a + fmix64 over the name
-//   * canonicalize_pack<Ts...>   — sort-by-name pack normalization
-//   * stable_function_id<FnPtr>  — combined hash over function type
-//
-// Implements FOUND-E07 / E08 / E09 / E10 of 28_04_2026_effects.md
-// §7 + 27_04_2026.md §5.9.
-//
-// ── Federation contract (READ FIRST) ────────────────────────────────
-//
-// The FOUND-I cache key extension uses `stable_type_id<T>` as part of
-// the row_hash that joins L1 IR002 entries across organizations.  For
-// federation to work — Meta's Llama-70B on H100 sharing IR002 entries
-// with Google's deployment on v5p — the SAME T at SAME row position
-// must produce the SAME 64-bit ID across BOTH installations.
-//
-// **THIS HEADER SHIPS V1 STABILITY GUARANTEES.**  V1 = bit-stable
-// WITHIN one build artifact; SAME compiler version + SAME header
-// inclusion order → SAME ID.  V2 (cross-compiler federation across
-// independent organizations) is NOT yet shipped — it requires either
-// a custom canonical type-walker (FOUND-H09) or an ABI-level
-// stable-name ABI from the C++26 reflection committee.
-//
-// What V1 DOES guarantee:
-//   * Within one build, stable_type_id<T> is deterministic across
-//     repeated calls and across TUs (modulo the TU-context-fragility
-//     of display_string_of, mitigated by the .ends_with discipline
-//     callers must follow per algebra/Graded.h:156-186).
-//   * Across builds with the SAME compiler version + SAME include
-//     order, stable_type_id<T> is bit-stable.
-//   * Across compiler updates within the same major version (GCC
-//     16.0.x), stable_type_id<T> is bit-stable in practice (P2996
-//     name-mangling stability has held since GCC 16.0.0).
-//
-// What V1 DOES NOT guarantee:
-//   * Cross-compiler federation (GCC ↔ Clang).  display_string_of's
-//     output varies by compiler implementation; FNV-1a downstream
-//     amplifies the divergence.
-//   * Stability across MAJOR version bumps (GCC 16 → GCC 17).  Future
-//     P2996 implementations may rephrase display_string_of's output;
-//     when this happens, federation across versions requires either
-//     a per-version recipe or the V2 canonical walker.
-//   * Stability under inline-namespace introduction.  If a future
-//     libstdc++ adds an inline namespace where there wasn't one
-//     (e.g. `std::__1::string_view` instead of `std::string_view`),
-//     stable_type_id<std::string_view> changes.
-//
-// **Engineering posture (per CLAUDE.md hard stops):** ship V1
-// honestly with the cross-compiler federation caveat documented at
-// EVERY usage site that depends on it.  The cache infrastructure
-// (FOUND-I) treats federation as a STRETCH goal that requires
-// additional machinery; basic single-org caching uses V1 directly.
-//
-// ── TU-context-fragility (the prior known-issue) ────────────────────
-//
-// `display_string_of(^^T)` returns a name whose qualification depth
-// depends on the including TU's scope chain.  See algebra/Graded.h:
-// 156-186 for the canonical write-up of this issue.  Mitigation:
-//
-//   * For COMPARISON: never use `==` against expected literal names;
-//     use `.ends_with(suffix)` since the simple name is always a
-//     suffix of the qualified form.
-//   * For HASHING: stable_type_id consumes whatever display_string_of
-//     produces in the TU where the variable template instantiates.
-//     Within one build, this is deterministic (the variable template
-//     instantiates at MOST once per TU per T, and the resulting hash
-//     is the same across TUs because all of them eventually reach
-//     the same `inline constexpr` definition).
-//
-// ── Architecture ────────────────────────────────────────────────────
-//
-// FNV-1a 64-bit (Fowler-Noll-Vo) is the underlying string hash:
-//   * Bit-stable across all platforms (no signed-integer trickery,
-//     no SSE-dependent intrinsics, no endian sensitivity in the algo).
-//   * Industry standard for short-string hashing; well-understood
-//     avalanche properties.
-//   * Reasonable distribution for type-name strings (typically 20-200
-//     chars; collision probability ~2^-32 for 10K types per FNV
-//     literature).
-//
-// We finalize with `crucible::detail::fmix64` (MurmurHash3 finalizer
-// from Expr.h) to maximize avalanche bits in the high half of the
-// 64-bit ID.  fmix64 is already proven in production at
-// `Reflect.h::reflect_hash` and `ExprPool` interning paths.
-//
-// ── References ──────────────────────────────────────────────────────
-//
-//   28_04_2026_effects.md §7.3 + §8.5  — design rationale + cache row
-//                                        keying
-//   27_04_2026.md §5.9                  — original spec sketch
-//   algebra/Graded.h:156-186            — TU-context-fragility doc
-//   Expr.h::detail::fmix64              — MurmurHash3 finalizer
-//   FNV-1a 64-bit                       — Fowler-Noll-Vo specification
-//                                        offset basis 0xcbf29ce484222325
-//                                        prime         0x100000001b3
-//
-// FOUND-E07 — stable_name_of<T> consteval string_view
-// FOUND-E08 — stable_type_id<T> 64-bit hash
-// FOUND-E09 — stable_function_id<FnPtr>
-// FOUND-E10 — canonicalize_pack<Ts...>
+// A reflected name is also qualified to a depth that follows the scope
+// chain of the including translation unit. Compare such a name with
+// ends_with against the simple name, never with == against a literal.
+// The simple name is always a suffix of the qualified form, so equality
+// compiles in one translation unit and fails in the next. Hashing is
+// unaffected: the variable template resolves to one inline constexpr
+// definition that every translation unit shares.
 
-#include <crucible/Expr.h>  // detail::fmix64
+#include <crucible/Expr.h>
 #include <crucible/Platform.h>
 
 #include <array>
@@ -122,22 +36,9 @@
 
 namespace crucible::safety::diag {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FNV-1a 64-bit string hash + fmix64 avalanche finalizer ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// FNV-1a 64-bit constants per the Fowler-Noll-Vo specification:
-//   offset basis: 0xcbf29ce484222325
-//   prime:        0x00000100000001b3
-//
-// Algorithm: h = offset; for byte b in input: h ^= b; h *= prime.
-// All-unsigned arithmetic; no platform-specific intrinsics; bit-stable
-// across x86-64, ARM64, RISC-V.
-//
-// We follow with `detail::fmix64` (MurmurHash3 finalizer) to spread
-// avalanche bits across the full 64-bit output.  Without the finalizer,
-// FNV-1a's output has slightly skewed bit distribution in the high
-// nibbles; fmix64 fixes this without changing collision resistance.
+// The two constants are the ones the 64-bit FNV-1a specification fixes.
+// The algorithm is unsigned arithmetic over bytes with no intrinsic and
+// no endian dependence, so the digest is identical on every platform.
 
 namespace detail {
 
@@ -153,31 +54,22 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
     return h;
 }
 
-// Compose FNV-1a with fmix64 for full-width avalanche.  Used as the
-// final transform on type/function names before exposing to callers.
+// FNV-1a alone leaves the high bits weakly mixed, so the finalizer runs
+// over the digest before any caller sees it.
 [[nodiscard]] consteval std::uint64_t hash_name(std::string_view s) noexcept {
     return ::crucible::detail::fmix64(fnv1a_64(s));
 }
 
-// Combine two 64-bit IDs into one.  Used to build composite IDs (e.g.,
-// stable_function_id from per-parameter stable_type_id values).
-// Boost-style hash combine: a ^= b + golden_ratio + (a << 6) + (a >> 2).
-// Avalanche-strong, order-sensitive (combining (a, b) ≠ (b, a)).
+// Boost-style combine, folding a golden-ratio salt with two shifts of
+// the accumulator. It is order-sensitive: combining a with b differs
+// from combining b with a. Callers that fold a sequence rely on that.
 //
-// ── Single source of truth (FIXY-FOUND-050) ────────────────────────
-//
-// Declared `constexpr`, NOT `consteval` — the same body discharges
-// both compile-time fold (every `row_hash_contribution<W>::value`
-// static-constexpr initialization) AND runtime fold (the cross-build
-// runtime witness in test/test_row_hash_distinctness.cpp re-derives
-// the ceremony anchor by calling THIS function at runtime).  A
-// runtime-only duplicate of this body anywhere in the codebase is a
-// drift surface: a change to the salt, the mix, or the finalizer
-// would silently leave the duplicate stale and break the wire-format
-// witness without tripping the static_assert.  `constexpr` over
-// `consteval` is the structural fix — never re-introduce a parallel
-// `combine_ids_runtime` or any other name.  CI grep guard at
-// scripts/check-no-combine-ids-duplicate.sh enforces this.
+// This is constexpr and not consteval because one body has to serve both
+// the compile-time fold and a runtime check that re-derives the same
+// value. A second copy of this body under any other name is a drift
+// surface. Changing the salt, the mix or the finalizer would leave that
+// copy stale and change the shared key while every assertion here still
+// passes.
 [[nodiscard]] constexpr std::uint64_t combine_ids(std::uint64_t a, std::uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
     return ::crucible::detail::fmix64(a);
@@ -185,95 +77,22 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 
 }  // namespace detail
 
-// ═════════════════════════════════════════════════════════════════════
-// ── stable_name_of<T> — canonical display name (FOUND-E07) ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Returns `std::meta::display_string_of(^^T)` — the type's name as
-// reflection emits it.  V1 contract: bit-stable within one build for
-// any given T.  Cross-compiler federation NOT yet guaranteed — see
-// the federation contract at file head.
-//
-// Callers MUST follow the .ends_with(...) discipline for shape
-// comparisons (see algebra/Graded.h:156-186).  Direct equality
-// against literal names is forbidden (TU-fragility makes such
-// comparisons compile in some TUs and fail in others).
-//
-// Usage:
-//
-//   constexpr auto name = stable_name_of<MyType>;  // string_view
-//   static_assert(name.ends_with("MyType"));        // OK — suffix safe
-//   static_assert(name == "MyType");                // FORBIDDEN —
-//                                                   // TU-fragile
-//
-// The string is held in the consteval reflection-result storage; its
-// lifetime persists for the life of the translation unit; callers
-// may safely persist the string_view as long as the TU's compile
-// session is alive (i.e., for the entire program lifetime once
-// linked).
+// The string lives in consteval result storage, which outlives every
+// caller, so holding the view for the life of the program is safe.
 
 template <typename T>
 inline constexpr std::string_view stable_name_of = std::meta::display_string_of(^^T);
 
-// ═════════════════════════════════════════════════════════════════════
-// ── stable_type_id<T> — 64-bit content hash (FOUND-E08) ────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// 64-bit content hash of stable_name_of<T> via FNV-1a + fmix64.
-// Foundation primitive for the FOUND-I cache key extension and the
-// FOUND-E08 stable-function-id composition.
-//
-// Properties (V1):
-//   * Deterministic within one build: same T → same ID across calls.
-//   * Bit-stable across TUs WITHIN one build: the inline constexpr
-//     storage ensures the variable template's value is identical in
-//     every TU that instantiates it.
-//   * 64-bit collision probability ~2^-32 for 10K distinct types
-//     (per FNV-1a literature) — wraparound impossible in practice.
-//   * Cross-compiler federation: NOT V1; see federation contract.
-//
-// Usage:
-//
-//   constexpr std::uint64_t my_id = stable_type_id<MyType>;
-//   static_assert(stable_type_id<int> != stable_type_id<float>);
-
 template <typename T>
 inline constexpr std::uint64_t stable_type_id = detail::hash_name(stable_name_of<T>);
 
-// ═════════════════════════════════════════════════════════════════════
-// ── canonicalize_pack<Ts...> — sort-by-name pack (FOUND-E10) ───────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Returns a `std::tuple<...>` of the same elements as `Ts...` reordered
-// by stable_name_of in lexicographic order.  Foundation primitive for
-// PermSet / Row / splits_into_pack so order-permutations of equivalent
-// packs collapse to the same canonical form.
-//
-// V1 scope:
-//   * Sort: yes (lexicographic by stable_name_of, bubble-sort O(N²))
-//   * Dedup: NOT v1 — adjacent duplicates remain in the output tuple.
-//     Callers needing dedup should use PermSet's perm_set_canonicalize_t
-//     (which composes dedup ON TOP of this canonicalize_pack).  Dedup
-//     at this layer would entail tuple-element-removal which expands
-//     the metafunction surface considerably.
-//
-// Empty pack: canonicalize_pack<>::type is std::tuple<>.
-// Single-element pack: canonicalize_pack<T>::type is std::tuple<T>.
-//
-// Usage:
-//
-//   using sorted = canonicalize_pack<float, int, double>::type;
-//   //  → std::tuple<double, float, int>  (alphabetical)
-//
-//   static_assert(std::is_same_v<
-//       canonicalize_pack<int, float>::type,
-//       canonicalize_pack<float, int>::type>);
+// Sorting by name collapses two packs that differ only in order to one
+// type. It does not deduplicate: a repeated element stays repeated.
 
 namespace detail {
 
-// Compute the sorted permutation indices for a pack.  Bubble-sort
-// over std::array<std::size_t> at consteval — O(N²) which is fine
-// for pack sizes typical in our use (< 32).
+// The sort is quadratic. Packs reaching here hold a few dozen elements
+// at most, and the whole sort runs at compile time.
 template <typename... Ts>
 [[nodiscard]] consteval auto sort_indices_by_stable_name() noexcept {
     constexpr std::size_t N = sizeof...(Ts);
@@ -281,7 +100,6 @@ template <typename... Ts>
     std::array<std::size_t, N> indices{};
     for (std::size_t i = 0; i < N; ++i)
         indices[i] = i;
-    // Bubble sort: simple, stable, sufficient for small N.
     for (std::size_t i = 0; i < N; ++i) {
         for (std::size_t j = i + 1; j < N; ++j) {
             if (names[indices[j]] < names[indices[i]]) {
@@ -294,7 +112,6 @@ template <typename... Ts>
     return indices;
 }
 
-// Materialize the sorted std::tuple from the indices.
 template <typename Tuple, std::size_t... Is>
 auto reassemble_tuple_impl(std::index_sequence<Is...>) -> std::tuple<std::tuple_element_t<Is, Tuple>...>;
 
@@ -323,59 +140,21 @@ public:
 template <typename... Ts>
 using canonicalize_pack_t = typename canonicalize_pack<Ts...>::type;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── stable_function_id<FnPtr> — function ID (FOUND-E09) ────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// 64-bit content hash of the function's TYPE (not its address — the
-// same function body at different addresses yields the same ID; the
-// same signature in different declarations yields the same ID).
-//
-// Implementation: hash `display_string_of(^^decltype(FnPtr))`, which
-// renders the function-pointer-type signature including parameters and
-// return type.  FNV-1a + fmix64 finalizes.  Same V1/V2 stability
-// contract as stable_type_id.
-//
-// Use cases (FOUND-F09 Cipher computation cache):
-//   * Cache key for computation results: hash function type + each
-//     argument's stable_type_id, look up cached body, execute or
-//     compute-and-store.
-//   * Cross-organization function-result federation: defer until V2
-//     cross-compiler stability ships.
-//
-// Usage:
-//
-//   void my_fn(int, float);
-//   constexpr std::uint64_t fid = stable_function_id<&my_fn>;
+// This hashes the function type, never the address. Two distinct
+// functions that share a signature therefore share one id, and one
+// function reached through different declarations keeps a single id.
 
 template <auto FnPtr>
 inline constexpr std::uint64_t stable_function_id =
     detail::hash_name(std::meta::display_string_of(^^std::remove_pointer_t<decltype(FnPtr)>));
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block — invariants asserted at header inclusion ──────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Every claim verified at header-inclusion time.  Adversarial cases
-// included to lock in expected behavior under future refactors.
-
 namespace detail::stable_name_self_test {
-
-// ─── stable_name_of<T> non-empty for primitives ────────────────────
-//
-// Use .ends_with discipline per the TU-fragility contract.
 
 static_assert(!stable_name_of<int>.empty());
 static_assert(!stable_name_of<float>.empty());
 static_assert(!stable_name_of<void>.empty());
 static_assert(stable_name_of<int>.ends_with("int"));
 static_assert(stable_name_of<float>.ends_with("float"));
-
-// ─── stable_type_id<T> distinguishes primitives ────────────────────
-//
-// FNV-1a + fmix64 produces visually-distinct outputs even for very
-// similar input strings; collisions across primitives are
-// vanishingly improbable.
 
 static_assert(stable_type_id<int> != stable_type_id<float>);
 static_assert(stable_type_id<int> != stable_type_id<double>);
@@ -386,42 +165,18 @@ static_assert(stable_type_id<void> != stable_type_id<int>);
 static_assert(stable_type_id<char> != stable_type_id<unsigned char>);
 static_assert(stable_type_id<short> != stable_type_id<int>);
 
-// stable_type_id is non-zero for every type encountered (FNV-1a
-// offset basis is non-zero, and FNV-1a never reduces to zero except
-// for very pathological inputs that don't occur with type names).
 static_assert(stable_type_id<int> != 0);
 static_assert(stable_type_id<float> != 0);
 static_assert(stable_type_id<void> != 0);
 
-// stable_type_id is consistent across the variable template: same T
-// always yields the same value.  (Trivially true for inline constexpr
-// — included for documentation discipline.)
 static_assert(stable_type_id<int> == stable_type_id<int>);
 
-// ─── V1 bit-stability pins for primitive types ─────────────────────
-//
-// stable_type_id<T> reduces a string through FNV-1a + fmix64 — the
-// arithmetic is deterministic, but the input string is whatever
-// `std::meta::display_string_of` produces in THIS build.  GCC's
-// canonicalization is TU-context-fragile: inline namespaces, ADL
-// scope, or compiler version changes can shift the string, and every
-// downstream hash moves silently along with it.
-//
-// These pins bind the current build's canonical hashes for the
-// 13 primitive types.  A cross-build hash shift will redden ONE of
-// these static_asserts immediately — the diagnostic names the type,
-// shows old vs new literal, and forces a ceremony commit that
-// (a) audits whether the shift is benign or breaks consumers, then
-// (b) refreshes the pins + golden snapshot in lockstep.
-//
-// V1 contract: pins are valid WITHIN one build family.  Cross
-// compiler-major-version rolls are EXPECTED to red these.  When
-// they do, treat it as a row_hash_contribution ceremony, not a bug.
-//
-// Discipline: companion runtime peers in test/test_stable_name_compile.cpp
-// (EXPECT_EQ literal form) catch consteval miscompiles that the
-// static_assert could not (e.g., constant folder bypass per
-// PR c++/124241, even patched).
+// These literals pin the ids the current toolchain produces. A shift in
+// how a name is printed moves every downstream hash silently, so one of
+// these fails first and names the type that moved. Treat a failure as a
+// decision, not a bug: confirm the shift breaks nobody who reads a shared
+// cache, then refresh the pins deliberately. A compiler major-version
+// roll is expected to fail them.
 
 static_assert(stable_type_id<int> == 0x038bf5d93760ba14ULL);
 static_assert(stable_type_id<unsigned int> == 0x3e40352bf14d5e8cULL);
@@ -437,32 +192,22 @@ static_assert(stable_type_id<long long> == 0x8e73a318de406be0ULL);
 static_assert(stable_type_id<unsigned long long> == 0xcb9dc82adf69491aULL);
 static_assert(stable_type_id<bool> == 0xc7dfd75159543180ULL);
 
-// ─── canonicalize_pack<Ts...> sorts by stable name ─────────────────
-
-// Empty pack → empty tuple.
 static_assert(std::is_same_v<canonicalize_pack_t<>, std::tuple<>>);
 
-// Single element → unchanged.
 static_assert(std::is_same_v<canonicalize_pack_t<int>, std::tuple<int>>);
 
-// Order-invariance: int + float in either order produces the same
-// canonical tuple.  Note: the SORTED order depends on which name
-// "int" or "float" comes first lexicographically, which depends on
-// display_string_of's output — but it is the SAME canonical order
-// regardless of the input permutation.
+// Which name sorts first depends on how reflection prints it. The
+// canonical order is the same for every permutation of one pack, which
+// is the only property callers rely on.
 static_assert(std::is_same_v<canonicalize_pack_t<int, float>, canonicalize_pack_t<float, int>>);
 
 static_assert(std::is_same_v<canonicalize_pack_t<int, float, double>, canonicalize_pack_t<float, double, int>>);
 
 static_assert(std::is_same_v<canonicalize_pack_t<int, float, double>, canonicalize_pack_t<double, int, float>>);
 
-// Mixed-cardinality permutations all collapse to one canonical form.
 static_assert(std::is_same_v<canonicalize_pack_t<char, short, int, long>, canonicalize_pack_t<long, int, short, char>>);
 
-// Adjacent duplicates remain (V1 dedup-deferred).
 static_assert(std::is_same_v<canonicalize_pack_t<int, int>, std::tuple<int, int>>);
-
-// ─── stable_function_id<FnPtr> distinguishes signatures ────────────
 
 namespace fn_test {
 inline void f0() noexcept {}
@@ -473,31 +218,20 @@ inline void f4(int, int) noexcept {}
 inline void f5(int, float) noexcept {}
 }  // namespace fn_test
 
-// Different signatures → different IDs.
 static_assert(stable_function_id<&fn_test::f0> != stable_function_id<&fn_test::f1>);
 static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f2>);
 static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f3>);
 static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f4>);
 static_assert(stable_function_id<&fn_test::f4> != stable_function_id<&fn_test::f5>);
 
-// IDs are non-zero (FNV-1a property).
 static_assert(stable_function_id<&fn_test::f0> != 0);
 
-// ─── FNV-1a + fmix64 well-known test vectors ───────────────────────
-//
-// FNV-1a over the empty string returns the offset basis (no input
-// bytes consumed).  fmix64(offset_basis) gives a deterministic
-// constant — verify it doesn't change across compiler updates.
-
+// The empty string consumes no bytes, so the digest is the offset basis.
 static_assert(detail::fnv1a_64("") == detail::FNV1A_OFFSET_BASIS);
 
-// Single-character "a" = 0x61.  FNV-1a step:
-//   h = OFFSET_BASIS ^ 0x61
-//   h *= PRIME
 constexpr std::uint64_t expected_fnv_a = (detail::FNV1A_OFFSET_BASIS ^ 0x61ULL) * detail::FNV1A_PRIME;
 static_assert(detail::fnv1a_64("a") == expected_fnv_a);
 
-// Two characters "ab" = 0x61, 0x62.
 constexpr std::uint64_t expected_fnv_ab = []() consteval {
     std::uint64_t h = detail::FNV1A_OFFSET_BASIS;
     h = (h ^ 0x61ULL) * detail::FNV1A_PRIME;
@@ -506,28 +240,20 @@ constexpr std::uint64_t expected_fnv_ab = []() consteval {
 }();
 static_assert(detail::fnv1a_64("ab") == expected_fnv_ab);
 
-// hash_name composes fnv1a_64 with fmix64; verify ordering of the
-// composition (regression-detect if someone swaps them).
+// Swapping the two stages produces different digests, so the order of
+// composition is pinned here.
 static_assert(detail::hash_name("test") == ::crucible::detail::fmix64(detail::fnv1a_64("test")));
 
-// combine_ids is order-sensitive.
 static_assert(detail::combine_ids(1, 2) != detail::combine_ids(2, 1));
 
 }  // namespace detail::stable_name_self_test
 
-// ═════════════════════════════════════════════════════════════════════
-// ── runtime_smoke_test — non-constant-args execution probe ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Per feedback_algebra_runtime_smoke_test_discipline: exercise the
-// header's consteval surface from runtime contexts.  Calls
-// stable_type_id<T> via volatile-bounded dispatch; calls stable_name_
-// of<T>.size() with the result fed to a volatile sink.
+// A static_assert can be discharged by the constant folder without the
+// consteval body running as written. Driving the same surface from a
+// runtime context, through volatile sinks the optimizer cannot fold,
+// keeps that path honest.
 
 inline void runtime_smoke_test_stable_name() noexcept {
-    // Capture stable_type_id<T> values into a runtime-volatile array;
-    // optimizer cannot fold the array into a static initializer once
-    // the volatile bound is involved.
     volatile std::uint64_t sink = 0;
     sink ^= stable_type_id<int>;
     sink ^= stable_type_id<float>;
@@ -538,24 +264,18 @@ inline void runtime_smoke_test_stable_name() noexcept {
     sink ^= stable_type_id<short>;
     (void)sink;
 
-    // stable_name_of<T> material exists at runtime (string_view points
-    // into consteval-result storage which has program lifetime).
     volatile std::size_t name_sink = 0;
     name_sink ^= stable_name_of<int>.size();
     name_sink ^= stable_name_of<float>.size();
     name_sink ^= stable_name_of<void>.size();
     (void)name_sink;
 
-    // canonicalize_pack instantiates at runtime context (the
-    // metafunction is constexpr-evaluable but its result type is
-    // queried at runtime via sizeof / is_same_v).
     using sorted2 = canonicalize_pack_t<int, float>;
     using sorted2b = canonicalize_pack_t<float, int>;
     bool const same = std::is_same_v<sorted2, sorted2b>;
     volatile bool sink_b = same;
     (void)sink_b;
 
-    // stable_function_id from a real function pointer at runtime.
     auto const fn_ptr = +[](int) noexcept -> int { return 0; };
     volatile std::uint64_t fid_sink = stable_function_id<+[](int) noexcept -> int { return 0; }>;
     fid_sink ^= std::bit_cast<std::uintptr_t>(fn_ptr);

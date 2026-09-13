@@ -1,16 +1,3 @@
-// crucible::perf::ProcGauges — userspace /proc + /sys gauge poller impl.
-//
-// Reads kernel-aggregated counters at SNAPSHOT time (not per-event).
-// Companion to SenseHub v2's BPF-side counter array; supplies the
-// gauge slots that the kernel already aggregates and exposes via
-// /proc and /sys.
-//
-// Per-source readers: each `read_*_()` helper preads the corresponding
-// fd into the heap-owned `scratch_` buffer at offset 0 (so we don't
-// need to lseek between reads), parses the relevant fields, returns
-// the aggregated value.  Failures (EAGAIN, parse errors, fd-not-valid)
-// return UNAVAILABLE — ProcGauges never throws.
-
 #include <crucible/perf/ProcGauges.h>
 #include <crucible/perf/SenseHubV2.h>
 
@@ -26,15 +13,12 @@
 
 namespace crucible::perf {
 
-// ─── ScopedFd dtor + close_ ───────────────────────────────────────────
-
 ScopedFd::~ScopedFd() noexcept { close_(); }
 
 void ScopedFd::close_() noexcept {
     if (fd_ >= 0) {
-        // Loop on EINTR — POSIX permits close to interrupt and on Linux
-        // the fd is always reclaimed regardless, but loop defends
-        // against systems where it isn't.
+        // POSIX permits close to be interrupted.  Linux reclaims the fd
+        // either way, but the loop covers a system that does not.
         int r;
         do {
             r = ::close(fd_);
@@ -43,12 +27,8 @@ void ScopedFd::close_() noexcept {
     }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────
-
 namespace {
 
-// Open a /proc or /sys file read-only, with O_CLOEXEC.  Return -1 on
-// failure (file missing, permission denied, kernel feature absent).
 [[nodiscard]] int open_ro(const char* path) noexcept {
     int fd;
     do {
@@ -57,8 +37,6 @@ namespace {
     return fd;
 }
 
-// pread(fd, buf, n-1, 0) and NUL-terminate.  Returns bytes read on
-// success, -1 on failure.  Loops on EINTR.
 [[nodiscard]] ssize_t pread_full(int fd, char* buf, size_t n) noexcept {
     if (fd < 0 || n == 0) return -1;
     ssize_t r;
@@ -69,14 +47,12 @@ namespace {
     return r;
 }
 
-// Skip whitespace
 [[nodiscard]] const char* skip_ws(const char* p, const char* end) noexcept {
     while (p < end && (*p == ' ' || *p == '\t'))
         ++p;
     return p;
 }
 
-// Parse one decimal u64.  Advances *pp.  Returns 0 if no digits.
 [[nodiscard]] uint64_t parse_u64(const char** pp, const char* end) noexcept {
     const char* p = skip_ws(*pp, end);
     uint64_t v = 0;
@@ -90,8 +66,6 @@ namespace {
     return any ? v : 0;
 }
 
-// Parse a fixed-point float "X.Y" → uint64_t (x * scale + y_truncated_to_scale_digits).
-// Used for /proc/loadavg + /proc/pressure/* avg10 fields scaled ×100.
 [[nodiscard]] uint64_t parse_fixed_x100(const char** pp, const char* end) noexcept {
     const char* p = skip_ws(*pp, end);
     uint64_t whole = 0;
@@ -108,8 +82,8 @@ namespace {
             ++p;
             ++digits;
         }
-        if (digits == 1) frac *= 10;  // "1.5" → 50, want 50
-        // skip remaining frac digits
+        // A single fractional digit counts tenths, so scale it to hundredths.
+        if (digits == 1) frac *= 10;
         while (p < end && *p >= '0' && *p <= '9')
             ++p;
     }
@@ -117,8 +91,6 @@ namespace {
     return whole * 100 + frac;
 }
 
-// Locate first occurrence of `needle` (NUL-terminated) in [p, end).
-// Returns pointer to start of needle, or end if not found.
 [[nodiscard]] const char* find_str(const char* p, const char* end, const char* needle) noexcept {
     const size_t nlen = std::strlen(needle);
     if (nlen == 0 || (size_t)(end - p) < nlen) return end;
@@ -130,39 +102,31 @@ namespace {
 
 }  // anonymous namespace
 
-// ─── ProcGauges::init ─────────────────────────────────────────────────
-
 std::optional<ProcGauges> ProcGauges::init(::crucible::effects::Init) noexcept {
     ProcGauges p{};
 
-    // Heap-allocated scratch buffer (avoid 128 KB stack alloc per
-    // populate() call).  Fail load if alloc fails — caller gets
-    // nullopt and can decide whether to proceed without proc gauges.
+    // The scratch buffer lives on the heap so that no poll puts a buffer of
+    // this size on the stack.  A failed allocation fails init, and the caller
+    // decides whether to proceed without these gauges.
     p.scratch_ = std::unique_ptr<char[]>(new(std::nothrow) char[SCRATCH_BYTES]);
     if (!p.scratch_) return std::nullopt;
 
-    // Open every always-available /proc + /sys file.  Failures per-file
-    // are tolerated — populate() writes UNAVAILABLE for each unreadable
-    // slot.
     p.fd_slabinfo_ = ScopedFd{open_ro("/proc/slabinfo")};
     p.fd_interrupts_ = ScopedFd{open_ro("/proc/interrupts")};
     p.fd_softnet_stat_ = ScopedFd{open_ro("/proc/net/softnet_stat")};
     p.fd_snmp_ = ScopedFd{open_ro("/proc/net/snmp")};
     p.fd_proc_net_tcp_ = ScopedFd{open_ro("/proc/net/tcp")};
 
-    // /sys/block enumeration: open one fd per block device's `stat`
-    // file at init() time.  Hot-plugged devices added later require
-    // re-init.  Cap at MAX_BLOCK_DEVS = 32.
+    // Every block device present now gets one fd.  A device hot-plugged
+    // afterwards is picked up only by a fresh init.
     DIR* sysblock = ::opendir("/sys/block");
     if (sysblock) {
         struct dirent* de;
         char path[256];
         while ((de = ::readdir(sysblock)) != nullptr && p.num_block_devs_ < MAX_BLOCK_DEVS) {
-            // Skip "." / ".."
             if (de->d_name[0] == '.' && (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0'))) {
                 continue;
             }
-            // /sys/block/<name>/stat — at most ~250 bytes
             int n = std::snprintf(path, sizeof(path), "/sys/block/%s/stat", de->d_name);
             if (n <= 0 || (size_t)n >= sizeof(path)) continue;
             int fd = open_ro(path);
@@ -184,8 +148,6 @@ std::optional<ProcGauges> ProcGauges::init(::crucible::effects::Init) noexcept {
     return p;
 }
 
-// ─── ProcGauges::open_count ───────────────────────────────────────────
-
 std::size_t ProcGauges::open_count() const noexcept {
     std::size_t n = 0;
     if (fd_slabinfo_.valid()) ++n;
@@ -204,20 +166,18 @@ std::size_t ProcGauges::open_count() const noexcept {
     return n;
 }
 
-// ─── Per-source readers ───────────────────────────────────────────────
-
 uint64_t ProcGauges::read_slab_total_bytes_() const noexcept {
     if (!fd_slabinfo_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_slabinfo_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // Format: "slabinfo - version: 2.1\n# name <active_objs> <num_objs> <objsize> ...\n"
-    // Sum = Σ(num_objs × objsize).  Skip first 2 lines (header + comment).
+    // The file opens with a version line and a column-name comment line, then
+    // carries one line per cache:
+    //   "<name> <active_objs> <num_objs> <objsize> ..."
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
     int header_skip = 2;
     uint64_t total = 0;
     while (p < end) {
-        // Find newline
         const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
         if (!nl) break;
         if (header_skip > 0) {
@@ -225,15 +185,13 @@ uint64_t ProcGauges::read_slab_total_bytes_() const noexcept {
             p = nl + 1;
             continue;
         }
-        // Skip slab name (first whitespace-delimited token)
+        // name
         const char* tok = skip_ws(p, nl);
         while (tok < nl && *tok != ' ' && *tok != '\t')
             ++tok;
-        // Active objs (skip)
+        // active_objs
         (void)parse_u64(&tok, nl);
-        // num_objs
         uint64_t num_objs = parse_u64(&tok, nl);
-        // objsize
         uint64_t objsize = parse_u64(&tok, nl);
         total += num_objs * objsize;
         p = nl + 1;
@@ -245,12 +203,10 @@ uint64_t ProcGauges::read_hardirq_total_count_() const noexcept {
     if (!fd_interrupts_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_interrupts_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // Format: header line "            CPU0  CPU1 ..." then one line per
-    // IRQ.  Each IRQ line: "  N:    <count_cpu0>   <count_cpu1>  ...
-    // <handler_name>".  Sum all per-CPU counts across all rows.
+    // A header line of CPU names comes first, then one line per interrupt:
+    //   "  <N>:  <count_cpu0>  <count_cpu1>  ...  <handler_name>"
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
-    // Skip header line
     const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
     if (!nl) return 0;
     p = nl + 1;
@@ -258,13 +214,12 @@ uint64_t ProcGauges::read_hardirq_total_count_() const noexcept {
     while (p < end) {
         nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
         if (!nl) break;
-        // Skip leading whitespace + "<irq>:" prefix
         const char* tok = skip_ws(p, nl);
-        // Skip the IRQ number/name up to the colon
         while (tok < nl && *tok != ':')
             ++tok;
         if (tok < nl && *tok == ':') ++tok;
-        // Sum per-CPU columns until we hit alpha (handler name)
+        // The handler name follows the last count, so the first non-digit
+        // ends the per-CPU columns.
         for (;;) {
             tok = skip_ws(tok, nl);
             if (tok >= nl || *tok < '0' || *tok > '9') break;
@@ -279,15 +234,13 @@ uint64_t ProcGauges::read_napi_poll_total_() const noexcept {
     if (!fd_softnet_stat_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_softnet_stat_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // Format: one hex-formatted line per CPU.  Column 0 is
-    // packets_processed (hex u32).  Sum across all CPUs.
+    // One hex-formatted line per CPU.  Column 0 is packets_processed.
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
     uint64_t total = 0;
     while (p < end) {
         const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
         if (!nl) nl = end;
-        // Parse first hex token
         const char* tok = skip_ws(p, nl);
         uint64_t v = 0;
         while (tok < nl
@@ -309,26 +262,21 @@ uint64_t ProcGauges::read_skb_drop_reason_total_() const noexcept {
     if (!fd_snmp_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_snmp_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // /proc/net/snmp has paired header/value lines per protocol.  We
-    // sum {Tcp.OutSegs, Udp.SndbufErrors, Icmp.OutDestUnreachs} as a
-    // proxy for "drops at the IP layer".  Not perfect, but tracks the
-    // skb drop pressure trend.
+    // The file pairs a header line of column names with a value line, per
+    // protocol, and both lines open with the same protocol prefix.  The
+    // second "Ip: " is therefore the value line.
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
-    // Find "Ip: "
     const char* ip_line = find_str(p, end, "Ip: ");
     if (ip_line == end) return 0;
-    // Skip the header line (which starts with "Ip:" followed by names),
-    // jump to the next "Ip: " (the value line).
     const char* nl = (const char*)std::memchr(ip_line, '\n', (size_t)(end - ip_line));
     if (!nl) return 0;
     const char* ip_values = find_str(nl + 1, end, "Ip: ");
     if (ip_values == end) return 0;
-    // Sum per-line: "Ip: <fwd> <default_ttl> <inreceives> <inhdr_errors>
-    //                 <inaddr_errors> <forwdatagrams> <inunknown_protos>
-    //                 <indiscards> <indelivers> <outrequests> <outdiscards>
-    //                 <outnoroutes> ..."
-    // We want indiscards (col 7) + outdiscards (col 10).
+    // The Ip columns run: <fwd> <default_ttl> <inreceives> <inhdr_errors>
+    // <inaddr_errors> <forwdatagrams> <inunknown_protos> <indiscards>
+    // <indelivers> <outrequests> <outdiscards> <outnoroutes> ...
+    // The two discard counters are columns 7 and 10.
     const char* tok = ip_values + 4;  // past "Ip: "
     uint64_t cols[16] = {};
     int idx = 0;
@@ -344,11 +292,11 @@ uint64_t ProcGauges::read_tcp_recv_buffer_max_() const noexcept {
     if (!fd_proc_net_tcp_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_proc_net_tcp_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // Format: "  sl  local_address rem_address st tx_queue rx_queue tr ..."
-    // tx_queue + rx_queue are hex "XXXXXXXX:XXXXXXXX".  We want max(rx_queue).
+    // A header line comes first, then one line per socket:
+    //   "  sl  local_address rem_address st tx_queue rx_queue tr ..."
+    // The queue pair is one hex field of the form "XXXXXXXX:XXXXXXXX".
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
-    // Skip header line
     const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
     if (!nl) return 0;
     p = nl + 1;
@@ -356,27 +304,26 @@ uint64_t ProcGauges::read_tcp_recv_buffer_max_() const noexcept {
     while (p < end) {
         nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
         if (!nl) break;
-        // Token 0: sl (decimal index with colon)
+        // sl
         const char* tok = skip_ws(p, nl);
         while (tok < nl && *tok != ' ' && *tok != '\t')
             ++tok;
-        // Tokens 1, 2: local_address rem_address (hex:hex)
+        // local_address, rem_address
         for (int i = 0; i < 2; ++i) {
             tok = skip_ws(tok, nl);
             while (tok < nl && *tok != ' ' && *tok != '\t')
                 ++tok;
         }
-        // Token 3: st (hex state)
+        // st
         tok = skip_ws(tok, nl);
         while (tok < nl && *tok != ' ' && *tok != '\t')
             ++tok;
-        // Token 4: tx_queue:rx_queue
+        // tx_queue, up to the colon
         tok = skip_ws(tok, nl);
-        // Skip tx_queue (8 hex chars + ':')
         while (tok < nl && *tok != ':')
             ++tok;
         if (tok < nl && *tok == ':') ++tok;
-        // Parse rx_queue (hex)
+        // rx_queue
         uint64_t rx = 0;
         while (tok < nl
                && ((*tok >= '0' && *tok <= '9') || (*tok >= 'a' && *tok <= 'f') || (*tok >= 'A' && *tok <= 'F'))) {
@@ -399,7 +346,6 @@ uint64_t ProcGauges::read_block_queue_depth_max_() const noexcept {
     for (std::size_t i = 0; i < num_block_devs_; ++i) {
         int fd = fd_block_stats_[i].raw();
         if (fd < 0) continue;
-        // Each /sys/block/<dev>/stat is small (~250 B) — share scratch.
         char buf[512];
         ssize_t n;
         do {
@@ -407,10 +353,10 @@ uint64_t ProcGauges::read_block_queue_depth_max_() const noexcept {
         } while (n == -1 && errno == EINTR);
         if (n <= 0) continue;
         buf[n] = '\0';
-        // Format: "<read_ios> <read_merges> <read_sectors> <read_ticks>
-        //          <write_ios> <write_merges> <write_sectors> <write_ticks>
-        //          <in_flight> <io_ticks> <time_in_queue> ..."
-        // We want column 8 (in_flight, 0-indexed).
+        // The columns run: <read_ios> <read_merges> <read_sectors>
+        // <read_ticks> <write_ios> <write_merges> <write_sectors>
+        // <write_ticks> <in_flight> <io_ticks> <time_in_queue> ...
+        // in_flight is column 8, counting from zero.
         const char* p = buf;
         const char* end = buf + n;
         for (int col = 0; col < 8; ++col) {
@@ -424,10 +370,8 @@ uint64_t ProcGauges::read_block_queue_depth_max_() const noexcept {
 }
 
 uint64_t ProcGauges::read_printk_ring_bytes_free_() const noexcept {
-    // Reading /sys/kernel/debug/printk requires CAP_SYS_ADMIN and is
-    // typically restricted.  Return UNAVAILABLE — a future PR can
-    // probe /proc/kmsg or netlink kobject_uevent NETLINK_KOBJECT_UEVENT
-    // for a non-debugfs proxy.
+    // Reading the debugfs printk file demands CAP_SYS_ADMIN and is restricted
+    // on a normal system, so there is no reading to report.
     return UNAVAILABLE;
 }
 
@@ -436,8 +380,7 @@ uint64_t ProcGauges::read_thp_split_total_() const noexcept {
     if (!fd_vmstat_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_vmstat_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // /proc/vmstat has lines "<name> <value>".  Sum thp_split_page +
-    // thp_split_pmd + thp_split_pud (kernel 4.20+).
+    // Every line of the file has the form "<name> <value>".
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
     uint64_t total = 0;
@@ -452,8 +395,7 @@ uint64_t ProcGauges::read_thp_split_total_() const noexcept {
     }
     return total;
 #else
-    // Basic build: vmstat fd not opened; thp_split unavailable here.
-    // Future basic-build addition could open /proc/vmstat unconditionally.
+    // The vmstat fd is opened only in the extended build.
     return UNAVAILABLE;
 #endif
 }
@@ -489,7 +431,8 @@ uint64_t ProcGauges::read_tcp_established_current_() const noexcept {
     if (!fd_snmp_.valid()) return UNAVAILABLE;
     ssize_t n = pread_full(fd_snmp_.raw(), scratch_.get(), SCRATCH_BYTES);
     if (n <= 0) return UNAVAILABLE;
-    // "Tcp: " value line.  CurrEstab is column 8 (0-indexed).
+    // The second "Tcp: " line carries the values.  CurrEstab is column 8,
+    // counting from zero.
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
     const char* tcp_hdr = find_str(p, end, "Tcp: ");
@@ -534,10 +477,11 @@ uint64_t ProcGauges::read_pressure_avg10_x100_(int fd, const char* kind) const n
     } while (n == -1 && errno == EINTR);
     if (n <= 0) return UNAVAILABLE;
     buf[n] = '\0';
-    // PSI format:
+    // A pressure file carries two lines:
     //   "some avg10=<f> avg60=<f> avg300=<f> total=<u64>"
     //   "full avg10=<f> avg60=<f> avg300=<f> total=<u64>"
-    // We expose `some avg10` × 100 — captures any-task-blocked %.
+    // The "some" line covers any task blocked, where "full" covers only the
+    // case of every task blocked.
     const char* p = buf;
     const char* end = buf + n;
     const char* hit = find_str(p, end, kind);
@@ -550,8 +494,6 @@ uint64_t ProcGauges::read_pressure_avg10_x100_(int fd, const char* kind) const n
 
 #endif  // CRUCIBLE_SENSE_HUB_EXTENDED
 
-// ─── populate ─────────────────────────────────────────────────────────
-
 void ProcGauges::populate(uint64_t* gauge_array, std::size_t gauge_count) const noexcept {
     if (!gauge_array || gauge_count == 0) return;
 
@@ -560,7 +502,6 @@ void ProcGauges::populate(uint64_t* gauge_array, std::size_t gauge_count) const 
         if (idx < gauge_count) gauge_array[idx] = v;
     };
 
-    // Basic build slots (16-22)
     write(Gauge::SLAB_TOTAL_BYTES, read_slab_total_bytes_());
     write(Gauge::HARDIRQ_TOTAL_COUNT, read_hardirq_total_count_());
     write(Gauge::NAPI_POLL_TOTAL, read_napi_poll_total_());
@@ -571,7 +512,6 @@ void ProcGauges::populate(uint64_t* gauge_array, std::size_t gauge_count) const 
     write(Gauge::THP_SPLIT, read_thp_split_total_());
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-    // Extended slots (49-56)
     write(Gauge::NUMA_HIT_RATIO_X100, read_numa_hit_ratio_x100_());
     write(Gauge::TCP_ESTABLISHED_CURRENT, read_tcp_established_current_());
 

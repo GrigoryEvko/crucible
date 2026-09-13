@@ -1,110 +1,16 @@
 #pragma once
 
-// ── crucible::fixy::warden — Warden minters under fixy:: ──────────
-//
-// FIXY-U-120.  Re-exports the four warden-tree §XXI mint factories
-// under `fixy::warden::` so callers who include only the fixy umbrella
-// do not have to descend into the warden/ tree to mint the cold-init
-// enforcement primitives.
-//
-// Per CLAUDE.md §XXI Universal Mint Pattern, each re-export preserves
-// the substrate's CtxFitsXMint concept gate (Init-row admission), the
-// `[[nodiscard]] constexpr noexcept` qualifiers (allocation-free
-// across all four — the policy state lives in Pinned singletons or
-// trivially-copyable structs minted in place), and the ctx-bound
-// authorization shape (`Ctx const&` first parameter, exec-row contains
-// Effect::Init).
-//
-// ── Substrate consumed ─────────────────────────────────────────────
-//
-//   warden::mint_hardening(ctx, policy)                       — Hardening.h
-//   warden::mint_deadline_watchdog(ctx, senses, policy)       — DeadlineWatchdog.h
-//   warden::mint_hot_region_registry_handle(ctx)              — Registry.h
-//   warden::mint_quarantine_policy<MaxCogs, MaxEvents>(ctx,..)— Quarantine.h
-//
-// ── Why every mint is Init-row gated ──────────────────────────────
-//
-// All four surfaces engage process-wide state mutations that belong
-// to the startup-only Init row:
-//
-//   - `mint_hardening` issues sched_setaffinity / sched_setattr /
-//     mlock2 / madvise(MADV_HUGEPAGE|MADV_COLLAPSE) / prctl syscalls
-//     against the calling thread / process address space.
-//   - `mint_deadline_watchdog` baselines a rolling-window observer
-//     against Senses + steady_clock; hot foreground / bg-drain
-//     contexts must not stand up a fresh watchdog (they observe one
-//     minted at Init time by the Keeper / bench harness).
-//   - `mint_hot_region_registry_handle` returns the 1-byte
-//     authorization token for the Pinned process-wide registry — the
-//     act of minting is the proof of Init-tier authority, even
-//     though the underlying state already exists.
-//   - `mint_quarantine_policy` constructs a fresh per-fleet
-//     quarantine watcher with its own ring buffer + per-Cog state;
-//     fleet-shape decisions are an Init-row concern.
-//
-// Hot foreground (`HotFgCtx`) and background drain (`BgDrainCtx`)
-// contexts are statically rejected at each mint's requires-clause.
-// The substrate ships the rejection static_asserts (witnessed in
-// `warden/{Hardening,DeadlineWatchdog,Registry,Quarantine}.h`); this
-// header relays them through the fixy:: layer so the same negative
-// reach holds through the umbrella.
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   InitSafe — re-exports introduce no new state path; the
-//              substrate's NSDMI + Pinned singletons handle init.
-//   TypeSafe — using-declarations preserve the substrate's concept
-//              gates (CtxFitsHardeningMint, CtxFitsDeadlineWatchdogMint,
-//              CtxFitsHotRegionRegistryMint, CtxFitsQuarantineMint).
-//   NullSafe — DeadlineWatchdog::ctor takes `const Senses*` and the
-//              mint forwards it directly; substrate enforces non-null
-//              via its own contract.  Other three mints take no
-//              pointer parameters.
-//   MemSafe  — zero heap.  Every mint is `constexpr` and constructs
-//              in place; AppliedPolicy / DeadlineWatchdog /
-//              HotRegionRegistryHandle / QuarantinePolicy each fit
-//              in their declared sizeof slots.
-//   BorrowSafe — no shared state.  HotRegionRegistryHandle is a
-//                proof-token; the underlying registry's atomics
-//                live in the Pinned singleton.
-//   ThreadSafe — only `mint_hot_region_registry_handle` returns a
-//                handle into shared atomic state; the underlying
-//                discipline (release-store on registration,
-//                acquire-load on probe) is owned by Registry.h.
-//   LeakSafe — every mint returns a value type with trivial dtor;
-//              no resource ownership crosses through the using-decl.
-//   DetSafe  — Init-tier mints; not on the deterministic-replay
-//              path.  Watchdog observations are advisory.
-//
-// ── Allocation discipline (zero-heap across all four mints) ───────
-//
-// Every warden mint is pure-construct: the body either returns a
-// value-typed struct via NRVO (AppliedPolicy, QuarantinePolicy) or
-// constructs a trivially-copyable token (HotRegionRegistryHandle).
-// DeadlineWatchdog's substrate ctor reads Senses fields + steady_clock
-// + the Policy baseline into a stack-allocated struct; the mint is
-// `constexpr` and `noexcept`, no heap path can fire.
-//
-// This is unlike `fixy::bridge::mint_persisted_session` (heap via
-// `std::unique_ptr<SessionPersistenceState>`); the warden surface is
-// fully zero-alloc and the fixy:: re-exports preserve that.
+// Every warden mint changes process-wide state at startup, so each one
+// admits only a context that carries the Init effect.
 
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Quarantine.h>
 #include <crucible/warden/Registry.h>
 
-#include <type_traits>  // sentinel block
+#include <type_traits>
 
 namespace crucible::fixy::warden {
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Hardening — Linux syscall policy applicator ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `mint_hardening(ctx, policy)` returns an `AppliedPolicy` RAII guard
-// that captures the pre-mutation state for revert-on-drop semantics.
-// Concept gate `CtxFitsHardeningMint<Ctx>` requires Init in row.
 
 using ::crucible::warden::mint_hardening;
 using ::crucible::warden::CtxFitsHardeningMint;
@@ -112,46 +18,13 @@ using ::crucible::warden::AppliedPolicy;
 using ::crucible::warden::Policy;
 using ::crucible::warden::Hardening;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Deadline watchdog — foreground-stall detection observer ────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `mint_deadline_watchdog(ctx, senses, policy)` baselines a rolling-
-// window stall observer against the perf::Senses telemetry surface.
-// Concept gate `CtxFitsDeadlineWatchdogMint<Ctx>` requires Init.
-
 using ::crucible::warden::mint_deadline_watchdog;
 using ::crucible::warden::CtxFitsDeadlineWatchdogMint;
 using ::crucible::warden::DeadlineWatchdog;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Hot-region registry — process-wide mlock/madvise registry ──────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `mint_hot_region_registry_handle(ctx)` returns a 1-byte token whose
-// existence proves Init-tier authority; the underlying registry state
-// lives in a Pinned process-wide singleton.  Concept gate
-// `CtxFitsHotRegionRegistryMint<Ctx>` requires Init.
-
 using ::crucible::warden::mint_hot_region_registry_handle;
 using ::crucible::warden::CtxFitsHotRegionRegistryMint;
 using ::crucible::warden::HotRegionRegistryHandle;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Quarantine policy — degraded-Cog lifecycle bound ───────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `mint_quarantine_policy<Ctx, MaxCogs, MaxEvents>(ctx, config)`
-// returns a fresh `QuarantinePolicy<MaxCogs, MaxEvents>` watcher.
-// Note: this is a function-template mint with non-type parameters;
-// using-decl re-exports the name into fixy::warden:: and concrete
-// instantiations resolve to the substrate template.
-//
-// The companion concept variants `CtxFitsQuarantineRecord` and
-// `CtxFitsQuarantineOverride` admit BgDrainCtx / TestRunnerCtx for
-// record-only and override-only callers (see Quarantine.h substrate
-// static_asserts); they are re-exported here for completeness so
-// the fixy:: layer surfaces the full quarantine-mint concept family.
 
 using ::crucible::warden::mint_quarantine_policy;
 using ::crucible::warden::CtxFitsQuarantineMint;
@@ -165,23 +38,11 @@ using ::crucible::warden::QuarantineEvent;
 
 }  // namespace crucible::fixy::warden
 
-// ─── Dual-export sentinel — FIXY-U-120 ─────────────────────────────
-//
-// Header-internal identity sentinels for every warden surface item.
-// Each alias resolves to its substrate type, not a shadowed local.
-// Same recipe as fixy/Bridge.h::self_test + fixy/Cap.h::self_test —
-// drift surfaces here at every consumer's include time, NOT only in
-// test_fixy_warden.cpp.  Cardinality witness at the tail catches a
-// future contributor adding (or removing) a warden mint without
-// updating both the using-decl block AND this sentinel.
+// These assertions repeat what the substrate already asserts at each mint
+// definition. The duplication is deliberate. A shadowed local declaration on
+// this layer reddens at every consumer's include rather than only in a test.
 
 namespace crucible::fixy::warden::self_test {
-
-// Type-identity witnesses.  Each `static_assert(std::is_same_v<...>)`
-// proves the fixy:: alias resolves to the same type as the substrate;
-// a future regression that introduces a shadowed local declaration
-// or accidentally rewrites the using-decl to import a different
-// symbol would red the build at this header's first include.
 
 static_assert(std::is_same_v<::crucible::fixy::warden::AppliedPolicy, ::crucible::warden::AppliedPolicy>,
               "fixy::warden::AppliedPolicy must alias warden::AppliedPolicy.");
@@ -202,39 +63,14 @@ static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineConfig, ::cruci
 static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineEvent, ::crucible::warden::QuarantineEvent>,
               "fixy::warden::QuarantineEvent must alias substrate.");
 
-// FIXY-U-120c — QuarantineTransition + QuarantineSnapshot identity
-// witnesses.  Both are non-mint quarantine surface types re-exported
-// at Warden.h above (the diagnostic-class-tag base + the snapshot
-// payload returned from QuarantinePolicy::current/snapshot).  Without
-// these asserts a using-decl regression that shadowed either type
-// with a local typedef would silently pass — `QuarantineSnapshot`
-// is trivially-copyable and structurally similar to a hand-rolled
-// substitute, masking ABI drift across the fixy:: surface.
 static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineTransition, ::crucible::warden::QuarantineTransition>,
               "fixy::warden::QuarantineTransition must alias substrate.");
 
 static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineSnapshot, ::crucible::warden::QuarantineSnapshot>,
               "fixy::warden::QuarantineSnapshot must alias substrate.");
 
-// FIXY-U-120d — Hardening class identity.  The class itself is
-// re-exported via `using ::crucible::warden::Hardening;` above; the
-// substrate exposes static `Hardening::apply(policy)` whose contract
-// the mint factory wraps.  Without this assert, a future regression
-// could shadow `Hardening` with an empty local struct (`Hardening{}`
-// is constructible) and the `mint_hardening` body — which forwards
-// to `Hardening::apply(policy)` inside the substrate — would still
-// resolve because the substrate namespace is what the body sees.
-// The fixy:: re-export semantics, however, would silently diverge:
-// downstream users typing `fixy::warden::Hardening::apply(...)` would
-// reach a different class.  Catch that asymmetry here.
 static_assert(std::is_same_v<::crucible::fixy::warden::Hardening, ::crucible::warden::Hardening>,
               "fixy::warden::Hardening must alias substrate.");
-
-// Concept-resolution witnesses.  Each concept name is satisfied by
-// `ColdInitCtx` (which carries Init in its effect row); the substrate
-// ships the same static_asserts at the mint definition site.  This
-// duplication is deliberate — surfaces drift through the fixy:: layer
-// at every consumer's include time.
 
 static_assert(::crucible::fixy::warden::CtxFitsHardeningMint<::crucible::effects::ColdInitCtx>,
               "fixy::warden::CtxFitsHardeningMint must admit ColdInitCtx.");
@@ -248,12 +84,6 @@ static_assert(::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<::crucible:
 static_assert(::crucible::fixy::warden::CtxFitsQuarantineMint<::crucible::effects::ColdInitCtx>,
               "fixy::warden::CtxFitsQuarantineMint must admit ColdInitCtx.");
 
-// Negative-reach witness.  `BgDrainCtx` carries `Bg, Alloc` but NOT
-// `Init`; every Init-only warden mint must reject it.  The substrate
-// ships these `!CtxFits...<BgDrainCtx>` asserts at the mint site;
-// re-asserting through the fixy:: surface witnesses the gate is not
-// silently relaxed by the using-decl.
-
 static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<::crucible::effects::BgDrainCtx>,
               "fixy::warden::CtxFitsHardeningMint must reject BgDrainCtx.");
 
@@ -266,15 +96,9 @@ static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<::crucible
 static_assert(!::crucible::fixy::warden::CtxFitsQuarantineMint<::crucible::effects::BgDrainCtx>,
               "fixy::warden::CtxFitsQuarantineMint must reject BgDrainCtx.");
 
-// FIXY-U-120d — Second negative-reach class: HotFgCtx.  Carries
-// `Row<>` (empty effect row), failing the Init-row conjunct of every
-// Init-tier mint concept.  Substrate ships these asserts at the mint
-// site; test_fixy_warden.cpp duplicates them; the header sentinel
-// must too so consumer-include drift detection sees BOTH rejection
-// classes (Bg → Init absent due to wrong row, HotFg → Init absent
-// due to empty row).  Quarantine has no HotFg neg-assert in
-// substrate (the substrate ships only ColdInit positive + BgDrain
-// negative for QuarantineMint), so we omit it here for parity.
+// The two rejection classes differ. BgDrainCtx carries a row without Init.
+// HotFgCtx carries an empty row. Quarantine is absent from this trio because
+// the substrate ships no HotFgCtx rejection for it.
 static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<::crucible::effects::HotFgCtx>,
               "fixy::warden::CtxFitsHardeningMint must reject HotFgCtx.");
 
@@ -284,18 +108,10 @@ static_assert(!::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<::crucible:
 static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<::crucible::effects::HotFgCtx>,
               "fixy::warden::CtxFitsHotRegionRegistryMint must reject HotFgCtx.");
 
-// FIXY-U-120d — Sub-concept admittance witnesses for the quarantine
-// record/override variants.  These are query-only concepts (not gates
-// on the mint factory itself); their substrate purpose is to widen
-// the legal-caller set for non-mint quarantine operations:
-//   - CtxFitsQuarantineRecord — admits BgDrainCtx so the steady-state
-//     drain thread can record quarantine transitions without minting.
-//   - CtxFitsQuarantineOverride — admits ColdInitCtx (Keeper override)
-//     and TestRunnerCtx (deterministic test override) so authorized
-//     callers can force-clear a quarantine state.
-// Substrate ships these asserts at Quarantine.h:471-474; test TU
-// duplicates them.  Header sentinel must too for include-time drift
-// detection at every fixy:: consumer.
+// These two concepts query the caller for a non-mint quarantine operation
+// rather than gate the mint, so they admit contexts the mint itself rejects.
+// A drain context records a transition without minting. An init or test
+// context force-clears a quarantine state.
 static_assert(::crucible::fixy::warden::CtxFitsQuarantineRecord<::crucible::effects::BgDrainCtx>,
               "fixy::warden::CtxFitsQuarantineRecord must admit BgDrainCtx "
               "(the steady-state drain context records transitions).");
@@ -308,45 +124,25 @@ static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<::crucible::ef
               "fixy::warden::CtxFitsQuarantineOverride must admit TestRunnerCtx "
               "(deterministic test-runner override authority).");
 
-// Cardinality witness.  Four mint factories live in `warden/`.
-//
-// FIXY-U-127 floor-vs-ceiling split (per U-124 catalog cardinality
-// drift family, feedback_catalog_cardinality_test_drift): the EXACT
-// ceiling pin (`== 4`) lives HERE, colocated with the source of
-// truth, so any contributor bumping the constant cannot miss the
-// sibling assertion at edit time.  The test TU `test_fixy_warden.cpp`
-// holds only the FLOOR pin (`>= 4`) which catches the inverse
-// direction — an accidental REMOVAL of a warden mint that escaped
-// review.  Adding a fifth warden mint requires updating BOTH the
-// constant AND the colocated `static_assert` below; the test TU
-// floor auto-tracks via `>=`.
-
+// The exact ceiling pin sits next to the re-export list so a contributor
+// changing the count cannot miss it. The sibling test holds only a floor pin,
+// which catches an accidental removal instead.
 inline constexpr int warden_mint_cardinality = 4;
 
-static_assert(warden_mint_cardinality == 4, "ceiling: fixy::warden:: re-exports exactly 4 mint factories — "
+static_assert(warden_mint_cardinality == 4, "fixy::warden:: re-exports exactly 4 mint factories — "
                                             "mint_hardening, mint_deadline_watchdog, "
                                             "mint_hot_region_registry_handle, mint_quarantine_policy.  "
                                             "If you add or remove a warden mint, update BOTH the constant "
-                                            "AND this colocated ceiling pin in the same edit.  The "
-                                            "sibling test_fixy_warden.cpp holds only a >= floor and "
-                                            "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
+                                            "AND this ceiling pin in the same edit.");
 
 }  // namespace crucible::fixy::warden::self_test
 
-// ─── Runtime smoke test ────────────────────────────────────────────
-//
-// Per FIXY-U-103 discipline (every fixy/ header ships a runtime
-// smoke block).  Smoke for warden mints is type-level: we cannot
-// actually invoke `mint_hardening` from a smoke routine without
-// performing real Linux syscalls, so the smoke verifies the
-// re-export name resolution at runtime context (instantiation
-// already-exercised at consteval above; this block ensures the
-// header is reachable via runtime-call paths too).
+// Calling a warden mint from the smoke test would issue real syscalls, so the
+// body only forces the re-exported names to resolve in a runtime context.
 
 namespace crucible::fixy::warden {
 
 inline void runtime_smoke_test() noexcept {
-    // Witness that the concept aliases instantiate at runtime context.
     constexpr bool admits_cold = CtxFitsHardeningMint<::crucible::effects::ColdInitCtx>;
     constexpr bool rejects_bg = !CtxFitsHardeningMint<::crucible::effects::BgDrainCtx>;
     (void)admits_cold;

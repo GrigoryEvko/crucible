@@ -1,116 +1,7 @@
 #pragma once
 
-// ── crucible::fixy::fn — Type + Grants → safety::fn::Fn aggregator ─
-//
-// Clean reimplementation per misc/16_05_2026_fixy.md §4.
-//
-// This header is THE universal integration point for fixy::: every
-// production binding spells `fixy::fn<Type, Grants...>` and the
-// resolver projects the Grants pack onto safety::fn::Fn's 19-positional
-// parameter slot, gates IsAccepted at the class-template body, and
-// surfaces a round-trip witness with the directly-spelled equivalent.
-//
-// ── Substrate consumed ─────────────────────────────────────────────
-//
-//   safety::fn::Fn<Type, ...>           — the 19-axis aggregator (P0-1)
-//   safety::fn::ValidComposition<F>     — 20-rule §6.8 gate (P0-2)
-//   safety::fn::UsageMode / SecLevel /  — enum-valued axis tags
-//     ReprKind / OverflowMode /
-//     MutationMode / ReentrancyMode
-//   safety::fn::pred::* / cost::* /     — type-valued axis tags
-//     precision::* / space::* /
-//     size_pol::* / lifetime::* /
-//     stale::* / proto::*
-//   safety::source::* / trust::*        — Provenance / Trust namespaces
-//   effects::Row<Es...>                 — Effect axis carrier
-//
-//   fixy::dim::DimensionAxis            — the 20-axis enum (alias)
-//   fixy::strict_default_for<D>         — per-dim strict default
-//   fixy::grant::*                      — engagement + relaxation tags
-//   fixy::IsAccepted<Type, Grants...>   — engagement gate
-//
-// ── Substrate added by this header ─────────────────────────────────
-//
-// Two metafunctions and one wrapper:
-//
-//   detail::resolve::project<G>     — Grant tag → substrate slot
-//                                     (specialized per tag, exposes
-//                                      ::type or ::value + ::value_type)
-//   detail::resolve::find_grant_t<D, Grants...>
-//                                   — first Grant in Grants whose
-//                                     which_dim_v matches D; falls
-//                                     back to accept_default_strict_for
-//                                     (which then projects to
-//                                     strict_default_for<D>)
-//   fixy::fn<Type, Grants...>       — wrapper aggregating value
-//                                     + 18-axis-resolved safety::fn::Fn
-//
-// One factory:
-//
-//   mint_fn<Type, Grants...>(value) — Universal Mint Pattern factory
-//
-// Fourteen stance aliases (misc/16_05_2026_fixy.md §5 catalog +
-// FIXY-U-041 extension + FIXY-FOUND-033 SecLevel coverage closure):
-//
-//   stance::PureLinear        — every axis strict-default
-//   stance::PureCopy          — copy usage, otherwise strict
-//   stance::IoFunction        — Effect=IO, otherwise strict
-//   stance::BgWorker          — Effect={Bg, Alloc}, otherwise strict
-//   stance::CtCrypto          — constant-time path: as_secret + with<>
-//                                (no IO; linear consume of Secret)
-//   stance::SecretConsumer    — Security=Public via declassify<Policy>
-//   stance::PublicEmit        — IO + declassify<Policy> audit trail
-//   stance::AsyncEndpoint     — Reentrancy=Coroutine + Effect={IO}
-//   stance::NamedSession      — Protocol=<Proto>, otherwise strict
-//                                (binds a session protocol type to
-//                                 the Protocol axis)
-//   stance::SyncBlocking      — Effect={IO,Block} + as_public —
-//                                synchronous blocking-syscall path
-//   stance::RealtimeHot       — Effect=<empty> + as_public + strict
-//                                Reentrancy — hot-loop discipline:
-//                                NO IO, NO Alloc, NO Block, no
-//                                coroutine yield
-//
-// FIXY-FOUND-033 (Security-axis coverage):
-//   stance::InternalApi          — Security=as_internal     (Internal)
-//   stance::UnclassifiedScratch  — Security=as_unclassified (Unclassified)
-//   Together with CtCrypto (Secret), SecretConsumer/PublicEmit (Public
-//   via declassify), and the strict-default arms above (Classified
-//   under accept_default_strict_for<Security>), every SecLevel
-//   enumerator is now reachable through at least one stance.
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   InitSafe — wrapper has one Type field initialized by NSDMI.  No
-//              uninitialized state path.
-//   TypeSafe — Grants pack types are structural concepts; project
-//              specializations name exact substrate slot types.  No
-//              implicit conversions, no raw integers.
-//   NullSafe — no pointer members; the wrapper is value-semantic.
-//   MemSafe  — no heap; Type's own move/copy semantics propagate.
-//   DetSafe  — same (Type, Grants...) → same safety_fn_t → same
-//              federation cache key (relevant for L7's KernelCache).
-//
-// ── Cost ───────────────────────────────────────────────────────────
-//
-// Zero.  Every grant tag is empty + final + grant_base; the 18-axis
-// type-level parameters carry no runtime state.  `sizeof(fixy::fn<T>)`
-// is exactly `sizeof(T)` when T's alignment dominates the EBO chain
-// (witnessed for trivial T below).
-//
-// ── Self-test ──────────────────────────────────────────────────────
-//
-// Five witnesses ride this header:
-//   1. Round-trip — fixy::fn<int>::safety_fn_t IS safety::fn::Fn<int>
-//   2. EBO collapse — sizeof(fixy::fn<int>) == sizeof(int)
-//   3. Per-axis projection — `affine` resolves to UsageMode::Affine
-//   4. Strict-default propagation — Refinement axis under accept-
-//      strict resolves to pred::True
-//   5. Compound relaxation — multiple non-strict grants compose
-//      correctly into the resolved Fn<>
-
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Capability.h>  // FOUND-043 witness — effects::Capability<E, S>
+#include <crucible/effects/Capability.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
@@ -128,47 +19,11 @@
 
 namespace crucible::fixy {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── detail::resolve — grant → substrate projection ─────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 namespace detail::resolve {
 
-// ─── project<G> — Grant tag → substrate slot ──────────────────────
-//
-// Per-tag specializations expose `::type` (type-valued axes) and/or
-// `::value` + `::value_type` (enum/integer-valued axes).  The
-// acceptance marker `accept_default_strict_for<D>` inherits from
-// `strict_default_for<D>` so the projection automatically reaches the
-// substrate default — no per-axis dispatch.
-//
-// FIXY-FOUND-026: the primary template was previously undefined,
-// which means a per-domain grant tag G (downstream-defined,
-// `grant::IsGrantTag_v<G> == true` AND `grant::which_dim_v<G>` is a
-// substrate axis) that lacks a `project<G>` specialization would
-// surface as an opaque "incomplete type project<...>" compile error
-// at the call site — readers cannot tell whether the tag is missing
-// a project<> specialization, was misrouted to the wrong axis, or
-// has a flawed `IsGrantTag_v` setup.
-//
-// The closure is a dependent-false static_assert primary template
-// that NAMES the offending tag in the compiler's instantiation
-// context and enumerates the two failure modes (per-domain tag
-// without project<> specialization; non-grant type that nevertheless
-// passed the IsGrantTag tier).  The discipline mirrors Reject.h's
-// `DiagnoseAxisNotEngaged<Tag>` / `DiagnoseAxisDuplicate<Tag>` /
-// `DiagnoseMalformedGrant<Tag>` family — a dedicated structured
-// diagnostic per failure class is the established fixy pattern.
-//
-// Soundness: this static_assert fires only when project<G> is
-// actually instantiated for an unspecialized G.  The acceptance
-// markers (`accept_default_strict_for<D>`) and every shipped grant
-// tag in this file specialize project<...>, so the static_assert is
-// unreachable through `find_grant_t<D, Grants...>` → known grant or
-// `accept_default_strict_for<D>`.  The diagnostic surface fires
-// EXCLUSIVELY when a downstream domain ships a grant tag that is
-// IsGrantTag-valid + which_dim-claims-a-substrate-axis BUT omits the
-// project<> specialization — the precise scenario FOUND-026 names.
+// A defined primary template names the offending tag in the instantiation
+// context. An undefined one reports only an incomplete type, which does not
+// distinguish a missing specialization from a misrouted axis.
 
 template <typename G>
 struct project {
@@ -177,35 +32,30 @@ struct project {
                   "with no specialization.  The G template parameter on this "
                   "project<...> instantiation names the offending tag.  Two ways "
                   "to repair:\n"
-                  "  (a) Per-domain tag routed to a substrate axis — if G is a "
-                  "downstream-defined grant tag (final, derives grant_base, has a "
-                  "which_dim<G> specialization on a non-Type DimensionAxis), "
-                  "specialize ::crucible::fixy::detail::resolve::project<G> in the "
-                  "downstream domain to expose ::type (type-valued axes: "
-                  "Refinement / Effect / Protocol / Lifetime / Provenance / Trust "
-                  "/ Complexity / Precision / Space / Size / Staleness) or ::value "
-                  "+ ::value_type (enum/integer-valued axes: Usage / Security / "
+                  "  (a) A per-domain grant tag routed to a substrate axis — if G "
+                  "is final, derives grant_base and has a which_dim<G> "
+                  "specialization on a non-Type DimensionAxis, specialize "
+                  "::crucible::fixy::detail::resolve::project<G> alongside the tag "
+                  "to expose ::type (type-valued axes: Refinement / Effect / "
+                  "Protocol / Lifetime / Provenance / Trust / Complexity / "
+                  "Precision / Space / Size / Staleness) or ::value + ::value_type "
+                  "(enum-valued and integer-valued axes: Usage / Security / "
                   "Representation / Overflow / Mutation / Reentrancy / Version).\n"
-                  "  (b) Non-grant type leaked through IsGrantTag — if G is NOT a "
-                  "grant tag, ensure `fixy::grant::IsGrantTag_v<G>` returns false "
-                  "at the grant-validation tier (Reject.h §AllGrantsWellFormed) so "
-                  "the type never reaches project<G> in the first place.  A "
-                  "per-domain extension should never reach this template — the "
-                  "wrapper-tier diagnostic FixyMalformedGrant is the correct "
-                  "catch-point for non-grant inputs.");
+                  "  (b) A non-grant type leaked through IsGrantTag — if G is not "
+                  "a grant tag, make `fixy::grant::IsGrantTag_v<G>` false so the "
+                  "type is rejected at the grant-validation tier and never reaches "
+                  "project<G>.  FixyMalformedGrant is the correct catch-point for "
+                  "non-grant inputs.");
 };
 
-// Acceptance markers delegate to strict_default_for<D>
 template <dim::DimensionAxis D>
 struct project<grant::accept_default_strict_for<D>> : strict_default_for<D> {};
 
-// ── DimensionAxis::Refinement = 1 (type-valued) ───────────────────
 template <typename Pred>
 struct project<grant::refined_with<Pred>> {
     using type = Pred;
 };
 
-// ── DimensionAxis::Usage = 2 (enum-valued) ────────────────────────
 template <>
 struct project<grant::affine> {
     using value_type = safety::fn::UsageMode;
@@ -232,34 +82,15 @@ struct project<grant::capability_usage> {
     static constexpr value_type value = safety::fn::UsageMode::Capability;
 };
 
-// ── DimensionAxis::Effect = 3 (type-valued) ───────────────────────
 template <effects::Effect... Es>
 struct project<grant::with<Es...>> {
     using type = effects::Row<Es...>;
 };
 
-// ── DimensionAxis::Security = 4 (enum-valued via declassify) ──────
-//
-// FIXY-FOUND-032: previously, `project<declassify<Policy>>::value`
-// hardcoded `SecLevel::Public` regardless of Policy.  This was a
-// LATTICE COLLAPSE — every declassification (whatever its policy)
-// landed at Public, defeating the Security lattice's stratification.
-// IFC theory wants per-policy SecLevel targets (e.g., `RedactPII`
-// might drop Secret→Classified, while `FullDeclassify` drops to
-// Public).  Folding all declassifications into Public hides the
-// difference at the type-system level, even though the Policy IS
-// captured separately via `find_declassify_policy_t<>` for audit.
-//
-// Closure: introduce `declassify_target<Policy>` as a customization
-// point.  Default value remains `SecLevel::Public` (preserves prior
-// behavior for un-specialized policies — including the empty
-// `declassify<>` case and any Policy without a per-Policy
-// specialization).  Downstream domains can specialize
-// `declassify_target<MyPolicy>::value` to land at any SecLevel
-// the IFC discipline of that domain authorizes, breaking the
-// structural collapse.
-//
-// Audit grep: `declassify_target<` finds every per-Policy override.
+// A declassification lands at the SecLevel its policy authorizes, which is
+// not always Public. Specializing per Policy keeps the Security lattice
+// stratified. A single fixed target would collapse every policy onto one
+// point and hide the difference from the type system.
 
 template <typename Policy>
 struct declassify_target {
@@ -275,19 +106,6 @@ struct project<grant::declassify<Policy>> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = declassify_target_v<Policy>;
 };
-
-// FIXY-FOUND-032 customization-point witnesses.
-//
-// Two sentinels at definition site, paired:
-//   (1) default-Public path — an un-specialized Policy (e.g., `int`
-//       used purely as a placeholder type-token) hits the primary
-//       template and lands at Public.  Preserves prior behavior.
-//   (2) lattice-non-collapse proof — a detail-namespace synthetic
-//       policy specialized to land at Classified demonstrates the
-//       customization point actually fires and the lattice can land
-//       at SecLevels OTHER than Public.  Without this sentinel the
-//       customization point could silently break under a future
-//       refactor and the lattice would collapse again unnoticed.
 
 namespace found_032_witness {
 
@@ -306,21 +124,14 @@ struct detail::resolve::declassify_target<detail::resolve::found_032_witness::La
 namespace detail::resolve {
 
 static_assert(declassify_target_v<int> == safety::fn::SecLevel::Public,
-              "FOUND-032: declassify_target<>'s default-Public path is broken "
-              "— an un-specialized Policy (here a bare `int` type-token) must "
-              "fall through to SecLevel::Public to preserve prior behavior on "
-              "all currently-deployed declassify<Policy> grants.");
+              "declassify_target<Policy> must fall through to SecLevel::Public "
+              "for a Policy with no specialization of its own.");
 
 static_assert(declassify_target_v<found_032_witness::LatticeNonCollapseProofPolicy> == safety::fn::SecLevel::Classified,
-              "FOUND-032: declassify_target<> customization point is broken — "
-              "the per-Policy specialization for LatticeNonCollapseProofPolicy "
-              "fails to override the default Public target.  This sentinel "
-              "proves the Security lattice no longer collapses to Public for "
-              "every declassify<>: per-Policy specializations can land at any "
-              "SecLevel the IFC discipline of the downstream domain authorizes.");
+              "A per-Policy declassify_target<> specialization must override the "
+              "default Public target.  Without the override every declassification "
+              "lands at Public and the Security lattice loses its stratification.");
 
-// FIXY-LAT-Security: explicit Security lattice point projections —
-// every SecLevel enumerator reachable through a named grant tag.
 template <>
 struct project<grant::as_unclassified> {
     using value_type = safety::fn::SecLevel;
@@ -347,32 +158,26 @@ struct project<grant::as_secret> {
     static constexpr value_type value = safety::fn::SecLevel::Secret;
 };
 
-// ── DimensionAxis::Protocol = 5 (type-valued) ─────────────────────
 template <typename Proto>
 struct project<grant::protocol<Proto>> {
     using type = Proto;
 };
 
-// ── DimensionAxis::Lifetime = 6 (type-valued) ─────────────────────
 template <auto RegionTag>
 struct project<grant::in_region<RegionTag>> {
     using type = safety::fn::lifetime::In<RegionTag>;
 };
 
-// ── DimensionAxis::Provenance = 7 (type-valued) ───────────────────
 template <typename Source>
 struct project<grant::from_source<Source>> {
     using type = Source;
 };
 
-// ── DimensionAxis::Trust = 8 (type-valued) ────────────────────────
 template <auto Rationale>
 struct project<grant::trust_assumed<Rationale>> {
     using type = safety::trust::Assumed;
 };
 
-// FIXY-LAT-Trust: explicit Trust lattice point projections — every
-// safety::trust::* tag reachable through a named grant tag.
 template <>
 struct project<grant::trust_verified> {
     using type = safety::trust::Verified;
@@ -390,14 +195,12 @@ struct project<grant::trust_external> {
     using type = safety::trust::External;
 };
 
-// ── DimensionAxis::Representation = 9 (enum-valued) ───────────────
 template <safety::fn::ReprKind Kind>
 struct project<grant::repr<Kind>> {
     using value_type = safety::fn::ReprKind;
     static constexpr value_type value = Kind;
 };
 
-// ── DimensionAxis::Complexity = 11 (type-valued) ──────────────────
 template <>
 struct project<grant::cost_constant> {
     using type = safety::fn::cost::Constant;
@@ -415,7 +218,6 @@ struct project<grant::cost_unbounded> {
     using type = safety::fn::cost::Unbounded;
 };
 
-// ── DimensionAxis::Precision = 12 (type-valued) ───────────────────
 template <>
 struct project<grant::precision_f32> {
     using type = safety::fn::precision::F32;
@@ -429,7 +231,6 @@ struct project<grant::precision_higham<Bound>> {
     using type = safety::fn::precision::Higham<Bound>;
 };
 
-// ── DimensionAxis::Space = 13 (type-valued) ───────────────────────
 template <auto N>
 struct project<grant::space_bounded<N>> {
     using type = safety::fn::space::Bounded<N>;
@@ -439,7 +240,6 @@ struct project<grant::space_unbounded> {
     using type = safety::fn::space::Unbounded;
 };
 
-// ── DimensionAxis::Overflow = 14 (enum-valued) ────────────────────
 template <>
 struct project<grant::overflow_wrap> {
     using value_type = safety::fn::OverflowMode;
@@ -456,7 +256,6 @@ struct project<grant::overflow_widen> {
     static constexpr value_type value = safety::fn::OverflowMode::Widen;
 };
 
-// ── DimensionAxis::Mutation = 15 (enum-valued) ────────────────────
 template <>
 struct project<grant::mut_mutable> {
     using value_type = safety::fn::MutationMode;
@@ -473,7 +272,6 @@ struct project<grant::mut_monotonic> {
     static constexpr value_type value = safety::fn::MutationMode::Monotonic;
 };
 
-// ── DimensionAxis::Reentrancy = 16 (enum-valued) ──────────────────
 template <>
 struct project<grant::reentrant> {
     using value_type = safety::fn::ReentrancyMode;
@@ -485,7 +283,6 @@ struct project<grant::coroutine> {
     static constexpr value_type value = safety::fn::ReentrancyMode::Coroutine;
 };
 
-// ── DimensionAxis::Size = 17 (type-valued) ────────────────────────
 template <auto Depth>
 struct project<grant::sized_at<Depth>> {
     using type = safety::fn::size_pol::Sized<Depth>;
@@ -495,161 +292,38 @@ struct project<grant::productive> {
     using type = safety::fn::size_pol::Productive;
 };
 
-// ── DimensionAxis::Version = 18 (integer-valued) ──────────────────
 template <std::uint32_t V>
 struct project<grant::version<V>> {
     using value_type = std::uint32_t;
     static constexpr value_type value = V;
 };
 
-// ── DimensionAxis::Staleness = 19 (type-valued) ───────────────────
 template <auto TauMax>
 struct project<grant::stale_to<TauMax>> {
     using type = safety::fn::stale::Stale<TauMax>;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-FOUND-027: axes without non-default grant family ──────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// The 13 newer DimensionAxis values (20-32) — Crucible extensions
-// landed 2026-05-18 through 2026-05-23 (Synchronization through
-// MemoryScope) — ship ONLY the structural acceptance marker
-// `grant::accept_default_strict_for<D>` and have NO per-axis grant
-// family beyond it.  Every production binding on these axes can
-// express "I accept the strict default" but cannot express any
-// alternative stance, because there is no `grant::*` tag with a
-// `which_dim` specialization routing to the axis (the resolver
-// reaches `project<accept_default_strict_for<D>>` → delegates to
-// `strict_default_for<D>::type/::value` and that is the only
-// reachable stance).
-//
-// This is a tracked, in-flight state — each axis was introduced with
-// a planned V-* follow-up that ships the per-axis grant catalog (the
-// per-axis doc-blocks at safety/DimensionTraits.h:209-323 cite the
-// V-* tasks).  But the gap is structurally invisible: a reviewer
-// looking at fixy/Grant.h cannot tell which axes are "wait for
-// V-*-to-populate" vs "axis design says default-only".
-//
-// The audit anchor below is the SINGLE SOURCE OF TRUTH for "which
-// axes still lack a grant family".  When the first non-default
-// grant ships for any axis in this list, the maintainer MUST drop
-// that axis AND update the cardinality static_assert below —
-// otherwise the gap persists silently as new bindings can't engage
-// the new grants without bypassing the audit anchor.
-//
-// Drift detection: the cardinality static_assert pins kCount = 13.
-// When a grant family ships, the list shrinks (say to 12) and the
-// static_assert reds, forcing the maintainer to (a) drop the axis
-// from kAxesWithoutNonDefaultGrants, (b) decrement the assertion,
-// (c) confirm the assertion now passes.  The reverse direction —
-// adding a new axis without a grant family — is caught by the next
-// FIXY-V-* introducing the axis (the maintainer adds the axis to
-// this list explicitly).
-//
-// Why detail::resolve namespace and not fixy/Grant.h?  The gap is
-// structurally about `project<>` specialization coverage — every
-// grant tag has a `project<>` specialization here, and the absence
-// of `project<>` specs for axis D's per-axis grant catalog IS the
-// gap.  Co-locating the audit anchor with the project<> family
-// makes it review-discoverable in exactly the right place.
+// An axis listed here has no grant tag of its own.  A binding on such an axis
+// reaches `project<accept_default_strict_for<D>>` and can only accept the
+// strict default.  No alternative stance is expressible.
 
 namespace audit {
 
 inline constexpr std::array<dim::DimensionAxis, 13> kAxesWithoutNonDefaultGrants = {
-    // Synchronization (added 2026-05-18, fixy-A3-008) — Tier S.
-    // Will gain grants when the Wait + MemOrder wrappers gain
-    // user-facing per-strategy / per-order grant tags beyond the
-    // default-strict acceptance.  Currently composed via
-    // wrapper-nesting at use-sites, not Fn-aggregated.
-    dim::DimensionAxis::Synchronization,
-    // Regime (added 2026-05-18, fixy-A3-009) — Tier S.  HotPath
-    // grants (e.g. `regime_hot` / `regime_warm` / `regime_cold`)
-    // are planned but not yet shipped; composes at use-sites via
-    // HotPath<Hot/Warm/Cold> wrapper.
-    dim::DimensionAxis::Regime,
-    // FpMode (added 2026-05-22, FIXY-V-088) — Tier S.  V-089/V-090
-    // were planned to ship the 11-sub-axis FP-mode grant catalog
-    // (rounding / Ftz / contract / trap mask / denormal / NaN /
-    // Inf / complex layout / libm policy / reassociate / FP const).
-    dim::DimensionAxis::FpMode,
-    // SyscallSurface (added 2026-05-22, FIXY-V-097) — Tier S.
-    // V-098 was planned to ship the per-family grant catalog
-    // (NoSyscall / VdsoOnly / ReadOnlyState / FileMutation /
-    // MemoryMapping / ThreadSync / NetworkIo / ProcessControl /
-    // Privilege), V-099 the per-ioctl grants, V-100 the
-    // syscall→effect-row bridge.
-    dim::DimensionAxis::SyscallSurface,
-    // ControlFlow (added 2026-05-23, FIXY-V-238) — Tier S.
-    // V-239/V-240/V-241 were planned to ship the ControlFlowLattice
-    // grant catalog (Pure / AbortOnly / ThrowOnly / MayLongjmp /
-    // MaySignal) and the V-243 §6.8 collision family that consumes
-    // it (C001 / D001 / D002 / G001 / L006 / P003 / S001 / S004).
-    dim::DimensionAxis::ControlFlow,
-    // CallShape (added 2026-05-23, FIXY-V-238) — Tier S.
-    // V-239/V-240/V-241 planned: CallShapeLattice grants
-    // (Direct / BoundedRecurses<N> / Indirect / Virtual / Unbounded)
-    // — drives Forge hot-path admission gates on bounded call shape.
-    dim::DimensionAxis::CallShape,
-    // StackUse (added 2026-05-23, FIXY-V-238) — Tier S.
-    // V-239/V-240/V-241 planned: per-stack-budget grant catalog.
-    dim::DimensionAxis::StackUse,
-    // GlobalState (added 2026-05-23, FIXY-V-238) — Tier S.
-    // V-239/V-240/V-241 planned: per-global-surface grants;
-    // V-248 Meyers-singleton init-cycle detection consumes this.
-    dim::DimensionAxis::GlobalState,
-    // Stdio (added 2026-05-23, FIXY-V-238) — Tier S.
-    // V-239/V-240/V-241 planned: per-stdio-channel grant catalog
-    // (stdin / stdout / stderr / null).
-    dim::DimensionAxis::Stdio,
-    // HwInstruction (added 2026-05-23, FIXY-V-253) — Tier S.
-    // V-251 plans HwInstructionLattice grants (NoneAllowed / Scalar
-    // / Vectorizable / NonDeterministicTsc / PrivilegedMsr); V-254
-    // wraps them at the value site.  Tier-0 Mimic blocker — Mimic
-    // must know per kernel whether SIMD / rdtsc / ring-0 MSR are
-    // emitted before lowering can complete.
-    dim::DimensionAxis::HwInstruction,
-    // BarrierStrength (added 2026-05-23, FIXY-V-253) — Tier S.
-    // V-252 plans BarrierStrengthLattice grants (None /
-    // CompilerBarrier / AcquireLoad / ReleaseStore / AcqRel /
-    // SeqCst / FullFence); V-255 wraps them.  Distinct from the
-    // Synchronization axis's MemOrder tag — the standalone HW-fence
-    // ladder for value-site boundary requirements.
-    dim::DimensionAxis::BarrierStrength,
-    // SimdIsa (added 2026-05-23, FIXY-V-253) — Tier L
-    // (NON-DISTRIBUTIVE partial order).  V-250 plans SimdIsaLattice
-    // grants; V-256 wraps them.  Second Tier-L axis (peer to
-    // Representation); x86 trunk × ARM trunk joined only at
-    // Scalar / Portable.  Specifies which ISA-extension the host
-    // must provide for a compiled SIMD kernel to issue.
-    dim::DimensionAxis::SimdIsa,
-    // MemoryScope (added 2026-05-23, FIXY-V-266 / Agent WMEM
-    // keystone) — Tier L (NON-DISTRIBUTIVE partial order).  V-265
-    // plans MemoryScopeLattice grants; safety/ScopedFence.h (V-267)
-    // wraps them.  Third Tier-L axis (peer to Representation +
-    // SimdIsa); accel trunk Thread ⊏ Warp ⊏ Cta ⊏ Cluster ⊏ Gpu ×
-    // ARM trunk Inner(ISH) ⊏ Outer(OSH), joined only at Thread(⊥)
-    // / System(⊤).
+    dim::DimensionAxis::Synchronization, dim::DimensionAxis::Regime,          dim::DimensionAxis::FpMode,
+    dim::DimensionAxis::SyscallSurface,  dim::DimensionAxis::ControlFlow,     dim::DimensionAxis::CallShape,
+    dim::DimensionAxis::StackUse,        dim::DimensionAxis::GlobalState,     dim::DimensionAxis::Stdio,
+    dim::DimensionAxis::HwInstruction,   dim::DimensionAxis::BarrierStrength, dim::DimensionAxis::SimdIsa,
     dim::DimensionAxis::MemoryScope,
 };
 
 static_assert(kAxesWithoutNonDefaultGrants.size() == 13,
-              "FIXY-FOUND-027: cardinality pin.  When the first non-default "
-              "grant ships for one of the 13 listed axes, (a) drop that axis "
-              "from `kAxesWithoutNonDefaultGrants` AND (b) decrement this "
-              "assertion's RHS.  If the assertion fires after a grant ships, "
-              "the gap-list and the cardinality have drifted out of sync — "
-              "fix by aligning both sides.  When a NEW axis lacking a grant "
-              "family lands (i.e., a new FIXY-V-* introduces another "
-              "extension axis), (a) append the new axis to the list AND (b) "
-              "increment this assertion's RHS.");
+              "Cardinality pin on the list of axes without a grant family.  When "
+              "the first non-default grant ships for a listed axis, drop that axis "
+              "from `kAxesWithoutNonDefaultGrants` and decrement this assertion.  "
+              "When a new axis lands with no grant family, append it and increment "
+              "this assertion.  A fire means the list and the count disagree.");
 
-// FIXY-FOUND-027: programmatic predicate — `axis_has_grant_family`
-// returns true iff axis D has at least one non-default grant tag
-// (i.e., D is NOT in `kAxesWithoutNonDefaultGrants`).  Audit code
-// and forge phase E.RecipeSelect can read this to skip per-axis
-// recipe gating for default-only axes, or to flag bindings that
-// engage a default-only axis "for show" without intent to pin.
 [[nodiscard]] constexpr bool axis_has_grant_family(dim::DimensionAxis D) noexcept {
     for (auto gap_axis : kAxesWithoutNonDefaultGrants) {
         if (gap_axis == D) return false;
@@ -657,34 +331,21 @@ static_assert(kAxesWithoutNonDefaultGrants.size() == 13,
     return true;
 }
 
-// Cardinality pin for the dual predicate — exactly N - 13 axes
-// (where N = DIMENSION_AXIS_COUNT, currently 33) have non-default
-// grant families.  Observability (axis 10) is exempt by design
-// (DimensionAxis::Observability is derived from Effect — Grant.h:535
-// "DimensionAxis::Observability = 10 — derived from Effect"), so it
-// is NOT in the gap list but ALSO has no native grants.  Counting
-// it as "has grant family = false" undercounts; counting as "true"
-// overcounts.  The discipline: the gap list is the ONLY source of
-// truth for missing-grants — Observability's structural-derivation
-// semantics make it incomparable to the gap-list classification.
-//
-// The pin below holds when the gap list size is exactly the count
-// of Crucible-extension axes (20-32) lacking grants.
+// The Observability axis has no grant tag either, but it is derived from the
+// Effect axis rather than awaiting a grant family, so it stays out of the list
+// above and counts on this side of the pin.
 static_assert(safety::DIMENSION_AXIS_COUNT - kAxesWithoutNonDefaultGrants.size() == 20,
-              "FIXY-FOUND-027: 20 axes (0-19) ship grant families OR are "
-              "structurally derived (Observability).  When this assertion "
-              "fires the maintainer has either added/removed a DimensionAxis "
-              "or updated the gap list out of sync with the axis enumeration.");
+              "20 axes either ship a grant family or are structurally derived "
+              "(Observability).  A fire means a DimensionAxis was added or "
+              "removed without updating the list of axes that lack a grant "
+              "family.");
 
 }  // namespace audit
 
-// ─── find_grant_t<D, Grants...> — first Grant with which_dim_v == D ─
-//
-// Walks the pack left-to-right.  The base case (empty pack) returns
-// `accept_default_strict_for<D>` so downstream `project` always has a
-// valid specialization to consult.  Post-IsAccepted, the pack is
-// guaranteed to engage every axis; the base case is unreachable in
-// well-formed bindings but defensive against bypassed IsAccepted.
+// The empty-pack base case is unreachable once IsAccepted has passed, since
+// an accepted pack engages every axis.  It returns the acceptance marker so
+// that `project` still has a specialization to consult when a caller bypasses
+// the gate.
 
 template <dim::DimensionAxis D, typename... Grants>
 struct find_grant_impl;
@@ -694,20 +355,12 @@ struct find_grant_impl<D> {
     using type = grant::accept_default_strict_for<D>;
 };
 
-// FIXY-AUDIT-A1: gate the `which_dim_v<G>` lookup on `IsGrantTag_v<G>`
-// to avoid eager substitution.  The previous std::conditional_t form
-// instantiates BOTH branches; `which_dim_v<G>` for a non-grant G
-// (e.g. someone accidentally seeds the pack with a raw type) is a
-// hard error inside the resolver rather than a clean rejection at
-// IsAccepted.
-//
-// The fix splits into two partial specializations:
-//   (1) primary unconstrained-on-G recursion — skip G as non-matching.
-//   (2) constrained specialization for an actual grant tag whose
-//       which_dim_v equals D — returns G.
-// Constraint partial-ordering picks the more-constrained (2) when G
-// is a real grant on axis D; else (1) recurses without ever touching
-// `which_dim_v<G>`.
+// Two partial specializations rather than one `std::conditional_t`: the
+// conditional instantiates both branches, so `which_dim_v<G>` would be
+// substituted for a non-grant G and fail hard inside the resolver instead of
+// being rejected cleanly at the acceptance gate.  Constraint partial ordering
+// picks the constrained form for a grant on axis D, and the unconstrained
+// recursion never touches `which_dim_v<G>`.
 template <dim::DimensionAxis D, typename G, typename... Rest>
 struct find_grant_impl<D, G, Rest...> {
     using type = typename find_grant_impl<D, Rest...>::type;
@@ -722,20 +375,11 @@ struct find_grant_impl<D, G, Rest...> {
 template <dim::DimensionAxis D, typename... Grants>
 using find_grant_t = typename find_grant_impl<D, Grants...>::type;
 
-// ─── declassify<Policy> Policy projection ─────────────────────────
-//
-// FIXY-AUDIT-A2: the Security axis's `declassify<Policy>` grant
-// captures a Policy tag for audit trails, but the substrate's
-// security-lattice slot only sees the post-declassification SecLevel
-// (`Public`).  Without explicit projection the Policy tag is invisible
-// to downstream consumers — they cannot identify which named
-// declassification policy authorized a fixy::fn binding.
-//
-// `find_declassify_policy_t<Grants...>` linearly scans Grants for a
-// `grant::declassify<P>` shape and returns `P`; if no declassify
-// grant appears (Security defaulted, or pinned via `as_*` tag), it
-// returns `void`.  Pattern-match — no `IsGrantTag_v` gate needed since
-// the only matching shape is `grant::declassify<P>` itself.
+// The Security slot of the resolved binding carries only the resulting
+// SecLevel, so the Policy that authorized a declassification would otherwise
+// be unrecoverable.  This scan keeps it visible to audit code.  No
+// IsGrantTag_v gate is needed because `grant::declassify<P>` is the only
+// shape the middle specialization can match.
 template <typename... Grants>
 struct find_declassify_policy {
     using type = void;
@@ -750,9 +394,6 @@ struct find_declassify_policy<G, Rest...> : find_declassify_policy<Rest...> {};
 template <typename... Grants>
 using find_declassify_policy_t = typename find_declassify_policy<Grants...>::type;
 
-// ─── Per-axis resolvers ────────────────────────────────────────────
-
-// Type-valued axes
 template <typename... Grants>
 using resolve_refinement_t = typename project<find_grant_t<dim::DimensionAxis::Refinement, Grants...>>::type;
 template <typename... Grants>
@@ -776,7 +417,6 @@ using resolve_size_t = typename project<find_grant_t<dim::DimensionAxis::Size, G
 template <typename... Grants>
 using resolve_staleness_t = typename project<find_grant_t<dim::DimensionAxis::Staleness, Grants...>>::type;
 
-// Enum/integer-valued axes
 template <typename... Grants>
 inline constexpr safety::fn::UsageMode resolve_usage_v =
     project<find_grant_t<dim::DimensionAxis::Usage, Grants...>>::value;
@@ -798,8 +438,6 @@ inline constexpr safety::fn::ReentrancyMode resolve_reentrancy_v =
 template <typename... Grants>
 inline constexpr std::uint32_t resolve_version_v = project<find_grant_t<dim::DimensionAxis::Version, Grants...>>::value;
 
-// ─── resolved_fn_t<Type, Grants...> — substrate Fn instantiation ──
-
 template <typename Type, typename... Grants>
 using resolved_fn_t =
     safety::fn::Fn<Type, resolve_refinement_t<Grants...>, resolve_usage_v<Grants...>, resolve_effect_t<Grants...>,
@@ -809,90 +447,21 @@ using resolved_fn_t =
                    resolve_overflow_v<Grants...>, resolve_mutation_v<Grants...>, resolve_reentrancy_v<Grants...>,
                    resolve_size_t<Grants...>, resolve_version_v<Grants...>, resolve_staleness_t<Grants...>>;
 
-// Implicit Type engagement marker injected at fixy::fn instantiation
-// (per Grant.h's DimensionAxis::Type = 0 discipline: callers do not write the
-// marker — the wrapper supplies it).
+// The caller never writes the Type-axis engagement marker.  The wrapper
+// supplies it, so the caller's pack covers only the other axes.
 using ImplicitTypeMarker = grant::accept_default_strict_for<dim::DimensionAxis::Type>;
 
-// FIXY-FOUND-041 cross-namespace identity pin: Reject.h owns the
-// canonical definition (detail::accept::ImplicitTypeMarker) so the
-// wrapper-discipline `IsAccepted` concept can reference it without
-// depending on Fn.h.  This Fn.h-local alias is documented as "an
-// alias of the canonical definition" (Reject.h:1429-1430).  Pin
-// that the two ARE structurally the same type — a refactor that
-// silently diverges the two definitions (e.g., one switched to a
-// different axis without the other) would silently break every
-// fixy::fn binding's Type-axis injection path.
+// The acceptance concept keeps its own copy of this marker so that it does not
+// have to depend on this header.  The two must stay the same type: a divergence
+// would have the acceptance gate and the projection helpers inject different
+// markers on paths that are meant to agree.
 static_assert(std::is_same_v<ImplicitTypeMarker, ::crucible::fixy::detail::accept::ImplicitTypeMarker>,
-              "FIXY-FOUND-041: Fn.h's detail::resolve::ImplicitTypeMarker MUST "
-              "be structurally identical to Reject.h's detail::accept::"
-              "ImplicitTypeMarker.  The two aliases denote the same canonical "
-              "Type-axis injection marker; if they diverge, the wrapper "
-              "(which uses Reject.h's form via the IsAccepted concept) and "
-              "Fn.h's internal projection helpers (which use the resolve "
-              "alias) would inject DIFFERENT markers at different paths.");
+              "The Type-axis injection marker used by the projection helpers must "
+              "be the same type as the one the acceptance concept injects.  If the "
+              "two diverge, the acceptance gate and the resolver disagree about "
+              "which marker a binding carries.");
 
 }  // namespace detail::resolve
-
-// ─── IsAcceptedFn — REMOVED, fixy-H-05 ──────────────────────────────
-//
-// FIXY-AUDIT-A8 originally factored an `IsAcceptedFn<Type, Grants...>`
-// alias that injected `detail::resolve::ImplicitTypeMarker` into the
-// substrate's low-level `IsAccepted` concept.  fixy-H-05 inverted the
-// public-name discipline: the SIMPLE name `fixy::IsAccepted<Type,
-// Grants...>` (Reject.h §IsAccepted, wrapper-discipline gate) now
-// auto-injects the marker via its own private `ImplicitTypeMarker`
-// alias.  The QUALIFIED name `fixy::IsAcceptedDirect<Type, Grants...>`
-// remains the low-level form that takes ALL engagement markers
-// explicitly.
-//
-// Consequence: `IsAcceptedFn` is now a trivial restatement of
-// `IsAccepted` and is removed.  Every consumer (fn<>'s class-body
-// requires-clause, `mint_fn`'s requires-clause, `mint_fn_for`) routes
-// through `fixy::IsAccepted` directly.
-
-// ═════════════════════════════════════════════════════════════════════
-// ── fixy::fn<Type, Grants...> — the universal integration point ────
-// ═════════════════════════════════════════════════════════════════════
-//
-// The wrapper aggregating a Type value with a Grants pack describing
-// the binding's discipline on the 18 non-Type axes (Type is the first
-// template parameter; the wrapper synthesizes its acceptance marker).
-//
-// Gate sequence at instantiation:
-//
-//   1. IsAccepted<Type, ImplicitTypeMarker, Grants...> fires the
-//      engagement check + Type-axis well-formedness (object type,
-//      non-cv, non-array, non-reference).
-//
-//   2. resolved_fn_t<Type, Grants...> projects every Grant onto the
-//      substrate's Fn<...> parameter pack.  Each `project` lookup
-//      either matches a known relaxation tag OR delegates to
-//      `strict_default_for<D>` via the acceptance marker.
-//
-//   3. safety::fn::Fn<...>'s class-body static_asserts fire:
-//      ValidComposition gates the 20 §6.8 collision rules; the Type
-//      gate re-checks the Type axis at the substrate level.
-//
-// Round-trip witness: `safety_fn_t` IS the directly-spelled
-// safety::fn::Fn<...> equivalent.
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Stance-compatibility concepts — declared BEFORE class fn so its ─
-//    private-ctor friend declarations can name them (fixy-A4-018)    ─
-// ═════════════════════════════════════════════════════════════════════
-//
-// `TypeIsStanceCompatible`, `StanceForUnary`, and `StanceForBinary` were
-// originally defined immediately above `mint_fn_for` (line ~830).  After
-// the fixy-A4-018 mint-discipline tightening privatized fn's value ctor,
-// the class-body friend declarations for `mint_fn_for` must reference
-// these concepts — which means they must be in scope at the friend-
-// declaration site (inside class fn).  Moving them BEFORE class fn is
-// the cleanest fix; the concepts themselves are tiny, depend only on
-// stdlib type-traits, and have no dependency on `fn` or the mint
-// factories that consume them.  The mint_fn_for definitions (line ~840
-// in the original layout) still reference these by name — no semantic
-// change, only reordering.
 
 namespace detail {
 
@@ -905,48 +474,15 @@ concept TypeIsStanceCompatible = !std::is_void_v<T> && !std::is_array_v<T> && !s
 template <template <typename> class Stance, typename Type>
 concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
 
-// fixy-A4-019: `StanceForBinary` historically gated only the Type axis
-// (`TypeIsStanceCompatible<Type>`) — Policy was accepted unchecked.  A
-// call like `mint_fn_for<stance::SecretConsumer, void>(42)` would
-// pass the requires-clause and then fail INSIDE `SecretConsumer<int,
-// void>` with a noisy template-instantiation cascade, violating §XXI's
-// "single concept gate at the function signature" rule.  The same
-// structural predicate fits Policy: a declassify-policy tag is a
-// phantom type whose identity is its bare class type — void / array /
-// reference / cv-qualified / function-typed Policy are all nonsensical
-// for tag identity.  Substrate-side `safety::secret_policy::*` tags
-// (Source.h) and the substrate self-test `IsGrantTag<declassify<int>>`
-// (Grant.h:555) both confirm fundamental object types remain accepted.
+// Policy takes the same shape constraint as Type because a declassification
+// policy is a phantom tag whose identity is its bare class type.  Checking it
+// here keeps the rejection at the function signature instead of deep inside
+// the stance instantiation.
 template <template <typename, typename> class Stance, typename Type, typename Policy>
 concept StanceForBinary = detail::TypeIsStanceCompatible<Type> && detail::TypeIsStanceCompatible<Policy>;
 
-// ─────────────────────────────────────────────────────────────────────
-// ── fixy-A4-025: CTAD-blocker sentinel ────────────────────────────
-// ─────────────────────────────────────────────────────────────────────
-//
-// `fixy::fn` does NOT support C++17 Class Template Argument Deduction
-// (CTAD).  Per CLAUDE.md §XXI Universal Mint Pattern ("single grep
-// target": `grep "mint_"` must find every value-carrying authorization
-// point), the value constructor is private (fixy-A4-018) and the only
-// way to obtain a value-carrying binding is through one of the three
-// canonical mint factories:
-//
-//   • `fixy::mint_fn<Type, Grants...>(value)` — explicit-grants form.
-//   • `fixy::mint_fn_for<UnaryStance>(value)` — stance-canonical unary.
-//   • `fixy::mint_fn_for<BinaryStance, Policy>(value)` — stance binary.
-//
-// Without a deduction guide, `fixy::fn{42}` fails at the deduction
-// step with an opaque "no viable deduction guide" diagnostic that
-// gives the user no actionable next step.  With the guide below, CTAD
-// succeeds at the deduction step and the resulting class instantiation
-// hits a dedicated tier-0 static_assert whose message names the three
-// mint factories explicitly.
-//
-// The sentinel's CLASS NAME (`fn_ctad_blocked_use_mint_fn_or_mint_fn_for`)
-// is itself the diagnostic — it appears verbatim in the compiler's
-// "required from `fixy::fn<fn_ctad_blocked_use_mint_fn_or_mint_fn_for>`"
-// trail, so even before the user reads the static_assert message they
-// see the sentinel's name in the error chain.
+// The sentinel's class name is itself part of the diagnostic: it appears
+// verbatim in the compiler's "required from" trail, ahead of any message.
 
 namespace detail::ctad {
 struct fn_ctad_blocked_use_mint_fn_or_mint_fn_for final {};
@@ -956,57 +492,28 @@ template <typename Type, typename... Grants>
 class fn {
     using ImplicitTypeMarker = detail::resolve::ImplicitTypeMarker;
 
-    // fixy-A4-025: tier-0 CTAD-blocker.  Fires when Type is the CTAD
-    // sentinel (set by the deduction guide that maps `fn(T)` to
-    // `fn<sentinel>`).  Placed BEFORE the H-03 diagnostic surface and
-    // the H-02 tier chain so its dedicated message surfaces FIRST in
-    // the compiler diagnostic stream.  Downstream tiers add
-    // `!fixy_a4_025_tier0_not_ctad_sentinel ||` to their silencer chain
-    // so a sentinel-typed instantiation only fires THIS message (not
-    // also tier-3 "missing axis" or tier-1 "non-payload type").
+    // Declared before the diagnostic surface and the tier chain: the compiler
+    // processes the class body in order, so this message reaches the user first
+    // and the later tiers silence themselves against it.
     static constexpr bool fixy_a4_025_tier0_not_ctad_sentinel =
         !std::is_same_v<Type, detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
     static_assert(fixy_a4_025_tier0_not_ctad_sentinel,
-                  "fixy::fn<Type, Grants...> [tier 0: §XXI Universal Mint Pattern]: "
-                  "CTAD (`fixy::fn{value}` / `fixy::fn(value)`) is NOT supported. "
-                  "Every value-carrying fixy::fn must be born via a mint_* factory "
-                  "so `grep \"mint_\"` finds every binding (CLAUDE.md §XXI). "
-                  "Use one of:\n"
+                  "fixy::fn<Type, Grants...> [tier 0: universal mint pattern]: "
+                  "class template argument deduction (`fixy::fn{value}` / "
+                  "`fixy::fn(value)`) is not supported.  Every value-carrying "
+                  "fixy::fn is born through a mint factory, so that one grep for "
+                  "\"mint_\" finds every binding.  Use one of:\n"
                   "  fixy::mint_fn<Type, Grants...>(value)         — explicit grants\n"
                   "  fixy::mint_fn_for<UnaryStance>(value)         — unary stance\n"
                   "  fixy::mint_fn_for<BinaryStance, Policy>(value) — binary stance\n"
-                  "See fixy::stance:: for the canonical 11-stance catalog "
-                  "(PureLinear/PureCopy/IoFunction/BgWorker/CtCrypto/SecretConsumer/"
-                  "NamedSession/SyncBlocking/RealtimeHot/InternalRead/"
-                  "TestOnly) and CLAUDE.md §XXI for the mint pattern rationale.");
+                  "The fixy::stance namespace holds the canonical stance catalog.");
 
-    // fixy-H-03: surface the per-axis FixyNotEngaged_<Axis>,
-    // FixyDuplicate_<Axis>, and FixyMalformedGrant diagnostic tag
-    // CLASS NAMES in the compiler's instantiation chain.  Placed at
-    // the TOP of the class body — before the H-02 tier static_assert
-    // chain — so the Diagnose<Tag> base-class instantiation fires
-    // its own static_assert FIRST, surfacing the offending Fixy*
-    // tag's class name in the compiler's "required from" trail
-    // BEFORE the H-02 tier static_assert (which would otherwise
-    // halt class-body processing and suppress the Diagnose firing).
-    //
-    // Per-tier guards in malformed_grant_or_void_t /
-    // missing_tag_or_void_t / duplicate_tag_or_void_t ensure each
-    // Diagnose fires only when its tier is the FIRST failing tier
-    // (avoids cascade — a malformed-grant doesn't ALSO surface
-    // missing-axis since AllDimsEngaged is meaningless then).
-    //
-    // OK case: each *_or_void_t resolves to `void`, matches the
-    // empty DiagnoseAxis*/DiagnoseMalformedGrant<void> spec, no
-    // diagnostic fires.  Failure case: resolves to the real Fixy*
-    // tag, instantiates the primary template, fires its inner
-    // static_assert AND surfaces the tag in the instantiation chain.
-
-    // fixy-A4-025: when the CTAD sentinel is detected, force every H-03
-    // diag_tag to resolve to `void` so the Diagnose<void> empty
-    // specialization is selected, no inner static_assert fires, and the
-    // user sees ONLY the tier-0 CTAD message above (clean single
-    // diagnostic instead of tier-0 + tier-3 + H-03 wall-of-errors).
+    // These three bases put the offending diagnostic tag's class name into the
+    // compiler's "required from" trail.  They come before the tier chain
+    // because the first failing tier assertion halts class-body processing and
+    // would otherwise suppress them.  A `void` tag selects the empty Diagnose
+    // specialization and stays silent, so the sentinel case shows the tier-0
+    // message alone rather than a cascade.
     using fixy_h03_tier2_diag_tag = std::conditional_t<fixy_a4_025_tier0_not_ctad_sentinel,
                                                        malformed_grant_or_void_t<ImplicitTypeMarker, Grants...>, void>;
     using fixy_h03_tier3_diag_tag = std::conditional_t<fixy_a4_025_tier0_not_ctad_sentinel,
@@ -1018,146 +525,60 @@ class fn {
     struct fixy_h03_tier3_diagnose : DiagnoseAxisNotEngaged<fixy_h03_tier3_diag_tag> {};
     struct fixy_h03_tier4_diagnose : DiagnoseAxisDuplicate<fixy_h03_tier4_diag_tag> {};
 
-    // [temp.inst]/9: member classes of a class template are NOT
-    // implicitly instantiated even if their enclosing template is.
-    // Force instantiation via sizeof so the Diagnose<Tag> primary
-    // template's inner static_assert fires (and surfaces the tag
-    // class name in the compiler's "required from" trail) BEFORE
-    // the H-02 tier static_assert halts class-body processing.
+    // [temp.inst]/9: a member class of a class template is not implicitly
+    // instantiated with its enclosing template.  Taking sizeof forces the
+    // instantiation, which is what fires the Diagnose assertion.
 
-    static_assert(sizeof(fixy_h03_tier2_diagnose) >= 1,
-                  "fixy-H-03: force tier-2 DiagnoseMalformedGrant<Tag> instantiation");
-    static_assert(sizeof(fixy_h03_tier3_diagnose) >= 1,
-                  "fixy-H-03: force tier-3 DiagnoseAxisNotEngaged<Tag> instantiation");
-    static_assert(sizeof(fixy_h03_tier4_diagnose) >= 1,
-                  "fixy-H-03: force tier-4 DiagnoseAxisDuplicate<Tag> instantiation");
+    static_assert(sizeof(fixy_h03_tier2_diagnose) >= 1, "The malformed-grant diagnostic base must instantiate.");
+    static_assert(sizeof(fixy_h03_tier3_diagnose) >= 1, "The unengaged-axis diagnostic base must instantiate.");
+    static_assert(sizeof(fixy_h03_tier4_diagnose) >= 1, "The duplicate-axis diagnostic base must instantiate.");
 
-    // fixy-H-02: branched static_assert chain.  Each tier guards the
-    // next via `!prior_failed || this_check`, so only the FIRST failing
-    // tier surfaces its diagnostic message.  Replaces the prior single
-    // static_assert that always said "axis not engaged" even when the
-    // real failure was AllGrantsWellFormed, UniqueEngagementPerAxis,
-    // type_is_accepted_payload, or NotInTheoryCorpus.  Each tier names
-    // the specific inspection helper a downstream author should consult
-    // to identify the offending entry/axis.
-
-    // fixy-A4-025: tier 1 silences when tier-0 already failed (sentinel-
-    // typed instantiation routes here from the CTAD deduction guide).
-    // The sentinel struct passes type_is_accepted_payload (it's a non-
-    // cv, non-array, non-reference, non-function, non-void object type)
-    // so without this gate tier 1 would pass vacuously and tier 3 would
-    // fire on the empty Grants pack — adding the gate keeps the
-    // diagnostic stream clean (tier-0 alone).
+    // The sentinel is an ordinary object type, so tier 1 would pass for it and
+    // tier 3 would then fire on the empty pack.  Guarding every tier against
+    // tier 0 keeps the sentinel case to one message.
     static constexpr bool fixy_h02_tier1_type_ok =
         !fixy_a4_025_tier0_not_ctad_sentinel || detail::accept::type_is_accepted_payload<Type>();
     static_assert(fixy_h02_tier1_type_ok, "fixy::fn<Type, Grants...> [tier 1: IsAccepted gate]: Type must be "
                                           "a non-cv, non-array, non-reference, non-function, non-void "
-                                          "object type. "
-                                          "Cite: fixy::detail::accept::type_is_accepted_payload.  "
-                                          "Wrap bare function types as pointers or callables "
-                                          "(std::function_ref) before instantiating fixy::fn.");
+                                          "object type.  Wrap a bare function type as a pointer or a "
+                                          "callable before instantiating fixy::fn.");
 
     static constexpr bool fixy_h02_tier2_grants_well_formed = !fixy_a4_025_tier0_not_ctad_sentinel
                                                            || !fixy_h02_tier1_type_ok
                                                            || AllGrantsWellFormed<ImplicitTypeMarker, Grants...>;
-    // FIXY-FOUND-130: route through P2741R3 dynamic message so the
-    // 0-based position of the FIRST malformed grant in the pack
-    // appears literally in the diagnostic text (e.g. "Malformed-grant
-    // position (0-based): 2 of 7").  Symmetric with tier-3 / tier-4 /
-    // tier-5 dynamic-routing surfaces; position alone is actionable
-    // without reflection (user counts grants to locate the offender).
-    //
-    // FIXY-FOUND-130-AUDIT: tier-2 helper is called WITHOUT the
-    // implicit Type marker so that the position + cardinality reported
-    // is USER-PACK-RELATIVE (the user wrote `Grants...`, not the
-    // marker-prepended internal form).  AllGrantsWellFormed is
-    // unchanged because the marker is always well-formed
-    // (accept_default_strict_for<Type> satisfies IsGrantTag); dropping
-    // it only fixes the off-by-one in the reported cardinality.  In
-    // contrast tier 4 below KEEPS the marker because
-    // first_duplicate_axis_v needs to see the marker's Type-axis
-    // engagement to surface FixyDuplicate_Type when a user explicitly
-    // re-engages Type (FIXY-AUDIT-A7).
+    // The message helper takes the caller's pack without the implicit marker,
+    // so the position and count it reports match what the caller wrote.  The
+    // check itself is unaffected, since the marker is always well formed.
+    // Tier 4 keeps the marker because duplicate detection has to see the
+    // marker's Type engagement to catch a caller who engages Type again.
     static_assert(fixy_h02_tier2_grants_well_formed, tier2_malformed_grant_message_v<Grants...>);
 
-    // Sketch mode (CRUCIBLE_FIXY_STRICT=0) relaxes the engagement
-    // axis per Profile.h's contract: "sketch mode permissivity applies
-    // only to the engagement axis + theory-corpus checks, never to
-    // the §6.8 collision rules."  Tier 3 is the engagement check;
-    // appending `|| !fixy_is_strict` short-circuits the assert under
-    // sketch.  Tiers 1 (Type validity), 2 (grant well-formedness),
-    // and 4 (unique engagement / collision rule) stay strict in both
-    // modes — sketch mode does NOT bypass correctness, only relaxes
-    // the "every axis must be engaged" rule for in-progress migrations.
+    // Sketch mode relaxes the engagement check and the corpus check only, for
+    // in-progress migrations.  Type validity, grant well-formedness and unique
+    // engagement stay strict in both modes, so sketch mode never admits a
+    // binding the collision rules reject.
     static constexpr bool fixy_h02_tier3_all_dims_engaged =
         !fixy_a4_025_tier0_not_ctad_sentinel || !fixy_h02_tier1_type_ok || !fixy_h02_tier2_grants_well_formed
         || AllDimsEngaged<ImplicitTypeMarker, Grants...> || !fixy_is_strict;
-    // fixy-H-15: route through P2741R3 dynamic message so the resolved
-    // FixyNotEngaged_<Axis> tag NAME appears literally in the diagnostic
-    // text (e.g. "Missing-axis diagnostic tag: FixyNotEngaged_Effect").
-    // `tier3_missing_tag_message_v` wraps `first_missing_tag_t<Grants...>`
-    // (the helper documented in Reject.h §"Failure inspection" but
-    // previously dead architectural plumbing) into a `std::string_view`
-    // promoted to static storage via `std::define_static_string`.  When
-    // tier 3 succeeds the variable evaluates to an empty string_view
-    // and the message is unused; the helper's `if constexpr
-    // (AllDimsEngaged<...>)` guard sidesteps the
-    // `requires (!AllDimsEngaged<...>)` clause on `first_missing_tag_t`.
     static_assert(fixy_h02_tier3_all_dims_engaged, tier3_missing_tag_message_v<ImplicitTypeMarker, Grants...>);
 
     static constexpr bool fixy_h02_tier4_unique_engagement =
         !fixy_a4_025_tier0_not_ctad_sentinel || !fixy_h02_tier1_type_ok || !fixy_h02_tier2_grants_well_formed
         || !fixy_h02_tier3_all_dims_engaged || UniqueEngagementPerAxis<ImplicitTypeMarker, Grants...>;
-    // FIXY-FOUND-130: route through P2741R3 dynamic message so the
-    // FixyDuplicate_<Axis> tag name (e.g. "FixyDuplicate_Effect")
-    // appears literally in the diagnostic text — symmetric with
-    // tier-3 missing-tag routing (line 770 above) and tier-5 corpus
-    // routing (line 810+ below).  Without P2741R3 routing, callers
-    // would only see "see first_duplicate_tag_t<Grants...>" and have
-    // to manually instantiate the trait to discover WHICH axis;
-    // dynamic routing surfaces the axis directly in the error.
     static_assert(fixy_h02_tier4_unique_engagement, tier4_duplicate_tag_message_v<ImplicitTypeMarker, Grants...>);
 
-    // Tier 5 is the §30.14 corpus check.  Profile.h documents the
-    // sketch-mode relaxation as "engagement axis + theory-corpus
-    // checks" — both relax under !fixy_is_strict.  Tiers 1/2/4 stay
-    // strict in both modes because they enforce the §6.8 collision
-    // rules (a non-negotiable correctness floor) and basic input
-    // shape (Type validity, grant well-formedness).
     static constexpr bool fixy_h02_tier5_not_in_corpus =
         !fixy_a4_025_tier0_not_ctad_sentinel || !fixy_h02_tier1_type_ok || !fixy_h02_tier2_grants_well_formed
         || !fixy_h02_tier3_all_dims_engaged || !fixy_h02_tier4_unique_engagement
         || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...> || !fixy_is_strict;
-    // fixy-H-13 + fixy-H-16: surface BOTH the matched corpus entry's
-    // struct name AND its `cite()` text in the rejection diagnostic
-    // via P2741R3 (user-generated static_assert messages).
-    // `corpus_full_diagnostic_v` concatenates "matched corpus entry:
-    // <name> — <cite>" into static storage via P3491R3
-    // `std::define_static_string`.  H-13 gave us the cite — paper,
-    // year, pattern explanation, and per-entry remediation — so the
-    // diagnostic identifies the literature reference.  H-16 adds the
-    // entry's struct name — so a maintainer who sees the diagnostic
-    // can grep Theory.h for the matched entry directly.  Together the
-    // doc-block claim at Theory.h §IsAccepted-composition ("names
-    // which corpus entry matched (paper + year)") is supported by
-    // code: name() supplies the entry identifier, cite() supplies the
-    // paper + year + remediation prose.  When tier 5 succeeds (no
-    // corpus match), corpus_full_diagnostic_v returns an empty
-    // string_view; the static_assert message is unused in that case.
     static_assert(fixy_h02_tier5_not_in_corpus, theory::corpus_full_diagnostic_v<Type, ImplicitTypeMarker, Grants...>);
 
 public:
     using value_type = Type;
     using safety_fn_t = detail::resolve::resolved_fn_t<Type, Grants...>;
 
-    // ── Declassify policy accessor (FIXY-AUDIT-A2) ────────────────
-    // Resolves to the `Policy` parameter of any `grant::declassify<P>`
-    // grant in the pack, else `void`.  Downstream audit code identifies
-    // which named declassification policy authorized this binding via
-    // `fn<...>::policy_t`.
     using policy_t = detail::resolve::find_declassify_policy_t<Grants...>;
 
-    // ── Per-axis introspection — passthroughs into safety_fn_t ────
     using refinement_t = typename safety_fn_t::refinement_t;
     using effect_row_t = typename safety_fn_t::effect_row_t;
     using protocol_t = typename safety_fn_t::protocol_t;
@@ -1178,89 +599,40 @@ public:
     static constexpr safety::fn::ReentrancyMode reentrancy_v = safety_fn_t::reentrancy_v;
     static constexpr std::uint32_t version_v = safety_fn_t::version_v;
 
-    // ── Construction + copy/move discipline (FIXY-AUDIT-A6) ───────
+    // The wrapper does not override Type's copy and move semantics, even at a
+    // Linear usage grade.  The grade records how the binding is meant to be
+    // consumed, not how its storage behaves, so a fixy::fn<int> stays copyable
+    // because int is.  Code that wants the runtime guarantee wraps a move-only
+    // payload, and the defaulted copy then disappears on its own.  Deriving the
+    // wrapper's copy semantics from the grade instead would tie one axis of the
+    // discipline to the structural shape of the value.
     //
-    // POLICY: fixy::fn does NOT override Type's copy/move semantics.
-    // Even when `usage_v == UsageMode::Linear`, the wrapper inherits
-    // Type's default copy/move/dtor.  Rationale:
-    //
-    //   • The Linear grade is INFORMATION about how the binding is
-    //     intended to be consumed downstream (Permission discipline,
-    //     session protocols, ownership audit) — not a runtime lifetime
-    //     constraint on the value's storage.  `fixy::fn<int, Linear-
-    //     grants>` must remain copyable because `int` is.
-    //
-    //   • Discipline enforcement is the JOB of `safety::Linear<T>`,
-    //     which IS move-only via deleted copy.  Production code that
-    //     wants the runtime guarantee declares `fixy::fn<safety::
-    //     Linear<T>, Linear-grants>` — the Type is itself move-only,
-    //     and fixy::fn's defaulted copy/move correctly disappears.
-    //
-    //   • Pinning fixy::fn's copy/move to the Linear grade would
-    //     conflate two orthogonal concerns: the wrapper's structural
-    //     copy semantics (driven by Type) and the binding's lifecycle
-    //     contract (driven by the grade).  fixy::fn is a documentation
-    //     + integration layer; lifecycle wrappers compose INTO it.
-    //
-    // Cost-of-violation: none from this policy; the grade is auditable
-    // via `usage_v` and `safety_fn_t::usage_v` at every call site, and
-    // downstream code that consumes a Linear-grade binding can require
-    // `safety::IsLinear<Type>` to refuse non-linear payloads.
-    //
-    // ── §XXI Universal-Mint-Pattern enforcement (fixy-A4-018) ─────
-    //
-    // The DEFAULT constructor remains public — it produces a zero-state
-    // binding from `Type{}`, carries no per-call authority, and is
-    // required by EBO-collapse probes (`sizeof(fn<int>) == sizeof(int)`)
-    // + standard type-trait surface (`std::is_default_constructible_v`).
-    //
-    // The VALUE constructor is private.  A value-carrying binding IS a
-    // §XXI authorization event: the caller is asserting that this
-    // specific `Type v` should be wrapped in this specific Grants pack.
-    // Per §XXI's "single grep target" discipline, every such event must
-    // route through a `mint_*` factory so `grep "mint_"` finds every
-    // binding in the codebase.  Direct construction
-    // (`fixy::fn<int, ...>{42}` / `fixy::stance::PureLinear<int>{42}`)
-    // would dilute that grep-target — review would have to scan for
-    // both `mint_fn` AND every `fn<.*>{` / `stance::.*<.*>{` shape.
-    //
-    // Resolution: privatize the value ctor and befriend the three
-    // canonical mint factories — `mint_fn`, `mint_fn_for<UnaryStance>`,
-    // `mint_fn_for<BinaryStance>`.  Every value-carrying construction
-    // path now goes through ONE of those three, and the requires-clause
-    // attached to each (IsAcceptedActive / StanceForUnary /
-    // StanceForBinary) is the single load-bearing soundness gate.
+    // The default constructor stays public: it carries no authority, and the
+    // size witnesses below need it.
     constexpr fn() = default;
 
-    // ── Value access (deducing-this) ──────────────────────────────
     template <typename Self>
     [[nodiscard]] constexpr auto&& value(this Self&& self) noexcept {
         return std::forward<Self>(self).value_;
     }
 
 private:
-    // fixy-A4-018: the value constructor is private; only the three
-    // canonical mint factories below can produce a value-carrying
-    // binding.  Direct construction
-    // (`fixy::fn<int, ...>{42}` / `fixy::stance::PureLinear<int>{42}`)
-    // fails with an "inaccessible" diagnostic at the call site.
+    // Wrapping a value is an authorization event: the caller asserts that this
+    // value belongs under this grants pack.  Keeping the value constructor
+    // private and befriending only the mint factories leaves one name to grep
+    // for to find every such event.  A public value constructor would spread
+    // the same authority across every `fn<...>{}` and `stance::...<...>{}`
+    // spelling.
     explicit constexpr fn(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) : value_{std::move(v)} {}
 
-    // Befriend `mint_fn<T, G...>(T)` — the §XXI token-mint factory.
-    // The friend declaration also forward-declares mint_fn at the
-    // enclosing `crucible::fixy` namespace scope; the actual
-    // definition below matches this declaration.
     template <typename T, typename... G>
         requires IsAcceptedActive<T, G...>
     friend constexpr auto mint_fn(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> fn<T, G...>;
 
-    // Befriend `mint_fn_for<UnaryStance>(T)` — unary-stance convenience.
     template <template <typename> class S, typename T>
         requires StanceForUnary<S, T>
     friend constexpr auto mint_fn_for(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> S<T>;
 
-    // Befriend `mint_fn_for<BinaryStance, Policy>(T)` — binary stance
-    // (declassify-policy-bearing) convenience.
     template <template <typename, typename> class S, typename P, typename T>
         requires StanceForBinary<S, T, P>
     friend constexpr auto mint_fn_for(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> S<T, P>;
@@ -1268,39 +640,16 @@ private:
     Type value_{};
 };
 
-// ─────────────────────────────────────────────────────────────────────
-// ── fixy-A4-025: CTAD deduction guide (intentional rejection) ─────
-// ─────────────────────────────────────────────────────────────────────
-//
-// This deduction guide INTENTIONALLY routes every CTAD attempt
-// `fixy::fn{value}` to `fn<detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>`,
-// whose class-body tier-0 static_assert fires with a §XXI-naming
-// diagnostic that points the user at the canonical mint factories.
-//
-// Without this guide, `fixy::fn{42}` fails at the deduction step with
-// "no viable deduction guide" — no actionable hint.  With this guide,
-// the deduction step SUCCEEDS, the resulting `fn<sentinel>` instantiation
-// surfaces the sentinel CLASS NAME in the error chain, AND the tier-0
-// static_assert names `mint_fn` / `mint_fn_for<Stance>` explicitly.
-//
-// Detail-namespaced + sentinel-typed: the sentinel never appears in
-// user-facing code paths and can't be back-doored by accident (it's
-// inside `crucible::fixy::detail::ctad::`, not a top-level name).  A
-// dedicated negative-compile fixture (fixy_neg/) exercises BOTH the
-// CTAD route (`fixy::fn{42}`) and the direct-sentinel route
-// (`fixy::fn<sentinel>{}`) per HS14 ≥2 floor.
+// The guide routes every deduction to the blocked sentinel on purpose.  With
+// no guide at all, `fixy::fn{42}` stops at "no viable deduction guide", which
+// names no remedy.  Deducing to the sentinel instead reaches the tier-0
+// assertion, which names the mint factories.
 template <typename T>
 fn(T) -> fn<detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── mint_fn — Universal Mint Pattern (CLAUDE.md §XXI) ──────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Token-mint flavor.  Derives `fixy::fn<Type, Grants...>` authority
-// from the Type + Grants pack.  Single concept gate is the same
-// IsAccepted predicate that the class body asserts; the requires-clause
-// makes the gate user-visible in the function signature for grep-
-// discoverable review surface.
+// The requires-clause repeats the check the class body already asserts.  It
+// earns its place by putting the gate in the function signature, where a
+// reader of the declaration sees it.
 
 template <typename Type, typename... Grants>
     requires IsAcceptedActive<Type, Grants...>
@@ -1309,87 +658,24 @@ template <typename Type, typename... Grants>
     return fn<Type, Grants...>{std::move(v)};
 }
 
-// ─── mint_fn_for<Stance>(value) — stance-bound mint convenience ────
-//
-// FIXY-AUDIT-A11 + fixy-H-01: Universal-Mint-Pattern entry point for
-// stance::* aliases.  `mint_fn_for<stance::PureCopy>(42)` deduces Type
-// from the argument and instantiates the stance with that Type.
-//
-// Two overloads, separated by stance arity:
-//
-//   • UNARY  — `template<typename> class Stance` — covers PureLinear /
-//     PureCopy / IoFunction / BgWorker / CtCrypto / AsyncEndpoint.
-//     Call form: `mint_fn_for<stance::PureCopy>(value)`.
-//
-//   • BINARY — `template<typename, typename> class Stance` — covers
-//     `stance::SecretConsumer<Type, Policy>` and
-//     `stance::PublicEmit<Type, Policy>` whose declassify-policy tag is
-//     captured as the second stance parameter.  Policy is non-deducible
-//     so it appears second in the function template list (after Stance,
-//     before Type) to let Type still deduce from the runtime argument.
-//     Call form: `mint_fn_for<stance::SecretConsumer, MyPolicy>(value)`.
-//
-// Per CLAUDE.md §XXI, every mint factory MUST attach a single concept
-// gate.  fixy-H-01 hardened both overloads with `StanceForUnary` /
-// `StanceForBinary` so Type-axis violations (void / array / reference /
-// cv-qualified / function-typed Type) are rejected BEFORE Stance<Type>
-// would instantiate; this names the failure at the function signature
-// rather than parser-level deduction failure or function-parameter
-// declaration ill-formedness.  fixy-A4-019 extended the binary gate to
-// also check Policy shape with the same `TypeIsStanceCompatible`
-// predicate — a declassify-policy tag is a phantom type whose identity
-// is its bare class type, so void / array / reference / cv-qualified /
-// function-typed Policy now reject at the function signature instead
-// of bubbling through the stance's interior static_asserts.
-// Engagement-level violations still surface via fn<>'s class-body
-// static_assert chain.
-//
-// Token-mint flavor (no Ctx).  Cost-of-violation: a stance that fails
-// IsAccepted for the deduced Type fires the same FixyNotEngaged_*
-// diagnostic chain as a direct mint_fn call.
-//
-// ── StanceFor* concept gates — defined ABOVE class fn (fixy-A4-018)
-// for friend-declaration visibility.  See header preamble at line ~529.
-
-// ── mint_fn_for — unary stance overload (Type deduced from arg) ──
+// The concept gate rejects an ill-shaped Type at the signature.  Without it
+// the same call fails inside the stance instantiation, where the diagnostic no
+// longer points at the caller.
 template <template <typename> class Stance, typename Type>
     requires StanceForUnary<Stance, Type>
 [[nodiscard]] constexpr auto mint_fn_for(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) -> Stance<Type> {
     return Stance<Type>{std::move(v)};
 }
 
-// ── mint_fn_for — binary stance overload (Policy explicit, Type deduced) ──
-//
-// Policy precedes Type in the template-arg list so the call site
-// `mint_fn_for<stance::SecretConsumer, MyPolicy>(42)` lets the compiler
-// deduce Type from the runtime argument while Policy stays explicit
-// (it is a phantom tag with no runtime carrier).
+// Policy precedes Type in the template parameter list.  Policy has no runtime
+// carrier and must be written explicitly, so it has to come before the
+// parameter that deduction fills in.
 template <template <typename, typename> class Stance, typename Policy, typename Type>
     requires StanceForBinary<Stance, Type, Policy>
 [[nodiscard]] constexpr auto mint_fn_for(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>)
     -> Stance<Type, Policy> {
     return Stance<Type, Policy>{std::move(v)};
 }
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Stance aliases — production short-hand ─────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Misc/16_05_2026_fixy.md §5 catalogs the canonical bindings every
-// production engineer encounters.  Each stance pre-fills the Grants
-// pack with a coherent set of acceptance markers + relaxations,
-// leaving only the Type as a parameter at the call site.
-//
-// The 8 stances cover:
-//   PureLinear     — strict-default everywhere, linear consumption
-//   PureCopy       — copy usage, strict elsewhere
-//   IoFunction     — IO-effecting function, strict elsewhere
-//   BgWorker       — background allocator + IO context
-//   CtCrypto       — constant-time crypto path: as_secret + with<>
-//                    (consumes Secret linearly, NO IO)
-//   SecretConsumer — declassifies a secret to public via declassify
-//   PublicEmit     — IO + declassify<Policy> audit-trail emission
-//   AsyncEndpoint  — coroutine reentrancy + IO
 
 namespace stance {
 
@@ -1398,7 +684,6 @@ template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
 }  // namespace detail_stance
 
-// ── PureLinear — all-strict, exhaustive engagement ────────────────
 template <typename Type>
 using PureLinear = ::crucible::fixy::fn<
     Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
@@ -1419,7 +704,6 @@ using PureLinear = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── PureCopy — copy usage, strict elsewhere ───────────────────────
 template <typename Type>
 using PureCopy = ::crucible::fixy::fn<
     Type, detail_stance::strict<dim::DimensionAxis::Refinement>, grant::copy,
@@ -1440,21 +724,10 @@ using PureCopy = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── IoFunction — IO effect, public-emit Security, strict elsewhere ─
-//
-// IoFunction emits data via I/O.  Per Theory.h §30.14
-// (classified_io_without_declassify), a binding that engages IO MUST
-// either declassify or pin Security to a non-classified level — the
-// I/O channel is observable and would otherwise leak a classified
-// value.  IoFunction pins `as_public` (= SecLevel::Public) at the
-// stance level: callers whose payload is publicly-observable get
-// IoFunction; callers whose payload is classified-but-audit-trail-
-// authorized for IO use `PublicEmit<T, Policy>` (declassify form).
-//
-// Pre-fixy-CR-01 IoFunction shipped `strict<Security>` (= Classified),
-// which silently bypassed the corpus via the strict-default
-// projection.  The fix pins `as_public` explicitly so the stance
-// matches its documented semantics.
+// Security is pinned here rather than left strict.  The strict Security
+// default is Classified, and an IO channel is observable, so a classified
+// payload leaks through it.  A payload that is classified but authorized for
+// emission uses PublicEmit, which discharges the same rule through a policy.
 template <typename Type>
 using IoFunction = ::crucible::fixy::fn<
     Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
@@ -1474,19 +747,10 @@ using IoFunction = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── BgWorker — Bg + Alloc effects, public Security, strict else ───
-//
-// BgWorker spawns work into a background-thread context.  Per
-// Theory.h §30.14 (classified_bg_without_declassify), the spawn is
-// itself a scheduler-observable event — a classified-value-dependent
-// spawn leaks the value through interleaving timing.  BgWorker pins
-// `as_public` at the stance level: bg workers carry routing /
-// scheduling metadata (non-sensitive by design); workers that
-// process classified payloads use `SecretConsumer<T, Policy>` or
-// compose `declassify<Policy> + with<Bg, Alloc>` explicitly.
-//
-// Pre-fixy-CR-01 BgWorker shipped `strict<Security>`, silently
-// bypassing the corpus.  The fix pins `as_public` explicitly.
+// Security is pinned here rather than left strict, for the same reason as an
+// IO binding: a spawn is scheduler-observable, so a spawn that depends on a
+// classified value leaks it through the interleaving.  A worker over a
+// classified payload declassifies explicitly instead of using this stance.
 template <typename Type>
 using BgWorker = ::crucible::fixy::fn<
     Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
@@ -1506,12 +770,6 @@ using BgWorker = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::HwInstruction>,
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
-
-// ── SecretConsumer — declassifies a secret value ──────────────────
-//
-// The Policy parameter is captured for audit-trail purposes; the
-// substrate's Security slot resolves to SecLevel::Public per the
-// declassify projection.
 
 template <typename Type, typename Policy>
 using SecretConsumer = ::crucible::fixy::fn<
@@ -1533,31 +791,13 @@ using SecretConsumer = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── CtCrypto — constant-time crypto path (FIXY-AUDIT-B3) ──────────
-//
-// Constant-time discipline: handles Secret data, performs NO IO (any
-// IO trip would create a timing-observable side channel), and consumes
-// its input linearly (Usage=Linear = the strict default — duplicating
-// a secret defeats the discipline).  Effect row is explicitly empty
-// via `with<>` to pin "no Bg, no Alloc, no IO, no Block" at the type
-// level; Security is pinned to `Secret` via `as_secret`.  The §30.14
-// classified-IO-without-declassify detector does NOT fire — `has_io`
-// is false, so the implicit-flow rule is structurally satisfied.
-//
-// Rationale for axis choices:
-//   - Security = as_secret   pin Secret; the value MUST NOT escape
-//     declassified.
-//   - Effect   = with<>      no Bg/IO/Alloc/Block — pure compute path.
-//     The strict default for Effect IS Row<>; we engage explicitly
-//     via `with<>` to make the constant-time discipline self-
-//     documenting at the signature level rather than relying on the
-//     implicit accept-default marker.
-//   - Usage    = strict (=Linear)   linear consumption.  The strict
-//     default is Linear per safety/Fn.h::usage_v; the engagement
-//     marker pins it explicitly.
-//   - Reentrancy = strict (=NonReentrant)   constant-time paths must
-//     not interleave with themselves; the strict default is
-//     NonReentrant.
+// A constant-time path does no IO at all, because any IO trip is timing-
+// observable and reopens the side channel the discipline closes.  The strict
+// Effect default is already the empty row, but the empty row is spelled out
+// here so that a later widening of that default cannot relax this stance.  The
+// strict defaults carry the rest: Linear usage, since duplicating a secret
+// defeats the discipline, and non-reentrant, since a constant-time path must
+// not interleave with itself.
 
 template <typename Type>
 using CtCrypto = ::crucible::fixy::fn<
@@ -1578,27 +818,10 @@ using CtCrypto = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── PublicEmit<Policy> — publicly-observable emission (FIXY-AUDIT-B3) ─
-//
-// Public-emission discipline: emits data via IO with an audit-trail-
-// discharging `declassify<Policy>` grant.  The Policy parameter is
-// captured for downstream identification of which named declassification
-// authorized the public emission (greppable via
-// `fn<...>::policy_t`).  The substrate's Security slot resolves to
-// SecLevel::Public per the declassify projection.
-//
-// Why declassify<Policy> rather than as_public:
-//   - `as_public` pins SecLevel::Public but carries NO audit trail.
-//     A grep over `as_public` reveals every public-emission call site
-//     but yields no Policy provenance.
-//   - `declassify<Policy>` carries the Policy tag through the type,
-//     surfaces via `fn<...>::policy_t`, and pins SecLevel::Public.
-//     The audit trail is recoverable at the type level.
-//
-// The §30.14 classified-IO-without-declassify detector does NOT fire
-// — `has_secret=false` (declassify is not in is_secret_grant), so
-// the implicit-flow rule is structurally satisfied regardless of the
-// IO grant.
+// The Security axis takes a declassification rather than a plain public pin.
+// Both land the binding at Public, but only the declassification carries the
+// policy that authorized the emission, and `policy_t` recovers it from the
+// type.  A plain pin would leave the emission auditable only by call site.
 
 template <typename Type, typename Policy>
 using PublicEmit = ::crucible::fixy::fn<
@@ -1619,16 +842,9 @@ using PublicEmit = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── AsyncEndpoint — coroutine + IO + public Security ──────────────
-//
-// AsyncEndpoint is an IO-effecting coroutine.  Same reasoning as
-// IoFunction (Theory.h §30.14): the IO emission requires Security
-// to be public-or-declassified.  Pins `as_public` at the stance
-// level; secret-carrying async endpoints compose `declassify<P>` +
-// `with_io` + `coroutine` explicitly.
-//
-// Pre-fixy-CR-01 AsyncEndpoint shipped `strict<Security>`, silently
-// bypassing the corpus.  The fix pins `as_public` explicitly.
+// Security is pinned here rather than left strict, for the same reason as any
+// other IO binding.  A secret-carrying async endpoint composes a
+// declassification with the IO and coroutine grants instead.
 template <typename Type>
 using AsyncEndpoint = ::crucible::fixy::fn<
     Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
@@ -1647,37 +863,6 @@ using AsyncEndpoint = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>,
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-U-041 stance extension — 4 additional canonical aliases ─
-// ═════════════════════════════════════════════════════════════════════
-//
-// Closes fixy-A4-020: pre-extension the stance:: namespace shipped 8
-// aliases but lacked the four common patterns below.  Production
-// callers were forced to either (a) hand-author a 20-axis fn<>
-// instantiation per call site (high churn, easy to drift) or (b)
-// compose existing stances ineffectively.
-//
-//   NamedSession<T, Proto>  — session-typed function: pins Protocol
-//                              to <Proto>.  All other axes strict.
-//   SyncBlocking<T>         — Effect={IO,Block} + as_public.  Pins
-//                              the synchronous-blocking discipline
-//                              for syscall-heavy paths (read/write
-//                              on blocking fd, file open, sleep).
-//                              Reentrancy stays strict (NonReentrant)
-//                              — blocking calls cannot interleave.
-//   RealtimeHot<T>          — Effect=<empty> + as_public + strict
-//                              Reentrancy.  Hot-loop discipline: NO
-//                              IO, NO Alloc, NO Block, no coroutine
-//                              yield.  The empty Effect row pins the
-//                              `with<>` engagement so a future audit
-//                              cannot accidentally widen to IO/Alloc.
-
-// ── NamedSession<Type, Proto> — pins the Protocol axis ──────────────
-//
-// `Proto` is the session-protocol type the function operates over.
-// `fixy/Fn.h`'s `detail::resolve::resolve_protocol_t` projects
-// `grant::protocol<Proto>` to `safety::fn::Protocol<Proto>`.
 
 template <typename Type, typename Proto>
 using NamedSession = ::crucible::fixy::fn<
@@ -1699,30 +884,15 @@ using NamedSession = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── (CooperativeBg removed — FIXY-FOUND-071 R003) ─────────────────
-//
-// CooperativeBg<Type> formerly meant "cooperative (coroutine-yielding)
-// background worker" = Effect={Bg,Alloc} + Reentrancy=Coroutine.  R003
-// (FIXY-FOUND-071) proves that combination structurally unsafe: a C++
-// coroutine declared in a Bg context can suspend on one bg thread and
-// resume on another (cross-thread resume hazard), so the stance's
-// defining semantic is illegal.  Stripping the coroutine grant to make
-// it compile left it byte-identical to BgWorker — a duplicate alias
-// that collapsed the federation-cache row_hash distinctness invariant
-// (two stance names → one fixy::fn<> type).  Rather than re-mean the
-// name onto an unrelated axis, the stance is removed.  Cooperative
-// background scheduling is expressed via an explicit executor / session
-// protocol (NamedSession<T, ExecutorProto>), not a Reentrancy grant.
+// There is no stance for a coroutine in a background context.  A coroutine
+// declared under Bg can suspend on one background thread and resume on
+// another, so the combination is unsound whatever else the binding pins.
+// Cooperative background work goes through an executor protocol on the
+// Protocol axis instead of a Reentrancy grant.
 
-// ── SyncBlocking<Type> — IO + Block + as_public ────────────────────
-//
-// Pins the synchronous-blocking syscall discipline: Effect carries
-// both IO and Block so the type signature makes the blocking
-// nature explicit.  Used for read/write on blocking fd, file
-// open, sleep, blocking lock acquisition — paths the hot-path
-// audit (§30.x) reads to refuse compilation when invoked from a
-// real-time context.  Reentrancy stays strict (NonReentrant) —
-// blocking calls cannot interleave at the same stack frame.
+// Carrying Block alongside IO puts the blocking nature in the signature, where
+// a hot-path admission check can refuse it.  Reentrancy stays strict, since a
+// blocking call cannot interleave with itself at the same frame.
 
 template <typename Type>
 using SyncBlocking = ::crucible::fixy::fn<
@@ -1744,18 +914,10 @@ using SyncBlocking = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── RealtimeHot<Type> — empty Effect row + as_public + strict ─────
-//
-// Hot-loop discipline pinned at the signature: Effect=<empty> means
-// the function MUST NOT do IO, allocate, or block; Reentrancy stays
-// strict (NonReentrant); Security is pinned `as_public` (hot path
-// emits public computation, no secret consumption).  The explicit
-// `with<>` engagement is what distinguishes RealtimeHot from
-// PureLinear: PureLinear uses the strict-default for Effect (which
-// also resolves to Row<> but via the implicit
-// accept_default_strict_for marker); RealtimeHot uses `with<>`
-// EXPLICITLY so a future widening of the default cannot silently
-// relax the discipline.
+// The empty Effect row is spelled out rather than taken from the strict
+// default.  Both resolve to the same row today, and that is the point: a later
+// widening of the default would relax every stance that only accepts it, while
+// this one keeps the hot-loop discipline of no IO, no allocation, no blocking.
 
 template <typename Type>
 using RealtimeHot = ::crucible::fixy::fn<
@@ -1776,54 +938,10 @@ using RealtimeHot = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-FOUND-033 stance extension — Internal + Unclassified ─────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Pre-FOUND-033 the shipped stances reached only 3 of the 5 SecLevel
-// enumerators:
-//   - Public        (IoFunction / BgWorker / SecretConsumer-default /
-//                    PublicEmit-default / AsyncEndpoint /
-//                    SyncBlocking / RealtimeHot)
-//   - Classified    (PureLinear / PureCopy / NamedSession via
-//                    strict<Security> = Classified per fixy-CR-01)
-//   - Secret        (CtCrypto via as_secret)
-//
-// `Internal` and `Unclassified` were unreachable through any stance —
-// callers wanting those SecLevels had to hand-author the full 33-axis
-// fn<> instantiation, which is high-churn and easy to drift relative
-// to the stance-canonical axis selections.
-//
-// Closure: ship two new stances mirroring the strict-elsewhere pattern
-// of NamedSession/PureLinear but customizing the Security axis.
-//
-//   InternalApi<Type>       — `as_internal` (= SecLevel::Internal).
-//                              Use for company-internal-but-not-
-//                              classified API surface (e.g., admin
-//                              dashboards, internal-only logging,
-//                              build-system orchestration).  Internal
-//                              IS observable to insiders but MUST NOT
-//                              leak through Public IO channels.
-//
-//   UnclassifiedScratch<T>  — `as_unclassified` (= SecLevel::Unclassified).
-//                              Use for scratch/intermediate data with
-//                              no confidentiality claim at all
-//                              (e.g., temporary buffers, debug
-//                              telemetry, regression-test fixtures).
-//                              Equivalent to opting OUT of the
-//                              Security lattice's stratification —
-//                              callers acknowledge the binding is
-//                              unclassified by design.
-//
-// Together these close the FOUND-033 gap: every SecLevel enumerator
-// is now reachable via at least one stance:
-//   Unclassified → UnclassifiedScratch
-//   Public       → IoFunction / BgWorker / AsyncEndpoint / ...
-//   Internal     → InternalApi
-//   Classified   → PureLinear / PureCopy / NamedSession (via strict)
-//   Secret       → CtCrypto
-
-// ── InternalApi<Type> — as_internal (= SecLevel::Internal), strict else ─
+// The two stances below exist so that every SecLevel is reachable through some
+// stance.  Without them a caller wanting Internal or Unclassified has to write
+// the whole axis pack out by hand, which drifts from the stance-canonical
+// choices on all the other axes.
 
 template <typename Type>
 using InternalApi = ::crucible::fixy::fn<
@@ -1844,8 +962,6 @@ using InternalApi = ::crucible::fixy::fn<
     detail_stance::strict<dim::DimensionAxis::HwInstruction>,
     detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
     detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
-
-// ── UnclassifiedScratch<Type> — as_unclassified, strict else ──────
 
 template <typename Type>
 using UnclassifiedScratch = ::crucible::fixy::fn<
@@ -1869,38 +985,25 @@ using UnclassifiedScratch = ::crucible::fixy::fn<
 
 }  // namespace stance
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test — compile-time witnesses ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 namespace detail::fn_self_test {
 
-// 1. Round-trip witness — fixy::fn<int>::safety_fn_t IS
-//    the all-default safety::fn::Fn<int>.
 static_assert(std::is_same_v<typename stance::PureLinear<int>::safety_fn_t, safety::fn::Fn<int>>,
               "stance::PureLinear<int>::safety_fn_t must round-trip to "
               "safety::fn::Fn<int>'s all-default instantiation.");
 
-// 2. EBO collapse — sizeof(fixy::fn<int, all-strict>) == sizeof(int).
-//    Each grant tag is empty + final + grant_base; the 18-axis
-//    type-level pack carries no runtime state.
 static_assert(sizeof(stance::PureLinear<int>) == sizeof(int),
-              "stance::PureLinear<int> must EBO-collapse to sizeof(int) — the "
-              "18-axis type-level pack carries no runtime state.");
+              "stance::PureLinear<int> must collapse to sizeof(int).  Every grant "
+              "tag is empty, so the axis pack carries no runtime state.");
 static_assert(sizeof(stance::PureLinear<char>) == sizeof(char),
-              "stance::PureLinear<char> must EBO-collapse to sizeof(char).");
+              "stance::PureLinear<char> must collapse to sizeof(char).");
 static_assert(sizeof(stance::PureLinear<double>) == sizeof(double),
-              "stance::PureLinear<double> must EBO-collapse to sizeof(double).");
+              "stance::PureLinear<double> must collapse to sizeof(double).");
 
-// 3. Per-axis projection — `grant::affine` resolves to
-//    UsageMode::Affine on the substrate Fn<...>.
 static_assert(
     detail::resolve::resolve_usage_v<grant::accept_default_strict_for<dim::DimensionAxis::Refinement>, grant::affine>
         == safety::fn::UsageMode::Affine,
     "grant::affine must project to UsageMode::Affine.");
 
-// 4. Strict-default propagation — under accept-strict, the
-//    Refinement axis resolves to pred::True.
 static_assert(
     std::is_same_v<
         detail::resolve::resolve_refinement_t<grant::accept_default_strict_for<dim::DimensionAxis::Refinement>>,
@@ -1908,26 +1011,20 @@ static_assert(
     "accept_default_strict_for<Refinement> must project to "
     "pred::True (the substrate's Refinement default).");
 
-// 5. PureCopy resolves Usage to Copy while keeping Refinement strict.
 static_assert(stance::PureCopy<int>::usage_v == safety::fn::UsageMode::Copy,
               "stance::PureCopy must resolve Usage to Copy.");
 static_assert(std::is_same_v<typename stance::PureCopy<int>::refinement_t, safety::fn::pred::True>,
               "stance::PureCopy must keep Refinement at the strict default.");
 
-// 6. IoFunction's Effect row contains Effect::IO.
 static_assert(std::is_same_v<typename stance::IoFunction<int>::effect_row_t, effects::Row<effects::Effect::IO>>,
               "stance::IoFunction's Effect row must contain exactly Effect::IO.");
 
-// 7. AsyncEndpoint resolves Reentrancy to Coroutine.
 static_assert(stance::AsyncEndpoint<int>::reentrancy_v == safety::fn::ReentrancyMode::Coroutine,
               "stance::AsyncEndpoint must resolve Reentrancy to Coroutine.");
 
-// 8. Direct (non-stance) round-trip — a user-spelled fixy::fn with
-//    one relaxation matches the directly-spelled safety::fn::Fn.
 namespace round_trip_2 {
 using direct_fixy = ::crucible::fixy::fn<int, grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
-                                         grant::affine,  // Usage = Affine
-                                         grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
+                                         grant::affine, grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
                                          grant::accept_default_strict_for<dim::DimensionAxis::Security>,
                                          grant::accept_default_strict_for<dim::DimensionAxis::Protocol>,
                                          grant::accept_default_strict_for<dim::DimensionAxis::Lifetime>,
@@ -1960,8 +1057,7 @@ using direct_fixy = ::crucible::fixy::fn<int, grant::accept_default_strict_for<d
 
 using direct_substrate = safety::fn::Fn<
     int, safety::fn::pred::True, safety::fn::UsageMode::Affine, effects::Row<>, safety::fn::SecLevel::Classified,
-    safety::fn::proto::None, safety::fn::lifetime::Static, safety::source::FromInternal,
-    safety::trust::Unverified,  // FIXY-FOUND-034: mirror substrate default flip
+    safety::fn::proto::None, safety::fn::lifetime::Static, safety::source::FromInternal, safety::trust::Unverified,
     safety::fn::ReprKind::Opaque, safety::fn::cost::Unstated, safety::fn::precision::Exact, safety::fn::space::Zero,
     safety::fn::OverflowMode::Trap, safety::fn::MutationMode::Immutable, safety::fn::ReentrancyMode::NonReentrant,
     safety::fn::size_pol::Unstated, 1u, safety::fn::stale::Fresh>;
@@ -1972,8 +1068,6 @@ static_assert(std::is_same_v<direct_fixy::safety_fn_t, direct_substrate>,
               "with UsageMode::Affine.");
 }  // namespace round_trip_2
 
-// FIXY-LAT-Security: every Security lattice point resolves to the
-// matching substrate SecLevel.
 static_assert(detail::resolve::project<grant::as_unclassified>::value == safety::fn::SecLevel::Unclassified,
               "grant::as_unclassified must project to SecLevel::Unclassified.");
 static_assert(detail::resolve::project<grant::as_public>::value == safety::fn::SecLevel::Public,
@@ -1985,8 +1079,6 @@ static_assert(detail::resolve::project<grant::as_classified>::value == safety::f
 static_assert(detail::resolve::project<grant::as_secret>::value == safety::fn::SecLevel::Secret,
               "grant::as_secret must project to SecLevel::Secret.");
 
-// FIXY-LAT-Trust: every Trust lattice point resolves to the matching
-// safety::trust::* tag.
 static_assert(std::is_same_v<detail::resolve::project<grant::trust_verified>::type, safety::trust::Verified>,
               "grant::trust_verified must project to safety::trust::Verified.");
 static_assert(std::is_same_v<detail::resolve::project<grant::trust_tested>::type, safety::trust::Tested>,
@@ -1996,13 +1088,6 @@ static_assert(std::is_same_v<detail::resolve::project<grant::trust_unverified>::
 static_assert(std::is_same_v<detail::resolve::project<grant::trust_external>::type, safety::trust::External>,
               "grant::trust_external must project to safety::trust::External.");
 
-// FIXY-LAT-Usage: every Usage lattice point resolves to the matching
-// substrate UsageMode.  Previously only grant::affine had an explicit
-// projection witness (line ~2030); extended here to cover all 5
-// non-default Usage grants (UsageMode::Linear is the strict default,
-// expressed via accept_default_strict_for<Usage> not a relaxation
-// grant).  See FIXY-FOUND-043 for the naming-asymmetry rationale
-// behind `grant::capability_usage`.
 static_assert(detail::resolve::project<grant::affine>::value == safety::fn::UsageMode::Affine,
               "grant::affine must project to UsageMode::Affine.");
 static_assert(detail::resolve::project<grant::copy>::value == safety::fn::UsageMode::Copy,
@@ -2012,56 +1097,29 @@ static_assert(detail::resolve::project<grant::ghost>::value == safety::fn::Usage
 static_assert(detail::resolve::project<grant::borrow>::value == safety::fn::UsageMode::Borrow,
               "grant::borrow must project to UsageMode::Borrow.");
 static_assert(detail::resolve::project<grant::capability_usage>::value == safety::fn::UsageMode::Capability,
-              "grant::capability_usage must project to UsageMode::Capability "
-              "(FIXY-FOUND-043 — asymmetric `_usage` suffix is mandatory to "
-              "avoid clash with effects::Capability<E, S>; see Grant.h:339).");
+              "grant::capability_usage must project to UsageMode::Capability.  "
+              "The `_usage` suffix keeps the grant tag distinct from the "
+              "Effect-axis Capability class template.");
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-FOUND-043 — capability_usage naming-asymmetry pin ────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Four of the five Usage-axis grants spell their UsageMode enumerator
-// as a bare noun (affine / copy / ghost / borrow); the fifth carries
-// the `_usage` suffix because three live `Capability` symbols already
-// exist in the fixy namespace tree (see Grant.h:339 doc-block).  This
-// witness block makes the asymmetry STRUCTURAL:
-//
-//   (1) Cardinality pin — exactly 5 Usage-axis grants exist.  Adding
-//       a 6th without registering bumps the tuple_size assertion.
-//   (2) Per-grant which_dim — every member of the roster routes to
-//       DimensionAxis::Usage (NOT a leak into another axis).
-//   (3) Cross-namespace clash witness — effects::Capability<E, S> is
-//       a CLASS TEMPLATE, not a grant_base.  Proves the name
-//       distinction is structural (different bases), not merely
-//       lexical (different spellings).  A bare `grant::capability`
-//       would compile today (the namespaces disambiguate), but it
-//       would defeat audit-grep and confuse readers — the witness
-//       below pins the discipline that the `_usage` suffix MUST
-//       remain.
+// Four of the five Usage-axis grants spell their UsageMode enumerator as a bare
+// noun.  The fifth takes a `_usage` suffix because a Capability name already
+// exists elsewhere in the namespace tree.  A bare `grant::capability` would
+// compile, since the namespaces disambiguate, but the two spellings would then
+// be indistinguishable to a grep over the grant roster.  The witnesses below
+// hold the distinction structurally rather than by convention.
 
 namespace found_043_witness {
 
-// Roster of every non-default Usage-axis grant.  UsageMode::Linear is
-// the strict default — expressed via accept_default_strict_for<Usage>
-// at call sites, never via a relaxation grant — so it's not in the
-// roster.
-using AllUsageGrants = std::tuple<grant::affine,  // UsageMode::Affine
-                                  grant::copy,  // UsageMode::Copy
-                                  grant::ghost,  // UsageMode::Ghost
-                                  grant::borrow,  // UsageMode::Borrow
-                                  grant::capability_usage>;  // UsageMode::Capability — ASYMMETRIC SUFFIX
+// UsageMode::Linear is the strict default and has no relaxation grant of its
+// own, so it is absent from this roster.
+using AllUsageGrants = std::tuple<grant::affine, grant::copy, grant::ghost, grant::borrow, grant::capability_usage>;
 
-// (1) Cardinality pin — adding a 6th Usage grant requires extending
-// AllUsageGrants AND bumping this literal.  Drift fires here.
 inline constexpr std::size_t kUsageGrantCount = std::tuple_size_v<AllUsageGrants>;
-static_assert(kUsageGrantCount == 5, "FIXY-FOUND-043 cardinality pin: 5 non-default Usage-axis grants "
-                                     "(UsageMode has 6 enumerators; Linear is the implicit strict "
-                                     "default with no relaxation grant).  Bumping requires (a) "
-                                     "appending the new grant to AllUsageGrants AND (b) incrementing "
-                                     "this literal.  Drift fires here.");
+static_assert(kUsageGrantCount == 5, "Cardinality pin: there are 5 non-default Usage-axis grants.  "
+                                     "UsageMode has 6 enumerators, and Linear is the strict default "
+                                     "with no relaxation grant.  A sixth grant must be appended to "
+                                     "AllUsageGrants and this literal incremented together.");
 
-// (2) Every Usage grant routes to DimensionAxis::Usage.  Folded over
-// the roster for compactness.
 template <typename Tuple>
 [[nodiscard]] consteval bool all_route_to_usage_axis() noexcept {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
@@ -2069,47 +1127,30 @@ template <typename Tuple>
     }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
 }
 static_assert(all_route_to_usage_axis<AllUsageGrants>(),
-              "FIXY-FOUND-043: every Usage-axis grant in AllUsageGrants MUST "
-              "specialize which_dim to DimensionAxis::Usage.  An unspecialized "
-              "grant routes to Type by default (Grant.h:223 primary template), "
-              "which would silently re-classify the grant into the wrong axis.");
+              "Every Usage-axis grant in AllUsageGrants must specialize "
+              "which_dim to DimensionAxis::Usage.  An unspecialized grant falls "
+              "through to the Type axis, which silently re-classifies it.");
 
-// (3) Cross-namespace clash witness — effects::Capability<E, S> is a
-// class template, NOT a grant_base.  The structural distinction
-// (different inheritance) is what allows fixy::grant::capability_usage
-// and fixy::eff::Capability<...> to coexist.  Renaming
-// `capability_usage` to `capability` would not collide at the
-// compiler level (different namespaces), but would defeat audit-grep
-// AND reader cognition — the suffix is the structural marker.
-//
-// `effects::Capability<E, S>` here is instantiated with arbitrary
-// (E, S) that satisfies CanMintCap.  Bg is the canonical
-// fully-rowed context whose permitted_row contains Alloc, IO, Block.
+// The witness needs one valid (Effect, context) pair.  Which pair does not
+// matter.
 using EffectAxisCapability =
     ::crucible::effects::Capability<::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>;
 
-static_assert(grant::IsGrantTag<grant::capability_usage>, "FIXY-FOUND-043: grant::capability_usage MUST satisfy "
-                                                          "IsGrantTag (inherits grant_base + final).");
-static_assert(!grant::IsGrantTag<EffectAxisCapability>, "FIXY-FOUND-043: effects::Capability<E, S> MUST NOT satisfy "
-                                                        "IsGrantTag — the Effect-axis Capability class template is "
-                                                        "the linear proof-token carrier (effects/Capability.h:107), "
+static_assert(grant::IsGrantTag<grant::capability_usage>, "grant::capability_usage must satisfy IsGrantTag: it "
+                                                          "derives grant_base and is final.");
+static_assert(!grant::IsGrantTag<EffectAxisCapability>, "effects::Capability<E, S> must not satisfy IsGrantTag.  It "
+                                                        "is the linear proof-token carrier on the Effect axis, "
                                                         "structurally distinct from the Usage-axis "
-                                                        "grant::capability_usage relaxation tag.  This negative "
-                                                        "witness pins that the clash between the two `Capability` "
-                                                        "spellings is RESOLVABLE precisely because the substrate "
-                                                        "name (effects::Capability) is a class template and the "
-                                                        "grant name (capability_usage) is suffixed.");
+                                                        "grant::capability_usage relaxation tag.  The two "
+                                                        "Capability spellings coexist because one is a class "
+                                                        "template and the other is a suffixed grant tag.");
 
-// (4) The three substrate-level Capability re-exports are all the
-// SAME template — pinned by Cap.h:316-323 (fixy::cap::Capability is
-// effects::Capability) and Eff.h:178-184 (fixy::eff::Capability is
-// effects::Capability).  Not restated here because Fn.h does not
-// include Eff.h or Cap.h (avoiding circular dependency); the
-// authoritative identity asserts live at those headers.
+// The re-exports of this capability template elsewhere in the tree are pinned
+// identical at their own definition sites.  Restating that here would need an
+// include that closes a dependency cycle.
 
 }  // namespace found_043_witness
 
-// 9. mint_fn factory returns the correct concrete type.
 constexpr auto minted = mint_fn<int, grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
                                 grant::accept_default_strict_for<dim::DimensionAxis::Usage>,
                                 grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
@@ -2144,19 +1185,8 @@ constexpr auto minted = mint_fn<int, grant::accept_default_strict_for<dim::Dimen
                                 grant::accept_default_strict_for<dim::DimensionAxis::MemoryScope>>(42);
 static_assert(minted.value() == 42, "mint_fn must construct fixy::fn carrying the supplied value.");
 
-// ── FIXY-U-041 positive self-test witnesses ──────────────────────
-//
-// One per new stance, asserting its DEFINING axis projects to the
-// expected substrate resolution plus EBO collapse.  Mirrors the
-// PureLinear / PureCopy / IoFunction / AsyncEndpoint discipline
-// above (each existing stance has one EBO witness + one
-// axis-projection witness).
-
-// 10a. NamedSession pins the Protocol axis to the supplied proto.
 namespace fixy_u_041 {
-struct FakeProto {};  // local witness — protocol value is type-level
-// here; resolution must thread it through to
-// safety_fn_t::protocol_t verbatim.
+struct FakeProto {};
 }  // namespace fixy_u_041
 
 static_assert(
@@ -2168,13 +1198,6 @@ static_assert(sizeof(stance::NamedSession<int, fixy_u_041::FakeProto>) == sizeof
               "stance::NamedSession<int, Proto> must EBO-collapse to sizeof(int) "
               "— grant::protocol<Proto> is an empty type-level tag.");
 
-// 10b. (CooperativeBg removed — FIXY-FOUND-071 R003 proves Coroutine×Bg
-//      structurally unsafe; the de-coroutined remnant was a verbatim
-//      BgWorker duplicate.  Cooperative background scheduling now goes
-//      through NamedSession<T, ExecutorProto>.  See the removed-stance
-//      note at the CooperativeBg deletion site.)
-
-// 10c. SyncBlocking pins Effect={IO, Block} + Security=Public.
 static_assert(std::is_same_v<typename stance::SyncBlocking<int>::effect_row_t,
                              effects::Row<effects::Effect::IO, effects::Effect::Block>>,
               "stance::SyncBlocking's Effect row must contain IO and Block.");
@@ -2186,11 +1209,6 @@ static_assert(stance::SyncBlocking<int>::security_v == safety::fn::SecLevel::Pub
 static_assert(sizeof(stance::SyncBlocking<int>) == sizeof(int),
               "stance::SyncBlocking<int> must EBO-collapse to sizeof(int).");
 
-// 10d. RealtimeHot pins Effect=<empty> + Security=Public.
-//      Distinguishing from PureLinear: RealtimeHot uses an
-//      EXPLICIT grant::with<> rather than the strict-default
-//      marker, so a future widening of the strict default cannot
-//      silently relax the discipline.
 static_assert(std::is_same_v<typename stance::RealtimeHot<int>::effect_row_t, effects::Row<>>,
               "stance::RealtimeHot's Effect row must be empty — hot-loop "
               "discipline forbids IO/Alloc/Block at the signature.");
@@ -2205,147 +1223,49 @@ static_assert(sizeof(stance::RealtimeHot<int>) == sizeof(int),
 
 }  // namespace crucible::fixy
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-V-001: row_hash_contribution<fixy::fn<T, Grants...>> ──────
-// ═════════════════════════════════════════════════════════════════════
+// The contribution below folds the resolved safety_fn_t rather than the Grants
+// pack directly.  Resolution selects one grant per axis, so the resolved type is
+// the same whichever order the caller wrote the pack in, and routing through it
+// inherits that permutation invariance instead of re-deriving it.
 //
-// Closes Agent 4's Tier-1 Critical federation-cache fragmentation
-// bug at the fixy-facade level. Reference: Agent 4 report §T1-A,
-// /tmp/audit_test.cpp pinned at compile-time on the patched GCC 16:
-//
-//   row_hash_contribution_v<fixy::stance::PureCopy<int>>
-//                  == row_hash_contribution_v<fixy::stance::IoFunction<int>>
-//                  == 0;
-//
-// — capability-divergent stances over the SAME payload Type produced
-// identical RowHash{0}, collapsing the federation cache key
-// `KernelCacheKey{ContentHash, RowHash}` to `(ContentHash, 0)` for
-// every fixy::fn instantiation. A pure-row CtCrypto kernel and an
-// IoFunction kernel published with byte-identical content_hash would
-// alias to the same cache slot. The spec §7(b) federation discharge
-// gate ("cross-vendor numerics correctness is enforced before the
-// binary leaves the publishing organization") was silently unsound;
-// org A's BITEXACT_TC + constant-time discipline would not be
-// preserved on org B's download because the cache routing didn't see
-// the grade divergence.
-//
-// Design — delegate via ::safety_fn_t for permutation invariance:
-//
-// fixy::fn<Type, Grants...> resolves its capability projection into a
-// concrete `safety_fn_t = detail::resolve::resolved_fn_t<Type,
-// Grants...>` using `find_grant_t<D, Grants...>` (one grant per axis;
-// UniqueEngagementPerAxis enforced by the H-02 tier-4 static_assert).
-// `find_grant_t` is permutation-invariant for well-formed Grants
-// packs — the resolved safety::fn::Fn<Type, ...> is bit-identical
-// regardless of grant declaration order in the user's source.
-//
-// Routing the row_hash through ::safety_fn_t therefore inherits this
-// permutation invariance for free, AND inherits the 19-axis fold
-// shipped by FIXY-V-002 in safety/Fn.h. No re-implementation of the
-// per-axis fold logic on the fixy side.
-//
-// The WRAPPER_FIXY_FN_TAG (0x1E) salt keeps fixy::fn<T, Grants...>'s
-// hash DISTINCT from the equivalent directly-written `safety::fn::Fn
-// <T, ...>` (WRAPPER_SAFETY_FN_TAG, 0x1D). This matches the spec §0
-// thesis that fixy::fn is the discipline-bearing surface — code that
-// chose to write `fixy::fn<...>` opted into the IsAccepted gate,
-// AllDimsEngaged, ValidComposition cascade etc., and the federation
-// cache should reflect "this kernel was published through fixy
-// discipline" as a discriminating axis. A future migration path
-// could collapse the two slots via grant-erasure, but for now the
-// disjoint salt preserves the audit trail (cache-key inspection
-// reveals which API surface emitted the kernel).
-//
-// Cache-key separation guarantee:
-//   • bare T              ≠ fixy::fn<T, ...>      ≠ safety::fn::Fn<T, ...>
-//   • fixy::fn<T, A, B>  == fixy::fn<T, B, A>     (permutation invariance via safety_fn_t)
-//   • fixy::stance::PureCopy<int>      ≠ fixy::stance::IoFunction<int>
-//     (Usage / EffectRow axes diverge → distinct safety_fn_t → distinct
-//      row_hash)
-//   • fixy::fn<T, ...>   ≠ fixy::fn<T, ...different-axes...>
-//
-// Specialization lives here (alongside the class definition) per the
-// A1-018 "spec next to declaration" convention. RowHashFold.h's
-// open-extension-point doc-block at line 346 explicitly endorses
-// out-of-file specializations in the `crucible::safety::diag`
-// namespace following the recursive composition discipline.
+// The wrapper salt keeps this hash distinct from the one a directly-spelled
+// substrate Fn with the same axis resolution produces.  Collapsing the two onto
+// one cache slot would erase the record of which surface published a kernel, and
+// the federation cache key is the only place that record survives.
 
 #include <crucible/safety/diag/RowHashFold.h>
 
 namespace crucible::safety::diag {
 
-// FIXY-FOUND-004 closure — per-grant axis-canonicalized fold helper.
-//
-// Without this, fixy::fn<T, hw::msr<0x10>> and fixy::fn<T,
-// accept_default_strict_for<HwInstruction>> resolve to identical
-// `safety_fn_t` (the 13 fixy-only axes — Synchronization=20 ..
-// MemoryScope=32 — do NOT project onto the 19-axis safety::fn::Fn<>
-// surface).  The safety_fn_t row_hash therefore collapses them to the
-// same federation cache slot.  Exploit: peer downloading kernel B
-// silently executes A's privileged-MSR bytes.
-//
-// Fix: combine each grant's `stable_type_id` into the row_hash in
-// CANONICAL axis order (iterate DimensionAxis 0..32, fold any grant
-// routing to that axis).  Canonical order makes the fold permutation-
-// invariant for axis-distinct grants (UniqueEngagementPerAxis already
-// ensures at most one grant per axis at the fixy::fn level).  Each
-// grant's stable_type_id uniquely identifies its (axis, value)
-// position — `hw::msr<0x10>` and `hw::msr<0x20>` are distinct types
-// → distinct ids → distinct folded hashes.
-//
-// Isolated as a free function so the witness in the self-test block
-// can exercise it without instantiating a full fixy::fn (which would
-// trigger every IsAccepted / AllDimsEngaged / ValidComposition gate).
+// The fixy-only axes do not project onto the substrate Fn surface, so two
+// bindings that differ only on one of them resolve to the same safety_fn_t and
+// would share a federation cache slot.  A peer downloading the safe kernel would
+// receive the privileged one.  Folding each grant's stable_type_id in canonical
+// axis order separates them: the id identifies the grant's (axis, value)
+// position, and a fixed axis order makes the result independent of the order the
+// caller wrote the pack in.
 namespace detail {
 
 template <typename... Grants>
 [[nodiscard]] consteval std::uint64_t fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
     std::uint64_t h = seed;
-    // Iterate the FIXY-ONLY DimensionAxis enumerators (Synchronization
-    // .. MemoryScope) in numeric order.  For each such axis K, any
-    // grant in `Grants...` routing to axis K updates `h` via
-    // combine_ids(h, stable_type_id<G>).  Result depends only on
-    // (axis, grant-type) pairs in canonical-axis order, NOT on the
-    // user's source-order of the Grants pack.
+    // Every type in `Grants...` must be a grant tag.  The `IsGrantTag_v<Grants>`
+    // term below does not make this tolerant of anything else: `which_dim_v` is
+    // a variable template, and its instantiation is forced whatever the `&&`
+    // operand order, so a non-grant type is a hard error rather than a silent
+    // skip.  That is sound because the only callers are the row_hash
+    // specialization, whose class body has already rejected any non-grant, and
+    // the self-tests, which pass grant tags exclusively.  The term stays as a
+    // per-axis match guard.
     //
-    // CONTRACT: every type in `Grants...` MUST be a grant tag (i.e.
-    // `IsGrantTag_v<G>` AND a defined `which_dim<G>` specialization).
-    // The `IsGrantTag_v<Grants> &&` term below is NOT a short-circuit
-    // that tolerates non-grant types — `which_dim_v<Grants>` is a
-    // variable template whose instantiation is forced regardless of `&&`
-    // operand order, so a non-grant `G` (incomplete `which_dim<G>`
-    // primary) is a hard error, not a silent skip.  This is sound
-    // because the ONLY callers are (a) `row_hash_contribution<fixy::fn<
-    // Type, Grants...>>`, where `fixy::fn`'s class-body
-    // AllGrantsWellFormed gate has already rejected any non-grant Grant,
-    // and (b) the self-tests below, which pass grant tags exclusively.
-    // The guard term remains as defense-in-depth for the per-axis match.
-    //
-    // FIXY-FOUND-045 structural fix: the loop starts at Synchronization
-    // (the first Crucible-extension axis), NOT 0.  Axes 0..19 (Type ..
-    // Staleness) PROJECT onto the 19-axis safety::fn::Fn surface and are
-    // ALREADY canonically hashed by row_hash_contribution_v<safety_fn_t>
-    // (the `h` seed).  Re-folding them here is redundant — and for the
-    // Effect axis's variadic `with<Es...>` grant it is HARMFUL: `with<
-    // Bg, Alloc>` and `with<Alloc, Bg>` are DISTINCT types with distinct
-    // stable_type_id, so folding them broke the permutation invariance
-    // that the canonicalized Row already guarantees.  The 13 fixy-only
-    // axes (Synchronization=20 .. MemoryScope=32) are the ones that do
-    // NOT project, so they are the ONLY axes this fold must cover — the
-    // function's documented contract.  Every fixy-only grant is fixed-
-    // arity (e.g. hw::cache<Op,Loc>, hw::msr<Id>) with positionally-
-    // distinct args, so no set-semantics permutation issue arises for
-    // them; only the Effect `with<>` pack had it, and it is now excluded.
-    // FIXY-FOUND-045 drift fix: derive the axis-count upper bound from
-    // the reflection-driven `dim::DIMENSION_AXIS_COUNT` rather than a
-    // hardcoded `33`.  A hardcoded literal silently STOPS covering the
-    // next fixy-only axis the moment a contributor appends enumerator 33
-    // to safety::DimensionAxis (per Dim.h's own anti-hardcode discipline,
-    // feedback_gcc16_c26_reflection_gotchas.md §3).  If that new axis is
-    // fixy-only (≥ Synchronization), a grant routing to it would be
-    // DROPPED from the fold — two kernels differing only in that grant
-    // would collide to the same federation cache slot, which is precisely
-    // the kernel-substitution attack this fold exists to prevent.
+    // The loop starts at the first fixy-only axis rather than at zero.  The axes
+    // below it project onto the substrate Fn surface and are already folded into
+    // the seed, so covering them again is redundant.  For the Effect axis it is
+    // also wrong: `with<Bg, Alloc>` and `with<Alloc, Bg>` are distinct types with
+    // distinct ids, and folding them would break the permutation invariance the
+    // canonicalized row already guarantees.  Every fixy-only grant is
+    // fixed-arity with positionally distinct arguments, so no such set-semantics
+    // question arises for the axes this loop does cover.
     constexpr int kAxisCount = static_cast<int>(::crucible::fixy::dim::DIMENSION_AXIS_COUNT);
     constexpr int kFirstFixyOnly = static_cast<int>(::crucible::fixy::dim::DimensionAxis::Synchronization);
     for (int axis = kFirstFixyOnly; axis < kAxisCount; ++axis) {
@@ -2366,14 +1286,9 @@ struct row_hash_contribution<::crucible::fixy::fn<Type, Grants...>> {
         std::uint64_t h =
             detail::combine_ids(detail::WRAPPER_FIXY_FN_TAG,
                                 row_hash_contribution_v<typename ::crucible::fixy::fn<Type, Grants...>::safety_fn_t>);
-        // FIXY-FOUND-004: fold per-grant identity so the 13 fixy-only
-        // axes (which never project onto safety_fn_t) discriminate at
-        // the federation cache layer.
         return detail::fold_canonicalized_grants_hash<Grants...>(h);
     }();
 };
-
-// ─── Self-test block — Agent 4's verified bug closes ──────────────
 
 namespace detail::fixy_fn_row_hash_self_test {
 
@@ -2383,37 +1298,17 @@ using crucible::fixy::stance::IoFunction;
 using crucible::fixy::stance::BgWorker;
 using crucible::fixy::stance::CtCrypto;
 
-// The headline closure: distinct stances over IDENTICAL payload Type
-// MUST produce distinct row hashes. This is the literal test that
-// /tmp/audit_test.cpp pinned at compile-time on the patched GCC 16.
-//
-// Before this specialization shipped:
-//   row_hash_contribution_v<PureCopy<int>>    == 0
-//   row_hash_contribution_v<IoFunction<int>>  == 0
-//   row_hash_contribution_v<PureCopy<int>>   == row_hash_contribution_v<IoFunction<int>>
-//
-// After this specialization ships, all three of the above flip:
-//   row_hash_contribution_v<PureCopy<int>>    != 0
-//   row_hash_contribution_v<IoFunction<int>>  != 0
-//   row_hash_contribution_v<PureCopy<int>>   != row_hash_contribution_v<IoFunction<int>>
-
-static_assert(row_hash_contribution_v<PureCopy<int>> != 0,
-              "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> must contribute non-zero "
-              "to the federation cache RowHash.");
+static_assert(row_hash_contribution_v<PureCopy<int>> != 0, "PureCopy<int> must contribute a non-zero federation cache "
+                                                           "RowHash.");
 static_assert(row_hash_contribution_v<IoFunction<int>> != 0,
-              "FIXY-V-001 / Agent 4 T1-A: IoFunction<int> must contribute non-zero "
-              "to the federation cache RowHash.");
+              "IoFunction<int> must contribute a non-zero federation cache "
+              "RowHash.");
 
-// The principal cache-divergence claim — capability-distinct stances
-// over the SAME payload Type produce DISTINCT row hashes.
 static_assert(row_hash_contribution_v<PureCopy<int>> != row_hash_contribution_v<IoFunction<int>>,
-              "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> and IoFunction<int> must "
-              "produce distinct RowHash so the federation cache (KernelCacheKey "
-              "{ContentHash, RowHash}) routes them to disjoint slots. Spec §7(b) "
-              "federation discharge depends on this discrimination.");
+              "PureCopy<int> and IoFunction<int> must produce distinct RowHash "
+              "values so the federation cache routes them to disjoint slots.  "
+              "They carry the same payload type and differ only in capability.");
 
-// Additional stance-divergence pinning — covers Usage, EffectRow,
-// Security, Reentrancy axes from the 12-stance catalog.
 static_assert(row_hash_contribution_v<PureLinear<int>> != row_hash_contribution_v<PureCopy<int>>,
               "PureLinear (Usage=Linear) vs PureCopy (Usage=Copy) differ on "
               "the Usage axis — distinct row hashes required.");
@@ -2426,69 +1321,35 @@ static_assert(row_hash_contribution_v<CtCrypto<int>> != row_hash_contribution_v<
               "CtCrypto (constant-time discipline + Security tier) vs "
               "PureLinear differ on multiple axes — distinct row hashes required.");
 
-// Cross-surface separation — fixy::fn and safety::fn::Fn route to
-// DISTINCT cache slots even when the underlying capability projection
-// is identical. The WRAPPER_FIXY_FN_TAG (0x1E) vs WRAPPER_SAFETY_FN_TAG
-// (0x1D) separation enforces this. (We cannot test this with the
-// `using safety_fn_t = ...` alias directly because the alias resolves
-// inside fixy::fn — but the salt guarantees it.)
 static_assert(row_hash_contribution_v<PureLinear<int>>
                   != row_hash_contribution_v<typename PureLinear<int>::safety_fn_t>,
-              "fixy::fn<T, ...> and the directly-spelled safety::fn::Fn<T, ...> "
-              "MUST route to distinct cache slots so the audit trail "
-              "'published-through-fixy' is preserved at federation-cache "
-              "lookup tier (WRAPPER_FIXY_FN_TAG vs WRAPPER_SAFETY_FN_TAG salt).");
+              "fixy::fn<T, ...> and the directly-spelled substrate Fn<T, ...> "
+              "must route to distinct cache slots, so that the federation cache "
+              "lookup preserves which surface published the kernel.");
 
-// Bare payload contributes 0; fixy::fn<T, ...> with the salt does NOT.
 static_assert(row_hash_contribution_v<int> == 0);
 static_assert(row_hash_contribution_v<PureLinear<int>> != 0);
 
-// RowHash sentinel discipline — fixy::fn's hash is NOT the cache's
-// dedicated sentinel slot value.
 static_assert(!row_hash_of_v<PureLinear<int>>.is_sentinel());
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-FOUND-004 — 13 fixy-only axes contribute to row_hash ─────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Tests fold_canonicalized_grants_hash directly so the witness does
-// not depend on a full fixy::fn instantiation (which would require
-// every IsAccepted / AllDimsEngaged gate to be satisfied — too high
-// a setup cost for a row-hash distinctness test).  Each assertion
-// pins a (Grants pack) → (distinct hash) relationship that closes a
-// specific kernel-substitution attack vector.
-
-// (1) HwInstruction axis: two different MSR IDs (privileged read of
-// different model-specific registers) on the same axis must produce
-// distinct folded hashes — defeats `hw::msr<0x10>` vs `hw::msr<0x20>`
-// federation slot collision.
 static_assert(detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
                   != detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::hw::msr<0x20u>>(0ULL),
-              "FIXY-FOUND-004: distinct MSR IDs on HwInstruction axis must "
-              "produce distinct grant-fold contributions.  Kernel-substitution "
-              "exploit if equal.");
+              "Distinct MSR identifiers on the HwInstruction axis must produce "
+              "distinct grant-fold contributions.  Equal contributions let one "
+              "kernel be substituted for another at the federation cache.");
 
-// (2) HwInstruction axis: privileged `hw::msr<...>` vs the strict
-// default `accept_default_strict_for<HwInstruction>` (kernel uses
-// default safe-ISA only) must produce DISTINCT row_hashes.  This is
-// the principal Org A vs Org B exploit from the task description.
 static_assert(detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
                   != detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::accept_default_strict_for<
                       ::crucible::fixy::dim::DimensionAxis::HwInstruction>>(0ULL),
-              "FIXY-FOUND-004: privileged hw::msr<...> grant vs strict default "
-              "MUST route to distinct federation cache slots.  Without this, "
-              "peer downloading default-safe kernel could silently execute "
-              "WRMSR bytes from privileged-msr kernel publisher.");
+              "A privileged hw::msr grant and the strict HwInstruction default "
+              "must route to distinct federation cache slots.  Without the "
+              "separation, a peer that downloads the default-safe kernel can "
+              "receive the privileged-register bytes instead.");
 
-// (3) Empty Grants pack collapses to identity fold (h == seed).
 static_assert(detail::fold_canonicalized_grants_hash<>(0xDEADBEEFULL) == 0xDEADBEEFULL,
-              "FIXY-FOUND-004: empty Grants pack must fold to identity (seed "
-              "unchanged).");
+              "An empty Grants pack must fold to identity and leave the seed "
+              "unchanged.");
 
-// (4) Permutation invariance: same grants in different source order
-// must produce the same canonical fold.  Canonical-axis ordering is
-// the load-bearing property — protects against compile-time pack
-// permutation breaking federation cache lookups.
 static_assert(
     detail::fold_canonicalized_grants_hash<
         ::crucible::fixy::grant::hw::msr<0x10u>,
@@ -2496,54 +1357,28 @@ static_assert(
         == detail::fold_canonicalized_grants_hash<
             ::crucible::fixy::grant::accept_default_strict_for<::crucible::fixy::dim::DimensionAxis::SimdIsa>,
             ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL),
-    "FIXY-FOUND-004: grant fold MUST be canonical-axis-ordered so "
-    "source-order permutations of the same Grants pack collapse to "
-    "the same federation cache slot.");
+    "The grant fold must be ordered by canonical axis, so that source-order "
+    "permutations of one Grants pack collapse to the same federation cache "
+    "slot.");
 
-// ═════════════════════════════════════════════════════════════════════
-// ── FIXY-FOUND-045 — with<E1, E2> permutation invariance ──────────
-// ═════════════════════════════════════════════════════════════════════
+// The row a `with<Es...>` grant projects to already hashes independently of the
+// order of its effects.  That does not by itself give the same property here:
+// it holds at this level only while the wrapper salt rides on the canonicalized
+// row rather than on the grant pack.  The witness below pins that it does.
 //
-// `grant::with<Es...>` projects to `effects::Row<Es...>` (Fn.h:231).
-// The Row-level row_hash is permutation-invariant by construction —
-// `row_hash_contribution<Row<Es...>>` sort-folds over Effect
-// underlying values (RowHashFold.h §I02), and that invariance is
-// pinned at RowHashFold.h:1208-1247 for 2-way / 3-way (all 6) /
-// 6-way (reversed + shuffled) Row<...> instantiations.
-//
-// FOUND-045 is the INTEGRATION witness: at the `fixy::fn<...>` level
-// (with the WRAPPER_FIXY_FN_TAG salt mixed in), permutations of the
-// `with<Es...>` Effect pack must produce IDENTICAL safety_fn_t row
-// hashes so the federation cache (KernelCacheKey {ContentHash,
-// RowHash}) does NOT fragment slots for semantically-equivalent
-// Effect packs.  The Row-level invariance does not automatically
-// imply fixy::fn-level invariance unless the salt is applied to the
-// CANONICALIZED row representation — this witness pins that it is.
-//
-// UniqueEngagementPerAxis interaction (read this paragraph if the
-// witness ever fires): `with<Bg, Alloc>` is ONE grant, ONE Effect
-// engagement.  Tier-4 (UniqueEngagementPerAxis) counts GRANTS per
-// axis, not Effect ATOMS within a grant.  Both orderings —
-// `with<Bg, Alloc>` and `with<Alloc, Bg>` — are equally well-formed
-// (one Effect grant in the pack).  Tier-4 fires only when TWO
-// separate `with<>` grants appear: e.g.,
-// `fixy::fn<int, with<Bg>, with<Alloc>, ...>` is rejected (two
-// Effect engagements, one axis).  The permutation question is
-// orthogonal to the engagement-count question; both invariants hold
-// simultaneously.
+// The engagement count is a separate question.  `with<Bg, Alloc>` is one grant
+// and therefore one Effect engagement, whichever order it lists.  The
+// acceptance gate counts grants per axis, not effects within a grant.  It
+// rejects two separate `with<>` grants in one pack, and both invariants hold
+// at once.
 
 namespace found_045_witness {
 
-// (1) 2-way permutation through fixy::fn — mirror of BgWorker
-// (Fn.h:1533, which uses `with<Bg, Alloc>`) with the Effect pack
-// REVERSED.  Every other axis is identical.  Federation cache MUST
-// route both to the same slot.  Fully-qualified `detail_stance` and
-// `grant` because we are inside `crucible::safety::diag` namespace.
 template <typename Type>
 using BgWorker_AllocBg = ::crucible::fixy::fn<
     Type, ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Refinement>,
     ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Usage>,
-    // ← Effect pack REVERSED: <Alloc, Bg> instead of BgWorker's <Bg, Alloc>
+    // The one line that differs from BgWorker: the Effect pack is reversed.
     ::crucible::fixy::grant::with<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::Bg>,
     ::crucible::fixy::grant::as_public,
     ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Protocol>,
@@ -2575,49 +1410,21 @@ using BgWorker_AllocBg = ::crucible::fixy::fn<
     ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::SimdIsa>,
     ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::MemoryScope>>;
 
-// The headline assertion — BgWorker (Effect={Bg, Alloc}) and
-// BgWorker_AllocBg (Effect={Alloc, Bg}) MUST hash identically at
-// the fixy::fn::safety_fn_t level.  Federation cache slot identity
-// for semantically-equivalent Effect packs.  Note: the existence of
-// the BgWorker_AllocBg using-alias above ALSO proves the permuted
-// form passes all five well-formedness tiers (incl. tier-4
-// UniqueEngagementPerAxis) — an ill-formed instantiation would
-// fail to materialize as a complete type, and row_hash_contribution
-// _v could not be evaluated on it.
 static_assert(row_hash_contribution_v<BgWorker<int>> == row_hash_contribution_v<BgWorker_AllocBg<int>>,
-              "FIXY-FOUND-045: fixy::fn with permuted `with<Es...>` Effect "
-              "pack MUST produce identical row_hash_contribution.  Federation "
-              "cache slot identity depends on this: `with<Bg, Alloc>` and "
-              "`with<Alloc, Bg>` are semantically the same Effect row "
-              "(Row<>-level invariance pinned at RowHashFold.h:1208).  If "
-              "this assertion fires, the WRAPPER_FIXY_FN_TAG salt is being "
-              "mixed in BEFORE row canonicalization — flip the order so the "
-              "salt rides on the canonicalized Row.");
+              "A fixy::fn with a permuted `with<Es...>` Effect pack must "
+              "produce the same row_hash_contribution, because the two packs "
+              "name the same Effect row.  If this fires, the wrapper salt is "
+              "being mixed in before row canonicalization.  Flip the order so "
+              "that the salt rides on the canonicalized row.");
 
-// The cache slot ID must be non-zero — both forms must contribute
-// the same NON-TRIVIAL hash, not zero on both sides (which would
-// silently satisfy the equality assertion above).
 static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>> != 0,
-              "FIXY-FOUND-045: BgWorker_AllocBg<int> must contribute "
-              "non-zero row_hash (permutation witness must be load-bearing).");
+              "BgWorker_AllocBg<int> must contribute a non-zero row hash, so "
+              "that the equality above is not satisfied by both sides being "
+              "zero.");
 
-// (2) Cross-stance pin — BgWorker_AllocBg<int> hashes the SAME as
-// the canonical BgWorker<int>, not the same as IoFunction<int>.
-// Proves the equality witness above is not vacuously satisfied by
-// some "always-the-same" bug.
 static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>> != row_hash_contribution_v<IoFunction<int>>,
-              "FIXY-FOUND-045: permuted BgWorker MUST still differ from "
-              "IoFunction (different Effect rows: {Bg, Alloc} vs {IO}).");
-
-// (3) UniqueEngagementPerAxis interaction — well-formedness of
-// BOTH forms is implicit in the using-alias compilation above.
-// Tier-4 counts GRANTS per axis (one with<> grant in each pack),
-// not Effect ATOMS within a grant.  Both `with<Bg, Alloc>` and
-// `with<Alloc, Bg>` are single Effect engagements.  The contrast
-// case — two separate `with<>` grants (e.g. `with<Bg>, with<Alloc>`
-// in the same pack) — would fire tier-4 (two Effect engagements,
-// one axis) and is witnessed by existing fixy_neg fixtures (see
-// test/fixy_neg/ for axis-duplication rejections).
+              "The permuted BgWorker must still differ from IoFunction: their "
+              "Effect rows are different.");
 
 }  // namespace found_045_witness
 

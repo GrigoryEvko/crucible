@@ -1,24 +1,9 @@
 #pragma once
 
-// ── crucible::safety::HugePageBuffer<T> ───────────────────────────
-//
-// Move-only RAII wrapper over a 2-MB-aligned heap allocation of T[N]
-// with MADV_HUGEPAGE applied.  Replaces hand-rolled patterns like:
-//
-//   T* p = std::aligned_alloc(kHugePageBytes, round_up(n*sizeof(T)));
-//   crucible::warden::register_hot_region(p, bytes, /*huge=*/true, "name");
-//   ...
-//   crucible::warden::unregister_hot_region(p);
-//   std::free(p);
-//
-//   Axiom coverage: MemSafe, LeakSafe.
-//   Runtime cost:   one pointer + one count + zero registration extra
-//                   (the registration metadata lives in warden::Registry,
-//                   not on the buffer).
-//
-// Pairing with warden::register_hot_region / unregister_hot_region is
-// explicit at the call site (the registry needs the friendly name);
-// HugePageBuffer owns the allocation lifetime.
+// This owns the allocation and its huge-page alignment, and nothing else.  It
+// does not advise the kernel that the region wants huge pages.  A caller that
+// needs that registers the region and unregisters it around the buffer's
+// lifetime, which is left explicit because the registry wants a name for it.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>
@@ -35,21 +20,6 @@
 #include <utility>
 
 namespace crucible::safety {
-
-// ── Diagnostic helper for HugePageBuffer allocation failure (fixy-A1-022) ─
-//
-// Pre-fix `allocate()` aborted silently when std::aligned_alloc returned
-// nullptr.  The new helper emits the catalogued tag's name/description/
-// remediation to stderr first, along with the requested byte count and
-// alignment, so an operator inspecting the core dump has a breadcrumb
-// pointing at /proc/sys/vm/nr_hugepages.  `[[gnu::cold, gnu::noinline]]`
-// keeps the helper out of the hot instruction-cache footprint of
-// `allocate()`; the helper is only reachable on the genuinely
-// catastrophic path.
-//
-// Header-only `inline` to satisfy ODR across translation units that
-// include HugePageBuffer.h; the helper has no template parameters
-// because the diagnostic is fixed.
 
 [[noreturn]] CRUCIBLE_COLD inline void huge_page_allocation_failed_abort_(std::size_t alloc_bytes,
                                                                           std::size_t alignment) noexcept {
@@ -77,21 +47,15 @@ public:
 
     constexpr HugePageBuffer() noexcept = default;
 
-    // Allocate `count` Ts in a 2-MB-rounded aligned region.  The
-    // returned buffer's bytes() reports the rounded allocation size
-    // — needed by the caller for register_hot_region / madvise.
     [[nodiscard]] static HugePageBuffer allocate(size_type count) {
         if (count == 0) [[unlikely]]
             return HugePageBuffer{};
-        // TypeSafe/MemSafe (CLAUDE.md §II): overflow-check the byte math.
-        // A bare `count * sizeof(T)` wraps silently for large `count`,
-        // under-provisioning the buffer that the caller then overruns.
-        // We also guard the 2-MB round-up: round_up_huge() computes
-        // `(n + kHugePageBytes - 1) & ~(kHugePageBytes - 1)`, whose inner
-        // add wraps to 0 when raw_bytes > SIZE_MAX - (kHugePageBytes - 1),
-        // yielding a zero-byte allocation.  Both overflows are fatal
-        // caller bugs (no valid count of T can exceed SIZE_MAX bytes), so
-        // we abort exactly as the OOM path does.
+        // Both byte computations wrap silently on a large count, and each wrap
+        // hands back a buffer smaller than the caller asked for.  The round-up
+        // is the subtler of the two: it adds one page less than a page before
+        // masking, so a raw size within a page of the maximum adds to zero and
+        // yields a zero-byte allocation.  round_probe exists only to catch that
+        // add.  Neither can happen for a real count of T, so both abort.
         size_type raw_bytes = 0;
         if (__builtin_mul_overflow(count, sizeof(T), &raw_bytes)) [[unlikely]]
             std::abort();
@@ -101,10 +65,6 @@ public:
         const size_type alloc_bytes = ::crucible::warden::round_up_huge(raw_bytes);
         void* raw = std::aligned_alloc(huge_page_bytes, alloc_bytes);
         if (!raw) [[unlikely]] {
-            // fixy-A1-022: emit catalogued diagnostic before aborting so
-            // the operator inspecting the core dump has a breadcrumb
-            // pointing at HugePageAllocationFailed.  Reaching this site
-            // is fatal for the SPSC backings of TraceRing / MetaLog.
             huge_page_allocation_failed_abort_(alloc_bytes, huge_page_bytes);
         }
         return HugePageBuffer{static_cast<T*>(raw), count, alloc_bytes};

@@ -1,9 +1,7 @@
-// GAPS-084: indexed SubstrateSessionBridge support for ShardedCalendarGrid.
-//
-// The live substrate exposes one producer and one consumer per shard.
-// ShardId<S> selects that shard-local calendar queue; bucket slots are
-// observed through the item's priority key and std::optional<T> empty
-// result, not through separate per-slot handle types.
+// The grid exposes one producer and one consumer per shard, and the shard
+// index selects that shard's calendar queue.  Bucket slots have no handles
+// of their own: a slot is observed through the item's priority key and
+// through an empty pop result.
 
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/permissions/Permission.h>
@@ -35,48 +33,28 @@ struct Job {
 };
 
 struct DeadlineKey {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
 
-using Grid = cc::PermissionedShardedCalendarGrid<
-    Job,
-    4,
-    64,
-    8,
-    DeadlineKey,
-    1ULL,
-    BridgeTag>;
+using Grid = cc::PermissionedShardedCalendarGrid<Job, 4, 64, 8, DeadlineKey, 1ULL, BridgeTag>;
 
 static_assert(scgs::ShardedCalendarGridSessionSurface<Grid>);
-static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<0>,
-                                             cc::Direction::Producer>);
-static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<3>,
-                                             cc::Direction::Consumer>);
+static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<0>, cc::Direction::Producer>);
+static_assert(cc::IsBridgeableShardDirection<Grid, cc::ShardId<3>, cc::Direction::Consumer>);
 static_assert(!cc::IsBridgeableDirection<Grid, cc::Direction::Producer>);
 static_assert(!cc::IsBridgeableDirection<Grid, cc::Direction::Consumer>);
 
-static_assert(std::is_same_v<
-    cc::handle_for_t<Grid, cc::Direction::Producer, cc::ShardId<2>>,
-    Grid::ProducerHandle<2>>);
-static_assert(std::is_same_v<
-    cc::handle_for_t<Grid, cc::Direction::Consumer, cc::ShardId<2>>,
-    Grid::ConsumerHandle<2>>);
-static_assert(std::is_same_v<
-    cc::default_proto_for_t<Grid, cc::Direction::Producer, cc::ShardId<0>>,
-    scgs::ProducerProto<Job>>);
-static_assert(std::is_same_v<
-    cc::default_proto_for_t<Grid, cc::Direction::Consumer, cc::ShardId<0>>,
-    scgs::ConsumerProto<Job>>);
+static_assert(std::is_same_v<cc::handle_for_t<Grid, cc::Direction::Producer, cc::ShardId<2>>, Grid::ProducerHandle<2>>);
+static_assert(std::is_same_v<cc::handle_for_t<Grid, cc::Direction::Consumer, cc::ShardId<2>>, Grid::ConsumerHandle<2>>);
+static_assert(
+    std::is_same_v<cc::default_proto_for_t<Grid, cc::Direction::Producer, cc::ShardId<0>>, scgs::ProducerProto<Job>>);
+static_assert(
+    std::is_same_v<cc::default_proto_for_t<Grid, cc::Direction::Consumer, cc::ShardId<0>>, scgs::ConsumerProto<Job>>);
 
 template <typename UserTag, std::size_t Shards>
 auto fresh_sharded_calendar_perms() {
-    auto whole = safety::mint_permission_root<
-        cc::sharded_calendar_tag::Whole<UserTag>>();
-    return safety::mint_grid_permissions<
-        cc::sharded_calendar_tag::Whole<UserTag>, Shards, Shards>(
-        std::move(whole));
+    auto whole = safety::mint_permission_root<cc::sharded_calendar_tag::Whole<UserTag>>();
+    return safety::mint_grid_permissions<cc::sharded_calendar_tag::Whole<UserTag>, Shards, Shards>(std::move(whole));
 }
 
 template <typename Session>
@@ -87,11 +65,8 @@ void detach(Session& session) {
 template <std::size_t Shard, typename Session>
 void push_even_slots(Session& session) {
     for (std::uint64_t slot = 0; slot < Grid::num_buckets; slot += 2) {
-        auto next = std::move(session).send(
-            Job{.shard = Shard,
-                .deadline_ns = slot,
-                .payload = Shard * 1000ULL + slot},
-            scgs::blocking_push);
+        auto next = std::move(session).send(Job{.shard = Shard, .deadline_ns = slot, .payload = Shard * 1000ULL + slot},
+                                            scgs::blocking_push);
         session = std::move(next);
     }
 }
@@ -133,31 +108,23 @@ int test_bridge_4_shard_64_bucket_half_present() {
     auto c2 = grid.template consumer<2>(std::move(std::get<2>(perms.consumers)));
     auto c3 = grid.template consumer<3>(std::move(std::get<3>(perms.consumers)));
 
-    auto ps0 = cc::mint_substrate_session<Grid, cc::ShardId<0>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p0);
-    auto ps1 = cc::mint_substrate_session<Grid, cc::ShardId<1>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p1);
-    auto ps2 = cc::mint_substrate_session<Grid, cc::ShardId<2>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p2);
-    auto ps3 = cc::mint_substrate_session<Grid, cc::ShardId<3>,
-                                          cc::Direction::Producer>(
-        ::crucible::effects::HotFgCtx{}, p3);
+    auto ps0 =
+        cc::mint_substrate_session<Grid, cc::ShardId<0>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p0);
+    auto ps1 =
+        cc::mint_substrate_session<Grid, cc::ShardId<1>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p1);
+    auto ps2 =
+        cc::mint_substrate_session<Grid, cc::ShardId<2>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p2);
+    auto ps3 =
+        cc::mint_substrate_session<Grid, cc::ShardId<3>, cc::Direction::Producer>(::crucible::effects::HotFgCtx{}, p3);
 
-    auto cs0 = cc::mint_substrate_session<Grid, cc::ShardId<0>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c0);
-    auto cs1 = cc::mint_substrate_session<Grid, cc::ShardId<1>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c1);
-    auto cs2 = cc::mint_substrate_session<Grid, cc::ShardId<2>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c2);
-    auto cs3 = cc::mint_substrate_session<Grid, cc::ShardId<3>,
-                                          cc::Direction::Consumer>(
-        ::crucible::effects::HotFgCtx{}, c3);
+    auto cs0 =
+        cc::mint_substrate_session<Grid, cc::ShardId<0>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c0);
+    auto cs1 =
+        cc::mint_substrate_session<Grid, cc::ShardId<1>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c1);
+    auto cs2 =
+        cc::mint_substrate_session<Grid, cc::ShardId<2>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c2);
+    auto cs3 =
+        cc::mint_substrate_session<Grid, cc::ShardId<3>, cc::Direction::Consumer>(::crucible::effects::HotFgCtx{}, c3);
 
     push_even_slots<0>(ps0);
     push_even_slots<1>(ps1);
@@ -183,24 +150,19 @@ int test_bridge_4_shard_64_bucket_half_present() {
 }
 
 int test_session_header_factories() {
-    using HeaderGrid = cc::PermissionedShardedCalendarGrid<
-        Job, 1, 8, 4, DeadlineKey, 1ULL, HeaderTag>;
+    using HeaderGrid = cc::PermissionedShardedCalendarGrid<Job, 1, 8, 4, DeadlineKey, 1ULL, HeaderTag>;
 
     HeaderGrid grid;
     auto perms = fresh_sharded_calendar_perms<HeaderTag, 1>();
-    auto producer = scgs::mint_sharded_calendar_grid_producer<HeaderGrid, 0>(
-        grid, std::move(std::get<0>(perms.producers)));
-    auto consumer = scgs::mint_sharded_calendar_grid_consumer<HeaderGrid, 0>(
-        grid, std::move(std::get<0>(perms.consumers)));
+    auto producer =
+        scgs::mint_sharded_calendar_grid_producer<HeaderGrid, 0>(grid, std::move(std::get<0>(perms.producers)));
+    auto consumer =
+        scgs::mint_sharded_calendar_grid_consumer<HeaderGrid, 0>(grid, std::move(std::get<0>(perms.consumers)));
 
-    auto ps = scgs::mint_producer_session<HeaderGrid, 0>(
-        ::crucible::effects::HotFgCtx{}, producer);
-    auto cs = scgs::mint_consumer_session<HeaderGrid, 0>(
-        ::crucible::effects::HotFgCtx{}, consumer);
+    auto ps = scgs::mint_producer_session<HeaderGrid, 0>(::crucible::effects::HotFgCtx{}, producer);
+    auto cs = scgs::mint_consumer_session<HeaderGrid, 0>(::crucible::effects::HotFgCtx{}, consumer);
 
-    auto next_ps = std::move(ps).send(
-        Job{.shard = 0, .deadline_ns = 3, .payload = 42},
-        scgs::blocking_push);
+    auto next_ps = std::move(ps).send(Job{.shard = 0, .deadline_ns = 3, .payload = 42}, scgs::blocking_push);
     auto [job, next_cs] = std::move(cs).recv(scgs::blocking_pop);
     assert(job.payload == 42);
     assert((!scgs::consumer_session_try_pop<HeaderGrid, 0>(next_cs).has_value()));

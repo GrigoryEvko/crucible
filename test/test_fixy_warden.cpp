@@ -1,24 +1,8 @@
-// ── test_fixy_warden — sentinel TU for fixy/Warden.h ──────────────
-//
-// FIXY-U-120.  Pulls fixy/Warden.h into a TU compiled under project
-// warning flags so the header's static_asserts (sentinel + concept
-// resolution + cardinality witness) execute.  Witnesses:
-//
-//   1. fixy::warden::mint_hardening                aliases substrate.
-//   2. fixy::warden::mint_deadline_watchdog        aliases substrate.
-//   3. fixy::warden::mint_hot_region_registry_handle aliases substrate.
-//   4. fixy::warden::mint_quarantine_policy        aliases substrate.
-//   5. Type aliases (AppliedPolicy / DeadlineWatchdog /
-//      HotRegionRegistryHandle / QuarantineConfig / QuarantineEvent /
-//      Policy) preserve substrate identity.
-//   6. CtxFitsXMint concepts admit ColdInitCtx and reject BgDrainCtx.
-//   7. Cardinality witness — substrate ships exactly 4 warden mints.
-//
-// Per CLAUDE.md §XXI the using-decl is name-lookup-only: each fixy::
-// re-export must resolve to the SAME substrate function-template
-// instantiation (pointer-identity, not behavioural-equivalence).
-// `decltype(&fixy::warden::mint_X<...>) == decltype(&warden::mint_X<...>)`
-// is the strongest reach witness for free function templates.
+// A re-export must be name lookup and nothing else: the re-exported name
+// has to resolve to the same substrate instantiation, not merely to
+// something that behaves the same way.  Comparing the types of the two
+// function pointers is the strongest available witness of that for a free
+// function template, which is why the assertions below take addresses.
 
 #include <crucible/fixy/Warden.h>
 
@@ -27,99 +11,62 @@
 
 #include <type_traits>
 
-namespace fw      = ::crucible::fixy::warden;
+namespace fw = ::crucible::fixy::warden;
 namespace warden_ = ::crucible::warden;
-namespace eff     = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
-// ─── 1. Function-template identity — mint_hardening ───────────────
-//
-// `mint_hardening<ColdInitCtx>` resolves through the using-decl to
-// the substrate's instantiation.  Same address proves the re-export
-// is pure name lookup (no shadowed wrapper, no proxy lambda).
+static_assert(std::is_same_v<decltype(&fw::mint_hardening<eff::ColdInitCtx>),
+                             decltype(&warden_::mint_hardening<eff::ColdInitCtx>)>,
+              "fixy::warden::mint_hardening must be the substrate function");
 
-static_assert(std::is_same_v<
-    decltype(&fw::mint_hardening<eff::ColdInitCtx>),
-    decltype(&warden_::mint_hardening<eff::ColdInitCtx>)>,
-    "FIXY-U-120: fixy::warden::mint_hardening must be the substrate "
-    "function (using-decl preserves crucible::warden:: residency).");
+static_assert(std::is_same_v<decltype(&fw::mint_deadline_watchdog<eff::ColdInitCtx>),
+                             decltype(&warden_::mint_deadline_watchdog<eff::ColdInitCtx>)>,
+              "fixy::warden::mint_deadline_watchdog must be the substrate function");
 
-// ─── 2. Function-template identity — mint_deadline_watchdog ───────
+static_assert(std::is_same_v<decltype(&fw::mint_hot_region_registry_handle<eff::ColdInitCtx>),
+                             decltype(&warden_::mint_hot_region_registry_handle<eff::ColdInitCtx>)>,
+              "fixy::warden::mint_hot_region_registry_handle must be the substrate "
+              "function");
 
-static_assert(std::is_same_v<
-    decltype(&fw::mint_deadline_watchdog<eff::ColdInitCtx>),
-    decltype(&warden_::mint_deadline_watchdog<eff::ColdInitCtx>)>,
-    "FIXY-U-120: fixy::warden::mint_deadline_watchdog must be the "
-    "substrate function (using-decl name-lookup-only).");
+// The only warden mint with non-type parameters.  Any pair of values pins
+// the reach, and these two are arbitrary.
+static_assert(std::is_same_v<decltype(&fw::mint_quarantine_policy<eff::ColdInitCtx, 8, 32>),
+                             decltype(&warden_::mint_quarantine_policy<eff::ColdInitCtx, 8, 32>)>,
+              "fixy::warden::mint_quarantine_policy must be the substrate function "
+              "template");
 
-// ─── 3. Function-template identity — mint_hot_region_registry_handle ──
-
-static_assert(std::is_same_v<
-    decltype(&fw::mint_hot_region_registry_handle<eff::ColdInitCtx>),
-    decltype(&warden_::mint_hot_region_registry_handle<eff::ColdInitCtx>)>,
-    "FIXY-U-120: fixy::warden::mint_hot_region_registry_handle must be "
-    "the substrate function (using-decl name-lookup-only).");
-
-// ─── 4. Function-template identity — mint_quarantine_policy ───────
-//
-// `mint_quarantine_policy<Ctx, MaxCogs, MaxEvents>` is the only
-// template in the warden surface with non-type parameters.  Pin the
-// instantiation at (ColdInitCtx, 8, 32) to witness reach.
-
-static_assert(std::is_same_v<
-    decltype(&fw::mint_quarantine_policy<eff::ColdInitCtx, 8, 32>),
-    decltype(&warden_::mint_quarantine_policy<eff::ColdInitCtx, 8, 32>)>,
-    "FIXY-U-120: fixy::warden::mint_quarantine_policy must be the "
-    "substrate function template (using-decl name-lookup-only).");
-
-// ─── 5. Type-alias identity ───────────────────────────────────────
-//
-// The non-mint types re-exported into fixy::warden:: must preserve
-// substrate identity.  A future regression that shadows one with a
-// local typedef would silently break ABI; the static_assert reds
-// the build immediately.
+// A shadowing local typedef of the same shape would change the type
+// identity while leaving every use site compiling.  These assertions are
+// what makes that fail.
 
 static_assert(std::is_same_v<fw::AppliedPolicy, warden_::AppliedPolicy>,
-    "fixy::warden::AppliedPolicy must alias substrate.");
+              "fixy::warden::AppliedPolicy must alias substrate.");
 
-static_assert(std::is_same_v<fw::Policy, warden_::Policy>,
-    "fixy::warden::Policy must alias substrate.");
+static_assert(std::is_same_v<fw::Policy, warden_::Policy>, "fixy::warden::Policy must alias substrate.");
 
 static_assert(std::is_same_v<fw::DeadlineWatchdog, warden_::DeadlineWatchdog>,
-    "fixy::warden::DeadlineWatchdog must alias substrate.");
+              "fixy::warden::DeadlineWatchdog must alias substrate.");
 
-static_assert(std::is_same_v<fw::HotRegionRegistryHandle,
-                             warden_::HotRegionRegistryHandle>,
-    "fixy::warden::HotRegionRegistryHandle must alias substrate.");
+static_assert(std::is_same_v<fw::HotRegionRegistryHandle, warden_::HotRegionRegistryHandle>,
+              "fixy::warden::HotRegionRegistryHandle must alias substrate.");
 
 static_assert(std::is_same_v<fw::QuarantineConfig, warden_::QuarantineConfig>,
-    "fixy::warden::QuarantineConfig must alias substrate.");
+              "fixy::warden::QuarantineConfig must alias substrate.");
 
 static_assert(std::is_same_v<fw::QuarantineEvent, warden_::QuarantineEvent>,
-    "fixy::warden::QuarantineEvent must alias substrate.");
+              "fixy::warden::QuarantineEvent must alias substrate.");
 
-// FIXY-U-120c — QuarantineTransition (diagnostic-class tag base) and
-// QuarantineSnapshot (return type of QuarantinePolicy::current /
-// ::snapshot) are re-exported through fixy::warden:: at Warden.h
-// alongside the other 6 non-mint types above.  Without these two
-// asserts a using-decl regression that shadowed either type with a
-// local typedef would silently pass — QuarantineSnapshot in
-// particular is trivially-copyable and a hand-rolled substitute of
-// the same shape would fool the test TU otherwise.
-static_assert(std::is_same_v<fw::QuarantineTransition,
-                             warden_::QuarantineTransition>,
-    "fixy::warden::QuarantineTransition must alias substrate.");
+// QuarantineSnapshot is trivially copyable, so a hand-rolled substitute of
+// the same shape would satisfy every other use in this file.
+static_assert(std::is_same_v<fw::QuarantineTransition, warden_::QuarantineTransition>,
+              "fixy::warden::QuarantineTransition must alias substrate.");
 
-static_assert(std::is_same_v<fw::QuarantineSnapshot,
-                             warden_::QuarantineSnapshot>,
-    "fixy::warden::QuarantineSnapshot must alias substrate.");
+static_assert(std::is_same_v<fw::QuarantineSnapshot, warden_::QuarantineSnapshot>,
+              "fixy::warden::QuarantineSnapshot must alias substrate.");
 
-// ─── 6. Concept-resolution identity ───────────────────────────────
-//
-// Each CtxFitsXMint concept admits ColdInitCtx and rejects BgDrainCtx.
-// The substrate ships these asserts at the mint-definition site; we
-// duplicate through the fixy:: layer so a future regression that
-// silently relaxed the concept gate (e.g., dropping the Init-row
-// requirement) would red THIS TU on top of the substrate's own.
+// The substrate asserts the same gates at the definition site.  Restating
+// them through the re-export catches a relaxed gate here as well, which is
+// the layer a caller actually names.
 
 static_assert(fw::CtxFitsHardeningMint<eff::ColdInitCtx>);
 static_assert(!fw::CtxFitsHardeningMint<eff::BgDrainCtx>);
@@ -136,38 +83,19 @@ static_assert(!fw::CtxFitsHotRegionRegistryMint<eff::HotFgCtx>);
 static_assert(fw::CtxFitsQuarantineMint<eff::ColdInitCtx>);
 static_assert(!fw::CtxFitsQuarantineMint<eff::BgDrainCtx>);
 
-// QuarantineRecord / QuarantineOverride sub-concepts (substrate-level
-// variants for record-only and override-only contexts) — re-export
-// identity also surfaced through fixy:: per Warden.h commentary.
 static_assert(fw::CtxFitsQuarantineRecord<eff::BgDrainCtx>);
 static_assert(fw::CtxFitsQuarantineOverride<eff::ColdInitCtx>);
 static_assert(fw::CtxFitsQuarantineOverride<eff::TestRunnerCtx>);
 
-// ─── 7. Cardinality witness — FLOOR ───────────────────────────────
-//
-// Per FIXY-U-127 floor-vs-ceiling split (feedback_catalog_cardinality_
-// test_drift family): the EXACT ceiling pin (`== 4`) lives in
-// fixy/Warden.h colocated with the source-of-truth constant, so a
-// contributor incrementing the constant cannot miss the sibling
-// assertion at edit time.  THIS TU only holds the FLOOR pin (`>= 4`)
-// which catches the inverse direction — an accidental REMOVAL of a
-// warden mint that escaped review.  Growth past 4 is silent here and
-// auto-tracked by the header's `==` ceiling.
+// A floor, not an exact count.  The exact pin sits next to the constant it
+// counts, where a contributor raising it cannot miss the sibling assertion.
+// Here only the other direction matters: a mint removed without review.
 
 static_assert(::crucible::fixy::warden::self_test::warden_mint_cardinality >= 4,
-    "floor: fixy::warden:: mint cardinality regressed below 4 — a "
-    "warden mint was removed without updating both fixy/Warden.h's "
-    "colocated ceiling pin AND this floor witness.");
+              "floor: warden mint cardinality regressed below 4, so a warden mint "
+              "was removed without updating the colocated exact pin");
 
 int main() {
-    // The substrate's own warden_neg fixtures exercise the negative
-    // requires-clause path; this TU asserts reachability + alias
-    // identity + concept resolution.  No runtime call needed.
-    //
-    // Touch the runtime smoke block so the header's no-throw
-    // smoke-test runs under the project's preset semantics (the
-    // smoke block itself is a no-op except for instantiating the
-    // concept aliases at runtime context).
     ::crucible::fixy::warden::runtime_smoke_test();
     return 0;
 }

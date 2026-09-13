@@ -1,10 +1,8 @@
 #include <crucible/cog/SrIov.h>
 
-// FIXY-U-087: free-function forwarders dispatch to SrIovManager methods, which
-// are themselves [[deprecated("CRUCIBLE_STUB:...")]].  Suppress the warning at
-// the authorized forwarder sites — substrate-internal composition is allowed
-// to call substrate stubs by construction, while EXTERNAL callers (vessel /
-// keeper / production code) still observe the warning at their call sites.
+// The SrIovManager methods these free-function forwarders dispatch to are
+// declared deprecated.  The suppression is scoped to this file so that callers
+// outside it still observe the warning at their own call sites.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 

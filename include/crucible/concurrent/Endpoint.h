@@ -1,114 +1,11 @@
 #pragma once
 
-// ── crucible::concurrent::Endpoint<Substr, Dir, Ctx> ────────────────
+// Binding a channel handle to an execution context checks the fit between the
+// two once, at construction.  Every send and receive afterwards runs with no
+// further check.
 //
-// The big ctx-aware endpoint type — Tier 2 keystone of the integration
-// stack.  Bundles a Permissioned* substrate's typed handle with an
-// ExecCtx, validates SubstrateFitsCtxResidency at construction, and
-// exposes FOUR composition views:
-//
-//   1. Raw view        — direct try_send / try_recv on the underlying
-//                        handle (full-speed hot-path equivalent).
-//   2. Session view    — `.into_session()` returns a typed PSH per
-//                        `default_proto_for<Substr, Dir>`.
-//   3. Recording view  — `.into_recording_session(log, self, peer)`
-//                        wraps the session view with audit-trail
-//                        recording (bridges/RecordingSessionHandle.h).
-//   4. Crash-watched   — `.into_crash_watched(flag)` wraps with
-//                        OneShotFlag-based crash transport (bridges/
-//                        CrashTransport.h).
-//
-// All `into_*` methods are `&&`-qualified — they CONSUME the Endpoint
-// and transfer ownership of the typed view to the returned wrapper.
-// Endpoint itself is move-only (the underlying handle holds a linear
-// Permission token; copy would duplicate it).
-//
-// ── Why this is the keystone ────────────────────────────────────────
-//
-// Production callers used to write ~50 LoC per session site:
-//   * mint Permission tokens for the channel
-//   * split into producer/consumer halves
-//   * call channel.producer(perm) / channel.consumer(perm)
-//   * spell the protocol shape manually
-//   * thread the handle through the session factory
-//
-// With Endpoint, the same site collapses to:
-//
-//   auto ep = mint_endpoint<Channel, Direction::Producer>(ctx, handle);
-//   ep.try_send(value);                    // raw view
-//   auto sess = std::move(ep).into_session();  // protocol view
-//
-// The construction boundary checks ctx fit ONCE; subsequent send/recv
-// runs at full speed with no per-op check.  Every cross-tier
-// composition follows the Universal Mint Pattern (CLAUDE.md §XXI).
-//
-// ── Composition with Tier 1 ─────────────────────────────────────────
-//
-// Endpoint reads ALL Tier 1 facilities through Ctx:
-//   * SubstrateFitsCtxResidency<Substr, Ctx>  — construction gate on
-//                                                per_call_working_set_v
-//                                                (HOT-PATH access pattern,
-//                                                NOT total channel storage —
-//                                                see SubstrateCtxFit.h #861).
-//                                                Large-N SpscRing on
-//                                                HotFgCtx is VALID because
-//                                                producer/consumer touch
-//                                                ~3 cache lines per call
-//                                                regardless of capacity.
-//   * IsHotCtx / IsBgCtx / IsArenaCtx / ...   — ctx_residency_tier_v
-//                                                + per-axis discrimination
-//                                                exposed as static facts
-//   * SubstrateBenefitsFromParallelism<Substr> — cliff signal: TOTAL
-//                                                storage > L2/core ⇒ this
-//                                                workload could benefit
-//                                                from sharding (informational;
-//                                                NOT a hard rejection).
-//   * recommend_topology_for_workload          — when Ctx carries
-//                                                ctx_workload::ChannelBudget,
-//                                                mint_endpoint checks the
-//                                                selected Substrate topology
-//                                                against the declared
-//                                                producer/consumer/workload
-//                                                shape.  This is the
-//                                                production consumer for the
-//                                                cliff-aware recommender.
-//   * cap_type_of_t<Ctx>                       — recoverable for downstream
-//                                                Capability minting
-//   * row_type_of_t<Ctx>                       — recoverable for downstream
-//                                                row-typed payload checks
-//
-// Future Tier 3 Stage<auto FnPtr, Ctx> consumes Endpoint via the FOUND
-// -D19 PipelineStage shape (function takes ConsumerHandle&&,
-// ProducerHandle&&).  The Endpoint's `.into_session()` produces a PSH
-// whose payload type matches the stage's input/output.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe — every (Substr, Dir, Ctx) triple is verified at the
-//              mint factory's requires-clause.  Mismatches surface as
-//              concept-violation diagnostics.
-//   InitSafe — pure type-level construction; no allocation.
-//   MemSafe  — Endpoint stores the handle BY POINTER (handle has a
-//              reference member to its Pinned channel; the channel
-//              outlives the Endpoint by construction).
-//   BorrowSafe — Endpoint is move-only; copy is deleted with reason.
-//                The underlying handle's Permission token enforces
-//                single-{producer,consumer,...} linearity.
-//   ThreadSafe — Endpoint defers all atomic ordering to the underlying
-//                channel.  Endpoint itself holds no atomics.
-//   LeakSafe — RAII destructor; no resources to free.  The underlying
-//              handle is owned by the caller's enclosing scope.
-//   DetSafe  — same (ctx, handle) → same Endpoint type and layout.
-//
-// Runtime cost: sizeof(Endpoint) == sizeof(handle_type*) (8 bytes on
-// 64-bit), plus Ctx (1 byte EBO-collapsed via [[no_unique_address]]).
-// All `try_send` / `try_recv` calls inline through to the underlying
-// handle's method — byte-identical to bare-handle code under -O3.
-//
-// ── Status ──────────────────────────────────────────────────────────
-//
-// v1 covers SPSC / MPSC / MPMC (try_push / try_pop), Snapshot
-// (publish / load), and ChaseLevDeque (owner push/pop, thief steal).
+// The channel outlives the endpoint by construction: the endpoint holds a
+// borrowed handle and owns nothing that has to be released.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
@@ -154,15 +51,11 @@ struct workload_shape<::crucible::effects::ctx_workload::ChannelBudget<Bytes, Pr
     static constexpr bool latest_only = LatestOnly;
 };
 
-// fixy-A3-026 — producer-only signalling-channel shape.
-//
-// has_channel_shape stays FALSE because endpoint_recommendation uses
-// it to decide whether to read producers/consumers from the workload
-// hint vs from default_topology_shape<Substr>.  Producer-only shapes
-// have no consumer count to dispatch against, so the recommender must
-// fall back to the substrate's intrinsic topology for the consumer
-// side.  The producer count IS exposed (informational) for scheduler-
-// side decisions (WorkStealing / Fifo / Lifo).
+// has_channel_shape stays false despite the name of the hint.  The
+// recommendation below reads it to decide whether both cardinalities come from
+// the hint, and a producer-only shape has no consumer count to offer, so the
+// consumer side has to fall back to the substrate's own topology.  The
+// producer count is still exposed for scheduling decisions.
 template <std::size_t Bytes, std::size_t Producers, bool LatestOnly>
 struct workload_shape<::crucible::effects::ctx_workload::ProducerOnlyChannel<Bytes, Producers, LatestOnly>> {
     static constexpr bool has_channel_shape = false;
@@ -173,12 +66,8 @@ struct workload_shape<::crucible::effects::ctx_workload::ProducerOnlyChannel<Byt
     static constexpr bool latest_only = LatestOnly;
 };
 
-// fixy-A3-026 — consumer-only signalling-channel shape.
-//
-// Symmetric to ProducerOnlyChannel above: has_channel_shape = false
-// so endpoint_recommendation falls back to substrate_topology_v for
-// the producer side, while consumers IS exposed (informational) for
-// fan-in scheduler decisions.
+// Mirror of the producer-only shape above, with the producer side falling
+// back to the substrate's own topology.
 template <std::size_t Bytes, std::size_t Consumers>
 struct workload_shape<::crucible::effects::ctx_workload::ConsumerOnlyChannel<Bytes, Consumers>> {
     static constexpr bool has_channel_shape = false;
@@ -251,23 +140,13 @@ template <class Substr, class Ctx>
 concept SubstrateMatchesEndpointRecommendation = IsSubstrate<Substr> && ::crucible::effects::IsExecCtx<Ctx>
                                               && endpoint_detail::endpoint_recommendation<Substr, Ctx>::admissible;
 
-// ── FIXY-V-014: composite §XXI single-concept gate ─────────────────
-//
-// Per CLAUDE.md §XXI Universal Mint Pattern: "The `requires` clause
-// MUST be a single concept".  `CtxFitsEndpointMint<Substr, Dir, Ctx>`
-// ANDs the three load-bearing sub-concepts (direction bridgeability,
-// substrate residency fit, channel-topology recommendation match)
-// into a single named gate.  All three Endpoint-related declaration
-// sites — the class template, the friend declaration on the private
-// ctor, and the free-function `mint_endpoint` factory — share this
-// concept verbatim, so a future tightening (or relaxation) is a
-// one-line edit and the inventory scanner consistently picks up the
-// rq flag regardless of which decl site wins the dedup tiebreak.
+// The class template, the friend declaration on the private constructor and
+// the mint factory all spell this one gate.  Splitting it into separate
+// conjunctions at each site would stop the friend declaration from matching
+// the factory the moment the three drift apart.
 template <class Substr, Direction Dir, class Ctx>
 concept CtxFitsEndpointMint = IsBridgeableDirection<Substr, Dir> && SubstrateFitsCtxResidency<Substr, Ctx>
                            && SubstrateMatchesEndpointRecommendation<Substr, Ctx>;
-
-// ── Endpoint<Substr, Dir, Ctx> — the typed ctx-aware view ──────────
 
 template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsEndpointMint<Substr, Dir, Ctx>
@@ -281,37 +160,19 @@ public:
     using user_tag = substrate_user_tag_t<Substr>;
     using proto_type = default_proto_for_t<Substr, Dir>;
 
-    // ── Compile-time facts derived from Ctx ────────────────────────
-    //
-    // These let downstream stages branch on the ctx without re-querying
-    // the discrimination concepts every time.  All static; cost-free.
-
     static constexpr bool ctx_is_hot = ::crucible::effects::IsHotCtx<Ctx>;
     static constexpr bool ctx_is_warm = ::crucible::effects::IsWarmCtx<Ctx>;
     static constexpr bool ctx_is_cold = ::crucible::effects::IsColdCtx<Ctx>;
     static constexpr bool ctx_is_arena = ::crucible::effects::IsArenaCtx<Ctx>;
-    static constexpr bool ctx_is_numa_local = IsNumaLocalCtx<Ctx>;  // concurrent/ExecCtxBridge.h
-    static constexpr Tier residency_tier_v = ctx_residency_tier<Ctx>();  // concurrent/ExecCtxBridge.h
+    static constexpr bool ctx_is_numa_local = IsNumaLocalCtx<Ctx>;
+    static constexpr Tier residency_tier_v = ctx_residency_tier<Ctx>();
 
-    // Substrate-side compile-time facts the downstream stage can branch
-    // on without re-querying Substrate.h's metafunctions.
-    //
-    // benefits_from_parallelism: total channel storage exceeds the
-    //   conservative L2/core bound (256 KB).  Per ParallelismRule
-    //   (concurrent/ParallelismRule.h), workloads above the cliff
-    //   benefit from sharding / parallelization.  Stage<>/Pipeline
-    //   downstream may use this to recommend a Sharded* alternative
-    //   or to wire NumaSpread placement.  NOT a hard rejection — 1×1
-    //   substrates above the cliff (TraceRing-style) remain valid.
-    //
-    // per_call_working_set: bytes the producer/consumer's hot path
-    //   actually touches per try_send / try_recv / publish / load
-    //   call.  Independent of total capacity.  Useful for Stage<>
-    //   tile-shape decisions that assume per-call WS dictates the
-    //   prefetch budget.
-    //
-    // total_channel_bytes: total static storage of the channel.
-    //   Diagnostic / placement decisions (NUMA, hugepage hint).
+    // benefits_from_parallelism reports that total storage crosses the cache
+    // cliff, so sharding the channel could pay.  It is advice for whoever
+    // places the data, not a rejection: one producer and one consumer moving
+    // that much through a single ring stays valid, because the hot path only
+    // has to keep per_call_working_set resident and that does not grow with
+    // capacity.
     static constexpr bool benefits_from_parallelism = SubstrateBenefitsFromParallelism<Substr>;
     static constexpr std::size_t per_call_working_set = per_call_working_set_v<Substr>;
     static constexpr std::size_t total_channel_bytes = channel_byte_footprint_v<Substr>;
@@ -331,21 +192,13 @@ public:
         endpoint_detail::endpoint_recommendation<Substr, Ctx>::overprovisioned;
 
 private:
-    // POINTER, not reference: the underlying handle has a reference
-    // member to its channel (per PermissionedSpscChannel.h:198) so it
-    // can't be move-assigned.  Endpoint stores Handle* so it CAN be
-    // move-constructed without breaking the underlying handle's
-    // single-handle-per-channel invariant.
+    // A pointer, not a reference: the handle itself holds a reference to its
+    // channel and so cannot be move-assigned.  Holding it indirectly lets the
+    // endpoint move without disturbing the one-handle-per-channel invariant.
     handle_type* handle_;
 
-    // Ctx is a phantom carrier — empty class, EBO-collapsed.
     [[no_unique_address]] Ctx ctx_;
 
-    // Factory-only construction.  The friend declaration matches
-    // exactly the mint_endpoint signature so SFINAE rejects any
-    // back-door instantiation.  FIXY-V-014: single-concept gate
-    // (CtxFitsEndpointMint) + [[nodiscard]] mirror the free-function
-    // definition byte-for-byte (per §XXI requires-clause discipline).
     template <class S, Direction D, ::crucible::effects::IsExecCtx C>
         requires CtxFitsEndpointMint<S, D, C>
     friend constexpr auto mint_endpoint(C const&, handle_for_t<S, D>&) noexcept;
@@ -353,23 +206,11 @@ private:
     constexpr explicit Endpoint(handle_type& h) noexcept : handle_{&h}, ctx_{} {}
 
 public:
-    // ── Linearity discipline ───────────────────────────────────────
-    //
-    // Copy: deleted (the underlying handle owns a linear Permission
-    // token; duplicating Endpoint would duplicate the typed view).
-    //
-    // Move: ownership-transferring.  The default move-ctor would
-    // POINTER-COPY handle_ to the destination, leaving the source
-    // Endpoint with a still-valid handle_ pointer — a use-after-move
-    // hazard (calling try_send on the moved-from Endpoint would
-    // succeed by hitting the same handle).  Custom move nulls the
-    // source's handle_ to make any post-move use a clean nullptr
-    // deref instead of a silent typed-view-aliasing.
-    //
-    // The Permission discipline at the underlying handle layer
-    // would still catch a runtime double-use, but the silent type-
-    // level aliasing breaks the "Endpoint is the unique typed view"
-    // invariant that Stage / Pipeline downstream rely on.
+    // The move is written out because the default one would copy the pointer
+    // and leave the source usable.  Sending on a moved-from endpoint would
+    // then quietly succeed against the same handle, giving two typed views of
+    // one channel.  Nulling the source turns that into a null dereference
+    // instead.
 
     Endpoint(Endpoint const&) = delete("Endpoint owns the typed view of a linear handle — copy would "
                                        "duplicate the producer/consumer Permission's typed projection.  "
@@ -387,17 +228,6 @@ public:
     }
     ~Endpoint() = default;
 
-    // ─────────────────────────────────────────────────────────────────
-    // ── View 1 — Raw: forward to the underlying handle ──────────────
-    // ─────────────────────────────────────────────────────────────────
-    //
-    // Identical to calling the bare handle's try_push / try_pop.
-    // Single per-call cost: one indirect through handle_, then the
-    // underlying SpscRing (or equivalent) operation — typically one
-    // acquire-load + one release-store on isolated cache lines.
-
-    // Producer-side direction (push-typed substrates: SPSC/MPSC/MPMC)
-    // plus ChaseLevDeque owner push_bottom.
     template <class T = value_type>
         requires(Dir == Direction::Producer || Dir == Direction::Owner)
              && std::same_as<std::remove_cvref_t<T>, value_type>
@@ -405,15 +235,12 @@ public:
         return handle_->try_push(v);
     }
 
-    // Snapshot-writer-side direction (publishes a single latest value)
     template <class T = value_type>
         requires(Dir == Direction::SwmrWriter) && std::same_as<std::remove_cvref_t<T>, value_type>
     [[gnu::hot]] void publish(T const& v) noexcept {
         handle_->publish(v);
     }
 
-    // Consumer-side direction (pop-typed substrates), ChaseLevDeque
-    // owner pop_bottom, and ChaseLevDeque thief steal_top.
     template <Direction D = Dir>
         requires(D == Direction::Consumer || D == Direction::Owner || D == Direction::Thief)
     [[nodiscard, gnu::hot]] std::optional<value_type> try_recv() noexcept {
@@ -424,14 +251,12 @@ public:
         }
     }
 
-    // Snapshot-reader-side direction (loads the latest published value)
     template <Direction D = Dir>
         requires(D == Direction::SwmrReader)
     [[nodiscard, gnu::hot]] value_type load() noexcept {
         return handle_->load();
     }
 
-    // Diagnostic / queue-state queries — forwarded uniformly.
     [[nodiscard]] bool empty_approx() const noexcept
         requires requires(handle_type const& h) { h.empty_approx(); }
     {
@@ -443,87 +268,32 @@ public:
         return handle_->size_approx();
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // ── View 2 — Session: PSH typed over default_proto_for<S, D> ────
-    // ─────────────────────────────────────────────────────────────────
-    //
-    // CONSUMES the Endpoint.  Returns a PermissionedSessionHandle
-    // typed over default_proto_for_t<Substr, Dir>, with EmptyPermSet
-    // (the substrate's Permission discipline at the handle layer
-    // already enforces single-producer-or-multi-producer semantics).
+    // The session carries an empty permission set.  The handle's own
+    // permission already fixes how many producers or consumers there may be,
+    // so the protocol has nothing further to transfer per step.
 
     [[nodiscard]] constexpr auto into_session() && noexcept {
         return mint_substrate_session<Substr, Dir>(ctx_, *handle_);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // ── View 2b — Bare session: SessionHandle (no PermSet wrapper) ──
-    // ─────────────────────────────────────────────────────────────────
-    //
-    // Returns a bare `SessionHandle<Proto, Handle*>` (NOT a PSH).
-    // Useful as input to bridge wrappers (RecordingSessionHandle,
-    // CrashWatchedHandle) which take SessionHandle directly — see
-    // bridges/EndpointMint.h for the bridge mint helpers.
-    //
-    // The underlying handle's Permission discipline still enforces
-    // single-{producer,consumer,...} linearity at the channel layer;
-    // dropping the EmptyPermSet wrapper is safe because EmptyPermSet
-    // carries no per-step PermSet evolution.
+    // Dropping the empty permission set to hand out a bare session handle is
+    // safe for the same reason: an empty set evolves at no step of the
+    // protocol.
 
     [[nodiscard]] constexpr auto into_bare_session() && noexcept {
         return ::crucible::safety::proto::mint_session_handle<proto_type>(handle_);
     }
 
-    // ── Accessor: peek at the underlying handle without consuming ──
-    //
-    // Used by Tier 3 Stage instantiation to introspect the handle's
-    // metadata without taking ownership.  Returns a const reference;
-    // does NOT invalidate the Endpoint.
     [[nodiscard]] constexpr handle_type& handle() & noexcept { return *handle_; }
     [[nodiscard]] constexpr handle_type const& handle() const& noexcept { return *handle_; }
 
-    // ─────────────────────────────────────────────────────────────────
-    // ── View 3 — Tier 3 bridge: consume into the underlying handle ─
-    // ─────────────────────────────────────────────────────────────────
-    //
-    // CONSUMES the Endpoint and returns the underlying handle BY MOVE.
-    // After this call:
-    //   * the Endpoint is in a moved-from state (handle_ == nullptr,
-    //     same as after std::move);
-    //   * the externally-owned handle (the lvalue the user passed to
-    //     mint_endpoint) is in a moved-from state — its embedded
-    //     Permission token has been transferred to the returned
-    //     handle, but its reference-to-channel remains bound (so
-    //     calling try_push/try_pop on the moved-from original would
-    //     still hit the channel's ring; the user must NOT do that).
-    //
-    // This is the canonical Tier 2 → Tier 3 bridge: Endpoint validates
-    // SubstrateFitsCtxResidency at mint time, then into_handle()
-    // releases the validated handle into Stage's mint_stage<FnPtr>(...)
-    // (or directly into mint_stage_from_endpoints, which calls this
-    // internally on both sides of the stage).
-    //
-    // Why both Endpoint AND the original handle are left moved-from:
-    //   ConsumerHandle / ProducerHandle hold a REFERENCE to the
-    //   channel — references can't be rebound.  Moving the handle
-    //   move-constructs a new handle with the same channel reference
-    //   and the moved-from Permission.  The ORIGINAL handle (in
-    //   user's scope) becomes moved-from but its reference stays
-    //   bound to the (still-alive) channel.  The discipline:
-    //   "after std::move(ep).into_handle(), the original lvalue
-    //   handle the user passed to mint_endpoint is moved-from; do
-    //   not touch it."  Consistent with standard moved-from
-    //   semantics.
-    //
-    // Axiom coverage:
-    //   MemSafe — handle_ nulled-out post-move; the moved handle
-    //             owns the linear Permission going forward.
-    //   BorrowSafe — the linear Permission is in exactly one place
-    //             (the returned handle); typed-view aliasing
-    //             impossible because Endpoint no longer holds a
-    //             non-null pointer.
-    //   LeakSafe — the returned handle's destructor releases the
-    //             Permission cleanly when it goes out of scope.
+    // This leaves two objects moved-from, not one.  The caller's own handle,
+    // the lvalue this endpoint was minted over, gives up its permission to the
+    // returned handle, but its reference to the channel cannot be unbound, so
+    // sending on it afterwards would still reach the ring.  The caller must
+    // treat that lvalue as dead from here on.  The returned handle is the only
+    // one holding the permission, and it releases it when it goes out of
+    // scope.
 
     [[nodiscard]] constexpr handle_type into_handle() && noexcept {
         handle_type extracted = std::move(*handle_);
@@ -531,26 +301,8 @@ public:
         return extracted;
     }
 
-    // ── Accessor: the Ctx as a value (zero cost) ───────────────────
     [[nodiscard]] constexpr Ctx ctx() const noexcept { return ctx_; }
 };
-
-// ── mint_endpoint<Substr, Dir>(ctx, handle) ─────────────────────────
-//
-// The Universal Mint factory for raw endpoints.  Same shape as
-// mint_substrate_session, but returns the concrete Endpoint type
-// instead of a PSH — for callers who want raw try_send / try_recv
-// access AND the optional ability to upgrade to a session view later
-// via .into_session().
-//
-// FIXY-V-014: a single composite concept `CtxFitsEndpointMint`
-// enforces the §XXI Universal Mint requires-clause discipline.  The
-// gate decomposes into three load-bearing sub-concepts (defined
-// alongside the composite above):
-//   * IsBridgeableDirection<Substr, Dir>     — supported (S, D) pair
-//   * SubstrateFitsCtxResidency<Substr, Ctx> — substrate footprint fits
-//   * SubstrateMatchesEndpointRecommendation — selected topology matches
-//                                             Ctx's ChannelBudget shape
 
 template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsEndpointMint<Substr, Dir, Ctx>
@@ -558,7 +310,6 @@ template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     return Endpoint<Substr, Dir, Ctx>{handle};
 }
 
-// ── Self-test block ─────────────────────────────────────────────────
 namespace detail::endpoint_self_test {
 
 namespace eff = ::crucible::effects;
@@ -581,7 +332,6 @@ using SmallOneToOneOverprovisionedCtx =
     eff::ExecCtx<eff::ctx_cap::Fg, eff::ctx_numa::Local, eff::ctx_alloc::Stack, eff::ctx_heat::Hot, eff::ctx_resid::L1,
                  eff::Row<>, eff::ctx_workload::ChannelBudget<16 * 1024, 1, 1, false>>;
 
-// ── Type-level invariants ──────────────────────────────────────────
 static_assert(std::is_same_v<typename ProdEp::handle_type, typename SmallSpsc::ProducerHandle>);
 static_assert(std::is_same_v<typename ProdEp::value_type, int>);
 static_assert(std::is_same_v<typename ProdEp::ctx_type, eff::HotFgCtx>);
@@ -592,7 +342,6 @@ static_assert(std::is_same_v<typename OwnerEp::proto_type, proto::chaselev_sessi
 static_assert(
     std::is_same_v<typename ThiefEp::proto_type, proto::chaselev_session::ThiefProto<int, SmallDeque::thief_tag>>);
 
-// Ctx-derived static facts
 static_assert(ProdEp::ctx_is_hot);
 static_assert(!ProdEp::ctx_is_warm);
 static_assert(!ProdEp::ctx_is_cold);
@@ -604,15 +353,12 @@ static_assert(!ConsEp::ctx_is_hot);
 static_assert(ConsEp::ctx_is_arena);
 static_assert(ConsEp::residency_tier_v == Tier::L2Resident);
 
-// Substrate-side static facts.  SmallSpsc<int, 64> = 256 B total →
-// well below the cliff; per-call WS = 192 B (3 cache lines).
-static_assert(!ProdEp::benefits_from_parallelism);  // 256 B < L2/core
-static_assert(ProdEp::per_call_working_set == 192);  // 2 head/tail + 1 cell line
+static_assert(!ProdEp::benefits_from_parallelism);
+static_assert(ProdEp::per_call_working_set == 192);  // head line, tail line, cell line
 static_assert(ProdEp::total_channel_bytes == sizeof(int) * 64);
 static_assert(ProdEp::recommended_topology == ChannelTopology::OneToOne);
 static_assert(ProdEp::topology_matches_recommendation);
 
-// ── Workload/cardinality recommendation gate ──────────────────────
 using SmallBudgetSpscEp = Endpoint<SmallSpsc, Direction::Producer, SmallOneToOneCtx>;
 static_assert(SmallBudgetSpscEp::recommended_topology == ChannelTopology::OneToOne);
 static_assert(SmallBudgetSpscEp::topology_matches_recommendation);
@@ -627,14 +373,8 @@ static_assert(OverprovisionedMpmcEp::recommended_topology == ChannelTopology::On
 static_assert(!OverprovisionedMpmcEp::topology_matches_recommendation);
 static_assert(OverprovisionedMpmcEp::topology_overprovisioned);
 
-// ── Cliff-crossing pin: large-N SPSC on HotFgCtx is now VALID ──────
-//
-// Before #861, this pairing was rejected (TOTAL storage check).
-// After #861, the gate uses per-call WS so large-N SPSCs compose
-// honestly with HotFgCtx.  benefits_from_parallelism flags the
-// developer that sharding could win, but it's an INFORMATIONAL
-// signal, not a hard rejection.
-
+// A ring far above the cliff still pairs with a hot context: the gate reads
+// the per-call footprint, not total storage.
 using HugeSpsc = PermissionedSpscChannel<int, 1024 * 1024, UserTag>;
 using HugeProdEp = Endpoint<HugeSpsc, Direction::Producer, eff::HotFgCtx>;
 static_assert(HugeProdEp::ctx_is_hot);
@@ -642,28 +382,18 @@ static_assert(HugeProdEp::residency_tier_v == Tier::L1Resident);
 static_assert(HugeProdEp::per_call_working_set == 192);
 static_assert(HugeProdEp::total_channel_bytes == 4 * 1024 * 1024);
 static_assert(HugeProdEp::benefits_from_parallelism);
-// The mint factory accepts (HugeSpsc, HotFgCtx) — exactly the
-// regression #861 fixes.  TraceRing-style large rings now compose
-// honestly with the ctx that documents their hot-path access.
 
-// ── Linearity ──────────────────────────────────────────────────────
 static_assert(!std::is_copy_constructible_v<ProdEp>);
 static_assert(!std::is_copy_assignable_v<ProdEp>);
 static_assert(std::is_move_constructible_v<ProdEp>);
 static_assert(std::is_move_assignable_v<ProdEp>);
 
-// ── Layout: pointer + EBO-collapsed Ctx ────────────────────────────
-//
-// Endpoint stores Handle* (8 bytes on 64-bit) + Ctx (empty class,
-// EBO-collapsed via [[no_unique_address]]).  Total sizeof should
-// equal sizeof(void*).
 static_assert(sizeof(ProdEp) == sizeof(void*), "Endpoint must collapse to pointer-size — Ctx EBO-collapse is "
                                                "load-bearing for the zero-runtime-cost claim.");
 static_assert(sizeof(ConsEp) == sizeof(void*));
 static_assert(sizeof(OwnerEp) == sizeof(void*));
 static_assert(sizeof(ThiefEp) == sizeof(void*));
 
-// ── Snapshot endpoint ──────────────────────────────────────────────
 struct SnapTag {};
 using SmallSnap = PermissionedSnapshot<int, SnapTag>;
 using SnapWriter = Endpoint<SmallSnap, Direction::SwmrWriter, eff::HotFgCtx>;
@@ -673,7 +403,6 @@ static_assert(std::is_same_v<typename SnapWriter::handle_type, typename SmallSna
 static_assert(std::is_same_v<typename SnapReader::handle_type, typename SmallSnap::ReaderHandle>);
 static_assert(SnapWriter::ctx_is_hot);
 
-// ── Move semantics — noexcept (Permission discipline is type-level) ─
 static_assert(std::is_nothrow_move_constructible_v<ProdEp>);
 static_assert(std::is_nothrow_move_assignable_v<ProdEp>);
 

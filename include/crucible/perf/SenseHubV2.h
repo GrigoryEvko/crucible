@@ -1,64 +1,8 @@
 #pragma once
 
-// crucible::perf::SenseHubV2 — userspace facade for SenseHub v2.
-//
-// STATUS: PROMOTED — production surface alongside v1 SenseHub.h.
-//         Built when CRUCIBLE_SENSE_HUB_V2=ON (default OFF).  v1
-//         SenseHub remains the active production loader; v2 ships
-//         the architectural surface (counters/gauges segregation,
-//         meta-versioned wire contract, /proc gauge poller) but
-//         the load() implementation is a stub until the v1 handler
-//         bodies + SenseHubV2.cpp impl land in subsequent PRs.
-//
-// ─── DESIGN GOALS ─────────────────────────────────────────────────────
-//
-//  Mirrors `bpf/sense_hub_v2.bpf.c`.  Two ship modes selected
-//  at build time by CMake option `CRUCIBLE_SENSE_HUB_EXTENDED`:
-//
-//    • DEFAULT (no flag)               — 128 counters + 32 gauges,
-//      always-on, target overhead ≤ 0.5 % CPU.
-//    • CRUCIBLE_SENSE_HUB_EXTENDED=1   — 256 counters + 64 gauges,
-//      opt-in "debug hub", target 1-2 % CPU.
-//
-//  Two value-shape surfaces, NOT one mixed array:
-//    • CounterSnapshot — monotone subtractable; supports operator-
-//    • GaugeSnapshot   — point-in-time + running max + userspace-sampled
-//                        ratios; NEVER subtracted
-//
-//  Wire-contract gate: load() reads the BPF `meta` map first.
-//  SENSE_HUB_LAYOUT_HASH must match exactly.  Mismatch → nullopt with
-//  diagnostic.  Default and extended builds publish DIFFERENT hashes
-//  (BUILD_TAG = 0xBA51 vs 0xDEB6), so neither can silently masquerade
-//  as the other.
-//
-//  Userspace gauges: 7 of the 22 gauge slots in basic (or 22 of 56 in
-//  extended) are NOT written by BPF — they are populated at snapshot
-//  time by `crucible::perf::ProcGauges` reading /proc and /sys.  See
-//  `proc_gauges.h` (sibling draft).
-//
-// ─── USAGE EXAMPLE ────────────────────────────────────────────────────
-//
-//   auto hub = crucible::perf::SenseHubV2::load(crucible::effects::testing::init());
-//   if (!hub) return;
-//
-//   auto a = hub->read_counters();
-//   /* ... do work ... */
-//   auto b = hub->read_counters();
-//   auto delta = b - a;  // CounterDelta — only operator- on counters
-//
-//   auto g = hub->read_gauges();   // point-in-time snapshot, no diff
-//   printf("FD now: %llu\n", g[Gauge::FD_CURRENT]);
-//   printf("TLB shoots: %llu\n", delta[Idx::TLB_SHOOTDOWNS]);
-//
-// ─── HS14 NEG-COMPILE FIXTURES (mandatory before promoting) ──────────
-//   • neg_perf_sense_hub_v2_load_no_cap.cpp     — load() without arg
-//   • neg_perf_sense_hub_v2_load_wrong_cap.cpp  — load(Bg{}) instead of Init{}
-//   • neg_perf_sense_hub_v2_subtract_gauges.cpp — operator- on GaugeSnapshot
-//                                                  must be a compile error
-
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -71,12 +15,10 @@
 
 namespace crucible::perf {
 
-// ─── Build-mode mirror ────────────────────────────────────────────────
-//
-// MUST match the constants in bpf/_drafts/sense_hub_v2.bpf.c.  CMake
-// passes `-DCRUCIBLE_SENSE_HUB_EXTENDED=1` to BOTH the BPF compile and
-// this userspace TU; the meta map's LAYOUT_HASH gates a runtime
-// mismatch as defense-in-depth.
+// The kernel-side program carries the same four constants, and the
+// build system defines CRUCIBLE_SENSE_HUB_EXTENDED for both sides at
+// once.  The layout hash below catches a pair that drifts apart
+// anyway.
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
 inline constexpr std::size_t NUM_COUNTERS = 256;
@@ -93,17 +35,15 @@ inline constexpr std::string_view BUILD_NAME = "basic";
 inline constexpr uint32_t SENSE_HUB_VERSION = 2;
 inline constexpr uint32_t SENSE_HUB_MAGIC = 0x4352424CU;  // 'CRBL'
 
-// LAYOUT_HASH — must equal the BPF-side computation.  Used for the
-// load-time wire-contract check.
+// The kernel-side program computes the same value.  A basic build and
+// an extended build produce different hashes, so neither can pass for
+// the other.
 inline constexpr uint64_t SENSE_HUB_LAYOUT_HASH = (uint64_t{NUM_COUNTERS} << 48) | (uint64_t{NUM_GAUGES} << 32)
                                                 | (uint64_t{SENSE_HUB_VERSION} << 16) | uint64_t{BUILD_TAG};
 
-// ─── enum class Idx — counter slot indices ────────────────────────────
-//
-// Mirrors `enum sense_idx` in sense_hub_v2.bpf.c EXACTLY.  Maintaining
-// this mirror by hand is the cost of the safety boundary; a future
-// refactor could code-gen one from the other (P3 — the static asserts
-// below catch any drift at compile time).
+// These indices mirror the slot numbering of the kernel-side program
+// exactly, and the mirror is maintained by hand.  A slot renumbered on
+// one side alone reads the wrong counter on the other.
 
 enum class Idx : uint32_t {
     // Domain 0 — Network (slots 0-31)
@@ -138,10 +78,10 @@ enum class Idx : uint32_t {
     READAHEAD_PAGES = 43,
     WRITE_THROTTLE_JIFFIES = 44,
     IO_UNPLUG_COUNT = 45,
-    IOCOST_IDLE_COUNT = 46,  // cgroup iocg went idle (proxy
-    // for "throttled hard"; kernel
-    // 6.17 has no direct throttle TP)
-    IOCOST_ACTIVATE_COUNT = 47,  // paired counterpart
+    // The kernel exposes no tracepoint for an iocost throttle itself,
+    // so a cgroup iocg going idle stands in for one.
+    IOCOST_IDLE_COUNT = 46,
+    IOCOST_ACTIVATE_COUNT = 47,
     WBT_DELAY_COUNT = 48,
     WBT_DELAY_NS = 49,
     FILELOCK_WAITS = 50,
@@ -164,9 +104,8 @@ enum class Idx : uint32_t {
     SWAP_OUT_PAGES = 75,
     THP_COLLAPSE_OK = 76,
     THP_COLLAPSE_FAIL = 77,
-    // Slot 78 RESERVED — was THP_SPLIT_COUNT in earlier draft; no
-    // matching tracepoint on kernel 6.17.  Sourced via ProcGauges →
-    // Gauge::THP_SPLIT (read from /proc/vmstat at snapshot time).
+    // Slot 78 stays reserved.  The kernel carries no tracepoint for a
+    // huge-page split, and Gauge::THP_SPLIT carries the signal instead.
     NUMA_MIGRATE_PAGES = 79,
     NUMA_MIG_NUMA_HINT = 80,
     NUMA_MIG_OTHER = 81,
@@ -274,7 +213,8 @@ enum class Idx : uint32_t {
     PAGE_ALLOC_MOVABLE = 194,
     PAGE_ALLOC_RETRY = 195,
     PAGE_ALLOC_OOM = 196,
-    // Slots 197-198 RESERVED — see Gauge::SLAB_TOTAL_BYTES (userspace)
+    // Slots 197-198 stay reserved.  Gauge::SLAB_TOTAL_BYTES carries
+    // the signal instead.
     KMEMLEAK_OBJECTS_TRACKED = 199,
     VMALLOC_BYTES_TOTAL = 200,
     HUGETLB_FAULTS = 201,
@@ -314,8 +254,8 @@ enum class Idx : uint32_t {
     RWSEM_WAIT_NS = 241,
     RTMUTEX_WAIT_COUNT = 242,
     RTMUTEX_WAIT_NS = 243,
-    // Slots 244-245 RESERVED — see Gauge::HARDIRQ_TOTAL_COUNT (userspace).
-    // For per-IRQ-vector drilldown, use planned standalone hardirq.bpf.c facade.
+    // Slots 244-245 stay reserved.  Gauge::HARDIRQ_TOTAL_COUNT carries
+    // the signal instead, as one total rather than per vector.
     PRINTK_LINE_COUNT = 246,
     AVC_DENIALS = 247,
     CAPABILITY_FAILS = 248,
@@ -332,10 +272,8 @@ enum class Idx : uint32_t {
 static_assert(static_cast<uint32_t>(Idx::MAP_FULL_DROPS) < NUM_COUNTERS,
               "Last basic Idx must fit within NUM_COUNTERS — wire contract assertion");
 
-// ─── enum class Gauge — gauge slot indices ────────────────────────────
-
 enum class Gauge : uint32_t {
-    // Mis-classified-from-v1 (0-7)
+    // Levels the kernel-side program sets rather than adds to (0-7)
     FD_CURRENT = 0,
     TCP_MIN_SRTT_US = 1,
     TCP_MAX_SRTT_US = 2,
@@ -349,7 +287,8 @@ enum class Gauge : uint32_t {
     NMI_HANDLER_MAX_NS = 10,
     MMAP_LOCK_MAX_WAIT_NS = 11,
 
-    // Userspace-sampled at snapshot time (16-31) — populated by ProcGauges
+    // Read from /proc and /sys at snapshot time, not written by the
+    // kernel-side program (16-31)
     SLAB_TOTAL_BYTES = 16,
     HARDIRQ_TOTAL_COUNT = 17,
     NAPI_POLL_TOTAL = 18,
@@ -358,13 +297,11 @@ enum class Gauge : uint32_t {
     BLOCK_QUEUE_DEPTH_MAX = 21,
     PRINTK_RING_BYTES_FREE = 22,
 
-    // C2 fix — THP_SPLIT replaces the dropped Idx::THP_SPLIT_COUNT
-    // counter (kernel 6.17 has no `huge_memory/mm_split_huge_page`
-    // tracepoint).  Sourced from /proc/vmstat at snapshot time.
     THP_SPLIT = 23,
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-    // PMU ratios (32-41) — projected from PmuSample at snapshot time
+    // PMU ratios (32-41), projected from the hardware counters at
+    // snapshot time
     PMU_IPC_X1000 = 32,
     PMU_FRONTEND_STALL_PCT_X100 = 33,
     PMU_BACKEND_STALL_PCT_X100 = 34,
@@ -397,27 +334,23 @@ enum class Gauge : uint32_t {
 #endif
 };
 
-// ─── Wire-contract sentinel struct ────────────────────────────────────
-//
-// Mirrors `struct sense_meta` in sense_hub_v2.bpf.c byte-for-byte.
+// The kernel-side program writes this struct, so every offset here is
+// fixed.
 
 struct sense_meta {
-    uint32_t magic;  // offset 0   ('CRBL' = 0x4352424C)
-    uint32_t version;  // offset 4   (SENSE_HUB_VERSION = 2)
-    uint32_t num_counters;  // offset 8   (128 or 256)
-    uint32_t num_gauges;  // offset 12  (32 or 64)
-    uint64_t layout_hash;  // offset 16  (gates ABI mismatch at load())
-    uint32_t build_tag;  // offset 24  (0xBA51 basic / 0xDEB6 extended)
-    uint8_t _pad[36];  // offset 28..63 — tail pad
-    // total = 4+4+4+4+8+4+36 = 64 B = one cache line
+    uint32_t magic;  // offset 0
+    uint32_t version;  // offset 4
+    uint32_t num_counters;  // offset 8
+    uint32_t num_gauges;  // offset 12
+    uint64_t layout_hash;  // offset 16
+    uint32_t build_tag;  // offset 24
+    uint8_t _pad[36];  // offset 28 to 63
 };
 static_assert(sizeof(sense_meta) == 64, "sense_meta must be exactly one cache line — wire contract");
 
-// ─── CounterSnapshot — monotone subtractable ──────────────────────────
-//
-// Read directly via mmap'd pointer dereference — ~200 ns total.
-// `operator-` produces CounterDelta; consumers compute window-relative
-// deltas instead of reading absolute counter values.
+// A counter is meaningful only as a difference between two readings,
+// so the subtraction yields a distinct type and an absolute counter
+// value never reaches a consumer by accident.
 
 struct CounterDelta;
 
@@ -438,50 +371,32 @@ struct alignas(64) CounterDelta {
 inline CounterDelta CounterSnapshot::operator-(const CounterSnapshot& older) const noexcept {
     CounterDelta d;
     for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-        // Counters are monotone — newer >= older.  std::sub_sat would be
-        // overkill on healthy inputs but defends against torn reads /
-        // counter resets across mmap pages.
+        // A counter only counts upward, so an ordered pair of readings
+        // never underflows here.  The clamp covers a torn read and a
+        // caller that passed the two readings the wrong way round.
         d.deltas[i] = (values[i] >= older.values[i]) ? (values[i] - older.values[i]) : 0;
     }
     return d;
 }
 
-// ─── GaugeSnapshot — point-in-time, NEVER subtracted ──────────────────
-//
-// No operator-.  Snapshot IS the value.  GaugeSnapshot::populate()
-// reads the BPF mmap'd gauges array AND polls /proc/sys for
-// userspace-sampled gauges (see ProcGauges in proc_gauges.h).
+// A gauge holds a level, a running maximum or a sampled ratio, so the
+// reading itself is the value.  The absence of operator- is deliberate
+// and makes a difference of two gauges a compile error.
 
 struct alignas(64) GaugeSnapshot {
     std::array<uint64_t, NUM_GAUGES> values{};
 
     [[nodiscard]] uint64_t operator[](Gauge g) const noexcept { return values[static_cast<uint32_t>(g)]; }
-
-    // Deliberately no operator- — gauges are not subtractable.
-    // Attempting `g1 - g2` is a compile error.
 };
-
-// ─── FullSnapshot — convenience for callers that want both ───────────
 
 struct FullSnapshot {
     CounterSnapshot counters;
     GaugeSnapshot gauges;
 };
 
-// ─── Load report ──────────────────────────────────────────────────
-//
-// load() never fails wholesale — each subprogram attaches independently.
-// LoadReport reports which programs/maps loaded vs failed (for the bench
-// harness banner).
-//
-// FIXY-U-121a — renamed from `CoverageReport` to resolve an ODR collision
-// against `crucible::perf::CoverageReport` (Senses.h:130).  The Senses
-// type answers "which fleet observers are alive?"; this type answers
-// "did THIS hub's eBPF program + maps initialize?".  Different
-// questions, deserve different names.  Surfaced when `fixy/Perf.h`
-// (FIXY-U-121) transitively included both Senses.h and SenseHubV2.h
-// into the same TU; ODR forbids two `crucible::perf::CoverageReport`
-// definitions.
+// Each subprogram attaches on its own, so a load that reports some
+// failures still yields a usable hub.  These fields say how much of it
+// came up.
 
 struct LoadReport {
     safety::Refined<safety::bounded_above<200>, std::size_t> attached_programs{0};
@@ -492,44 +407,29 @@ struct LoadReport {
     bool procgauges_initialized = false;
 };
 
-// ─── class SenseHubV2 ─────────────────────────────────────────────────
-
 class SenseHubV2 {
 public:
-    // Capability-typed loader.  effects::Init is a 1-byte EBO-collapsed
-    // tag minted only at process startup — prevents accidental hot-path
-    // load() calls.  Same discipline as SenseHub v1 / SchedSwitch /
-    // PmuSample / LockContention / SyscallLatency.
     [[nodiscard]] static std::optional<SenseHubV2> load(::crucible::effects::Init) noexcept;
 
-    // Read counters via direct mmap pointer dereference.  ~200 ns.
     [[nodiscard]] CounterSnapshot read_counters() const noexcept;
 
-    // Read gauges = mmap dereference of BPF-side gauges + ProcGauges
-    // populating userspace-sampled slots.  ~50-100 µs total.
+    // Reading the gauges also polls the files behind the
+    // userspace-sampled slots, which costs far more than reading the
+    // counters.
     [[nodiscard]] GaugeSnapshot read_gauges() const noexcept;
 
-    // Convenience: both surfaces in one call.
     [[nodiscard]] FullSnapshot read() const noexcept { return {read_counters(), read_gauges()}; }
 
-    // Borrowed view over the raw mmap'd counter pages — for callers
-    // that need byte-level access (bench harness, runtime drift detector).
     [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHubV2> counters_view() const noexcept;
 
     [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHubV2> gauges_view() const noexcept;
 
-    // Diagnostic surface (FIXY-U-121a — was `CoverageReport`; see
-    // the struct-rename comment above for ODR-collision rationale).
     [[nodiscard]] LoadReport coverage() const noexcept;
 
-    // Ship-time constants
     static constexpr std::size_t num_counters() noexcept { return NUM_COUNTERS; }
     static constexpr std::size_t num_gauges() noexcept { return NUM_GAUGES; }
     static constexpr std::string_view build_name() noexcept { return BUILD_NAME; }
 
-    // Move-only — owns BPF object + mmap regions (deleted copy is
-    // load-bearing).  Same delete-with-reason discipline as the
-    // v1 SenseHub and every per-program facade in the GAPS-004 series.
     SenseHubV2(const SenseHubV2&) = delete("SenseHubV2 owns unique BPF object + mmap; copying would double-close");
     SenseHubV2&
     operator=(const SenseHubV2&) = delete("SenseHubV2 owns unique BPF object + mmap; copying would double-close");
@@ -537,7 +437,6 @@ public:
     SenseHubV2& operator=(SenseHubV2&&) noexcept;
     ~SenseHubV2() noexcept;
 
-    // Internal — used by load() factory.
 private:
     struct State;
     std::unique_ptr<State> state_;
@@ -545,32 +444,24 @@ private:
     explicit SenseHubV2(std::unique_ptr<State>) noexcept;
 };
 
-// EBO sanity — same discipline as v1 SenseHub.
 struct DummyStateV2 {};
 static_assert(sizeof(SenseHubV2) == sizeof(std::unique_ptr<DummyStateV2>),
               "SenseHubV2 must be EBO-equivalent to unique_ptr<State> — regression "
               "indicates a non-EBO field crept in (likely a missing [[no_unique_address]] "
               "or a polymorphic vptr).");
 
-// ── §XXI Universal Mint Pattern — mint_sense_hub_v2 (FIXY-U-083) ─────
-//
-// CtxFitsSenseHubV2Mint admits only contexts whose effect row carries
-// the Init capability.  SenseHubV2::load() performs BPF program loading
-// + tracepoint attach via bpf()/perf_event_open syscalls and mmap —
-// startup-only operations belonging to the Init row.  Hot foreground
-// and background-drain contexts must not engage this surface; the
-// Ctx-fit gate enforces that at the type level.
+// Loading the program attaches to the kernel tracepoints and maps the
+// counter and gauge arrays.  Those are startup-only operations, so
+// only a context carrying the Init capability may reach this surface.
 template <class Ctx>
 concept CtxFitsSenseHubV2Mint = ::crucible::effects::IsExecCtx<Ctx>
                              && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>
-// §XXI carve-out: cx=alloc — SenseHubV2::load() performs BPF
-// program loading + tracepoint attach via bpf()/perf_event_open +
-// mmaps the kernel ringbuf + heap-allocates std::unique_ptr<State>.
-// CLAUDE.md §XXI: compile-time evaluation would lie about the
-// runtime cost.
+// §XXI carve-out: cx=alloc — the load path maps the counter and gauge
+// arrays and heap-allocates State.  Compile-time evaluation would lie
+// about the runtime cost.
 [[nodiscard]] inline std::optional<SenseHubV2> mint_sense_hub_v2(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SenseHubV2::load(init);
 }

@@ -5,9 +5,9 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
-#include <crucible/fixy/Source.h>  // FIXY-U-096n: source::Interned through fixy::tags::source::
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096n: Refined/Monotonic/PowerOfTwo/Tagged/SwissTableBuffer/det_safe::Pure
-#include <crucible/safety/Decide.h>  // decide::in_range / bounded_above / is_power_of_two_le predicates
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
 
 #include <algorithm>
@@ -28,64 +28,35 @@ namespace crucible {
 
 namespace detail {
 
-// Hash all structural fields of an expression. Args are compared by pointer
-// (since children are themselves interned), so we hash their addresses.
+// Hashes the structural fields of an expression.  Children are themselves
+// interned, so equal children are the same pointer and their addresses are
+// what gets hashed.
 //
-// ─── Family-B (process-local) per Types.h taxonomy ─────────────────
-// The returned value embeds `std::bit_cast<uintptr_t>(args[i])` for
-// compound nodes — arena pointers are ASLR-randomized per process, so
-// the SAME structural input produces DIFFERENT bits in different
-// processes.  This is INTENTIONAL: the Swiss-table intern path only
-// needs process-local uniqueness at zero-cost probing, and within a
-// single process, interning guarantees structural equality → pointer
-// equality on children.
+// This value is process-local.  Arena addresses are randomized per process,
+// so the same structural input hashes differently in two processes.  That is
+// intentional: the intern table only needs uniqueness within one process.
+// Never persist this value, never use it as a durable cache key, and never
+// mix it into a content or merkle hash.  A cross-process structural identity
+// would need a separate function that recurses through the children's own
+// structural hashes instead of their addresses.
 //
-// MUST NOT be persisted, fed into any Cipher key, or mixed into any
-// Family-A hash (content_hash / merkle_hash / Guard::hash / etc).
-// If FORGE ever needs a cross-process stable Expr identity for L1
-// federation (FORGE.md §18.6), add a separate `structural_content_hash`
-// that walks children via their own structural hashes, not pointers.
-//
-// Uses wyhash-style 128-bit multiply mixing: each wymix() is a single
-// mulq + xor on x86-64 (~3 cycles). Total cost for a binary node:
-// 2 wymix calls = ~6 cycles ≈ 2ns. Previous fmix64 chain was ~15ns.
-//
-// ─── Why NOT reflect_hash on Expr? (REFL-4) ────────────────────────
-//
-// Two reasons this stays manual:
-//
-// (1) API shape: this hash is computed on the intern hot path BEFORE
-//     an Expr exists.  Inputs are loose parameters (op, payload,
-//     symbol_id, flags, args, nargs) — there's no Expr struct yet
-//     to reflect on.  Building one to reflect would require an arena
-//     allocation per probe attempt; the whole point of the intern
-//     path is to avoid that allocation when the lookup hits.
-//
-// (2) Performance: the manual path is ~6 cycles for the common
-//     binary-arg case (one wymix per arg).  reflect_hash builds a
-//     multiplicative wymix-like chain over members + a final fmix64
-//     — even on a synthesized struct that would be ~3-4× slower.
-//     ExprPool::intern is the single hottest function in the bg
-//     trace path; the perf budget here is unforgiving.
-//
-// If a separate cross-process structural hash is ever needed (FORGE.md
-// §18.6 federation), it would be a SECOND function operating on an
-// already-interned `const Expr&` and could cleanly use reflect_hash
-// without the API or perf constraints listed above.
+// The hash stays hand-written rather than reflection-generated because it is
+// computed before any Expr exists.  The inputs are loose parameters, so
+// reflecting would mean constructing an Expr per probe attempt, and avoiding
+// exactly that allocation on a lookup hit is the point of interning.
 [[nodiscard, gnu::pure]] inline uint64_t expr_hash(Op op, int64_t payload, SymbolId symbol_id, uint16_t flags,
                                                    const Expr* const* args, uint8_t nargs) {
-    // Pack small fields (op, nargs, flags, symbol_id) into one 64-bit word.
-    // This avoids separate mix operations for each tiny field.
+    // Packing the four small fields into one word avoids a separate mix per
+    // field.
     uint64_t packed_metadata = static_cast<uint64_t>(std::to_underlying(op)) | (static_cast<uint64_t>(nargs) << 8)
                              | (static_cast<uint64_t>(flags) << 16) | (static_cast<uint64_t>(symbol_id.raw()) << 32);
 
-    // Mix packed metadata with payload — one 128-bit multiply
     uint64_t mixed_hash =
         wymix(packed_metadata ^ 0x9E3779B97F4A7C15ULL, static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
 
-    // Mix in child pointers. Common cases (0, 1, 2 args) are unrolled
-    // to avoid loop overhead. Each child is already interned → unique
-    // pointer → good entropy without additional mixing per-pointer.
+    // Each child is already interned, so its address is unique and carries
+    // enough entropy on its own.  The zero, one and two argument cases are
+    // unrolled because they dominate.
     switch (nargs) {
         case 0:
             break;
@@ -115,10 +86,9 @@ namespace detail {
     return flag_bits;
 }
 
-// Derive flags for a composite node from its op and children.
 [[nodiscard]] constexpr uint16_t composite_flags(Op op, const Expr* const* args, uint8_t nargs) {
     switch (op) {
-        // Variadic: intersect numeric type flags of all children
+        // Variadic: intersect the numeric type flags of every child.
         case Op::ADD:
         case Op::MUL:
         case Op::MIN:
@@ -202,10 +172,7 @@ namespace detail {
                      & (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
             return 0;
 
-        // ABS: propagates input's numeric kind AND guarantees non-negative.
-        // Before this case existed, ABS hit default:return 0 and silently
-        // lost its integer/real classification, breaking downstream
-        // simplifiers that branch on is_integer/is_real.
+        // Propagates the input's numeric kind and adds non-negativity.
         case Op::ABS:
             if (nargs >= 1)
                 return (args[0]->flags
@@ -213,20 +180,12 @@ namespace detail {
                      | ExprFlags::IS_NONNEGATIVE;
             return 0;
 
-        // BITWISE_XOR: integer like AND/OR.  Its absence from the old
-        // switch meant BITWISE_XOR expressions lost IS_INTEGER / IS_REAL /
-        // IS_FINITE / IS_NUMBER — a correctness hole in every simplifier
-        // that consulted the flags.
         case Op::BITWISE_XOR:
             return ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
 
-        // ── Atoms reach composite_flags only under caller bug ──
-        //
-        // integer(), float_(), symbol(), bool_true(), bool_false() populate
-        // flags directly via intern_node; composite_flags is invoked only
-        // on composite (nargs>0) construction paths.  Receiving an atom op
-        // here means a caller bypassed the dedicated constructor and fed
-        // raw args through make()/intern_node with atom-kind — a bug.
+        // Atoms set their flags directly at construction and never reach
+        // here.  An atom op arriving means a caller bypassed the dedicated
+        // constructor and pushed raw args through the composite path.
         case Op::INTEGER:
         case Op::FLOAT:
         case Op::SYMBOL:
@@ -234,14 +193,13 @@ namespace detail {
         case Op::BOOL_FALSE:
             std::unreachable();
 
-        // ── NUM_OPS is the enum sentinel ──
+        // The enum sentinel, never a real op.
         case Op::NUM_OPS:
             std::unreachable();
 
-        // Required by -Werror=switch-default.  Every enumerator is handled
-        // above.  Reaching this arm implies the op value was read from
-        // out-of-range memory (cast from a corrupted uint8_t).  A new Op
-        // added without a case here still fires -Werror=switch first.
+        // Required by -Werror=switch-default even though every enumerator is
+        // handled.  Reaching it means the op was read from out-of-range
+        // memory.  A newly added op still trips -Werror=switch first.
         default:
             std::unreachable();
     }
@@ -251,23 +209,17 @@ namespace detail {
 
 // Arena-based expression factory with Swiss-table interning.
 //
-// All Expr nodes are allocated from an internal arena and deduplicated
-// via a Swiss hash table (separate control-byte array + slot array).
-// Same structure → same pointer, so equality is pointer comparison (~1ns).
-// Thread-local: one per thread.
+// Every node is allocated from the internal arena and deduplicated through
+// the table, so equal structure means an equal pointer and equality is a
+// pointer comparison.  One pool per thread.
 //
-// The Swiss table uses SIMD to compare kGroupWidth control bytes (H2 tags)
-// in parallel, eliminating the branch-per-slot pattern of linear probing.
-// At 87.5% load with 32-byte groups (AVX2), ~98.5% of lookups resolve
-// in the first group with ~0.22 expected structural comparisons.
-//
-// Construction methods (add, mul, etc.) perform eager canonicalization:
+// The construction methods canonicalize eagerly:
 //   - Constant folding: add(3, 5) → integer(8)
 //   - Identity elimination: add(x, 0) → x, mul(x, 1) → x
 //   - Flattening: add(add(a, b), c) → add(a, b, c)
 //   - Constant collection: add(a, 3, b, 5) → add(a, b, 8)
 //   - Canonical ordering: add(b, a) → add(a, b) by pointer
-//   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
+//   - Term combining: add(a, 2a) → 3a, by coefficient decomposition
 class CRUCIBLE_OWNER ExprPool {
 public:
     static constexpr int64_t kIntCacheLow = -128;
@@ -288,46 +240,21 @@ public:
     static_assert(sizeof(InternedExpr) == sizeof(const Expr*));
     static_assert(sizeof(PureInternedExpr) == sizeof(const Expr*));
 
-    // Default `initial_capacity` sized for real production graphs — ViT
-    // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
-    // contributes 1-3 non-cached Exprs (shape polynomials, symbolic dims,
-    // composites; concrete ints are served by the separate 256-entry
-    // integer cache). 16384 slots holds 14k user entries at 87.5% load
-    // → covers ViT-scale graphs with zero rehashes.
+    // Sized so a real network's graph never rehashes:
+    //   16384 slots at the 7/8 load threshold = 14336 entries
+    //   258 of those are seeded by the constructor
     //
-    // Capacity math:
-    //   16384 slots × 7/8 threshold  = 14336 entries max
-    //   258 seeded by ctor           = 14078 user Exprs budget
+    // The backing allocation is 144 KB, the first size above glibc's default
+    // 128 KB mmap threshold, so it goes through mmap and munmap directly and
+    // returns to the operating system when the pool dies instead of growing
+    // the heap pool.
     //
-    // Memory cost: 144 KB (16384 ctrl + 16384*8 slots). This is the
-    // first capacity above glibc's default 128 KB mmap threshold, so the
-    // single backing_ allocation goes through mmap/munmap directly —
-    // clean return to the OS on dtor (no heap-pool growth).
-    //
-    // Ctor cost (measured AVX2): ~30 µs for the two memsets + mmap + the
-    // 258 initial inserts. Negligible for long-lived pools; bench harness
-    // wall-cap keeps short-lived test scopes bounded.
-    //
-    // Callers with known bounded size call `reserve(n)` explicitly:
-    //   - Production KernelCache: reserve(expected_kernel_count)
-    //   - Large graphs (>14k exprs): reserve(approximate_final_size)
-    //
-    // History: original default was 1<<16 = 65536 (576 KB up-front, ~25
-    // cold-page faults per ctor, 7M faults across bench_graph's 65k-iter
-    // loop). First reduction went to 512 (optimal for tiny benches but
-    // forced 5+ rehashes on real graphs). 16384 is the measured sweet
-    // spot — covers the user-declared minimum baseline (10k+ node real
-    // networks) while staying at a clean mmap-backed allocation size.
+    // A caller that knows its bound calls reserve(n) instead.
     static constexpr size_t kDefaultInitialCapacity = 16384;
 
-    // CONTRACT-109: pin the structural pow2 invariant at the constant's
-    // definition site through `decide::is_power_of_two_le` (CONTRACT-050).
-    // 16384 = 2^14 is the measured sweet spot; the cite is the discipline
-    // gate ensuring future edits to the constant preserve the Swiss-table
-    // probe invariant (capacity_ - 1 = slot_mask requires pow2).  Upper
-    // bound 1 << 30 (~1 G slots, ~8 GB pointer table) is the structural
-    // ceiling — past that the single mmap allocation no longer fits in the
-    // address-space budget the rest of Crucible reserves.
+    // The probe computes slot_mask as capacity minus one, which requires a
+    // power of two.  Past 1 << 30 the single backing allocation no longer
+    // fits the address-space budget.
     static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kDefaultInitialCapacity, std::size_t{1} << 30),
                   "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
 
@@ -347,24 +274,18 @@ public:
         }
     }
 
-    ~ExprPool() = default;  // backing_ owns the alloc via SwissTableBuffer RAII (#915 WRAP-ExprPool-1)
+    ~ExprPool() = default;
 
     ExprPool(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
     ExprPool& operator=(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
     ExprPool(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
     ExprPool& operator=(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
 
-    // Pre-grow the Swiss table to hold at least `n_entries` without
-    // triggering rehash during subsequent intern_node calls. No-op if the
-    // table already has the capacity. Safe to call multiple times.
-    //
-    // A production KernelCache that will register ~10k sub-computations
-    // calls `pool.reserve(10'000)` right after construction and skips the
-    // ~5 doublings (256→512→1024→2048→4096→8192→16384) that would
-    // otherwise land on its insertion path.
+    // Grows the table so that `n_entries` insertions fit without a rehash.
+    // A no-op when the capacity already suffices, and safe to repeat.
     void reserve(size_t n_entries) pre(n_entries <= (((std::size_t{1} << 30) * 7) / 8)) {
-        // Need capacity such that n_entries * 8 <= capacity * 7 (87.5% LF).
-        // Solve: capacity >= ceil(n_entries * 8 / 7).
+        // The load threshold is n_entries * 8 <= capacity * 7, so the
+        // capacity needed is ceil(n_entries * 8 / 7).
         const size_t needed = (n_entries * 8 + 6) / 7;
         size_t target = detail::group_width();
         while (target < needed)
@@ -387,7 +308,8 @@ public:
         else if (val < 0)
             assumption_flags_combined |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
         else if ((static_cast<uint64_t>(bit_payload) << 1) == 0) {
-            // ±0 but not NaN — shift-out-sign catches both signed zeros.
+            // Shifting the sign bit out catches both signed zeros, and only
+            // those: a NaN has a non-zero payload left after the shift.
             assumption_flags_combined |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE | ExprFlags::IS_NONPOSITIVE;
         }
         return intern_node(a, Op::FLOAT, nullptr, 0, assumption_flags_combined, SymbolId{}, bit_payload);
@@ -407,32 +329,15 @@ public:
         const Expr* result =
             intern_node(a, Op::SYMBOL, nullptr, 0, assumption_flags | ExprFlags::IS_SYMBOL, id, name_ptr_payload);
 
-        // PERF-2: populate the SymbolId-indexed fast-lookup cache.
-        // After this call returns, fast_symbol(id) hits a parallel-array
-        // load (~1.5 ns) instead of a full Swiss-table probe (~6.7 ns).
-        // Same Expr pointer in both paths — they're interchangeable.
         if (id.raw() >= symbol_exprs_.size()) symbol_exprs_.resize(id.raw() + 1, nullptr);
         symbol_exprs_[id.raw()] = result;
 
         return result;
     }
 
-    // ── fast_symbol — O(1) SymbolId-indexed lookup ───────────────────
-    //
-    // Returns the interned Expr* for `sid` if it has been registered
-    // via a prior symbol(name, sid, flags) call.  Otherwise returns
-    // nullptr — caller MUST fall back to symbol(name, sid, flags) to
-    // register first.
-    //
-    // No Swiss-table probe.  No hashing.  Single bounds-checked
-    // load from the parallel array — typically ~1.5 ns vs ~6.7 ns
-    // for the full symbol() path.  Use this for hot paths that
-    // already have a SymbolId in hand: TraceGraph rebuild, replay
-    // engine, ExprPool::make(SYMBOL, …) routing.
-    //
-    // gnu::pure: depends only on caller-visible memory (the
-    // symbol_exprs_ vector); no side effects.  Safe to CSE within
-    // a sequence of fast_symbol calls on the same pool.
+    // Returns the interned Expr for `sid` when a prior symbol() call
+    // registered it, and nullptr otherwise.  A caller that gets nullptr must
+    // fall back to symbol() to register first.
     [[nodiscard, gnu::hot, gnu::pure]] const Expr* fast_symbol(SymbolId sid) const noexcept {
         if (sid.raw() < symbol_exprs_.size() && symbol_exprs_[sid.raw()] != nullptr) [[likely]]
             return symbol_exprs_[sid.raw()];
@@ -445,64 +350,52 @@ public:
     // ---- Arithmetic ----
 
     [[nodiscard]] const Expr* add(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-        // Fast path: two children that don't need canonicalization.
-        // Excluded ops: ADD (needs flattening), MUL (needs coefficient
-        // extraction for term combining), INTEGER/FLOAT (needs folding).
-        // Symbols, POW, FLOOR_DIV, etc. go straight to intern.
+        // ADD needs flattening, MUL needs coefficient extraction for term
+        // combining, and the two constant kinds need folding.  Everything
+        // else can go straight to the intern table.
         if (lhs->op != Op::ADD && rhs->op != Op::ADD && lhs->op != Op::MUL && rhs->op != Op::MUL
             && lhs->op != Op::INTEGER && rhs->op != Op::INTEGER && lhs->op != Op::FLOAT && rhs->op != Op::FLOAT)
             [[likely]] {
-            // Same base detection: a + a → 2a
             if (lhs == rhs) [[unlikely]]
                 return mul(a, integer(a, 2), lhs);
-            // Canonical ordering by pointer address
+            // Canonical ordering by address, so add(b, a) interns as add(a, b).
             if (lhs > rhs) std::swap(lhs, rhs);
             const Expr* args[] = {lhs, rhs};
             uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, args, 2);
             return intern_node(a, Op::ADD, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
-        // Constant folding
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, lhs->payload + rhs->payload);
         if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() + rhs->as_float());
-        // Identity
         if (lhs->is_zero_int()) return rhs;
         if (rhs->is_zero_int()) return lhs;
-        // Slow path: flatten + fold + sort + coefficient combining
         const Expr* binary_args[] = {lhs, rhs};
         return add_n(a, binary_args);
     }
 
     [[nodiscard]] const Expr* mul(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-        // Fast path: two non-constant, non-MUL children.
-        // Skip the full mul_n() canonicalization (flatten, fold, sort).
-        // Most symbolic expressions (x * y, a * b) hit this directly.
+        // Two non-constant, non-MUL children need none of the flatten, fold
+        // and sort work below.
         if (lhs->op != Op::MUL && rhs->op != Op::MUL && lhs->op != Op::INTEGER && rhs->op != Op::INTEGER
             && lhs->op != Op::FLOAT && rhs->op != Op::FLOAT) [[likely]] {
-            // Canonical ordering by pointer address
+            // Canonical ordering by address, so mul(b, a) interns as mul(a, b).
             if (lhs > rhs) std::swap(lhs, rhs);
             const Expr* args[] = {lhs, rhs};
             uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, args, 2);
             return intern_node(a, Op::MUL, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
-        // Constant folding
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, lhs->payload * rhs->payload);
         if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() * rhs->as_float());
-        // Zero annihilation
         if (lhs->is_zero_int() || rhs->is_zero_int()) return integer(a, 0);
-        // Identity
         if (lhs->is_one()) return rhs;
         if (rhs->is_one()) return lhs;
-        // Slow path: flatten + fold + sort
         const Expr* binary_args[] = {lhs, rhs};
         return mul_n(a, binary_args);
     }
 
     [[nodiscard]] const Expr* pow(effects::Alloc a, const Expr* base, const Expr* exp) {
-        // x^0 → 1
         if (exp->is_zero_int()) return integer(a, 1);
-        // x^1 → x
         if (exp->is_one()) return base;
-        // Concrete integer power (small exponents only to avoid overflow)
+        // Only small exponents fold, to keep the repeated product bounded.
         if (base->op == Op::INTEGER && exp->op == Op::INTEGER && exp->payload >= 0 && exp->payload <= 62) {
             int64_t accumulated_product = 1;
             int64_t base_value = base->payload;
@@ -516,7 +409,8 @@ public:
         return intern_node(a, Op::POW, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
 
-    // Canonical form: MUL(-1, x). No NEG nodes in output.
+    // The canonical form of a negation is MUL(-1, x).  No NEG node ever
+    // reaches the intern table.
     [[nodiscard]] const Expr* neg(effects::Alloc a, const Expr* expr) {
         if (expr->op == Op::INTEGER) return integer(a, -expr->payload);
         if (expr->op == Op::FLOAT) return float_(a, -expr->as_float());
@@ -528,7 +422,7 @@ public:
     [[nodiscard]] const Expr* eq(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return true_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload == rhs->payload) ? true_ : false_;
-        // Eq is commutative: canonical order by pointer
+        // Equality is commutative, so order the operands canonically.
         if (lhs > rhs) std::swap(lhs, rhs);
         const Expr* args[] = {lhs, rhs};
         return intern_node(a, Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
@@ -593,7 +487,6 @@ public:
     [[nodiscard]] const Expr* not_(effects::Alloc a, const Expr* expr) {
         if (expr == true_) return false_;
         if (expr == false_) return true_;
-        // Double negation elimination
         if (expr->op == Op::NOT) return expr->args[0];
         const Expr* args[] = {expr};
         return intern_node(a, Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
@@ -710,7 +603,6 @@ public:
     [[nodiscard]] const Expr* modular_indexing(effects::Alloc a, const Expr* base, const Expr* div,
                                                const Expr* modulus) {
         if (base->is_zero_int() || modulus->is_one()) return integer(a, 0);
-        // All concrete
         if (base->op == Op::INTEGER && div->op == Op::INTEGER && modulus->op == Op::INTEGER && div->as_int() != 0
             && modulus->as_int() != 0) {
             int64_t base_value = base->as_int();
@@ -790,22 +682,15 @@ public:
         return max_n(a, binary_args);
     }
 
-    // ---- Generic construction ----
-    // Dispatches to canonical constructors for ops that have them,
-    // generic interning for everything else.
+    // Dispatches to a canonical constructor where one exists, and interns
+    // generically otherwise.  A two-element span routes to the binary helper
+    // so the n-ary flatten, sort and coefficient-combining work is skipped
+    // entirely by the binary early returns.
     //
-    // Variadic ops (ADD/MUL/AND/OR/MIN/MAX) take an n-ary args span.  When
-    // size() == 2, dispatching to the binary helper (add/mul/and_/or_/
-    // min_expr/max_expr) bypasses the *_n slow path's flatten + sort +
-    // coefficient-combining work that the binary fast paths skip via
-    // their early-return identity checks (e.g. add(x,0) -> x without
-    // touching the intern table).  The binary helpers are inline and
-    // hot — the compiler inlines them into make() naturally without
-    // gnu::flatten (attempted initially, reverted: flatten also inlined
-    // the bulky add_n/mul_n/and_n/... slow-path bodies into make(),
-    // bloating the function to ~900 B of stack frame + icache pressure
-    // and REGRESSING the hit-path benchmark from 138 ns to 690 ns).
-    // Relying on default inlining keeps make() lean.
+    // gnu::flatten is deliberately not applied here.  It also inlines the
+    // bulky n-ary bodies, which inflates the stack frame and the instruction
+    // footprint enough to make the hit path several times slower.  Default
+    // inlining already pulls in the small binary helpers.
     [[nodiscard]] PureInternedExpr make(effects::Alloc a, Op op, std::span<const Expr* const> args) {
         return PureInternedExpr{InternedExpr{make_raw_(a, op, args)}};
     }
@@ -870,11 +755,9 @@ private:
                     return max_expr(a, args[0], args[1]);
                 return max_n(a, args);
 
-            // Atoms must be built via the dedicated constructors
-            // (integer()/float()/symbol()/bool_true()/bool_false()); they
-            // carry a payload, not child args, and the args.data() vector
-            // would be silently ignored by intern_node.  make(atom, ...) is
-            // a caller bug, not a runtime-dispatchable condition.
+            // Atoms carry a payload rather than child args, so the args
+            // span would be silently dropped.  They must be built through
+            // their dedicated constructors instead.
             case Op::INTEGER:
             case Op::FLOAT:
             case Op::SYMBOL:
@@ -882,16 +765,14 @@ private:
             case Op::BOOL_FALSE:
                 std::unreachable();
 
-            // Sentinel: not a valid op value.  Reached only via corrupted
-            // input or a caller passing a cast-from-int out-of-range value.
+            // The enum sentinel, never a real op.
             case Op::NUM_OPS:
                 std::unreachable();
 
-            // Opaque math (SIN, COS, LOG, …), type conversions, bitwise,
-            // shift, identity, and IS_NON_OVERLAPPING_AND_DENSE all share
-            // the generic interning path — no canonical simplifier required.
-            // Listed explicitly-as-fallthrough so adding a new op surfaces
-            // here (via -Wswitch) rather than disappearing into a catch-all.
+            // These have no canonical simplifier and share the generic
+            // intern path.  They are listed rather than folded into the
+            // default arm so a newly added op surfaces here under -Wswitch
+            // instead of silently taking this route.
             case Op::INT_TRUE_DIV:
             case Op::FLOAT_TRUE_DIV:
             case Op::CEIL_TO_INT:
@@ -925,11 +806,11 @@ private:
             case Op::BITWISE_AND:
             case Op::BITWISE_OR:
             case Op::BITWISE_XOR:
-                break;  // fall through to intern_node below
+                break;
 
             // Required by -Wswitch-default even though every enumerator is
-            // handled above.  Reaching this arm implies Op was read from
-            // out-of-range memory (e.g. casting a corrupted uint8_t to Op).
+            // handled.  Reaching it means the op was read from out-of-range
+            // memory.
             default:
                 std::unreachable();
         }
@@ -948,22 +829,16 @@ public:
     }
 
 private:
-    // CONTRACT-109: kIntCacheSize = 256 = 2^8.  The pow2 cite is structural
-    // (the kIntCacheLow / kIntCacheHigh range is inclusive on both ends, so
-    // the `+ 1` produces 256), but if either bound shifts by an odd offset
-    // the pow2 property silently breaks and direct-index lookups
-    // (`int_cache_[val - kIntCacheLow]`) get sloppy bounds.  The
-    // `decide::is_power_of_two_le` cite (CONTRACT-050) pins the invariant
-    // at the constant's definition site so future edits to the bounds trip
-    // the static_assert.  Upper bound 1024 leaves room for a 4× expansion
-    // without requiring a re-audit; past that the cache table itself stops
-    // fitting cleanly in two cache lines.
+    // The cache bounds are inclusive on both ends, so the range size is a
+    // power of two only while both bounds move together.  Shifting one by an
+    // odd offset breaks it and loosens the bounds on the direct-index
+    // lookup.
     static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kIntCacheSize, std::size_t{1024}),
                   "kIntCacheSize must be a power of two ≤ 1024");
 
-    // Round up to a power-of-two table capacity, with at least one SIMD
-    // control group. The documented constructor ceiling is 1<<30, so the
-    // left shift cannot overflow for admitted callers.
+    // Rounds up to a power-of-two capacity holding at least one control
+    // group.  The constructor precondition caps the input at 1 << 30, so the
+    // shift cannot overflow for an admitted caller.
     [[nodiscard, gnu::const]] static constexpr size_t rounded_capacity_(size_t initial_capacity) noexcept {
         size_t cap = detail::group_width();
         while (cap < initial_capacity)
@@ -987,12 +862,10 @@ private:
         return intern_node(a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
     }
 
-    // ---- GCD / coefficient helpers for division rules ----
-
     [[nodiscard]] static int64_t gcd_(int64_t a, int64_t b) {
-        // Note: -INT64_MIN is UB; callers route absolute-value inputs through
-        // safe_abs_() which clamps INT64_MIN → INT64_MAX, so the unary
-        // negations below never observe INT64_MIN.
+        // Negating INT64_MIN is undefined.  Callers route their operands
+        // through safe_abs_, which clamps INT64_MIN to INT64_MAX, so the
+        // negations below never see it.
         a = (a < 0) ? -a : a;
         b = (b < 0) ? -b : b;
         while (b) {
@@ -1003,7 +876,7 @@ private:
         return a;
     }
 
-    // Integer coefficient of a term: MUL(3,x,y) → 3, INTEGER(5) → 5, x → 1
+    // MUL(3, x, y) → 3, INTEGER(5) → 5, x → 1.
     [[nodiscard, gnu::pure]] static int64_t integer_coefficient_(const Expr* expr) {
         if (expr->op == Op::INTEGER) return expr->as_int();
         if (expr->op == Op::MUL) {
@@ -1013,21 +886,12 @@ private:
         return 1;
     }
 
-    // GCD of |integer coefficients| across all ADD terms.
-    //
-    // Overflow trap: unary negation on INT64_MIN (-(-2^63)) is
-    // undefined behavior (the positive value 2^63 doesn't fit in
-    // int64_t).  Adversarial or corrupt ADD arms could carry
-    // INT64_MIN coefficients; the GCD walk below would UB through
-    // the negation.  Use bit-twiddle absolute value that treats
-    // INT64_MIN → INT64_MAX (one off, acceptable for GCD — the loss
-    // of 1 unit cannot change the resulting GCD since all other
-    // coefficients are ≤ INT64_MAX anyway).
+    // Negating INT64_MIN is undefined, because 2^63 does not fit in an
+    // int64_t, and a corrupt or adversarial ADD arm can carry that
+    // coefficient.  Clamping it to INT64_MAX instead is off by one, which
+    // cannot change the resulting GCD: every other coefficient is already at
+    // most INT64_MAX.
     [[nodiscard]] static constexpr int64_t safe_abs_(int64_t value) noexcept {
-        // For value == INT64_MIN: cast to uint64_t, negate (legal in
-        // unsigned), cast back.  Result is INT64_MIN in two's comp
-        // (still negative).  That would poison GCD; instead clamp to
-        // INT64_MAX for the GCD walk.
         if (value == std::numeric_limits<int64_t>::min()) return std::numeric_limits<int64_t>::max();
         return (value < 0) ? -value : value;
     }
@@ -1052,8 +916,8 @@ private:
             for (uint8_t i = 0; i < expr->nargs; ++i) {
                 if (expr->args[i]->op == Op::INTEGER) {
                     int64_t new_coeff = expr->args[i]->as_int() / divisor;
-                    // Coefficient collapsed to 1 in a binary MUL: drop the integer,
-                    // return the only remaining factor directly.
+                    // A binary MUL whose coefficient collapsed to one is just
+                    // its other factor.
                     if (new_coeff == 1 && expr->nargs == 2) return expr->args[1 - i];
                     const Expr* rebuilt_factors[255];
                     uint8_t num_rebuilt = 0;
@@ -1062,7 +926,7 @@ private:
                     return mul_n(a, std::span{rebuilt_factors, num_rebuilt});
                 }
             }
-            return expr;  // no integer factor
+            return expr;
         }
         if (expr->op == Op::ADD) {
             const Expr* divided_terms[255];
@@ -1073,7 +937,6 @@ private:
         return expr;
     }
 
-    // Flatten MIN/MAX + dedup + sort
     const Expr* min_n(effects::Alloc a, std::span<const Expr* const> inputs) {
         const Expr* scratch_buf[64];
         uint8_t num_args = 0;
@@ -1114,15 +977,14 @@ private:
         return intern_node(a, Op::MAX, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
     }
 
-    // Flatten ADD children, fold integer constants, combine like terms,
-    // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
-    // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
+    // Flattens nested ADD, folds integer constants, combines like terms,
+    // sorts and interns.  Term combining is what keeps expansion tractable:
+    // (a+b)^n yields n+1 binomial terms instead of 2^n unmerged products.
     const Expr* add_n(effects::Alloc a, std::span<const Expr* const> inputs) {
         const Expr* term_scratch_buf[256];
         uint8_t num_args = 0;
         int64_t int_sum = 0;
 
-        // Phase 1: Flatten nested ADD, separate integer constants
         for (auto* arg_expr : inputs) {
             if (arg_expr->op == Op::ADD) {
                 for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
@@ -1143,12 +1005,13 @@ private:
 
         if (num_args == 0) return integer(a, int_sum);
 
-        // Phase 2: Decompose each term into (coefficient, base).
-        // MUL(3, a, b) → coeff=3, base=MUL(a,b)
-        // MUL(a, b)    → coeff=1, base=MUL(a,b)   [same base!]
-        // a            → coeff=1, base=a
-        // The "base" is the coefficient-free interned form. Two terms with
-        // the same base get their coefficients summed: a + 2a → 3a.
+        // Decompose each term into a coefficient and a base:
+        //   MUL(3, a, b) → coeff 3, base MUL(a, b)
+        //   MUL(a, b)    → coeff 1, base MUL(a, b)
+        //   a            → coeff 1, base a
+        // The base is the coefficient-free interned form, so the first two
+        // share one.  Two terms with the same base sum their coefficients,
+        // which is how a + 2a becomes 3a.
         struct CoeffTerm {
             int64_t coeff;
             const Expr* base;
@@ -1161,7 +1024,6 @@ private:
             const Expr* base = term_scratch_buf[j];
 
             if (term_scratch_buf[j]->op == Op::MUL) {
-                // Strip integer coefficient from MUL
                 const Expr* mul_factors[256];
                 uint8_t num_factors = 0;
                 for (uint8_t k = 0; k < term_scratch_buf[j]->nargs; ++k) {
@@ -1171,14 +1033,16 @@ private:
                         mul_factors[num_factors++] = term_scratch_buf[j]->args[k];
                 }
                 if (num_factors == 0) {
-                    // Pure integer MUL (shouldn't happen after phase 1, but be safe)
+                    // A MUL of integers only.  The flattening above should
+                    // have folded it already.
                     int_sum += combined_coefficient;
                     continue;
                 } else if (num_factors == 1) {
                     base = mul_factors[0];
                 } else {
-                    // Re-intern coefficient-free MUL as the grouping key.
-                    // mul_factors[] are already sorted (came from a canonical MUL).
+                    // The coefficient-free MUL is the grouping key.  Its
+                    // factors came out of a canonical MUL, so they are
+                    // already sorted.
                     uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, mul_factors, num_factors);
                     base = intern_node(a, Op::MUL, mul_factors, num_factors, composite_flag_bits, SymbolId{}, 0);
                 }
@@ -1186,7 +1050,8 @@ private:
             decomposed_terms[num_decomposed++] = {.coeff = combined_coefficient, .base = base};
         }
 
-        // Phase 3: Sort by base pointer, merge adjacent same-base entries
+        // Sorting by base brings equal bases adjacent, so one linear pass
+        // merges them.
         std::ranges::sort(std::span{decomposed_terms, num_decomposed},
                           [](const CoeffTerm& lhs, const CoeffTerm& rhs) { return lhs.base < rhs.base; });
 
@@ -1203,7 +1068,7 @@ private:
             }
 
             if (total_coeff == 0) {
-                // Terms cancelled out (e.g., a + (-a))
+                // The terms cancelled, as in a + (-a).
             } else if (total_coeff == 1) {
                 collected_terms[num_collected++] = base;
             } else {
@@ -1213,20 +1078,19 @@ private:
             i = j;
         }
 
-        // Reattach integer sum (omit zero unless it's the only term)
+        // Reattach the integer sum, omitting a zero unless it is the only
+        // term left.
         if (int_sum != 0 || num_collected == 0) {
             assert(num_collected < 255);
             collected_terms[num_collected++] = integer(a, int_sum);
         }
         if (num_collected == 1) return collected_terms[0];
 
-        // Final sort for canonical ordering
         std::ranges::sort(std::span{collected_terms, num_collected});
         uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, collected_terms, num_collected);
         return intern_node(a, Op::ADD, collected_terms, num_collected, composite_flag_bits, SymbolId{}, 0);
     }
 
-    // Flatten MUL children, fold integer constants, sort, intern.
     const Expr* mul_n(effects::Alloc a, std::span<const Expr* const> inputs) {
         const Expr* factor_scratch_buf[256];
         uint8_t num_args = 0;
@@ -1251,7 +1115,8 @@ private:
         }
 
         if (int_prod == 0) return integer(a, 0);
-        // Reattach integer product (omit 1 unless it's the only term)
+        // Reattach the integer product, omitting a one unless it is the only
+        // factor left.
         if (int_prod != 1 || num_args == 0) {
             assert(num_args < 255);
             factor_scratch_buf[num_args++] = integer(a, int_prod);
@@ -1263,7 +1128,6 @@ private:
         return intern_node(a, Op::MUL, factor_scratch_buf, num_args, composite_flag_bits, SymbolId{}, 0);
     }
 
-    // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
     const Expr* and_n(effects::Alloc a, std::span<const Expr* const> inputs) {
         const Expr* operand_scratch_buf[64];
         uint8_t num_operands = 0;
@@ -1290,7 +1154,6 @@ private:
         return intern_node(a, Op::AND, operand_scratch_buf, num_operands, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
     const Expr* or_n(effects::Alloc a, std::span<const Expr* const> inputs) {
         const Expr* operand_scratch_buf[64];
         uint8_t num_operands = 0;
@@ -1317,25 +1180,24 @@ private:
         return intern_node(a, Op::OR, operand_scratch_buf, num_operands, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    // Swiss table probe + insert. Returns existing interned node or creates new.
+    // Probes the table and inserts on miss, returning the interned node
+    // either way.
     //
-    // Probing: SIMD-compare kGroupWidth H2 tags → bitmask → iterate matches.
-    // H2 filters 127/128 candidates; full hash rejects the rest.
-    // Expected structural comparisons per lookup: ~0.01 (virtually zero
-    // false positives). Insert-only: no tombstones, empty-stop is sound.
+    // The probe compares a whole group of control bytes at once and iterates
+    // only the tag matches.  The table is insert-only and has no tombstones,
+    // so stopping at the first empty slot in a group is sound: an entry that
+    // hashed here would have been placed before that empty slot.
     //
-    // Hot path optimization: hash check (64-bit compare) is the primary
-    // filter. After hash match (P(collision) ≈ 2^-57), we only need
-    // args pointer comparison. The hash encodes op/nargs/flags/symbol_id/
-    // payload, so re-checking those is redundant on a hash match.
-    // We still verify all fields as a safety net — the compiler optimizes
-    // the packed comparison into a single 64-bit op.
+    // The full-hash compare is the real filter.  The hash already encodes op,
+    // nargs, flags, symbol_id and payload, so re-checking them on a hash
+    // match is redundant.  They are checked anyway, packed into one word so
+    // the check is a single comparison.
     CRUCIBLE_UNSAFE_BUFFER_USAGE CRUCIBLE_INLINE const Expr* intern_node(effects::Alloc a, Op op,
                                                                          const Expr* const* args, uint8_t nargs,
                                                                          uint16_t flags, SymbolId symbol_id,
                                                                          int64_t payload) {
-        // Load factor 87.5% (7/8). Swiss table tolerates higher load than
-        // linear probing because SIMD amortizes the cost of denser groups.
+        // The load factor is 7/8.  Group-at-a-time probing tolerates a
+        // denser table than linear probing does.
         const size_t cap = capacity_.value();
         if (intern_count_.get() * 8 >= cap * 7) [[unlikely]]
             rehash();
@@ -1343,15 +1205,14 @@ private:
         uint64_t expr_full_hash = detail::expr_hash(op, payload, symbol_id, flags, args, nargs);
         int8_t slot_match_tag = detail::h2_tag(expr_full_hash);
 
-        // Pack small fields for a single 64-bit comparison instead of
-        // 4 separate branches. Same packing as expr_hash uses.
+        // Same packing expr_hash uses, so one comparison replaces four
+        // branches.
         uint64_t query_packed_metadata = static_cast<uint64_t>(std::to_underlying(op))
                                        | (static_cast<uint64_t>(nargs) << 8) | (static_cast<uint64_t>(flags) << 16)
                                        | (static_cast<uint64_t>(symbol_id.raw()) << 32);
 
-        // Operate directly on slot indices (probe_base_slot) instead of
-        // group indices.  Eliminates the g*kGroupWidth multiply on every
-        // probe iteration.
+        // Working in slot indices rather than group indices removes a
+        // multiply from every probe iteration.
         size_t slot_mask = cap - 1;
         size_t probe_base_slot = (expr_full_hash * detail::group_width()) & slot_mask;
         size_t probe_iteration = 0;
@@ -1359,18 +1220,12 @@ private:
         while (true) {
             auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
 
-            // Phase 1: Check H2 tag matches within the group.
-            // SIMD produces a bitmask; iterate only the ~0.11 expected matches.
             auto matches = group.match(slot_match_tag);
             while (matches) {
                 size_t match_slot_index = probe_base_slot + matches.lowest();
                 const Expr* existing_expr = slots_[match_slot_index];
-                // Full hash compare: rejects with P(false positive) ≈ 2^-57.
-                // Packed metadata compare: catches the astronomically rare hash
-                // collision where different (op,nargs,flags,symbol_id) produce
-                // the same 64-bit hash.
-                // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
-                // unwraps to the raw u64 for the Swiss-table full-hash compare.
+                // The packed-metadata compare catches the case where two
+                // different field sets hash to the same 64-bit value.
                 if (existing_expr->hash.value() == expr_full_hash && existing_expr->payload == payload) [[likely]] {
                     // Pack the existing expr's metadata the same way for single compare
                     uint64_t existing_packed_metadata = static_cast<uint64_t>(std::to_underlying(existing_expr->op))
@@ -1378,7 +1233,6 @@ private:
                                                       | (static_cast<uint64_t>(existing_expr->flags) << 16)
                                                       | (static_cast<uint64_t>(existing_expr->symbol_id.raw()) << 32);
                     if (existing_packed_metadata == query_packed_metadata) [[likely]] {
-                        // Args comparison — specialized for common arities
                         switch (nargs) {
                             case 0:
                                 return existing_expr;
@@ -1411,26 +1265,24 @@ private:
                 matches.clear_lowest();
             }
 
-            // Phase 2: If any empty slot exists in this group, the entry
-            // is definitively not in the table (insert-only, no tombstones).
+            // An empty slot anywhere in this group proves the entry is not
+            // in the table.
             auto empties = group.match_empty();
             if (empties) [[likely]] {
                 size_t match_slot_index = probe_base_slot + empties.lowest();
 
-                // Copy args into the arena BEFORE constructing the Expr — the
-                // Expr's args pointer is const, so it can only be set via the
-                // constructor (not assigned later).  For nargs == 0 we pass
-                // nullptr, matching the legacy null-args contract.
+                // The args must be copied into the arena before the Expr is
+                // constructed: the Expr's args pointer is const and can only
+                // be set through the constructor.  A node with no args gets
+                // a null pointer.
                 const Expr** arena_owned_args = nullptr;
                 if (nargs > 0) {
                     arena_owned_args = arena_.alloc_array<const Expr*>(a, nargs);
                     std::memcpy(arena_owned_args, args, nargs * sizeof(const Expr*));
                 }
 
-                // Placement-new into arena storage via the full-args
-                // constructor.  The const fields of Expr are initialized
-                // in-place; no post-construction mutation is possible
-                // (or desired — Expr is immutable by contract).
+                // Placement-new into arena storage, because the const fields
+                // of Expr can only be initialized in place.
                 void* arena_expr_storage = arena_.alloc_obj<Expr>(a);
                 Expr* interned_expr = ::new(arena_expr_storage)
                     Expr(op, nargs, flags, symbol_id, expr_full_hash, payload, arena_owned_args);
@@ -1441,74 +1293,54 @@ private:
                 return interned_expr;
             }
 
-            // Triangular probing: visits all groups before repeating.
-            // Sequence: probe_base_slot, +G, +3G, +6G, ...
+            // Triangular probing visits every group before it repeats.  The
+            // step sequence is +G, +3G, +6G and so on.
             ++probe_iteration;
             probe_base_slot = (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
 
-            // PERF-3: prefetch the NEXT probe's control group.  Issued
-            // ONLY here — after we've decided to iterate (current group
-            // had no empty slots, current matches all rejected) — so the
-            // dominant first-probe-hit case never pays the prefetch tax.
+            // The prefetch is issued only here, after the decision to
+            // iterate, so the dominant first-probe hit never pays for it.
             //
-            // Cost: ~1 cycle on the iterate path, where it's amortized
-            // against a ~50-cycle memory fetch on the next CtrlGroup::load.
-            // The prefetch is in flight while the loop branch back to top
-            // executes and the optimizer may interleave the load.
-            //
-            // Locality hint = 0 (streaming, no L1 retention).  Probe
-            // tables are large (~64-512 KB); evicting useful data with
-            // speculative prefetches would cost more than it saves.
+            // The locality hint is zero because the table is far larger than
+            // the cache and retaining a speculatively probed group would
+            // evict something more useful.
             __builtin_prefetch(&ctrl_[probe_base_slot], 0, 0);
         }
     }
 
-    // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer
-    // via fixy::wrap::SwissTableBuffer<const Expr*> (#915 WRAP-ExprPool-1).
-    // The wrapper owns the aligned_alloc lifetime as move-only RAII;
-    // ctrl_ and slots_ remain raw projections cached on the hot probe
-    // path so SwissTable::CtrlGroup::load(&ctrl_[i]) and slots_[i] keep
-    // their single-load shape with no indirection.
-    // Layout (preserved):
+    // Both arrays live in one contiguous buffer laid out as
     //   [ctrl_: `cap` bytes] [slots_: `cap * 8` bytes]
-    // slots_ starts at offset `cap`, which is always a multiple of
-    // kGroupWidth (≥ 16) → trivially 8-byte aligned for the pointer array.
+    // The slot array starts at offset `cap`, which is always a multiple of
+    // the group width and therefore at least 16, so the pointer array is
+    // 8-byte aligned without any padding.
+    //
+    // ctrl_ and slots_ stay as raw projections so each probe reads them with
+    // a single load and no indirection through the owning buffer.
     void alloc_tables_(size_t cap) {
         const size_t slot_bytes = cap * sizeof(const Expr*);
         backing_ = ::crucible::fixy::wrap::SwissTableBuffer<const Expr*>::allocate(cap);
         ctrl_ = backing_.ctrl();
         slots_ = backing_.slots();
-        std::memset(ctrl_, 0x80, cap);  // kEmpty = 0x80
-        std::memset(slots_, 0, slot_bytes);  // null-init slot pointers
+        std::memset(ctrl_, 0x80, cap);  // 0x80 is the empty control byte.
+        std::memset(slots_, 0, slot_bytes);
     }
 
     CRUCIBLE_UNSAFE_BUFFER_USAGE void rehash() { grow_to_(capacity_.value() * 2); }
 
-    // Core resize: allocate new ctrl_/slots_ of `new_capacity`, re-insert
-    // every live entry at its new home, free the old buffer. Called both
-    // by rehash() (implicit doubling at 87.5% load) and reserve() (caller-
-    // directed pre-growth). new_capacity must be a power of 2 and a
-    // multiple of kGroupWidth — the public entrypoints enforce that.
+    // Allocates fresh tables at `new_capacity`, re-inserts every live entry
+    // at its new home and frees the old buffer.
     //
-    // CONTRACT-109: discharge the pow2 invariant through the named
-    // `decide::is_power_of_two_le` cite (CONTRACT-050 catalog) plus an
-    // explicit `>= kGroupWidth` lower bound.  The downstream SIMD probe
-    // depends on `(slot_mask = capacity_ - 1) & probe_index`, which
-    // requires both invariants to hold: a non-pow2 capacity corrupts the
-    // mask; a sub-kGroupWidth capacity walks the SIMD load past the
-    // allocated control-byte buffer.  Both call sites preserve the
-    // invariants (rehash doubles a pow2; reserve ratchets up from
-    // kGroupWidth via `<<= 1`); the precondition is the grep-discoverable
-    // VC-discharge anchor for any future caller addition.  Upper bound
-    // 1 << 30 matches the kDefaultInitialCapacity ceiling above.
+    // Both preconditions are load-bearing for the probe.  It masks with
+    // capacity minus one, which a non-power-of-two capacity corrupts, and it
+    // loads a whole control group at a time, which walks off the end of a
+    // buffer narrower than one group.
     CRUCIBLE_UNSAFE_BUFFER_USAGE void grow_to_(size_t new_capacity)
         pre(::crucible::decide::is_power_of_two_le<std::size_t>(new_capacity, std::size_t{1} << 30))
             pre(new_capacity >= detail::group_width()) {
         size_t old_capacity = capacity_.value();
         size_t old_count = intern_count_.get();
-        // #915 WRAP-ExprPool-1: move the old SwissTableBuffer into a local;
-        // its dtor frees the backing alloc when this function returns,
-        // replacing the explicit std::free(old_backing) at the bottom.
+        // The local keeps the old buffer alive for the re-insert walk below
+        // and frees it when this function returns.
         auto old_backing = std::move(backing_);
         int8_t* old_ctrl = old_backing.ctrl();
         const Expr** old_slots = old_backing.slots();
@@ -1523,8 +1355,6 @@ private:
             if (old_ctrl[i] == detail::kEmpty) continue;
 
             const Expr* existing_expr = old_slots[i];
-            // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
-            // unwraps for Swiss-table rehash (h2_tag + modular probe-base).
             const std::uint64_t existing_hash_raw = existing_expr->hash.value();
             int8_t slot_match_tag = detail::h2_tag(existing_hash_raw);
             size_t probe_base_slot = (existing_hash_raw * detail::group_width()) & slot_mask;
@@ -1546,29 +1376,19 @@ private:
         }
         CRUCIBLE_POST(0, reinserted == old_count);
         intern_count_.advance(reinserted);
-        // old_backing.~SwissTableBuffer() frees old alloc via RAII.
     }
 
     Arena arena_;
-    // #915 WRAP-ExprPool-1: SwissTableBuffer owns the aligned coupled
-    // ctrl+slots backing as move-only RAII.  ctrl_/slots_ remain raw
-    // projections cached on the hot probe path so SIMD probes keep
-    // their single-load shape.
     ::crucible::fixy::wrap::SwissTableBuffer<const Expr*> backing_;
     int8_t* ctrl_;  // Points into backing_ at offset 0.
     const Expr** slots_;  // Points into backing_ at offset capacity_.
-    Capacity capacity_;  // Total slots (always power of 2, multiple of kGroupWidth)
-    InternCount intern_count_;  // Number of occupied slots
+    Capacity capacity_;  // Total slots, a power of two and a group multiple.
+    InternCount intern_count_;  // Occupied slots.
     std::vector<const char*> symbol_names_;
 
-    // PERF-2: SymbolId → const Expr* parallel to symbol_names_.
-    // After symbol() registers a SymbolId, the (Op::SYMBOL, sid) pair
-    // uniquely identifies the interned Expr — no Swiss-table probe
-    // needed for subsequent lookups by sid.  fast_symbol(sid) reads
-    // this cache directly: ~1.5 ns vs ~6.7 ns for the full symbol()
-    // probe.  Per-symbol cost is one parallel-array entry; symbols
-    // are sparse (typically dozens, not thousands) so the cache stays
-    // cache-line-friendly.
+    // Runs parallel to symbol_names_.  Once symbol() has registered a
+    // SymbolId, that id alone identifies the interned Expr, so a lookup by
+    // id needs no table probe at all.
     std::vector<const Expr*> symbol_exprs_;
 
     std::array<const Expr*, kIntCacheSize> int_cache_{};

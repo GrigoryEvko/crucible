@@ -16,8 +16,7 @@ namespace {
     return out;
 }
 
-[[nodiscard]] crucible::canopy::HyParViewPeer
-hp(std::uint64_t id) noexcept {
+[[nodiscard]] crucible::canopy::HyParViewPeer hp(std::uint64_t id) noexcept {
     auto admitted = crucible::canopy::admit_hyparview_peer(peer(id));
     assert(admitted.has_value());
     return *admitted;
@@ -31,13 +30,10 @@ int main() {
     using Membership = cc::HyParViewMembership<3, 6>;
     static_assert(!std::is_copy_constructible_v<Membership>);
     static_assert(!std::is_move_constructible_v<Membership>);
-    static_assert(std::same_as<cc::HyParViewPeer::tag_type,
-                               crucible::safety::source::HyParView>);
+    static_assert(std::same_as<cc::HyParViewPeer::tag_type, crucible::safety::source::HyParView>);
 
-    assert(cc::hyparview_error_name(cc::HyParViewError::PeerNotFound) ==
-           std::string_view{"PeerNotFound"});
-    assert(!cc::admit_hyparview_peer(crucible::cog::CogIdentity{})
-                .has_value());
+    assert(cc::hyparview_error_name(cc::HyParViewError::PeerNotFound) == std::string_view{"PeerNotFound"});
+    assert(!cc::admit_hyparview_peer(crucible::cog::CogIdentity{}).has_value());
 
     std::array active{hp(1), hp(2)};
     std::array passive{hp(3), hp(4), hp(5)};
@@ -49,11 +45,9 @@ int main() {
         .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
         .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
     };
-    auto membership = cc::mint_hyparview<3, 6>(
-        crucible::effects::testing::init(),
-        std::span<const cc::HyParViewPeer>{active},
-        std::span<const cc::HyParViewPeer>{passive},
-        config);
+    auto membership =
+        cc::mint_hyparview<3, 6>(crucible::effects::testing::init(), std::span<const cc::HyParViewPeer>{active},
+                                 std::span<const cc::HyParViewPeer>{passive}, config);
 
     assert(membership.active_size().value() == 2);
     assert(membership.passive_size().value() == 3);
@@ -79,19 +73,15 @@ int main() {
     dead.peer = peer(2);
     dead.state = cc::SwimState::Dead;
     dead.incarnation = 2;
-    assert(membership.on_swim_event(cc::GossipedSwimEvent{dead})
-               .has_value());
+    assert(membership.on_swim_event(cc::GossipedSwimEvent{dead}).has_value());
     assert(membership.active_size().value() == 3);
     active_view = membership.active_view();
     bool saw_promoted = false;
     bool saw_dead = false;
-    // FIXY-U-107: promotion is Philox-derived (was passive_[0]).
-    // Invariant: some original passive peer (3/4/5) ends up in active.
+    // Which passive peer gets promoted is drawn from the generator, so
+    // the check is that one of the three arrives, not which one.
     for (crucible::cog::CogIdentity const& id : active_view.as_span()) {
-        saw_promoted = saw_promoted ||
-                       id.uuid == peer(3).uuid ||
-                       id.uuid == peer(4).uuid ||
-                       id.uuid == peer(5).uuid;
+        saw_promoted = saw_promoted || id.uuid == peer(3).uuid || id.uuid == peer(4).uuid || id.uuid == peer(5).uuid;
         saw_dead = saw_dead || id.uuid == peer(2).uuid;
     }
     assert(saw_promoted);
@@ -100,14 +90,12 @@ int main() {
     auto plan = membership.shuffle_plan();
     assert(plan.has_value());
     assert(!plan->target.uuid.is_zero());
-    assert(plan->sample.count <=
-           membership.config().passive_random_walk_length.value());
+    assert(plan->sample.count <= membership.config().passive_random_walk_length.value());
 
     cc::HyParViewShuffle<6> incoming{};
     incoming.peers[0] = peer(8);
     incoming.count = 1;
-    assert(membership.apply_shuffle(
-               cc::GossipedHyParViewShuffle<6>{incoming}).has_value());
+    assert(membership.apply_shuffle(cc::GossipedHyParViewShuffle<6>{incoming}).has_value());
     passive_view = membership.passive_view();
     bool saw_shuffle = false;
     for (crucible::cog::CogIdentity const& id : passive_view.as_span()) {
@@ -118,22 +106,18 @@ int main() {
     auto forward = membership.forward_join_plan(hp(9));
     assert(forward.has_value());
     assert(forward->joining.uuid == peer(9).uuid);
-    assert(forward->ttl ==
-           membership.config().active_random_walk_length.value());
-    assert(forward->count ==
-           membership.config().active_random_walk_acceptance.value());
+    assert(forward->ttl == membership.config().active_random_walk_length.value());
+    assert(forward->count == membership.config().active_random_walk_acceptance.value());
 
     auto missing = membership.mark_failed(peer(99).uuid);
     assert(!missing.has_value());
     assert(missing.error() == cc::HyParViewError::PeerNotFound);
 
-    // fixy-A5-030 regression: recoverable admission path must reject
-    // over-capacity config and over-capacity peer spans WITHOUT
-    // aborting the process via CRUCIBLE_FATAL_INVARIANT.  Pre-fix the
-    // only way to construct from untrusted input was the trapping
-    // constructor; now callers can pre-validate and recover.
+    // Untrusted input reaches the admission path, so an over-capacity
+    // config or peer span must come back as an error the caller can act
+    // on rather than take the process down.
 
-    // Config too large for template params: active_size > MaxActive.
+    // An active size larger than the template parameter allows.
     {
         cc::HyParViewConfig too_big{
             .active_size = cc::HyParViewPositiveCount{99},
@@ -144,7 +128,7 @@ int main() {
         assert(admitted.error() == cc::HyParViewError::InvalidConfig);
     }
 
-    // Config valid → returns the config unchanged.
+    // A valid config comes back unchanged.
     {
         cc::HyParViewConfig ok{
             .active_size = cc::HyParViewPositiveCount{2},
@@ -155,8 +139,7 @@ int main() {
         assert(admitted->active_size.value() == 2);
     }
 
-    // Active span larger than config.active_size → ActiveViewFull
-    // (would have trapped pre-fix via the peer-list constructor).
+    // An active span larger than the config allows.
     {
         cc::HyParViewConfig small_cfg{
             .active_size = cc::HyParViewPositiveCount{1},
@@ -166,12 +149,11 @@ int main() {
         assert(admitted.has_value());
         cc::HyParViewMembership<3, 6> m{*admitted};
         std::array over_capacity{hp(50), hp(51), hp(52)};  // 3 > 1
-        auto rc = cc::populate_hyparview_membership(
-            m,
-            std::span<const cc::HyParViewPeer>{over_capacity});
+        auto rc = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{over_capacity});
         assert(!rc.has_value());
         assert(rc.error() == cc::HyParViewError::ActiveViewFull);
-        // Membership stays empty — early reject avoided partial fill.
+        // The rejection happens before anything is written, so the
+        // membership is not left half filled.
         assert(m.active_size().value() == 0);
     }
 
@@ -186,10 +168,8 @@ int main() {
         cc::HyParViewMembership<3, 6> m{*admitted};
         std::array good_active{hp(60), hp(61)};
         std::array good_passive{hp(70), hp(71), hp(72)};
-        auto rc = cc::populate_hyparview_membership(
-            m,
-            std::span<const cc::HyParViewPeer>{good_active},
-            std::span<const cc::HyParViewPeer>{good_passive});
+        auto rc = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{good_active},
+                                                    std::span<const cc::HyParViewPeer>{good_passive});
         assert(rc.has_value());
         assert(m.active_size().value() == 2);
         assert(m.passive_size().value() == 3);

@@ -1,11 +1,8 @@
 #pragma once
 
-// GAPS-147. Typed SR-IOV / virtual-function management substrate.
-//
-// This header owns admission for physical-NIC -> VF partitioning intent. It
-// does not perform privileged kernel mutation or invent live vendor behavior.
-// Privileged Linux backends consume DeclaredSrIovPlan values and currently
-// report explicit deferral/unavailability.
+// Admission for partitioning a physical NIC into virtual functions.
+// Nothing here mutates kernel state or guesses at vendor behaviour. A
+// privileged backend consumes the declared plan this header mints.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
@@ -27,13 +24,11 @@
 
 namespace crucible::cog::sriov {
 
-// fixy-A5-002 honesty marker.  Live tier = admission + DeclaredSrIovPlan
-// validation; stub tier = every privileged apply / query function which
-// currently returns PrivilegedApplyDeferred or PrivilegedBackendUnavailable
-// or QueryDeferred.  Flipping `privileged_apply_implemented` to true
-// requires a CAP_NET_ADMIN backend (sysfs sriov_numvfs / iproute2 / netlink)
-// and a lockstep update to test_sriov::test_apply_paths_are_stubbed.
-// Tracked by FIXY-U-087.
+// Admission and validation are live. Every privileged apply and query
+// function is a stub that reports PrivilegedApplyDeferred,
+// PrivilegedBackendUnavailable or QueryDeferred. Setting this true
+// means a backend exists that drives the real kernel interfaces, and
+// the tests that assert the stubbed behaviour change with it.
 inline constexpr bool privileged_apply_implemented = false;
 
 enum class SrIovError : std::uint8_t {
@@ -269,45 +264,41 @@ materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept
     return make_vf_handle(plan.value().physical, index);
 }
 
-// FIXY-U-087: stub-vs-live deprecation discipline.  Every SrIovManager method
-// and every free-function counterpart is a STUB (see
-// `privileged_apply_implemented = false`).  Authorized callers
-// (`test/test_sriov.cpp`, `test/cog_neg/neg_sriov_raw_plan_enable.cpp`,
-// `src/cog/SrIov.cpp` free→member forwarders) suppress the warning with
-// `#pragma GCC diagnostic push/ignored "-Wdeprecated-declarations"/pop`.
+// Every method below and every free function that mirrors one is a
+// stub. The deprecation attribute is what makes a caller see that at
+// compile time rather than only through the returned sentinel. A
+// caller that means to touch a stub suppresses the warning around the
+// call.
 class SrIovManager : public safety::Pinned<SrIovManager> {
 public:
     SrIovManager() = default;
 
-    [[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF enable (sysfs "
-                            "sriov_numvfs / netlink) not yet wired; returns "
-                            "PrivilegedApplyDeferred or PrivilegedBackendUnavailable; see "
-                            "fixy-A5-002 / FIXY-U-087")]]
+    [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend creates virtual "
+                            "functions; returns PrivilegedApplyDeferred or "
+                            "PrivilegedBackendUnavailable")]]
     std::expected<std::span<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
 
-    [[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF configure (iproute2 / "
-                            "netlink) not yet wired; returns PrivilegedApplyDeferred; see "
-                            "fixy-A5-002 / FIXY-U-087")]]
+    [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend configures a "
+                            "virtual function; returns PrivilegedApplyDeferred")]]
     std::expected<void, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
 
-    [[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF disable (sysfs "
-                            "sriov_numvfs=0) not yet wired; returns PrivilegedApplyDeferred or "
-                            "PrivilegedBackendUnavailable; see fixy-A5-002 / FIXY-U-087")]]
+    [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend removes virtual "
+                            "functions; returns PrivilegedApplyDeferred or "
+                            "PrivilegedBackendUnavailable")]]
     std::expected<void, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
 };
 
-[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF enable (sysfs sriov_numvfs "
-                        "/ netlink) not yet wired; see fixy-A5-002 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend creates virtual "
+                        "functions")]]
 std::expected<std::span<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF configure (iproute2 / "
-                        "netlink) not yet wired; see fixy-A5-002 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend configures a "
+                        "virtual function")]]
 std::expected<void, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF disable (sysfs "
-                        "sriov_numvfs=0) not yet wired; see fixy-A5-002 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend removes virtual "
+                        "functions")]]
 std::expected<void, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF query (sysfs / netlink) "
-                        "not yet wired; returns SrIovError::QueryDeferred; see fixy-A5-002 / "
-                        "FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no backend reads the live virtual-function "
+                        "layout; returns SrIovError::QueryDeferred")]]
 std::expected<DeclaredSrIovPlan, SrIovError> query_current(CogIdentity physical,
                                                            cntp::NicInterfaceName interface) noexcept;
 

@@ -4,65 +4,43 @@
 #ifndef CRUCIBLE_SAFETY_COLLISION_CATALOG_BODY
 #define CRUCIBLE_SAFETY_COLLISION_CATALOG_BODY
 
-// ── crucible::safety — CollisionCatalog.h (GAPS-005..018) ───────────
-//
-// Compile-time collision rules for safety::fn::Fn<...>.  Fn is the
-// 19-axis product surface; this catalog rejects cross-axis
-// compositions that are unsound even when each axis is individually
-// well-formed.
-//
-// The current C++ substrate does not yet carry a full Fixy body IR, so
-// flow-sensitive rules are represented by explicit opt-in marker
-// traits (`marks_async`, `marks_fail`, `marks_runtime_ghost_use`, ...).
-// That keeps Phase 0 honest: source-visible annotations can trigger
-// the rejection today, while future compiler passes can specialize the
-// same traits from analyzed bodies without changing Fn's ABI.
+// Flow-sensitive rules are opt-in marker traits, not body analysis. The
+// substrate carries no function-body IR, so the trigger has to be a
+// source-visible annotation. A later analysis pass can specialize the same
+// traits from analyzed bodies without changing any signature here.
 
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-260 V301 BarrierStrength tier
-#include <crucible/algebra/lattices/ControlFlowLattice.h>  // FIXY-V-243 C001/L006/P003 ControlFlow tier
-#include <crucible/algebra/lattices/HwInstructionLattice.h>  // FIXY-V-260 V201..V203 HwInstruction tier
-#include <crucible/algebra/lattices/SimdIsaLattice.h>  // FIXY-V-260 V101 SimdIsa tier
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>  // FIXY-V-268 V401/V402 MemoryScope tier + trunk classifiers
-#include <crucible/algebra/lattices/StdioLattice.h>  // FIXY-V-243 S001 Stdio tier
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/ControlFlowLattice.h>
+#include <crucible/algebra/lattices/HwInstructionLattice.h>
+#include <crucible/algebra/lattices/SimdIsaLattice.h>
+#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/lattices/StdioLattice.h>
 #include <crucible/algebra/lattices/WaitLattice.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Diagnostic.h>
-#include <crucible/safety/FpMode.h>  // FIXY-V-091 F-family detectors
-#include <crucible/safety/IsHotPath.h>  // FIXY-FOUND-067 Phase 1: structural hot-path reader
-#include <crucible/safety/source/Arch.h>  // FIXY-V-268 V402 arch_pin_v<F::source_t> host-arch reader
+#include <crucible/safety/FpMode.h>
+#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/source/Arch.h>
 
 #include <array>
 #include <cstdint>
-#include <meta>  // FIXY-FOUND-134: reflection-driven rule_bijection fold
+#include <meta>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-// Forward-declaration of safety::Wait<Strategy, T> — V-081 detects this
-// type pattern from F::type_t without pulling in the full safety/Wait.h
-// header (which would create a header cycle with Wait → DimensionTraits
-// → Witness → Fn).  Partial specialization needs only the class-template
-// declaration.
+// The wrapper class templates below are forward declared rather than
+// included. Each of their headers reaches this catalog transitively, so an
+// include here closes a cycle. The enum types they take as template
+// parameters do arrive by include above, so every non-type parameter is
+// complete.
 namespace crucible::safety {
 template <::crucible::algebra::lattices::WaitStrategy Strategy, typename T>
 class Wait;
 }  // namespace crucible::safety
 
-// Forward-declaration of safety::FpModePinned<auto Mode, T> — FIXY-V-091
-// detects this type pattern from F::type_t for the F-family FP-mode
-// cross-axis rules.  Including safety/FpMode.h here would pull in
-// algebra/lattices/FpModeLattice.h and the full 11-axis composite which
-// the catalog header has no other reason to depend on.  RowHashFold.h
-// already uses the same forward-decl pattern (the row-hash specialization
-// for FpModePinned has to fwd-decl the class for the same reason).
-//
-// The 11 FP-mode enum classes are forward-declared as opaque
-// `enum class : std::uint8_t` here; the partial spec of fp_axis_mode_of<>
-// below binds to FpModePinned<Mode, U> with `AxisEnum Mode` as a
-// constrained NTTP — substitution rejects when Mode's type doesn't match
-// AxisEnum, so a single generic detector covers all 11 sub-axes.
 namespace crucible::safety {
 enum class FpRounding : std::uint8_t;
 enum class FpFtz : std::uint8_t;
@@ -79,16 +57,6 @@ template <auto Mode, typename T>
 class FpModePinned;
 }  // namespace crucible::safety
 
-// Forward-declaration of the V-242 hazard-axis Graded carriers
-// safety::ControlFlowPinned<Tier, T> and safety::StdioPinned<Tier, T> —
-// FIXY-V-243 detects these type patterns from F::type_t for the
-// ControlFlow-tier (C001/L006/P003) and Stdio-tier (S001) rules without
-// pulling in the full safety/ControlFlow.h + safety/Stdio.h wrapper
-// headers (which would re-enter Graded → DimensionTraits → Witness → Fn
-// and create a header cycle).  The ControlFlow / Stdio enums themselves
-// arrive via the lattice headers included above (the same shape as the
-// WaitLattice.h include that W001 uses), so the NTTP enum types are
-// complete here; only the wrapper class templates are forward-declared.
 namespace crucible::safety {
 template <::crucible::algebra::lattices::ControlFlow Tier, typename T>
 class ControlFlowPinned;
@@ -96,15 +64,6 @@ template <::crucible::algebra::lattices::Stdio Tier, typename T>
 class StdioPinned;
 }  // namespace crucible::safety
 
-// Forward-declaration of the V-254/V-255/V-256 hardware-axis Graded
-// carriers — FIXY-V-260 reads their pinned tier off F::type_t for the
-// V101 (SimdIsa) / V201..V203 (HwInstruction) / V301 (BarrierStrength)
-// rules without pulling in the full safety/{Hw,BarrierGuarded,
-// SimdWidthPinned}.h wrapper headers (which would re-enter Graded →
-// DimensionTraits → Witness → Fn and create a header cycle, the same
-// reason the ControlFlowPinned / StdioPinned block above forward-decls).
-// The three lattice enums arrive complete via the lattice headers
-// included above; only the wrapper class templates are forward-declared.
 namespace crucible::safety {
 template <::crucible::algebra::lattices::HwInstruction Tier, typename T>
 class Hw;
@@ -112,13 +71,6 @@ template <::crucible::algebra::lattices::BarrierStrength Tier, typename T>
 class BarrierGuarded;
 template <::crucible::algebra::lattices::SimdIsa W, typename T>
 class SimdWidthPinned;
-// FIXY-V-268: the V-267 ScopedFence carrier — V401 reads its MemoryScope
-// tier off F::type_t (composed with a BarrierGuarded tier) for the
-// scope×strength sufficiency rule, V402 for the scope×arch cross-trunk
-// rule.  Forward-declared (not #include ScopedFence.h) for the same
-// header-cycle reason the Hw/BarrierGuarded/SimdWidthPinned block above
-// forward-decls; the MemoryScope enum + lattice arrive complete via the
-// MemoryScopeLattice.h include above.
 template <::crucible::algebra::lattices::MemoryScope S, typename T>
 class ScopedFence;
 }  // namespace crucible::safety
@@ -126,7 +78,6 @@ class ScopedFence;
 namespace crucible::safety::fn::collision {
 
 enum class RuleCode : std::uint8_t {
-    // ── 12 §6.8 rules shipped Phase 0 (GAPS-005..018) ────────────────
     I002 = 0,
     L002 = 1,
     E044 = 2,
@@ -139,404 +90,48 @@ enum class RuleCode : std::uint8_t {
     M011 = 9,
     S010 = 10,
     S011 = 11,
-    // ── 8 NEW rules shipped Phase B per misc/16_05_2026_fixy.md §4 ──
-    //
-    // Per the Phase-B substrate-grows-by-200-LoC plan, these eight
-    // rules live alongside the §6.8 rules in the substrate catalog so
-    // that direct `safety::Fn<...>` instantiation is gated identically
-    // to the `fixy::fn<...>` aggregator (no fixy-only rule machinery).
-    // `fixy::rule::R013..R020` are one-line aliases over them (shipped
-    // in fixy/Rules.h, Phase B).
-    L004 = 12,  // Linear x lifetime_region without Permission token
-    B001 = 13,  // Bg observable surface without bounded-resource decl
-    H001 = 14,  // HotPath with Unstated or Unbounded Cost
-    H002 = 15,  // HotPath without refinement witness floor
-    L005 = 16,  // Linear aliasing — two Linears sharing one region tag
-    F001 = 17,  // Frame manifesto: axis values disagree across pack
-    H003 = 18,  // HotPath row contains Alloc or IO without budget
-    F002 = 19,  // Federation peer without terminating budget
-    // ── FIXY-V-081 Phase C/W-family (Wait-strategy cross-axis) ─────────
-    //
-    // W-family rules guard the Synchronization axis (DimensionAxis::20)
-    // against compositions that violate latency or scheduling discipline.
-    // W001 is the first such rule: HotPath × syscall-tier Wait rejects
-    // functions marked hot-path that wrap their return/parameter type
-    // in any kernel-crossing Wait strategy — {Block, Park, AcquireWait,
-    // UmwaitC01}.  All four involve a syscall or kernel-mediated
-    // transition with latency 100 ns – 20 µs, incompatible with the
-    // hot-path budget (≤ 40 ns intra-socket per CLAUDE.md §IX latency
-    // hierarchy).  Only BoundedSpin and SpinPause are admissible.
-    // FIXY-FOUND-061 widened the rejected set from {Block, Park} to all
-    // four syscall-tier strategies; the diagnostic message and
-    // remediation text already named the wider set.
-    W001 = 20,  // HotPath × Wait<{Block,Park,AcquireWait,UmwaitC01}> (syscall-tier blocker on hot path)
-    // ── FIXY-V-082 Phase C/W-family — Bg × active-spin Wait ───────────
-    //
-    // W002 is the dual of W001 on the Synchronization axis: a Bg-context
-    // function MUST NOT wrap its return/parameter type in an active-spin
-    // Wait strategy.  SpinPause (pure `_mm_pause` loop, never blocks) and
-    // BoundedSpin (deadline-bounded spin) both monopolize the hosting
-    // core for the duration of the wait.  Bg threads are by contract
-    // permitted to block — they SHOULD use Park/Block/AcquireWait/Umwait
-    // so the scheduler can do useful work elsewhere.  Active-spin in a
-    // Bg row is the back-pressure-trap shape B001 catches one axis over.
-    W002 = 21,  // Bg-row × Wait<SpinPause> or Wait<BoundedSpin> (active-spin in cold thread)
-    // ── FIXY-V-091 F-family — FP-mode cross-axis rules ─────────────────
-    //
-    // V-090 ships 11 per-axis FP-mode wrappers (FpReassociatePinned,
-    // FpContractPinned, FpFtzPinned, FpDenormalInputPinned, ...).  Each
-    // pins a sub-axis at the type level.  The F-family rules guard
-    // cross-axis compositions where pinning one FP sub-axis defeats a
-    // load-bearing property on a DIFFERENT Fn axis:
-    //
-    //   F101: marks_replay_required × FpReassociate<non-strict>
-    //         FOUND-074: F101 rejects both UnrestrictedRewrite AND
-    //         BoundedTreeDepth.  UnrestrictedRewrite reorders FP additions
-    //         freely (compiler-scheduler-dependent).  BoundedTreeDepth
-    //         pins a log-N tree DEPTH but lets vendors pick the per-level
-    //         LANE ASSIGNMENT (NVIDIA warp-shuffle, AMD wavefront, Intel
-    //         SVE differ on operand ordering within the same tree shape);
-    //         the bit pattern diverges across the cross-vendor numerics
-    //         CI matrix.  Bit-exact replay requires Forbidden — the IEEE
-    //         754 default, the ONLY setting compatible with replay.
-    //
-    //   F102: marks_replay_required × FpContract<Fast>
-    //         `-ffp-contract=fast` allows cross-statement FMA folding.
-    //         NVIDIA SASS / AMD CDNA / Intel SPR contract at different
-    //         expression boundaries; same source → different bits.
-    //
-    //   F103: has_ct × FpReassociate<UnrestrictedRewrite>
-    //         Reassociation introduces data-dependent reduction-tree
-    //         topology (the compiler may pick different orderings
-    //         based on operand magnitudes), violating CT timing
-    //         independence.
-    //
-    //   F104: has_ct × FpDenormalInput<HonorDenormals>
-    //         DAZ=0 on x86 introduces a 30-100× slowdown when the
-    //         input IS denormal — textbook FP timing side-channel.
-    //         Crypto and CT paths PIN DAZ=1 (DenormalsAreZero) to make
-    //         denormal-vs-normal-input timing identical.
-    //
-    //   F105: has_ct × FpFtz<PreserveSubnormals>
-    //         FTZ=0 introduces the same 30-100× slowdown PRODUCING
-    //         denormal outputs (output side; F104 is input side).  CT
-    //         paths PIN FlushToZero so the result-magnitude doesn't
-    //         leak through cycle count.
-    F101 = 22,  // Replay-required × FpReassociate non-strict (Unrestricted OR BoundedTreeDepth)  FOUND-074
-    F102 = 23,  // Replay-required × FpContract<Fast>
-    F103 = 24,  // CT × FpReassociate<UnrestrictedRewrite>
-    F104 = 25,  // CT × FpDenormalInput<HonorDenormals>
-    F105 = 26,  // CT × FpFtz<PreserveSubnormals>
-    // ── FIXY-V-234 M-family — mmap-syscall-surface cross-axis rules ───
-    //
-    // M001 names the collision class Agent 9 Bug 5 surfaced on the
-    // SenseHub MAP_SHARED reader: a future "release pressure on cold
-    // gauges" change that called `madvise(MADV_DONTNEED)` on the same
-    // region a concurrent `__atomic_load_n` reader was sampling would
-    // zero the pages mid-load, returning a bogus counter value.  The
-    // rule pins the disjoint-routing discipline V-225 + V-234 shipped:
-    //
-    //   safe surface  (`fixy::mmap::advise<Advice>`)
-    //                  refuses `is_dangerous_advice_v<Advice>` Advice;
-    //                  callers needing DontNeed/Free MUST switch to
-    //                  the release-aware surface.
-    //
-    //   release-aware (`fixy::mmap::advise_release_aware<Advice,
-    //                                                    RegionTag>`)
-    //                  takes a `Permission<RegionTag> const&` borrow
-    //                  proof so the type system witnesses unique-
-    //                  exclusive-access; combined with
-    //                  `SharedPermissionPool<RegionTag>::try_upgrade()`
-    //                  the runtime state machine guarantees no live
-    //                  shared reader.
-    //
-    // Routing collision — `advise<DontNeed>` on the safe surface — is
-    // rejected by `CtxFitsSafeAdvise` (one half of M001).  Calling
-    // `advise_release_aware<HugePage>` (non-dangerous advice on the
-    // release-aware surface) is rejected by `CtxFitsReleaseAwareAdvise`
-    // (the other half).  Together: dangerous Advice flows EXCLUSIVELY
-    // through the Permission-witnessed surface.
-    //
-    // FIXY-FOUND-013 audit: M001's enforcement model is CONCEPT-GATED at
-    // the production-callsite of `fixy::wrap::mmap::advise<>` and
-    // `fixy::wrap::mmap::advise_release_aware<>` (Mmap.h ~L721 / ~L771),
-    // NOT a `CollisionRules<Fn>::validate()` pack walk like the W-family.
-    // Both polarities are pinned at fixy/Mmap.h:903-910 (substrate side)
-    // AND test/test_fixy_v_234_release_aware_permission.cpp (catalog
-    // side, 4 static_asserts) so renaming/removing either concept reds
-    // both directions.  Negative fixtures:
-    //   test/fixy_neg/neg_fixy_v_234_advise_release_aware_missing_permission.cpp
-    //   test/fixy_neg/neg_fixy_v_234_advise_release_aware_cross_tag_permission.cpp
-    M001 = 27,  // mmap.advise<DontNeed> without release_aware<RegionTag>
-    // ── FIXY-V-243 hazard-axis cross-axis rules (Agent 10 §4) ──────────
-    //
-    // V-242 ships 5 hazard-axis Graded carriers (ControlFlowPinned,
-    // CallShapePinned, StackUsePinned, GlobalStatePinned, StdioPinned).
-    // These eight rules gate cross-axis compositions where a hazard
-    // declaration is inconsistent with another Fn axis.  Per the catalog
-    // decoupling discipline (W-family / F-family precedent), each rule
-    // reads either a SHIPPED V-242 wrapper tier off `F::type_t` (C001 /
-    // L006 / P003 / S001 — testable today) or an opt-in marker trait that
-    // the V-244/V-245/V-246 grant headers will specialize once they land
-    // (D001 / D002 / G001 / S004 — default-SAFE until a grant opts in).
-    //
-    //   C001: marks_aborts × ControlFlow tier < AbortOnly.  A function
-    //         declaring it may abort (grant::ctrl::abort<Rationale>, V-244)
-    //         MUST carry a ControlFlow tier ≥ AbortOnly — the type-level
-    //         witness of the escape.  Claiming abort while typed Pure is
-    //         the ControlFlow↔escape inconsistency Agent 10 §4 names.
-    //   D001: marks_indirect_call_not_noexcept.  An indirect-call grant
-    //         (grant::dispatch::indirect_call<Family>, V-245) whose RunFn
-    //         type is NOT noexcept reds — closes Scenario A
-    //         (BackgroundThread::RegionReadyCallback::Fn missing noexcept).
-    //   D002: marks_recurses_unbounded.  grant::dispatch::recurses<> (V-245)
-    //         without an NTTP MaxDepth reds — the implicit-recursion-bound
-    //         anti-pattern.
-    //   G001: marks_thread_local_untagged.  grant::global::thread_local_<>
-    //         (V-246) without a TLSTag NTTP reds.
-    //   L006: Usage::Linear × ControlFlow tier ≥ MayLongjmp (or the
-    //         marks_longjmp_unsafe marker).  longjmp SKIPS destructors —
-    //         a Linear resource in scope would leak / dangle across the
-    //         non-local jump.  The TYPE-LEVEL companion to the C++ rule
-    //         that already rejects goto across a destructor scope.
-    //   P003: marks_fork_worker × ControlFlow tier ≥ ThrowOnly (or the
-    //         marks_throws marker).  A throwing permission_fork worker
-    //         body terminates the hosting jthread (no exception crosses
-    //         the thread boundary; -fno-exceptions makes throw == abort).
-    //         The catalog-level codification of the V-087 fork-body
-    //         static_assert.
-    //   S001: marks_hot_path × Stdio tier ≥ BufferedWrite.  A hot-path
-    //         function (TraceRing / Arena / KernelCache) MUST NOT do stdio
-    //         — format parsing ≥ 100 ns, output syscalls flush buffers
-    //         (CLAUDE.md §XII).
-    //   S004: marks_singleton_init_cycle.  The V-248 tag-graph closure
-    //         walk over registered Meyers-singleton tags detects a cycle
-    //         at consteval and flags the participating Fn.  The reusable
-    //         cycle detector ships here as pack::singleton_init_acyclic<>.
-    //   G002: marks_thread_local_atomic.  A grant::global::thread_local_<Tag>
-    //         (V-246) PAIRED with an atomic memory-order wrapper
-    //         (safety::MemOrder<*, std::atomic<T>>) is nonsensical: an atomic
-    //         op on a per-thread object orders against no peer (one instance
-    //         per thread).  Either the atomic is redundant (misleading) or
-    //         the thread_local was a typo for process-wide `static`.  Closes
-    //         Scenario E (bench_smoke.cpp:78 thread_local std::atomic counter).
-    C001 = 28,  // marks_aborts × ControlFlow tier < AbortOnly (escape unwitnessed)
-    D001 = 29,  // indirect_call grant with non-noexcept callable
-    D002 = 30,  // recurses grant without a bounded MaxDepth
-    G001 = 31,  // thread_local_ grant without a TLSTag
-    L006 = 32,  // Linear × ControlFlow tier ≥ MayLongjmp (destructor-skipping jump)
-    P003 = 33,  // fork-worker × ControlFlow tier ≥ ThrowOnly (throw terminates jthread)
-    S001 = 34,  // HotPath × Stdio tier ≥ BufferedWrite (stdio on hot path)
-    S004 = 35,  // Meyers-singleton init-dependency cycle
-    G002 = 36,  // thread_local_ grant × atomic MemOrder (per-thread atomic nonsensical)
-    // ── FIXY-V-260 V-family — hardware-axis cross-axis rules (Agent 11 §3.6) ──
-    //
-    // V-254/V-255/V-256 ship three hardware-band Graded carriers:
-    // Hw<HwInstruction, T> (the instruction-capability ceiling),
-    // BarrierGuarded<BarrierStrength, T> (the memory-fence strength), and
-    // SimdWidthPinned<SimdIsa, T> (the pinned vector ISA).  V-258/V-259
-    // ship the vendor::intrinsic<V, I> and simd::width<W> GRANTS.  These
-    // eight rules guard cross-axis compositions where a hardware
-    // declaration is unsound against another Fn axis.  Per the catalog
-    // decoupling discipline (W-/F-family precedent), each rule reads
-    // either a SHIPPED V-254/255/256 wrapper tier off F::type_t (V101 /
-    // V201 / V202 / V203 / V301 — testable today) or an opt-in marker
-    // trait that the V-258/V-259 grant-pack analysis specializes once it
-    // lands (V001 / V002 / V102 — default-SAFE until a grant opts in).
-    //
-    // The V band is FREE (no V### existed); the eight rules re-home Agent
-    // 11 §3.6's V001/V002/S001/S002/H001/H002/H003/B001 onto collision-
-    // free codes because S001/H001/H002/H003/B001 are already taken by the
-    // V-243 Stdio / Phase-B HotPath / Bg rules.  Number ranges encode the
-    // sub-axis exactly like the F-family (Frame F0xx + Fp F1xx): vendor
-    // V0xx, SimdIsa V1xx, HwInstruction V2xx, BarrierStrength V3xx.
-    //
-    //   V001: marks_vendor_isa_inconsistent.  The pack declares
-    //         vendor::intrinsic<V, I> grants whose (V, I) disagree across
-    //         bindings (one binding pins NV, another an x86 ISA family) —
-    //         the grant-pack version of the per-grant
-    //         vendor_isa_consistent_v<V, I> gate V-258 enforces on a
-    //         SINGLE intrinsic.  Default-SAFE marker.
-    //   V002: marks_vendor_cross_arch.  A single binding composes
-    //         intrinsics from incompatible architecture trunks (an x86
-    //         intrinsic AND an ARM intrinsic) — the catalog companion to
-    //         the V-261 source::ArchPinned<Arch> cross-arch gate.  An
-    //         x86+ARM kernel can never run on either; the binary would
-    //         #UD on whichever ISA it lands.  Default-SAFE marker.
-    //   V101: marks_replay_required × SimdWidthPinned tier ∉ {Scalar,
-    //         Portable}.  A replay-required function MUST NOT pin a
-    //         specific vector ISA: AVX-512 and NEON have different lane
-    //         counts, so the same IR produces a different FP-reduction
-    //         tree and the bit pattern diverges across the cross-vendor
-    //         CI matrix (CLAUDE.md DetSafe: FP reductions are forbidden
-    //         because chunked-fold reorders).  Scalar (no SIMD) and
-    //         Portable (⊤, identical on every ISA) are replay-safe.
-    //         Type-readable off F::type_t today.
-    //   V102: marks_simd_width_exceeds_isa.  A simd::width<W> grant whose
-    //         W exceeds the declared vendor ISA family's native width —
-    //         the marquee "width<512> on AVX2 family" reject the V-259
-    //         sentinel reserved for this rule (AVX2 tops out at 256-bit;
-    //         pinning a 512-bit width on an AVX2 binding would emit
-    //         instructions the target #UDs on).  Reasons about cross-grant
-    //         VALUE compatibility, so it ships as a default-SAFE marker
-    //         the V-258/V-259 grant-pack analysis specializes.
-    //   V201: marks_hot_path × Hw tier ≥ NonDeterministicTsc.  A hot-path
-    //         function (TraceRing / Arena / KernelCache) MUST NOT carry a
-    //         Hw<NonDeterministicTsc> or Hw<PrivilegedMsr> tier: rdtsc /
-    //         rdtscp are serializing (≈ 20-40 cycles), rdmsr / wrmsr are
-    //         privileged ring-0 traps — both blow the ≤ 40 ns intra-socket
-    //         hot budget (CLAUDE.md §IX).  Type-readable.
-    //   V202: Hw tier == PrivilegedMsr WITHOUT effect_row ⊇ Effect::Init.
-    //         rdmsr / wrmsr / IN / OUT require ring 0 and a Permission
-    //         proof; the HwInstructionLattice doc pins them to the Init
-    //         context (one-shot privileged setup, never the steady state).
-    //         A PrivilegedMsr tier on a non-Init row is the unguarded-
-    //         privilege shape.  Type + row-readable.
-    //   V203: marks_replay_required × Hw tier ≥ NonDeterministicTsc.  rdtsc
-    //         is hardware-dependent (different cycle base / invariant-TSC
-    //         behavior on H100 vs 3090 hosts), so a replay-required body
-    //         reading it diverges across reincarnation hardware — the
-    //         instruction-axis dual of the F101 FP-replay rule.
-    //         Type-readable.
-    //   V301: marks_hot_path × BarrierStrength tier ≥ SeqCst.  A hot-path
-    //         function MUST NOT carry a BarrierGuarded<SeqCst> or
-    //         BarrierGuarded<FullFence> tier: a full fence (mfence /
-    //         lock-prefixed) drains the store buffer (≈ 20-40+ cycles) —
-    //         CLAUDE.md §IX mandates acquire/release only on the hot path
-    //         (free on x86 TSO).  Type-readable.
-    V001 = 37,  // vendor::intrinsic pack with inconsistent (V, I)
-    V002 = 38,  // single binding composes cross-arch intrinsics (x86 + ARM)
-    V101 = 39,  // replay-required × SimdWidthPinned pins a specific vector ISA
-    V102 = 40,  // simd::width<W> exceeds the declared ISA family native width
-    V201 = 41,  // HotPath × Hw tier ≥ NonDeterministicTsc (rdtsc / privileged)
-    V202 = 42,  // Hw tier == PrivilegedMsr without an Init-context row
-    V203 = 43,  // replay-required × Hw tier ≥ NonDeterministicTsc (rdtsc nondeterminism)
-    V301 = 44,  // HotPath × BarrierStrength tier ≥ SeqCst (full fence on hot path)
-    // ── FIXY-V-268 V4xx-family — memory-scope cross-axis rules (Agent WMEM) ──
-    //
-    // V-265 ships the MemoryScopeLattice (the two-trunk partial order:
-    // accel Warp⊑Cta⊑Cluster⊑Gpu × ARM Inner⊑Outer, joined at Thread/⊥ and
-    // System/⊤); V-267 ships the ScopedFence<Scope, T> carrier that pins a
-    // publish scope at the type level.  These two rules guard cross-axis
-    // compositions where a memory-scope declaration is unsound against the
-    // BarrierStrength axis (V-252 / V-255 BarrierGuarded) or the host-arch
-    // pin (V-261 source::ArchPinned).  The V4xx band is FREE; both rules are
-    // TYPE-READABLE off F::type_t + F::source_t today (no grant needed), like
-    // V101/V201/V301 — the V402 marker is the second, grant-driven path for
-    // the cross-grant case a single type read cannot express.
-    //
-    //   V401: marks scope ⊒ Cluster × BarrierStrength ⊏ AcqRel.  A value
-    //         published at cross-CTA-or-wider visibility (Cluster / Gpu /
-    //         System) needs at least acquire-release ordering to make the
-    //         cross-CTA / cross-cluster / cross-device writes actually
-    //         visible; a Cluster/Gpu-scope publication guarded only by None /
-    //         CompilerBarrier / AcquireLoad / ReleaseStore is a silent weak-
-    //         memory race (the fence widens visibility but the barrier
-    //         never establishes the two-sided ordering cross-CTA readers
-    //         require).  FIXY-FOUND-062 widened the threshold from Gpu to
-    //         Cluster — Hopper's thread-block cluster (PTX `.cluster`,
-    //         distributed shared memory across up to 8 CTAs, cluster.sync)
-    //         crosses CTA boundaries with the same silent-race profile as
-    //         a `.gpu` publish.  scope_at_or_above_v<Cluster, type_t> reads
-    //         the ScopedFence tier; barrier_at_or_above_v<AcqRel, type_t>
-    //         reads the BarrierGuarded tier from the SAME composed type_t
-    //         (the two detectors pierce each other).  Type-readable.
-    //   V402: marks scope-trunk × host-arch CROSS-TRUNK incoherence.  An
-    //         accel-trunk (GPU device) scope pinned to a CPU-host arch
-    //         (source::ArchPinned<Arm> or <X86> — the fence dialect is
-    //         mfence / DMB, which cannot realize a PTX `.cta`/`.gpu` scope),
-    //         OR an ARM-shareability scope (Inner/Outer = DMB ISH/OSH) pinned
-    //         to a non-ARM host (X86 has no ISH/OSH domain).  The mirror of
-    //         V002 marks_vendor_cross_arch on the memory-scope axis.  Reads
-    //         the ScopedFence trunk (V-265 mem_scope_is_accel / mem_scope_is_arm
-    //         classifiers) against arch_pin_v<F::source_t> (V-261).  Type +
-    //         source-readable; the marks_scope_arch_cross_trunk marker is the
-    //         grant-driven path for the nested-cross-trunk-scope case a single
-    //         type read cannot express (two ScopedFence layers from different
-    //         trunks composed in one binding).
-    V401 = 45,  // scope ⊒ Cluster × BarrierStrength ⊏ AcqRel (cross-CTA publish under-fenced)
-    V402 = 46,  // scope-trunk × host-arch cross-trunk (GPU scope on CPU host / ARM scope on x86)
-    // ── FIXY-FOUND-063 H-family extension — context-row contradictions ─
-    //
-    // H010 closes a gap among the existing H001/H002/H003 rules: those
-    // catch HotPath × {Unbounded cost, trivial refinement, Alloc/IO with
-    // unbounded cost}, but NONE of them catches the direct contextual
-    // contradiction `HotPath × Row<Bg>`.  A Bg-row function declares
-    // "I run in background context (allocations / IO / blocking allowed,
-    // milliseconds latency)"; a HotPath function declares "I run on the
-    // ≤40 ns intra-socket hot path".  These are mutually exclusive
-    // contexts per CLAUDE.md §IX latency hierarchy.  Marking both is a
-    // structural contradiction the type system must reject — closing
-    // the gap left by H001/H003 (which depend on cost / Alloc/IO carriers
-    // and miss HotPath × Bg × cost::Constant × no-Alloc/IO).
-    H010 = 47,  // HotPath × Row<Bg> (mutually exclusive context markers)
-    // ── FIXY-FOUND-064 P-family extension — Ghost erasure contract ─────
-    //
-    // P010 closes a gap left by P002.  P002 catches `UsageMode::Ghost ×
-    // marks_runtime_ghost_use<F>::value` — a marker-driven detection
-    // that fires only when downstream code SPECIALIZES the trait on
-    // the offending Fn (FIXY-FOUND-067 dormant-marker family).  But a
-    // Ghost binding declared with a runtime-observable effect atom in
-    // its effect row (Alloc / IO / Block) is structurally a contradiction
-    // independent of any marker: Ghost values are erased at codegen
-    // (no emitted instructions, no register pressure, no stack
-    // footprint) — yet Alloc emits heap-touching code, IO emits
-    // syscall / kernel-mediated traffic, and Block emits blocking
-    // primitives.  ALL THREE require emitted instructions; Ghost
-    // contractually forbids them.  P010 catches the type-readable
-    // case (the effect-row direct read) where P002 catches the
-    // grant-driven `marks_runtime_ghost_use` case.  Structurally
-    // parallel to H010 (HotPath × Bg) but on the Usage axis instead
-    // of the HotPath marker — the two rules pin the same shape on
-    // orthogonal axes.
-    P010 = 48,  // Ghost × Row<Alloc|IO|Block> (erasure contract violation)
-    // ── FIXY-FOUND-065 L-family extension — borrow × Bg-row lifetime ───
-    //
-    // L007 closes a gap left by L002 / L003.  L002 catches `borrow_capture
-    // × marks_async`; L003 catches `borrow_capture × marks_unscoped_spawn`.
-    // Both rely on a marker-trait specialization that downstream code must
-    // hand-roll on the offending Fn (FIXY-FOUND-067 dormant-marker
-    // family).  But a borrow_capture × Row<Bg> binding declares "this
-    // function takes a borrowed reference AND runs in background-thread
-    // context" — and the Bg-row carrier directly implies cross-thread
-    // execution where the caller's stack may have unwound by the time
-    // the background thread executes the body, leaving the borrow
-    // dangling.  Structurally the same lifetime hazard L003 targets,
-    // but readable from the EffectRow alone with no marker required.
-    // Parallel to P010 (Ghost × Row<observable-effects>) on the Usage
-    // axis but on the Borrow side of the Borrow/Ghost split.
-    L007 = 49,  // borrow_capture × Row<Bg> (cross-thread borrow lifetime hazard)
-    // ── FIXY-FOUND-070: Trust-axis rule (catalog grown 50 → 51) ───────
-    //
-    // Trust grades the binding's provenance: Verified > Tested > Unverified
-    // (FOUND-034 set the default to Unverified, the Biba-safe bottom).  Before
-    // FOUND-070 the Trust axis was destructured by Fn but read by ZERO §6.8
-    // collision rules — every binding could declare any UsageMode regardless
-    // of provenance, including UsageMode::Capability which mints a non-
-    // revocable authorization token.  A Capability from an Unverified call
-    // path is the canonical privilege-escalation shape: untrusted code mints
-    // an authority token that downstream consumers treat as legitimate.
-    // T001 closes the gap structurally — any Capability binding must declare
-    // its provenance Verified or Tested.
-    T001 = 50,  // Trust::Unverified × UsageMode::Capability (capability minted from untrusted provenance)
-    // FIXY-FOUND-071: Reentrancy axis read by §6.8 rules.  Pre-FOUND-071 the
-    // Reentrancy field (ReentrancyMode::{NonReentrant, Reentrant, Coroutine})
-    // was destructured by Fn but read by ZERO §6.8 collision rules — every
-    // binding could declare any Reentrancy regardless of execution context.
-    // R001 catches Coroutine on the hot path (per-suspend state-machine spill
-    // + indirect resume incompatible with ≤40ns hot-path budget per
-    // CLAUDE.md §IX).  R002 catches Coroutine × UsageMode::Borrow: a borrow
-    // captured in a coroutine frame faces the same dangling-on-resume hazard
-    // L002 catches on the async-marker side (the borrowed value's stack may
-    // have unwound by resume time).  R003 catches Coroutine in a Bg context
-    // (suspend/resume across thread boundaries is not thread-safe by default;
-    // C++ coroutines require explicit executor synchronization to migrate
-    // the resumption point).  All three target Coroutine — the riskiest
-    // ReentrancyMode value — leaving NonReentrant (the default) and
-    // Reentrant unconstrained at the Reentrancy-axis layer.
-    R001 = 51,  // Reentrancy::Coroutine × hot_path (state-machine spill on hot path)
-    R002 = 52,  // Reentrancy::Coroutine × UsageMode::Borrow (capture-dangling on resume)
-    R003 = 53,  // Reentrancy::Coroutine × Row<Bg> (cross-thread resume hazard)
+    L004 = 12,
+    B001 = 13,
+    H001 = 14,
+    H002 = 15,
+    L005 = 16,
+    F001 = 17,
+    H003 = 18,
+    F002 = 19,
+    W001 = 20,
+    W002 = 21,
+    F101 = 22,
+    F102 = 23,
+    F103 = 24,
+    F104 = 25,
+    F105 = 26,
+    M001 = 27,
+    C001 = 28,
+    D001 = 29,
+    D002 = 30,
+    G001 = 31,
+    L006 = 32,
+    P003 = 33,
+    S001 = 34,
+    S004 = 35,
+    G002 = 36,
+    V001 = 37,
+    V002 = 38,
+    V101 = 39,
+    V102 = 40,
+    V201 = 41,
+    V202 = 42,
+    V203 = 43,
+    V301 = 44,
+    V401 = 45,
+    V402 = 46,
+    H010 = 47,
+    P010 = 48,
+    L007 = 49,
+    T001 = 50,
+    R001 = 51,
+    R002 = 52,
+    R003 = 53,
     None = 255,
 };
 
@@ -577,8 +172,6 @@ struct S011_CapabilityReplay : diag::tag_base {
     static constexpr std::string_view name = "S011_CapabilityReplay";
 };
 
-// ── 8 NEW rule tags (Phase B per misc/16_05_2026_fixy.md §4) ────────
-
 struct L004_LinearLifetimeNeedsPermission : diag::tag_base {
     static constexpr std::string_view name = "L004_LinearLifetimeNeedsPermission";
 };
@@ -604,17 +197,14 @@ struct F002_FederationPeerTerminatingBudget : diag::tag_base {
     static constexpr std::string_view name = "F002_FederationPeerTerminatingBudget";
 };
 
-// ── FIXY-V-081 W-family (Wait-strategy cross-axis) ──────────────────
 struct W001_HotPathWaitParkOrBlocker : diag::tag_base {
     static constexpr std::string_view name = "W001_HotPathWaitParkOrBlocker";
 };
 
-// ── FIXY-V-082 W-family (Wait-strategy × Bg cold-thread axis) ──────
 struct W002_BgWaitActiveSpin : diag::tag_base {
     static constexpr std::string_view name = "W002_BgWaitActiveSpin";
 };
 
-// ── FIXY-V-091 F-family (FP-mode cross-axis) ────────────────────────
 struct F101_ReplayFpReassocPermitted : diag::tag_base {
     static constexpr std::string_view name = "F101_ReplayFpReassocPermitted";
 };
@@ -631,12 +221,10 @@ struct F105_CtFpFtzPreserved : diag::tag_base {
     static constexpr std::string_view name = "F105_CtFpFtzPreserved";
 };
 
-// ── FIXY-V-234 M-family (mmap-syscall-surface cross-axis) ──────────
 struct M001_DontNeedRequiresReleaseAware : diag::tag_base {
     static constexpr std::string_view name = "M001_DontNeedRequiresReleaseAware";
 };
 
-// ── FIXY-V-243 hazard-axis cross-axis rule tags (Agent 10 §4) ──────
 struct C001_AbortRequiresControlFlowWitness : diag::tag_base {
     static constexpr std::string_view name = "C001_AbortRequiresControlFlowWitness";
 };
@@ -665,7 +253,6 @@ struct G002_ThreadLocalAtomicNonsensical : diag::tag_base {
     static constexpr std::string_view name = "G002_ThreadLocalAtomicNonsensical";
 };
 
-// ── FIXY-V-260 hardware-axis cross-axis rule tags (Agent 11 §3.6) ──
 struct V001_VendorIsaInconsistent : diag::tag_base {
     static constexpr std::string_view name = "V001_VendorIsaInconsistent";
 };
@@ -691,7 +278,6 @@ struct V301_HotPathFullFence : diag::tag_base {
     static constexpr std::string_view name = "V301_HotPathFullFence";
 };
 
-// ── FIXY-V-268 memory-scope cross-axis rule tags (Agent WMEM §3.6) ──
 struct V401_ScopeStrengthInsufficient : diag::tag_base {
     static constexpr std::string_view name = "V401_ScopeStrengthInsufficient";
 };
@@ -699,37 +285,30 @@ struct V402_ScopeArchCrossTrunk : diag::tag_base {
     static constexpr std::string_view name = "V402_ScopeArchCrossTrunk";
 };
 
-// ── FIXY-FOUND-063 H010 — HotPath × Bg row contradiction ────────────
 struct H010_HotPathBgContradiction : diag::tag_base {
     static constexpr std::string_view name = "H010_HotPathBgContradiction";
 };
 
-// ── FIXY-FOUND-064 P010 — Ghost × runtime-effect erasure violation ──
 struct P010_GhostNonErasable : diag::tag_base {
     static constexpr std::string_view name = "P010_GhostNonErasable";
 };
 
-// ── FIXY-FOUND-065 L007 — borrow × Bg-row cross-thread lifetime ─────
 struct L007_BorrowBgRow : diag::tag_base {
     static constexpr std::string_view name = "L007_BorrowBgRow";
 };
 
-// ── FIXY-FOUND-070 T001 — Trust::Unverified × UsageMode::Capability ─
 struct T001_UnverifiedCapability : diag::tag_base {
     static constexpr std::string_view name = "T001_UnverifiedCapability";
 };
 
-// ── FIXY-FOUND-071 R001 — Reentrancy::Coroutine × hot_path ──────────
 struct R001_CoroutineHotPath : diag::tag_base {
     static constexpr std::string_view name = "R001_CoroutineHotPath";
 };
 
-// ── FIXY-FOUND-071 R002 — Reentrancy::Coroutine × UsageMode::Borrow ─
 struct R002_CoroutineBorrow : diag::tag_base {
     static constexpr std::string_view name = "R002_CoroutineBorrow";
 };
 
-// ── FIXY-FOUND-071 R003 — Reentrancy::Coroutine × Row<Bg> ───────────
 struct R003_CoroutineBgRow : diag::tag_base {
     static constexpr std::string_view name = "R003_CoroutineBgRow";
 };
@@ -754,21 +333,9 @@ using Catalog = std::tuple<
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
 static_assert(catalog_size == 54);
 
-// FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
-//
-// `rule_bijection_v` (declared above near rule_code_of_v) maps each
-// RuleCode enumerator to its tag, and the FOUND-134 reflection
-// fold (see end of this file, ~line 2820) asserts every non-None
-// enumerator is bijective.  But neither of those checks pins the
-// RuleCode enum CARDINALITY against the Catalog tuple — a future
-// RuleCode value added without appending the catalog entry would
-// NOT trip the existing bijection check (the new enumerator would
-// also lack a rule_tag specialization, so the fold would just
-// trigger an instantiation error at the missing-spec site, NOT a
-// clean cardinality mismatch).
-//
-// This ceiling reflects directly over the enum.  The +1 accounts
-// for the `None = 255` sentinel which has no Catalog entry.
+// The bijection fold at the end of this file cannot catch a cardinality
+// drift. An enumerator added without a Catalog entry fails at its missing
+// rule_tag specialization instead. The +1 below is the None sentinel.
 inline constexpr std::size_t rule_code_count = std::meta::enumerators_of(^^RuleCode).size();
 
 static_assert(rule_code_count == catalog_size + 1, "FIXY-FOUND-139: RuleCode enum cardinality and Catalog tuple "
@@ -1340,12 +907,6 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(
     W001, "W001", "HotPath functions do not wrap their return/parameter type in a syscall-blocking Wait strategy",
     "marks_hot_path is true AND F::type_t is safety::Wait<Park, U> or safety::Wait<Block, U> "
     "(strategies that involve futex / condvar / poll syscalls, 1-5 µs latency)",
-    // FIXY-FOUND-124: previous remediation also listed Wait<UmwaitC01> and
-    // Wait<AcquireWait> — both are explicitly contraindicated for hot path by
-    // CLAUDE.md §IX (UMWAIT: 'Not applicable on our hot path'; futex / atomic::
-    // wait: 'BANNED on hot path').  Recommend only the two §IX-admissible hot-
-    // path strategies; see safety/Wait.h `is_hot_path_waiter_admissible` for
-    // the strict admissibility gate.
     "drop the Wait wrapper from the hot path, switch to a non-blocking strategy "
     "(Wait<SpinPause> — the §IX default, 10-40 ns intra-socket; or Wait<BoundedSpin> "
     "for unknown-delay signals), or move the blocking call into an Init/Bg context "
@@ -1362,7 +923,6 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(
     "Active-spin in a Bg row is the back-pressure-trap shape — Bg threads are by "
     "contract permitted to block so the scheduler can do useful work elsewhere",
     "fixy.md §24.2 W002");
-// FIXY-V-091 F-family diagnostics (5 FP-mode cross-axis rules).
 CRUCIBLE_COLLISION_DIAGNOSTIC(F101, "F101",
                               "Replay-required functions do not wrap return/parameter type in "
                               "FpReassociatePinned with any non-strict mode (UnrestrictedRewrite "
@@ -1433,7 +993,6 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(F105, "F105",
                               "always a normal value or ±0.0 in constant time, or move the "
                               "subnormal-preserving code outside the constant-time region",
                               "fixy.md §24.2 F105 (V-091)");
-// FIXY-V-243 hazard-axis diagnostics (8 control-flow / dispatch / global / stdio rules).
 CRUCIBLE_COLLISION_DIAGNOSTIC(C001, "C001", "abort-declaring functions witness the escape in their ControlFlow tier",
                               "marks_aborts is true (grant::ctrl::abort<Rationale>) AND F::type_t carries "
                               "no ControlFlowPinned tier >= AbortOnly. Declaring a function may std::abort "
@@ -1499,7 +1058,6 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(G002, "G002", "thread_local storage is never combi
                               "if cross-thread, or drop the atomic for a plain thread_local (keeping the "
                               "grant::global::thread_local_<Tag>) if genuinely per-thread",
                               "fixy.md §24.2 G002 (V-249)");
-// FIXY-V-260 V-family diagnostics (8 hardware-axis cross-axis rules).
 CRUCIBLE_COLLISION_DIAGNOSTIC(V001, "V001",
                               "vendor::intrinsic grants in a pack declare a consistent (vendor, ISA-family)",
                               "marks_vendor_isa_inconsistent — the binding pack declares vendor::intrinsic<V, I> "
@@ -1572,7 +1130,6 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(V301, "V301", "HotPath functions do not carry a fu
                               "use BarrierGuarded<AcquireLoad> / <ReleaseStore> / <AcqRel> on the hot path; "
                               "reserve SeqCst / FullFence for Init or Bg sequencing",
                               "fixy.md §24.2 V301 (V-260)");
-// FIXY-V-268 V4xx-family diagnostics (2 memory-scope cross-axis rules).
 CRUCIBLE_COLLISION_DIAGNOSTIC(V401, "V401",
                               "cross-CTA-or-wider memory-scope publications carry at least acquire-release ordering",
                               "F::type_t composes a ScopedFence tier ⊒ Cluster (cross-CTA / device / system "
@@ -1757,23 +1314,11 @@ struct marks_replay_required : std::false_type {};
 template <typename F>
 struct marks_replay_stable : std::false_type {};
 
-// ── Phase B marker traits (8 new rules) ─────────────────────────────
-//
-// Source-visible opt-ins.  A binding marks itself as "hot path",
-// "federation peer", or "externally observable" via specialization,
-// and the corresponding §6.8-family rule fires when the marker is
-// combined with an unsound axis value.  This keeps Phase B honest:
-// the source-of-truth is the marker, not a hidden compiler pass.
-//
-// `marks_lifetime_region_unprotected` is the L004 anti-marker — it
-// defaults TRUE (the unprotected state).  A binding that has plumbed a
-// Permission<Tag> through its call signature specializes the trait to
-// `std::false_type`, asserting "I have the proof token".  L004 then
-// fires only when (a) Usage::Linear, (b) lifetime is region-tagged,
-// AND (c) the binding has NOT specialized away the unprotected
-// default.  This makes the rule "opt-out of unprotected" rather than
-// "opt-in to protected" — the safer default for a freshly-written
-// Fn<...> that no one has reviewed yet.
+// `marks_lifetime_region_unprotected` defaults to true, the unprotected
+// state. A binding that threads a permission token through its signature
+// specializes it to false. The rule is opt-out of unprotected rather than
+// opt-in to protected, so a freshly written binding starts on the
+// rejecting side.
 template <typename F>
 struct marks_lifetime_region_unprotected : std::true_type {};
 template <typename F>
@@ -1783,26 +1328,6 @@ struct marks_externally_observable : std::false_type {};
 template <typename F>
 struct marks_federation_peer : std::false_type {};
 
-// ── FIXY-V-243 hazard-axis marker traits (Agent 10 §4) ──────────────
-//
-// Default-SAFE opt-ins, specialized by the V-244/V-245/V-246 grant
-// headers (and the V-248 singleton walk) when they land.  Until a grant
-// opts in, every one defaults to the non-toxic value so no existing
-// Fn<...> instantiation reds.  The C001/L006/P003/S001 rules ALSO read a
-// shipped V-242 wrapper tier off F::type_t (see the detectors below), so
-// they are triggerable today without any grant — the marker is the
-// second, grant-driven trigger path.
-//
-//   marks_aborts                       — grant::ctrl::abort<Rationale> (V-244)
-//   marks_indirect_call_not_noexcept   — grant::dispatch::indirect_call<NonNoexcept> (V-245)
-//   marks_recurses_unbounded           — grant::dispatch::recurses<> w/o MaxDepth (V-245)
-//   marks_thread_local_untagged        — grant::global::thread_local_<> w/o TLSTag (V-246)
-//   marks_longjmp_unsafe               — grant::ctrl::longjmp_unsafe<Rationale> (V-244)
-//   marks_fork_worker                  — permission_fork worker body (V-087 / V-245)
-//   marks_throws                       — grant::ctrl::throws<Family> (V-244)
-//   marks_singleton_init_cycle         — V-248 tag-graph closure walk verdict
-//   marks_thread_local_atomic          — grant::global::thread_local_<Tag> ×
-//                                        atomic MemOrder wrapper (V-249)
 template <typename F>
 struct marks_aborts : std::false_type {};
 template <typename F>
@@ -1822,25 +1347,6 @@ struct marks_singleton_init_cycle : std::false_type {};
 template <typename F>
 struct marks_thread_local_atomic : std::false_type {};
 
-// ── FIXY-V-260 hardware-axis marker traits (Agent 11 §3.6) ──────────
-//
-// Default-SAFE opt-ins, specialized by the V-258/V-259 grant-pack
-// analysis (and the V-261 source::ArchPinned cross-arch gate) when it
-// lands.  Until a grant opts in, every one defaults to the non-toxic
-// value so no existing Fn<...> instantiation reds.  The V101 / V201 /
-// V202 / V203 / V301 rules ALSO read a shipped V-254/255/256 wrapper
-// tier off F::type_t (see the hardware detectors below), so they are
-// triggerable today without any grant — these three markers are the
-// grant-driven trigger path for the three rules that reason about
-// cross-grant VALUE compatibility (which a single type_t wrapper read
-// cannot express):
-//
-//   marks_vendor_isa_inconsistent  — vendor::intrinsic<V, I> pack with
-//                                     disagreeing (V, I) (V-258 pack)
-//   marks_vendor_cross_arch        — x86-trunk + ARM-trunk intrinsics in
-//                                     one binding (V-261 ArchPinned gate)
-//   marks_simd_width_exceeds_isa   — simd::width<W> exceeds the bound ISA
-//                                     family native width (V-259 pack)
 template <typename F>
 struct marks_vendor_isa_inconsistent : std::false_type {};
 template <typename F>
@@ -1848,22 +1354,6 @@ struct marks_vendor_cross_arch : std::false_type {};
 template <typename F>
 struct marks_simd_width_exceeds_isa : std::false_type {};
 
-// ── FIXY-V-268 memory-scope-axis marker trait (Agent WMEM §3.6) ─────
-//
-// Default-SAFE opt-in for V402's grant-driven path.  The V402 rule ALSO
-// reads a SHIPPED V-267 ScopedFence trunk off F::type_t against
-// arch_pin_v<F::source_t> (the type-readable path, triggerable today —
-// see the scope detectors below), so this marker is the SECOND trigger:
-// the grant-pack analysis specializes it for the nested-cross-trunk-scope
-// case a single type_t read cannot express (two ScopedFence layers from
-// DIFFERENT MemoryScope trunks composed in one binding — an accel scope
-// AND an ARM-shareability scope on the same value, which has no coherent
-// realization on any single architecture).
-//
-//   marks_scope_arch_cross_trunk — accel-trunk scope AND ARM-trunk scope
-//                                   composed in one binding, OR a scope
-//                                   whose trunk the grant pack proves
-//                                   contradicts the target arch.
 template <typename F>
 struct marks_scope_arch_cross_trunk : std::false_type {};
 
@@ -1881,31 +1371,6 @@ template <typename Row, effects::Effect E>
 inline constexpr bool row_has_effect_v =
     effects::row_contains_v<Row, E>;  // ROW-CONTAINS-OK: generic <Row, E> membership alias, not a Ctx capability check
 
-// FIXY-FOUND-067 Phase 2: structural async reader (L002/E044/I004).
-//
-// `has_async_v<F>` OR-folds THREE trigger paths for the marks_async
-// rule family:
-//
-//   1.  STRUCTURAL via reentrancy axis.  `F::reentrancy_v ==
-//       ReentrancyMode::Coroutine` declares "this binding suspends".
-//
-//   2.  STRUCTURAL via effect row.  `effects::Effect::Bg` in F's
-//       effect_row_t declares "this binding runs in background context".
-//
-//   3.  LEGACY OPT-IN.  `marks_async<F>::value` via explicit user
-//       specialization at file scope.  Preserves backward compat with
-//       every existing safety_neg fixture (e.g.,
-//       neg_collision_L002_borrow_async.cpp) that opts in via the marker
-//       without touching Fn's Reentrancy or EffectRow axes.
-//
-// This alias is consumed by `L002_OK` (borrow × async), `E044_OK`
-// (constant-time × async), `I004_OK` (classified × async × session ×
-// !CT), and `concurrent_context_v<F>` — all at namespace `fn::collision`
-// scope, evaluated LAZILY in concept-satisfaction contexts.  Eager
-// reads inside `CollisionRules<Fn<...>>::async` MUST instead use the
-// partial-spec parameters `Reentrancy` and `EffectRow` directly to
-// avoid the `F::*_t → ValidComposition` cycle (see
-// `feedback_collision_rules_partial_spec_cycle.md`).
 template <typename F>
 inline constexpr bool has_async_v =
     (F::reentrancy_v == ReentrancyMode::Coroutine)
@@ -1914,49 +1379,13 @@ inline constexpr bool has_async_v =
 template <typename F>
 inline constexpr bool has_ct_v = marks_ct<F>::value;
 
-// ── FIXY-FOUND-067 Phase 1: structural hot-path reader (H-family) ───
+// Staged through a class template rather than a consteval lambda. A lambda
+// in a template body makes GCC 16 report the extract namespace as
+// undeclared under two-phase lookup even with the include order correct.
 //
-// `is_hot_path_v<F>` is the disjunction of TWO trigger paths for the
-// H001 / H002 / H003 / H010 / W001 / V201 / V301 / S001 / I004-like
-// rule family:
-//
-//   1.  STRUCTURAL.  F::type_t's outermost wrapper is HotPath<Hot, U>.
-//       The canonical §XVI wrapper-nesting order pins HotPath at the
-//       outermost position, so a binding that wraps its payload in
-//       HotPath<Hot, ...> is asserting "this is hot-path code" through
-//       the type system — no per-Fn marker specialization required.
-//
-//   2.  LEGACY OPT-IN.  marks_hot_path<F>::value == true via explicit
-//       specialization at file scope.  Preserves backward compat with
-//       every existing safety_neg fixture and any production opt-in
-//       that pre-dates the structural reader.
-//
-// HotPath<Warm, ...> and HotPath<Cold, ...> WRAPPED type_t do NOT
-// trigger the H-family rules — those tiers explicitly declare
-// non-hot-path code, and the rules' rationale (≤40 ns p99 budget,
-// CLAUDE.md §IX) only applies to the Hot tier.  A binding that needs
-// to opt into hot-tier semantics WITHOUT wrapping type_t (e.g., a
-// fixture that uses bare `int` as type_t for orthogonal test purposes)
-// continues to use path (2).
-//
-// Rule predicates migrate from `marks_hot_path<F>::value` to
-// `is_hot_path_v<F>`.  Per FIXY-FOUND-067, this graduates the H-family
-// from "dormant unless the binding author specializes the marker" to
-// "fires automatically on any production-shape HotPath<Hot> wrapped
-// binding" — closing 8 of the 21 dormant rules in one batch.
-// Structural detector — staged through partial specialization to keep
-// every name lookup at "first phase" (template-definition time) under
-// GCC 16's -Wtemplate-body two-phase rules.  An IIFE consteval lambda
-// here trips `-Wtemplate-body 'crucible::safety::extract' has not been
-// declared` even with the include order correct, so we stage via
-// `hot_path_tier_is_hot` (a class template) which never crosses the
-// lambda-in-template boundary.  We DROP the SFINAE guard on F::type_t
-// because (a) every safety::fn::Fn<...> instantiation defines type_t as
-// its first template parameter (Fn.h:535), and (b) the SFINAE guard
-// triggers a recursive constraint-satisfaction cycle through
-// CollisionRules<F>::valid when F is a Fn that re-enters its own
-// validate() during instantiation of the static_assert(ValidComposition<F>)
-// inside Fn's body.
+// There is deliberately no SFINAE guard on `type_t`. Every `Fn` defines it,
+// and guarding re-enters `CollisionRules<F>::valid` while `F` is still
+// being instantiated for its own composition assert.
 namespace detail_hot_path {
 
 template <typename T, bool = ::crucible::safety::extract::is_hot_path_v<T>>
@@ -2033,16 +1462,11 @@ template <typename F>
 concept S011_OK =
     !(F::usage_v == UsageMode::Capability && marks_replay_required<F>::value && !marks_replay_stable<F>::value);
 
-// ── Phase B helper traits ───────────────────────────────────────────
-
-// `lifetime::In<RegionTag>` detector — used by L004.  `lifetime::Static`
-// is the program-wide default; any region-tagged lifetime needs proof.
 template <typename L>
 struct is_region_lifetime : std::false_type {};
 template <auto RegionTag>
 struct is_region_lifetime<lifetime::In<RegionTag>> : std::true_type {};
 
-// `cost::Unstated` / `cost::Unbounded` detector — used by H001/F002.
 template <typename C>
 struct is_unbounded_cost : std::false_type {};
 template <>
@@ -2050,53 +1474,18 @@ struct is_unbounded_cost<cost::Unstated> : std::true_type {};
 template <>
 struct is_unbounded_cost<cost::Unbounded> : std::true_type {};
 
-// `pred::True` (no witness) detector — used by H002.  A trivial-true
-// refinement on a hot path is the no-witness case the rule catches.
 template <typename R>
 struct is_trivial_refinement : std::false_type {};
 template <>
 struct is_trivial_refinement<pred::True> : std::true_type {};
 
-// ── W001 helper detectors (Phase C wait-strategy axis) ──────────────
-//
-// `wait_strategy_of<T>` extracts the WaitStrategy enumerator pinned by
-// a safety::Wait<Strategy, U> wrapper around T.  For non-Wait types the
-// detector reports `has_wait = false` (rule trivially passes).
-//
-// `is_kernel_wait_v<S>` consults the WaitLattice chain: every strategy
-// AT OR BELOW UmwaitC01 involves a kernel/syscall round-trip and
-// exceeds the hot-path latency budget (CLAUDE.md §IX latency
-// hierarchy):
-//   - Block       (0): poll / epoll_wait — 5-20 µs.
-//   - Park        (1): pthread_cond_wait / condvar — 3-10 µs.
-//   - AcquireWait (2): std::atomic::wait / futex — 1-5 µs.
-//   - UmwaitC01   (3): UMWAIT (WAITPKG) — 100-500 ns + wait time;
-//                      power-aware but explicitly contraindicated for
-//                      hot path per CLAUDE.md §IX ("Not applicable on
-//                      our hot path").
-// Admissible on the hot path (≤ 40 ns intra-socket budget):
-//   - BoundedSpin (4): SpinPause + exponential backoff.
-//   - SpinPause   (5): _mm_pause / yield on acquire-load.
-//
-// FIXY-FOUND-061: pre-fix this used `leq(S, Park)` and under-rejected
-// AcquireWait + UmwaitC01 — both syscall-tier strategies that CLAUDE.md
-// §IX bans on the hot path.  The W001 diagnostic message and remediation
-// text already named all four, but the rule itself caught only two.
-// Predicate widened to `leq(S, UmwaitC01)` to match the documented
-// contract.
 template <typename T>
 struct wait_strategy_of {
     static constexpr bool has_wait = false;
-    // Sentinel value present on the primary template too.  W001/W002
-    // concept atoms reference `::value` as a non-type template argument
-    // to `is_kernel_wait_v` / `is_active_spin_v`; even though the
-    // outer conjunction short-circuits at runtime when `has_wait` is
-    // false, GCC 16 concept normalization eagerly substitutes the
-    // template argument list of the right-hand variable template under
-    // certain instantiation contexts (sentinel-TU re-instantiation in
-    // particular).  Providing a sentinel `value` makes the substitution
-    // well-formed; the predicate result is irrelevant because the
-    // short-circuit chops it off before validate() inspects it.
+    // The primary template carries a sentinel `value` even though
+    // `has_wait` is false. Concept normalization substitutes the argument
+    // list of `is_kernel_wait_v` before the conjunction short-circuits, so
+    // the argument has to be well formed. Its result is never read.
     static constexpr ::crucible::algebra::lattices::WaitStrategy value =
         ::crucible::algebra::lattices::WaitStrategy::SpinPause;
 };
@@ -2105,8 +1494,6 @@ struct wait_strategy_of<::crucible::safety::Wait<S, U>> {
     static constexpr bool has_wait = true;
     static constexpr ::crucible::algebra::lattices::WaitStrategy value = S;
 };
-// Also pierce reference / cv qualifiers — a hot-path return of
-// `Wait<Park, T> const&` is just as toxic as a bare `Wait<Park, T>`.
 template <typename T>
 struct wait_strategy_of<T&> : wait_strategy_of<T> {};
 template <typename T>
@@ -2114,41 +1501,16 @@ struct wait_strategy_of<T const> : wait_strategy_of<T> {};
 template <typename T>
 struct wait_strategy_of<T const&> : wait_strategy_of<T> {};
 
-// WaitLattice ordinal convention (WaitLattice.h L160-162):
-//   Block       = 0  (bottom — blockiest)
-//   Park        = 1
-//   AcquireWait = 2
-//   UmwaitC01   = 3
-//   BoundedSpin = 4
-//   SpinPause   = 5  (top — never blocks)
-// `leq(W, UmwaitC01)` is true iff W is at-or-below UmwaitC01 in the
-// lattice = W ∈ {Block, Park, AcquireWait, UmwaitC01}.  Those are the
-// four tiers that cross a syscall/kernel boundary and exceed the hot-
-// path latency budget (CLAUDE.md §IX).
+// WaitLattice orders Block at the bottom and SpinPause at the top, so
+// `leq(S, UmwaitC01)` picks out the kernel-crossing strategies and
+// `leq(BoundedSpin, S)` picks out the two that hold the core.
 template <::crucible::algebra::lattices::WaitStrategy S>
 inline constexpr bool is_kernel_wait_v =
     ::crucible::algebra::lattices::WaitLattice::leq(S, ::crucible::algebra::lattices::WaitStrategy::UmwaitC01);
 
-// `is_active_spin_v<S>` is the symmetric counterpart at the TOP of the
-// chain.  `leq(BoundedSpin, S)` is true iff BoundedSpin is at-or-below
-// S in the lattice = S ∈ {BoundedSpin, SpinPause}.  Those are the two
-// strategies that occupy 100% of a CPU core for the duration of the
-// wait — pure spin-pause loops with no kernel involvement.  On a Bg
-// thread (cold path, scheduler-yielding), an active-spin is the back-
-// pressure trap: the core stays busy while no useful work happens, and
-// the kernel cannot schedule another runnable thread onto it.
 template <::crucible::algebra::lattices::WaitStrategy S>
 inline constexpr bool is_active_spin_v =
     ::crucible::algebra::lattices::WaitLattice::leq(::crucible::algebra::lattices::WaitStrategy::BoundedSpin, S);
-
-// ── Phase B per-Fn rule concepts (6 of 8) ────────────────────────────
-//
-// L005 (alias of two Linears on one region tag) and F001 (frame axis
-// disagreement) are PACK-LEVEL rules — they read across a Grants pack,
-// not across a single Fn's axes.  Phase B ships them as pack
-// metafunctions further below; the Fn-level concept gate trivially
-// passes for those two (a single Fn cannot alias itself, and a single
-// Fn cannot disagree on a single axis).
 
 template <typename F>
 concept L004_OK = !(F::usage_v == UsageMode::Linear && is_region_lifetime<typename F::lifetime_t>::value
@@ -2176,89 +1538,31 @@ concept H003_OK = !(is_hot_path_v<F>
                         || row_has_effect_v<typename F::effect_row_t, effects::Effect::IO>)
                     && is_unbounded_cost<typename F::cost_t>::value);
 
-// H010: HotPath × Row<Bg> contradiction (FIXY-FOUND-063).  HotPath
-// declares "≤40 ns intra-socket per CLAUDE.md §IX"; Bg declares
-// "background context, Alloc/IO/Block allowed, millisecond latency".
-// These are mutually exclusive contexts; marking both is a structural
-// contradiction.  H001 / H003 cover the unbounded-cost and Alloc/IO
-// subcases, but a HotPath × Bg × cost::Constant × no-Alloc/IO/Block
-// Fn slips both — yet is still a context contradiction the type
-// system must reject.
 template <typename F>
 concept H010_OK = !(is_hot_path_v<F> && row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg>);
 
-// P010: Ghost × Row<Alloc|IO|Block> erasure-contract violation (FIXY-FOUND-064).
-// Ghost values are erased at codegen — no emitted instructions.  A Ghost
-// binding declared with any of the three observable runtime-effect atoms
-// (Alloc / IO / Block) contradicts the erasure contract: Alloc emits
-// heap-touching code, IO emits syscalls / external observers, Block emits
-// blocking primitives.  P002 catches the marker-driven variant
-// (marks_runtime_ghost_use specialization); P010 catches the structural
-// effect-row read where no marker is engaged.  Structurally parallel to
-// H010 (HotPath × Bg) but on the Usage axis instead of the HotPath
-// marker — the two rules pin the same erased-vs-emitted shape on
-// orthogonal axes.  Bg is deliberately EXCLUDED from P010's catch set —
-// Bg classification interacts with HotPath (caught by H010) on a
-// different contradiction shape; Ghost × Bg is a separable concern
-// reserved for a future P011 if a real production case emerges.
+// Bg is deliberately outside the catch set. Ghost combined with Bg is a
+// different contradiction from the erasure one, and no production case has
+// needed it.
 template <typename F>
 concept P010_OK = !(F::usage_v == UsageMode::Ghost
                     && (row_has_effect_v<typename F::effect_row_t, effects::Effect::Alloc>
                         || row_has_effect_v<typename F::effect_row_t, effects::Effect::IO>
                         || row_has_effect_v<typename F::effect_row_t, effects::Effect::Block>));
 
-// L007: borrow_capture × Row<Bg> cross-thread lifetime hazard
-// (FIXY-FOUND-065). A borrow-capture function takes a borrowed reference
-// whose lifetime is tied to the caller's stack; Bg-row implies cross-
-// thread execution where the caller's stack may unwind before the
-// background thread runs the body. The borrow then dangles.  L002 / L003
-// catch the marker-driven variants (marks_async / marks_unscoped_spawn);
-// L007 catches the structural effect-row direct-read where no marker is
-// engaged. Structurally parallel to L003 on the Bg-row side.  Note that
-// the EXISTING legitimate borrow-into-Bg pattern is `permission_fork`
-// (CSL parallel rule, fork-join lifetime-scoped) — code wanting that
-// pattern uses the explicit fork API, NOT a bare borrow_capture × Bg
-// signature.
 template <typename F>
 concept L007_OK = !(has_borrow_capture_v<F> && row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg>);
 
-// T001: Trust::Unverified × UsageMode::Capability rejected (FIXY-FOUND-070).
-// A Capability binding mints a non-revocable authorization token; a binding
-// whose provenance is Unverified cannot establish the authority chain.
-// Closed the Trust-axis no-op gap — before FOUND-070 the Trust axis was
-// destructured by Fn but read by ZERO §6.8 rules.  The rule is asymmetric
-// (only Unverified rejected; Tested and Verified both establish the
-// authority chain — Tested via measured behavior under test isolation,
-// Verified via cryptographic / proof-witnessed mint).
 template <typename F>
 concept T001_OK = !(F::usage_v == UsageMode::Capability
                     && std::is_same_v<typename F::trust_t, ::crucible::safety::trust::Unverified>);
 
-// R001: ReentrancyMode::Coroutine × hot_path rejected (FIXY-FOUND-071).
-// Coroutine state-machine spill + per-suspend indirect-call cost cliff
-// vs hot-path budget (≤40ns intra-socket per CLAUDE.md §IX).  Asymmetric:
-// only Coroutine flagged; NonReentrant and Reentrant pass.  Closes the
-// Reentrancy-axis no-op gap (the Reentrancy field was destructured by
-// Fn but read by ZERO §6.8 rules before FOUND-071).
 template <typename F>
 concept R001_OK = !(F::reentrancy_v == ReentrancyMode::Coroutine && is_hot_path_v<F>);
 
-// R002: ReentrancyMode::Coroutine × UsageMode::Borrow rejected (FIXY-FOUND-071).
-// A Borrow-usage binding takes a borrowed reference whose lifetime is tied
-// to the caller's stack; a coroutine suspends mid-execution and resumes
-// after the caller's stack frame may have unwound.  On resume the borrow
-// dangles.  Symmetric to L002 (Borrow x marks_async) and L007 (Borrow x
-// Row<Bg>) on the Reentrancy-axis side — R002 catches the Coroutine
-// ReentrancyMode form (no async marker, no Bg row required).  Asymmetric:
-// only Coroutine + Borrow flagged.
 template <typename F>
 concept R002_OK = !(F::reentrancy_v == ReentrancyMode::Coroutine && F::usage_v == UsageMode::Borrow);
 
-// R003: ReentrancyMode::Coroutine × Row<Bg> rejected (FIXY-FOUND-071).
-// C++ coroutines are NOT thread-safe by default; suspend-on-A / resume-on-
-// B without explicit executor handoff is undefined behavior on TLS-tied
-// state and captured borrows.  Symmetric to R002 on the Coroutine half.
-// Asymmetric: only Coroutine flagged.
 template <typename F>
 concept R003_OK =
     !(F::reentrancy_v == ReentrancyMode::Coroutine && row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg>);
@@ -2266,54 +1570,21 @@ concept R003_OK =
 template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value && is_unbounded_cost<typename F::cost_t>::value);
 
-// W001: HotPath × syscall-tier Wait rejected.  Functions marked
-// hot-path MUST NOT wrap their type_t in any Wait strategy that
-// crosses a kernel/syscall boundary — the rejected set is {Block,
-// Park, AcquireWait, UmwaitC01}, all of which exceed the hot-path
-// budget (≤ 40 ns intra-socket per CLAUDE.md §IX latency hierarchy).
-//
-// FIXY-FOUND-061: pre-fix the predicate used `leq(S, Park)` and
-// under-rejected AcquireWait + UmwaitC01.  Widened to `leq(S,
-// UmwaitC01)` to match the documented contract and the diagnostic
-// remediation text.
 template <typename F>
 concept W001_OK = !(is_hot_path_v<F> && wait_strategy_of<typename F::type_t>::has_wait
                     && is_kernel_wait_v<wait_strategy_of<typename F::type_t>::value>);
 
-// W002: Bg-row × Wait<SpinPause> or Wait<BoundedSpin> rejected.
-// Functions whose effect_row carries Effect::Bg MUST NOT wrap their
-// type_t in an active-spin Wait strategy.  SpinPause and BoundedSpin
-// occupy 100% of a CPU core — the Bg thread is by contract permitted
-// to block, so the kernel should be free to schedule another runnable
-// thread onto the core while the Bg wait is pending.  Active-spin in
-// a Bg row is the back-pressure-trap shape B001 catches one axis over.
 template <typename F>
 concept W002_OK =
     !(row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg> && wait_strategy_of<typename F::type_t>::has_wait
       && is_active_spin_v<wait_strategy_of<typename F::type_t>::value>);
 
-// ── FIXY-V-091 F-family detector — FpModePinned wrapper inspection ──
-//
-// `wraps_fp_axis_mode<AxisMode, T>` is true iff T is structurally
-// `safety::FpModePinned<AxisMode, U>` for some U.  ONE generic detector
-// covers all 11 FP sub-axes because `auto AxisMode` binds to the actual
-// enum type at the call site — a partial-spec match requires the
-// FpModePinned's first template arg to have the SAME enum type AND
-// the SAME value as the AxisMode supplied at the consumer site.
-//
-// Probing for `<FpReassociate::UnrestrictedRewrite, FpRoundingPinned<...>>`
-// falls back to the false_type primary template — the inner FpRoundingPinned
-// pins `Mode` of type FpRounding, not FpReassociate, so the partial spec
-// substitution rejects.  No per-axis specialization needed.
 template <auto AxisMode, typename T>
 struct wraps_fp_axis_mode : std::false_type {};
 
 template <auto AxisMode, typename U>
 struct wraps_fp_axis_mode<AxisMode, ::crucible::safety::FpModePinned<AxisMode, U>> : std::true_type {};
 
-// Pierce reference / cv qualifiers — a hot-path return of
-// `FpReassociatePinned<UnrestrictedRewrite, T> const&` is just as toxic
-// as the bare wrapper (mirrors wait_strategy_of's CV-piercing).
 template <auto AxisMode, typename T>
 struct wraps_fp_axis_mode<AxisMode, T&> : wraps_fp_axis_mode<AxisMode, T> {};
 template <auto AxisMode, typename T>
@@ -2324,66 +1595,31 @@ struct wraps_fp_axis_mode<AxisMode, T const&> : wraps_fp_axis_mode<AxisMode, T> 
 template <auto AxisMode, typename T>
 inline constexpr bool wraps_fp_axis_mode_v = wraps_fp_axis_mode<AxisMode, T>::value;
 
-// F101: Replay-required × FpReassociate non-strict rejected (FOUND-074).
-// IEEE 754 default (Forbidden) is the only setting compatible with bit-
-// exact replay across the cross-vendor CI matrix.  Pre-FOUND-074 the
-// rule rejected ONLY UnrestrictedRewrite; BoundedTreeDepth slipped
-// through despite being equally non-deterministic across vendors —
-// vendors agree on the log-N tree DEPTH but disagree on the per-level
-// LANE ASSIGNMENTS (NVIDIA warp-shuffle reductions and AMD wavefront
-// reductions use different operand orderings within the same tree
-// shape).  Same source → different FP bits across vendors, defeating
-// bit-exact replay.  F101 now rejects ANY non-Forbidden setting under
-// replay_required; F103 (CT-axis) remains narrow because BoundedTreeDepth
-// has data-independent topology and is CT-safe.
 template <typename F>
 concept F101_OK =
     !(marks_replay_required<F>::value
       && (wraps_fp_axis_mode_v<::crucible::safety::FpReassociate::UnrestrictedRewrite, typename F::type_t>
           || wraps_fp_axis_mode_v<::crucible::safety::FpReassociate::BoundedTreeDepth, typename F::type_t>));
 
-// F102: Replay-required × FpContract<Fast> rejected.  Cross-statement
-// FMA folding picks DIFFERENT contraction boundaries per vendor; same
-// source → different bits across the cross-vendor numerics CI matrix.
 template <typename F>
 concept F102_OK = !(marks_replay_required<F>::value
                     && wraps_fp_axis_mode_v<::crucible::safety::FpContract::Fast, typename F::type_t>);
 
-// F103: CT × FpReassociate<UnrestrictedRewrite> rejected.  Reassociation
-// introduces data-dependent reduction-tree topology (compiler picks the
-// tree based on operand magnitudes / constant-foldability), violating
-// timing-independence in a constant-time region.
+// BoundedTreeDepth is deliberately absent here. Its tree topology is fixed
+// independently of the data, so it costs no timing independence, even
+// though F101 rejects it for replay.
 template <typename F>
 concept F103_OK =
     !(has_ct_v<F> && wraps_fp_axis_mode_v<::crucible::safety::FpReassociate::UnrestrictedRewrite, typename F::type_t>);
 
-// F104: CT × FpDenormalInput<HonorDenormals> rejected.  DAZ=0 introduces
-// a 30-100× cycle-count delta when the input IS denormal — textbook FP
-// timing side-channel.  Crypto / CT paths PIN DenormalsAreZero so the
-// cycle count is data-independent.
 template <typename F>
 concept F104_OK =
     !(has_ct_v<F> && wraps_fp_axis_mode_v<::crucible::safety::FpDenormalInput::HonorDenormals, typename F::type_t>);
 
-// F105: CT × FpFtz<PreserveSubnormals> rejected.  Output-side dual of
-// F104 — FTZ=0 introduces the same 30-100× slowdown PRODUCING denormal
-// outputs.  Result-magnitude leaks through cycle count.
 template <typename F>
 concept F105_OK =
     !(has_ct_v<F> && wraps_fp_axis_mode_v<::crucible::safety::FpFtz::PreserveSubnormals, typename F::type_t>);
 
-// ── FIXY-V-243 hazard-axis detectors (ControlFlow / Stdio tiers) ────
-//
-// control_flow_tier_of<T> / stdio_tier_of<T> extract the tier pinned by
-// a shipped V-242 ControlFlowPinned<Tier, U> / StdioPinned<Tier, U>
-// wrapper around T — mirrors wait_strategy_of's design (sentinel value on
-// the primary template + CV/reference piercing).  For a non-wrapper T,
-// `has_*` is false and the rule reading the tier trivially passes via the
-// `&&` short-circuit in cf_at_or_above_v / stdio_at_or_above_v.  The
-// sentinel `value` lives on the primary template too, so GCC-16 concept
-// normalization can substitute the NTTP argument of *_at_or_above_v even
-// when the short-circuit chops the predicate off (the same eager-
-// substitution workaround wait_strategy_of documents).
 template <typename T>
 struct control_flow_tier_of {
     static constexpr bool has_cf = false;
@@ -2419,10 +1655,9 @@ struct stdio_tier_of<T const> : stdio_tier_of<T> {};
 template <typename T>
 struct stdio_tier_of<T const&> : stdio_tier_of<T> {};
 
-// cf_at_or_above_v<Floor, T>: wrapper present AND its tier is at-or-above
-// `Floor` on the ControlFlow chain (leq(Floor, tier) ⇔ Floor ⊑ tier).
-// ControlFlow is a capability-CEILING axis: higher ordinal = MORE
-// hazardous, so "tier ≥ Floor" reads as "at least this dangerous".
+// The ControlFlow chain runs from least to most hazardous, so
+// `leq(Floor, tier)` reads as "at least this dangerous". The Stdio,
+// HwInstruction and BarrierStrength chains below share that orientation.
 template <::crucible::algebra::lattices::ControlFlow Floor, typename T>
 inline constexpr bool cf_at_or_above_v =
     control_flow_tier_of<T>::has_cf
@@ -2432,70 +1667,41 @@ template <::crucible::algebra::lattices::Stdio Floor, typename T>
 inline constexpr bool stdio_at_or_above_v =
     stdio_tier_of<T>::has_stdio && ::crucible::algebra::lattices::StdioLattice::leq(Floor, stdio_tier_of<T>::value);
 
-// ── FIXY-V-243 hazard-axis rule concepts (8 of 8) ───────────────────
-
-// C001: marks_aborts × ControlFlow tier < AbortOnly.  A function
-// declaring it may abort (grant::ctrl::abort<Rationale>) MUST carry a
-// ControlFlow tier that witnesses the escape (≥ AbortOnly).  "Claims
-// abort but typed Pure" is the ControlFlow↔escape inconsistency.
 template <typename F>
 concept C001_OK = !(marks_aborts<F>::value
                     && !cf_at_or_above_v<::crucible::algebra::lattices::ControlFlow::AbortOnly, typename F::type_t>);
 
-// D001: indirect-call grant whose callable is NOT noexcept (Scenario A).
 template <typename F>
 concept D001_OK = !marks_indirect_call_not_noexcept<F>::value;
 
-// D002: recursion grant declared without a bounded MaxDepth.
 template <typename F>
 concept D002_OK = !marks_recurses_unbounded<F>::value;
 
-// G001: thread_local grant declared without a TLSTag.
 template <typename F>
 concept G001_OK = !marks_thread_local_untagged<F>::value;
 
-// L006: Usage::Linear × ControlFlow tier ≥ MayLongjmp (or the
-// marks_longjmp_unsafe marker).  longjmp SKIPS destructors; a Linear
-// resource in scope would leak / dangle across the non-local jump.
 template <typename F>
 concept L006_OK =
     !(F::usage_v == UsageMode::Linear
       && (marks_longjmp_unsafe<F>::value
           || cf_at_or_above_v<::crucible::algebra::lattices::ControlFlow::MayLongjmp, typename F::type_t>));
 
-// P003: marks_fork_worker × ControlFlow tier ≥ ThrowOnly (or the
-// marks_throws marker).  A throw inside a jthread fork body crosses no
-// thread boundary; under -fno-exceptions it is std::terminate.
 template <typename F>
 concept P003_OK =
     !(marks_fork_worker<F>::value
       && (marks_throws<F>::value
           || cf_at_or_above_v<::crucible::algebra::lattices::ControlFlow::ThrowOnly, typename F::type_t>));
 
-// S001: marks_hot_path × Stdio tier ≥ BufferedWrite.  Hot-path code
-// (TraceRing / Arena / KernelCache) MUST NOT do stdio (CLAUDE.md §XII).
 template <typename F>
 concept S001_OK =
     !(is_hot_path_v<F> && stdio_at_or_above_v<::crucible::algebra::lattices::Stdio::BufferedWrite, typename F::type_t>);
 
-// S004: Meyers-singleton init-dependency cycle (V-248 walk verdict).
 template <typename F>
 concept S004_OK = !marks_singleton_init_cycle<F>::value;
 
-// G002: thread_local storage paired with an atomic memory-order wrapper —
-// a per-thread atomic orders against no peer, so the combination is a
-// category error (V-249 / Scenario E).
 template <typename F>
 concept G002_OK = !marks_thread_local_atomic<F>::value;
 
-// ── FIXY-V-260 hardware-axis detectors (Hw / BarrierGuarded /
-//    SimdWidthPinned tier extraction off F::type_t) ──────────────────
-//
-// Mirror the control_flow_tier_of / stdio_tier_of design: a sentinel
-// value on the primary template + CV / reference piercing, plus a
-// partial spec that reads the pinned tier from the V-254/255/256
-// wrapper.  For a non-wrapper T, has_* is false and the at_or_above
-// predicate short-circuits to false (rule trivially passes).
 template <typename T>
 struct hw_tier_of {
     static constexpr bool has_hw = false;
@@ -2525,11 +1731,6 @@ struct barrier_tier_of<::crucible::safety::BarrierGuarded<Tier, U>> {
     static constexpr bool has_barrier = true;
     static constexpr ::crucible::algebra::lattices::BarrierStrength value = Tier;
 };
-// FIXY-V-268: pierce a ScopedFence sibling wrapper so the V401 scope×strength
-// rule finds a nested BarrierGuarded tier regardless of nesting order
-// (`ScopedFence<Gpu, BarrierGuarded<AcqRel, T>>` reads AcqRel, not has_barrier
-// = false).  Safe for the existing V301 rule: a bare `BarrierGuarded<SeqCst,T>`
-// still matches the BarrierGuarded partial spec above, not this one.
 template <::crucible::algebra::lattices::MemoryScope S, typename U>
 struct barrier_tier_of<::crucible::safety::ScopedFence<S, U>> : barrier_tier_of<U> {};
 template <typename T>
@@ -2556,9 +1757,6 @@ struct simd_isa_of<T const> : simd_isa_of<T> {};
 template <typename T>
 struct simd_isa_of<T const&> : simd_isa_of<T> {};
 
-// hw_at_or_above_v<Floor, T>: wrapper present AND its tier is at-or-above
-// Floor on the HwInstruction capability chain (higher ordinal = MORE
-// hazardous, so "≥ Floor" reads as "at least this dangerous").
 template <::crucible::algebra::lattices::HwInstruction Floor, typename T>
 inline constexpr bool hw_at_or_above_v =
     hw_tier_of<T>::has_hw && ::crucible::algebra::lattices::HwInstructionLattice::leq(Floor, hw_tier_of<T>::value);
@@ -2568,27 +1766,11 @@ inline constexpr bool barrier_at_or_above_v =
     barrier_tier_of<T>::has_barrier
     && ::crucible::algebra::lattices::BarrierStrengthLattice::leq(Floor, barrier_tier_of<T>::value);
 
-// simd_isa_pins_specific_vector_v<T>: a SimdWidthPinned wrapper present
-// whose tier is a SPECIFIC vector ISA — neither Scalar (no SIMD, runs
-// everywhere identically) nor Portable (⊤, ISA-agnostic).  Both poles
-// are replay-safe; any concrete trunk point pins a lane count that
-// reorders FP reductions across ISAs.
 template <typename T>
 inline constexpr bool simd_isa_pins_specific_vector_v =
     simd_isa_of<T>::has_simd && simd_isa_of<T>::value != ::crucible::algebra::lattices::SimdIsa::Scalar
     && simd_isa_of<T>::value != ::crucible::algebra::lattices::SimdIsa::Portable;
 
-// ── FIXY-V-268 memory-scope-axis detectors (ScopedFence tier extraction
-//    off F::type_t + host-arch contradiction) ───────────────────────
-//
-// scope_tier_of mirrors barrier_tier_of: a sentinel on the primary
-// template + CV / reference piercing + a partial spec reading the pinned
-// MemoryScope from the V-267 ScopedFence carrier.  It ALSO pierces the
-// sibling hardware-band wrappers (BarrierGuarded / Hw / SimdWidthPinned)
-// so V401 finds the scope even when a barrier (or other hw-band wrapper)
-// nests outside the ScopedFence — the dual of barrier_tier_of's
-// ScopedFence-piercing above.  For a non-ScopedFence T, has_scope is false
-// and scope_at_or_above_v short-circuits to false (rule trivially passes).
 template <typename T>
 struct scope_tier_of {
     static constexpr bool has_scope = false;
@@ -2613,30 +1795,17 @@ struct scope_tier_of<T const> : scope_tier_of<T> {};
 template <typename T>
 struct scope_tier_of<T const&> : scope_tier_of<T> {};
 
-// scope_at_or_above_v<Floor, T>: a ScopedFence is present AND its pinned
-// scope SUBSUMES Floor on the MemoryScopeLattice partial order
-// (leq(Floor, value) — "the publish scope is at-or-above the floor").  With
-// Floor = Cluster (FIXY-FOUND-062 widening), {Cluster, Gpu, System} satisfy
-// (cross-CTA-or-wider visibility — the silent-weak-memory-race set on
-// Hopper thread-block-cluster and beyond); Cta / Warp and every ARM-trunk
-// scope do NOT (cross-trunk leq is false), so the V401 rule fires ONLY for
-// genuinely cross-CTA-or-wider accel-trunk scopes.
+// Comparison across trunks is false on this lattice, so an accel-trunk
+// floor never selects an ARM-trunk scope.
 template <::crucible::algebra::lattices::MemoryScope Floor, typename T>
 inline constexpr bool scope_at_or_above_v =
     scope_tier_of<T>::has_scope
     && ::crucible::algebra::lattices::MemoryScopeLattice::leq(Floor, scope_tier_of<T>::value);
 
-// scope_contradicts_host_arch(scope, arch): the V402 trunk-vs-host-arch
-// incoherence predicate, reusing the V-265 trunk classifiers.  A Portable
-// host pin (or a non-arch-pinned source, which arch_pin_v maps to Portable)
-// never contradicts; the shared sentinels Thread (no fence) and System
-// (full-system / `.sys` / DMB SY) are realizable on any host.  An ARM-
-// shareability scope (Inner/Outer = DMB ISH/OSH) contradicts a non-ARM host
-// (x86 has no ISH/OSH domain); an accel-trunk scope (Warp..Gpu = a PTX
-// device scope) contradicts ANY concrete CPU-host pin (the host fence
-// dialect — mfence / DMB — cannot realize a `.cta`/`.gpu` scope; ArchTag
-// carries no GPU trunk, so a GPU-device scope is only coherent with a
-// Portable host pin).
+// A Portable pin, and the Thread and System scopes, are realizable on any
+// host. The accel branch returns true for every concrete pin because the
+// arch tag set carries no device trunk, so a device scope is coherent only
+// with a Portable host.
 [[nodiscard]] constexpr bool scope_contradicts_host_arch(::crucible::algebra::lattices::MemoryScope scope,
                                                          ::crucible::safety::source::ArchTag arch) noexcept {
     using MS = ::crucible::algebra::lattices::MemoryScope;
@@ -2652,58 +1821,30 @@ inline constexpr bool scope_at_or_above_v =
     return false;
 }
 
-// scope_arch_cross_trunk_v<F>: the type-readable V402 trigger — F::type_t
-// pins a ScopedFence whose trunk contradicts arch_pin_v<F::source_t>.
 template <typename F>
 inline constexpr bool scope_arch_cross_trunk_v =
     scope_tier_of<typename F::type_t>::has_scope
     && scope_contradicts_host_arch(scope_tier_of<typename F::type_t>::value,
                                    ::crucible::safety::arch_pin_v<typename F::source_t>);
 
-// ── FIXY-FOUND-073: nested-cross-trunk ScopedFence detector ──────────
-//
-// inner_scope_tier_of<T>: peer to scope_tier_of, but extracts the FIRST
-// nested ScopedFence WITHIN the outer ScopedFence's payload — i.e. the
-// inner trunk of a `ScopedFence<S_outer, ... ScopedFence<S_inner, U> ...>`
-// stack.  Pierces the same sibling wrappers (BarrierGuarded / Hw /
-// SimdWidthPinned) AND CV / reference qualifiers as scope_tier_of.
-//
-// For NON-NESTED ScopedFence (outer scope wrapping a non-ScopedFence
-// payload — the common case), has_inner_scope is false.  For genuinely
-// nested ScopedFence stacks, the inner partial spec fires and exposes
-// the SECOND (innermost-visible) trunk for cross-trunk comparison.
 template <typename T>
 struct inner_scope_tier_of {
     static constexpr bool has_inner_scope = false;
     static constexpr ::crucible::algebra::lattices::MemoryScope value =
         ::crucible::algebra::lattices::MemoryScope::Thread;
 };
-// OUTER-level sibling piercing — when a BarrierGuarded / Hw /
-// SimdWidthPinned wraps the entire nested-ScopedFence stack, recurse
-// past it so the nested-ScopedFence detection still fires.  Dual of
-// the scope_tier_of sibling piercing above; required because real
-// V402-triggering bindings are typically `BarrierGuarded<Tier,
-// ScopedFence<S_outer, ScopedFence<S_inner, U>>>`-shaped (the barrier
-// pins the strength, the nested ScopedFences pin the scope trunks).
 template <::crucible::algebra::lattices::BarrierStrength Tier, typename U>
 struct inner_scope_tier_of<::crucible::safety::BarrierGuarded<Tier, U>> : inner_scope_tier_of<U> {};
 template <::crucible::algebra::lattices::HwInstruction Tier, typename U>
 struct inner_scope_tier_of<::crucible::safety::Hw<Tier, U>> : inner_scope_tier_of<U> {};
 template <::crucible::algebra::lattices::SimdIsa W, typename U>
 struct inner_scope_tier_of<::crucible::safety::SimdWidthPinned<W, U>> : inner_scope_tier_of<U> {};
-// Outer ScopedFence wrapping an INNER ScopedFence (the nested case the
-// shallow scope_tier_of missed).
 template <::crucible::algebra::lattices::MemoryScope S_outer, ::crucible::algebra::lattices::MemoryScope S_inner,
           typename U>
 struct inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer, ::crucible::safety::ScopedFence<S_inner, U>>> {
     static constexpr bool has_inner_scope = true;
     static constexpr ::crucible::algebra::lattices::MemoryScope value = S_inner;
 };
-// Sibling-wrapper piercing INSIDE the outer ScopedFence's payload so
-// `ScopedFence<S_outer, BarrierGuarded<Tier, ScopedFence<S_inner, U>>>`
-// (and the Hw / SimdWidthPinned analogues) still surface the inner
-// trunk.  Without these, an interposed barrier/hw/width band silently
-// hides the nested trunk.
 template <::crucible::algebra::lattices::MemoryScope S_outer, ::crucible::algebra::lattices::BarrierStrength Tier,
           typename U>
 struct inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer, ::crucible::safety::BarrierGuarded<Tier, U>>>
@@ -2722,14 +1863,7 @@ struct inner_scope_tier_of<T const> : inner_scope_tier_of<T> {};
 template <typename T>
 struct inner_scope_tier_of<T const&> : inner_scope_tier_of<T> {};
 
-// scopes_cross_trunk(a, b): two MemoryScope values land in CONTRADICTING
-// trunks — one accel-trunk and one ARM-trunk, OR vice versa.  Shared
-// sentinels Thread and System belong to neither trunk and never
-// contradict.  Reuses the V-265 trunk classifiers; cross-trunk leq on
-// MemoryScopeLattice is false in both directions, but this predicate
-// answers the simpler "are the trunks DIFFERENT and both NON-SHARED"
-// question (no host-arch in play — the contradiction is internal to
-// the type stack).
+// Thread and System belong to neither trunk.
 [[nodiscard]] constexpr bool scopes_cross_trunk(::crucible::algebra::lattices::MemoryScope a,
                                                 ::crucible::algebra::lattices::MemoryScope b) noexcept {
     using MS = ::crucible::algebra::lattices::MemoryScope;
@@ -2742,21 +1876,11 @@ struct inner_scope_tier_of<T const&> : inner_scope_tier_of<T> {};
     return (a_accel && b_arm) || (a_arm && b_accel);
 }
 
-// nested_scope_cross_trunk_v<T>: a nested ScopedFence stack whose outer
-// and inner trunks contradict.  This is the V402 detector the shallow
-// scope_arch_cross_trunk_v missed — the contradiction is INTERNAL to
-// the type and independent of host arch (no `.gpu` and `.ish` can
-// coexist in one binding on any host).
 template <typename T>
 inline constexpr bool nested_scope_cross_trunk_v =
     scope_tier_of<T>::has_scope && inner_scope_tier_of<T>::has_inner_scope
     && scopes_cross_trunk(scope_tier_of<T>::value, inner_scope_tier_of<T>::value);
 
-// ── FIXY-V-260 hardware-axis rule concepts (8 of 8) ─────────────────
-
-// V001 / V002 / V102: grant-pack rules — default-SAFE markers the
-// V-258 / V-259 / V-261 grant-pack analysis specializes (cross-grant
-// VALUE compatibility a single type_t wrapper read cannot express).
 template <typename F>
 concept V001_OK = !marks_vendor_isa_inconsistent<F>::value;
 template <typename F>
@@ -2764,60 +1888,35 @@ concept V002_OK = !marks_vendor_cross_arch<F>::value;
 template <typename F>
 concept V102_OK = !marks_simd_width_exceeds_isa<F>::value;
 
-// V101: replay-required × SimdWidthPinned pins a specific vector ISA.
 template <typename F>
 concept V101_OK = !(marks_replay_required<F>::value && simd_isa_pins_specific_vector_v<typename F::type_t>);
 
-// V201: HotPath × Hw tier ≥ NonDeterministicTsc (rdtsc / privileged).
 template <typename F>
 concept V201_OK =
     !(is_hot_path_v<F>
       && hw_at_or_above_v<::crucible::algebra::lattices::HwInstruction::NonDeterministicTsc, typename F::type_t>);
 
-// V202: Hw tier == PrivilegedMsr without an Init-context row.
 template <typename F>
 concept V202_OK =
     !(hw_tier_of<typename F::type_t>::has_hw
       && hw_tier_of<typename F::type_t>::value == ::crucible::algebra::lattices::HwInstruction::PrivilegedMsr
       && !row_has_effect_v<typename F::effect_row_t, effects::Effect::Init>);
 
-// V203: replay-required × Hw tier ≥ NonDeterministicTsc (rdtsc nondeterminism).
 template <typename F>
 concept V203_OK =
     !(marks_replay_required<F>::value
       && hw_at_or_above_v<::crucible::algebra::lattices::HwInstruction::NonDeterministicTsc, typename F::type_t>);
 
-// V301: HotPath × BarrierStrength tier ≥ SeqCst (full fence on hot path).
 template <typename F>
 concept V301_OK =
     !(is_hot_path_v<F>
       && barrier_at_or_above_v<::crucible::algebra::lattices::BarrierStrength::SeqCst, typename F::type_t>);
 
-// ── FIXY-V-268 memory-scope-axis rule concepts (2 of 2) ─────────────
-
-// V401: scope ⊒ Cluster × BarrierStrength ⊏ AcqRel.  A cross-CTA-or-wider
-// publish scope composed with a barrier weaker than acquire-release is an
-// under-fenced publication (visibility widened, ordering never established).
-// FIXY-FOUND-062 widened the threshold from Gpu to Cluster — Hopper
-// thread-block-cluster publishes are cross-CTA and exhibit the same
-// silent-weak-memory race as Gpu publishes when guarded by a sub-AcqRel
-// barrier.  The widening catches {Cluster, Gpu, System} in the accel trunk
-// (cross-trunk leq false leaves the ARM trunk untouched).
 template <typename F>
 concept V401_OK =
     !(scope_at_or_above_v<::crucible::algebra::lattices::MemoryScope::Cluster, typename F::type_t>
       && !barrier_at_or_above_v<::crucible::algebra::lattices::BarrierStrength::AcqRel, typename F::type_t>);
 
-// V402: scope-trunk × host-arch cross-trunk.  Three trigger paths:
-//   (1) Type-readable HOST-vs-OUTER: ScopedFence trunk on F::type_t
-//       contradicts arch_pin_v<F::source_t>.
-//   (2) Type-readable OUTER-vs-INNER: a nested ScopedFence stack whose
-//       outer and inner trunks contradict (FIXY-FOUND-073 — the
-//       internal-to-type contradiction the host-vs-outer detector
-//       missed; e.g. `.gpu`-trunk wrapping an `ish`-trunk inner has no
-//       coherent realization on ANY host).
-//   (3) Grant-driven marker: marks_scope_arch_cross_trunk for the
-//       cross-grant-value cases a single type read cannot express.
 template <typename F>
 concept V402_OK = !(marks_scope_arch_cross_trunk<F>::value
                     || scope_arch_cross_trunk_v<F> || nested_scope_cross_trunk_v<typename F::type_t>);
@@ -2951,35 +2050,8 @@ inline constexpr RuleCode first_failure_v = first_failure<F>();
 template <typename F>
 struct CollisionDiagnostic : CollisionDiagnosticByRule<F, first_failure_v<F>> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Phase B pack-level rules (L005 + F001) ────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Two of the eight Phase B rules read across MULTIPLE Fn instances —
-// they cannot be enforced by a single-Fn concept gate.  Phase B ships
-// them under `crucible::safety::fn::collision::pack` as compile-time
-// boolean metafunctions over `Fn<...>...` packs.  fixy/Fn.h reads them
-// after resolving its `Grants...` pack into a `safety::Fn<...>` pack.
-//
-//   L005_LinearAliasSameRegionTag —
-//     no two Linear-usage Fns share the same lifetime::In<Tag>.
-//     `lifetime::Static` is a global default and is never an alias;
-//     only region-tagged lifetimes participate.
-//
-//   F001_FrameDeclaresAxisCollision —
-//     in a frame manifesto (a curated pack), no axis disagrees across
-//     the pack.  Phase B ships the security axis as the seed (every
-//     binding in a frame must agree on classification level); future
-//     axes are added by extending the conjunction below.
-
 namespace pack {
 
-// ── Lifetime tag extraction ─────────────────────────────────────────
-//
-// For non-region lifetimes (lifetime::Static or anything else that is
-// not a region), the extraction returns `void` — a sentinel that the
-// aliasing check ignores.  For lifetime::In<Tag>, the extraction
-// returns the Tag value at type level via std::integral_constant.
 template <typename L>
 struct region_tag_of {
     using type = void;
@@ -2991,24 +2063,19 @@ struct region_tag_of<lifetime::In<RegionTag>> {
 template <typename L>
 using region_tag_of_t = typename region_tag_of<L>::type;
 
-// ── Is a given Fn a Linear in a region? ────────────────────────────
 template <typename F>
 inline constexpr bool is_linear_in_region_v =
     F::usage_v == UsageMode::Linear && is_region_lifetime<typename F::lifetime_t>::value;
 
-// ── Are two extracted region-tag carriers identical and non-void? ──
 template <typename Tag1, typename Tag2>
 inline constexpr bool same_region_tag_v = !std::is_void_v<Tag1> && !std::is_void_v<Tag2> && std::is_same_v<Tag1, Tag2>;
 
-// ── Pairwise alias check across a Fn pack ──────────────────────────
-//
-// O(n^2) over a typically small pack (≤ 20 grants/fns in production).
-// Uses a fold expression over two index packs.
+// Quadratic in the pack size.
 template <typename... Fs>
 [[nodiscard]] consteval bool no_linear_region_alias() noexcept {
     constexpr std::size_t N = sizeof...(Fs);
     if constexpr (N < 2) {
-        return true;  // single binding cannot alias itself
+        return true;
     } else {
         bool ok = true;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -3042,11 +2109,6 @@ template <typename... Fs>
 template <typename... Fs>
 inline constexpr bool no_linear_region_alias_v = no_linear_region_alias<Fs...>();
 
-// ── Frame manifesto axis consistency (security seed) ───────────────
-//
-// Every binding in a frame manifesto must agree on the security axis.
-// More axes can be added to this conjunction as the frame discipline
-// grows; Phase B ships the security seed.
 template <typename... Fs>
 [[nodiscard]] consteval bool frame_axis_consistent() noexcept {
     constexpr std::size_t N = sizeof...(Fs);
@@ -3072,21 +2134,10 @@ template <typename... Fs>
 template <typename... Fs>
 inline constexpr bool frame_axis_consistent_v = frame_axis_consistent<Fs...>();
 
-// ── S004 Meyers-singleton init-cycle detector ───────────────────────
-//
-// Reusable consteval cycle detector over a compile-time directed-edge
-// list on `NodeCount` singleton tags.  An edge (from, to) reads "the
-// lazy initializer of singleton `from` touches singleton `to`", so a
-// cycle is the static-initialization-order fiasco in its subtlest
-// (lazy-init) form: the first thread to touch either singleton triggers
-// a re-entrant initialization that observes a half-constructed peer.
-//
-// V-248 (Scenario D) supplies the edges from registered
-// grant::global::singleton<Tag> annotations and specializes
-// marks_singleton_init_cycle<F> for any Fn whose tag participates in a
-// detected cycle.  Kahn's algorithm: repeatedly retire a zero-in-degree
-// node; if any node survives when none can be retired, the graph has a
-// cycle.  Returns true iff ACYCLIC.
+// An edge (from, to) reads: the lazy initializer of singleton `from`
+// touches singleton `to`. A cycle is the static-initialization-order
+// problem in its lazy form, where the first thread to touch either
+// singleton observes a half-constructed peer.
 template <std::size_t NodeCount, std::size_t EdgeCount>
 [[nodiscard]] consteval bool
 singleton_init_acyclic(const std::array<std::pair<std::size_t, std::size_t>, EdgeCount>& edges) noexcept {
@@ -3144,14 +2195,10 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
     using F = Fn<Type, Refinement, Usage, EffectRow, Security, Protocol, Lifetime, Source, Trust, Repr, Cost, Precision,
                  Space, Overflow, Mutation, Reentrancy, Size, Version, Staleness>;
 
+    // Every predicate here reads the partial-specialization parameters, not
+    // the `F::` member aliases. Naming a member completes `Fn`, whose body
+    // asserts this struct's `valid`, and the instantiation recurses.
     static constexpr bool classified = Security == SecLevel::Classified || Security == SecLevel::Secret;
-    // FIXY-FOUND-067 Phase 2: structural OR marker, computed via the
-    // partial-spec `Reentrancy` and `EffectRow` parameters rather than
-    // `F::reentrancy_v` and `typename F::effect_row_t`.  Going through
-    // `F::*` member aliases would force completion of F (= Fn<...>)
-    // inside CollisionRules, triggering ValidComposition recursion via
-    // Fn body's `static_assert(ValidComposition<F>)`.  Partial-spec
-    // parameters are cycle-safe.
     static constexpr bool async = (Reentrancy == ReentrancyMode::Coroutine)
                                || collision::row_has_effect_v<EffectRow, effects::Effect::Bg>
                                || collision::marks_async<F>::value;
@@ -3166,18 +2213,9 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
     static constexpr bool session_protocol = !std::is_same_v<Protocol, proto::None>;
     static constexpr bool stale_nonfresh = !std::is_same_v<Staleness, stale::Fresh>;
 
-    // ── Phase B per-F predicates (6 of 8 new rules) ──────────────────
     static constexpr bool region_lifetime = collision::is_region_lifetime<Lifetime>::value;
     static constexpr bool lifetime_unprotected = collision::marks_lifetime_region_unprotected<F>::value;
     static constexpr bool unbounded_cost = collision::is_unbounded_cost<Cost>::value;
-    // FIXY-FOUND-067 Phase 1: structural OR marker, computed via the
-    // partial-spec `Type` parameter rather than `typename F::type_t`.
-    // Going through `F::type_t` would force completion of F (Fn<...>)
-    // inside CollisionRules — but completing F triggers Fn's body's
-    // `static_assert(ValidComposition<F>)`, which evaluates
-    // CollisionRules<F>::valid, which reads this very member.  Cycle.
-    // Type is directly available here (partial spec parameter) so the
-    // structural reading is cycle-safe.
     static constexpr bool hot_path = collision::marks_hot_path<F>::value
                                   || collision::detail_hot_path::hot_path_tier_is_hot<std::remove_cvref_t<Type>>::value;
     static constexpr bool externally_observable = collision::marks_externally_observable<F>::value;
@@ -3187,9 +2225,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
     static constexpr bool row_has_alloc_or_io = collision::row_has_effect_v<EffectRow, effects::Effect::Alloc>
                                              || collision::row_has_effect_v<EffectRow, effects::Effect::IO>;
 
-    // ── W001: HotPath × Wait<{Block,Park,AcquireWait,UmwaitC01}> ─────
-    // FIXY-FOUND-061: rejected set widened to all four syscall-tier
-    // strategies (was {Block, Park} only) to match CLAUDE.md §IX.
     static constexpr bool type_has_kernel_wait = collision::wait_strategy_of<Type>::has_wait && []() consteval {
         if constexpr (collision::wait_strategy_of<Type>::has_wait) {
             return collision::is_kernel_wait_v<collision::wait_strategy_of<Type>::value>;
@@ -3198,7 +2233,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
         }
     }();
 
-    // ── W002: Bg-row × Wait<SpinPause> or Wait<BoundedSpin> ──────────
     static constexpr bool type_has_active_spin_wait = collision::wait_strategy_of<Type>::has_wait && []() consteval {
         if constexpr (collision::wait_strategy_of<Type>::has_wait) {
             return collision::is_active_spin_v<collision::wait_strategy_of<Type>::value>;
@@ -3207,22 +2241,9 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
         }
     }();
 
-    // ── FIXY-V-091 F-family predicates (FP-mode cross-axis) ──────────
-    //
-    // Each predicate checks whether Type is an FpModePinned wrapper for
-    // the load-bearing toxic mode value on its sub-axis.  Per-axis
-    // detector is `wraps_fp_axis_mode_v<AxisMode, T>` — one generic
-    // detector covers all 11 sub-axes because the NTTP type-discriminates.
     static constexpr bool replay_required = collision::marks_replay_required<F>::value;
     static constexpr bool fp_reassoc_unrestricted =
         collision::wraps_fp_axis_mode_v<::crucible::safety::FpReassociate::UnrestrictedRewrite, Type>;
-    // FIXY-FOUND-074: any non-Forbidden FpReassociate setting under
-    // replay defeats bit-exact cross-vendor replay (BoundedTreeDepth's
-    // vendor-specific lane assignment within the log-N tree shape
-    // diverges the same as UnrestrictedRewrite's free reordering).
-    // F103 (CT-axis) still reads the narrower fp_reassoc_unrestricted
-    // because BoundedTreeDepth has data-independent topology and is
-    // CT-safe even though it is replay-unsafe.
     static constexpr bool fp_reassoc_bounded_tree =
         collision::wraps_fp_axis_mode_v<::crucible::safety::FpReassociate::BoundedTreeDepth, Type>;
     static constexpr bool fp_reassoc_non_strict = fp_reassoc_unrestricted || fp_reassoc_bounded_tree;
@@ -3233,7 +2254,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
     static constexpr bool fp_ftz_preserved =
         collision::wraps_fp_axis_mode_v<::crucible::safety::FpFtz::PreserveSubnormals, Type>;
 
-    // ── FIXY-V-243 hazard-axis predicates (8 cross-axis rules) ───────
     static constexpr bool aborts = collision::marks_aborts<F>::value;
     static constexpr bool cf_witnesses_abort =
         collision::cf_at_or_above_v<::crucible::algebra::lattices::ControlFlow::AbortOnly, Type>;
@@ -3252,7 +2272,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
     static constexpr bool singleton_init_cycle = collision::marks_singleton_init_cycle<F>::value;
     static constexpr bool thread_local_atomic = collision::marks_thread_local_atomic<F>::value;
 
-    // ── FIXY-V-260 hardware-axis predicates (8 cross-axis rules) ─────
     static constexpr bool vendor_isa_inconsistent = collision::marks_vendor_isa_inconsistent<F>::value;
     static constexpr bool vendor_cross_arch = collision::marks_vendor_cross_arch<F>::value;
     static constexpr bool simd_width_exceeds_isa = collision::marks_simd_width_exceeds_isa<F>::value;
@@ -3266,25 +2285,11 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
     static constexpr bool hot_path_full_fence =
         collision::barrier_at_or_above_v<::crucible::algebra::lattices::BarrierStrength::SeqCst, Type>;
 
-    // ── FIXY-V-268 memory-scope-axis predicates (2 cross-axis rules) ─
-    // FIXY-FOUND-062: V401 threshold widened Gpu → Cluster, catching the
-    // Hopper thread-block-cluster cross-CTA publish case alongside
-    // device-wide / system-wide publishes.  See V401_OK concept above.
     static constexpr bool scope_at_or_above_cluster =
         collision::scope_at_or_above_v<::crucible::algebra::lattices::MemoryScope::Cluster, Type>;
     static constexpr bool barrier_at_least_acqrel =
         collision::barrier_at_or_above_v<::crucible::algebra::lattices::BarrierStrength::AcqRel, Type>;
     static constexpr bool scope_strength_insufficient = scope_at_or_above_cluster && !barrier_at_least_acqrel;
-    // Read the destructured Type / Source template params directly (NOT
-    // scope_arch_cross_trunk_v<F>, which would touch F::type_t / F::source_t
-    // and force Fn<> to complete — re-entering its own
-    // static_assert(ValidComposition<Fn>) and recursing).  The V402_OK
-    // concept reads F::type_t in the safe AllRulesOK / first_failure path.
-    //
-    // FIXY-FOUND-073: extend with the nested-cross-trunk leg.  A binding
-    // whose Type pins two ScopedFence layers from contradicting trunks
-    // (accel + ARM) has no coherent realization on any host; the
-    // contradiction is internal to the type and independent of Source.
     static constexpr bool scope_arch_cross_trunk =
         collision::marks_scope_arch_cross_trunk<F>::value
         || (collision::scope_tier_of<Type>::has_scope
@@ -3330,7 +2335,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
                         && !collision::marks_replay_stable<F>::value),
                       "S011: Capability x Replay incompatible. Ephemeral capabilities "
                       "must not enter replay-stable code without content-addressed handles.");
-        // ── Phase B per-Fn collision asserts ─────────────────────────
         static_assert(!(Usage == UsageMode::Linear && region_lifetime && lifetime_unprotected),
                       "L004: Linear x lifetime::In<Tag> without Permission proof. "
                       "Thread a Permission<Tag> through the call or move Usage out "
@@ -3461,7 +2465,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
                       "onto the core. Switch to Wait<UmwaitC01> (power-aware), "
                       "Wait<AcquireWait> (futex), Wait<Park> (condvar), or Wait<Block> "
                       "(poll/epoll).");
-        // ── FIXY-V-091 F-family static asserts ───────────────────────
         static_assert(!(replay_required && fp_reassoc_non_strict),
                       "F101: Replay-required x non-strict FpReassociatePinned "
                       "(UnrestrictedRewrite OR BoundedTreeDepth). UnrestrictedRewrite "
@@ -3496,7 +2499,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
                                                  "30-100x slowdown when the result IS denormal; result-magnitude "
                                                  "leaks through cycle count. Switch to FpFtzPinned<FlushToZero> "
                                                  "on the CT path.");
-        // ── FIXY-V-243 hazard-axis static asserts ─────────────────────
         static_assert(!(aborts && !cf_witnesses_abort),
                       "C001: abort-declaring function (grant::ctrl::abort<Rationale>) MUST "
                       "carry a ControlFlow tier >= AbortOnly that witnesses the escape. "
@@ -3537,7 +2539,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
                                             "(one instance per thread) — either drop thread_local for a "
                                             "process-wide static std::atomic<T>, or drop the atomic for a plain "
                                             "thread_local (Scenario E: bench_smoke.cpp:78).");
-        // ── FIXY-V-260 hardware-axis static asserts ───────────────────
         static_assert(!vendor_isa_inconsistent, "V001: vendor::intrinsic grants in the binding pack declare an "
                                                 "inconsistent (vendor, ISA-family). The per-grant "
                                                 "vendor_isa_consistent_v<V, I> gate (V-258) only checks a single "
@@ -3582,7 +2583,6 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
                       "(~20-40+ cycles) — CLAUDE.md §IX mandates acquire/release only on the "
                       "hot path (free on x86 TSO). Use BarrierGuarded<AcquireLoad>/"
                       "<ReleaseStore>/<AcqRel>; reserve SeqCst/FullFence for Init or Bg.");
-        // ── FIXY-V-268 memory-scope-axis static asserts ──────────────
         static_assert(!scope_strength_insufficient,
                       "V401: a ScopedFence scope ⊒ Cluster (cross-CTA / device / system visibility) "
                       "is composed with a BarrierStrength ⊏ AcqRel (None / CompilerBarrier / "
@@ -3603,9 +2603,8 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security, Protocol,
                       "The MemoryScope-axis mirror of V002 cross-arch mixing. Pin a host arch whose "
                       "trunk matches the scope (ArchPinned<Arm> for Inner/Outer; leave the pin "
                       "Portable for a GPU-device scope), or drop the contradicting scope.");
-        // L005 and F001 are pack-level rules (no single-Fn enforcement
-        // shape); fixy/Fn.h checks them across the Grants pack via
-        // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
+        // L005 and F001 have no single-binding shape. The pack
+        // metafunctions above cover them.
         return !(classified && fail && !fail_secret) && !(borrow_capture && async) && !(ct && async)
             && !(ct && fail && collision::marks_fail_on_secret<F>::value)
             && !(Mutation == MutationMode::Monotonic && concurrent && Repr != ReprKind::Atomic)
@@ -3661,21 +2660,11 @@ namespace detail::collision_catalog_self_test {
 
 using DefaultFn = Fn<int>;
 static_assert(ValidComposition<DefaultFn>);
-// FIXY-V-234 bump: 27 → 28 with M001_DontNeedRequiresReleaseAware.
-// Use `>=` floor pattern (per feedback_catalog_cardinality_test_drift) so
-// future appends don't silently red this self-test; the per-rule
-// rule_bijection assertions below pin each catalog entry individually.
+// A floor rather than an equality: appending a rule must not break this.
 static_assert(collision::catalog_size >= 36, "FIXY-V-091/V-234/V-243 floor: catalog must include F101..F105 + M001 "
                                              "+ C001/D001/D002/G001/L006/P003/S001/S004");
 static_assert(std::is_same_v<collision::rule_tag_t<collision::RuleCode::I002>, collision::I002_ClassifiedFailPayload>);
 static_assert(collision::rule_code_of_v<collision::I002_ClassifiedFailPayload> == collision::RuleCode::I002);
-// FIXY-FOUND-134: replaces 38 hand-maintained per-rule static_asserts with
-// a Pattern B reflection fold that iterates `enumerators_of(^^RuleCode)` and
-// instantiates `rule_bijection_v<E>` for every non-sentinel enumerator.
-// Auto-extends to new RuleCode atoms on append; closes FIXY-FOUND-075
-// (the 9 codes G002 / V001 / V002 / V101 / V102 / V201 / V202 / V203 / V301
-// shipped with `rule_tag` + `rule_code_of` specializations but no bijection
-// assertion).  Mirrors the effects::is_observable Pattern B from FOUND-133.
 consteval bool every_rule_code_has_bijection_() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^collision::RuleCode));
     bool result = true;
@@ -3683,9 +2672,8 @@ consteval bool every_rule_code_has_bijection_() noexcept {
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr collision::RuleCode code = [:en:];
-        // RuleCode::None is the "no violation" sentinel — no rule_tag
-        // specialization exists for it (intentional; the inverse map
-        // would have no payload).  Skip; every other code MUST bijct.
+        // None is the no-violation sentinel and has no rule_tag
+        // specialization.
         if constexpr (code != collision::RuleCode::None) {
             result = result && collision::rule_bijection_v<code>;
         }

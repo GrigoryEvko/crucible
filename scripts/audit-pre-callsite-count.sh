@@ -99,10 +99,17 @@ count_pattern() {
     # least one match, so two cites sharing a line count as one and the total
     # moves whenever a reformat joins or splits lines.  `rg -o` emits one line
     # per match, which is the quantity this audit actually claims to report.
+    #
+    # Count CODE, not prose.  A cite named in a comment is not adoption, and
+    # counting it makes the metric track how much the tree talks about
+    # contracts rather than how much it uses them.  Two guards do that: the
+    # line must not open as a comment, and no `//` may precede the match on
+    # the line.  A cite named inside a multi-line block comment still counts,
+    # which is the residual this cheap form accepts.
     local pattern="$1"
     local total=0
     total=$(
-        rg -oP "$pattern" "${common_globs[@]}" \
+        rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\K${pattern}" "${common_globs[@]}" \
            "$root/include" "$root/src" 2>/dev/null | wc -l
     )
     printf '%s' "$total"
@@ -205,7 +212,7 @@ HEADER
         # two land on one line.
         local n=0
         n=$(
-            rg -oP "decide::${proc}\b" "${common_globs[@]}" \
+            rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
                --glob '!include/crucible/safety/Decide.h' \
                "$root/include" "$root/src" 2>/dev/null | wc -l
         )
@@ -270,7 +277,7 @@ print_json() {
         # -o counts occurrences; see the human-summary loop above.
         local n=0
         n=$(
-            rg -oP "decide::${proc}\b" "${common_globs[@]}" \
+            rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
                --glob '!include/crucible/safety/Decide.h' \
                "$root/include" "$root/src" 2>/dev/null | wc -l
         )

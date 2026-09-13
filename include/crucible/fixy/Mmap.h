@@ -1,107 +1,14 @@
 #pragma once
 
-// ── crucible::fixy::mmap — typed memory-mapping surface (FIXY-V-225) ──
-//
-// Three orthogonal axis namespaces under `crucible::fixy::mmap`:
-//
-//   prot::{ReadOnly, WriteCopy, ReadWrite, Exec}
-//                                         — protection bit tier
-//   share::{Private, Shared, Anonymous, Locked, Populate, HugeTLB}
-//                                         — primary mode + additive flags
-//   advice::{HugePage, NoHugePage, Collapse, Sequential, Random,
-//            WillNeed, DontNeed, Free, WipeOnFork, DontDump}
-//                                         — madvise(2) hint tier
-//
-// Grant tags (each `final : grant::grant_base`) route through
-// `DimensionAxis::SyscallSurface` (V-097's enumerator; the mmap/munmap/
-// madvise trio IS a syscall surface tier):
-//
-//   crucible::fixy::grant::mmap::with_prot<Prot>
-//   crucible::fixy::grant::mmap::with_share<Share>
-//   crucible::fixy::grant::mmap::with_advice<Advice>
-//   crucible::fixy::grant::mmap::trusted_jit           — Exec gating
-//   crucible::fixy::grant::mmap::release_aware<RegionTag>
-//                                         — Bug 5 typed-witness (V-234
-//                                           composes with SharedPermission)
-//
-// One Linear move-only RAII type:
-//
-//   OwnedMmap<Tag, Prot, Share>           — destructor calls ::munmap;
-//                                            data()/size()/is_mapped()
-//                                            accessors; non-copyable.
-//
-// Three call-site factories per CLAUDE.md §XXI:
-//
-//   mint_mmap<Tag, Grants...>(ctx, fh, length, offset)
-//         — §XXI mint; file-backed mapping over an open FileHandle.
-//           Requires CtxFitsMmapMint<Ctx, Grants...> (single concept).
-//
-//   mint_mmap_anon<Tag, Grants...>(ctx, length)
-//         — §XXI mint; anonymous mapping (no file backing).
-//           Requires CtxFitsAnonMmapMint<Ctx, Grants...> which adds the
-//           "Grants engages with_share<Anonymous>" predicate.
-//
-// Two effect operations (NOT §XXI mints — they perform syscalls on an
-// existing region, no fresh authoritative resource synthesized):
-//
-//   advise<Advice>(ctx, OwnedMmap&)
-//         — safe-surface madvise; accepts every advice EXCEPT DontNeed.
-//           DontNeed is dangerous (zeros pages out from under any
-//           concurrent ReadView).  Caller must use advise_release_aware
-//           for that one.
-//
-//   advise_release_aware<Advice, RegionTag>(ctx, OwnedMmap&)
-//         — Bug 5 narrow surface for DontNeed (and future MADV_FREE
-//           variants that zero pages).  Compile-time witness of the
-//           release_aware<RegionTag> grant family.  V-234 will extend
-//           this with a SharedPermission proof obligation that no
-//           live ReadView<RegionTag> exists at the call site.
-//
-// ── Axiom coverage (code_guide §II) ───────────────────────────────────
-//
-//   InitSafe   — every tag is `final` empty struct, NSDMI-trivial;
-//                OwnedMmap default-ctor leaves MAP_FAILED sentinel;
-//                std::expected return channel.
-//   TypeSafe   — strong types for every axis value (no raw int PROT_*/
-//                MAP_*/MADV_* in the public surface).
-//   NullSafe   — std::expected, no raw pointer return; is_mapped()
-//                gate before every dereference.
-//   MemSafe    — OwnedMmap is move-only; dtor unmaps; Linear gate at
-//                mint boundary forces explicit consume.
-//   BorrowSafe — mint_mmap consumes Grants pack by template; no shared
-//                mutable state in the factories.
-//   ThreadSafe — every factory is pure / stateless.  munmap is the
-//                only syscall that mutates process VA on destruction;
-//                no cross-thread races within a single OwnedMmap.
-//   LeakSafe   — OwnedMmap dtor unconditionally unmaps on is_mapped();
-//                move-assignment unmaps the target before overwrite.
-//   DetSafe    — same length + same Grants + same ctx → same mmap()
-//                syscall sequence; mmap address itself depends on
-//                kernel ASLR (intentionally non-deterministic for
-//                security — this is fine for DetSafe because no
-//                replay path observes the address).
-//
-// ── HS14 fixtures (≥6 per §XXI / CLAUDE.md HS14) ──────────────────────
-//
-// Each mismatch class lives in test/fixy_neg/neg_fixy_v_225_*.cpp:
-//
-//   1. mint_mmap<...>(ctx) with empty Grants — no prot, no share.
-//   2. mint_mmap with with_prot<Exec> but no trusted_jit grant.
-//   3. mint_mmap with two with_prot<X> grants — duplicate-prot reject.
-//   4. mint_mmap with two primary-share grants — duplicate reject.
-//   5. mint_mmap_anon without with_share<Anonymous> — gate fires.
-//   6. mint_mmap in a ColdInitCtx (Row<Init,Alloc,IO>, no Block).
-//   7. advise<DontNeed> on the safe surface — must use advise_release_aware.
+#include <crucible/fixy/Grant.h>
+#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/Linear.h>
+#include <crucible/safety/OwnedMmap.h>
+#include <crucible/permissions/Permission.h>
 
-#include <crucible/fixy/Grant.h>  // grant_base, which_dim primary
-#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::SyscallSurface
-#include <crucible/safety/Linear.h>  // safety::Linear
-#include <crucible/safety/OwnedMmap.h>  // safety::OwnedMmap — V-231 promoted RAII
-#include <crucible/permissions/Permission.h>  // Permission<Tag> — V-234 borrow-proof
-
-#include <crucible/effects/ExecCtx.h>  // IsExecCtx + row_type_of_t
-#include <crucible/effects/EffectRow.h>  // row_contains_v
-#include <crucible/effects/Capabilities.h>  // effects::Effect
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/Capabilities.h>
 
 #include <sys/mman.h>
 #include <unistd.h>
@@ -114,11 +21,8 @@
 #include <type_traits>
 #include <utility>
 
-// ── Linux defensive constants — only define if absent ────────────────
-//
-// Crucible targets Linux exclusively (CLAUDE.md §XIV).  Defensive
-// macros guard the few flags that landed in newer kernels so this
-// header builds against any libc that doesn't yet expose them.
+// A libc header older than a flag does not declare it, so each value is
+// spelled here as well.
 
 #ifndef MADV_COLLAPSE
 #define MADV_COLLAPSE 25  // Linux 6.1 (2022-12).
@@ -138,21 +42,19 @@
 
 namespace crucible::fixy::mmap {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── (a) prot — protection bit tier ────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
+// Write and execute are never both set: Exec carries read and execute only.
+// A JIT that has to stage writes maps the same pages twice, once writable for
+// code generation and once executable to run them, which is the discipline
+// hardware execute-only memory assumes anyway.
 //
-// Four tier markers.  W^X is structural: prot::Exec is PROT_READ|
-// PROT_EXEC ONLY (never paired with PROT_WRITE).  A JIT that needs to
-// stage writes must dual-map (one writable region for code generation,
-// one executable region for execution) — this is the same discipline
-// hardware-enforced memory protection (XOM, CET shadow stacks) assumes.
+// WriteCopy and ReadWrite carry identical bits and differ only in the share
+// mode they are meant to accompany.
 
 namespace prot {
-struct ReadOnly final {};  // PROT_READ
-struct WriteCopy final {};  // PROT_READ | PROT_WRITE — COW, pairs with Private
-struct ReadWrite final {};  // PROT_READ | PROT_WRITE — pairs with Shared
-struct Exec final {};  // PROT_READ | PROT_EXEC — gated by trusted_jit
+struct ReadOnly final {};
+struct WriteCopy final {};  // copy-on-write; goes with share::Private
+struct ReadWrite final {};  // goes with share::Shared
+struct Exec final {};  // reachable only with the trusted_jit grant
 }  // namespace prot
 
 template <typename Prot>
@@ -169,27 +71,16 @@ struct prot_bits<prot::Exec> : std::integral_constant<int, PROT_READ | PROT_EXEC
 template <typename Prot>
 inline constexpr int prot_bits_v = prot_bits<Prot>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── (b) share — primary mode + additive flags ─────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Three primary modes (mutually exclusive — exactly one per mint):
-//   Private    MAP_PRIVATE                — COW backing
-//   Shared     MAP_SHARED                 — visible to other mappers
-//   Anonymous  MAP_PRIVATE|MAP_ANONYMOUS  — zero-fill, no file
-//
-// Three additive flags (stackable on any primary):
-//   Locked     MAP_LOCKED                 — prevent swap (RLIMIT_MEMLOCK)
-//   Populate   MAP_POPULATE               — prefault all pages
-//   HugeTLB    MAP_HUGETLB|MAP_HUGE_2MB   — 2 MiB pages
+// The first three are primary modes and a mapping has exactly one.  The last
+// three are flags that stack on any primary.
 
 namespace share {
 struct Private final {};
 struct Shared final {};
-struct Anonymous final {};
-struct Locked final {};
-struct Populate final {};
-struct HugeTLB final {};
+struct Anonymous final {};  // zero-filled, no file behind it
+struct Locked final {};  // keeps pages off swap, against RLIMIT_MEMLOCK
+struct Populate final {};  // prefaults every page
+struct HugeTLB final {};  // 2 MiB pages
 }  // namespace share
 
 template <typename Share>
@@ -210,34 +101,25 @@ struct share_flags<share::HugeTLB> : std::integral_constant<int, MAP_HUGETLB | M
 template <typename Share>
 inline constexpr int share_flags_v = share_flags<Share>::value;
 
-// `is_primary_share_v<X>` — true iff X is one of the mutually-exclusive
-// primary tiers.  Used by has_primary_share_v / has_duplicate_primary_v.
-
 template <typename Share>
 inline constexpr bool is_primary_share_v = std::is_same_v<Share, share::Private> || std::is_same_v<Share, share::Shared>
                                         || std::is_same_v<Share, share::Anonymous>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── (c) advice — madvise(2) hint tier ─────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Ten markers covering the production-relevant subset of MADV_*.
-// `DontNeed` is the LOAD-BEARING dangerous case: it zeros pages, racing
-// with any concurrent ReadView reader.  The safe-surface `advise()`
-// refuses it; callers route through `advise_release_aware<DontNeed,
-// RegionTag>` which carries the typed witness.
+// DontNeed is the one that has to be handled apart from the rest: it zeros
+// the pages, which races any concurrent reader of the region.  The plain
+// advise surface refuses it and the release-aware one takes a witness.
 
 namespace advice {
-struct HugePage final {};  // MADV_HUGEPAGE
-struct NoHugePage final {};  // MADV_NOHUGEPAGE
-struct Collapse final {};  // MADV_COLLAPSE (kernel 6.1+)
-struct Sequential final {};  // MADV_SEQUENTIAL
-struct Random final {};  // MADV_RANDOM
-struct WillNeed final {};  // MADV_WILLNEED
-struct DontNeed final {};  // MADV_DONTNEED — DANGEROUS, zeros pages
-struct Free final {};  // MADV_FREE
-struct WipeOnFork final {};  // MADV_WIPEONFORK
-struct DontDump final {};  // MADV_DONTDUMP
+struct HugePage final {};
+struct NoHugePage final {};
+struct Collapse final {};
+struct Sequential final {};
+struct Random final {};
+struct WillNeed final {};
+struct DontNeed final {};
+struct Free final {};
+struct WipeOnFork final {};
+struct DontDump final {};
 }  // namespace advice
 
 template <typename Advice>
@@ -266,35 +148,22 @@ struct advice_value<advice::DontDump> : std::integral_constant<int, MADV_DONTDUM
 template <typename Advice>
 inline constexpr int advice_value_v = advice_value<Advice>::value;
 
-// `is_dangerous_advice_v<A>` — true iff A zeros/discards pages
-// (currently {DontNeed}; future variants of MADV_FREE that the kernel
-// chooses to dispatch as zero-now rather than zero-lazily would join
-// this set, hence the named predicate over std::is_same_v).
-//
-// The safe `advise<>` surface uses `!is_dangerous_advice_v` as its
-// concept gate; `advise_release_aware<>` uses the positive case.
+// A named predicate rather than an inline comparison, because the set can
+// grow: a kernel that starts discarding eagerly where it discards lazily
+// today moves that advice into this set.
 
 template <typename Advice>
 inline constexpr bool is_dangerous_advice_v = std::is_same_v<Advice, advice::DontNeed>;
 
 }  // namespace crucible::fixy::mmap
 
-// ═════════════════════════════════════════════════════════════════════
-// ── grant tags — every mmap grant routes to SyscallSurface ────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Per Grant.h's namespace-purity discipline (CR-09), all `which_dim`
-// specializations MUST live syntactically inside
-// `namespace crucible::fixy::grant`.  This header reopens that
-// namespace; check-fixy-grant-namespace-purity.sh allowlists Mmap.h
-// alongside Fs.h / Fp.h / syscall/*.
+// An explicit specialization has to appear inside the namespace of the
+// template it specializes, so the grant namespace is reopened here rather
+// than the tags living beside their axes.
 
 namespace crucible::fixy::grant {
 
 namespace mmap {
-
-// Each parametric grant takes a type-tag NTTP from the mmap:: enums.
-// EBO-collapsible (sizeof == 1 standalone, 0 inside aggregators).
 
 template <typename Prot>
 struct with_prot final : grant_base {};
@@ -305,43 +174,26 @@ struct with_share final : grant_base {};
 template <typename Advice>
 struct with_advice final : grant_base {};
 
-// Trusted-JIT gate — enables `with_prot<prot::Exec>` at mint time.
-// Documentary intent: caller has audited the executable bytes and
-// asserts the W^X discipline (separate write-mapped region, code
-// signing, RX-only at execution time).
+// This grant is what admits an executable mapping.  It asserts that the
+// caller has audited the bytes that will run and holds to the discipline
+// that keeps writing and executing in separate mappings.
 
 struct trusted_jit final : grant_base {};
 
-// `release_aware<RegionTag>` — typed witness for the Bug 5 closure.
-//
-// V-225 ships the TYPE (compile-time gate at advise_release_aware<>
-// requires this grant in the pack); V-234 will compose it with
-// SharedPermissionPool<RegionTag> so the runtime proof of "no live
-// ReadView<RegionTag>" is also enforced.  The RegionTag identifies
-// WHICH region's ReadViews matter — the typed-permission machinery
-// (SEPLOG/CSL) ensures cross-tag traffic can't masquerade.
+// The tag names which region's readers the caller is claiming to have
+// accounted for.  Naming it is what stops a permission over one region from
+// standing in for another.
 
 template <typename RegionTag>
 struct release_aware final : grant_base {};
 
 }  // namespace mmap
 
-// ── leak — deliberate-resource-leak rationale grants ─────────────────
-//
-// `grant::leak::resource<RationaleTag>` gates the
-// `safety::OwnedMmap::release()` method (V-231 HS14 fixture #2 — the
-// release-without-grant rejection).  Calling `release()` without
-// supplying one of these grants is a hard compile error because the
-// `IsLeakGrant<LeakGrant>` concept primary template returns false; only
-// the partial specialization below flips it to true for this family.
-//
-// `RationaleTag` is an empty struct naming WHY the leak is acceptable.
-// Production rationales: handed-to-perf-event-kernel-ringbuf, handed-
-// to-XDP-socket-umem, handed-to-io_uring-fixed-buffer, etc.  Each call
-// site declares its own RationaleTag so a code reviewer sees the
-// rationale in the source AND a grep for the tag finds every leak.
-//
-// Empty struct + EBO-collapsible: zero runtime cost.
+// This grant is what lets a caller give up a mapped region without
+// unmapping it.  Its tag names why that is acceptable — the region was
+// handed to a kernel ring buffer, to a socket memory pool, and so on.  Each
+// call site declares its own tag, so the reason is in the source the
+// reviewer reads and every such site is findable by its tag.
 
 namespace leak {
 
@@ -349,8 +201,6 @@ template <typename RationaleTag>
 struct resource final : grant_base {};
 
 }  // namespace leak
-
-// ── which_dim routing ────────────────────────────────────────────────
 
 template <typename Prot>
 struct which_dim<mmap::with_prot<Prot>>
@@ -367,10 +217,9 @@ template <typename RegionTag>
 struct which_dim<mmap::release_aware<RegionTag>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
-// leak::resource<RationaleTag> routes to the SyscallSurface axis
-// because a deliberate leak is the ABSENCE of the matching munmap
-// syscall — the axis tracks the syscall surface engaged (or, in
-// this case, deliberately NOT engaged) by the call site.
+// A deliberate leak is the absence of the matching unmap call, and the axis
+// tracks which syscall surface a site engages, so its absence belongs on the
+// same axis.
 
 template <typename RationaleTag>
 struct which_dim<leak::resource<RationaleTag>>
@@ -378,14 +227,9 @@ struct which_dim<leak::resource<RationaleTag>>
 
 }  // namespace crucible::fixy::grant
 
-// ── safety::is_leak_grant<grant::leak::resource<...>> = true ─────────
-//
-// Re-open the safety namespace to add the partial specialization that
-// flips the primary `is_leak_grant<G>` trait to true for the
-// canonical leak grant family.  This is the extension-by-trait
-// pattern: the safety/OwnedMmap.h primary template never names this
-// type; only the fixy layer's specialization makes it satisfy
-// `IsLeakGrant`.
+// The trait's primary template is declared where the region type lives and
+// never names this grant family.  Only this specialization makes the family
+// satisfy it, which is how the lower layer stays unaware of the grant.
 
 namespace crucible::safety {
 
@@ -394,17 +238,10 @@ struct is_leak_grant<::crucible::fixy::grant::leak::resource<RationaleTag>> : st
 
 }  // namespace crucible::safety
 
-// ═════════════════════════════════════════════════════════════════════
-// ── OwnedMmap + concept gates + mints + advise ────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 namespace crucible::fixy::mmap {
-
-// ── detail::* — grant-pack walkers ───────────────────────────────────
 
 namespace detail {
 
-// Extract Prot from with_prot<Prot> grant.  Non-with_prot grants give void.
 template <typename G>
 struct extract_prot {
     using type = void;
@@ -430,10 +267,6 @@ struct is_with_share<::crucible::fixy::grant::mmap::with_share<Share>> : std::tr
 template <typename G>
 inline constexpr bool is_with_share_v = is_with_share<G>::value;
 
-// `is_primary_with_share_v<G>` — G is `with_share<Share>` AND Share is
-// one of the primary tiers (Private/Shared/Anonymous).  Used to count
-// engagement on the primary axis (additive Locked/Populate/HugeTLB do
-// NOT count toward this).
 template <typename G>
 struct is_primary_with_share : std::false_type {};
 template <typename Share>
@@ -463,8 +296,6 @@ struct is_release_aware<::crucible::fixy::grant::mmap::release_aware<RegionTag>>
 template <typename G>
 inline constexpr bool is_release_aware_v = is_release_aware<G>::value;
 
-// Pack predicates — fold over Grants...
-
 template <typename... Grants>
 inline constexpr bool has_prot_grant_v = (is_with_prot_v<Grants> || ...);
 
@@ -483,9 +314,6 @@ inline constexpr bool has_duplicate_prot_v = (static_cast<int>(is_with_prot_v<Gr
 template <typename... Grants>
 inline constexpr bool has_duplicate_primary_share_v = (static_cast<int>(is_primary_with_share_v<Grants>) + ...) > 1;
 
-// Extract Prot from the Grants pack.  Walks the pack and returns the
-// first with_prot<X>'s X.  Returns void if no with_prot is present
-// (caller's concept gate should have caught this earlier).
 template <typename... Grants>
 struct prot_of;
 template <typename First, typename... Rest>
@@ -499,8 +327,6 @@ struct prot_of<> {
 template <typename... Grants>
 using prot_of_t = typename prot_of<Grants...>::type;
 
-// Same for Share — walks the pack, returns the first primary
-// with_share<X>'s X.
 template <typename G>
 struct extract_share {
     using type = void;
@@ -526,7 +352,6 @@ struct primary_share_of<> {
 template <typename... Grants>
 using primary_share_of_t = typename primary_share_of<Grants...>::type;
 
-// Pack-wide prot bits — OR of every with_prot<X>'s prot_bits_v.
 template <typename G>
 struct grant_prot_bits : std::integral_constant<int, 0> {};
 template <typename Prot>
@@ -542,7 +367,6 @@ inline constexpr int fold_prot_bits() noexcept {
     return acc;
 }
 
-// Pack-wide share flags — OR of every with_share<X>'s share_flags_v.
 template <typename G>
 struct grant_share_flags : std::integral_constant<int, 0> {};
 template <typename Share>
@@ -558,7 +382,6 @@ inline constexpr int fold_share_flags() noexcept {
     return acc;
 }
 
-// `has_exec_prot_v<Grants...>` — pack contains `with_prot<prot::Exec>`.
 template <typename G>
 struct is_exec_prot : std::false_type {};
 template <>
@@ -569,8 +392,6 @@ inline constexpr bool is_exec_prot_v = is_exec_prot<G>::value;
 template <typename... Grants>
 inline constexpr bool has_exec_prot_v = (is_exec_prot_v<Grants> || ...);
 
-// `pack_has_anonymous_v<Grants...>` — at least one
-// `with_share<share::Anonymous>` in the pack.
 template <typename G>
 struct is_anonymous_share : std::false_type {};
 template <>
@@ -583,29 +404,16 @@ inline constexpr bool pack_has_anonymous_v = (is_anonymous_share_v<Grants> || ..
 
 }  // namespace detail
 
-// ── OwnedMmap<Tag, Prot, Share> — Linear RAII region (V-231 promoted) ─
-//
-// Move-only RAII over a mmap'd region.  Destructor calls ::munmap if
-// `is_mapped()` (the addr_ != MAP_FAILED && addr_ != nullptr predicate).
-// Move semantics swap the carrier to MAP_FAILED so the moved-from
-// instance no longer claims the region.
-//
-// V-231 promoted the underlying RAII to safety/OwnedMmap.h so consumers
-// outside the fixy syscall surface (V-236 perf hubs, future Cipher
-// warm-tier mmap users) can reach the discipline without pulling
-// fixy/Mmap.h.  This alias keeps V-225's call-site spelling stable;
-// `crucible::fixy::mmap::OwnedMmap<...>` and
-// `crucible::safety::OwnedMmap<...>` are the SAME type.
+// The region type itself lives a layer down, so that a consumer which needs
+// the unmapping discipline but none of this syscall surface can reach it
+// without this header.  The two spellings name one type.
 
 template <typename Tag, typename Prot, typename Share>
 using OwnedMmap = ::crucible::safety::OwnedMmap<Tag, Prot, Share>;
 
-// ── §XXI ctx-bound mint gates — single-concept requires per family ───
-//
-// `CtxAdmitsIoBlock<Ctx>` mirrors fixy::fs::CtxAdmitsIoBlock: mmap and
-// munmap can both park the caller (kernel page-cache pressure, NUMA
-// remote-page faulting, write-back stalls), so we treat them as IO+Block
-// like every other filesystem-touching syscall.
+// Mapping and unmapping can both park the caller — on page-cache pressure,
+// on a NUMA-remote page fault, on write-back — so Block is required
+// alongside IO, as for any other filesystem-touching call.
 
 template <typename Ctx>
 concept CtxAdmitsIoBlock =
@@ -613,57 +421,23 @@ concept CtxAdmitsIoBlock =
     && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::IO>
     && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::Block>;
 
-// `CtxFitsMmapMint<Ctx, Grants...>` — single soundness gate on
-// `mint_mmap<Tag, Grants...>(ctx, ...)`.  Bundles:
-//
-//   (1) Ctx is a valid ExecCtx admitting IO + Block effects.
-//   (2) Grants pack engages exactly one with_prot<X> (rule 1, no dup).
-//   (3) Grants pack engages exactly one primary with_share<X>
-//       (Private/Shared/Anonymous; no dup).
-//   (4) If pack engages with_prot<Exec>, it MUST also engage
-//       trusted_jit (W^X gating; fixture #2).
-//
-// Mismatch on any rule fires a distinct HS14 fixture.
-
 template <typename Ctx, typename... Grants>
 concept CtxFitsMmapMint =
     CtxAdmitsIoBlock<Ctx> && detail::has_prot_grant_v<Grants...> && detail::has_primary_share_grant_v<Grants...>
     && !detail::has_duplicate_prot_v<Grants...> && !detail::has_duplicate_primary_share_v<Grants...>
     && (!detail::has_exec_prot_v<Grants...> || detail::has_trusted_jit_v<Grants...>);
 
-// `CtxFitsAnonMmapMint<Ctx, Grants...>` — strict superset of
-// CtxFitsMmapMint that additionally requires the primary share to be
-// Anonymous (no file backing).  fixture #5 fires when this is violated.
-
 template <typename Ctx, typename... Grants>
 concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Grants...> && detail::pack_has_anonymous_v<Grants...>;
-
-// `CtxFitsSafeAdvise<Ctx, Advice>` — gate for the safe-surface
-// `advise<Advice>` call.  Refuses Advice ∈ dangerous-set (fixture #7).
 
 template <typename Ctx, typename Advice>
 concept CtxFitsSafeAdvise = CtxAdmitsIoBlock<Ctx> && !is_dangerous_advice_v<Advice>;
 
-// `CtxFitsReleaseAwareAdvise<Ctx, Advice, RegionTag>` — gate for the
-// dangerous-surface call.  Requires Advice ∈ dangerous-set + Ctx fit.
-// (V-234 will fold a SharedPermission<RegionTag> consume into this
-// concept, making the proof obligation runtime-witnessable.)
-
 template <typename Ctx, typename Advice, typename RegionTag>
 concept CtxFitsReleaseAwareAdvise = CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice>;
 
-// ── mint_mmap<Tag, Grants...>(ctx, fd, length, offset) ───────────────
-//
-// §XXI ctx-bound mint.  File-backed mapping over an open file
-// descriptor (passed as raw int rather than safety::FileHandle so the
-// caller can use both Linux fd and shm_open results without conversion;
-// the caller's FileHandle / Dirfd / shm fd must remain live for the
-// region's lifetime — `MAP_SHARED` semantics).
-//
-// The returned OwnedMmap<Tag, Prot, Share> infers Prot and Share from
-// the Grants pack via prot_of_t / primary_share_of_t.  Wrapped in
-// safety::Linear<> at the boundary so callers can't accidentally
-// discard the [[nodiscard]] result.
+// The descriptor is a plain int rather than an owning handle type, so that a
+// descriptor from any source reaches this without a conversion.
 
 template <typename Tag, typename... Grants, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsMmapMint<Ctx, Grants...>
@@ -683,12 +457,8 @@ mint_mmap(Ctx const&, int fd, std::size_t length, ::off_t offset = 0) noexcept {
     return ::crucible::safety::Linear<Region>{Region{addr, length}};
 }
 
-// ── mint_mmap_anon<Tag, Grants...>(ctx, length) ──────────────────────
-//
-// §XXI ctx-bound mint for anonymous mappings.  fd = -1 per the mmap(2)
-// convention; offset is forced to 0.  Concept gate requires
-// `with_share<share::Anonymous>` in the Grants pack — passing
-// Shared or Private here fires fixture #5.
+// An anonymous mapping takes a descriptor of -1 and an offset of 0, which is
+// the convention mmap(2) states.
 
 template <typename Tag, typename... Grants, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAnonMmapMint<Ctx, Grants...>
@@ -708,12 +478,6 @@ mint_mmap_anon(Ctx const&, std::size_t length) noexcept {
     return ::crucible::safety::Linear<Region>{Region{addr, length}};
 }
 
-// ── advise<Advice>(ctx, OwnedMmap&) — safe surface ───────────────────
-//
-// NOT a §XXI mint — performs madvise on an existing region.  Concept
-// gate refuses the dangerous-set; callers needing DontNeed must route
-// through advise_release_aware<Advice, RegionTag>.
-
 template <typename Advice, typename Tag, typename Prot, typename Share, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSafeAdvise<Ctx, Advice>
 [[nodiscard]] inline std::expected<void, std::error_code> advise(Ctx const&,
@@ -728,39 +492,16 @@ template <typename Advice, typename Tag, typename Prot, typename Share, ::crucib
     return {};
 }
 
-// ── advise_release_aware<Advice, RegionTag>(ctx, OwnedMmap&, ...) ─────
+// What makes this surface safe is the permission the caller has to produce.
+// An exclusive permission over a region is obtainable only once every
+// outstanding share of it has been deposited back, so holding one witnesses
+// that no reader is live.  The permission is move-only, so the caller cannot
+// have handed it to a reader between obtaining it and arriving here, and the
+// tag on it must match the region, so a permission over some other region
+// cannot stand in.
 //
-// Bug 5 narrow surface (FIXY-V-234 — SharedPermission composition shipped).
-//
-// Three independent gates close the "DontNeed mid-read zeroes the page" hole
-// Agent 9 surfaced on the SenseHub MAP_SHARED reader:
-//
-//   (1) `CtxFitsReleaseAwareAdvise` static-rejects non-dangerous Advice on
-//       this path (callers MUST route safe advice through `advise<>`).  Also
-//       fires on missing IO + Block effects in the Ctx row.
-//   (2) `RegionTag` template parameter forces the caller to NAME which
-//       region's readers matter.  A cross-tag Permission can't fit (V-234
-//       fixture #3) — the type system rejects laundering at compile time.
-//   (3) `Permission<RegionTag> const&` is the runtime-witnessed CSL borrow
-//       proof that the caller is the unique exclusive holder.  Combined
-//       with `SharedPermissionPool<RegionTag>::try_upgrade()`'s atomic
-//       state machine (which transitions only when ALL outstanding shares
-//       have been deposited), the borrow witnesses "no live reader".
-//       Linearity at the caller (Permission is move-only) ensures the
-//       caller cannot have given the Permission away to a concurrent
-//       reader between try_upgrade and advise_release_aware.
-//
-// The Permission is borrowed const& not consumed — `MADV_DONTNEED` leaves
-// the region usable, so the caller keeps the Permission and may deposit
-// it back to the pool for new readers (V-234 positive integration test).
-//
-// CollisionCatalog rule `M001_DontNeedRequiresReleaseAware` (in
-// `safety/CollisionCatalog.h`) names this collision class for fleet-wide
-// audit purposes.  The catalog entry IS documentation-of-record; the
-// actual static gate is `CtxFitsReleaseAwareAdvise` rejecting Advice that
-// is NOT in the dangerous set on this surface AND `CtxFitsSafeAdvise`
-// rejecting Advice that IS in the dangerous set on the safe surface —
-// the two concepts together form the disjoint-routing rule M001 names.
+// It is borrowed rather than consumed because discarding pages leaves the
+// region usable, so the caller keeps it and may hand it back out afterwards.
 
 template <typename Advice, typename RegionTag, typename Tag, typename Prot, typename Share,
           ::crucible::effects::IsExecCtx Ctx>
@@ -778,13 +519,8 @@ advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share>& region,
     return {};
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-tests — pin the substrate at compile time ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 namespace self_test {
 
-// ── prot_bits / share_flags / advice_value tables sane ───────────────
 static_assert(prot_bits_v<prot::ReadOnly> == PROT_READ);
 static_assert(prot_bits_v<prot::WriteCopy> == (PROT_READ | PROT_WRITE));
 static_assert(prot_bits_v<prot::ReadWrite> == (PROT_READ | PROT_WRITE));
@@ -803,7 +539,6 @@ static_assert(is_dangerous_advice_v<advice::DontNeed>);
 static_assert(!is_dangerous_advice_v<advice::HugePage>);
 static_assert(!is_dangerous_advice_v<advice::Sequential>);
 
-// ── primary_share predicate ──────────────────────────────────────────
 static_assert(is_primary_share_v<share::Private>);
 static_assert(is_primary_share_v<share::Shared>);
 static_assert(is_primary_share_v<share::Anonymous>);
@@ -811,7 +546,6 @@ static_assert(!is_primary_share_v<share::Locked>);
 static_assert(!is_primary_share_v<share::Populate>);
 static_assert(!is_primary_share_v<share::HugeTLB>);
 
-// ── detail::* pack predicates ────────────────────────────────────────
 using G_RO_Priv = ::crucible::fixy::grant::mmap::with_prot<prot::ReadOnly>;
 using G_RW_Shar = ::crucible::fixy::grant::mmap::with_share<share::Shared>;
 using G_RW_Priv = ::crucible::fixy::grant::mmap::with_share<share::Private>;
@@ -836,20 +570,15 @@ static_assert(!detail::has_trusted_jit_v<G_RO_Priv, G_RW_Shar>);
 static_assert(detail::pack_has_anonymous_v<G_RO_Priv, G_Anon>);
 static_assert(!detail::pack_has_anonymous_v<G_RO_Priv, G_RW_Shar>);
 
-// prot_of / primary_share_of extract the right type from the pack.
 static_assert(std::is_same_v<detail::prot_of_t<G_RO_Priv, G_RW_Shar>, prot::ReadOnly>);
 static_assert(std::is_same_v<detail::prot_of_t<G_RW_Shar, G_Exec, G_Jit>, prot::Exec>);
 static_assert(std::is_same_v<detail::primary_share_of_t<G_RO_Priv, G_RW_Shar>, share::Shared>);
 static_assert(std::is_same_v<detail::primary_share_of_t<G_RO_Priv, G_Anon, G_Locked>, share::Anonymous>);
 
-// fold_prot_bits / fold_share_flags OR the contributions.
-static_assert(detail::fold_prot_bits<G_RO_Priv, G_Exec, G_Jit>()
-              == (PROT_READ | PROT_EXEC));  // RO contributes PROT_READ; Exec contributes PROT_READ|PROT_EXEC
+static_assert(detail::fold_prot_bits<G_RO_Priv, G_Exec, G_Jit>() == (PROT_READ | PROT_EXEC));
 static_assert(detail::fold_share_flags<G_RW_Shar, G_Locked>() == (MAP_SHARED | MAP_LOCKED));
 
-// ── OwnedMmap layout discipline ──────────────────────────────────────
-
-struct RegionA {};  // dummy Tag for self-test
+struct RegionA {};
 using TestRegion = OwnedMmap<RegionA, prot::ReadOnly, share::Private>;
 
 static_assert(!std::is_copy_constructible_v<TestRegion>, "OwnedMmap must be move-only — copy would double-unmap");
@@ -860,45 +589,25 @@ static_assert(std::is_nothrow_default_constructible_v<TestRegion>);
 static_assert(sizeof(TestRegion) == sizeof(void*) + sizeof(std::size_t),
               "OwnedMmap is exactly {addr, len} — no hidden padding");
 
-// ── CtxFitsMmapMint membership smoke (positive case) ─────────────────
-//
-// TestRunnerCtx has Row<Test, Alloc, IO, Block> per ExecCtx.h, so it
-// admits IO+Block.  G_RO_Priv + G_RW_Shar engages both axes once
-// without duplicate, no Exec, no trusted_jit needed — gate accepts.
+// The context named below carries an effect row with both IO and Block, so
+// it is the one that reaches every gate here.
 
 static_assert(CtxFitsMmapMint<::crucible::effects::TestRunnerCtx, G_RO_Priv, G_RW_Shar>);
 
-// Anon variant — TestRunnerCtx + ReadOnly + Anonymous (primary).
 static_assert(CtxFitsAnonMmapMint<::crucible::effects::TestRunnerCtx, G_RO_Priv, G_Anon>);
 
-// Anon variant REJECTS Shared (must be Anonymous).
 static_assert(!CtxFitsAnonMmapMint<::crucible::effects::TestRunnerCtx, G_RO_Priv, G_RW_Shar>);
 
-// Exec without trusted_jit REJECTS.
 static_assert(!CtxFitsMmapMint<::crucible::effects::TestRunnerCtx, G_Exec, G_RW_Priv>);
-// Exec WITH trusted_jit accepts.
 static_assert(CtxFitsMmapMint<::crucible::effects::TestRunnerCtx, G_Exec, G_RW_Priv, G_Jit>);
 
-// Empty Grants rejects (no prot, no share).
 static_assert(!CtxFitsMmapMint<::crucible::effects::TestRunnerCtx>);
 
-// Safe advise accepts non-dangerous advices.
 static_assert(CtxFitsSafeAdvise<::crucible::effects::TestRunnerCtx, advice::HugePage>);
 static_assert(CtxFitsSafeAdvise<::crucible::effects::TestRunnerCtx, advice::Sequential>);
-// Safe advise REJECTS DontNeed (Bug 5 closure).
 static_assert(!CtxFitsSafeAdvise<::crucible::effects::TestRunnerCtx, advice::DontNeed>);
-// Release-aware advise accepts DontNeed.
 static_assert(CtxFitsReleaseAwareAdvise<::crucible::effects::TestRunnerCtx, advice::DontNeed, RegionA>);
-// Release-aware advise REJECTS non-dangerous advices (use safe surface).
 static_assert(!CtxFitsReleaseAwareAdvise<::crucible::effects::TestRunnerCtx, advice::HugePage, RegionA>);
-
-// ── V-231 leak-grant trait pivot ─────────────────────────────────────
-//
-// The `safety::is_leak_grant` primary returns false for non-grant
-// types; the partial specialization (added by this header in the
-// safety namespace block above) flips it to true for the canonical
-// `leak::resource<RationaleTag>` family.  Anchor both directions
-// here so the trait survives any future header refactor.
 
 struct DummyLeakRationale {};
 using LeakGrant = ::crucible::fixy::grant::leak::resource<DummyLeakRationale>;

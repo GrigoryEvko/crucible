@@ -1,86 +1,29 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// StorageNbytes.h — SIMD compute_storage_nbytes overflow chain (SIMD-2)
+// The span in bytes a tensor's storage covers, which a negative stride makes
+// a question about the distance between the lowest and the highest offset the
+// tensor reaches, not about the product of its extents.
 //
-// SIMD-optimized counterpart to MerkleDag.h's
-// compute_storage_nbytes.  Returns the storage span (in bytes) of
-// a TensorMeta, accounting for negative strides via max/min offset
-// split, with full overflow detection.
+// A vector integer multiply has no per-lane overflow flag: it wraps. That
+// matters because this function is a boundary against a corrupt or hostile
+// descriptor, and a wrapped product understates the span, which would let a
+// caller allocate too little.
 //
-// Two implementations:
+// So the vector path is entered only after a scalar screen. Take the largest
+// extent and the largest absolute stride over the live lanes. If their
+// product fits, no per-lane product can overflow, because each factor is
+// bounded by the one taken. If it does not fit, the scalar routine runs
+// instead and reports the overflow at whichever step it occurs.
 //
-//   compute_storage_nbytes_scalar(meta)  — reference, bit-identical
-//     to MerkleDag.h::compute_storage_nbytes.  Uses
-//     __builtin_*_overflow at every arithmetic step.  Source of
-//     truth for correctness.
-//
-//   compute_storage_nbytes_simd(meta)    — SIMD-optimized with
-//     fallback.  Pre-screens for overflow risk via SIMD reduce_max;
-//     if all per-lane (sizes[d]-1) × strides[d] fit safely in int64,
-//     uses the SIMD path.  Otherwise falls back to scalar.  ALWAYS
-//     bit-equivalent to scalar — the safety boundary is preserved.
-//
-// ─── The overflow-detection-vs-SIMD tension ────────────────────────
-//
-// SIMD int64 multiply has NO per-lane overflow flag — it wraps
-// modulo 2^64.  Crucible's compute_storage_nbytes is a defense-in-
-// depth boundary against adversarial TensorMetas (corrupt Cipher
-// load, malicious vessel API caller); silent overflow could let
-// downstream allocators underallocate (use-after-free) or trip
-// contracts.  We must NOT trade away that overflow detection.
-//
-// Resolution: pre-screen via SIMD reduce_max.  Find max(sizes) and
-// max(|strides|) over valid lanes.  Single scalar mul_overflow
-// check determines whether the SIMD multiply is safe.  If safe,
-// SIMD path executes (load + multiply + mask + spill + scalar fold).
-// If unsafe, fall back to scalar (which reads out the per-dim
-// overflow at every step, returning UINT64_MAX cleanly).
-//
-// The pre-screen is cheap (~5 cycles): one SIMD reduce_max + one
-// scalar __builtin_mul_overflow.  The fast-path covers the
-// realistic 99.9% of TensorMetas (sizes ≤ 2^30 by physical memory
-// limits, strides bounded by tensor extent).  The fallback path
-// matches scalar exactly.
-//
-// ─── Algorithmic structure (matches scalar) ────────────────────────
-//
-// For each dim d in [0, ndim):
-//   if sizes[d] == 0: return 0  (zero-size tensor)
-//   extent[d] = (sizes[d] - 1) * strides[d]   (can overflow int64)
-//   if extent > 0: max_offset += extent       (can overflow int64)
-//   else:          min_offset += extent       (can overflow int64)
-// span = max_offset - min_offset + 1          (subtraction safe)
-// total_bytes = span * element_size(dtype)    (can overflow uint64)
-//
-// SIMD path computes extent[] all at once, masks invalid lanes,
-// spills, and folds scalar with add_overflow checks.  The
-// multiplication itself is trusted (pre-screened safe).
-//
-// ─── DetSafe contract (CLAUDE.md §II.8) ─────────────────────────────
-//
-// compute_storage_nbytes_simd MUST produce IDENTICAL output to
-// compute_storage_nbytes_scalar on every TensorMeta on every
-// supported ISA.  Enforced by:
-//   * Pre-screen guarantees no per-lane multiply overflow on the
-//     SIMD path.
-//   * Per-lane operations only — no cross-lane shuffles.
-//   * Scalar fold uses identical __builtin_*_overflow logic.
-//   * Fallback to scalar on overflow risk, ensuring identical
-//     UINT64_MAX return on adversarial inputs.
-//
-// Verified by test_storage_nbytes_simd's bit-equivalence tests +
-// prop_storage_nbytes_simd_equivalence randomized fuzzer.
-// ═══════════════════════════════════════════════════════════════════
+// The two routines must agree bit for bit on every input and every
+// instruction set. Three things hold that: the screen removes the only
+// unchecked arithmetic from the vector path, every vector operation is
+// per-lane so no lane order can be observed, and the fold that follows is the
+// same scalar code with the same overflow checks.
 
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
-// FIXY-U-096a production migration: safety wrappers (Saturated /
-// DetSafe / FixedArray) routed through fixy::wrap:: instead of
-// safety::* directly.  safety/Simd.h declares the crucible::simd::*
-// substrate sibling facade (not a safety wrapper); keep the include
-// path until a `fixy::simd::` round-2 surface lands.
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/Simd.h>
 
@@ -88,16 +31,8 @@
 
 namespace crucible::detail {
 
-// ── compute_storage_nbytes_scalar (reference) ─────────────────────
-//
-// Bit-identical to MerkleDag.h::compute_storage_nbytes.  Kept
-// exposed so equivalence fuzzers can compare scalar vs SIMD output
-// bit-for-bit, and so this file is self-contained as a SIMD-2
-// reference.
-//
-// Any future change to the storage-nbytes algorithm MUST update
-// BOTH this function AND compute_storage_nbytes_simd in lockstep,
-// AND update the equivalence fuzzer.
+// This is the reference. A change to the algorithm has to land here and in
+// the vector routine in one step, or the two stop agreeing.
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
 compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
@@ -111,10 +46,10 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
     for (uint8_t d = 0; d < raw.ndim; ++d) {
         const int64_t size = raw_tensor_dim(raw.sizes[d]);
         const int64_t stride = raw_tensor_dim(raw.strides[d]);
-        if (size == 0) return Sat{uint64_t{0}};  // zero-size tensor
+        if (size == 0) return Sat{uint64_t{0}};
         int64_t dim_extent_bytes;
-        // (sizes[d] - 1) * strides[d] can overflow int64 for huge dims.
-        // sizes[d] is positive, so the subtraction never underflows.
+        // The size is positive here, so the subtraction cannot underflow.
+        // The product still can overflow.
         if (__builtin_mul_overflow(size - 1, stride, &dim_extent_bytes)) [[unlikely]] {
             return Sat{UINT64_MAX, true};
         }
@@ -128,8 +63,8 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
             }
         }
     }
-    // span = max_offset - min_offset + 1; subtractions can overflow
-    // when max and min straddle int64 limits.
+    // The difference can overflow when the two offsets sit at opposite ends
+    // of the int64 range.
     int64_t span_signed;
     if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
@@ -137,7 +72,9 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
     if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
-    // span is non-negative (max >= 0 >= min, so max - min >= 0).
+    // The span is non-negative, because the running maximum never falls
+    // below zero and the running minimum never rises above it. That is what
+    // makes the unsigned conversion below safe.
     uint64_t total_bytes;
     if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
                                &total_bytes)) [[unlikely]] {
@@ -153,134 +90,77 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
         compute_storage_nbytes_scalar(meta)};
 }
 
-// ── Helper: pre-screen safety check ──────────────────────────────
-//
-// Returns true iff the SIMD path can safely multiply (sizes - 1)
-// by strides without per-lane overflow.  Conservative — false
-// negatives (returning false for safe inputs) merely fall back to
-// the scalar path; false positives (returning true for unsafe
-// inputs) would be a correctness bug.
-//
-// Strategy: find the maximum |sizes-1| value and maximum |strides|
-// value over the valid lanes.  If max_a × max_b fits in int64
-// (single scalar mul_overflow check), then for every valid d:
-//
-//   |(sizes[d] - 1) × strides[d]| ≤ |max_smo| × |max_str|
-//                                  ≤ INT64_MAX
-//
-// so the per-lane SIMD multiply cannot overflow.
+// The screen leans one way. Answering false for an input that would in fact
+// have been safe costs a fall back to the scalar routine. Answering true for
+// an input that is not safe is a defect.
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
     using simd::i64x8;
     const TensorMeta& raw = meta.value();
 
-    // TensorMeta is naturally aligned, not guaranteed vector-aligned.
-    // Use element-aligned loads so trace-loader vectors and MetaLog
-    // buffers are valid inputs.
+    // The descriptor is aligned for its element type and no further, so the
+    // load must not assume vector alignment.
     auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
     auto strides = simd::load<i64x8>(raw.strides.raw_data());
 
     auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
-    // sizes[d] - 1 for valid lanes, 0 for invalid.  Sizes are
-    // non-negative by TensorMeta invariant; (size - 1) for size == 0
-    // would be -1, but the zero-size short-circuit catches that
-    // before this function runs (callers check first).  For safety
-    // we mask and clamp negative results to 0.
+    // A size of zero would make this negative, but the caller returns before
+    // reaching here in that case. Dead lanes go to zero so they cannot win
+    // the reduction below.
     auto sizes_minus_one = simd::select(valid_mask, sizes - i64x8(1), i64x8(0));
 
-    // strides absolute value, masked.  Avoid -INT64_MIN UB by
-    // computing via select-and-negate which is well-defined for
-    // every value except INT64_MIN itself; if a stride IS
-    // INT64_MIN we mask to INT64_MAX (forces fallback).
+    // Negating the most negative int64 does not produce a positive value, so
+    // that one stride is mapped to the largest positive value instead, which
+    // forces the screen to fail and the scalar routine to run.
     auto strides_neg = -strides;
     auto strides_abs_raw = simd::select(strides >= i64x8(0), strides, strides_neg);
-    // INT64_MIN → -INT64_MIN wraps to INT64_MIN; treat as "unsafe"
-    // by mapping to INT64_MAX so reduce_max returns INT64_MAX.
     auto is_int64_min = (strides == i64x8(INT64_MIN));
     auto strides_abs = simd::select(is_int64_min, i64x8(INT64_MAX), strides_abs_raw);
     strides_abs = simd::select(valid_mask, strides_abs, i64x8(0));
 
-    // Reduce max over valid lanes.  Both vectors have invalid lanes
-    // zeroed; the reduce_max picks the largest valid value (or 0 if
-    // no valid lanes).
     const int64_t max_smo = simd::reduce_max(sizes_minus_one);
     const int64_t max_str = simd::reduce_max(strides_abs);
 
-    // Safe iff max_smo × max_str fits in int64.  __builtin_mul_overflow
-    // returns true on overflow (NOT what we want); negate to get safe.
     int64_t bound;
     return !__builtin_mul_overflow(max_smo, max_str, &bound);
 }
-
-// ── compute_storage_nbytes_simd ──────────────────────────────────
-//
-// SIMD-optimized.  Bit-equivalent to scalar for ALL inputs:
-//   * Pre-screen passes (99.9% of real tensors) → SIMD path
-//   * Pre-screen fails (adversarial / huge inputs) → scalar fallback
-//
-// Both paths return UINT64_MAX on detected overflow at any
-// arithmetic step.
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
 compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     using Sat = fixy::wrap::Saturated<uint64_t>;
     const TensorMeta& raw = meta.value();
-    // Edge case: scalar tensor.  Same as scalar path.
     if (raw.ndim == 0) {
         return Sat{element_size(raw.dtype).raw()};
     }
 
     using simd::i64x8;
 
-    // Load sizes and strides via element-aligned SIMD load.  TensorMeta
-    // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
+    // The descriptor is aligned for its element type and no further.
     auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
     auto strides = simd::load<i64x8>(raw.strides.raw_data());
 
     auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
-    // Zero-size short-circuit: if any valid dim has size 0, total
-    // is 0.  Cheap SIMD check via masked equality + any_of.
     auto zero_size_mask = (sizes == i64x8(0)) && valid_mask;
     if (any_of(zero_size_mask)) [[unlikely]] {
         return Sat{uint64_t{0}};
     }
 
-    // Pre-screen for overflow safety.  If any per-lane multiply
-    // could overflow, fall back to scalar (which detects + returns
-    // a clamped Saturated<uint64_t> cleanly).
     if (!storage_nbytes_simd_safe_(meta)) [[unlikely]] {
         return compute_storage_nbytes_scalar(meta);
     }
 
-    // SIMD path: pre-screen guarantees no per-lane multiply overflow.
-    // Compute extents = (sizes - 1) * strides via SIMD; mask invalid
-    // lanes to 0 so they don't contribute to max/min accumulation.
+    // The screen above is what licenses this unchecked multiply. Dead lanes
+    // go to zero so they add nothing to either running offset.
     auto sizes_minus_one = sizes - i64x8(1);
     auto extents = sizes_minus_one * strides;
     extents = simd::select(valid_mask, extents, i64x8(0));
 
-    // Spill to stack for the scalar fold.
-    // FixedArray<int64_t, 8> (#1019 production migration of #1081):
-    //   - Carries alignas(64) propagation as a member-level alignment
-    //     (the wrapping `alignas(64)` aligns the entire FixedArray
-    //     struct to 64, which means data_[0] sits at offset 0 = 64B
-    //     aligned — matching the SIMD-aligned discipline the bare
-    //     C array used to enforce structurally).
-    //   - NSDMI zero-init replaces the bare-array uninit-before-store
-    //     window (the std::simd::unchecked_store overwrites all 8
-    //     lanes immediately, so this is defense-in-depth, not a
-    //     correctness fix).
-    //   - .data() returns int64_t* — drop-in replacement for the
-    //     bare-array pointer the SIMD store and operator[] expect.
+    // The store below is the aligned form, hence the explicit alignment.
     alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
     simd::store_aligned(extents, extents_buf.data());
 
-    // Scalar fold: per-lane sign-based dispatch into max_offset /
-    // min_offset, with __builtin_add_overflow check.  Multiplication
-    // overflow CANNOT occur here (pre-screened), so no per-lane
-    // mul_overflow re-check needed.
     int64_t max_offset = 0;
     int64_t min_offset = 0;
     for (uint8_t d = 0; d < raw.ndim; ++d) {
@@ -296,7 +176,6 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
         }
     }
 
-    // Final span and total bytes (scalar, identical to reference).
     int64_t span_signed;
     if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};

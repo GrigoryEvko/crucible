@@ -1,38 +1,12 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_algebra_compile — sentinel TU for the algebra/* header tree
+// These headers carry their verification inside themselves, as
+// assertions and inline smoke tests.  A header no translation unit
+// includes is never compiled under the project warning flags, and its
+// assertions never run at all.  This file is where each of them is
+// included and each of their smoke tests is called.
 //
-// Why this exists:
-//   The algebra/Modality.h, algebra/Lattice.h, algebra/Graded.h, and
-//   algebra/lattices/* headers carry their verification entirely as
-//   header-only `static_assert` blocks plus inline runtime_smoke_test
-//   functions.  Until MIGRATE-2 (Refined → Graded<>) shipped, NO
-//   production .cpp included any of them, which meant the embedded
-//   self-tests were never compiled under the project's full
-//   -Werror=shadow / -Werror=switch-default / -Wanalyzer-* flag set.
-//   Three latent bug families (template-for shadow, missing default
-//   arms, display_string_of TU-context-dependent name comparison)
-//   sat undetected for the entire ALGEBRA-1..11 shipping window.
-//
-//   See feedback_header_only_static_assert_blind_spot memory rule.
-//
-//   This sentinel TU forces every algebra/* header through the test
-//   target's full warning matrix.  Adding a new lattice header without
-//   updating this file is a CI miss — the sentinel must be the
-//   authoritative TU-coverage list.
-//
-// What it tests:
-//   1. Every algebra/* header compiles under the test target's
-//      warning matrix (the embedded static_asserts fire on include).
-//   2. Every per-header runtime_smoke_test() executes without
-//      tripping a contract violation under enforce semantic.
-//
-// Coverage discipline:
-//   When a new ALGEBRA-* header ships under algebra/lattices/, add
-//   its include below AND add its runtime_smoke_test() invocation
-//   inside the corresponding run_test() block.  Don't rely on the
-//   AllLattices.h umbrella alone — a per-header invocation is
-//   greppable and makes the discipline explicit.
-// ═══════════════════════════════════════════════════════════════════
+// A new header here needs both: the include and its own call in the
+// list at the bottom.  The umbrella header alone would pull the code in
+// without naming it, and a missing entry would be invisible.
 
 #include <crucible/algebra/Algebra.h>
 #include <crucible/algebra/Graded.h>
@@ -75,8 +49,6 @@
 #include <cstdio>
 #include <cstdlib>
 
-// ── Test harness — pattern matches test_owned_region etc. ───────────
-
 namespace {
 
 struct TestFailure {};
@@ -97,33 +69,20 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-// ── Per-header runtime smoke probes ─────────────────────────────────
-//
-// Each calls into the corresponding header's `runtime_smoke_test()`,
-// forcing the consteval-vs-constexpr-vs-runtime path through the
-// header's lattice / Graded operations.  The functions are inline
-// `void`-returning; the optimizer can elide them under -O3, but
-// the front-end still type-checks every call site, which is the
-// load-bearing property here.
+// Each smoke test returns nothing and may be optimized away entirely.
+// What survives is the front end checking the call, which is where a
+// header that fails to compile under these flags is caught.
 
-void test_modality_compile() {
-    // The static_asserts in detail::modality_self_test fire at TU
-    // include time (above).  Reaching this body proves the header
-    // compiled clean under the test target's warning matrix.
-}
+// These two bodies are empty on purpose.  The headers they stand for
+// assert everything at include time and expose nothing to call, so
+// reaching the body is the whole result.
+void test_modality_compile() {}
 
-void test_lattice_concepts_compile() {
-    // Same shape — Lattice.h's TrivialBoolLattice + TrivialBoolSemiring
-    // self-tests fire at include time; nothing to call at runtime.
-}
+void test_lattice_concepts_compile() {}
 
-void test_graded_runtime_smoke() {
-    ::crucible::algebra::detail::graded_self_test::runtime_smoke_test();
-}
+void test_graded_runtime_smoke() { ::crucible::algebra::detail::graded_self_test::runtime_smoke_test(); }
 
-void test_qtt_semiring_runtime_smoke() {
-    ::crucible::algebra::lattices::detail::qtt_self_test::runtime_smoke_test();
-}
+void test_qtt_semiring_runtime_smoke() { ::crucible::algebra::lattices::detail::qtt_self_test::runtime_smoke_test(); }
 
 void test_bool_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::bool_lattice_self_test::runtime_smoke_test();
@@ -258,71 +217,42 @@ void test_join_policy_lattice_runtime_smoke() {
 int main() {
     std::fprintf(stderr, "test_algebra_compile:\n");
 
-    run_test("test_modality_compile",                test_modality_compile);
-    run_test("test_lattice_concepts_compile",        test_lattice_concepts_compile);
-    run_test("test_graded_runtime_smoke",            test_graded_runtime_smoke);
-    run_test("test_qtt_semiring_runtime_smoke",      test_qtt_semiring_runtime_smoke);
-    run_test("test_bool_lattice_runtime_smoke",      test_bool_lattice_runtime_smoke);
-    run_test("test_conf_lattice_runtime_smoke",      test_conf_lattice_runtime_smoke);
-    run_test("test_trust_lattice_runtime_smoke",     test_trust_lattice_runtime_smoke);
-    run_test("test_fractional_lattice_runtime_smoke",
-             test_fractional_lattice_runtime_smoke);
-    run_test("test_monotone_lattice_runtime_smoke",
-             test_monotone_lattice_runtime_smoke);
-    run_test("test_seq_prefix_lattice_runtime_smoke",
-             test_seq_prefix_lattice_runtime_smoke);
-    run_test("test_staleness_semiring_runtime_smoke",
-             test_staleness_semiring_runtime_smoke);
-    run_test("test_product_lattice_runtime_smoke",
-             test_product_lattice_runtime_smoke);
-    run_test("test_happens_before_runtime_smoke",
-             test_happens_before_runtime_smoke);
-    run_test("test_chain_lattice_runtime_smoke",
-             test_chain_lattice_runtime_smoke);
-    run_test("test_lifetime_lattice_runtime_smoke",
-             test_lifetime_lattice_runtime_smoke);
-    run_test("test_consistency_lattice_runtime_smoke",
-             test_consistency_lattice_runtime_smoke);
-    run_test("test_tolerance_lattice_runtime_smoke",
-             test_tolerance_lattice_runtime_smoke);
-    run_test("test_det_safe_lattice_runtime_smoke",
-             test_det_safe_lattice_runtime_smoke);
-    run_test("test_hot_path_lattice_runtime_smoke",
-             test_hot_path_lattice_runtime_smoke);
-    run_test("test_wait_lattice_runtime_smoke",
-             test_wait_lattice_runtime_smoke);
-    run_test("test_mem_order_lattice_runtime_smoke",
-             test_mem_order_lattice_runtime_smoke);
-    run_test("test_progress_lattice_runtime_smoke",
-             test_progress_lattice_runtime_smoke);
-    run_test("test_alloc_class_lattice_runtime_smoke",
-             test_alloc_class_lattice_runtime_smoke);
-    run_test("test_bits_budget_lattice_runtime_smoke",
-             test_bits_budget_lattice_runtime_smoke);
-    run_test("test_peak_bytes_lattice_runtime_smoke",
-             test_peak_bytes_lattice_runtime_smoke);
-    run_test("test_epoch_lattice_runtime_smoke",
-             test_epoch_lattice_runtime_smoke);
-    run_test("test_generation_lattice_runtime_smoke",
-             test_generation_lattice_runtime_smoke);
-    run_test("test_numa_node_lattice_runtime_smoke",
-             test_numa_node_lattice_runtime_smoke);
-    run_test("test_affinity_lattice_runtime_smoke",
-             test_affinity_lattice_runtime_smoke);
-    run_test("test_recipe_family_lattice_runtime_smoke",
-             test_recipe_family_lattice_runtime_smoke);
-    run_test("test_cipher_tier_lattice_runtime_smoke",
-             test_cipher_tier_lattice_runtime_smoke);
-    run_test("test_residency_heat_lattice_runtime_smoke",
-             test_residency_heat_lattice_runtime_smoke);
-    run_test("test_vendor_lattice_runtime_smoke",
-             test_vendor_lattice_runtime_smoke);
-    run_test("test_crash_lattice_runtime_smoke",
-             test_crash_lattice_runtime_smoke);
-    run_test("test_witness_lattice_runtime_smoke",
-             test_witness_lattice_runtime_smoke);
-    run_test("test_join_policy_lattice_runtime_smoke",
-             test_join_policy_lattice_runtime_smoke);
+    run_test("test_modality_compile", test_modality_compile);
+    run_test("test_lattice_concepts_compile", test_lattice_concepts_compile);
+    run_test("test_graded_runtime_smoke", test_graded_runtime_smoke);
+    run_test("test_qtt_semiring_runtime_smoke", test_qtt_semiring_runtime_smoke);
+    run_test("test_bool_lattice_runtime_smoke", test_bool_lattice_runtime_smoke);
+    run_test("test_conf_lattice_runtime_smoke", test_conf_lattice_runtime_smoke);
+    run_test("test_trust_lattice_runtime_smoke", test_trust_lattice_runtime_smoke);
+    run_test("test_fractional_lattice_runtime_smoke", test_fractional_lattice_runtime_smoke);
+    run_test("test_monotone_lattice_runtime_smoke", test_monotone_lattice_runtime_smoke);
+    run_test("test_seq_prefix_lattice_runtime_smoke", test_seq_prefix_lattice_runtime_smoke);
+    run_test("test_staleness_semiring_runtime_smoke", test_staleness_semiring_runtime_smoke);
+    run_test("test_product_lattice_runtime_smoke", test_product_lattice_runtime_smoke);
+    run_test("test_happens_before_runtime_smoke", test_happens_before_runtime_smoke);
+    run_test("test_chain_lattice_runtime_smoke", test_chain_lattice_runtime_smoke);
+    run_test("test_lifetime_lattice_runtime_smoke", test_lifetime_lattice_runtime_smoke);
+    run_test("test_consistency_lattice_runtime_smoke", test_consistency_lattice_runtime_smoke);
+    run_test("test_tolerance_lattice_runtime_smoke", test_tolerance_lattice_runtime_smoke);
+    run_test("test_det_safe_lattice_runtime_smoke", test_det_safe_lattice_runtime_smoke);
+    run_test("test_hot_path_lattice_runtime_smoke", test_hot_path_lattice_runtime_smoke);
+    run_test("test_wait_lattice_runtime_smoke", test_wait_lattice_runtime_smoke);
+    run_test("test_mem_order_lattice_runtime_smoke", test_mem_order_lattice_runtime_smoke);
+    run_test("test_progress_lattice_runtime_smoke", test_progress_lattice_runtime_smoke);
+    run_test("test_alloc_class_lattice_runtime_smoke", test_alloc_class_lattice_runtime_smoke);
+    run_test("test_bits_budget_lattice_runtime_smoke", test_bits_budget_lattice_runtime_smoke);
+    run_test("test_peak_bytes_lattice_runtime_smoke", test_peak_bytes_lattice_runtime_smoke);
+    run_test("test_epoch_lattice_runtime_smoke", test_epoch_lattice_runtime_smoke);
+    run_test("test_generation_lattice_runtime_smoke", test_generation_lattice_runtime_smoke);
+    run_test("test_numa_node_lattice_runtime_smoke", test_numa_node_lattice_runtime_smoke);
+    run_test("test_affinity_lattice_runtime_smoke", test_affinity_lattice_runtime_smoke);
+    run_test("test_recipe_family_lattice_runtime_smoke", test_recipe_family_lattice_runtime_smoke);
+    run_test("test_cipher_tier_lattice_runtime_smoke", test_cipher_tier_lattice_runtime_smoke);
+    run_test("test_residency_heat_lattice_runtime_smoke", test_residency_heat_lattice_runtime_smoke);
+    run_test("test_vendor_lattice_runtime_smoke", test_vendor_lattice_runtime_smoke);
+    run_test("test_crash_lattice_runtime_smoke", test_crash_lattice_runtime_smoke);
+    run_test("test_witness_lattice_runtime_smoke", test_witness_lattice_runtime_smoke);
+    run_test("test_join_policy_lattice_runtime_smoke", test_join_policy_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

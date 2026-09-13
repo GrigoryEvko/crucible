@@ -1,10 +1,3 @@
-// Direct tests for Types.h — strong-ID and strong-hash newtype macros.
-//
-// Covers the TypeSafe axiom: strong IDs cannot be silently swapped,
-// have deterministic layout, propagate noexcept, and compare via
-// operator<=>.  These are the foundation of every public Crucible
-// API surface.
-
 #include <crucible/Types.h>
 
 #include "test_assert.h"
@@ -19,16 +12,16 @@ using namespace crucible;
 
 static void test_layout_and_trivial_relocatability() {
     static_assert(sizeof(OpIndex) == 4);
-    static_assert(sizeof(SlotId)  == 4);
-    static_assert(sizeof(NodeId)  == 4);
+    static_assert(sizeof(SlotId) == 4);
+    static_assert(sizeof(NodeId) == 4);
     static_assert(sizeof(SymbolId) == 4);
     static_assert(sizeof(MetaIndex) == 4);
     static_assert(sizeof(SchemaHash) == 8);
-    static_assert(sizeof(ShapeHash)  == 8);
-    static_assert(sizeof(ScopeHash)  == 8);
+    static_assert(sizeof(ShapeHash) == 8);
+    static_assert(sizeof(ScopeHash) == 8);
     static_assert(sizeof(CallsiteHash) == 8);
-    static_assert(sizeof(ContentHash)  == 8);
-    static_assert(sizeof(MerkleHash)   == 8);
+    static_assert(sizeof(ContentHash) == 8);
+    static_assert(sizeof(MerkleHash) == 8);
 
     static_assert(std::is_trivially_copyable_v<OpIndex>);
     static_assert(std::is_trivially_copyable_v<SchemaHash>);
@@ -57,12 +50,10 @@ static void test_explicit_construction() {
     assert(o.is_valid());
     assert(static_cast<bool>(o));
 
-    // No implicit conversion from uint32_t — enforce at compile time.
     static_assert(!std::is_convertible_v<uint32_t, OpIndex>);
     static_assert(!std::is_convertible_v<OpIndex, uint32_t>);
     static_assert(std::is_constructible_v<OpIndex, uint32_t>);
 
-    // Cross-type: no implicit conversion between strong IDs.
     static_assert(!std::is_convertible_v<OpIndex, SlotId>);
     static_assert(!std::is_convertible_v<SlotId, OpIndex>);
     static_assert(!std::is_convertible_v<SchemaHash, ShapeHash>);
@@ -82,7 +73,6 @@ static void test_three_way_compare() {
 }
 
 static void test_hash_sentinel_distinct_from_default() {
-    // Default hash = 0, sentinel hash = UINT64_MAX, they're distinct.
     SchemaHash def{};
     SchemaHash sent = SchemaHash::sentinel();
     assert(def != sent);
@@ -94,10 +84,8 @@ static void test_hash_sentinel_distinct_from_default() {
 }
 
 static void test_noexcept_ctors_propagate() {
-    // Strong IDs' default and explicit ctors must be noexcept so
-    // containing types propagate the noexcept guarantee through
-    // default-construction chains.  This is the fix for the
-    // -Wnoexcept warning cascade.
+    // Both constructors must be noexcept, or every containing type loses
+    // its own noexcept guarantee through the default-construction chain.
     static_assert(std::is_nothrow_default_constructible_v<OpIndex>);
     static_assert(std::is_nothrow_default_constructible_v<SchemaHash>);
     static_assert(noexcept(OpIndex{}));
@@ -110,18 +98,17 @@ static void test_noexcept_ctors_propagate() {
 }
 
 static void test_scalar_type_element_sizes() {
-    // Per #129, element_size returns ElementBytes strong type — raw
-    // integer literals don't implicitly compare; use ElementBytes{N}
-    // or .raw() at the comparison site.
-    assert(element_size(ScalarType::Bool)          == ElementBytes{1});
-    assert(element_size(ScalarType::Byte)          == ElementBytes{1});
-    assert(element_size(ScalarType::Half)          == ElementBytes{2});
-    assert(element_size(ScalarType::BFloat16)      == ElementBytes{2});
-    assert(element_size(ScalarType::Int)           == ElementBytes{4});
-    assert(element_size(ScalarType::Float)         == ElementBytes{4});
-    assert(element_size(ScalarType::Long)          == ElementBytes{8});
-    assert(element_size(ScalarType::Double)        == ElementBytes{8});
-    assert(element_size(ScalarType::ComplexFloat)  == ElementBytes{8});
+    // element_size returns a strong type, so a bare integer literal does not
+    // compare against it. The expected sizes are written as ElementBytes.
+    assert(element_size(ScalarType::Bool) == ElementBytes{1});
+    assert(element_size(ScalarType::Byte) == ElementBytes{1});
+    assert(element_size(ScalarType::Half) == ElementBytes{2});
+    assert(element_size(ScalarType::BFloat16) == ElementBytes{2});
+    assert(element_size(ScalarType::Int) == ElementBytes{4});
+    assert(element_size(ScalarType::Float) == ElementBytes{4});
+    assert(element_size(ScalarType::Long) == ElementBytes{8});
+    assert(element_size(ScalarType::Double) == ElementBytes{8});
+    assert(element_size(ScalarType::ComplexFloat) == ElementBytes{8});
     assert(element_size(ScalarType::ComplexDouble) == ElementBytes{16});
     assert(element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
     assert(element_size(ScalarType::Undefined).is_zero());
@@ -129,8 +116,8 @@ static void test_scalar_type_element_sizes() {
 }
 
 static void test_bit_cast_round_trip() {
-    // Underlying bit representation must be the raw integer value — so
-    // bit_cast from/to the integer underlying type round-trips cleanly.
+    // The representation is exactly the wrapped integer, so a bit_cast to
+    // that integer and back is the identity.
     OpIndex in{0x1234'5678u};
     auto raw = std::bit_cast<uint32_t>(in);
     assert(raw == 0x1234'5678u);

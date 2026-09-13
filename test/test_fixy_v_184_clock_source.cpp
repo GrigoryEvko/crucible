@@ -1,29 +1,15 @@
-// FIXY-V-184 sentinel TU: algebra/lattices/ClockSourceLattice.h —
-// COMPOSITE product lattice over DetSafe × SuspendBehavior × Pinning,
-// plus the 10-source `ClockSource` value vocabulary and its
-// many-to-one projection onto the product's 3-tuple element.
-// (FIXY-V-201 appended PtpHwClock at ordinal 9 — append-only universe
-// extension; existing positions never renumber.)
+// A composite lattice: the product of the determinism, suspend-behaviour and
+// pinning axes, together with the value-level clock sources and the
+// many-to-one projection of a source onto a point of that product.
 //
-// V-184 ships the lattice + enum + projection (the algebraic substrate
-// + value-level FIXING function).  It ships NO row_hash and NO
-// DimensionAxis enumerator:
-//   - FIXY-V-185 ships safety/ClockSource.h (the Graded carrier keyed
-//     on the `ClockSource` NTTP) PLUS the
-//     row_hash_contribution<ClockSource<...>> federation-cache
-//     discriminator — exactly mirroring MemoryScopeLattice (V-265) →
-//     safety/ScopedFence.h (V-267).  The lattice layer pulls NO
-//     safety/diag header.  A COMPOSITE additionally carries no salt of
-//     its own (FpModeProductLattice precedent): the federation
-//     contribution composes through the per-axis component WRAPPERS.
+// Two properties carry the file. Every source projects to the tuple it is
+// documented to project to. And the order really is a product, taken
+// pointwise, rather than a chain: there are incomparable points, and one pair
+// is ordered by the pinning axis alone.
 //
-// THE LOAD-BEARING PROPERTIES this TU defends:
-//   (1) Every ClockSource projects to its documented (DetSafe,
-//       Suspend, Pin) tuple — the three task-FIXED rows (Realtime,
-//       Boot, TscRaw) plus the seven derived rows.
-//   (2) The order is a genuine PRODUCT (pointwise AND), not a chain:
-//       there exist INCOMPARABLE points, and Boot ⊏ TscRaw is a strict
-//       order via the pinning axis alone.
+// A composite carries no federation salt of its own, so nothing here asserts
+// anything about row hashing. That discrimination happens through the per-axis
+// wrappers instead.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -43,149 +29,119 @@ using cal::PinningRequirement;
 using cal::SuspendBehavior;
 using L = cal::ClockSourceLattice;
 
-// ── Concept satisfaction — bounded lattice, not a semiring ──────────
-static_assert(crucible::algebra::Lattice<L>,
-    "FIXY-V-184: ClockSourceLattice must satisfy the Lattice concept.");
-static_assert(crucible::algebra::BoundedLattice<L>,
-    "FIXY-V-184: the product of three bounded chains is a bounded lattice.");
+static_assert(crucible::algebra::Lattice<L>, "ClockSourceLattice must satisfy the Lattice concept.");
+static_assert(crucible::algebra::BoundedLattice<L>, "the product of three bounded chains is itself a bounded lattice.");
 static_assert(crucible::algebra::BoundedBelowLattice<L>);
 static_assert(crucible::algebra::BoundedAboveLattice<L>);
 static_assert(!crucible::algebra::UnboundedLattice<L>);
 static_assert(!crucible::algebra::Semiring<L>);
 
-// ── Cardinality — ten value-level sources (V-201 appended PtpHwClock) ─
-static_assert(cal::clock_source_count == 10,
-    "FIXY-V-184: ClockSource must have exactly 10 enumerators; FIXY-V-201 "
-    "appended PtpHwClock at ordinal 9 (append-only — existing positions "
-    "never renumber).");
+static_assert(cal::clock_source_count == 10, "ClockSource must have exactly 10 enumerators. The enumeration is "
+                                             "append-only and existing positions never renumber.");
 static_assert(std::is_same_v<std::underlying_type_t<ClockSource>, std::uint8_t>,
-    "FIXY-V-184: ClockSource uses uint8_t underlying; the ordinal is "
-    "declaration order, NOT an order-semantics rank.");
+              "ClockSource uses a uint8_t underlying type. Its ordinal is "
+              "declaration order and carries no order semantics.");
 
-// ── Arity + named axis projections ──────────────────────────────────
 static_assert(L::arity == 3);
 static_assert(std::is_same_v<L::nth_lattice<0>, cal::DetSafeLattice>);
 static_assert(std::is_same_v<L::nth_lattice<1>, cal::SuspendBehaviorLattice>);
 static_assert(std::is_same_v<L::nth_lattice<2>, cal::PinningRequirementLattice>);
 static_assert(std::is_same_v<L::det_safe_axis, cal::DetSafeLattice>);
-static_assert(std::is_same_v<L::suspend_axis,  cal::SuspendBehaviorLattice>);
-static_assert(std::is_same_v<L::pinning_axis,  cal::PinningRequirementLattice>);
+static_assert(std::is_same_v<L::suspend_axis, cal::SuspendBehaviorLattice>);
+static_assert(std::is_same_v<L::pinning_axis, cal::PinningRequirementLattice>);
 
-// ── Bounds — pointwise lifts of the component endpoints ─────────────
+// The bounds are the component endpoints lifted pointwise.
 static_assert(L::get<0>(L::bottom()) == DetSafeTier::NonDeterministicSyscall);
 static_assert(L::get<1>(L::bottom()) == SuspendBehavior::Unknown);
 static_assert(L::get<2>(L::bottom()) == PinningRequirement::NotRequired);
-static_assert(L::get<0>(L::top())    == DetSafeTier::Pure);
-static_assert(L::get<1>(L::top())    == SuspendBehavior::KeepsTicking);
-static_assert(L::get<2>(L::top())    == PinningRequirement::CrossSocketSafe);
+static_assert(L::get<0>(L::top()) == DetSafeTier::Pure);
+static_assert(L::get<1>(L::top()) == SuspendBehavior::KeepsTicking);
+static_assert(L::get<2>(L::top()) == PinningRequirement::CrossSocketSafe);
 
-// ── Projection matrix — the three task-FIXED rows are load-bearing ──
-[[nodiscard]] consteval bool projects_to(
-    ClockSource source, DetSafeTier det, SuspendBehavior suspend,
-    PinningRequirement pin) noexcept
-{
+[[nodiscard]] consteval bool projects_to(ClockSource source, DetSafeTier det, SuspendBehavior suspend,
+                                         PinningRequirement pin) noexcept {
     auto point = cal::clock_source_project(source);
-    return L::get<0>(point) == det
-        && L::get<1>(point) == suspend
-        && L::get<2>(point) == pin;
+    return L::get<0>(point) == det && L::get<1>(point) == suspend && L::get<2>(point) == pin;
 }
 
-static_assert(projects_to(ClockSource::Realtime,
-    DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired), "Realtime [FIXED]");
-static_assert(projects_to(ClockSource::Monotonic,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
-static_assert(projects_to(ClockSource::MonotonicRaw,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
-static_assert(projects_to(ClockSource::Boot,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::NotRequired), "Boot [FIXED]");
-static_assert(projects_to(ClockSource::ThreadCpu,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
-static_assert(projects_to(ClockSource::ProcessCpu,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
-static_assert(projects_to(ClockSource::TscRaw,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::PerCore), "TscRaw [FIXED]");
-static_assert(projects_to(ClockSource::TscSerialized,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::PerCore));
-static_assert(projects_to(ClockSource::PmuCounter,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::PerCore));
-// FIXY-V-201: PtpHwClock shares Boot's projected tuple — per-NIC silicon
-// clock, suspend-independent, no CPU pin required.  Source identity stays
-// distinct at the V-185 wrapper / federation-cache key.
-static_assert(projects_to(ClockSource::PtpHwClock,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::NotRequired),
-    "FIXY-V-201: PtpHwClock must project to (MonotonicClockRead, "
-    "KeepsTicking, NotRequired) — same tuple as Boot.");
-static_assert(crucible::algebra::equivalent<L>(
-    cal::clock_source_project(ClockSource::Boot),
-    cal::clock_source_project(ClockSource::PtpHwClock)),
-    "FIXY-V-201: Boot and PtpHwClock collapse to the SAME projected tuple "
-    "— both monotonic, both suspend-inclusive, both fd/syscall-read.  The "
-    "V-185 wrapper keeps the source identities distinct (Boot vs PHC) at "
-    "the federation-cache key.");
+static_assert(projects_to(ClockSource::Realtime, DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired),
+              "Realtime");
+static_assert(projects_to(ClockSource::Monotonic, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::MonotonicRaw, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::Boot, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::NotRequired),
+              "Boot");
+static_assert(projects_to(ClockSource::ThreadCpu, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::ProcessCpu, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::TscRaw, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::PerCore),
+              "TscRaw");
+static_assert(projects_to(ClockSource::TscSerialized, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::PerCore));
+static_assert(projects_to(ClockSource::PmuCounter, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::PerCore));
+// A per-NIC silicon clock: unaffected by suspend and needing no CPU pin, so
+// it projects onto the same tuple as the boot clock. The two sources stay
+// distinct one layer up, where the cache key is formed.
+static_assert(projects_to(ClockSource::PtpHwClock, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::NotRequired),
+              "PtpHwClock must project to (MonotonicClockRead, KeepsTicking, "
+              "NotRequired), the same tuple as Boot.");
+static_assert(crucible::algebra::equivalent<L>(cal::clock_source_project(ClockSource::Boot),
+                                               cal::clock_source_project(ClockSource::PtpHwClock)),
+              "Boot and PtpHwClock collapse to the same projected tuple. Both are "
+              "monotonic, both keep ticking across suspend, and both are read through "
+              "a descriptor. Their identities stay distinct at the cache key.");
 
-// ── Order witnesses: Boot ⊏ TscRaw via the pinning axis alone ───────
-static_assert( L::leq(cal::clock_source_project(ClockSource::Boot),
-                      cal::clock_source_project(ClockSource::TscRaw)));
-static_assert(!L::leq(cal::clock_source_project(ClockSource::TscRaw),
-                      cal::clock_source_project(ClockSource::Boot)),
-    "FIXY-V-184: TscRaw ⋣ Boot — PerCore ⋣ NotRequired; descending FALSE.");
-static_assert( L::leq(cal::clock_source_project(ClockSource::Realtime),
-                      cal::clock_source_project(ClockSource::Boot)));
-static_assert( L::leq(cal::clock_source_project(ClockSource::Monotonic),
-                      cal::clock_source_project(ClockSource::Boot)));
+// Boot is strictly below TscRaw, and the pinning axis alone is what orders
+// them.
+static_assert(L::leq(cal::clock_source_project(ClockSource::Boot), cal::clock_source_project(ClockSource::TscRaw)));
+static_assert(!L::leq(cal::clock_source_project(ClockSource::TscRaw), cal::clock_source_project(ClockSource::Boot)),
+              "TscRaw is not below Boot, because PerCore is not below NotRequired.");
+static_assert(L::leq(cal::clock_source_project(ClockSource::Realtime), cal::clock_source_project(ClockSource::Boot)));
+static_assert(L::leq(cal::clock_source_project(ClockSource::Monotonic), cal::clock_source_project(ClockSource::Boot)));
 
-// ── Incomparability — proves it is a PRODUCT, not a chain ───────────
-static_assert(!L::leq(
-    L::make_point(DetSafeTier::Pure, SuspendBehavior::Unknown,
-                  PinningRequirement::CrossSocketSafe),
-    L::make_point(DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
-                  PinningRequirement::NotRequired)),
-    "FIXY-V-184: these two points are incomparable — a chain cannot do this.");
-static_assert(!L::leq(
-    L::make_point(DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
-                  PinningRequirement::NotRequired),
-    L::make_point(DetSafeTier::Pure, SuspendBehavior::Unknown,
-                  PinningRequirement::CrossSocketSafe)));
+// Neither point is below the other. A chain admits no such pair, so this is
+// what makes the order a genuine product.
+static_assert(!L::leq(L::make_point(DetSafeTier::Pure, SuspendBehavior::Unknown, PinningRequirement::CrossSocketSafe),
+                      L::make_point(DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
+                                    PinningRequirement::NotRequired)),
+              "these two points are incomparable, which a chain cannot produce.");
+static_assert(!L::leq(L::make_point(DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
+                                    PinningRequirement::NotRequired),
+                      L::make_point(DetSafeTier::Pure, SuspendBehavior::Unknown, PinningRequirement::CrossSocketSafe)));
 
-// ── join / meet pointwise ───────────────────────────────────────────
-static_assert(L::get<1>(L::join(
-    cal::clock_source_project(ClockSource::Boot),
-    cal::clock_source_project(ClockSource::Realtime))) == SuspendBehavior::KeepsTicking);
-static_assert(L::get<2>(L::meet(
-    cal::clock_source_project(ClockSource::TscRaw),
-    cal::clock_source_project(ClockSource::Boot))) == PinningRequirement::NotRequired);
+static_assert(L::get<1>(L::join(cal::clock_source_project(ClockSource::Boot),
+                                cal::clock_source_project(ClockSource::Realtime)))
+              == SuspendBehavior::KeepsTicking);
+static_assert(L::get<2>(L::meet(cal::clock_source_project(ClockSource::TscRaw),
+                                cal::clock_source_project(ClockSource::Boot)))
+              == PinningRequirement::NotRequired);
 
-// ── Monotonic and MonotonicRaw collapse to the SAME tuple ───────────
-static_assert(crucible::algebra::equivalent<L>(
-    cal::clock_source_project(ClockSource::Monotonic),
-    cal::clock_source_project(ClockSource::MonotonicRaw)),
-    "FIXY-V-184: Monotonic/MonotonicRaw differ only in NTP-slew, which "
-    "this lattice does not model — same projected point; the V-185 "
-    "wrapper keeps them distinct at the federation-cache key.");
+static_assert(crucible::algebra::equivalent<L>(cal::clock_source_project(ClockSource::Monotonic),
+                                               cal::clock_source_project(ClockSource::MonotonicRaw)),
+              "Monotonic and MonotonicRaw differ only in whether time is slewed, "
+              "which this lattice does not model, so they project to one point. "
+              "Their identities stay distinct at the cache key.");
 
-// ── Names ───────────────────────────────────────────────────────────
 static_assert(L::name() == std::string_view{"ClockSourceLattice"});
 static_assert(cal::clock_source_name(ClockSource::TscRaw) == std::string_view{"TscRaw"});
-static_assert(cal::clock_source_name(ClockSource::Boot)   == std::string_view{"Boot"});
+static_assert(cal::clock_source_name(ClockSource::Boot) == std::string_view{"Boot"});
 
-// ── EBO note: the grade is NON-empty (3 bytes), so Graded grows ─────
-struct EightByteValue { unsigned long long v{0}; };
-static_assert(
-    sizeof(crucible::algebra::Graded<crucible::algebra::ModalityKind::Absolute,
-                                     L, EightByteValue>)
-    <= sizeof(EightByteValue) + 8,
-    "FIXY-V-184: the 3-byte (DetSafe×Suspend×Pin) grade plus alignment "
-    "padding must fit in 8 trailing bytes over an 8-byte payload.");
+// Unlike a singleton grade, this one is three bytes wide, so a graded value
+// over this lattice is genuinely larger than its payload.
+struct EightByteValue {
+    unsigned long long v{0};
+};
+static_assert(sizeof(crucible::algebra::Graded<crucible::algebra::ModalityKind::Absolute, L, EightByteValue>)
+                  <= sizeof(EightByteValue) + 8,
+              "the three-byte grade plus alignment padding must fit in 8 trailing "
+              "bytes over an 8-byte payload.");
 
 }  // namespace
 

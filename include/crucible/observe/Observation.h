@@ -1,12 +1,8 @@
 #pragma once
 
-// Observation rail for physical signals.
-//
-// Wall-clock latency, energy, power, and transferred-bit counts are operational
-// facts, not type-system guarantees.  The compiler cannot prove physical
-// bounds, so these values deliberately live in observe/ as latest-value runtime
-// observations.  Deterministic replay and safety contracts must not consume
-// this header as proof evidence.
+// These values are measured facts, not proofs. The compiler cannot bound
+// them. Deterministic replay and safety contracts must not consume them as
+// evidence.
 
 #include <crucible/concurrent/AtomicSnapshot.h>
 

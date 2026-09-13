@@ -1,27 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * syscall_tp_btf.bpf.c — Syscall latency via BTF-typed tracepoints.
- *
- * Functionally identical to syscall_latency.bpf.c but uses
- * SEC("tp_btf/sys_enter") and SEC("tp_btf/sys_exit") instead of
- * SEC("tracepoint/raw_syscalls/sys_enter") and sys_exit.
- *
- * Advantages over legacy raw_syscalls tracepoints:
- *   1. ~30% lower overhead (skips format string processing)
- *   2. CO-RE portable: args via BTF, survives kernel struct changes
- *   3. Direct typed access to syscall args
- *
- * BTF signatures (from /sys/kernel/btf/vmlinux):
- *   btf_trace_sys_enter(void *, struct pt_regs *regs, long syscall_id)
- *   btf_trace_sys_exit(void *, struct pt_regs *regs, long ret)
- *
- * Requires: CONFIG_DEBUG_INFO_BTF=y, /sys/kernel/btf/vmlinux present.
- * Minimum kernel: 5.5 (BTF raw tracepoints).
- */
-
 #include "common.h"
-
-/* ─── Maps ──────────────────────────────────────────────────────────── */
 
 struct syscall_start_val {
     __u64 ts;
@@ -29,13 +7,11 @@ struct syscall_start_val {
     __u32 _pad;
 };
 
-/* GAPS-004f-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
- * entries (sys_enter recorded but matching sys_exit never arrives, e.g.
- * thread killed mid-syscall, exec replacing thread, target_tgid filter
- * accepted enter but rejected exit) auto-evict on capacity pressure
- * rather than accumulating to MAX_ENTRIES=65536 and silently blocking
- * new inserts via BPF_NOEXIST.  Same fix class as syscall_latency
- * GAPS-004e and SchedSwitch GAPS-004b-AUDIT. */
+/* An enter whose exit never arrives leaves an orphan here. A thread killed
+ * mid-call, an exec that replaces the thread, or a target filter that accepts
+ * the enter and rejects the exit all produce one. LRU_HASH evicts them under
+ * capacity pressure. A plain HASH would fill to the entry limit and then
+ * reject every new insert. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
@@ -65,15 +41,13 @@ struct {
     __type(value, struct syscall_timeline);
 } syscall_timeline SEC(".maps");
 
-/* ─── BTF-typed tracepoint handlers ──────────────────────────────────── */
-
 /*
- * tp_btf/sys_enter — BTF raw tracepoint for syscall entry.
+ * The raw tracepoint hands over its arguments as an untyped array. Slot 0 is
+ * an unused context pointer, slot 1 the register state at entry and slot 2 the
+ * syscall number.
  *
- * Args from BTF:
- *   ctx[0]: void *         (unused context pointer)
- *   ctx[1]: struct pt_regs * (register state at syscall entry)
- *   ctx[2]: long           syscall number (NR)
+ * A BTF tracepoint needs a kernel built with CONFIG_DEBUG_INFO_BTF, which is
+ * what puts /sys/kernel/btf/vmlinux in place, and kernel 5.5 or newer.
  */
 SEC("tp_btf/sys_enter")
 int handle_sys_enter_btf(u64* ctx) {
@@ -92,22 +66,13 @@ int handle_sys_enter_btf(u64* ctx) {
 }
 
 /*
- * tp_btf/sys_exit — BTF raw tracepoint for syscall exit.
- *
- * Args from BTF:
- *   ctx[0]: void *         (unused context pointer)
- *   ctx[1]: struct pt_regs * (register state)
- *   ctx[2]: long           return value (not used)
+ * The argument array here holds an unused context pointer, the register state
+ * and the syscall return value.
  */
 SEC("tp_btf/sys_exit")
 int handle_sys_exit_btf(u64* ctx) {
     if (!is_target()) return 0;
 
-    /* GAPS-004f-AUDIT (2026-05-04): single bpf_ktime_get_ns() per event.
-     * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns/event.
-     * Capture once at function entry and reuse for both purposes;
-     * matches the canonical syscall_latency GAPS-004e / SchedSwitch
-     * GAPS-004b-AUDIT pattern. */
     __u64 now = bpf_ktime_get_ns();
 
     __u32 tid = get_tid();
@@ -118,7 +83,6 @@ int handle_sys_exit_btf(u64* ctx) {
     __u32 nr = start->nr;
     bpf_map_delete_elem(&syscall_start, &tid);
 
-    /* Update per-syscall stats */
     struct syscall_stats* stats = bpf_map_lookup_elem(&syscall_latency, &nr);
     if (stats) {
         __sync_fetch_and_add(&stats->count, 1);
@@ -135,7 +99,6 @@ int handle_sys_exit_btf(u64* ctx) {
         bpf_map_update_elem(&syscall_latency, &nr, &new_stats, BPF_NOEXIST);
     }
 
-    /* Emit to zero-copy timeline */
     __u32 tl_zero = 0;
     struct syscall_timeline* tl = bpf_map_lookup_elem(&syscall_timeline, &tl_zero);
     if (tl) {
@@ -145,19 +108,14 @@ int handle_sys_exit_btf(u64* ctx) {
             tl->events[slot].duration_ns = delta;
             tl->events[slot].tid = tid;
             tl->events[slot].syscall_nr = nr;
-            /* Compiler barrier — GAPS-004f-AUDIT (2026-05-04).
-             * Forces clang to emit the prior 3 stores BEFORE the ts_ns
-             * store; without this, -O2 may reorder and break the
-             * "ts_ns LAST as completion marker" contract.  Zero machine
-             * cost; pairs with userspace reader's __atomic_load_n
-             * (&ts_ns, ACQUIRE).  Same fix class as syscall_latency
-             * GAPS-004e and SchedSwitch GAPS-004b-AUDIT. */
+            /* The memory clobber stops the compiler from sinking the three
+             * stores above past the ts_ns store. It pairs with the acquire
+             * load of ts_ns in the reader. */
             __asm__ __volatile__("" ::: "memory");
             tl->events[slot].ts_ns = now; /* completion marker */
         }
     }
 
-    /* Increment total counter */
     __u32 zero = 0;
     __u64* cnt = bpf_map_lookup_elem(&total_syscalls, &zero);
     if (cnt) __sync_fetch_and_add(cnt, 1);

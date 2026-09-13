@@ -1,34 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * symbiotic: Lock contention profiling via futex tracing.
- *
- * Traces futex(FUTEX_WAIT) entry/exit to measure exactly how long
- * each thread waits on each lock. Aggregates by (futex_address, stack)
- * so the userspace side can tell you:
- *   "Mutex at 0x7f...a380 is contended 450 times, avg wait 12μs,
- *    hottest caller: image_filter::sharpen line 142"
- *
- * Also tracks voluntary vs involuntary waits via sched:sched_process_wait.
- */
-
 #include "common.h"
 
-/* Futex operations we care about */
 #define FUTEX_WAIT 0
 #define FUTEX_WAIT_BITSET 9
 #define FUTEX_LOCK_PI 6
 
-/* ─── Maps ──────────────────────────────────────────────────────────── */
-
-/* (tid) → (futex_addr, start_ts, stack_id) for in-flight waits.
- *
- * GAPS-004d-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
- * entries (futex_enter recorded but matching futex_exit never arrives,
- * e.g. thread killed mid-wait, syscall returns via signal, or
- * target_tgid filter accepted enter but rejected exit) are auto-
- * evicted on capacity pressure rather than accumulating to
- * MAX_ENTRIES=65536 and silently blocking new inserts via BPF_NOEXIST.
- * Same fix as SchedSwitch GAPS-004b-AUDIT for switch_start. */
+/* An enter whose exit never arrives leaves an orphan here. A thread killed
+ * mid-wait, a syscall that returns through a signal, or a target filter that
+ * accepts the enter and rejects the exit all produce one. LRU_HASH evicts them
+ * under capacity pressure. A plain HASH would fill to the entry limit and then
+ * reject every new insert. */
 struct wait_info {
     __u64 addr;
     __u64 ts;
@@ -43,7 +24,6 @@ struct {
     __type(value, struct wait_info);
 } wait_start SEC(".maps");
 
-/* (futex_addr, stack_id) → contention stats */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, MAX_ENTRIES);
@@ -51,7 +31,6 @@ struct {
     __type(value, struct lock_val);
 } contention SEC(".maps");
 
-/* Stack traces */
 struct {
     __uint(type, BPF_MAP_TYPE_STACK_TRACE);
     __uint(max_entries, MAX_STACKS);
@@ -59,7 +38,6 @@ struct {
     __uint(value_size, MAX_STACK_DEPTH * sizeof(__u64));
 } lock_stacks SEC(".maps");
 
-/* Total lock wait events counter */
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
@@ -67,7 +45,6 @@ struct {
     __type(value, __u64);
 } lock_wait_count SEC(".maps");
 
-/* Zero-copy timeline: mmap'd circular buffer (sub-ns reads from Rust) */
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
@@ -76,30 +53,25 @@ struct {
     __type(value, struct lock_timeline);
 } lock_timeline SEC(".maps");
 
-/* ─── Tracepoint handlers ──────────────────────────────────────────── */
-
 /*
- * sys_enter_futex format:
- *   field:unsigned long uaddr;
- *   field:int op;
- *   field:unsigned int val;
- *   field:... (timespec, uaddr2, val3)
+ * The syscall arguments arrive as a raw array. Slot 0 holds the futex user
+ * address and slot 1 holds the operation, then val, timespec, uaddr2 and val3.
  */
 SEC("tracepoint/syscalls/sys_enter_futex")
 int handle_futex_enter(struct trace_event_raw_sys_enter* ctx) {
     if (!is_target()) return 0;
 
-    /* Read futex op from args[1] (second arg to futex syscall) */
-    int op = (int)ctx->args[1] & 0x7F; /* mask out FUTEX_PRIVATE_FLAG etc */
+    /* The high bits carry FUTEX_PRIVATE_FLAG and FUTEX_CLOCK_REALTIME, which
+     * do not change which operation this is. */
+    int op = (int)ctx->args[1] & 0x7F;
 
-    /* Only trace wait operations */
     if (op != FUTEX_WAIT && op != FUTEX_WAIT_BITSET && op != FUTEX_LOCK_PI) return 0;
 
     __u32 tid = get_tid();
     __s32 sid = bpf_get_stackid(ctx, &lock_stacks, BPF_F_USER_STACK | BPF_F_FAST_STACK_CMP);
 
     struct wait_info info = {
-        .addr = ctx->args[0], /* futex uaddr */
+        .addr = ctx->args[0],
         .ts = bpf_ktime_get_ns(),
         .stack_id = sid >= 0 ? sid : -1,
     };
@@ -112,10 +84,6 @@ SEC("tracepoint/syscalls/sys_exit_futex")
 int handle_futex_exit(struct trace_event_raw_sys_exit* ctx) {
     if (!is_target()) return 0;
 
-    /* GAPS-004d-AUDIT (2026-05-04): single bpf_ktime_get_ns() call.
-     * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns
-     * per event.  SchedSwitch and the canonical pattern capture once
-     * at function entry and reuse for both purposes; mirrored here. */
     __u64 now = bpf_ktime_get_ns();
 
     __u32 tid = get_tid();
@@ -130,7 +98,6 @@ int handle_futex_exit(struct trace_event_raw_sys_exit* ctx) {
 
     bpf_map_delete_elem(&wait_start, &tid);
 
-    /* Emit to zero-copy timeline (ts_ns written last for ordering) */
     __u32 tl_zero = 0;
     struct lock_timeline* tl = bpf_map_lookup_elem(&lock_timeline, &tl_zero);
     if (tl) {
@@ -140,21 +107,14 @@ int handle_futex_exit(struct trace_event_raw_sys_exit* ctx) {
             tl->events[slot].futex_addr = info->addr;
             tl->events[slot].wait_ns = delta;
             tl->events[slot].tid = tid;
-            /* Compiler barrier — GAPS-004d-AUDIT (2026-05-04).
-             * Forces clang to emit the prior 3 stores BEFORE the
-             * ts_ns store; without this, -O2 may reorder and break
-             * the "ts_ns LAST as completion marker" contract.  Zero
-             * machine cost (asm volatile with empty body emits no
-             * instruction; the "memory" clobber tells the compiler
-             * not to reorder across this point).  Pairs with the
-             * userspace reader's __atomic_load_n(&ts_ns, ACQUIRE).
-             * Same fix class as SchedSwitch GAPS-004b-AUDIT. */
+            /* The memory clobber stops the compiler from sinking the three
+             * stores above past the ts_ns store. It pairs with the acquire
+             * load of ts_ns in the reader. */
             __asm__ __volatile__("" ::: "memory");
             tl->events[slot].ts_ns = now; /* completion marker */
         }
     }
 
-    /* Aggregate contention */
     struct lock_val* val = bpf_map_lookup_elem(&contention, &key);
     if (val) {
         __sync_fetch_and_add(&val->total_wait_ns, delta);
@@ -169,7 +129,6 @@ int handle_futex_exit(struct trace_event_raw_sys_exit* ctx) {
         bpf_map_update_elem(&contention, &key, &new_val, BPF_NOEXIST);
     }
 
-    /* Increment total counter */
     __u32 zero = 0;
     __u64* cnt = bpf_map_lookup_elem(&lock_wait_count, &zero);
     if (cnt) __sync_fetch_and_add(cnt, 1);

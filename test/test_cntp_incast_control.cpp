@@ -47,8 +47,7 @@ private:
 };
 
 void test_admission_and_names() {
-    assert(cntp::incast_error_name(cntp::IncastError::CreditUnavailable) ==
-           std::string_view{"CreditUnavailable"});
+    assert(cntp::incast_error_name(cntp::IncastError::CreditUnavailable) == std::string_view{"CreditUnavailable"});
 
     auto credit = cntp::admit_credit_bytes(64 * 1024);
     assert(credit.has_value());
@@ -85,9 +84,7 @@ void test_config_minting() {
     assert(rto.has_value());
     assert(senders.has_value());
 
-    auto config =
-        cntp::mint_dctcp_incast_config<cntp::LinkClass::LosslessDatacenterFabric>(
-            *credit, *rto, *senders);
+    auto config = cntp::mint_dctcp_incast_config<cntp::LinkClass::LosslessDatacenterFabric>(*credit, *rto, *senders);
     static_assert(std::same_as<decltype(config), cntp::DeclaredIncastConfig>);
     assert(config.value().enable_dctcp);
     assert(config.value().enable_ecn);
@@ -137,10 +134,9 @@ void test_credit_pacing_state() {
     assert(grant->bytes.value() == extra->value());
     assert(grant->sequence == 7);
 
-    // fixy-A5-005: try_consume_credit polls once, never blocks.  First
-    // call drains the 5120-byte balance (initial 4096 + issued 1024);
-    // second call returns CreditUnavailable immediately because no
-    // additional credit has been issued.
+    // The consume call polls once and never blocks.  The first drains the
+    // whole balance, 4096 started plus 1024 issued, and the second finds
+    // nothing left because no further credit was granted between them.
     auto received = controller.try_consume_credit(bg, *fd0);
     assert(received.has_value());
     assert(received->value() == 5120);
@@ -148,14 +144,12 @@ void test_credit_pacing_state() {
     assert(!empty.has_value());
     assert(empty.error() == cntp::IncastError::CreditUnavailable);
 
-    // Pre-fix regression guard: await_credit took a PositiveRtoMinUsec
-    // parameter that was completely ignored.  Confirm the renamed
-    // method's signature drops that parameter (compile-time check via
-    // pointer-to-member-function type assignment).
-    using ConsumeFn = std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
-        (cntp::IncastController<2>::*)(effects::BgDrainCtx const&, cntp::SocketFd) noexcept;
-    static_cast<void>(static_cast<ConsumeFn>(
-        &cntp::IncastController<2>::try_consume_credit<effects::BgDrainCtx>));
+    // The signature must carry no timeout parameter.  A parameter that is
+    // accepted and then ignored reads as a working timeout to every
+    // caller.  Naming the exact member type is what pins it.
+    using ConsumeFn = std::expected<cntp::PositiveCreditBytes, cntp::IncastError> (cntp::IncastController<2>::*)(
+        effects::BgDrainCtx const&, cntp::SocketFd) noexcept;
+    static_cast<void>(static_cast<ConsumeFn>(&cntp::IncastController<2>::try_consume_credit<effects::BgDrainCtx>));
 
     assert(controller.start_credit_flow(init, *fd1, *initial).has_value());
     auto overflow = controller.start_credit_flow(init, *fd2, *initial);
@@ -176,8 +170,8 @@ void test_live_rto_if_available() {
 
     auto set = cntp::set_socket_rto_min_usec(*fd, *rto);
     if (!set.has_value()) {
-        assert(set.error() == cntp::IncastError::SetRtoMinFailed ||
-               set.error() == cntp::IncastError::UnsupportedRtoMinSockOpt);
+        assert(set.error() == cntp::IncastError::SetRtoMinFailed
+               || set.error() == cntp::IncastError::UnsupportedRtoMinSockOpt);
         std::printf("  test_live_rto_if_available: SKIPPED\n");
         return;
     }
@@ -192,9 +186,7 @@ int main() {
     static_assert(sizeof(cntp::PositiveRtoMinUsec) == sizeof(std::uint32_t));
     static_assert(sizeof(cntp::DeclaredIncastConfig) == sizeof(cntp::IncastConfig));
     static_assert(std::is_trivially_copyable_v<cntp::IncastConfig>);
-    static_assert(std::same_as<
-                  cntp::DeclaredIncastConfig::tag_type,
-                  saf::source::IncastConfig>);
+    static_assert(std::same_as<cntp::DeclaredIncastConfig::tag_type, saf::source::IncastConfig>);
     static_assert(cntp::CtxFitsIncastConfigure<effects::ColdInitCtx>);
     static_assert(cntp::CtxFitsIncastConfigure<effects::BgDrainCtx>);
     static_assert(!cntp::CtxFitsIncastConfigure<effects::HotFgCtx>);

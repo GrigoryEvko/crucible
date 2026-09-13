@@ -1,24 +1,14 @@
 #pragma once
 
-// crucible::concurrent::AutoRouter
+// Turns four facts into a channel: what the caller means to do, how many
+// producers and consumers there are, and how many bytes are in flight.
+// The result is an alias to an existing channel, so nothing is erased,
+// wrapped or dispatched at runtime.
 //
-// Type-level routing policy for permissioned concurrency primitives.  The
-// router turns four compile-time facts into an underlying Permissioned*
-// substrate:
-//
-//   * semantic intent: ordered stream, latest-value broadcast, shardable
-//     bulk work, or variable-cost work
-//   * producer cardinality
-//   * consumer cardinality
-//   * byte footprint of the unit being routed
-//
-// The policy is intentionally conservative: ordered streams remain ordered
-// even above the L2/core cliff; only callers that declare Shardable may be
-// routed into the MxN sharded SPSC grid.
-//
-// Runtime cost: zero.  All routing is consteval / inline constexpr.  The
-// selected route is an alias to an existing permissioned primitive, with no
-// wrapper allocation, vtable, branch, heap allocation, or type erasure.
+// The policy is deliberately conservative.  An ordered stream stays
+// ordered however large it grows, and only a caller that has said its
+// work is shardable can be routed into the grid, because sharding is
+// what gives up the order.
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/Substrate.h>

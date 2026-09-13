@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-146 WIP. CNT-P kernel TLS offload sketch.
-//
-// This header owns typed admission for TLS 1.3 record keys that may be
-// handed to Linux kTLS / NIC TLS offload.  It deliberately does not
-// synthesize a fake kernel install: without the real socket/TLS backend,
-// target-capability proof, and vendor policy, runtime enablement reports
-// a deferred or unavailable result after validating the request shape.
+// No kernel install happens here.  There is no socket backend, no
+// target-capability proof and no vendor policy behind enable_ktls_offload, so
+// it validates the request shape and then reports deferral or unavailability.
 
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/effects/Capabilities.h>

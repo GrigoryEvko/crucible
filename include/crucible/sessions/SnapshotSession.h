@@ -1,48 +1,5 @@
 #pragma once
 
-// SnapshotSession.h — typed-session facade for PermissionedSnapshot.
-//
-// PermissionedSnapshot (concurrent/PermissionedSnapshot.h) is a SWMR
-// seqlock substrate: a single Writer publishes `T` values into an
-// AtomicSnapshot, many Readers concurrently load the most-recently-
-// published value via SharedPermissionPool refcount shares.  The
-// substrate already enforces role separation through linear / fractional
-// permission tokens; this header adds the session-protocol shape:
-//
-//   Writer: Loop<Send<T, Continue>>   — publish each value
-//   Reader: Loop<Recv<T, Continue>>   — load each value
-//
-// EmptyPermSet is deliberate.  Writer / Reader authority stays in the
-// endpoint handles (Permission<writer_tag> consumed at writer mint;
-// SharedPermissionGuard<reader_tag> held by ReaderHandle); the wire-
-// format `T` values do NOT transfer permissions per Send.  Callers that
-// need permission-bearing payload markers use PermissionedSession's
-// direct path with Transferable/Borrowed/Returned wrappers.
-//
-// ── Relationship to SwmrSession.h ─────────────────────────────────────
-//
-// SwmrSession.h ships a parallel SWMR substrate (its own AtomicSnapshot
-// + SharedPermissionPool composition) alongside its session facade — a
-// legacy quirk from when both layers landed together.  SnapshotSession.h
-// follows the cleaner MetaLogSession.h pattern: thin protocol layer over
-// an existing substrate.  Callers pick PermissionedSnapshot vs
-// SwmrSession based on substrate semantics; both have session-typed
-// surfaces.
-//
-// ── §XXI Universal Mint Pattern ───────────────────────────────────────
-//
-//   Endpoint mints (substrate-shape, no Ctx):
-//     mint_snapshot_writer<Snap>(snap, perm)        — Permission consume
-//     mint_snapshot_reader<Snap>(snap)              — Pool lend
-//
-//   Ctx-bound mints (typed-session, ctx-driven policy):
-//     mint_snapshot_writer_session<Snap>(ctx, handle)
-//     mint_snapshot_reader_session<Snap>(ctx, handle)
-//
-// Both ctx-bound mints route through mint_permissioned_session<Proto>
-// with EmptyPermSet; the substrate's structural concept gate
-// (SnapshotSessionSurface<Snap>) is the requires-clause.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/permissions/Permission.h>
@@ -64,13 +21,6 @@ using WriterProto = Loop<Send<T, Continue>>;
 template <typename T>
 using ReaderProto = Loop<Recv<T, Continue>>;
 
-// ── SnapshotSessionSurface ────────────────────────────────────────────
-//
-// Structural gate: every PermissionedSnapshot specialization satisfies
-// this — the concept probes the substrate's published surface (writer
-// / reader factories, value_type / writer_tag / reader_tag aliases,
-// publish / load on the handles).
-
 template <typename Snap>
 concept SnapshotSessionSurface =
     requires(Snap& snap, typename Snap::WriterHandle& writer_handle, typename Snap::ReaderHandle& reader_handle,
@@ -89,8 +39,6 @@ concept SnapshotSessionSurface =
         { reader_handle.try_load() } -> std::same_as<std::optional<typename Snap::value_type>>;
     };
 
-// ── Endpoint mints (substrate-shape) ──────────────────────────────────
-
 template <SnapshotSessionSurface Snap>
 [[nodiscard]] constexpr auto
 mint_snapshot_writer(Snap& snap, ::crucible::safety::Permission<typename Snap::writer_tag>&& perm) noexcept {
@@ -101,8 +49,6 @@ template <SnapshotSessionSurface Snap>
 [[nodiscard]] auto mint_snapshot_reader(Snap& snap) noexcept {
     return snap.reader();
 }
-
-// ── Ctx-bound mints (typed session) ───────────────────────────────────
 
 template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto mint_snapshot_writer_session(Ctx const& ctx,
@@ -118,8 +64,6 @@ template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx>
     return mint_permissioned_session<ReaderProto<T>>(ctx, &handle);
 }
 
-// ── Session-handle type aliases (callers spell at struct/var sites) ──
-
 template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using WriterSessionHandle = decltype(mint_snapshot_writer_session<Snap>(std::declval<Ctx const&>(),
                                                                         std::declval<typename Snap::WriterHandle&>()));
@@ -127,8 +71,6 @@ using WriterSessionHandle = decltype(mint_snapshot_writer_session<Snap>(std::dec
 template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using ReaderSessionHandle = decltype(mint_snapshot_reader_session<Snap>(std::declval<Ctx const&>(),
                                                                         std::declval<typename Snap::ReaderHandle&>()));
-
-// ── Stream lambdas (blocking-spin glue for session-loop bodies) ──────
 
 inline constexpr auto blocking_publish = [](auto& hp, auto const& value) noexcept { hp->publish(value); };
 
@@ -140,8 +82,6 @@ inline constexpr auto blocking_try_load = [](auto& hp) noexcept {
         CRUCIBLE_SPIN_PAUSE;
     }
 };
-
-// ── Self-test ────────────────────────────────────────────────────────
 
 namespace detail::snapshot_session_self_test {
 

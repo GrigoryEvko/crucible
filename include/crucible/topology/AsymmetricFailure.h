@@ -1,13 +1,5 @@
 #pragma once
 
-// GAPS-127. Bounded asymmetric/gray failure classification.
-//
-// This header consumes already-measured probe outcomes. It does not send
-// packets, poll witnesses over the network, or mutate membership state. Those
-// side effects belong to CNT/PERF transport tasks and Canopy membership tasks.
-// The invariant here is one typed, bounded classification substrate over
-// local bidirectional probe legs plus multi-vantage witness reports.
-
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>

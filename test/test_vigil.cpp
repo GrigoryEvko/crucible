@@ -12,34 +12,31 @@
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
-// Build a minimal TraceRing::Entry for testing.
 static crucible::TraceRing::Entry make_entry(SchemaHash schema_hash) {
     crucible::TraceRing::Entry e{};
-    e.schema_hash      = schema_hash;
-    e.shape_hash       = ShapeHash{0x1234};
-    e.num_inputs       = 1;
-    e.num_outputs      = 1;
-    e.num_scalar_args  = 0;
-    e.op_flags         = 0;
+    e.schema_hash = schema_hash;
+    e.shape_hash = ShapeHash{0x1234};
+    e.num_inputs = 1;
+    e.num_outputs = 1;
+    e.num_scalar_args = 0;
+    e.op_flags = 0;
     return e;
 }
 
-// Build a minimal TensorMeta for one tensor (CPU, 1D float[8]).
 static crucible::TensorMeta make_meta() {
     crucible::TensorMeta m{};
-    m.ndim        = 1;
-    m.sizes[0]    = ::crucible::tensor_dim(8);
-    m.strides[0]  = ::crucible::tensor_dim(1);
-    m.dtype       = crucible::ScalarType::Float;
+    m.ndim = 1;
+    m.sizes[0] = ::crucible::tensor_dim(8);
+    m.strides[0] = ::crucible::tensor_dim(1);
+    m.dtype = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;
-    m.device_idx  = -1;
-    m.layout      = crucible::Layout::Strided;
-    m.data_ptr    = crucible::external_data_ptr(nullptr);
+    m.device_idx = -1;
+    m.layout = crucible::Layout::Strided;
+    m.data_ptr = crucible::external_data_ptr(nullptr);
     return m;
 }
 
-static std::filesystem::path object_path_for(const std::filesystem::path& root,
-                                             crucible::ContentHash hash) {
+static std::filesystem::path object_path_for(const std::filesystem::path& root, crucible::ContentHash hash) {
     char hex[16];
     uint64_t value = hash.raw();
     static constexpr char kHex[] = "0123456789abcdef";
@@ -51,12 +48,10 @@ static std::filesystem::path object_path_for(const std::filesystem::path& root,
 }
 
 int main() {
-    // ── Create temp directory for Cipher ─────────────────────────────
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";
     char* dir = mkdtemp(tmpdir);
     assert(dir != nullptr);
 
-    // ── Construct Vigil with persistence enabled ─────────────────────
     crucible::Vigil::Config cfg;
     cfg.cipher_path = dir;
     crucible::Vigil vigil(std::move(cfg));
@@ -65,22 +60,16 @@ int main() {
     assert(vigil.current_step() == 0);
     assert(vigil.active_region() == nullptr);
 
-    // ── Feed 15 ops (3 × 5 identical schema hashes) ──────────────────
-    //
-    // IterationDetector (K=5) fires after:
-    //   Ops  1-5:  builds signature (NOT a match, just records first K ops)
-    //   Ops  6-10: first match → candidate state (confirmed = true)
-    //   Ops 11-15: second match → confirmed boundary → RegionNode created
-    //
-    // Each op carries 2 TensorMeta (1 input + 1 output) so build_trace()
-    // can reconstruct a valid TraceGraph without a MetaLog miss.
+    // Fifteen ops, as three repeats of the same five schema hashes. The
+    // detector needs a signature of five, then a first match, then a second
+    // match before it confirms a boundary, so three repeats is the minimum
+    // that produces a region. Each op carries two tensor metas, one in and
+    // one out, or the trace cannot be rebuilt.
 
-    const SchemaHash schemas[5] = {
-        SchemaHash{0xAA01}, SchemaHash{0xBB02}, SchemaHash{0xCC03},
-        SchemaHash{0xDD04}, SchemaHash{0xEE05}
-    };
+    const SchemaHash schemas[5] = {SchemaHash{0xAA01}, SchemaHash{0xBB02}, SchemaHash{0xCC03}, SchemaHash{0xDD04},
+                                   SchemaHash{0xEE05}};
     const crucible::TensorMeta meta = make_meta();
-    const crucible::TensorMeta io_metas[2] = {meta, meta}; // [0]=input, [1]=output
+    const crucible::TensorMeta io_metas[2] = {meta, meta};  // [0]=input, [1]=output
 
     for (int iter = 0; iter < 3; iter++) {
         for (int j = 0; j < 5; j++) {
@@ -90,7 +79,6 @@ int main() {
         }
     }
 
-    // ── flush + wait for COMPILED mode ───────────────────────────────
     crucible::test::flush_and_wait_compiled(vigil);
 
     assert(vigil.is_compiled());
@@ -98,47 +86,36 @@ int main() {
     assert(vigil.current_step() >= 1);
     const crucible::RegionNode* active_region = vigil.active_region();
     const auto object_path = object_path_for(dir, active_region->content_hash);
-    assert(!std::filesystem::exists(object_path)
-           && "background Vigil callback must not pre-store Cipher objects");
+    assert(!std::filesystem::exists(object_path) && "background Vigil callback must not pre-store Cipher objects");
     assert(!std::filesystem::exists(std::string(dir) + "/HEAD")
            && "background Vigil callback must not advance Cipher HEAD");
 
-    // ── persist() → Cipher HEAD must be non-zero ─────────────────────
     const bool persisted = vigil.persist();
     assert(persisted && "persist() must succeed with a cipher_path set");
     assert(static_cast<bool>(vigil.head_hash()) && "Cipher HEAD must be non-zero after persist()");
-    assert(std::filesystem::exists(object_path)
-           && "foreground persist() must be the direct Cipher object writer");
+    assert(std::filesystem::exists(object_path) && "foreground persist() must be the direct Cipher object writer");
 
-    // Verify the HEAD file was actually written to disk.
     std::ifstream hf(std::string(dir) + "/HEAD");
     assert(hf.is_open() && "HEAD file must exist on disk after persist()");
     std::string head_hex;
     std::getline(hf, head_hex);
     assert(!head_hex.empty() && "HEAD file must be non-empty");
 
-    // ── replay() must call RegionExec exactly once ────────────────────
     int region_exec_count = 0;
     const crucible::RegionNode* exec_region_ptr = nullptr;
 
     const bool replayed = vigil.replay(
-        // GuardEval: no guards in this simple linear region.
+        // Guard evaluation. The region is linear, so there is no guard.
         [](const crucible::Guard&) -> int64_t { return 0; },
-        // RegionExec: count calls and capture the pointer.
+        // Region execution.
         [&region_exec_count, &exec_region_ptr](const crucible::RegionNode* r) {
             region_exec_count++;
             exec_region_ptr = r;
         });
 
     assert(replayed && "replay() must return true for a linear region");
-    assert(region_exec_count == 1
-           && "RegionExec must be called exactly once for a single-region DAG");
-    assert(exec_region_ptr == vigil.active_region()
-           && "replay() must execute the active region");
-
-    // ── Cleanup ───────────────────────────────────────────────────────
-    // Vigil destructor stops the background thread cleanly.
-    // (vigil goes out of scope at end of block → stop() called)
+    assert(region_exec_count == 1 && "RegionExec must be called exactly once for a single-region DAG");
+    assert(exec_region_ptr == vigil.active_region() && "replay() must execute the active region");
 
     std::filesystem::remove_all(dir);
 

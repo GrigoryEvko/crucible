@@ -1,5 +1,3 @@
-// Focused session self-test TU for protocol-subtype invariants.
-
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
 #include <crucible/sessions/SessionSubtype.h>

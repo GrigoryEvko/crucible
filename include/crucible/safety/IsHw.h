@@ -1,18 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_hw_v ──────────────────────────────
-//
-// FIXY-V-254 — wrapper-detection predicate for `Hw<Tier, T>` (the
-// V-254 HwInstruction-axis carrier).  Mechanical sibling of IsVendor /
-// IsResidencyHeat — the partial spec captures the HwInstruction NTTP
-// tier alongside the wrapped type, so downstream dispatchers can read
-// the pinned instruction-capability tier off the type without
-// instantiating the wrapper.
-//
-// The detector keys on the wrapper class identity, not the lattice
-// value: an `Hw<Vectorizable, T>` and a look-alike struct carrying an
-// HwInstruction field are NOT confused.
-
 #include <crucible/safety/Hw.h>
 
 #include <type_traits>
@@ -51,8 +38,6 @@ using hw_value_t = typename detail::is_hw_impl<std::remove_cvref_t<T>>::value_ty
 template <typename T>
     requires is_hw_v<T>
 inline constexpr HwInstruction_v hw_tier_v = detail::is_hw_impl<std::remove_cvref_t<T>>::tier;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_hw_self_test {
 

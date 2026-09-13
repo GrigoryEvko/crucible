@@ -1,79 +1,5 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// Topology — hardware introspection for the cost model
-//
-// One-shot startup probe of the host's compute hierarchy.  Parses
-// Linux sysfs (or falls back to compile-time constants on non-Linux /
-// /sys-less containers) into a cached singleton.  Provides cache
-// sizes, core counts, L3 grouping, and NUMA distance matrix to the
-// AdaptiveScheduler (SEPLOG-C3) and to `should_parallelize` in
-// safety/Workload.h (currently using hardcoded constants).
-//
-// ─── The cost-model decision rule the Topology supports ────────────
-//
-//   ws = workload's total read+write bytes
-//
-//   if ws < l1d_per_core_bytes     → SEQUENTIAL  (already L1-resident)
-//   if ws < l2_per_core_bytes      → SEQUENTIAL  (already L2-private)
-//   if ws < l3_total_bytes / 8     → PARALLEL ≤ cores_per_socket
-//   if ws ≥ l3_total_bytes (DRAM)  → PARALLEL = min(num_cores,
-//                                                    ws / l2_per_core_bytes)
-//                                    with NUMA-local affinity
-//
-// The cache thresholds come from Topology; the cost model (SEPLOG-C2)
-// applies them.  Without Topology, the cost model has only generic
-// fallback constants — Topology gives it ground truth.
-//
-// ─── What Topology provides (and explicitly does NOT) ──────────────
-//
-// Provides:
-//   * Cache hierarchy: L1d, L2, L3, cache-line size
-//   * Core counts: physical cores + SMT threads
-//   * L3 groups: which cores share which L3 instance (= socket boundary)
-//   * NUMA: node count, distance matrix, CPUs per node
-//
-// Does NOT (yet) provide:
-//   * NUMA-local allocation (`numa_alloc_onnode` — needs libnuma; stub
-//     returns the cores-on-node CPU set, leaving allocation to caller)
-//   * Per-thread current-node detection (`getcpu` syscall — defer)
-//   * Hugepage detection
-//   * GPU/accelerator topology (Mimic territory; orthogonal)
-//
-// ─── The fallback discipline ────────────────────────────────────────
-//
-// On non-Linux, container without /sys, or sysfs read failure: the
-// constructor logs once to stderr (in debug only) and populates
-// reasonable defaults:
-//
-//   l1d  = 32 KB
-//   l2   = 1 MB
-//   l3   = 32 MB
-//   line = 64 bytes
-//   cores   = std::thread::hardware_concurrency() (always works)
-//   threads = same
-//   numa_nodes = 1
-//   numa_distance(0, 0) = 10
-//
-// `source()` returns Source::Fallback so callers can tell.  The
-// fallback values are conservative for cost-model decisions: they
-// underestimate cache size, biasing toward parallelism (which is the
-// safer error to make — over-parallelising at small workloads
-// regresses by ~2× whereas under-parallelising at large workloads
-// loses ~Nx).
-//
-// ─── Singleton lifetime ─────────────────────────────────────────────
-//
-// `Topology::instance()` returns a const reference to a function-
-// local static.  C++11 guarantees thread-safe initialisation.  The
-// probe runs exactly once, on the first instance() call from any
-// thread; subsequent calls are zero-cost (atomic load + return).
-//
-// The class is Pinned (the singleton's address is the identity of
-// the topology data; copying or moving would create stale references
-// to invalidated cache).
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/Platform.h>
 #include <crucible/safety/Pinned.h>
 
@@ -113,9 +39,8 @@ namespace crucible::concurrent {
 
 namespace topology_detail {
 
-// Read entire file content as a trimmed string.  Returns empty on
-// failure (file missing, permission denied, etc.).  Trimming removes
-// trailing whitespace (sysfs files end with newline).
+// Empty on any failure to read.  The trailing newline every sysfs file ends
+// with is trimmed off.
 [[nodiscard]] inline std::string read_trimmed_(std::string_view path) noexcept {
     try {
         std::ifstream f{std::string{path}};
@@ -126,7 +51,6 @@ namespace topology_detail {
             if (!content.empty()) content += ' ';
             content += line;
         }
-        // Trim trailing whitespace.
         while (
             !content.empty()
             && (content.back() == '\n' || content.back() == ' ' || content.back() == '\t' || content.back() == '\r')) {
@@ -138,11 +62,10 @@ namespace topology_detail {
     }
 }
 
-// Parse "32K" / "1024K" / "32M" / "1G" / "12345" → bytes.  Returns 0
-// on parse failure.  Sysfs cache size files use 'K'/'M'/'G' suffixes.
+// Sysfs writes cache sizes with a K, M or G suffix, or none at all.  Zero on
+// a parse failure.
 [[nodiscard]] inline std::size_t parse_size_suffix_(std::string_view s) noexcept {
     if (s.empty()) return 0;
-    // Find the suffix.
     char suffix = '\0';
     std::string_view digits = s;
     if (s.back() == 'K' || s.back() == 'M' || s.back() == 'G' || s.back() == 'k' || s.back() == 'm'
@@ -165,20 +88,17 @@ namespace topology_detail {
     }
 }
 
-// Parse "0-3,8-11,16" → {0,1,2,3,8,9,10,11,16}.  Returns empty
-// vector on parse failure.  Used for sysfs `shared_cpu_list` and
-// `cpulist` files.
+// Sysfs writes CPU sets as comma-separated singletons and inclusive ranges,
+// as in "0-3,8-11,16".  Empty on a parse failure.
 [[nodiscard]] inline std::vector<int> parse_cpu_list_(std::string_view s) noexcept {
     std::vector<int> result;
     try {
         std::size_t pos = 0;
         while (pos < s.size()) {
-            // Skip leading whitespace/separators.
             while (pos < s.size() && (s[pos] == ' ' || s[pos] == ','))
                 ++pos;
             if (pos >= s.size()) break;
 
-            // Parse first number.
             int start = 0;
             auto [p1, ec1] = std::from_chars(s.data() + pos, s.data() + s.size(), start);
             if (ec1 != std::errc{}) return {};
@@ -200,7 +120,7 @@ namespace topology_detail {
     return result;
 }
 
-// Parse "10 20 20 30" → {10, 20, 20, 30}.  Used for NUMA distance row.
+// One row of the NUMA distance matrix: integers separated by spaces.
 [[nodiscard]] inline std::vector<int> parse_int_list_(std::string_view s) noexcept {
     std::vector<int> result;
     try {
@@ -221,9 +141,8 @@ namespace topology_detail {
     return result;
 }
 
-// Enumerate /sys/devices/system/cpu/cpu* directories that look like
-// "cpuNNN" (digits only; not "cpufreq" / "cpuidle" / etc.).  Returns
-// sorted vector of cpu IDs.
+// The CPU directory holds entries such as "cpufreq" and "cpuidle" alongside
+// the per-CPU ones, so only a "cpu" followed by digits alone counts.
 [[nodiscard]] inline std::vector<int> enumerate_cpus_() noexcept {
     std::vector<int> cpus;
 #if __has_include(<filesystem>)
@@ -236,7 +155,6 @@ namespace topology_detail {
             const std::string_view tail{name.data() + 3, name.size() - 3};
             int id = 0;
             auto [p, ec] = std::from_chars(tail.data(), tail.data() + tail.size(), id);
-            // Must consume entire tail (no trailing chars).
             if (ec != std::errc{} || p != tail.data() + tail.size()) continue;
             cpus.push_back(id);
         }
@@ -248,13 +166,8 @@ namespace topology_detail {
     return cpus;
 }
 
-// Probe sched_getaffinity for the count of CPUs THIS process is
-// allowed to run on.  Inside a Docker/Kubernetes/cgroup container,
-// this is typically smaller than the host's physical CPU count —
-// using `num_cores()` for parallelism would over-spawn threads.
-//
-// Returns 0 on platforms without sched_getaffinity (Mac, Windows);
-// callers fall back to hardware_concurrency.
+// Zero where the affinity call does not exist, which callers read as "ask the
+// standard library instead".
 [[nodiscard]] inline std::size_t probe_process_cpu_count_() noexcept {
 #if CRUCIBLE_HAS_SCHED_AFFINITY
     cpu_set_t mask;
@@ -266,9 +179,6 @@ namespace topology_detail {
     return 0;
 }
 
-// Probe page size via sysconf.  Always available on POSIX.  Standard
-// 4 KB on x86-64 / aarch64 with default kernel config; 16 KB on Apple
-// Silicon (macOS) and some ARM Linux distros.
 [[nodiscard]] inline std::size_t probe_page_size_() noexcept {
 #if CRUCIBLE_HAS_UNISTD
     const long s = sysconf(_SC_PAGESIZE);
@@ -278,22 +188,17 @@ namespace topology_detail {
 #endif
 }
 
-// Probe whether 2MB hugepages are usable by reading
-// /sys/kernel/mm/transparent_hugepage/enabled — typical contents
-// "always [madvise] never" or "[always] madvise never".  We accept
-// "always" or "madvise" as available (the latter requires explicit
-// MADV_HUGEPAGE per allocation, which Crucible's Arena could opt
-// into in future).
+// The kernel writes all three settings and brackets the active one, as in
+// "always [madvise] never".  Either "always" or "madvise" counts as available,
+// the second requiring the allocation to ask for it.
 [[nodiscard]] inline bool probe_hugepage_2mb_available_() noexcept {
     const auto contents = read_trimmed_("/sys/kernel/mm/transparent_hugepage/enabled");
     if (contents.empty()) return false;
-    // Look for [always] or [madvise] (selected option in brackets).
     return contents.find("[always]") != std::string::npos || contents.find("[madvise]") != std::string::npos;
 }
 
-// Probe CPU vendor + model from /proc/cpuinfo.  Reads first
-// matching field; assumes homogeneous CPUs (true for every
-// platform we ship to).
+// Only the first entry is read.  This assumes every CPU in the machine is the
+// same model.
 [[nodiscard]] inline std::pair<std::string, std::string> probe_cpu_vendor_and_model_() noexcept {
     std::string vendor, model;
     try {
@@ -318,7 +223,6 @@ namespace topology_detail {
     return {vendor, model};
 }
 
-// Enumerate /sys/devices/system/node/node* directories.
 [[nodiscard]] inline std::vector<int> enumerate_numa_nodes_() noexcept {
     std::vector<int> nodes;
 #if __has_include(<filesystem>)
@@ -344,13 +248,11 @@ namespace topology_detail {
 
 }  // namespace topology_detail
 
-// ── Topology singleton ──────────────────────────────────────────────
-
 class Topology : public safety::Pinned<Topology> {
 public:
     enum class Source : std::uint8_t {
-        Sysfs,  // probed Linux /sys successfully
-        Fallback,  // sysfs unavailable; using compile-time defaults
+        Sysfs,
+        Fallback,
     };
 
     struct Snapshot {
@@ -368,7 +270,6 @@ public:
         Source source = Source::Fallback;
     };
 
-    // Singleton accessor.  C++11-thread-safe function-local static.
     [[nodiscard]] static const Topology& instance() noexcept {
         static const Topology inst{};
         return inst;
@@ -396,60 +297,42 @@ public:
         };
     }
 
-    // ── Cache hierarchy ─────────────────────────────────────────────
-
     [[nodiscard]] std::size_t l1d_per_core_bytes() const noexcept { return l1d_; }
     [[nodiscard]] std::size_t l1i_per_core_bytes() const noexcept { return l1i_; }
     [[nodiscard]] std::size_t l2_per_core_bytes() const noexcept { return l2_; }
     [[nodiscard]] std::size_t l3_total_bytes() const noexcept { return l3_; }
     [[nodiscard]] std::size_t cache_line_bytes() const noexcept { return line_; }
 
-    // ── Core counts ─────────────────────────────────────────────────
-
     [[nodiscard]] std::size_t num_cores() const noexcept { return cores_; }
     [[nodiscard]] std::size_t num_smt_threads() const noexcept { return threads_; }
     [[nodiscard]] std::size_t smt_factor() const noexcept { return cores_ == 0 ? 1 : threads_ / cores_; }
 
-    // process_cpu_count — THE container/cgroup-respecting count.
-    // Returns the number of CPUs THIS process is allowed to run on
-    // per sched_getaffinity.  Inside Docker / Kubernetes / cgroup
-    // restrictions, this is typically smaller than num_cores().
-    //
-    // Cost-model decisions, thread pool sizing, and parallel_for
-    // factor selection MUST use this — not num_cores() — to avoid
-    // over-spawning threads inside containers.
-    //
-    // Falls back to num_smt_threads() when sched_getaffinity isn't
-    // available (Mac, Windows, /proc/self locked down).
+    // How many CPUs this process is allowed to run on, which under a container
+    // or a cgroup is fewer than the machine has.  Thread-pool sizing and every
+    // parallelism decision reads this rather than the core count, or it spawns
+    // threads the process is not permitted to spread onto.
     [[nodiscard]] std::size_t process_cpu_count() const noexcept { return process_cpus_; }
 
-    // ── Memory characteristics ──────────────────────────────────────
-
-    // Base page size (4096 on x86-64/aarch64; 16384 on Apple Silicon
-    // and some Pi 4 / Graviton ARM Linux distros).
+    // Probed rather than assumed: it is 4 KB on most hosts but 16 KB on some
+    // ARM ones.
     [[nodiscard]] std::size_t page_size_bytes() const noexcept { return page_size_; }
 
-    // Whether 2MB transparent hugepages are kernel-enabled (either
-    // "always" or "madvise" mode — the Arena could opt-in via
-    // madvise(MADV_HUGEPAGE) for large bump-pointer blocks).
+    // True when transparent hugepages are enabled, in either the always or the
+    // ask-for-it mode.
     [[nodiscard]] bool hugepage_2mb_available() const noexcept { return hugepage_2mb_; }
-
-    // ── CPU identity (diagnostic) ───────────────────────────────────
 
     [[nodiscard]] std::string_view cpu_vendor() const noexcept { return cpu_vendor_; }
     [[nodiscard]] std::string_view cpu_model_name() const noexcept { return cpu_model_; }
 
-    // ── L3 grouping ─────────────────────────────────────────────────
-    //
-    // Returns spans of cpu IDs sharing each L3 instance.  Outer span
-    // has one entry per L3 instance (= socket).  Inner spans contain
-    // the SMT thread IDs (not just physical cores) sharing that L3.
+    // One entry per L3 instance.  The inner spans list hardware thread ids,
+    // not physical cores, so a machine with symmetric multithreading reports
+    // each core more than once.
 
     [[nodiscard]] std::span<const std::vector<int>> l3_groups() const noexcept {
         return {l3_groups_.data(), l3_groups_.size()};
     }
 
-    // Largest L3-sharing group's size — proxy for cores-per-socket.
+    // An approximation: the largest group of threads sharing one L3.
     [[nodiscard]] std::size_t cores_per_socket() const noexcept {
         std::size_t m = 0;
         for (auto const& g : l3_groups_)
@@ -457,13 +340,9 @@ public:
         return m == 0 ? cores_ : m;
     }
 
-    // Alias of l3_groups() — the AMD-vocabulary name.  On AMD Zen 4/5
-    // each L3 instance corresponds to one CCD (Chiplet Complex Die);
-    // on Intel each L3 corresponds to one socket.  Same data either
-    // way; the alias documents intent at the call site.
+    // The same data under the name a chiplet-based part invites: there one L3
+    // bounds a die, where on a monolithic part it bounds a socket.
     [[nodiscard]] std::span<const std::vector<int>> cache_clusters() const noexcept { return l3_groups(); }
-
-    // ── NUMA topology ───────────────────────────────────────────────
 
     [[nodiscard]] std::size_t numa_nodes() const noexcept { return cores_on_node_.size(); }
 
@@ -483,19 +362,9 @@ public:
         return {cores_on_node_[n].data(), cores_on_node_[n].size()};
     }
 
-    // ── Probe origin diagnostic ─────────────────────────────────────
-
     [[nodiscard]] Source source() const noexcept { return source_; }
 
-    // ── Startup logging ─────────────────────────────────────────────
-    //
-    // Print a one-screen human-readable summary of the probed
-    // topology to `out`.  Intended for ops visibility at Keeper /
-    // Vessel / test startup; call once after first instance().
-    //
-    // Thread-safe (writes via a single fprintf burst per line; if
-    // multiple threads call concurrently the output may interleave
-    // but each line is intact).
+    // Concurrent callers can interleave, but each line arrives whole.
     void log_summary(FILE* out = stderr) const noexcept {
         std::fprintf(out,
                      "crucible::Topology(source=%s):\n"
@@ -512,10 +381,10 @@ public:
     }
 
 private:
-    // Fallback defaults — chosen conservatively.  Underestimating
-    // cache sizes biases the cost model toward parallelism, which is
-    // the safer error mode (over-parallel regresses ~2x; under-
-    // parallel loses ~Nx on DRAM-bound workloads).
+    // Deliberately small.  Understating the caches makes a workload look
+    // larger than the cache and so biases the cost model toward parallelism.
+    // Splitting a workload that did not need it costs a constant factor, while
+    // failing to split one that did costs a factor of the core count.
     static constexpr std::size_t kFallbackL1d = 32 * 1024;
     static constexpr std::size_t kFallbackL2 = 1024 * 1024;
     static constexpr std::size_t kFallbackL3 = 32ULL * 1024 * 1024;
@@ -538,35 +407,25 @@ private:
     std::vector<std::vector<int>> numa_distance_;
     Source source_ = Source::Fallback;
 
-    // Constructor probes Linux sysfs; falls back to defaults on
-    // any failure.  Marked noexcept — we never throw out, even on
-    // catastrophic /sys corruption (graceful fallback).
+    // Noexcept and total: any failure to read sysfs, however malformed, leaves
+    // the defaults in place rather than propagating out.
     Topology() noexcept {
-        // Always-available baseline: hardware_concurrency.
         const unsigned hw = std::thread::hardware_concurrency();
         cores_ = (hw == 0) ? 1 : hw;
         threads_ = cores_;
 
-        // Container/cgroup probe: sched_getaffinity tells us which
-        // CPUs THIS process is allowed on.  Critical for thread-pool
-        // sizing in Docker/Kubernetes — without it, num_cores()
-        // returns the host's CPU count and we over-spawn.
         const std::size_t allowed = topology_detail::probe_process_cpu_count_();
         process_cpus_ = (allowed > 0) ? allowed : threads_;
 
-        // Page size: sysconf(_SC_PAGESIZE).  Always available on POSIX.
         page_size_ = topology_detail::probe_page_size_();
 
-        // Hugepage availability: read /sys.  False on non-Linux or
-        // when transparent hugepage is disabled at the kernel level.
         hugepage_2mb_ = topology_detail::probe_hugepage_2mb_available_();
 
-        // CPU vendor + model from /proc/cpuinfo.  Empty on non-Linux.
         auto [vendor, model] = topology_detail::probe_cpu_vendor_and_model_();
         cpu_vendor_ = std::move(vendor);
         cpu_model_ = std::move(model);
 
-        // Fallback NUMA: single node, self-distance 10.
+        // One node, and the conventional distance from a node to itself.
         cores_on_node_.push_back({});
         numa_distance_.push_back({10});
         for (std::size_t i = 0; i < cores_; ++i) {
@@ -583,31 +442,24 @@ private:
 #endif
 };
 
-// ── Linux probe implementation (out-of-line for readability) ────────
-
 #if __has_include(<filesystem>)
 inline void Topology::probe_linux_() noexcept {
     using namespace topology_detail;
 
     const auto cpus = enumerate_cpus_();
-    if (cpus.empty()) return;  // no /sys; keep fallback
+    if (cpus.empty()) return;  // no sysfs: keep the fallback values
 
-    // CPU count from sysfs (more authoritative than hardware_concurrency
-    // when cgroup or hot-unplug applies — but only if it's positive).
+    // Sysfs beats the standard library's count when CPUs have been unplugged.
     threads_ = cpus.size();
 
-    // ── Cache hierarchy: read cpu0's caches ─────────────────────────
-    //
-    // Assume all cores have homogeneous cache hierarchy (true on every
-    // x86-64 / aarch64 platform we care about).  Asymmetric caches
-    // (e.g. Apple Silicon E vs P cores) would need per-core probing;
-    // defer until we ship on Apple Silicon.
+    // Reading one CPU's caches assumes every core has the same hierarchy.  A
+    // part that mixes performance and efficiency cores would need each core
+    // probed separately.
 
     {
         const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(cpus[0]) + "/cache";
         std::set<int> physical_cores;  // dedup via core_id
 
-        // Walk index0..indexN
         namespace fs = std::filesystem;
         try {
             if (!fs::exists(base)) return;
@@ -631,11 +483,9 @@ inline void Topology::probe_linux_() noexcept {
                 if (size == 0) continue;
 
                 if (level == 1) {
-                    // L1 has separate Data and Instruction caches.
-                    // Record both (l1d_ for cost model; l1i_ for
-                    // hot-function-fits-icache discipline per
-                    // CLAUDE.md §VIII).  Unified L1 (rare; some
-                    // ARM uarchs) sets both to the same value.
+                    // Sysfs reports the two halves of L1 as separate entries.
+                    // Some designs report one unified cache instead, which
+                    // stands for both.
                     if (type_str == "Data") {
                         l1d_ = size;
                     } else if (type_str == "Instruction") {
@@ -655,11 +505,8 @@ inline void Topology::probe_linux_() noexcept {
         }
     }
 
-    // ── Physical core count via core_id ─────────────────────────────
-    //
-    // SMT siblings share a core_id.  Counting unique core_ids gives
-    // the physical core count (vs threads_ which is logical thread
-    // count).
+    // Hardware threads on one core report the same core id, so the number of
+    // distinct ids is the number of physical cores.
 
     {
         std::set<int> physical_core_ids;
@@ -675,10 +522,8 @@ inline void Topology::probe_linux_() noexcept {
         }
     }
 
-    // ── L3 groups via shared_cpu_list on the L3 cache index ─────────
-    //
-    // For each cpu, find its L3 cache's shared_cpu_list (the set of
-    // cpus sharing that L3).  Deduplicate by sorting + comparing.
+    // Every CPU sharing one L3 reports the same set in shared_cpu_list, so
+    // sorting each set and discarding repeats leaves one entry per L3.
 
     {
         std::vector<std::vector<int>> all_groups;
@@ -704,7 +549,7 @@ inline void Topology::probe_linux_() noexcept {
                     if (seen.insert(group).second) {
                         all_groups.push_back(std::move(group));
                     }
-                    break;  // only need cpu's L3 (one per cpu)
+                    break;  // one L3 per CPU
                 }
             } catch (...) {
                 // skip this cpu
@@ -714,11 +559,6 @@ inline void Topology::probe_linux_() noexcept {
             l3_groups_ = std::move(all_groups);
         }
     }
-
-    // ── NUMA topology ───────────────────────────────────────────────
-    //
-    // Read each node's cpulist + distance row.  Replace fallback
-    // single-node only if probe yields >= 1 node.
 
     {
         const auto nodes = enumerate_numa_nodes_();
@@ -734,7 +574,7 @@ inline void Topology::probe_linux_() noexcept {
 
                 auto dist_row = parse_int_list_(read_trimmed_(base + "/distance"));
                 if (dist_row.empty()) {
-                    // Fallback row: self-distance only.
+                    // The conventional distances: 10 to itself, 20 elsewhere.
                     dist_row.assign(nodes.size(), 20);
                     if (static_cast<std::size_t>(node) < dist_row.size()) {
                         dist_row[static_cast<std::size_t>(node)] = 10;
@@ -754,10 +594,9 @@ inline void Topology::probe_linux_() noexcept {
 }
 #endif  // __has_include(<filesystem>)
 
-// ── Compile-time sanity ─────────────────────────────────────────────
-
 static_assert(std::is_class_v<Topology>);
-// Pinned (deleted move/copy) — singleton's address is the identity.
+// The address of the singleton is the identity of the probed data, so it
+// neither copies nor moves.
 static_assert(!std::is_copy_constructible_v<Topology>);
 static_assert(!std::is_move_constructible_v<Topology>);
 

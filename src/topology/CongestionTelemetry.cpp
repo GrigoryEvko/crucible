@@ -169,12 +169,6 @@ void record_sample(CongestionAggregate& aggregate, RttHistogram& rtt_hist, Bandw
     bw_hist.record(BandwidthHistogram::checked_value(bw_value));
 }
 
-// fixy-A5-031: single finalize step shared by aggregate_congestion and
-// harvest_per_link.  Pre-fix harvest_per_link omitted the sample_count
-// guard and divided unconditionally — a div-by-zero waiting for any
-// future record_sample filter (or for the obvious symmetric guard to
-// drift away from its sibling).  One helper, one guard, two call
-// sites — drift is now structurally impossible.
 void finalize_aggregate(CongestionAggregate& aggregate, RttHistogram& rtt_hist, BandwidthHistogram& bw_hist) noexcept {
     if (aggregate.sample_count == 0) {
         return;
@@ -241,13 +235,11 @@ std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd)
     tcp_info info{};
     socklen_t info_len = sizeof(info);
     const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);
-    // fixy-A5-041: decode_tcp_info reads through tcpi_delivered_ce
-    // (and tcpi_max_pacing_rate, tcpi_delivery_rate, tcpi_min_rtt,
-    // tcpi_ca_state, ...) — every field after the first.  A short
-    // snapshot zero-fills the tail of `info` from our stack init, so
-    // the function returns zero-valued congestion data as if it were
-    // real kernel-reported state.  The gate must cover every field
-    // we semantically depend on; tcpi_delivered_ce is the latest.
+    // An older kernel returns a tcp_info shorter than this build's struct.
+    // The tail then keeps the zero-fill from the stack initialiser and reads
+    // back as genuine congestion data.  The length gate must therefore cover
+    // every field decode_tcp_info depends on, of which tcpi_delivered_ce is
+    // the last.
     constexpr socklen_t kRequiredInfoLen =
         static_cast<socklen_t>(offsetof(tcp_info, tcpi_delivered_ce) + sizeof(info.tcpi_delivered_ce));
     if (tcp_rc != 0 || info_len < kRequiredInfoLen) {

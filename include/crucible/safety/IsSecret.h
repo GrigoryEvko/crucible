@@ -1,11 +1,5 @@
 #pragma once
 
-// Wrapper-detection predicate for safety::Secret<T>.
-//
-// Secret<T> does not encode a declassification policy in the wrapper type;
-// policies are named at the consuming call site via declassify<Policy>().
-// This detector therefore extracts only the classified payload type.
-
 #include <crucible/safety/Secret.h>
 
 #include <type_traits>

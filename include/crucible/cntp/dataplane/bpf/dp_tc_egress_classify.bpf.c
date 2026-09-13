@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P dataplane TC egress classifier stub.
- *
- * Future role: enforce source-tagged dataplane TcEbpf flow class decisions at
- * clsact/egress. Current behavior: TC_ACT_OK for every skb.
- */
-
 #include "net_common.h"
 
 #ifndef TC_ACT_OK

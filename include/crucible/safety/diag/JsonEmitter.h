@@ -1,10 +1,8 @@
 #pragma once
 
-// safety/diag/JsonEmitter.h — structured runtime diagnostic emission.
-//
-// Cold-path companion to Runtime.h.  The default runtime sink keeps the
-// legacy single-line text format unless CRUCIBLE_DIAG_FORMAT=json is set;
-// this header owns the JSON record layout used by IDE/LSP tooling.
+// The record this emits is read by editor tooling, so the field names,
+// their nesting and the version number are an external contract. Adding
+// a field is safe. Renaming or removing one is not.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>
@@ -163,6 +161,10 @@ struct fixed_json_buffer {
 
 }  // namespace detail
 
+// The context is the composite the runtime emitter puts in its function
+// field, "<file>:<line>:<column>@<function>". Every shorter or malformed
+// form degrades rather than fails: whatever cannot be read as a position
+// stays whole in one of the two string fields.
 [[nodiscard]] inline SourcePosition parse_source_position(std::string_view context) noexcept {
     SourcePosition pos{};
     const std::size_t at = context.rfind('@');

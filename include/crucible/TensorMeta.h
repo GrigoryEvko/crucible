@@ -1,22 +1,9 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// TensorMeta — extracted from MerkleDag.h to break the include cycle
-// with DimHash.h.  TensorMeta is referenced by both MerkleDag (the
-// content-hash machinery + RegionNode body) and DimHash (the SIMD
-// dim-hash helper), and DimHash is itself called from inside
-// MerkleDag::compute_content_hash.  Putting TensorMeta in its own
-// leaf header lets both consumers include it without circular deps.
-//
-// Sizes and strides inlined for up to 8 dimensions, covering 99.9%
-// of real tensors.  Arena-allocated when > 8 dims needed (via
-// indirection at a higher level, not inside this struct).
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>  // FIXY-U-096x: tags::source::External
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096x: Tagged / Refined / bounded_above
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -25,20 +12,13 @@
 
 namespace crucible {
 
-// ── Maximum tensor dimensionality (#534 PROD-WRAP-5) ───────────────
-//
-// The TensorMeta layout inlines sizes[8] and strides[8].  Any tensor
-// with ndim > 8 cannot be expressed without out-of-bounds reads on
-// the inline arrays — the structural bound is 8 per definition,
-// independent of any runtime configuration.  `kMaxTensorNDim` names
-// the bound at the type level so call sites can reference it without
-// re-deriving the constant from the array sizeof.
+// The bound is structural, not a tuning knob: sizes and strides are inlined
+// arrays of this length, so any larger dimension count reads out of bounds.
 inline constexpr uint8_t kMaxTensorNDim = 8;
 
-// WRAP-TensorMeta-2 (#1035): Tensor storage addresses enter Crucible
-// from PyTorch / trace / disk boundaries.  The runtime only hashes and
-// compares them as opaque external cookies until a later validator
-// explicitly retags them.
+// A storage address arrives from a frontend, a trace or a file. It is hashed
+// and compared as an opaque cookie and never dereferenced, until some later
+// validator retags it.
 using ExternalDataPtr = ::crucible::fixy::wrap::Tagged<void*, ::crucible::fixy::tags::source::External>;
 
 static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
@@ -47,10 +27,8 @@ static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
 static_assert(std::is_trivially_copyable_v<ExternalDataPtr>);
 static_assert(std::is_standard_layout_v<ExternalDataPtr>);
 
-// WRAP-TensorMeta-7 (#1040): PyTorch grad_fn identity is process-local.
-// The value may depend on autograd object identity and must never be
-// treated as a persistent Family-A key.  Tagged keeps the 8-byte layout
-// but forces every consumer to acknowledge the Family-B lane.
+// This value derives from an autograd object's identity, which is local to
+// one process. It must never be used as a key that outlives the run.
 using GradFnHash = ::crucible::fixy::wrap::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
 
 static_assert(sizeof(GradFnHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
@@ -58,10 +36,11 @@ static_assert(sizeof(GradFnHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_fam
 static_assert(std::is_trivially_copyable_v<GradFnHash>);
 static_assert(std::is_standard_layout_v<GradFnHash>);
 
-// WRAP-TensorMeta-1 (#1034): sizes/strides are bounded by the largest
-// dtype byte width before storage-span arithmetic consumes them.  The
-// raw storage remains int64_t[8] so DimHash/StorageNbytes can keep
-// zero-copy SIMD loads; writes go through TensorDim.
+// An extent is capped so that multiplying it by the widest element size
+// cannot overflow int64_t, which is what the storage-span arithmetic does.
+// The lanes stay plain int64_t so a consumer can load the whole block into a
+// vector register without a copy. Only the write path goes through the
+// refined type.
 inline constexpr int64_t kTensorDimElementByteBudget = 16;
 inline constexpr int64_t kMaxTensorDimExtent = std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
 
@@ -118,34 +97,34 @@ static_assert(std::is_standard_layout_v<TensorDimArray>);
 [[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept { return dim.value(); }
 
 struct TensorMeta {
-    TensorDimArray sizes{};  // 64B — zero-init prevents hash instability
-    TensorDimArray strides{};  // 64B
-    ExternalDataPtr data_ptr{nullptr};  // 8B — external tensor pointer cookie
-    uint8_t ndim = 0;  // 1B — dimensions used (0..kMaxTensorNDim)
-    ScalarType dtype = ScalarType::Undefined;  // 1B
-    DeviceType device_type = DeviceType::CPU;  // 1B
-    int8_t device_idx = -1;  // 1B — -1 = CPU, 0+ = device index
-    Layout layout = Layout::Strided;  // 1B
-    bool requires_grad = false;  // 1B — tensor.requires_grad (forward/backward discriminator)
+    // The lanes past ndim are hashed along with the used ones, so they must
+    // start at zero or two equal tensors hash differently.
+    TensorDimArray sizes{};
+    TensorDimArray strides{};
+    ExternalDataPtr data_ptr{nullptr};
+    uint8_t ndim = 0;
+    ScalarType dtype = ScalarType::Undefined;
+    DeviceType device_type = DeviceType::CPU;
+    int8_t device_idx = -1;  // -1 is the host; 0 and up index a device
+    Layout layout = Layout::Strided;
+    bool requires_grad = false;
 
-    // Packed tensor flags (1B). Bit layout:
-    //   bit 0: is_leaf       — parameter or user-created tensor (no grad_fn)
-    //   bit 1: is_contiguous — contiguous memory layout
-    //   bit 2: has_grad_fn   — has autograd history (not a leaf)
-    //   bit 3: is_view       — shares storage with another tensor
-    //   bit 4: is_neg        — negation bit-view (torch._neg_view)
-    //   bit 5: is_conj       — conjugate bit-view
-    //   bit 6-7: reserved
-    uint8_t flags = 0;  // 1B — packed tensor flags (see meta_flags)
+    // Bit layout:
+    //   bit 0: is_leaf, a parameter or user-created tensor with no grad_fn
+    //   bit 1: is_contiguous
+    //   bit 2: has_grad_fn
+    //   bit 3: is_view, shares storage with another tensor
+    //   bit 4: is_neg, negation bit-view
+    //   bit 5: is_conj, conjugate bit-view
+    //   bits 6 and 7: reserved
+    uint8_t flags = 0;
 
-    uint8_t output_nr = 0;  // 1B — autograd output number (multi-output ops)
+    uint8_t output_nr = 0;
 
-    // ── Extended fields (24B) ─────────────────────────────────────────
-    int64_t storage_offset = 0;  // 8B — offset into underlying storage (view chains)
-    uint32_t version = 0;  // 4B — tensor data version counter (in-place mutation detection)
-    uint32_t storage_nbytes = 0;  // 4B — actual storage size in bytes (may differ from view)
-    GradFnHash grad_fn_hash{0};  // 8B — Family-B FNV-1a grad_fn class-name hash
-    //      0 = no grad_fn (leaf tensor or no autograd)
+    int64_t storage_offset = 0;
+    uint32_t version = 0;  // bumped on in-place mutation
+    uint32_t storage_nbytes = 0;  // size of the storage, which a view does not span
+    GradFnHash grad_fn_hash{0};  // 0 means no grad_fn
 };
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
@@ -167,77 +146,24 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
     return raw_grad_fn_hash(meta.grad_fn_hash);
 }
 
-// WRAP-StorageNbytes-5 (#1022): storage-span computation is an
-// adversarial-defense boundary over TensorMeta values read from
-// Vessel / traces / disk.  Callers must now explicitly mark the input
-// as source::External before compute_storage_nbytes* consumes it.
-// Reference payload keeps the 168-byte TensorMeta layout untouched.
 using ExternalTensorMeta = ::crucible::fixy::wrap::Tagged<const TensorMeta&, ::crucible::fixy::tags::source::External>;
 
 [[nodiscard]] inline constexpr ExternalTensorMeta external_tensor_meta(const TensorMeta& meta) noexcept {
     return ExternalTensorMeta{meta};
 }
 
-// ── Validated ndim carrier (#534 PROD-WRAP-5) ──────────────────────
-//
-// `TensorMeta::ndim` is structurally bounded by 8 (the inline
-// sizes[]/strides[] array length).  Reading a uint8_t from disk / FFI
-// / external trace can deliver ANY byte in [0, 255]; values in [9,
-// 255] are corrupt or adversarial and would, if propagated, produce:
-//
-//   * out-of-bounds reads on `sizes[d]` and `strides[d]` for d up to
-//     ndim (the inline arrays only hold 8 slots);
-//   * silent contract violation in compute_storage_nbytes (which
-//     carries `pre(meta.ndim <= kMaxTensorNDim)` and would terminate
-//     under semantic=enforce, or invoke [[assume]] UB under
-//     semantic=ignore on hot-path TUs);
-//   * incorrect SIMD strides in DimHash (which reads sizes[ndim]
-//     indices speculatively to fold the dim hash).
-//
-// `ValidNDim` is the type-level witness that ndim has been validated
-// at the boundary it crossed.  Construction is gated by Refined<>'s
-// `pre(bounded_above<8>(v))` clause; under semantic=enforce the
-// runtime path is contract violation -> handle_contract_violation
-// (logged + std::abort), under semantic=ignore the optimizer treats
-// the bound as `[[assume]]` and downstream loops vectorize on the
-// trip-count knowledge.
-//
-// `make_ndim` is a [[gnu::const]] factory that lifts the witness back
-// to a bare uint8_t for storage in the TensorMeta::ndim field —
-// preserving the 168-byte layout lock + trivially-relocatable
-// classification while routing every external write through the
-// ValidNDim ctor.
-//
-// Defense-in-depth: TraceLoader's existing `if (metas[i].ndim > 8)
-// [[unlikely]] return nullptr` runtime guard at line 321 is retained.
-// ValidNDim catches the byte at deserialize entry; the loader guard
-// catches it at iteration entry.  Both layers must reject for the
-// type-level bound and the runtime path to disagree.
-//
-// Cost: regime-1 EBO collapse — sizeof(ValidNDim) == sizeof(uint8_t).
+// A deserialized byte can hold any value in [0, 255]. Every write of ndim
+// from outside the process goes through this so the field keeps the bound the
+// inline arrays depend on. The factory hands back a bare uint8_t, which is
+// what keeps the struct layout unchanged.
 using ValidNDim = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>, uint8_t>;
 
 [[nodiscard, gnu::const]] inline constexpr uint8_t make_ndim(ValidNDim raw) noexcept { return raw.value(); }
 
-// ── read_meta dtype gate (sibling of #534 ndim / #892 kernel_id) ──────
-//
-// read_meta() reconstructs `m.dtype = r.r<ScalarType>()` from a single
-// untrusted byte.  ScalarType is a SPARSE int8_t enum (0..11, 15,
-// 23..26, -1) — a corrupt or version-skewed Cipher file can deliver a
-// gap value (e.g. 14) or an out-of-range byte.  The unchecked cast then
-// flows into element_size(), whose `default: std::unreachable()` makes
-// any non-enumerator value UNDEFINED BEHAVIOUR in the size-math path.
-//
-// `valid_scalar_type` is a named-case predicate (mirrors element_size's
-// switch, fails closed on unknown values); ValidScalarType's ctor
-// pre-clause rejects an invalid byte via P1494R5 partial-program
-// correctness, exactly as ValidNDim guards ndim.  make_scalar_type lifts
-// the witness back to a bare ScalarType for storage — the 168-byte
-// TensorMeta layout lock + wire format are unchanged (1 byte in, 1 byte
-// out; the read switches from r.r<ScalarType>() to r.r<int8_t>() which
-// consumes the identical byte).
-//
-// Cost: regime-1 EBO collapse — sizeof(ValidScalarType) == sizeof(int8_t).
+// ScalarType is sparse: many int8_t values are not enumerators. A consumer
+// that switches over every enumerator and marks the remainder unreachable
+// turns an unchecked byte from a file into undefined behaviour, so a
+// deserialized dtype passes through this predicate first. It fails closed.
 inline constexpr auto valid_scalar_type = [](auto raw) constexpr noexcept -> bool {
     switch (static_cast<ScalarType>(static_cast<std::int8_t>(raw))) {
         case ScalarType::Byte:
@@ -270,23 +196,10 @@ using ValidScalarType = ::crucible::fixy::wrap::Refined<valid_scalar_type, std::
     return static_cast<ScalarType>(raw.value());
 }
 
-// ── read_meta device_type gate (sibling of the dtype gate above) ──────
-//
-// read_meta() reconstructs `m.device_type = r.r<DeviceType>()` from a
-// single untrusted byte.  DeviceType is a SPARSE int8_t enum (0,1,2,6,9,
-// 13,14,20) so a corrupt or version-skewed Cipher byte can deliver a gap
-// value (e.g. 3) or an out-of-range byte.
-//
-// Unlike the dtype gate, this is NOT a UB fix — device_type has no
-// `std::unreachable()` consumer (it is equality-compared against
-// DeviceType::CPU and folded into the content hash).  It is a BOUNDARY
-// validation: device_type feeds the node's content hash (MerkleDag node
-// identity for KernelCache dedup / diff / merge), so an invalid byte
-// silently corrupts that identity.  Gating fail-closes on a corrupt
-// Cipher byte at deserialize entry, consistent with the ndim / kernel_id
-// / dtype gates, rather than admitting a node with a corrupted hash.
-//
-// Cost: regime-1 EBO collapse — sizeof(ValidDeviceType) == sizeof(int8_t).
+// DeviceType is sparse as well, but no consumer treats a gap value as
+// unreachable, so this gate is not about undefined behaviour. The field is
+// folded into a content hash that serves as a node identity, and an invalid
+// byte corrupts that identity without any other symptom.
 inline constexpr auto valid_device_type = [](auto raw) constexpr noexcept -> bool {
     switch (static_cast<DeviceType>(static_cast<std::int8_t>(raw))) {
         case DeviceType::CPU:
@@ -309,24 +222,10 @@ using ValidDeviceType = ::crucible::fixy::wrap::Refined<valid_device_type, std::
     return static_cast<DeviceType>(raw.value());
 }
 
-// ── read_meta layout gate (last enum reconstruction in read_meta) ─────
-//
-// read_meta() reconstructs `m.layout = r.r<Layout>()` from a single
-// untrusted byte.  Layout is a DENSE int8_t enum (Strided=0 .. SparseBsc=5)
-// but the byte is signed, so a corrupt or version-skewed Cipher byte can
-// be negative or above 5.  Like the device_type gate, this is NOT a UB
-// fix (Layout has no std::unreachable consumer) — it is BOUNDARY
-// validation: layout feeds the node content hash (Merkle identity), so an
-// invalid byte silently corrupts it.  The gate fail-closes, completing the
-// read_meta enum-validation family (ndim / kernel_id / dtype / device_type
-// / layout all validated; the numeric fields are not — every byte value
-// is a semantically valid offset/version, so they need no gate).
-//
-// A named-case switch (not bounded_above<5>) is used deliberately: a plain
-// `bounded_above<5>` over a SIGNED int8_t would wrongly accept negatives
-// (-1 <= 5), and the named cases stay correct if Layout gains ordinals.
-//
-// Cost: regime-1 EBO collapse — sizeof(ValidLayout) == sizeof(int8_t).
+// Layout is dense, so an upper bound would appear to be enough. It is not:
+// the byte is signed, and a bound of five accepts every negative value.
+// Naming the cases also survives Layout gaining an enumerator. Like the
+// device type, an invalid layout corrupts the content hash silently.
 inline constexpr auto valid_layout = [](auto raw) constexpr noexcept -> bool {
     switch (static_cast<Layout>(static_cast<std::int8_t>(raw))) {
         case Layout::Strided:

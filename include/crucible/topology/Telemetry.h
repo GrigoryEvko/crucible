@@ -1,13 +1,5 @@
 #pragma once
 
-// GAPS-112 substrate: per-NIC effective-capacity telemetry.
-//
-// This header intentionally admits already-collected Linux-visible facts
-// into bounded, typed storage. Live sysfs/procfs/netlink/tc harvesting is
-// a separate boundary; this substrate owns the typed accounting, effective
-// bandwidth calculation, and bounded history surface consumed by later
-// health and routing owners.
-
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>

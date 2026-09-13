@@ -1,20 +1,9 @@
-// Runtime + compile-time harness for safety/SessionEventLog.h and
-// safety/RecordingSessionHandle.h (task #404, SAFEINT-B15 from
-// misc/24_04_2026_safety_integration.md §15).
-//
-// Coverage:
-//   * Compile-time: SessionEvent layout invariants, strong-ID type
-//     safety, default_schema_hash distinguishes types, SessionEventLog
-//     is Pinned, OrderedAppendOnly contract pulled in via Mutation.h.
-//   * Runtime: SessionEventLog records + iterates; AtomicMonotonic
-//     step counter is monotonic; manual record_now stamps the session.
-//   * Runtime: RecordingSessionHandle wraps Send/Recv/Select/Offer/End
-//     and records each operation in order.  Worked example: a small
-//     request/reply protocol driven through both sides with a single
-//     event log capturing the full bilateral trace.
-//   * Worked: replay-determinism property — driving the same protocol
-//     twice produces step_id-shifted but otherwise identical event
-//     sequences.
+// The event log is meant to be a faithful record of a session: reading
+// the log back has to tell you exactly what the protocol did.  So most
+// of the tests here drive a real protocol through recording handles and
+// then assert on the log rather than on the protocol, and the strongest
+// of them drives the same protocol twice and demands that the two logs
+// agree on everything except the per-log step ids.
 
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
@@ -33,31 +22,20 @@ namespace {
 
 using namespace crucible::safety::proto;
 
-// ── Compile-time witnesses ─────────────────────────────────────────
-
+// 72 bytes is the cold-tier record layout.
 static_assert(sizeof(SessionEvent) == 72);
 static_assert(std::is_trivially_copyable_v<SessionEvent>);
 static_assert(session_op_name(SessionOp::Stop) == std::string_view{"Stop"});
-static_assert(session_op_name(SessionOp::Checkpoint_Base) ==
-              std::string_view{"Checkpoint_Base"});
-static_assert(session_op_name(SessionOp::Checkpoint_Rollback) ==
-              std::string_view{"Checkpoint_Rollback"});
-static_assert(session_op_name(SessionOp::Delegate) ==
-              std::string_view{"Delegate"});
-static_assert(session_op_name(SessionOp::Accept) ==
-              std::string_view{"Accept"});
-static_assert(session_op_name(SessionOp::StorePending) ==
-              std::string_view{"StorePending"});
-static_assert(session_op_name(SessionOp::StoreCommitted) ==
-              std::string_view{"StoreCommitted"});
-static_assert(session_op_name(SessionOp::LoadFromTier) ==
-              std::string_view{"LoadFromTier"});
-static_assert(session_op_name(SessionOp::TierPromote) ==
-              std::string_view{"TierPromote"});
-static_assert(session_op_name(SessionOp::TierDemote) ==
-              std::string_view{"TierDemote"});
-static_assert(session_op_name(SessionOp::TierRestore) ==
-              std::string_view{"TierRestore"});
+static_assert(session_op_name(SessionOp::Checkpoint_Base) == std::string_view{"Checkpoint_Base"});
+static_assert(session_op_name(SessionOp::Checkpoint_Rollback) == std::string_view{"Checkpoint_Rollback"});
+static_assert(session_op_name(SessionOp::Delegate) == std::string_view{"Delegate"});
+static_assert(session_op_name(SessionOp::Accept) == std::string_view{"Accept"});
+static_assert(session_op_name(SessionOp::StorePending) == std::string_view{"StorePending"});
+static_assert(session_op_name(SessionOp::StoreCommitted) == std::string_view{"StoreCommitted"});
+static_assert(session_op_name(SessionOp::LoadFromTier) == std::string_view{"LoadFromTier"});
+static_assert(session_op_name(SessionOp::TierPromote) == std::string_view{"TierPromote"});
+static_assert(session_op_name(SessionOp::TierDemote) == std::string_view{"TierDemote"});
+static_assert(session_op_name(SessionOp::TierRestore) == std::string_view{"TierRestore"});
 static_assert(!session_op_is_cipher(SessionOp::Send));
 static_assert(session_op_is_cipher(SessionOp::StorePending));
 static_assert(session_op_is_cipher(SessionOp::TierRestore));
@@ -68,68 +46,60 @@ static_assert(session_op_commits_cipher_head(SessionOp::TierDemote));
 static_assert(session_op_commits_cipher_head(SessionOp::TierRestore));
 
 constexpr auto kCipherEventWitness =
-    SessionEvent::cipher_tier_promote(
-        StepId{11}, crucible::ContentHash::from_raw(0x1234), 1, 2, 99);
+    SessionEvent::cipher_tier_promote(StepId{11}, crucible::ContentHash::from_raw(0x1234), 1, 2, 99);
 static_assert(kCipherEventWitness.is_cipher_event());
 static_assert(kCipherEventWitness.commits_cipher_head());
-static_assert(kCipherEventWitness.cipher_content_hash() ==
-              crucible::ContentHash::from_raw(0x1234));
+static_assert(kCipherEventWitness.cipher_content_hash() == crucible::ContentHash::from_raw(0x1234));
 static_assert(kCipherEventWitness.cipher_timestamp_ns() == 99);
 static_assert(kCipherEventWitness.cipher_from_tier() == 1);
 static_assert(kCipherEventWitness.cipher_to_tier() == 2);
 
-static_assert(default_schema_hash<int>          != default_schema_hash<long>);
-static_assert(default_schema_hash<int>          == default_schema_hash<int>);
+static_assert(default_schema_hash<int> != default_schema_hash<long>);
+static_assert(default_schema_hash<int> == default_schema_hash<int>);
 
 static_assert(!std::is_copy_constructible_v<SessionEventLog>);
 static_assert(!std::is_move_constructible_v<SessionEventLog>);
 
-// Strong-ID guards: distinct types not interconvertible.
 static_assert(!std::is_convertible_v<SessionTagId, RoleTagId>);
-static_assert(!std::is_convertible_v<RoleTagId,    SchemaHash>);
-static_assert(!std::is_convertible_v<StepId,       PayloadHash>);
-
-// ── Test: SessionEventLog basic record + iterate ───────────────────
+static_assert(!std::is_convertible_v<RoleTagId, SchemaHash>);
+static_assert(!std::is_convertible_v<StepId, PayloadHash>);
 
 int run_log_basic() {
     SessionEventLog log{SessionTagId{99}};
-    if (!log.empty())                     return 1;
-    if (log.session().value != 99u)       return 2;
+    if (!log.empty()) return 1;
+    if (log.session().value != 99u) return 2;
 
     log.record_now(SessionEvent{
         .from_role = RoleTagId{1},
-        .to_role   = RoleTagId{2},
-        .op        = SessionOp::Send,
+        .to_role = RoleTagId{2},
+        .op = SessionOp::Send,
     });
     log.record_now(SessionEvent{
         .from_role = RoleTagId{2},
-        .to_role   = RoleTagId{1},
-        .op        = SessionOp::Recv,
+        .to_role = RoleTagId{1},
+        .op = SessionOp::Recv,
     });
     log.record_now(SessionEvent{
         .from_role = RoleTagId{1},
-        .to_role   = RoleTagId{2},
-        .op        = SessionOp::Close,
+        .to_role = RoleTagId{2},
+        .op = SessionOp::Close,
     });
 
-    if (log.size() != 3)                                  return 3;
-    if (log[0].op != SessionOp::Send)                     return 4;
-    if (log[1].op != SessionOp::Recv)                     return 5;
-    if (log[2].op != SessionOp::Close)                    return 6;
+    if (log.size() != 3) return 3;
+    if (log[0].op != SessionOp::Send) return 4;
+    if (log[1].op != SessionOp::Recv) return 5;
+    if (log[2].op != SessionOp::Close) return 6;
 
-    // Step IDs strictly increasing.
-    if (!(log[0].step_id.value < log[1].step_id.value))   return 7;
-    if (!(log[1].step_id.value < log[2].step_id.value))   return 8;
+    if (!(log[0].step_id.value < log[1].step_id.value)) return 7;
+    if (!(log[1].step_id.value < log[2].step_id.value)) return 8;
 
-    // Session ID stamped automatically by record_now.
-    if (log[0].session.value != 99u)                       return 9;
-    if (log[1].session.value != 99u)                       return 10;
-    if (log[2].session.value != 99u)                       return 11;
+    // record_now stamps the session id, which the caller never supplied.
+    if (log[0].session.value != 99u) return 9;
+    if (log[1].session.value != 99u) return 10;
+    if (log[2].session.value != 99u) return 11;
 
     return 0;
 }
-
-// ── Test: monotonic step counter ───────────────────────────────────
 
 int run_step_counter_monotone() {
     SessionEventLog log{};
@@ -142,21 +112,19 @@ int run_step_counter_monotone() {
     return 0;
 }
 
-// ── Test: manual record (no auto-stamp) preserves caller's step ───
-
+// record() leaves the caller's step id and session alone, where
+// record_now() would overwrite both.
 int run_manual_record_preserves_stepid() {
     SessionEventLog log{SessionTagId{7}};
     SessionEvent ev{};
-    ev.step_id   = StepId{42};
-    ev.session   = SessionTagId{7};
-    ev.op        = SessionOp::Send;
+    ev.step_id = StepId{42};
+    ev.session = SessionTagId{7};
+    ev.op = SessionOp::Send;
     log.record(ev);
-    if (log[0].step_id.value != 42u)  return 1;
-    if (log[0].session.value != 7u)   return 2;
+    if (log[0].step_id.value != 42u) return 1;
+    if (log[0].session.value != 7u) return 2;
     return 0;
 }
-
-// ── Test: drain consumes the log, leaves empty ─────────────────────
 
 int run_drain_yields_storage() {
     SessionEventLog log{SessionTagId{1}};
@@ -165,19 +133,26 @@ int run_drain_yields_storage() {
     log.record_now(SessionEvent{.op = SessionOp::Close});
 
     auto drained = std::move(log).drain();
-    if (drained.size() != 3)                       return 1;
-    if (drained[0].op != SessionOp::Send)          return 2;
-    if (drained[2].op != SessionOp::Close)         return 3;
+    if (drained.size() != 3) return 1;
+    if (drained[0].op != SessionOp::Send) return 2;
+    if (drained[2].op != SessionOp::Close) return 3;
     return 0;
 }
 
-// ── Worked example: a request/reply protocol with both sides
-//    recorded into the SAME log ─────────────────────────────────────
+// Both sides of the request/reply exchange below record into one log,
+// so the log holds the whole bilateral trace rather than one party's
+// view of it.
 
-struct ReqMsg { int n; };
-struct RepMsg { int n; };
+struct ReqMsg {
+    int n;
+};
+struct RepMsg {
+    int n;
+};
 
-struct WireBuf { std::deque<int>* bytes = nullptr; };
+struct WireBuf {
+    std::deque<int>* bytes = nullptr;
+};
 
 constexpr RoleTagId kClient{1};
 constexpr RoleTagId kServer{2};
@@ -219,64 +194,51 @@ int run_request_reply_recorded() {
     auto client = mint_recording_session(std::move(client_bare), log, kClient, kServer);
     auto server = mint_recording_session(std::move(server_bare), log, kServer, kClient);
 
-    // Client sends request.
-    auto client_recv = std::move(client).send(
-        ReqMsg{42},
-        [](WireBuf& w, ReqMsg m) noexcept { w.bytes->push_back(m.n); });
+    auto client_recv =
+        std::move(client).send(ReqMsg{42}, [](WireBuf& w, ReqMsg m) noexcept { w.bytes->push_back(m.n); });
 
-    // Server recvs request, computes reply, sends.
-    auto [req, server_send] = std::move(server).recv(
-        [](WireBuf& w) noexcept -> ReqMsg {
-            ReqMsg m{w.bytes->front()};
-            w.bytes->pop_front();
-            return m;
-        });
+    auto [req, server_send] = std::move(server).recv([](WireBuf& w) noexcept -> ReqMsg {
+        ReqMsg m{w.bytes->front()};
+        w.bytes->pop_front();
+        return m;
+    });
 
-    auto server_end = std::move(server_send).send(
-        RepMsg{req.n * 2},
-        [](WireBuf& w, RepMsg m) noexcept { w.bytes->push_back(m.n); });
+    auto server_end =
+        std::move(server_send).send(RepMsg{req.n * 2}, [](WireBuf& w, RepMsg m) noexcept { w.bytes->push_back(m.n); });
 
-    // Client recvs reply, both close.
-    auto [rep, client_end] = std::move(client_recv).recv(
-        [](WireBuf& w) noexcept -> RepMsg {
-            RepMsg m{w.bytes->front()};
-            w.bytes->pop_front();
-            return m;
-        });
+    auto [rep, client_end] = std::move(client_recv).recv([](WireBuf& w) noexcept -> RepMsg {
+        RepMsg m{w.bytes->front()};
+        w.bytes->pop_front();
+        return m;
+    });
 
     if (rep.n != 84) return 1;
 
     auto c_buf = std::move(client_end).close();
     auto s_buf = std::move(server_end).close();
-    (void)c_buf; (void)s_buf;
+    (void)c_buf;
+    (void)s_buf;
 
-    // Verify the bilateral log: 6 events in step-monotonic order:
-    //   client.Send (req)
-    //   server.Recv (req)
-    //   server.Send (rep)
-    //   client.Recv (rep)
-    //   client.Close
-    //   server.Close
-    if (log.size() != 6)                                       return 2;
+    if (log.size() != 6) return 2;
 
-    // Check op + role on each entry.  Order-of-record is the order in
-    // which the operations executed in the test driver above; that's
-    // the ground truth.
-    if (log[0].op != SessionOp::Send  || log[0].from_role != kClient) return 3;
-    if (log[1].op != SessionOp::Recv  || log[1].to_role   != kServer) return 4;
-    if (log[2].op != SessionOp::Send  || log[2].from_role != kServer) return 5;
-    if (log[3].op != SessionOp::Recv  || log[3].to_role   != kClient) return 6;
+    // The expected order is the order the driver above executed the
+    // operations in, not the order the protocol type declares them.
+    if (log[0].op != SessionOp::Send || log[0].from_role != kClient) return 3;
+    if (log[1].op != SessionOp::Recv || log[1].to_role != kServer) return 4;
+    if (log[2].op != SessionOp::Send || log[2].from_role != kServer) return 5;
+    if (log[3].op != SessionOp::Recv || log[3].to_role != kClient) return 6;
     if (log[4].op != SessionOp::Close || log[4].from_role != kClient) return 7;
     if (log[5].op != SessionOp::Close || log[5].from_role != kServer) return 8;
 
-    // Schema hashes capture the payload type so a deserialiser knows
-    // what each event referred to.
+    // The schema hash is what tells a later reader which payload type
+    // each event carried.
     if (log[0].payload_schema != default_schema_hash<ReqMsg>) return 9;
     if (log[1].payload_schema != default_schema_hash<ReqMsg>) return 10;
     if (log[2].payload_schema != default_schema_hash<RepMsg>) return 11;
     if (log[3].payload_schema != default_schema_hash<RepMsg>) return 12;
 
-    // Step-id monotonicity across both sides.
+    // Two handles share one step counter, so the ids order the whole
+    // exchange and not each side separately.
     for (std::size_t i = 1; i < log.size(); ++i) {
         if (!(log[i - 1].step_id.value < log[i].step_id.value)) return 13;
     }
@@ -284,15 +246,11 @@ int run_request_reply_recorded() {
     return 0;
 }
 
-// ── Worked: request/reply over PSH wrapped in recording handle ─────
-//
-// fixy-A2-006 Phase 1 positive runtime witness.  The bare-handle
-// recording path is covered by run_request_reply_recorded above; this
-// test exercises the PSH overload of mint_recording_session that
-// permissioned channels rely on for audit.  EmptyPermSet keeps the
-// scope minimal — what's verified here is that wrapping a PSH does NOT
-// silently degrade the recording surface: the same 6 events appear in
-// the same order with the same payload schemas.
+// The same exchange again, this time over permissioned handles.  The
+// claim is that wrapping a permissioned handle does not degrade the
+// recording surface: the same six events, in the same order, with the
+// same payload schemas.  An empty permission set keeps the rest of the
+// test identical to the one above.
 
 int run_request_reply_psh_recorded() {
     namespace eff = crucible::effects;
@@ -307,50 +265,42 @@ int run_request_reply_psh_recorded() {
     SessionEventLog log{SessionTagId{2026}};
 
     constexpr eff::HotFgCtx kCtx{};
-    auto client_psh = mint_permissioned_session<ClientProto>(
-        kCtx, std::move(c_wire));
-    auto server_psh = mint_permissioned_session<ServerProto>(
-        kCtx, std::move(s_wire));
+    auto client_psh = mint_permissioned_session<ClientProto>(kCtx, std::move(c_wire));
+    auto server_psh = mint_permissioned_session<ServerProto>(kCtx, std::move(s_wire));
 
-    // PSH overload of mint_recording_session.
-    auto client = mint_recording_session(
-        std::move(client_psh), log, kClient, kServer);
-    auto server = mint_recording_session(
-        std::move(server_psh), log, kServer, kClient);
+    auto client = mint_recording_session(std::move(client_psh), log, kClient, kServer);
+    auto server = mint_recording_session(std::move(server_psh), log, kServer, kClient);
 
-    auto client_recv = std::move(client).send(
-        ReqMsg{21},
-        [](WireBuf& w, ReqMsg m) noexcept { w.bytes->push_back(m.n); });
+    auto client_recv =
+        std::move(client).send(ReqMsg{21}, [](WireBuf& w, ReqMsg m) noexcept { w.bytes->push_back(m.n); });
 
-    auto [req, server_send] = std::move(server).recv(
-        [](WireBuf& w) noexcept -> ReqMsg {
-            ReqMsg m{w.bytes->front()};
-            w.bytes->pop_front();
-            return m;
-        });
+    auto [req, server_send] = std::move(server).recv([](WireBuf& w) noexcept -> ReqMsg {
+        ReqMsg m{w.bytes->front()};
+        w.bytes->pop_front();
+        return m;
+    });
 
-    auto server_end = std::move(server_send).send(
-        RepMsg{req.n * 3},
-        [](WireBuf& w, RepMsg m) noexcept { w.bytes->push_back(m.n); });
+    auto server_end =
+        std::move(server_send).send(RepMsg{req.n * 3}, [](WireBuf& w, RepMsg m) noexcept { w.bytes->push_back(m.n); });
 
-    auto [rep, client_end] = std::move(client_recv).recv(
-        [](WireBuf& w) noexcept -> RepMsg {
-            RepMsg m{w.bytes->front()};
-            w.bytes->pop_front();
-            return m;
-        });
+    auto [rep, client_end] = std::move(client_recv).recv([](WireBuf& w) noexcept -> RepMsg {
+        RepMsg m{w.bytes->front()};
+        w.bytes->pop_front();
+        return m;
+    });
 
     if (rep.n != 63) return 1;
 
     auto c_buf = std::move(client_end).close();
     auto s_buf = std::move(server_end).close();
-    (void)c_buf; (void)s_buf;
+    (void)c_buf;
+    (void)s_buf;
 
-    if (log.size() != 6)                                              return 2;
-    if (log[0].op != SessionOp::Send  || log[0].from_role != kClient) return 3;
-    if (log[1].op != SessionOp::Recv  || log[1].to_role   != kServer) return 4;
-    if (log[2].op != SessionOp::Send  || log[2].from_role != kServer) return 5;
-    if (log[3].op != SessionOp::Recv  || log[3].to_role   != kClient) return 6;
+    if (log.size() != 6) return 2;
+    if (log[0].op != SessionOp::Send || log[0].from_role != kClient) return 3;
+    if (log[1].op != SessionOp::Recv || log[1].to_role != kServer) return 4;
+    if (log[2].op != SessionOp::Send || log[2].from_role != kServer) return 5;
+    if (log[3].op != SessionOp::Recv || log[3].to_role != kClient) return 6;
     if (log[4].op != SessionOp::Close || log[4].from_role != kClient) return 7;
     if (log[5].op != SessionOp::Close || log[5].from_role != kServer) return 8;
 
@@ -366,21 +316,21 @@ int run_request_reply_psh_recorded() {
     return 0;
 }
 
-// ── Worked: replay determinism property ────────────────────────────
-//
-// Driving the same protocol twice with identical inputs produces
-// identical event sequences (modulo step_id offset).  This is the
-// essence of bit-exact replay: the audit log fully captures the
-// protocol shape.
+// The strongest claim in the file.  If the log fully captures the
+// protocol shape, then two runs of the same protocol on the same inputs
+// must produce the same events.  Anything the log fails to capture, or
+// captures from outside the protocol, shows up as a difference here.
 
 int run_replay_determinism_property() {
     using P = Loop<Select<Send<int, Continue>, End>>;
 
     auto drive = [](SessionEventLog& log) {
-        struct R { int sentinel = 0; };
+        struct R {
+            int sentinel = 0;
+        };
         auto bare = mint_session_handle<P>(R{});
-        auto rec  = mint_recording_session(std::move(bare), log, kClient, kServer);
-        // pick<0> twice (Send branch), then pick<1> (End).
+        auto rec = mint_recording_session(std::move(bare), log, kClient, kServer);
+        // Branch 0 sends and loops, branch 1 ends.  Two sends, then out.
         auto h1 = std::move(rec).template select_local<0>();
         auto h2 = std::move(h1).send(11, [](R&, int) noexcept {});
         auto h3 = std::move(h2).template select_local<0>();
@@ -394,52 +344,43 @@ int run_replay_determinism_property() {
     drive(log_a);
     drive(log_b);
 
-    if (log_a.size() != log_b.size())  return 1;
+    if (log_a.size() != log_b.size()) return 1;
     for (std::size_t i = 0; i < log_a.size(); ++i) {
-        // Step ids are per-log-instance; compare everything else.
-        if (log_a[i].op             != log_b[i].op)             return 10 + int(i);
-        if (log_a[i].branch_index   != log_b[i].branch_index)   return 20 + int(i);
-        if (log_a[i].from_role      != log_b[i].from_role)      return 30 + int(i);
-        if (log_a[i].to_role        != log_b[i].to_role)        return 40 + int(i);
+        // Step ids count within one log, so the two runs cannot agree
+        // on them.  Everything else must match exactly.
+        if (log_a[i].op != log_b[i].op) return 10 + int(i);
+        if (log_a[i].branch_index != log_b[i].branch_index) return 20 + int(i);
+        if (log_a[i].from_role != log_b[i].from_role) return 30 + int(i);
+        if (log_a[i].to_role != log_b[i].to_role) return 40 + int(i);
         if (log_a[i].payload_schema != log_b[i].payload_schema) return 50 + int(i);
     }
-    // Expected sequence:
-    //   Select(0) — branch index 0 (Send)
-    //   Send       — payload_schema = hash<int>
-    //   Select(0)
-    //   Send
-    //   Select(1) — branch index 1 (End)
-    //   Close
-    if (log_a.size() != 6)                                          return 100;
+    if (log_a.size() != 6) return 100;
     if (log_a[0].op != SessionOp::Select || log_a[0].branch_index != 0) return 101;
-    if (log_a[1].op != SessionOp::Send)                             return 102;
+    if (log_a[1].op != SessionOp::Send) return 102;
     if (log_a[4].op != SessionOp::Select || log_a[4].branch_index != 1) return 103;
-    if (log_a[5].op != SessionOp::Close)                            return 104;
+    if (log_a[5].op != SessionOp::Close) return 104;
     return 0;
 }
 
-// ── Worked: payload hashing opt-in via specialisation ──────────────
-//
-// Demonstrates the per-type hash override path.  Real production code
-// for replay-strict audits supplies its own hasher; default is the
-// PayloadHash{0} sentinel.
+// Payload hashing is opt-in per type.  Without an override the log
+// stores a zero sentinel rather than a hash, so an audit that needs to
+// compare payloads has to supply its own hasher.
 
-struct HashedPayload { int n; };
+struct HashedPayload {
+    int n;
+};
 
 }  // anonymous namespace
 
-// Specialise default_payload_hash_fn for HashedPayload — must be in
-// the framework's namespace per the trait's declaration.
+// The override has to be declared in the namespace that declares the
+// primary template, which is why it sits apart from the type it is for.
 namespace crucible::safety::proto {
 
 template <>
-inline constexpr auto default_payload_hash_fn<HashedPayload> =
-    [](const HashedPayload& p) noexcept -> PayloadHash {
-        // Trivial hasher; real code uses Philox or FNV-1a.
-        return PayloadHash{
-            static_cast<uint64_t>(static_cast<int64_t>(p.n)) *
-            uint64_t{0x9E3779B97F4A7C15ULL}};
-    };
+inline constexpr auto default_payload_hash_fn<HashedPayload> = [](const HashedPayload& p) noexcept -> PayloadHash {
+    // Any deterministic function of the payload will do here.
+    return PayloadHash{static_cast<uint64_t>(static_cast<int64_t>(p.n)) * uint64_t{0x9E3779B97F4A7C15ULL}};
+};
 
 }  // namespace crucible::safety::proto
 
@@ -451,27 +392,21 @@ int run_payload_hash_opt_in() {
     using P = Send<HashedPayload, End>;
     struct R {};
     auto bare = mint_session_handle<P>(R{});
-    auto rec  = mint_recording_session(std::move(bare), log, kClient, kServer);
-    auto end  = std::move(rec).send(HashedPayload{7},
-                                    [](R&, HashedPayload) noexcept {});
+    auto rec = mint_recording_session(std::move(bare), log, kClient, kServer);
+    auto end = std::move(rec).send(HashedPayload{7}, [](R&, HashedPayload) noexcept {});
     (void)std::move(end).close();
 
-    if (log.size() != 2)                                            return 1;
-    // payload_hash for the HashedPayload Send is the user-specified
-    // value — non-zero, deterministic.
-    if (log[0].payload_hash.value == 0u)                            return 2;
-    const uint64_t expected =
-        static_cast<uint64_t>(int64_t{7}) * uint64_t{0x9E3779B97F4A7C15ULL};
-    if (log[0].payload_hash.value != expected)                      return 3;
-    // Close's payload hash remains the sentinel.
-    if (log[1].payload_hash.value != 0u)                            return 4;
+    if (log.size() != 2) return 1;
+    if (log[0].payload_hash.value == 0u) return 2;
+    const uint64_t expected = static_cast<uint64_t>(int64_t{7}) * uint64_t{0x9E3779B97F4A7C15ULL};
+    if (log[0].payload_hash.value != expected) return 3;
+    // Close carries no payload, so its hash stays the sentinel.
+    if (log[1].payload_hash.value != 0u) return 4;
     return 0;
 }
 
-// ── Worked: Offer + branch() recording through the wrapper ─────────
-
 int run_offer_branch_recorded() {
-    using OfferProto  = Offer<Recv<int, End>, End>;
+    using OfferProto = Offer<Recv<int, End>, End>;
     using SelectProto = dual_of_t<OfferProto>;
 
     SessionEventLog log{SessionTagId{1}};
@@ -485,15 +420,9 @@ int run_offer_branch_recorded() {
     auto sel = mint_recording_session(std::move(sel_bare), log, kClient, kServer);
     auto off = mint_recording_session(std::move(off_bare), log, kServer, kClient);
 
-    // Client picks branch 0 (Send<int, End> on its side, Recv<int, End> on
-    // server's side).  Sends 99, then closes.  Server branches on 0,
-    // recvs, closes.
     auto sel_send = std::move(sel).template select<0>(
-        [](WireBuf& w, std::size_t i) noexcept {
-            w.bytes->push_back(static_cast<int>(i));
-        });
-    auto sel_end = std::move(sel_send).send(
-        99, [](WireBuf& w, int v) noexcept { w.bytes->push_back(v); });
+        [](WireBuf& w, std::size_t i) noexcept { w.bytes->push_back(static_cast<int>(i)); });
+    auto sel_end = std::move(sel_send).send(99, [](WireBuf& w, int v) noexcept { w.bytes->push_back(v); });
 
     int recv_value = 0;
     std::move(off).branch(
@@ -504,13 +433,12 @@ int run_offer_branch_recorded() {
         },
         [&recv_value](auto handle) {
             using H = decltype(handle);
-            if constexpr (std::is_same_v<typename H::protocol,
-                                          Recv<int, End>>) {
-                auto [v, end_h] = std::move(handle).recv(
-                    [](WireBuf& w) noexcept -> int {
-                        int x = w.bytes->front(); w.bytes->pop_front();
-                        return x;
-                    });
+            if constexpr (std::is_same_v<typename H::protocol, Recv<int, End>>) {
+                auto [v, end_h] = std::move(handle).recv([](WireBuf& w) noexcept -> int {
+                    int x = w.bytes->front();
+                    w.bytes->pop_front();
+                    return x;
+                });
                 recv_value = v;
                 (void)std::move(end_h).close();
             } else {
@@ -522,120 +450,91 @@ int run_offer_branch_recorded() {
 
     if (recv_value != 99) return 1;
 
-    // Expected event sequence in driver order:
-    //   client.Select(0)
-    //   client.Send (int)
-    //   server.Offer(0)    — branch dispatched
-    //   server.Recv (int)
-    //   server.Close
-    //   client.Close
-    if (log.size() != 6)                                            return 2;
+    if (log.size() != 6) return 2;
     if (log[0].op != SessionOp::Select || log[0].branch_index != 0) return 3;
-    if (log[1].op != SessionOp::Send)                               return 4;
-    if (log[2].op != SessionOp::Offer  || log[2].branch_index != 0) return 5;
-    if (log[3].op != SessionOp::Recv)                               return 6;
-    if (log[4].op != SessionOp::Close)                              return 7;
-    if (log[5].op != SessionOp::Close)                              return 8;
+    if (log[1].op != SessionOp::Send) return 4;
+    if (log[2].op != SessionOp::Offer || log[2].branch_index != 0) return 5;
+    if (log[3].op != SessionOp::Recv) return 6;
+    if (log[4].op != SessionOp::Close) return 7;
+    if (log[5].op != SessionOp::Close) return 8;
     return 0;
 }
-
-// ── Worked: Stop event replay round-trip ───────────────────────────
 
 int run_stop_event_replay_roundtrip() {
     SessionEventLog log{SessionTagId{303}};
     constexpr RecoveryPathHash kRecovery{0xBADC0FFEE0DDF00DULL};
 
-    log.append_event(SessionEvent::stop(
-        kServer, kClient, kClient,
-        StopReasonKind::PeerCrashed,
-        kRecovery));
+    log.append_event(SessionEvent::stop(kServer, kClient, kClient, StopReasonKind::PeerCrashed, kRecovery));
 
-    if (log.size() != 1)                                      return 1;
+    if (log.size() != 1) return 1;
 
     auto replay = log.replay_iter();
     auto it = replay.begin();
-    if (it == replay.end())                                   return 2;
+    if (it == replay.end()) return 2;
 
     const SessionEvent replayed = *it;
     ++it;
-    if (it != replay.end())                                   return 3;
+    if (it != replay.end()) return 3;
 
     if (std::memcmp(&replayed, &log[0], sizeof(SessionEvent)) != 0) return 4;
-    if (replayed.session.value != 303u)                       return 5;
-    if (replayed.op != SessionOp::Stop)                       return 6;
-    if (replayed.from_role != kServer)                        return 7;
-    if (replayed.to_role != kClient)                          return 8;
-    if (replayed.stop_peer_tag() != kClient)                  return 9;
+    if (replayed.session.value != 303u) return 5;
+    if (replayed.op != SessionOp::Stop) return 6;
+    if (replayed.from_role != kServer) return 7;
+    if (replayed.to_role != kClient) return 8;
+    if (replayed.stop_peer_tag() != kClient) return 9;
     if (replayed.stop_reason_kind() != StopReasonKind::PeerCrashed) return 10;
-    if (replayed.stop_recovery_path_hash() != kRecovery)      return 11;
+    if (replayed.stop_recovery_path_hash() != kRecovery) return 11;
     return 0;
 }
 
-// ── Worked: RecordingSessionHandle<Stop> emits Stop, not Close ─────
-
+// Closing a Stop-typed handle records a Stop event, not a Close.
 int run_recording_stop_close_recorded() {
-    struct StopResource { int sentinel = 0; };
+    struct StopResource {
+        int sentinel = 0;
+    };
 
     SessionEventLog log{SessionTagId{404}};
     auto bare = mint_session_handle<Stop>(StopResource{17});
     auto rec = mint_recording_session(std::move(bare), log, kServer, kClient);
 
-    StopResource resource = std::move(rec).close(
-        StopReasonKind::PeerCrashed,
-        RecoveryPathHash{0x123456789ABCDEF0ULL});
+    StopResource resource = std::move(rec).close(StopReasonKind::PeerCrashed, RecoveryPathHash{0x123456789ABCDEF0ULL});
 
-    if (resource.sentinel != 17)                              return 1;
-    if (log.size() != 1)                                      return 2;
-    if (log[0].op != SessionOp::Stop)                         return 3;
-    if (log[0].from_role != kServer)                          return 4;
-    if (log[0].to_role != kClient)                            return 5;
-    if (log[0].stop_peer_tag() != kClient)                    return 6;
+    if (resource.sentinel != 17) return 1;
+    if (log.size() != 1) return 2;
+    if (log[0].op != SessionOp::Stop) return 3;
+    if (log[0].from_role != kServer) return 4;
+    if (log[0].to_role != kClient) return 5;
+    if (log[0].stop_peer_tag() != kClient) return 6;
     if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 7;
-    if (log[0].stop_recovery_path_hash().value !=
-        0x123456789ABCDEF0ULL)                                return 8;
+    if (log[0].stop_recovery_path_hash().value != 0x123456789ABCDEF0ULL) return 8;
     return 0;
 }
 
-// ── Worked: fixy-A2-008 — CrashClass tier round-trips through Stop ─
-//
-// Before the fix, `SessionEvent::stop()` dropped the protocol's
-// `Stop_g<C>` tier and `RecordingSessionHandle<Stop_g<C>>::close()`
-// emitted an Abort-tagged Stop event regardless of the source tier;
-// `record_crash_stop_` in the CrashWatched detour was wired the same
-// way, so replay could not distinguish the four BSYZ22 crash tiers
-// (Abort ⊑ Throw ⊑ ErrorReturn ⊑ NoThrow).  The fix encodes the tier
-// in `SessionEvent::pad[0]` and threads `C` through every record site.
-//
-// Coverage matrix:
-//   self-closed × {Abort, Throw, ErrorReturn, NoThrow}  — 4 cases
-//   peer-closed × {Abort, Throw, ErrorReturn}            — 3 cases
-// peer-closed × NoThrow is structurally inadmissible: CrashWatched
-// handles reject `CrashClass::NoThrow` at the mint gate per
-// `require_crash_watched_class_admissible_` (no-throw peers don't need
-// a runtime watcher).  That admission is verified separately by the
-// existing neg-compile fixtures; here we only assert the four/three
-// reachable rows of the matrix.
+// A Stop event carries the protocol's crash class, so replay can tell
+// the four tiers apart.  The matrix below is deliberately seven rows,
+// not eight: self-closed covers all four classes, but peer-closed
+// covers only three, because a crash-watched handle refuses the
+// no-throw class at its mint gate.  A peer that cannot throw needs no
+// runtime watcher, so that row does not exist to be tested.
 
 template <CrashClass C>
 int verify_self_closed_stop_tier_one(SessionTagId session_id) {
-    struct StopResource { int sentinel = 0; };
+    struct StopResource {
+        int sentinel = 0;
+    };
 
     SessionEventLog log{session_id};
     auto bare = mint_session_handle<Stop_g<C>>(StopResource{77});
-    auto rec  = mint_recording_session(std::move(bare), log,
-                                       kServer, kClient);
+    auto rec = mint_recording_session(std::move(bare), log, kServer, kClient);
 
-    StopResource resource = std::move(rec).close(
-        StopReasonKind::PeerCrashed,
-        RecoveryPathHash{0xFEEDFACECAFEBEEFULL});
+    StopResource resource = std::move(rec).close(StopReasonKind::PeerCrashed, RecoveryPathHash{0xFEEDFACECAFEBEEFULL});
 
-    if (resource.sentinel != 77)                            return 1;
-    if (log.size() != 1)                                    return 2;
-    if (log[0].op != SessionOp::Stop)                       return 3;
-    if (log[0].stop_crash_class() != C)                     return 4;
+    if (resource.sentinel != 77) return 1;
+    if (log.size() != 1) return 2;
+    if (log[0].op != SessionOp::Stop) return 3;
+    if (log[0].stop_crash_class() != C) return 4;
     if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 5;
-    if (log[0].stop_recovery_path_hash().value !=
-        0xFEEDFACECAFEBEEFULL)                              return 6;
+    if (log[0].stop_recovery_path_hash().value != 0xFEEDFACECAFEBEEFULL) return 6;
     return 0;
 }
 
@@ -648,84 +547,68 @@ int verify_peer_crash_stop_tier_one(SessionTagId session_id) {
     SessionEventLog log{session_id};
     bool transport_invoked = false;
 
-    auto bare    = mint_session_handle<P>(CrashWire{&wire, 555});
-    auto watched = mint_crash_watched_session<CrashPeer, C>(
-        std::move(bare), flag);
-    auto rec     = mint_recording_session(
-        std::move(watched), log, kClient, kServer);
+    auto bare = mint_session_handle<P>(CrashWire{&wire, 555});
+    auto watched = mint_crash_watched_session<CrashPeer, C>(std::move(bare), flag);
+    auto rec = mint_recording_session(std::move(watched), log, kClient, kServer);
 
     flag.signal();
 
-    auto result = std::move(rec).send(
-        3,
-        [&](CrashWire& w, int value) noexcept {
-            transport_invoked = true;
-            w.bytes->push_back(value);
-        });
+    auto result = std::move(rec).send(3, [&](CrashWire& w, int value) noexcept {
+        transport_invoked = true;
+        w.bytes->push_back(value);
+    });
 
-    if (result)                                             return 1;
-    if (transport_invoked)                                  return 2;
-    if (!wire.empty())                                      return 3;
-    if (log.size() != 1)                                    return 4;
-    if (log[0].op != SessionOp::Stop)                       return 5;
-    if (log[0].stop_crash_class() != C)                     return 6;
-    if (log[0].stop_peer_tag() != kServer)                  return 7;
+    if (result) return 1;
+    if (transport_invoked) return 2;
+    if (!wire.empty()) return 3;
+    if (log.size() != 1) return 4;
+    if (log[0].op != SessionOp::Stop) return 5;
+    if (log[0].stop_crash_class() != C) return 6;
+    if (log[0].stop_peer_tag() != kServer) return 7;
     if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 8;
     return 0;
 }
 
 int run_fixy_a2_008_crash_class_round_trip() {
-    // ── Row 1-4: self-closed × every CrashClass tier ────────────────
-    if (int rc = verify_self_closed_stop_tier_one<CrashClass::Abort>(
-            SessionTagId{8001}); rc != 0)        return 10 + rc;
-    if (int rc = verify_self_closed_stop_tier_one<CrashClass::Throw>(
-            SessionTagId{8002}); rc != 0)        return 20 + rc;
-    if (int rc = verify_self_closed_stop_tier_one<CrashClass::ErrorReturn>(
-            SessionTagId{8003}); rc != 0)        return 30 + rc;
-    if (int rc = verify_self_closed_stop_tier_one<CrashClass::NoThrow>(
-            SessionTagId{8004}); rc != 0)        return 40 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::Abort>(SessionTagId{8001}); rc != 0) return 10 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::Throw>(SessionTagId{8002}); rc != 0) return 20 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::ErrorReturn>(SessionTagId{8003}); rc != 0) return 30 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::NoThrow>(SessionTagId{8004}); rc != 0) return 40 + rc;
 
-    // ── Row 5-7: peer-closed × {Abort, Throw, ErrorReturn} ──────────
-    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::Abort>(
-            SessionTagId{8005}); rc != 0)        return 50 + rc;
-    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::Throw>(
-            SessionTagId{8006}); rc != 0)        return 60 + rc;
-    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::ErrorReturn>(
-            SessionTagId{8007}); rc != 0)        return 70 + rc;
+    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::Abort>(SessionTagId{8005}); rc != 0) return 50 + rc;
+    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::Throw>(SessionTagId{8006}); rc != 0) return 60 + rc;
+    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::ErrorReturn>(SessionTagId{8007}); rc != 0) return 70 + rc;
 
-    // ── Cross-tier anti-collapse witness ────────────────────────────
-    // Pre-fix behaviour returned Abort on every Stop event regardless
-    // of source tier.  A regression that reverted the fix would make
-    // every row above record Abort and these inequality witnesses
-    // would fire independent of the per-row equality checks.
+    // These two logs must disagree.  If the tier were dropped on the
+    // record path every event would carry one fixed class, and this
+    // check fires whichever class the collapse settles on.
     SessionEventLog throw_log{SessionTagId{8101}};
     {
-        struct R { int s = 0; };
+        struct R {
+            int s = 0;
+        };
         auto b = mint_session_handle<Stop_g<CrashClass::Throw>>(R{});
-        auto r = mint_recording_session(std::move(b), throw_log,
-                                        kServer, kClient);
-        (void)std::move(r).close(StopReasonKind::PeerCrashed,
-                                  RecoveryPathHash{});
+        auto r = mint_recording_session(std::move(b), throw_log, kServer, kClient);
+        (void)std::move(r).close(StopReasonKind::PeerCrashed, RecoveryPathHash{});
     }
     SessionEventLog noth_log{SessionTagId{8102}};
     {
-        struct R { int s = 0; };
+        struct R {
+            int s = 0;
+        };
         auto b = mint_session_handle<Stop_g<CrashClass::NoThrow>>(R{});
-        auto r = mint_recording_session(std::move(b), noth_log,
-                                        kServer, kClient);
-        (void)std::move(r).close(StopReasonKind::PeerCrashed,
-                                  RecoveryPathHash{});
+        auto r = mint_recording_session(std::move(b), noth_log, kServer, kClient);
+        (void)std::move(r).close(StopReasonKind::PeerCrashed, RecoveryPathHash{});
     }
-    if (throw_log[0].stop_crash_class() ==
-        noth_log[0].stop_crash_class())                     return 80;
-    if (throw_log[0].stop_crash_class() != CrashClass::Throw)   return 81;
-    if (noth_log[0].stop_crash_class() != CrashClass::NoThrow)  return 82;
+    if (throw_log[0].stop_crash_class() == noth_log[0].stop_crash_class()) return 80;
+    if (throw_log[0].stop_crash_class() != CrashClass::Throw) return 81;
+    if (noth_log[0].stop_crash_class() != CrashClass::NoThrow) return 82;
 
     return 0;
 }
 
-// ── Worked: Recording wrapper over CrashWatchedHandle happy path ───
-
+// A crash watch that never fires must not disturb the recording: the
+// ops appear as usual and no Stop event is emitted.
 int run_recording_crash_watched_happy_path_records_ops() {
     using P = Select<Send<int, End>, End>;
 
@@ -741,35 +624,29 @@ int run_recording_crash_watched_happy_path_records_ops() {
     static_assert(std::is_same_v<typename decltype(rec)::peer, CrashPeer>);
 
     auto selected = std::move(rec).template select<0>(
-        [](CrashWire& w, std::size_t branch) noexcept {
-            w.bytes->push_back(static_cast<int>(branch));
-        });
-    if (!selected)                                             return 1;
+        [](CrashWire& w, std::size_t branch) noexcept { w.bytes->push_back(static_cast<int>(branch)); });
+    if (!selected) return 1;
 
-    auto sent = std::move(*selected).send(
-        42,
-        [](CrashWire& w, int value) noexcept {
-            w.bytes->push_back(value);
-        });
-    if (!sent)                                                 return 2;
+    auto sent = std::move(*selected).send(42, [](CrashWire& w, int value) noexcept { w.bytes->push_back(value); });
+    if (!sent) return 2;
 
     CrashWire recovered = std::move(*sent).close();
-    if (recovered.session_id != 71)                            return 3;
-    if (wire.size() != 2 || wire[0] != 0 || wire[1] != 42)      return 4;
+    if (recovered.session_id != 71) return 3;
+    if (wire.size() != 2 || wire[0] != 0 || wire[1] != 42) return 4;
 
-    if (log.size() != 3)                                       return 5;
+    if (log.size() != 3) return 5;
     if (log[0].op != SessionOp::Select || log[0].branch_index != 0) return 6;
-    if (log[1].op != SessionOp::Send)                          return 7;
-    if (log[1].payload_schema != default_schema_hash<int>)     return 8;
-    if (log[2].op != SessionOp::Close)                         return 9;
+    if (log[1].op != SessionOp::Send) return 7;
+    if (log[1].payload_schema != default_schema_hash<int>) return 8;
+    if (log[2].op != SessionOp::Close) return 9;
     for (const SessionEvent& event : log) {
-        if (event.op == SessionOp::Stop)                       return 10;
+        if (event.op == SessionOp::Stop) return 10;
     }
     return 0;
 }
 
-// ── Worked: CrashWatchedHandle peer death records Stop only ────────
-
+// When the peer dies before a send, the transport must not run at all
+// and the log must show the Stop alone, with no Send before it.
 int run_recording_crash_watched_send_crash_records_stop_only() {
     using P = Send<int, End>;
 
@@ -784,29 +661,27 @@ int run_recording_crash_watched_send_crash_records_stop_only() {
 
     flag.signal();
 
-    auto result = std::move(rec).send(
-        9,
-        [&](CrashWire& w, int value) noexcept {
-            transport_invoked = true;
-            w.bytes->push_back(value);
-        });
+    auto result = std::move(rec).send(9, [&](CrashWire& w, int value) noexcept {
+        transport_invoked = true;
+        w.bytes->push_back(value);
+    });
 
-    if (result)                                                return 1;
-    if (result.error().resource.session_id != 81)              return 2;
-    if (transport_invoked)                                     return 3;
-    if (!wire.empty())                                         return 4;
+    if (result) return 1;
+    if (result.error().resource.session_id != 81) return 2;
+    if (transport_invoked) return 3;
+    if (!wire.empty()) return 4;
 
-    if (log.size() != 1)                                       return 5;
-    if (log[0].op != SessionOp::Stop)                          return 6;
-    if (log[0].from_role != kClient)                           return 7;
-    if (log[0].to_role != kServer)                             return 8;
-    if (log[0].stop_peer_tag() != kServer)                     return 9;
+    if (log.size() != 1) return 5;
+    if (log[0].op != SessionOp::Stop) return 6;
+    if (log[0].from_role != kClient) return 7;
+    if (log[0].to_role != kServer) return 8;
+    if (log[0].stop_peer_tag() != kServer) return 9;
     if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 10;
     return 0;
 }
 
-// ── Worked: recv-side crash records Stop after prior success ───────
-
+// A crash partway through leaves the successful operations in the log
+// and appends the Stop after them.
 int run_recording_crash_watched_recv_crash_records_stop() {
     using P = Send<int, Recv<int, End>>;
 
@@ -819,36 +694,30 @@ int run_recording_crash_watched_recv_crash_records_stop() {
     auto watched = mint_crash_watched_session<CrashPeer>(std::move(bare), flag);
     auto rec = mint_recording_session(std::move(watched), log, kClient, kServer);
 
-    auto sent = std::move(rec).send(
-        5,
-        [](CrashWire& w, int value) noexcept {
-            w.bytes->push_back(value);
-        });
-    if (!sent)                                                 return 1;
-    if (log.size() != 1 || log[0].op != SessionOp::Send)       return 2;
+    auto sent = std::move(rec).send(5, [](CrashWire& w, int value) noexcept { w.bytes->push_back(value); });
+    if (!sent) return 1;
+    if (log.size() != 1 || log[0].op != SessionOp::Send) return 2;
 
     flag.signal();
 
-    auto received = std::move(*sent).recv(
-        [&](CrashWire& w) noexcept -> int {
-            recv_invoked = true;
-            return w.bytes->front();
-        });
+    auto received = std::move(*sent).recv([&](CrashWire& w) noexcept -> int {
+        recv_invoked = true;
+        return w.bytes->front();
+    });
 
-    if (received)                                              return 3;
-    if (received.error().resource.session_id != 91)            return 4;
-    if (recv_invoked)                                          return 5;
-    if (wire.size() != 1 || wire.front() != 5)                 return 6;
+    if (received) return 3;
+    if (received.error().resource.session_id != 91) return 4;
+    if (recv_invoked) return 5;
+    if (wire.size() != 1 || wire.front() != 5) return 6;
 
-    if (log.size() != 2)                                       return 7;
-    if (log[1].op != SessionOp::Stop)                          return 8;
-    if (log[1].from_role != kClient)                           return 9;
-    if (log[1].stop_peer_tag() != kServer)                     return 10;
+    if (log.size() != 2) return 7;
+    if (log[1].op != SessionOp::Stop) return 8;
+    if (log[1].from_role != kClient) return 9;
+    if (log[1].stop_peer_tag() != kServer) return 10;
     return 0;
 }
 
-// ── Worked: select/offer crash paths also record Stop ──────────────
-
+// The branch operations take the same crash path as send and recv.
 int run_recording_crash_watched_choice_crash_records_stop() {
     {
         using P = Select<End, End>;
@@ -864,11 +733,11 @@ int run_recording_crash_watched_choice_crash_records_stop() {
         flag.signal();
 
         auto result = std::move(rec).template select_local<1>();
-        if (result)                                            return 1;
-        if (result.error().resource.session_id != 101)         return 2;
-        if (log.size() != 1)                                   return 3;
-        if (log[0].op != SessionOp::Stop)                      return 4;
-        if (log[0].stop_peer_tag() != kServer)                 return 5;
+        if (result) return 1;
+        if (result.error().resource.session_id != 101) return 2;
+        if (log.size() != 1) return 3;
+        if (log[0].op != SessionOp::Stop) return 4;
+        if (log[0].stop_peer_tag() != kServer) return 5;
     }
 
     {
@@ -885,53 +754,47 @@ int run_recording_crash_watched_choice_crash_records_stop() {
         flag.signal();
 
         auto result = std::move(rec).template pick_local<0>();
-        if (result)                                            return 11;
-        if (result.error().resource.session_id != 111)         return 12;
-        if (log.size() != 1)                                   return 13;
-        if (log[0].op != SessionOp::Stop)                      return 14;
-        if (log[0].stop_peer_tag() != kClient)                 return 15;
+        if (result) return 11;
+        if (result.error().resource.session_id != 111) return 12;
+        if (log.size() != 1) return 13;
+        if (log[0].op != SessionOp::Stop) return 14;
+        if (log[0].stop_peer_tag() != kClient) return 15;
     }
 
     return 0;
 }
 
-// ── Worked: Checkpoint base/rollback event replay round-trip ───────
-
 int run_checkpoint_event_replay_roundtrip() {
     SessionEventLog log{SessionTagId{505}};
     constexpr CheckpointId kBaseId{11};
     constexpr CheckpointId kRollbackId{12};
-    constexpr auto kBaseHash =
-        crucible::ContentHash::from_raw(0x1010101010101010ULL);
-    constexpr auto kRollbackHash =
-        crucible::ContentHash::from_raw(0x2020202020202020ULL);
+    constexpr auto kBaseHash = crucible::ContentHash::from_raw(0x1010101010101010ULL);
+    constexpr auto kRollbackHash = crucible::ContentHash::from_raw(0x2020202020202020ULL);
 
-    log.append_event(SessionEvent::checkpoint_base(
-        kClient, kServer, kBaseId, kBaseHash));
-    log.append_event(SessionEvent::checkpoint_rollback(
-        kClient, kServer, kRollbackId, kRollbackHash));
+    log.append_event(SessionEvent::checkpoint_base(kClient, kServer, kBaseId, kBaseHash));
+    log.append_event(SessionEvent::checkpoint_rollback(kClient, kServer, kRollbackId, kRollbackHash));
 
-    if (log.size() != 2)                                            return 1;
+    if (log.size() != 2) return 1;
 
     auto replay = log.replay_iter();
     auto it = replay.begin();
-    if (it == replay.end())                                         return 2;
+    if (it == replay.end()) return 2;
     const SessionEvent base = *it++;
-    if (it == replay.end())                                         return 3;
+    if (it == replay.end()) return 3;
     const SessionEvent rollback = *it++;
-    if (it != replay.end())                                         return 4;
+    if (it != replay.end()) return 4;
 
-    if (std::memcmp(&base, &log[0], sizeof(SessionEvent)) != 0)      return 5;
-    if (std::memcmp(&rollback, &log[1], sizeof(SessionEvent)) != 0)  return 6;
+    if (std::memcmp(&base, &log[0], sizeof(SessionEvent)) != 0) return 5;
+    if (std::memcmp(&rollback, &log[1], sizeof(SessionEvent)) != 0) return 6;
 
-    if (base.op != SessionOp::Checkpoint_Base)                      return 7;
-    if (base.checkpoint_id() != kBaseId)                            return 8;
-    if (base.checkpoint_choice() != CheckpointChoice::Base)          return 9;
-    if (base.checkpoint_saved_state_content_hash() != kBaseHash)     return 10;
+    if (base.op != SessionOp::Checkpoint_Base) return 7;
+    if (base.checkpoint_id() != kBaseId) return 8;
+    if (base.checkpoint_choice() != CheckpointChoice::Base) return 9;
+    if (base.checkpoint_saved_state_content_hash() != kBaseHash) return 10;
 
-    if (rollback.op != SessionOp::Checkpoint_Rollback)              return 11;
-    if (rollback.checkpoint_id() != kRollbackId)                    return 12;
-    if (rollback.checkpoint_choice() != CheckpointChoice::Rollback)  return 13;
+    if (rollback.op != SessionOp::Checkpoint_Rollback) return 11;
+    if (rollback.checkpoint_id() != kRollbackId) return 12;
+    if (rollback.checkpoint_choice() != CheckpointChoice::Rollback) return 13;
     if (rollback.checkpoint_saved_state_content_hash() != kRollbackHash) {
         return 14;
     }
@@ -939,76 +802,64 @@ int run_checkpoint_event_replay_roundtrip() {
     return 0;
 }
 
-// ── Worked: RecordingSessionHandle<CheckpointedSession> events ─────
-
 int run_recording_checkpoint_paths_recorded() {
-    struct CheckpointResource { int sentinel = 0; };
+    struct CheckpointResource {
+        int sentinel = 0;
+    };
     using CkptProto = CheckpointedSession<End, End>;
-    constexpr auto kBaseHash =
-        crucible::ContentHash::from_raw(0xABCD000000000001ULL);
-    constexpr auto kRollbackHash =
-        crucible::ContentHash::from_raw(0xABCD000000000002ULL);
+    constexpr auto kBaseHash = crucible::ContentHash::from_raw(0xABCD000000000001ULL);
+    constexpr auto kRollbackHash = crucible::ContentHash::from_raw(0xABCD000000000002ULL);
 
     SessionEventLog base_log{SessionTagId{606}};
     auto base_bare = mint_session_handle<CkptProto>(CheckpointResource{31});
-    auto base_rec = mint_recording_session(
-        std::move(base_bare), base_log, kClient, kServer);
+    auto base_rec = mint_recording_session(std::move(base_bare), base_log, kClient, kServer);
     auto base_end = std::move(base_rec).base(CheckpointId{91}, kBaseHash);
     auto base_resource = std::move(base_end).close();
 
-    if (base_resource.sentinel != 31)                               return 1;
-    if (base_log.size() != 2)                                       return 2;
-    if (base_log[0].op != SessionOp::Checkpoint_Base)               return 3;
-    if (base_log[0].checkpoint_id() != CheckpointId{91})            return 4;
-    if (base_log[0].checkpoint_choice() != CheckpointChoice::Base)  return 5;
+    if (base_resource.sentinel != 31) return 1;
+    if (base_log.size() != 2) return 2;
+    if (base_log[0].op != SessionOp::Checkpoint_Base) return 3;
+    if (base_log[0].checkpoint_id() != CheckpointId{91}) return 4;
+    if (base_log[0].checkpoint_choice() != CheckpointChoice::Base) return 5;
     if (base_log[0].checkpoint_saved_state_content_hash() != kBaseHash) {
         return 6;
     }
-    if (base_log[1].op != SessionOp::Close)                         return 7;
+    if (base_log[1].op != SessionOp::Close) return 7;
 
     SessionEventLog rollback_log{SessionTagId{607}};
-    auto rollback_bare = mint_session_handle<CkptProto>(
-        CheckpointResource{41});
-    auto rollback_rec = mint_recording_session(
-        std::move(rollback_bare), rollback_log, kClient, kServer);
-    auto rollback_end = std::move(rollback_rec).rollback(
-        CheckpointId{92}, kRollbackHash);
+    auto rollback_bare = mint_session_handle<CkptProto>(CheckpointResource{41});
+    auto rollback_rec = mint_recording_session(std::move(rollback_bare), rollback_log, kClient, kServer);
+    auto rollback_end = std::move(rollback_rec).rollback(CheckpointId{92}, kRollbackHash);
     auto rollback_resource = std::move(rollback_end).close();
 
-    if (rollback_resource.sentinel != 41)                           return 8;
-    if (rollback_log.size() != 2)                                   return 9;
-    if (rollback_log[0].op != SessionOp::Checkpoint_Rollback)       return 10;
-    if (rollback_log[0].checkpoint_id() != CheckpointId{92})        return 11;
-    if (rollback_log[0].checkpoint_choice() !=
-        CheckpointChoice::Rollback)                                 return 12;
-    if (rollback_log[0].checkpoint_saved_state_content_hash() !=
-        kRollbackHash)                                              return 13;
-    if (rollback_log[1].op != SessionOp::Close)                     return 14;
+    if (rollback_resource.sentinel != 41) return 8;
+    if (rollback_log.size() != 2) return 9;
+    if (rollback_log[0].op != SessionOp::Checkpoint_Rollback) return 10;
+    if (rollback_log[0].checkpoint_id() != CheckpointId{92}) return 11;
+    if (rollback_log[0].checkpoint_choice() != CheckpointChoice::Rollback) return 12;
+    if (rollback_log[0].checkpoint_saved_state_content_hash() != kRollbackHash) return 13;
+    if (rollback_log[1].op != SessionOp::Close) return 14;
 
     return 0;
 }
-
-// ── Worked: Delegate/Accept event replay round-trip ────────────────
 
 int run_delegate_event_replay_roundtrip() {
     SessionEventLog log{SessionTagId{708}};
     constexpr auto kProtoHash = default_proto_hash<End>;
     constexpr InnerPermSetHash kPerms{0xC0FFEE1234567890ULL};
 
-    log.append_event(SessionEvent::delegate_handoff(
-        kClient, kServer, kProtoHash, kPerms));
-    log.append_event(SessionEvent::accept_handoff(
-        kServer, kClient, kProtoHash, kPerms));
+    log.append_event(SessionEvent::delegate_handoff(kClient, kServer, kProtoHash, kPerms));
+    log.append_event(SessionEvent::accept_handoff(kServer, kClient, kProtoHash, kPerms));
 
-    if (log.size() != 2)                                      return 1;
+    if (log.size() != 2) return 1;
 
     auto replay = log.replay_iter();
     auto it = replay.begin();
-    if (it == replay.end())                                   return 2;
+    if (it == replay.end()) return 2;
     const SessionEvent delegated = *it++;
-    if (it == replay.end())                                   return 3;
+    if (it == replay.end()) return 3;
     const SessionEvent accepted = *it++;
-    if (it != replay.end())                                   return 4;
+    if (it != replay.end()) return 4;
 
     if (std::memcmp(&delegated, &log[0], sizeof(SessionEvent)) != 0) {
         return 5;
@@ -1017,26 +868,28 @@ int run_delegate_event_replay_roundtrip() {
         return 6;
     }
 
-    if (delegated.op != SessionOp::Delegate)                  return 7;
-    if (delegated.from_role != kClient)                       return 8;
-    if (delegated.delegate_recipient_role_tag() != kServer)   return 9;
-    if (delegated.delegated_proto_hash() != kProtoHash)       return 10;
-    if (delegated.inner_perm_set_hash() != kPerms)            return 11;
+    if (delegated.op != SessionOp::Delegate) return 7;
+    if (delegated.from_role != kClient) return 8;
+    if (delegated.delegate_recipient_role_tag() != kServer) return 9;
+    if (delegated.delegated_proto_hash() != kProtoHash) return 10;
+    if (delegated.inner_perm_set_hash() != kPerms) return 11;
 
-    if (accepted.op != SessionOp::Accept)                     return 12;
-    if (accepted.to_role != kServer)                          return 13;
-    if (accepted.accept_sender_role_tag() != kClient)         return 14;
-    if (accepted.delegated_proto_hash() != kProtoHash)        return 15;
-    if (accepted.inner_perm_set_hash() != kPerms)             return 16;
+    if (accepted.op != SessionOp::Accept) return 12;
+    if (accepted.to_role != kServer) return 13;
+    if (accepted.accept_sender_role_tag() != kClient) return 14;
+    if (accepted.delegated_proto_hash() != kProtoHash) return 15;
+    if (accepted.inner_perm_set_hash() != kPerms) return 16;
 
     return 0;
 }
 
-// ── Worked: RecordingSessionHandle Delegate/Accept handoff events ──
-
 int run_recording_delegate_accept_recorded() {
-    struct CarrierResource { int transferred_endpoint = 0; };
-    struct DelegatedResource { int endpoint = 0; };
+    struct CarrierResource {
+        int transferred_endpoint = 0;
+    };
+    struct DelegatedResource {
+        int endpoint = 0;
+    };
 
     using DelegatedEndpoint = End;
     using DelegateCarrier = Delegate<DelegatedEndpoint, End>;
@@ -1044,305 +897,233 @@ int run_recording_delegate_accept_recorded() {
 
     constexpr InnerPermSetHash kPerms{0x1111222233334444ULL};
 
-    auto delegate_transport =
-        [](CarrierResource& carrier, DelegatedResource&& delegated) noexcept {
-            carrier.transferred_endpoint = delegated.endpoint;
-        };
-    auto accept_transport =
-        [](CarrierResource& carrier) noexcept -> DelegatedResource {
-            return DelegatedResource{carrier.transferred_endpoint};
-        };
+    auto delegate_transport = [](CarrierResource& carrier, DelegatedResource&& delegated) noexcept {
+        carrier.transferred_endpoint = delegated.endpoint;
+    };
+    auto accept_transport = [](CarrierResource& carrier) noexcept -> DelegatedResource {
+        return DelegatedResource{carrier.transferred_endpoint};
+    };
 
     SessionEventLog log{SessionTagId{709}};
 
-    auto delegate_bare =
-        mint_session_handle<DelegateCarrier>(CarrierResource{});
-    auto delegate_rec = mint_recording_session(
-        std::move(delegate_bare), log, kClient, kServer);
-    auto delegated_handle =
-        mint_session_handle<DelegatedEndpoint>(DelegatedResource{77});
+    auto delegate_bare = mint_session_handle<DelegateCarrier>(CarrierResource{});
+    auto delegate_rec = mint_recording_session(std::move(delegate_bare), log, kClient, kServer);
+    auto delegated_handle = mint_session_handle<DelegatedEndpoint>(DelegatedResource{77});
 
-    auto delegate_end = std::move(delegate_rec).delegate(
-        std::move(delegated_handle), delegate_transport, kPerms);
+    auto delegate_end = std::move(delegate_rec).delegate(std::move(delegated_handle), delegate_transport, kPerms);
     CarrierResource carrier_after_delegate = std::move(delegate_end).close();
 
-    if (carrier_after_delegate.transferred_endpoint != 77)     return 1;
+    if (carrier_after_delegate.transferred_endpoint != 77) return 1;
 
-    auto accept_bare =
-        mint_session_handle<AcceptCarrier>(carrier_after_delegate);
-    auto accept_rec = mint_recording_session(
-        std::move(accept_bare), log, kServer, kClient);
-    auto [accepted_handle, accept_end] =
-        std::move(accept_rec).accept(accept_transport, kPerms);
+    auto accept_bare = mint_session_handle<AcceptCarrier>(carrier_after_delegate);
+    auto accept_rec = mint_recording_session(std::move(accept_bare), log, kServer, kClient);
+    auto [accepted_handle, accept_end] = std::move(accept_rec).accept(accept_transport, kPerms);
 
-    DelegatedResource accepted_resource =
-        std::move(accepted_handle).close();
+    DelegatedResource accepted_resource = std::move(accepted_handle).close();
     CarrierResource carrier_after_accept = std::move(accept_end).close();
 
-    if (accepted_resource.endpoint != 77)                      return 2;
-    if (carrier_after_accept.transferred_endpoint != 77)        return 3;
-    if (log.size() != 4)                                       return 4;
+    if (accepted_resource.endpoint != 77) return 2;
+    if (carrier_after_accept.transferred_endpoint != 77) return 3;
+    if (log.size() != 4) return 4;
 
-    if (log[0].op != SessionOp::Delegate)                      return 5;
-    if (log[0].from_role != kClient)                           return 6;
-    if (log[0].delegate_recipient_role_tag() != kServer)       return 7;
-    if (log[0].delegated_proto_hash() !=
-        default_proto_hash<DelegatedEndpoint>)                 return 8;
-    if (log[0].inner_perm_set_hash() != kPerms)                return 9;
-    if (log[1].op != SessionOp::Close)                         return 10;
+    if (log[0].op != SessionOp::Delegate) return 5;
+    if (log[0].from_role != kClient) return 6;
+    if (log[0].delegate_recipient_role_tag() != kServer) return 7;
+    if (log[0].delegated_proto_hash() != default_proto_hash<DelegatedEndpoint>) return 8;
+    if (log[0].inner_perm_set_hash() != kPerms) return 9;
+    if (log[1].op != SessionOp::Close) return 10;
 
-    if (log[2].op != SessionOp::Accept)                        return 11;
-    if (log[2].to_role != kServer)                             return 12;
-    if (log[2].accept_sender_role_tag() != kClient)            return 13;
-    if (log[2].delegated_proto_hash() !=
-        default_proto_hash<DelegatedEndpoint>)                 return 14;
-    if (log[2].inner_perm_set_hash() != kPerms)                return 15;
-    if (log[3].op != SessionOp::Close)                         return 16;
+    if (log[2].op != SessionOp::Accept) return 11;
+    if (log[2].to_role != kServer) return 12;
+    if (log[2].accept_sender_role_tag() != kClient) return 13;
+    if (log[2].delegated_proto_hash() != default_proto_hash<DelegatedEndpoint>) return 14;
+    if (log[2].inner_perm_set_hash() != kPerms) return 15;
+    if (log[3].op != SessionOp::Close) return 16;
 
     return 0;
 }
 
-// ── Worked: EpochedDelegate / EpochedAccept emit dedicated SessionOps
-//           carrying MinEpoch + MinGeneration NTTPs (fixy-A2-005) ───
-
+// The epoched handoffs carry their minimum epoch and generation into
+// the log, so a replay can tell which thresholds were in force.
 int run_recording_epoched_delegate_accept_fidelity() {
-    struct CarrierResource { int transferred_endpoint = 0; };
-    struct DelegatedResource { int endpoint = 0; };
+    struct CarrierResource {
+        int transferred_endpoint = 0;
+    };
+    struct DelegatedResource {
+        int endpoint = 0;
+    };
 
     using DelegatedEndpoint = End;
-    // Two distinct (MinEpoch, MinGeneration) NTTP pairs.  A silent
-    // collapse to {0, 0} (the pre-fix behaviour, where `delegate_handoff`
-    // dropped the thresholds entirely) would tie pair-A's and pair-B's
-    // recorded events together — the cross-pair inequality witnesses
-    // below would fire immediately.
+    // Two distinct threshold pairs.  If the thresholds were dropped on
+    // the record path both pairs would log the same values, which the
+    // cross-pair inequalities at the end of this function catch.
     static constexpr std::uint64_t kEpochA = 5;
-    static constexpr std::uint64_t kGenA   = 3;
+    static constexpr std::uint64_t kGenA = 3;
     static constexpr std::uint64_t kEpochB = 7;
-    static constexpr std::uint64_t kGenB   = 11;
+    static constexpr std::uint64_t kGenB = 11;
 
-    using DelegateCarrierA =
-        EpochedDelegate<DelegatedEndpoint, End, kEpochA, kGenA>;
-    using AcceptCarrierA   =
-        EpochedAccept<DelegatedEndpoint,   End, kEpochA, kGenA>;
-    using DelegateCarrierB =
-        EpochedDelegate<DelegatedEndpoint, End, kEpochB, kGenB>;
-    using AcceptCarrierB   =
-        EpochedAccept<DelegatedEndpoint,   End, kEpochB, kGenB>;
+    using DelegateCarrierA = EpochedDelegate<DelegatedEndpoint, End, kEpochA, kGenA>;
+    using AcceptCarrierA = EpochedAccept<DelegatedEndpoint, End, kEpochA, kGenA>;
+    using DelegateCarrierB = EpochedDelegate<DelegatedEndpoint, End, kEpochB, kGenB>;
+    using AcceptCarrierB = EpochedAccept<DelegatedEndpoint, End, kEpochB, kGenB>;
 
-    // The Accept side requires a LoopCtx carrying an explicit-epoch
-    // proof (EpochCtx<MinE, MinG>) — without it, is_well_formed_v on
-    // EpochedAccept is false and mint_session_handle would refuse to
-    // construct.  Aggregate-construct the inner SessionHandle directly
-    // and let mint_recording_session deduce LoopCtx.
+    // The accept side is only well formed when its loop context carries
+    // an explicit epoch proof, so the plain mint refuses to build one.
     using RecipientCtxA = EpochCtx<kEpochA, kGenA>;
     using RecipientCtxB = EpochCtx<kEpochB, kGenB>;
 
     constexpr InnerPermSetHash kPerms{0xCAFEBABEDEADBEEFULL};
 
-    auto delegate_transport =
-        [](CarrierResource& carrier, DelegatedResource&& delegated) noexcept {
-            carrier.transferred_endpoint = delegated.endpoint;
-        };
-    auto accept_transport =
-        [](CarrierResource& carrier) noexcept -> DelegatedResource {
-            return DelegatedResource{carrier.transferred_endpoint};
-        };
+    auto delegate_transport = [](CarrierResource& carrier, DelegatedResource&& delegated) noexcept {
+        carrier.transferred_endpoint = delegated.endpoint;
+    };
+    auto accept_transport = [](CarrierResource& carrier) noexcept -> DelegatedResource {
+        return DelegatedResource{carrier.transferred_endpoint};
+    };
 
     SessionEventLog log{SessionTagId{4242}};
 
-    // ── Pair A: MinEpoch = 5, MinGeneration = 3 ─────────────────────
-    auto delegate_bare_a =
-        mint_session_handle<DelegateCarrierA>(CarrierResource{});
-    auto delegate_rec_a = mint_recording_session(
-        std::move(delegate_bare_a), log, kClient, kServer);
-    auto delegated_handle_a =
-        mint_session_handle<DelegatedEndpoint>(DelegatedResource{77});
+    auto delegate_bare_a = mint_session_handle<DelegateCarrierA>(CarrierResource{});
+    auto delegate_rec_a = mint_recording_session(std::move(delegate_bare_a), log, kClient, kServer);
+    auto delegated_handle_a = mint_session_handle<DelegatedEndpoint>(DelegatedResource{77});
 
-    auto delegate_end_a = std::move(delegate_rec_a).delegate(
-        std::move(delegated_handle_a), delegate_transport, kPerms);
-    CarrierResource carrier_after_delegate_a =
-        std::move(delegate_end_a).close();
-    if (carrier_after_delegate_a.transferred_endpoint != 77)     return 1;
+    auto delegate_end_a = std::move(delegate_rec_a).delegate(std::move(delegated_handle_a), delegate_transport, kPerms);
+    CarrierResource carrier_after_delegate_a = std::move(delegate_end_a).close();
+    if (carrier_after_delegate_a.transferred_endpoint != 77) return 1;
 
-    // Mint the Accept-side handle with the explicit EpochCtx LoopCtx
-    // so it flows through mint_recording_session unchanged.  fix-04:
-    // SessionHandle value ctors are private; detail::make_session_handle
-    // is the sole construction path, and it (unlike bare
-    // mint_session_handle) exposes the LoopCtx parameter the
-    // EpochedAccept body's fresh-EpochCtx static_assert requires.
-    auto accept_bare_a = detail::make_session_handle<
-        AcceptCarrierA, CarrierResource, RecipientCtxA>(
-        carrier_after_delegate_a);
-    auto accept_rec_a = mint_recording_session(
-        std::move(accept_bare_a), log, kServer, kClient);
-    auto [accepted_handle_a, accept_end_a] =
-        std::move(accept_rec_a).accept(accept_transport, kPerms);
+    // The handle's value constructors are private, so this factory is
+    // the only construction path that takes the loop context the accept
+    // side needs.
+    auto accept_bare_a =
+        detail::make_session_handle<AcceptCarrierA, CarrierResource, RecipientCtxA>(carrier_after_delegate_a);
+    auto accept_rec_a = mint_recording_session(std::move(accept_bare_a), log, kServer, kClient);
+    auto [accepted_handle_a, accept_end_a] = std::move(accept_rec_a).accept(accept_transport, kPerms);
 
-    DelegatedResource accepted_resource_a =
-        std::move(accepted_handle_a).close();
-    CarrierResource carrier_after_accept_a =
-        std::move(accept_end_a).close();
-    if (accepted_resource_a.endpoint != 77)                      return 2;
-    if (carrier_after_accept_a.transferred_endpoint != 77)        return 3;
+    DelegatedResource accepted_resource_a = std::move(accepted_handle_a).close();
+    CarrierResource carrier_after_accept_a = std::move(accept_end_a).close();
+    if (accepted_resource_a.endpoint != 77) return 2;
+    if (carrier_after_accept_a.transferred_endpoint != 77) return 3;
 
-    // ── Pair B: MinEpoch = 7, MinGeneration = 11 ────────────────────
-    auto delegate_bare_b =
-        mint_session_handle<DelegateCarrierB>(CarrierResource{});
-    auto delegate_rec_b = mint_recording_session(
-        std::move(delegate_bare_b), log, kClient, kServer);
-    auto delegated_handle_b =
-        mint_session_handle<DelegatedEndpoint>(DelegatedResource{99});
+    auto delegate_bare_b = mint_session_handle<DelegateCarrierB>(CarrierResource{});
+    auto delegate_rec_b = mint_recording_session(std::move(delegate_bare_b), log, kClient, kServer);
+    auto delegated_handle_b = mint_session_handle<DelegatedEndpoint>(DelegatedResource{99});
 
-    auto delegate_end_b = std::move(delegate_rec_b).delegate(
-        std::move(delegated_handle_b), delegate_transport, kPerms);
-    CarrierResource carrier_after_delegate_b =
-        std::move(delegate_end_b).close();
-    if (carrier_after_delegate_b.transferred_endpoint != 99)     return 4;
+    auto delegate_end_b = std::move(delegate_rec_b).delegate(std::move(delegated_handle_b), delegate_transport, kPerms);
+    CarrierResource carrier_after_delegate_b = std::move(delegate_end_b).close();
+    if (carrier_after_delegate_b.transferred_endpoint != 99) return 4;
 
-    auto accept_bare_b = detail::make_session_handle<
-        AcceptCarrierB, CarrierResource, RecipientCtxB>(
-        carrier_after_delegate_b);
-    auto accept_rec_b = mint_recording_session(
-        std::move(accept_bare_b), log, kServer, kClient);
-    auto [accepted_handle_b, accept_end_b] =
-        std::move(accept_rec_b).accept(accept_transport, kPerms);
+    auto accept_bare_b =
+        detail::make_session_handle<AcceptCarrierB, CarrierResource, RecipientCtxB>(carrier_after_delegate_b);
+    auto accept_rec_b = mint_recording_session(std::move(accept_bare_b), log, kServer, kClient);
+    auto [accepted_handle_b, accept_end_b] = std::move(accept_rec_b).accept(accept_transport, kPerms);
 
-    DelegatedResource accepted_resource_b =
-        std::move(accepted_handle_b).close();
-    CarrierResource carrier_after_accept_b =
-        std::move(accept_end_b).close();
-    if (accepted_resource_b.endpoint != 99)                      return 5;
-    if (carrier_after_accept_b.transferred_endpoint != 99)        return 6;
+    DelegatedResource accepted_resource_b = std::move(accepted_handle_b).close();
+    CarrierResource carrier_after_accept_b = std::move(accept_end_b).close();
+    if (accepted_resource_b.endpoint != 99) return 5;
+    if (carrier_after_accept_b.transferred_endpoint != 99) return 6;
 
-    // ── Event-log fidelity assertions ───────────────────────────────
-    // Each (delegate, accept) pair emits 4 events: EpochedDelegate,
-    // Close (sender's End continuation), EpochedAccept, Close
-    // (receiver's End continuation).  Two pairs → 8 events.
-    if (log.size() != 8)                                          return 7;
+    // Each pair emits four events: the handoff and the close on the
+    // sender side, then the same two on the receiver side.
+    if (log.size() != 8) return 7;
 
-    // Pair A: events 0-3
-    if (log[0].op != SessionOp::EpochedDelegate)                  return 10;
-    if (log[0].from_role != kClient)                              return 11;
-    if (log[0].delegate_recipient_role_tag() != kServer)          return 12;
-    if (log[0].delegated_proto_hash() !=
-        default_proto_hash<DelegatedEndpoint>)                    return 13;
-    if (log[0].inner_perm_set_hash() != kPerms)                   return 14;
-    if (log[0].epoched_min_epoch() != kEpochA)                    return 15;
-    if (log[0].epoched_min_generation() != kGenA)                 return 16;
-    if (log[1].op != SessionOp::Close)                            return 17;
+    if (log[0].op != SessionOp::EpochedDelegate) return 10;
+    if (log[0].from_role != kClient) return 11;
+    if (log[0].delegate_recipient_role_tag() != kServer) return 12;
+    if (log[0].delegated_proto_hash() != default_proto_hash<DelegatedEndpoint>) return 13;
+    if (log[0].inner_perm_set_hash() != kPerms) return 14;
+    if (log[0].epoched_min_epoch() != kEpochA) return 15;
+    if (log[0].epoched_min_generation() != kGenA) return 16;
+    if (log[1].op != SessionOp::Close) return 17;
 
-    if (log[2].op != SessionOp::EpochedAccept)                    return 18;
-    if (log[2].to_role != kServer)                                return 19;
-    if (log[2].accept_sender_role_tag() != kClient)               return 20;
-    if (log[2].delegated_proto_hash() !=
-        default_proto_hash<DelegatedEndpoint>)                    return 21;
-    if (log[2].inner_perm_set_hash() != kPerms)                   return 22;
-    if (log[2].epoched_min_epoch() != kEpochA)                    return 23;
-    if (log[2].epoched_min_generation() != kGenA)                 return 24;
-    if (log[3].op != SessionOp::Close)                            return 25;
+    if (log[2].op != SessionOp::EpochedAccept) return 18;
+    if (log[2].to_role != kServer) return 19;
+    if (log[2].accept_sender_role_tag() != kClient) return 20;
+    if (log[2].delegated_proto_hash() != default_proto_hash<DelegatedEndpoint>) return 21;
+    if (log[2].inner_perm_set_hash() != kPerms) return 22;
+    if (log[2].epoched_min_epoch() != kEpochA) return 23;
+    if (log[2].epoched_min_generation() != kGenA) return 24;
+    if (log[3].op != SessionOp::Close) return 25;
 
-    // Pair B: events 4-7 — only the epoch lanes need re-checking, the
-    // structural shape was already pinned by Pair A.
-    if (log[4].op != SessionOp::EpochedDelegate)                  return 30;
-    if (log[4].epoched_min_epoch() != kEpochB)                    return 31;
-    if (log[4].epoched_min_generation() != kGenB)                 return 32;
-    if (log[5].op != SessionOp::Close)                            return 33;
+    // The second pair only needs its epoch fields checked.  The
+    // structural shape is already pinned by the first.
+    if (log[4].op != SessionOp::EpochedDelegate) return 30;
+    if (log[4].epoched_min_epoch() != kEpochB) return 31;
+    if (log[4].epoched_min_generation() != kGenB) return 32;
+    if (log[5].op != SessionOp::Close) return 33;
 
-    if (log[6].op != SessionOp::EpochedAccept)                    return 34;
-    if (log[6].epoched_min_epoch() != kEpochB)                    return 35;
-    if (log[6].epoched_min_generation() != kGenB)                 return 36;
-    if (log[7].op != SessionOp::Close)                            return 37;
+    if (log[6].op != SessionOp::EpochedAccept) return 34;
+    if (log[6].epoched_min_epoch() != kEpochB) return 35;
+    if (log[6].epoched_min_generation() != kGenB) return 36;
+    if (log[7].op != SessionOp::Close) return 37;
 
-    // ── Anti-collapse witnesses ─────────────────────────────────────
-    // A pre-fix regression that dropped MinEpoch/MinGeneration would
-    // record {0, 0} on every Epoched* event.  These cross-pair
-    // inequalities catch that silent collapse independent of the
-    // structural-shape assertions above.
-    if (log[0].epoched_min_epoch() == log[4].epoched_min_epoch())
-        return 40;
-    if (log[0].epoched_min_generation() == log[4].epoched_min_generation())
-        return 41;
-    if (log[2].epoched_min_epoch() == log[6].epoched_min_epoch())
-        return 42;
-    if (log[2].epoched_min_generation() == log[6].epoched_min_generation())
-        return 43;
+    // The two pairs were given different thresholds, so their recorded
+    // values must differ.  A record path that dropped the thresholds
+    // would make these four comparisons equal.
+    if (log[0].epoched_min_epoch() == log[4].epoched_min_epoch()) return 40;
+    if (log[0].epoched_min_generation() == log[4].epoched_min_generation()) return 41;
+    if (log[2].epoched_min_epoch() == log[6].epoched_min_epoch()) return 42;
+    if (log[2].epoched_min_generation() == log[6].epoched_min_generation()) return 43;
 
     return 0;
 }
 
-// ── Worked: every SessionOp round-trips bit-exactly ────────────────
-
+// Every operation kind, written once and read back byte for byte.  A
+// new SessionOp that forgets a field shows up here as a memcmp failure.
 int run_all_session_ops_bit_exact_replay() {
-    constexpr auto kProtoHash =
-        crucible::ContentHash::from_raw(0xE0111E0111E0111ULL);
-    constexpr auto kSavedHash =
-        crucible::ContentHash::from_raw(0xD0222D0222D0222ULL);
-    constexpr auto kCipherHash =
-        crucible::ContentHash::from_raw(0xC155EC155EC155EULL);
+    constexpr auto kProtoHash = crucible::ContentHash::from_raw(0xE0111E0111E0111ULL);
+    constexpr auto kSavedHash = crucible::ContentHash::from_raw(0xD0222D0222D0222ULL);
+    constexpr auto kCipherHash = crucible::ContentHash::from_raw(0xC155EC155EC155EULL);
     constexpr InnerPermSetHash kPerms{0xA0333A0333A0333ULL};
     constexpr RecoveryPathHash kRecovery{0xB0444B0444B0444ULL};
 
     const std::array<SessionEvent, 17> events{{
         SessionEvent{
-            .from_role      = kClient,
-            .to_role        = kServer,
+            .from_role = kClient,
+            .to_role = kServer,
             .payload_schema = default_schema_hash<int>,
-            .payload_hash   = PayloadHash{1},
-            .op             = SessionOp::Send,
+            .payload_hash = PayloadHash{1},
+            .op = SessionOp::Send,
         },
         SessionEvent{
-            .from_role      = kServer,
-            .to_role        = kClient,
+            .from_role = kServer,
+            .to_role = kClient,
             .payload_schema = default_schema_hash<int>,
-            .payload_hash   = PayloadHash{2},
-            .op             = SessionOp::Recv,
+            .payload_hash = PayloadHash{2},
+            .op = SessionOp::Recv,
         },
         SessionEvent{
-            .from_role    = kClient,
-            .to_role      = kServer,
-            .op           = SessionOp::Select,
+            .from_role = kClient,
+            .to_role = kServer,
+            .op = SessionOp::Select,
             .branch_index = 1,
         },
         SessionEvent{
-            .from_role    = kServer,
-            .to_role      = kClient,
-            .op           = SessionOp::Offer,
+            .from_role = kServer,
+            .to_role = kClient,
+            .op = SessionOp::Offer,
             .branch_index = 2,
         },
         SessionEvent{
             .from_role = kClient,
-            .to_role   = kServer,
-            .op        = SessionOp::Close,
+            .to_role = kServer,
+            .op = SessionOp::Close,
         },
         SessionEvent{
             .from_role = kClient,
-            .to_role   = kServer,
-            .op        = SessionOp::Detach,
+            .to_role = kServer,
+            .op = SessionOp::Detach,
         },
-        SessionEvent::stop(
-            kServer, kClient, kClient,
-            StopReasonKind::PeerCrashed,
-            kRecovery),
-        SessionEvent::checkpoint_base(
-            kClient, kServer, CheckpointId{31}, kSavedHash),
-        SessionEvent::checkpoint_rollback(
-            kClient, kServer, CheckpointId{32}, kSavedHash),
-        SessionEvent::delegate_handoff(
-            kClient, kServer, kProtoHash, kPerms),
-        SessionEvent::accept_handoff(
-            kServer, kClient, kProtoHash, kPerms),
-        SessionEvent::cipher_store_pending(
-            StepId{}, kCipherHash, 1001),
-        SessionEvent::cipher_store_committed(
-            StepId{}, kCipherHash, 1002),
-        SessionEvent::cipher_load_from_tier(
-            StepId{}, kCipherHash, 1, 1003),
-        SessionEvent::cipher_tier_promote(
-            StepId{}, kCipherHash, 1, 2, 1004),
-        SessionEvent::cipher_tier_demote(
-            StepId{}, kCipherHash, 2, 0, 1005),
-        SessionEvent::cipher_tier_restore(
-            StepId{}, kCipherHash, 0, 1, 1006),
+        SessionEvent::stop(kServer, kClient, kClient, StopReasonKind::PeerCrashed, kRecovery),
+        SessionEvent::checkpoint_base(kClient, kServer, CheckpointId{31}, kSavedHash),
+        SessionEvent::checkpoint_rollback(kClient, kServer, CheckpointId{32}, kSavedHash),
+        SessionEvent::delegate_handoff(kClient, kServer, kProtoHash, kPerms),
+        SessionEvent::accept_handoff(kServer, kClient, kProtoHash, kPerms),
+        SessionEvent::cipher_store_pending(StepId{}, kCipherHash, 1001),
+        SessionEvent::cipher_store_committed(StepId{}, kCipherHash, 1002),
+        SessionEvent::cipher_load_from_tier(StepId{}, kCipherHash, 1, 1003),
+        SessionEvent::cipher_tier_promote(StepId{}, kCipherHash, 1, 2, 1004),
+        SessionEvent::cipher_tier_demote(StepId{}, kCipherHash, 2, 0, 1005),
+        SessionEvent::cipher_tier_restore(StepId{}, kCipherHash, 0, 1, 1006),
     }};
 
     SessionEventLog log{SessionTagId{808}};
@@ -1350,62 +1131,56 @@ int run_all_session_ops_bit_exact_replay() {
         log.append_event(event);
     }
 
-    if (log.size() != events.size())                              return 1;
+    if (log.size() != events.size()) return 1;
 
     auto replay = log.replay_iter();
     auto it = replay.begin();
     for (std::size_t i = 0; i < events.size(); ++i, ++it) {
-        if (it == replay.end())                                   return 10;
+        if (it == replay.end()) return 10;
         if (std::memcmp(&*it, &log[i], sizeof(SessionEvent)) != 0) return 20;
-        if (log[i].op != events[i].op)                            return 30;
-        if (log[i].session.value != 808u)                         return 40;
+        if (log[i].op != events[i].op) return 30;
+        if (log[i].session.value != 808u) return 40;
         if (i > 0 && !(log[i - 1].step_id.value < log[i].step_id.value)) {
             return 50;
         }
-        if (log[i].is_cipher_event()
-            && log[i].cipher_content_hash() != kCipherHash) {
+        if (log[i].is_cipher_event() && log[i].cipher_content_hash() != kCipherHash) {
             return 70;
         }
     }
-    if (it != replay.end())                                       return 60;
+    if (it != replay.end()) return 60;
 
     return 0;
 }
 
-// ── Worked: mixed session + Cipher events stay monotonic ───────────
-
+// Session events and cipher events share one step counter, so a log
+// that interleaves them still reads back in a single total order.
 int run_mixed_session_cipher_events_ordered() {
-    constexpr auto kCipherHashBase =
-        crucible::ContentHash::from_raw(0xC1FEE00000000000ULL);
+    constexpr auto kCipherHashBase = crucible::ContentHash::from_raw(0xC1FEE00000000000ULL);
     constexpr std::size_t kEventCount = 1000;
 
     SessionEventLog log{SessionTagId{909}};
     for (std::size_t i = 0; i < kEventCount; ++i) {
         if ((i % 4) == 0) {
             log.append_event(SessionEvent::cipher_store_pending(
-                StepId{},
-                crucible::ContentHash::from_raw(kCipherHashBase.raw() + i),
-                10'000 + i));
+                StepId{}, crucible::ContentHash::from_raw(kCipherHashBase.raw() + i), 10'000 + i));
         } else if ((i % 4) == 1) {
             log.append_event(SessionEvent::cipher_store_committed(
-                StepId{},
-                crucible::ContentHash::from_raw(kCipherHashBase.raw() + i),
-                10'000 + i));
+                StepId{}, crucible::ContentHash::from_raw(kCipherHashBase.raw() + i), 10'000 + i));
         } else if ((i % 4) == 2) {
             log.append_event(SessionEvent{
-                .from_role      = kClient,
-                .to_role        = kServer,
+                .from_role = kClient,
+                .to_role = kServer,
                 .payload_schema = default_schema_hash<int>,
-                .payload_hash   = PayloadHash{i},
-                .op             = SessionOp::Send,
+                .payload_hash = PayloadHash{i},
+                .op = SessionOp::Send,
             });
         } else {
             log.append_event(SessionEvent{
-                .from_role      = kServer,
-                .to_role        = kClient,
+                .from_role = kServer,
+                .to_role = kClient,
                 .payload_schema = default_schema_hash<int>,
-                .payload_hash   = PayloadHash{i},
-                .op             = SessionOp::Recv,
+                .payload_hash = PayloadHash{i},
+                .op = SessionOp::Recv,
             });
         }
     }
@@ -1425,8 +1200,7 @@ int run_mixed_session_cipher_events_ordered() {
         if (event.is_cipher_event()) {
             ++cipher_events;
             if (event.cipher_timestamp_ns() != 10'000 + i) return 30;
-            if (event.cipher_content_hash() !=
-                crucible::ContentHash::from_raw(kCipherHashBase.raw() + i)) {
+            if (event.cipher_content_hash() != crucible::ContentHash::from_raw(kCipherHashBase.raw() + i)) {
                 return 40;
             }
             if (event.commits_cipher_head()) ++head_commits;
@@ -1445,17 +1219,17 @@ int run_mixed_session_cipher_events_ordered() {
 }  // anonymous namespace
 
 int main() {
-    if (int rc = run_log_basic();                       rc != 0) return rc;
-    if (int rc = run_step_counter_monotone();           rc != 0) return 100 + rc;
-    if (int rc = run_manual_record_preserves_stepid();  rc != 0) return 200 + rc;
-    if (int rc = run_drain_yields_storage();            rc != 0) return 300 + rc;
-    if (int rc = run_request_reply_recorded();          rc != 0) return 400 + rc;
-    if (int rc = run_request_reply_psh_recorded();      rc != 0) return 450 + rc;
-    if (int rc = run_replay_determinism_property();     rc != 0) return 500 + rc;
-    if (int rc = run_payload_hash_opt_in();             rc != 0) return 600 + rc;
-    if (int rc = run_offer_branch_recorded();           rc != 0) return 700 + rc;
-    if (int rc = run_stop_event_replay_roundtrip();     rc != 0) return 800 + rc;
-    if (int rc = run_recording_stop_close_recorded();   rc != 0) return 900 + rc;
+    if (int rc = run_log_basic(); rc != 0) return rc;
+    if (int rc = run_step_counter_monotone(); rc != 0) return 100 + rc;
+    if (int rc = run_manual_record_preserves_stepid(); rc != 0) return 200 + rc;
+    if (int rc = run_drain_yields_storage(); rc != 0) return 300 + rc;
+    if (int rc = run_request_reply_recorded(); rc != 0) return 400 + rc;
+    if (int rc = run_request_reply_psh_recorded(); rc != 0) return 450 + rc;
+    if (int rc = run_replay_determinism_property(); rc != 0) return 500 + rc;
+    if (int rc = run_payload_hash_opt_in(); rc != 0) return 600 + rc;
+    if (int rc = run_offer_branch_recorded(); rc != 0) return 700 + rc;
+    if (int rc = run_stop_event_replay_roundtrip(); rc != 0) return 800 + rc;
+    if (int rc = run_recording_stop_close_recorded(); rc != 0) return 900 + rc;
     if (int rc = run_fixy_a2_008_crash_class_round_trip(); rc != 0) return 920 + rc;
     if (int rc = run_recording_crash_watched_happy_path_records_ops(); rc != 0) {
         return 950 + rc;

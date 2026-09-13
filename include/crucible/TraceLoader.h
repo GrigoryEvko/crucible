@@ -1,38 +1,30 @@
 #pragma once
 
-// TraceLoader: load .crtrace binary files for benchmarking build_trace().
+// The on-disk trace format, little-endian throughout and read as raw struct
+// bytes.
 //
-// File format (all little-endian, designed for zero-overhead C++ loading):
+//   Header, 16 bytes:
+//     char[4]  magic, "CRTR"
+//     uint32   version
+//     uint32   op count
+//     uint32   metadata-record count
 //
-//   Header (16B):
-//     char[4]  magic    = "CRTR"
-//     uint32   version  = 1
-//     uint32   num_ops
-//     uint32   num_metas
+//   Op records, 80 bytes each:
+//     uint64 schema hash, uint64 shape hash,
+//     uint64 scope hash, uint64 callsite hash,
+//     int64  scalar values, five of them,
+//     uint16 input count, uint16 output count, uint16 scalar count,
+//     uint8  gradient flag, uint8 packed operation flags
 //
-//   Op records (num_ops × 80B):
-//     uint64 schema_hash, uint64 shape_hash,
-//     uint64 scope_hash, uint64 callsite_hash,
-//     int64  scalar_values[5],
-//     uint16 num_inputs, uint16 num_outputs, uint16 num_scalars,
-//     uint8  grad_enabled, uint8 op_flags (bit-packed, see op_flag:: in TraceRing.h)
+//   Metadata records, 168 bytes each: tensor metadata structs, verbatim.
+//   Two shorter historical record sizes are also accepted, 144 and 160.
 //
-//   Meta records (num_metas × 168B):
-//     Raw TensorMeta structs (sizes, strides, data_ptr, ndim, dtype, etc.)
-//     Current readers accept the historical 144B and 160B writer layouts.
-//
-//   Schema name table (optional, present if file has trailing data):
-//     uint32   num_names
-//     For each name:
-//       uint64   schema_hash
-//       uint16   name_len (excluding null terminator)
-//       char[name_len]  name (NOT null-terminated in file)
-//
-// Usage:
-//   auto trace = crucible::load_trace("vit_b.crtrace");
-//   if (!trace) { /* error */ }
-//   // Feed to BackgroundThread::build_trace() via its public vectors.
-//   // Schema names are auto-registered in the global SchemaTable.
+//   A schema-name table follows if the file has trailing data:
+//     uint32   name count
+//     Then, per name:
+//       uint64   schema hash
+//       uint16   name length, terminator excluded
+//       char     the name itself, not terminated in the file
 
 #include <cstdint>
 #include <cstdio>
@@ -43,47 +35,20 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096r: Refined / bounded_above / in_range via the fixy umbrella
-#include <crucible/fixy/Handle.h>  // FIXY-V-032-audit: route OwnedFile via fixy::handle::
+#include <crucible/fixy/Wrap.h>
+#include <crucible/fixy/Handle.h>
 
 namespace crucible {
 
-// ── Header count caps (file-format invariant) ────────────────────────
-//
-// .crtrace headers carry three uint32_t counts read from disk:
-//   * num_ops    — number of TraceOpRecord entries (each 80 B)
-//   * num_metas  — number of TensorMeta entries (each 168 B)
-//   * num_names  — number of (schema_hash, name) pairs in the optional
-//                  trailing table
-//
-// Real traces top out at ~10^5 ops; we cap each count well above any
-// plausible-trace value but well below the adversarial wire value that
-// would request a multi-GB allocation before discovering truncation.
-//
-//   MAX_OPS         = 1 << 22  (4 M ops      ≈ 320 MB)
-//   MAX_METAS       = 1 << 24  (16 M metas   ≈ 2.7 GB)
-//   SCHEMA_TABLE_CAP   from SchemaTable.h    (currently 512)
-//
-// `num_ops`, `num_metas`, and `num_names` arrive as raw bytes from disk
-// — every uint32_t value is reachable on a corrupted or version-skewed
-// file.  Per WRAP-TraceLoader-2 (#1050), the runtime if-checks at the
-// header / name-table boundaries each pair with a typed Refined ctor
-// downstream that pins the bound at the type system.  Both layers fire
-// before any std::vector allocation or for-loop with the count as
-// upper bound; either alone catches the bug; together the structural
-// guarantee is doubled and the type-level proof rides into every
-// future call site.  The 6 HS14 negative-compile fixtures
-// (test/safety_neg/neg_trace_num_*) wedge each bound into place.
-//
-// Sized small (uint32_t headroom for hard caps).  `inline constexpr`
-// promotes them to file-scope so the Refined alias and the runtime
-// guard read the same constants.
-inline constexpr uint32_t MAX_OPS = 1u << 22;  // 4 M ops
-inline constexpr uint32_t MAX_METAS = 1u << 24;  // 16 M metas
+// Every count in the header arrives as raw bytes, so any value at all is
+// reachable on a corrupt or version-skewed file. These ceilings sit far above
+// what a real trace reaches and far below the value that would have the loader
+// allocate gigabytes before discovering the file is truncated. Both are file
+// scope so the runtime check and the typed gate read the same constant.
+inline constexpr uint32_t MAX_OPS = 1u << 22;
+inline constexpr uint32_t MAX_METAS = 1u << 24;
 
-// Validated count carriers.  `bounded_above<MAX>` admits `v ≤ MAX`
-// (zero is admissible — empty traces are well-formed).  Regime-1 EBO
-// collapse keeps each wrapper zero-cost: sizeof == sizeof(uint32_t).
+// Zero is admitted: an empty trace is well-formed.
 using ValidTraceNumOps = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MAX_OPS>, uint32_t>;
 
 using ValidTraceNumMetas = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MAX_METAS>, uint32_t>;
@@ -91,9 +56,6 @@ using ValidTraceNumMetas = ::crucible::fixy::wrap::Refined<::crucible::fixy::wra
 using ValidTraceNumNames =
     ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<SCHEMA_TABLE_CAP>, uint32_t>;
 
-// Widening factories.  `gnu::const` documents that the result depends
-// only on the argument and has no side effects; the optimizer can CSE /
-// DCE the call freely under -O3.
 [[nodiscard, gnu::const]] inline constexpr uint32_t make_trace_num_ops(ValidTraceNumOps raw) noexcept {
     return raw.value();
 }
@@ -106,107 +68,67 @@ using ValidTraceNumNames =
     return raw.value();
 }
 
-// ── Schema-name length bounds (file-format invariant) ────────────────
-//
-// The .crtrace optional schema-name table stores each name's length as
-// a uint16_t.  By format definition the length is in [1, 256] — names
-// must be non-empty (a zero-length name pairs with no schema_hash) and
-// fit in the loader's fixed 257-byte stack buffer (256 chars + the null
-// terminator written by load_trace).
-//
-// `name_len` arrives at the loader as raw bytes from disk — every value
-// in [0, UINT16_MAX] is reachable on a corrupted or version-skewed
-// file.  The defense-in-depth gate is documented in the WRAP-TraceLoader-3
-// (#1051) block below; ValidSchemaNameLen pins the bound at the type
-// system and the 2 HS14 negative-compile fixtures
-// (test/safety_neg/neg_schema_name_len_*) wedge the bound into place.
+// A name length is stored on disk as a 16-bit value, so any of them can
+// arrive. The lower bound is one, because a zero-length name names nothing.
+// The upper bound is what the loader's fixed buffer holds once room is left
+// for the terminator it writes.
 inline constexpr uint16_t SCHEMA_NAME_LEN_MIN = 1;
 inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 256;
 
-// Validated schema-name length carrier.  Per WRAP-TraceLoader-3 (#1051),
-// ValidSchemaNameLen is fixy::wrap::Refined<fixy::wrap::in_range<MIN,MAX>, uint16_t>
-// — the typed gate at every uint16_t → schema-name-length widening
-// site (currently only TraceLoader::load_trace, but future readers
-// of the .crtrace name table inherit the same gate by construction).
-//
-// The bound `[SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX]` admits the
-// closed interval [1, 256]; values outside that interval cause the
-// constructor's pre clause to fail in constexpr context (P1494R5
-// non-constant expression → ill-formed) and to terminate via the
-// project contract handler at runtime.  Defense-in-depth: existing
-// explicit `if (name_len < MIN || name_len > MAX) break;` runtime
-// guard + checked Refined ctor fired BEFORE the fread/null-terminator
-// writes consume the value.  Either layer alone catches the bug;
-// together the structural guarantee is doubled and the type-level
-// proof rides into every future call site.
 using ValidSchemaNameLen =
     ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>,
                                     uint16_t>;
 
-// Widening factory for ValidSchemaNameLen → uint16_t in production
-// hot-path code.  `gnu::const` documents that the result depends only
-// on the argument and has no side effects; the optimizer can CSE / DCE
-// the call freely under -O3.
 [[nodiscard, gnu::const]] inline constexpr uint16_t make_schema_name_len(ValidSchemaNameLen raw) noexcept {
     return raw.value();
 }
 
-// ── On-disk record layout (80 bytes) ─────────────────────────────────
-
 struct TraceOpRecord {
-    SchemaHash schema_hash;  // 8B — default-ctor 0; same layout as uint64_t
-    ShapeHash shape_hash;  // 8B
-    ScopeHash scope_hash;  // 8B
-    CallsiteHash callsite_hash;  // 8B
-    int64_t scalar_values[5]{};  // 40B
-    uint16_t num_inputs = 0;  // 2B
-    uint16_t num_outputs = 0;  // 2B
-    uint16_t num_scalars = 0;  // 2B
-    uint8_t grad_enabled = 0;  // 1B
-    uint8_t inference_mode = 0;  // 1B — misleading name (kept for struct layout);
-    //      carries all op_flag bits, see op_flag:: in TraceRing.h
+    SchemaHash schema_hash;
+    ShapeHash shape_hash;
+    ScopeHash scope_hash;
+    CallsiteHash callsite_hash;
+    int64_t scalar_values[5]{};
+    uint16_t num_inputs = 0;
+    uint16_t num_outputs = 0;
+    uint16_t num_scalars = 0;
+    uint8_t grad_enabled = 0;
+    // The name is a misnomer this byte is stuck with: it carries the whole
+    // packed set of operation flags, not one of them.
+    uint8_t inference_mode = 0;
 };
 
-// Strong-hash newtypes are sizeof()-identical to their raw uint64_t;
-// the on-disk record remains bit-compatible with pre-typed writers.
+// The strong hash types are the size of the integers they wrap, so the record
+// stays byte-compatible with a file written before they were introduced.
 static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
 static_assert(std::is_trivially_copyable_v<TraceOpRecord>);
 static_assert(std::is_standard_layout_v<TraceOpRecord>);
 
-// ── Loaded trace data ────────────────────────────────────────────────
-
 struct LoadedTrace {
-    // Parallel arrays matching BackgroundThread's vectors.
+    // Parallel arrays, indexed by the same operation position.
     std::vector<TraceRing::Entry> entries;
     std::vector<MetaIndex> meta_starts;
     std::vector<ScopeHash> scope_hashes;
     std::vector<CallsiteHash> callsite_hashes;
 
-    // All TensorMetas concatenated (entries index into this).
+    // Every operation's metadata concatenated. The array above holds each
+    // operation's offset into this one.
     std::vector<TensorMeta> metas;
 
     uint32_t num_ops = 0;
     uint32_t num_metas = 0;
 };
 
-// ── Loader ───────────────────────────────────────────────────────────
-
-// .crtrace is written and read as raw struct bytes — only correct on
-// little-endian hosts. x86_64 and aarch64 (in LE mode) are fine.
+// The file is written and read as raw struct bytes.
 static_assert(std::endian::native == std::endian::little, ".crtrace format requires little-endian host");
 
 [[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
-    // FIXY-V-032: OwnedFile RAII — every early-return below closes the
-    // FILE* via the dtor; the 9 std::fclose() calls the previous version
-    // sprinkled across error paths are now structurally unreachable as
-    // a LeakSafe-axiom-violation (no path can leak the handle).
     ::crucible::fixy::handle::OwnedFile trace_file{std::fopen(path, "rb")};
     if (!trace_file.is_open()) {
         std::fprintf(stderr, "load_trace: cannot open %s\n", path);
         return nullptr;
     }
 
-    // Read header (16 bytes).
     char magic[4]{};
     uint32_t version = 0, num_ops = 0, num_metas = 0;
     if (std::fread(magic, 1, 4, trace_file.get()) != 4 || std::fread(&version, 4, 1, trace_file.get()) != 1
@@ -224,11 +146,6 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
         return nullptr;
     }
 
-    // Hard caps: real traces top out at 10^5 ops; reject adversarial
-    // headers that would allocate >8 GB of records before discovering
-    // truncation.  MAX_OPS / MAX_METAS are file-scope `inline constexpr`
-    // (see top of header) so the runtime guard and the typed gate below
-    // read the same constants.
     if (num_ops > MAX_OPS || num_metas > MAX_METAS) {
         std::fprintf(stderr,
                      "load_trace: header counts exceed cap in %s "
@@ -236,27 +153,21 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
                      path, num_ops, num_metas);
         return nullptr;
     }
-    // Defense-in-depth typed witnesses (#1050 WRAP-TraceLoader-2).  The
-    // if-check above already returns nullptr-equivalent for out-of-range
-    // values, so the Refined ctor's pre clause holds and never aborts on
-    // this path.  The reassignment is structurally a no-op (same value,
-    // same type) but makes every downstream `num_ops` / `num_metas` read
-    // inherit the bound witness from the gate.  The neg-compile fixtures
-    // pin the structural guarantee at the type level: a constexpr
-    // ValidTraceNumOps{> MAX_OPS} or ValidTraceNumMetas{> MAX_METAS} is
-    // ill-formed regardless of what callers do.
+    // The check above is what rejects an out-of-range value in every build.
+    // Passing each count through its type here, and again for the name count
+    // below, adds nothing at run time but carries the bound as a witness that
+    // downstream code inherits instead of re-deriving.
     num_ops = make_trace_num_ops(ValidTraceNumOps{num_ops});
     num_metas = make_trace_num_metas(ValidTraceNumMetas{num_metas});
 
-    // Read op records.
     std::vector<TraceOpRecord> records(num_ops);
     if (num_ops > 0 && std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file.get()) != num_ops) {
         std::fprintf(stderr, "load_trace: truncated op records in %s\n", path);
         return nullptr;
     }
 
-    // Read meta records. Detect 144B, 160B, and 168B layouts by checking
-    // remaining file size after op records.
+    // Which of the three record sizes this file uses is inferred from how many
+    // bytes remain after the op records.
     const long meta_start_pos = std::ftell(trace_file.get());
     std::fseek(trace_file.get(), 0, SEEK_END);
     const long file_size = std::ftell(trace_file.get());
@@ -267,7 +178,7 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
     const long meta_bytes_160 = static_cast<long>(num_metas) * 160;
     const long meta_bytes_168 = static_cast<long>(num_metas) * 168;
 
-    uint32_t meta_record_size = 168;  // default: current
+    uint32_t meta_record_size = 168;
     if (num_metas > 0) {
         if (remaining >= meta_bytes_168)
             meta_record_size = 168;
@@ -282,102 +193,64 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
     std::vector<TensorMeta> metas(num_metas);
     if (num_metas > 0) {
         if (historical_144 || historical_160) {
-            // Historical format: read each meta at its original size, zero-init rest.
+            // One record at a time at its original size. The fields the older
+            // layout does not carry keep their zero-initialised values.
             for (uint32_t i = 0; i < num_metas; i++) {
                 if (std::fread(&metas[i], meta_record_size, 1, trace_file.get()) != 1) {
                     std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
                     return nullptr;
                 }
-                // Extended fields beyond meta_record_size stay zero from TensorMeta{}.
             }
         } else {
-            // Current 168B format: direct bulk read.
             if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, trace_file.get()) != num_metas) {
                 std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
                 return nullptr;
             }
         }
 
-        // Sanitize: validate each meta's untrusted fields AT the read boundary.
-        // Source is disk bytes (source::External); downstream code assumes
-        // ndim ≤ 8 (TensorMeta::sizes/strides capacity).  Without this check,
-        // an adversarial trace with ndim=255 would drive compute_storage_nbytes
-        // to read past the end of the sizes[] array.
-        //
-        // data_ptr is zeroed at write time (Serialize.h: WriteOps writes
-        // TensorMeta with data_ptr=0; ReadOps treats it as discarded).  We
-        // re-zero here so any downstream address-use path fails loudly rather
-        // than treating a disk byte pattern as a pointer.
+        // The bulk read above copies disk bytes straight into the struct, so
+        // every field below is untrusted until checked here. Each of the four
+        // is checked because something downstream would otherwise act on it.
         for (uint32_t i = 0; i < num_metas; i++) {
+            // The rank indexes fixed-width size and stride arrays, so a value
+            // past their capacity reads off the end of them.
             if (metas[i].ndim > 8) [[unlikely]] {
                 std::fprintf(stderr, "load_trace: meta[%u].ndim=%u exceeds max 8 in %s — corrupt trace\n", i,
                              metas[i].ndim, path);
                 return nullptr;
             }
-            // dtype gate (sibling of the ndim check): load_trace bulk-reads
-            // TensorMeta as raw struct bytes, so dtype is an unvalidated disk
-            // byte — unlike Serialize.h read_meta, which gates it through
-            // ValidScalarType.  An out-of-range dtype drives element_size()
-            // (Types.h) into its `default: std::unreachable()` via
-            // compute_storage_nbytes_det in the BackgroundThread build path —
-            // true UB the optimizer exploits.  valid_scalar_type is the same
-            // fail-closed named-case predicate ValidScalarType wraps; reject
-            // the corrupt trace here, mirroring the ndim boundary.
+            // Computing a storage size from an unrecognised element type
+            // reaches a switch whose default is marked unreachable.
             if (!valid_scalar_type(static_cast<std::int8_t>(metas[i].dtype))) [[unlikely]] {
                 std::fprintf(stderr, "load_trace: meta[%u].dtype=%d invalid in %s — corrupt trace\n", i,
                              static_cast<int>(metas[i].dtype), path);
                 return nullptr;
             }
-            // device_type gate (parity with Serialize.h read_meta's
-            // ValidDeviceType gate, sibling of the dtype/ndim checks):
-            // load_trace bulk-reads TensorMeta raw, so device_type is an
-            // unvalidated disk byte.  Unlike dtype it has no std::unreachable
-            // consumer (not a UB fix), but it IS folded into the node's
-            // ContentHash (BackgroundThread.h packs `device_type << 8` into
-            // meta_packed; MerkleDag.h's compute path does the same), so a
-            // corrupt/skewed byte silently corrupts node identity → a wrong
-            // (content_hash, device_capability) KernelCache key.  read_meta
-            // fails closed here; the raw-read boundary must match.
+            // The device type is folded into the node's content hash, which is
+            // its identity and half of a compiled-kernel lookup key, so an
+            // unrecognised value would not fail. It would key the wrong entry.
             if (!valid_device_type(static_cast<std::int8_t>(metas[i].device_type))) [[unlikely]] {
                 std::fprintf(stderr, "load_trace: meta[%u].device_type=%d invalid in %s — corrupt trace\n", i,
                              static_cast<int>(metas[i].device_type), path);
                 return nullptr;
             }
-            // layout gate (completes read_meta parity — read_meta gates all
-            // four untrusted ndim/dtype/device_type/layout fields).  The
-            // TraceLoader build path copies layout into slot metadata rather
-            // than the ContentHash, but the Forge IR001 comm path
-            // (forge/Ir001/Comm.h) does hash it, and the canonical read_meta
-            // boundary fails closed on a corrupt layout byte.  Match it:
-            // fail-closed at the raw-read boundary for uniformity and
-            // forward-safety rather than admit an out-of-enum layout.
+            // This path only copies the layout onward, but another consumer
+            // hashes it, and every other boundary refuses an unrecognised one.
             if (!valid_layout(static_cast<std::int8_t>(metas[i].layout))) [[unlikely]] {
                 std::fprintf(stderr, "load_trace: meta[%u].layout=%d invalid in %s — corrupt trace\n", i,
                              static_cast<int>(metas[i].layout), path);
                 return nullptr;
             }
+            // The stored address is written as zero and is meaningless in this
+            // process anyway. Re-zeroing it means a later use of it fails
+            // loudly rather than treating a disk byte pattern as an address.
             metas[i].data_ptr = external_data_ptr(nullptr);
         }
     }
 
-    // Read optional schema name table (trailing data after metas).
-    // Name-length bound: SCHEMA_NAME_LEN_MIN ≤ name_len ≤ SCHEMA_NAME_LEN_MAX
-    // (1..256 inclusive). Any wire value outside [1, 256] breaks the
-    // loop at the parse boundary, never downstream.  The validated
-    // length feeds ValidSchemaNameLen — the type-level witness propagates
-    // the bound to the optimizer (the Refined ctor's pre clause is the
-    // [[assume]] that used to live here, scoped to the validated
-    // variable rather than open-coded at every call site).  See
-    // WRAP-TraceLoader-3 (#1051) and the negative-compile fixtures
-    // test/safety_neg/neg_schema_name_len_below_min.cpp +
-    // test/safety_neg/neg_schema_name_len_above_max.cpp.
+    // The name table is optional and sits after the metadata.
     uint32_t num_names = 0;
     if (std::fread(&num_names, 4, 1, trace_file.get()) == 1 && num_names > 0 && num_names <= SCHEMA_TABLE_CAP) {
-        // Defense-in-depth typed witness (#1050 WRAP-TraceLoader-2).  The
-        // condition on the if above ensures `num_names` lies in (0,
-        // SCHEMA_TABLE_CAP], so the Refined ctor's pre clause holds and
-        // never aborts.  Reassigning makes the loop bound below inherit
-        // the bound witness.
         num_names = make_trace_num_names(ValidTraceNumNames{num_names});
         auto schema_table_view = global_schema_table().mint_mutable_view();
         for (uint32_t i = 0; i < num_names; i++) {
@@ -385,30 +258,21 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
             uint16_t raw_name_len = 0;
             if (std::fread(&schema_hash_raw, 8, 1, trace_file.get()) != 1) break;
             if (std::fread(&raw_name_len, 2, 1, trace_file.get()) != 1) break;
+            // A length outside the bound ends the table here. Whatever names
+            // were read stay registered, which is this function's policy for a
+            // malformed tail.
             if (raw_name_len < SCHEMA_NAME_LEN_MIN || raw_name_len > SCHEMA_NAME_LEN_MAX) break;
-            // Validated uint16_t → schema-name-length widening
-            // (#1051 WRAP-TraceLoader-3).  The if-break above already
-            // returns nullptr-equivalent (loop exit; the partial table is
-            // the deserialize-error policy this function uses), and the
-            // checked Refined ctor stands as a defense-in-depth re-check —
-            // the bound is established by the if-break, so the ctor's pre
-            // clause holds and never aborts on this path.  The neg-compile
-            // fixtures pin the structural guarantee at the type level: a
-            // constexpr ValidSchemaNameLen{0} or {>= 257} is ill-formed
-            // regardless of what callers do.
             const uint16_t name_len = make_schema_name_len(ValidSchemaNameLen{raw_name_len});
             char name_buf[257]{};
             if (std::fread(name_buf, 1, name_len, trace_file.get()) != name_len) break;
             name_buf[name_len] = '\0';
-            // Bytes from disk, but length-validated above (1..256) and explicitly
-            // null-terminated.  Retag from External (file source) → Sanitized so
-            // the schema table can accept them.
+            // Bounded and terminated here, which is what lets the bytes cross
+            // from untrusted file content into the table.
             register_schema_name(schema_table_view, SchemaHash{schema_hash_raw},
                                  SchemaTable::SanitizedName{static_cast<const char*>(name_buf)});
         }
     }
 
-    // Convert to BackgroundThread-compatible vectors.
     auto trace = std::make_unique<LoadedTrace>();
     trace->num_ops = num_ops;
     trace->num_metas = num_metas;
@@ -429,7 +293,7 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
         entry.num_inputs = op_record.num_inputs;
         entry.num_outputs = op_record.num_outputs;
         entry.num_scalar_args = op_record.num_scalars;
-        entry.op_flags = op_record.inference_mode;  // on-disk byte carries all op_flag bits
+        entry.op_flags = op_record.inference_mode;  // the whole packed set, despite the field name
         if (op_record.grad_enabled != 0) {
             entry.op_flags = static_cast<uint8_t>(entry.op_flags | op_flag::GRAD_ENABLED);
         } else {
@@ -439,23 +303,21 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
         for (uint16_t j = 0; j < num_inline_scalars; j++)
             entry.scalar_values[j] = op_record.scalar_values[j];
 
-        // num_inputs + num_outputs in uint32: each is a uint16, so their sum can
-        // reach 131070 and would WRAP if computed in uint16 (65535 + 1 -> 0),
-        // hiding an op that claims tens of thousands of tensors behind a
-        // meta_start of none().
+        // Widened before adding: two 16-bit counts sum past what 16 bits hold,
+        // and the wrap would turn an operation claiming tens of thousands of
+        // tensors into one claiming none.
         const uint32_t total_tensors =
             static_cast<uint32_t>(op_record.num_inputs) + static_cast<uint32_t>(op_record.num_outputs);
         if (total_tensors > 0) {
-            // meta_starts[i] indexes the metas vector (num_metas entries); every
-            // consumer (BackgroundThread build path, vis/BlockDetector) reads
-            // metas[meta_start + k] for k in [0, num_inputs + num_outputs).  The
-            // running cursor must never reach past num_metas, else those reads
-            // overrun the vector — a heap OOB read from an untrusted .crtrace.
-            // Reject at the load boundary so load_trace always yields a self-
-            // consistent LoadedTrace.  `total_tensors > num_metas - meta_cursor`
-            // is the overflow-safe form of `meta_cursor + total_tensors >
-            // num_metas`: meta_cursor <= num_metas is the loop invariant (held by
-            // this very check), so num_metas - meta_cursor never underflows.
+            // Every consumer reads this operation's metadata as a run starting
+            // at the cursor, so a cursor that runs past the end of the array
+            // is an out-of-bounds read driven by the file. Rejecting it here
+            // means a loaded trace is always self-consistent.
+            //
+            // Written as a subtraction on the right rather than an addition on
+            // the left so the sum cannot overflow. The subtraction cannot
+            // underflow either, because the cursor never passes the count, and
+            // it is this very check that keeps that true.
             if (total_tensors > num_metas - meta_cursor) [[unlikely]] {
                 std::fprintf(stderr,
                              "load_trace: op[%u] meta range (%u tensors at cursor %u) "

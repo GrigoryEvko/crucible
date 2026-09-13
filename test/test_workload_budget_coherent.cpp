@@ -1,12 +1,8 @@
-// crucible::concurrent::WorkloadBudgetCoherent smoke test (FIXY-V-075).
-//
-// Verifies the type-level coherence concept rejects ctx/pipeline pairs
-// that contradict each other on one of three cost-model axes
-// (workload byte budget, alloc class WS ceiling, NUMA WS floor) and
-// admits coherent pairs.
-//
-// Positive cases live as `static_assert(...)` cells below; negative
-// cases live in test/effects_neg/neg_workload_budget_coherent_*.cpp.
+// The coherence concept refuses a context and pipeline that contradict
+// each other on any of three cost-model axes: the workload byte budget,
+// the ceiling an allocation class puts on a working set, and the floor a
+// NUMA policy puts under one.  Only admission is testable here.  A pair
+// that must fail to compile lives in a negative-compile fixture instead.
 
 #include <crucible/concurrent/Pipeline.h>
 #include <crucible/concurrent/WorkloadBudgetCoherent.h>
@@ -36,17 +32,14 @@ struct Producer {
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
-// ── A small stage: 4 KiB consumer + 4 KiB producer = 8 KiB WS ─────────
 static void small_stage(Consumer<4 * KiB>&&, Producer<4 * KiB>&&) noexcept {}
 using SmallStage = cc::Stage<&small_stage, eff::BgDrainCtx>;
 static_assert(cc::stage_per_call_ws_v<SmallStage> == 8 * KiB);
 
-// ── A medium stage: 128 KiB consumer + 128 KiB producer = 256 KiB ─────
 static void medium_stage(Consumer<128 * KiB>&&, Producer<128 * KiB>&&) noexcept {}
 using MediumStage = cc::Stage<&medium_stage, eff::BgDrainCtx>;
 static_assert(cc::stage_per_call_ws_v<MediumStage> == 256 * KiB);
 
-// ── A large stage: 4 MiB consumer + 4 MiB producer = 8 MiB ────────────
 static void large_stage(Consumer<4 * MiB>&&, Producer<4 * MiB>&&) noexcept {}
 using LargeStage = cc::Stage<&large_stage, eff::BgDrainCtx>;
 static_assert(cc::stage_per_call_ws_v<LargeStage> == 8 * MiB);
@@ -68,9 +61,9 @@ struct stage_inline_safe<workload_budget_coherent_test::LargeStage> : std::true_
 
 namespace workload_budget_coherent_test {
 
-using SmallPipeline = cc::Pipeline<SmallStage>;          // 8 KiB
-using MediumPipeline = cc::Pipeline<MediumStage>;        // 256 KiB
-using LargePipeline = cc::Pipeline<LargeStage>;          // 8 MiB
+using SmallPipeline = cc::Pipeline<SmallStage>;
+using MediumPipeline = cc::Pipeline<MediumStage>;
+using LargePipeline = cc::Pipeline<LargeStage>;
 
 static_assert(SmallPipeline::aggregate_per_call_working_set == 8 * KiB);
 static_assert(MediumPipeline::aggregate_per_call_working_set == 256 * KiB);
@@ -79,73 +72,47 @@ static_assert(SmallPipeline::aggregate_working_set_known);
 static_assert(MediumPipeline::aggregate_working_set_known);
 static_assert(LargePipeline::aggregate_working_set_known);
 
-// ════════════════════════════════════════════════════════════════════
-// ── (1) Workload byte-budget admission ──────────────────────────────
-// ════════════════════════════════════════════════════════════════════
-
-// Default ctx with Unspecified workload → admits everything.
+// The default workload hint is unspecified, which bounds nothing.
 static_assert(cc::WorkloadBudgetCoherent<eff::BgDrainCtx, SmallPipeline>);
 static_assert(cc::WorkloadBudgetCoherent<eff::BgDrainCtx, LargePipeline>);
 
-// Ctx with ByteBudget<16 KiB> admits SmallPipeline (8 KiB ≤ 16 KiB).
-using TinyBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<
-    eff::ctx_workload::ByteBudget<16 * KiB>>());
+using TinyBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ByteBudget<16 * KiB>>());
 static_assert(cc::WorkloadBudgetCoherent<TinyBudgetCtx, SmallPipeline>);
-
-// Ctx with ByteBudget<16 KiB> REJECTS MediumPipeline (256 KiB > 16 KiB).
 static_assert(!cc::WorkloadBudgetCoherent<TinyBudgetCtx, MediumPipeline>);
 
-// Ctx with ByteBudget<16 MiB> admits LargePipeline (8 MiB ≤ 16 MiB).
-using LargeBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<
-    eff::ctx_workload::ByteBudget<16 * MiB>>());
+using LargeBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ByteBudget<16 * MiB>>());
 static_assert(cc::WorkloadBudgetCoherent<LargeBudgetCtx, LargePipeline>);
 
-// Ctx with ChannelBudget<8 KiB> REJECTS MediumPipeline (256 KiB > 8 KiB).
-using ChannelBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<
-    eff::ctx_workload::ChannelBudget<8 * KiB, 1, 1, false>>());
+// A channel budget bounds the working set the same way a byte budget does.
+using ChannelBudgetCtx =
+    decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ChannelBudget<8 * KiB, 1, 1, false>>());
 static_assert(!cc::WorkloadBudgetCoherent<ChannelBudgetCtx, MediumPipeline>);
 
-// ════════════════════════════════════════════════════════════════════
-// ── (2) Alloc-class WS ceiling admission ────────────────────────────
-// ════════════════════════════════════════════════════════════════════
-
-// HotFgCtx uses ctx_alloc::Stack — admits SmallPipeline (8 KiB ≤ 1 MiB).
+// The hot foreground context allocates on the stack, which caps a
+// working set at one mebibyte.
 static_assert(cc::WorkloadBudgetCoherent<eff::HotFgCtx, SmallPipeline>);
-
-// HotFgCtx with Stack REJECTS LargePipeline (8 MiB > 1 MiB stack limit).
 static_assert(!cc::WorkloadBudgetCoherent<eff::HotFgCtx, LargePipeline>);
 
-// BgDrainCtx uses ctx_alloc::Arena — admits LargePipeline (no ceiling).
+// The background context allocates from an arena and caps nothing.
 static_assert(cc::WorkloadBudgetCoherent<eff::BgDrainCtx, LargePipeline>);
 
-// ════════════════════════════════════════════════════════════════════
-// ── (3) NUMA-policy WS floor admission ──────────────────────────────
-// ════════════════════════════════════════════════════════════════════
-
-// Default BgDrainCtx uses ctx_numa::Local — no floor; admits all.
+// A local NUMA policy sets no floor.
 static_assert(cc::WorkloadBudgetCoherent<eff::BgDrainCtx, SmallPipeline>);
 
-// ColdInitCtx uses ctx_numa::Spread — REJECTS workloads below 4 MiB.
-// SmallPipeline 8 KiB → reject; MediumPipeline 256 KiB → reject;
-// LargePipeline 8 MiB → admit (≥ 4 MiB).
+// The cold init context spreads across nodes, which is only worth doing
+// above four mebibytes, so it refuses anything smaller.
 static_assert(!cc::WorkloadBudgetCoherent<eff::ColdInitCtx, SmallPipeline>);
 static_assert(!cc::WorkloadBudgetCoherent<eff::ColdInitCtx, MediumPipeline>);
-// LargePipeline + ColdInitCtx: passes NUMA floor (8 MiB ≥ 4 MiB);
-// passes alloc class (Heap is unbounded); passes workload hint
-// (Unspecified is unbounded).  All three axes admit.
+// The large pipeline clears that floor, and its allocation class and
+// workload hint are both unbounded, so all three axes admit it.
 static_assert(cc::WorkloadBudgetCoherent<eff::ColdInitCtx, LargePipeline>);
 
-// ════════════════════════════════════════════════════════════════════
-// ── (4) Trivially-true (unknown working set) admission ──────────────
-// ════════════════════════════════════════════════════════════════════
-
-// A stage whose per_call_working_set is NOT static (no
-// `static constexpr per_call_working_set`) yields a Pipeline with
-// `aggregate_working_set_known == false` — the concept admits trivially.
+// A stage that declares no static working set yields a pipeline whose
+// aggregate is unknown, and the concept then has nothing to contradict.
 
 template <std::size_t Ws>
 struct StatelessConsumer {
-    // NB: no `per_call_working_set` here.
+    // The absence of per_call_working_set here is the point.
     [[nodiscard]] std::optional<int> try_pop() noexcept { return 1; }
 };
 
@@ -159,10 +126,9 @@ using StatelessStage = cc::Stage<&stateless_stage, eff::BgDrainCtx>;
 using StatelessPipeline = cc::Pipeline<StatelessStage>;
 
 static_assert(!StatelessPipeline::aggregate_working_set_known,
-    "StatelessPipeline should not advertise a static aggregate WS.");
+              "StatelessPipeline must not advertise a static aggregate working set.");
 
-// Even the most restrictive ctx admits a pipeline with unknown WS —
-// no measurable contradiction.
+// Even the most restrictive context admits it.
 static_assert(cc::WorkloadBudgetCoherent<TinyBudgetCtx, StatelessPipeline>);
 static_assert(cc::WorkloadBudgetCoherent<eff::ColdInitCtx, StatelessPipeline>);
 

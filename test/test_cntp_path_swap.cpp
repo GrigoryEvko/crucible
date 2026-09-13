@@ -19,9 +19,7 @@ struct Wire {
 
 using Proto = proto::Send<int, proto::End>;
 
-void send_int(Wire& wire, int value) noexcept {
-    wire.last = value;
-}
+void send_int(Wire& wire, int value) noexcept { wire.last = value; }
 
 cntp::DeclaredPathSwapPlan make_plan() {
     auto flow = cntp::admit_path_id(10).value();
@@ -34,10 +32,8 @@ cntp::DeclaredPathSwapPlan make_plan() {
 }
 
 void test_admission() {
-    assert(cntp::swap_state_name(cntp::SwapState::Draining) ==
-           std::string_view{"Draining"});
-    assert(cntp::swap_error_name(cntp::SwapError::SamePath) ==
-           std::string_view{"SamePath"});
+    assert(cntp::swap_state_name(cntp::SwapState::Draining) == std::string_view{"Draining"});
+    assert(cntp::swap_error_name(cntp::SwapError::SamePath) == std::string_view{"SamePath"});
 
     auto zero_path = cntp::admit_path_id(0);
     assert(!zero_path.has_value());
@@ -79,8 +75,7 @@ void test_state_machine_and_session_resource_transition() {
     assert(swapper.state() == cntp::SwapState::NewPathFlushing);
 
     auto old_handle = proto::mint_session_handle<Proto>(Wire{.id = 1});
-    auto swapped = swapper.commit_sender(bg, std::move(old_handle),
-                                         Wire{.id = 2}, 400);
+    auto swapped = swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, 400);
     assert(swapped.has_value());
     assert(swapper.state() == cntp::SwapState::Complete);
     assert(swapper.event_count() == 4);
@@ -95,13 +90,11 @@ void test_state_machine_and_session_resource_transition() {
     std::printf("  test_state_machine_and_session_resource_transition: PASSED\n");
 }
 
+// The swapper is address-stable and therefore shareable across threads,
+// which means its state is read by an observer while a background
+// thread is writing it.  A plain enum field would be torn by that, and
+// the observer would see a value that is not any of the states.
 void test_concurrent_observer_sees_only_valid_states() {
-    // fixy-A5-038 regression: PathSwapper inherits Pinned, advertising
-    // address-stable cross-thread sharing.  Pre-fix the state_ field was a
-    // plain `SwapState` enum read non-atomically by state() — a foreground
-    // observer racing against a Bg-context transition_to would see torn
-    // bytes and TSan would flame.  Atomic state_ + acquire/release pairing
-    // makes the observation sound.
     crucible::effects::ColdInitCtx init{};
     crucible::effects::BgDrainCtx bg{};
 
@@ -111,9 +104,10 @@ void test_concurrent_observer_sees_only_valid_states() {
     std::atomic<std::uint32_t> torn_observations{0};
     std::atomic<std::uint32_t> total_observations{0};
     std::jthread observer{[&]() noexcept {
-        // do-while ensures at least one observation even if writer races to
-        // completion before the observer thread first wakes — the structural
-        // claim is "no torn read", not "observer wins the start-up race".
+        // The loop runs its body before testing the flag, so at least
+        // one observation happens even when the writer finishes first.
+        // The claim under test is that no read is torn, not that the
+        // observer wins the start-up race.
         do {
             const auto observed = swapper.state();
             total_observations.fetch_add(1, std::memory_order_relaxed);
@@ -148,19 +142,13 @@ void test_concurrent_observer_sees_only_valid_states() {
     std::printf("  test_concurrent_observer_sees_only_valid_states: PASSED\n");
 }
 
-// fixy-A5-024 HS14 fixture #2: runtime witness that `commit_sender` is
-// state-machine-only — bytes sitting on the OLD resource at the swap
-// boundary are LOST, never migrated to the new resource.  A real Tier-2
-// engine (MPTCP TCP_MIGRATE, RDMA path-migration verb, AF_XDP map swap)
-// would replay or hand-off these bytes; today's stub does not, and the
-// `data_migration_implemented` honesty marker advertises that fact.
-//
-// We arm a sentinel byte (`old_wire.last = 0xBEEF`) on the OLD wire to
-// represent "buffered-but-unsent" application data, drive the swap to
-// completion, and then assert the NEW wire is structurally independent:
-// fresh id, no inherited sentinel.  The OLD wire is consumed by the
-// detach inside commit_sender and is unobservable post-call — the
-// structural type guarantee IS the proof that the bytes are gone.
+// Committing a swap moves the state machine and nothing else.  Data
+// still buffered on the old resource is dropped, where a transport that
+// could genuinely migrate a path would replay or hand it over.  The
+// sentinel value planted below stands in for such buffered data, and
+// the old resource is consumed by the commit, so its absence from the
+// new one is the whole proof: there is no path by which it could
+// arrive.
 void test_commit_sender_loses_in_flight_bytes() {
     crucible::effects::ColdInitCtx init{};
     crucible::effects::BgDrainCtx bg{};
@@ -171,26 +159,24 @@ void test_commit_sender_loses_in_flight_bytes() {
     assert(swapper.receiver_accepts_bidir(bg, 200).has_value());
     assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
 
-    Wire old_wire{.id = 7, .last = 0xBEEF};  // sentinel "in-flight byte"
+    Wire old_wire{.id = 7, .last = 0xBEEF};  // stands in for buffered data
     auto old_handle = proto::mint_session_handle<Proto>(std::move(old_wire));
 
     Wire new_wire{.id = 9, .last = 0};
-    auto swapped = swapper.commit_sender(bg, std::move(old_handle),
-                                         std::move(new_wire), 400);
+    auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), 400);
     assert(swapped.has_value());
     assert(swapper.state() == cntp::SwapState::Complete);
 
-    // The new resource is structurally independent of the old one: the
-    // sentinel byte 0xBEEF is unrecoverable because no Tier-2 migration
-    // engine copied or replayed it.  A future migration-capable backend
-    // would flip `data_migration_implemented` to true AND propagate the
-    // sentinel — that day this assert turns into a positive check.
+    // A migration-capable backend would flip the marker and carry the
+    // sentinel across, at which point these two lines become a positive
+    // check instead of a negative one.
     assert(swapped->resource().id == 9);
     assert(swapped->resource().last == 0);
     assert(swapped->resource().last != 0xBEEF);
 
-    // Drive the session through send+close so the SessionHandle lifetime
-    // contract is honored (the framework aborts on dropped handles).
+    // A session handle must be run to its end.  Dropping one aborts, so
+    // the send and close here are the lifetime contract and not extra
+    // coverage.
     auto end = std::move(*swapped).send(7, send_int);
     auto final_wire = std::move(end).close();
     assert(final_wire.id == 9);
@@ -199,15 +185,12 @@ void test_commit_sender_loses_in_flight_bytes() {
     std::printf("  test_commit_sender_loses_in_flight_bytes: PASSED\n");
 }
 
-// fixy-V-207 regression: pre-fix, `transition_to` was a read-then-store
-// pair that two threads could both observe (prev = NewPathFlushing) and both
-// fire `append_event(prev=NewPathFlushing, to=Complete, ts)` — corrupting
-// the audit log with TWO Complete transitions out of one NewPathFlushing
-// source.  The CAS-loop replacement and [[nodiscard]] bool return guarantee:
-//   (a) exactly one transition succeeds when N threads race the same edge,
-//   (b) the audit log gains exactly ONE event per successful transition,
-//   (c) losing threads get InvalidTransition because the post-CAS state
-//       (Complete) is not a valid source for Complete (table rejects).
+// A transition that read the state and then stored it would let two
+// threads both see the same source state and both append an event, so
+// one edge would appear twice in the audit log.  Replacing that with a
+// single compare-and-exchange makes exactly one thread win the edge.
+// The losers are then refused, because the state they would transition
+// from is no longer the state that is there.
 void test_concurrent_complete_receiver_exactly_one_wins() {
     constexpr int kRacers = 16;
     crucible::effects::ColdInitCtx init{};
@@ -216,10 +199,9 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     auto swapper = cntp::mint_path_swapper<32>(init);
     auto plan = make_plan();
 
-    // Drive to NewPathFlushing — the single state from which N readers will
-    // race `complete_receiver`.  These setup transitions are sequential so
-    // the event count up to here is exactly 3 (Stable→Draining,
-    // Draining→BidirReceive, BidirReceive→NewPathFlushing).
+    // The three setup transitions run on this thread alone, so the
+    // event count is known exactly before the race begins and the one
+    // event the race is allowed to add can be counted afterwards.
     assert(swapper.begin_swap(bg, plan, 100).has_value());
     assert(swapper.receiver_accepts_bidir(bg, 200).has_value());
     assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
@@ -232,12 +214,13 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     std::jthread racers[kRacers];
     for (int idx = 0; idx < kRacers; ++idx) {
         racers[idx] = std::jthread{[&, idx]() noexcept {
-            // Spin to align thread starts as tightly as the OS allows so
-            // multiple threads enter the CAS-loop with the same `prev`
-            // observation.  Without this the first thread typically wins
-            // before the others wake and the race is unobserved.
+            // The threads are held at this gate so that they enter the
+            // exchange having seen the same state.  Without the gate the
+            // first thread to wake usually finishes before the others
+            // start and the race never happens.
             while (!start.load(std::memory_order_acquire)) {
-                // PAUSE — but std::this_thread::yield is the portable form.
+                // Yielding rather than spinning: this gate is off any
+                // hot path, and yielding behaves the same everywhere.
                 std::this_thread::yield();
             }
             const std::uint64_t now_ns = 400 + static_cast<std::uint64_t>(idx);
@@ -252,15 +235,14 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     }
 
     start.store(true, std::memory_order_release);
-    for (auto& t : racers) t.join();
+    for (auto& t : racers)
+        t.join();
 
-    // EXACTLY ONE transition succeeded — the CAS-loop guarantee.
     assert(winners.load() == 1);
     assert(losers.load() == kRacers - 1);
 
-    // Audit log gained EXACTLY ONE Complete event.  Pre-fix this would have
-    // been kRacers Complete events (one per stale-prev append_event call),
-    // corrupting the swap history.
+    // One winner is not enough on its own: the log must have gained one
+    // event and not one per thread that observed the source state.
     assert(swapper.event_count() == 4);
     assert(swapper.event_at(3).from == cntp::SwapState::NewPathFlushing);
     assert(swapper.event_at(3).to == cntp::SwapState::Complete);
@@ -297,23 +279,17 @@ void test_invalid_transition_and_timeout() {
 
 int main() {
     static_assert(sizeof(cntp::PositivePathId) == sizeof(std::uint64_t));
-    static_assert(sizeof(cntp::DeclaredPathSwapPlan) ==
-                  sizeof(cntp::PathSwapPlan));
+    static_assert(sizeof(cntp::DeclaredPathSwapPlan) == sizeof(cntp::PathSwapPlan));
     static_assert(cntp::CtxFitsPathSwapMint<crucible::effects::ColdInitCtx>);
     static_assert(cntp::CtxFitsPathSwapTransition<crucible::effects::BgDrainCtx>);
     static_assert(!cntp::CtxFitsPathSwapTransition<crucible::effects::HotFgCtx>);
     static_assert(cntp::PathSwapSessionResource<Wire>);
     static_assert(!cntp::PathSwapSessionResource<Wire&>);
 
-    // fixy-A5-024 HS14 fixture #1: compile-time witness that the
-    // PathSwapper class advertises STATE-ONLY semantics — no Tier-2
-    // in-flight data migration engine (MPTCP/RDMA/AF_XDP) ships yet.
-    // The marker is `static constexpr bool`, grep-discoverable via
-    // `data_migration_implemented`, and reachable from every template
-    // arity so callers can branch at compile time on the gap.
-    static_assert(!cntp::PathSwapper<>::data_migration_implemented,
-                  "fixy-A5-024: PathSwapper must advertise state-only "
-                  "semantics until a per-transport migration engine ships");
+    // The marker is readable at every arity, so a caller can branch on
+    // the gap at compile time rather than discovering it at runtime.
+    static_assert(!cntp::PathSwapper<>::data_migration_implemented, "PathSwapper must advertise state-only semantics "
+                                                                    "until a per-transport migration engine ships");
     static_assert(!cntp::PathSwapper<8>::data_migration_implemented);
     static_assert(!cntp::PathSwapper<16>::data_migration_implemented);
 

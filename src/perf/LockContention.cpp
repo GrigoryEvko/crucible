@@ -1,49 +1,22 @@
-// crucible::perf::LockContention — libbpf binding implementation.
-//
-// Third per-program facade in the GAPS-004 series (after SenseHub,
-// SchedSwitch, PmuSample).  Mirrors SchedSwitch.cpp's loader shape
-// almost 1:1 — same 7-step Phase loop, same WriteOnce/Tagged/
-// Monotonic/NonMovable wrapper toolkit, same env-var conventions.
-//
-// Specific differences vs SchedSwitch.cpp (lock_contention.bpf.c
-// has a different map shape):
-//   • `lock_wait_count` (1-element ARRAY) replaces `cs_count` —
-//     same syscall-per-read shape, just a different name.
-//   • `lock_timeline` (BPF_F_MMAPABLE) replaces `sched_timeline` —
-//     same mmap shape, same TimelineHeader+events[] layout, just
-//     TimelineLockEvent (32 B) instead of TimelineSchedEvent (32 B).
-//   • NO `our_tids` registration — lock_contention.bpf.c uses
-//     is_target() (target_tgid match) for filtering, NOT per-tid
-//     lookup.  Phase 5 is therefore omitted.
-//   • Two attach points (sys_enter_futex + sys_exit_futex), not one
-//     — both must attach for the facade to work (a half-attach
-//     would leak wait_start entries).  Failure is hard nullopt.
-//
-// Cost: each futex syscall pays ~100 ns extra (two tracepoint
-// dispatches + two map ops on enter, four on exit including the
-// timeline write + count bump).  For lock-contended workloads at
-// ~10K futex_wait/sec this is 1-2 ms/sec ≈ 0.1-0.2% CPU.  Default-on
-// safe.  See GAPS-004d header for the full cost model.
-
 #include <crucible/perf/LockContention.h>
 
-#include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
+#include <crucible/perf/detail/BpfLoader.h>
 
-#include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
-#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
-#include <crucible/safety/Pinned.h>  // safety::NonMovable<T>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
 
-#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>
 
 #include <inplace_vector>
-#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>
 
 extern "C" {
 extern const unsigned char lock_contention_bpf_bytecode[];
@@ -54,7 +27,6 @@ namespace crucible::perf {
 
 namespace {
 
-// Shared loader helpers from detail::BpfLoader (GAPS-004x).
 namespace source = ::crucible::perf::detail::source;
 using ::crucible::perf::detail::Tgid;
 using ::crucible::perf::detail::Tid;
@@ -70,8 +42,8 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
-// FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
-// ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
+// The distinct phantom tag makes one facade's ring buffer mapping unusable
+// as another facade's mapping at compile time.
 struct LockContentionRingbufTag {};
 struct ReadOnlyProt {};
 struct SharedShare {};
@@ -80,7 +52,6 @@ struct LockContention::State : crucible::safety::NonMovable<LockContention::Stat
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    // FIXY-V-236: RAII OwnedMmap replaces {WriteOnceNonNull, WriteOnce}.
     using TimelineMmap = ::crucible::safety::OwnedMmap<LockContentionRingbufTag, ReadOnlyProt, SharedShare>;
     std::optional<TimelineMmap> timeline_mmap{};
 
@@ -93,7 +64,6 @@ struct LockContention::State : crucible::safety::NonMovable<LockContention::Stat
     ~State() {
         for (struct bpf_link* l : links)
             if (l != nullptr) bpf_link__destroy(l);
-        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -117,7 +87,6 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
 
     auto state = std::make_unique<State>();
 
-    // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
     opts.sz = sizeof(opts);
     opts.object_name = "crucible_lock_contention";
@@ -131,7 +100,6 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     }
     state->obj = obj;
 
-    // ── 2. Rewrite target_tgid in .rodata to our PID ───────────────
     if (struct bpf_map* rodata = find_rodata(state->obj); rodata != nullptr) {
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
@@ -144,10 +112,8 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
         }
     }
 
-    // ── 3. Skip programs whose tracepoints aren't on this kernel ──
     disable_unavailable_programs(state->obj);
 
-    // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
                "verifier rejected, missing CAP_BPF, or kernel too old)",
@@ -155,10 +121,6 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
         return std::nullopt;
     }
 
-    // ── 5. (No our_tids registration — this BPF program filters on
-    //       target_tgid only, set in Phase 2.)
-
-    // ── 6. Attach every autoload-enabled program ───────────────────
     struct bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
@@ -184,12 +146,9 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
         }
         state->links.push_back(link);
     }
-    // Both sys_enter_futex AND sys_exit_futex are required.  A
-    // half-attach (only enter, no exit) would leak wait_start map
-    // entries to MAX_ENTRIES (65536) and silently lose contention
-    // data after that.  Insist on at least 2 links — if only one
-    // attached the kernel is misconfigured and we should bail
-    // rather than pretend to be observable.
+    // The attach is all-or-nothing.  With the enter tracepoint attached but
+    // the exit one missing, wait-start entries accumulate to the map's
+    // capacity and contention data is silently lost past that point.
     if (state->links.size() < 2) {
         report("expected 2 tracepoint attachments (sys_enter_futex + "
                "sys_exit_futex), got fewer — kernel missing futex syscall "
@@ -197,7 +156,6 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
         return std::nullopt;
     }
 
-    // ── 7. mmap the lock_timeline ring buffer ──────────────────────
     struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "lock_timeline");
     if (timeline_map == nullptr) {
         report("lock_timeline map not found in object (bytecode/header out of sync — rebuild)");
@@ -211,8 +169,6 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
         return std::nullopt;
     }
     const size_t page = static_cast<size_t>(page_l);
-    // sizeof(TimelineHeader) + sizeof(events[TIMELINE_CAPACITY])
-    //   = 64 + (4096 * 32) = 131136 bytes.  Round to page granularity.
     const size_t bytes = sizeof(TimelineHeader) + TIMELINE_CAPACITY * sizeof(TimelineLockEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
     void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
@@ -222,17 +178,13 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
                errno);
         return std::nullopt;
     }
-    // FIXY-V-236: structural RAII closure via OwnedMmap.
     state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
-    // Capture the lock_wait_count FD for wait_count() lookups.  The
-    // map is a 1-element ARRAY map (not mmap-able as currently
-    // declared in lock_contention.bpf.c), so reads require a syscall.
+    // The wait-count map is a one-element array map and is not declared
+    // mmap-able, so every read of it costs a syscall through this fd.
     if (struct bpf_map* wc = bpf_object__find_map_by_name(state->obj, "lock_wait_count"); wc != nullptr) {
         state->wait_count_fd = map_fd(wc);
     } else {
-        // Soft failure — the timeline still works without
-        // lock_wait_count, and wait_count() returns 0 when fd is -1.
         if (verbose()) {
             std::fprintf(stderr, "[crucible::perf] lock_contention lock_wait_count map missing — "
                                  "wait_count() will return 0\n");
@@ -265,14 +217,13 @@ safety::Borrowed<const TimelineLockEvent, LockContention> LockContention::timeli
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineLockEvent, LockContention>{};
     }
-    // FIXY-V-236: bit_cast OwnedMmap void* data() to typed volatile ptr.
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
-    // runtime; forbidden only in constant expressions), then start_lifetime_as_array
-    // (P2590R2) begins implicit-lifetime TimelineLockEvent storage in-place.
-    // _Tp non-const: const-void* overload returns const _Tp*; passing
-    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
-    // through a const-qualified array location.
+    // The mapping is untyped byte storage, so start_lifetime_as_array begins
+    // the typed array lifetime inside it.  The bit_cast drops volatile, which
+    // is well defined at runtime and forbidden only in a constant expression.
+    // The element type stays non-const: the const-void* overload already
+    // returns a const pointer, and a const element type makes libstdc++ emit
+    // an asm clobber that writes through a const-qualified location.
     auto* events = std::start_lifetime_as_array<TimelineLockEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineLockEvent, LockContention>{events, TIMELINE_CAPACITY};
@@ -281,9 +232,8 @@ safety::Borrowed<const TimelineLockEvent, LockContention> LockContention::timeli
 uint64_t LockContention::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: implicit qualification add (volatile T* → const volatile T*)
-    // is a permitted conversion; start_lifetime_as<TimelineHeader> begins
-    // implicit-lifetime header storage at the mmap base.
+    // The added const selects the overload taking const volatile void*, which
+    // returns a const volatile pointer to the header.
     const volatile uint8_t* qbase = base;
     auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;

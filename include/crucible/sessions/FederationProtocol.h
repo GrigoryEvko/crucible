@@ -1,20 +1,11 @@
 #pragma once
 
-// crucible::safety::proto::federation
+// The byte-stable codec lives elsewhere. This header fixes only the legal
+// message order around it.
 //
-// MPST facade for Cipher federation.  The byte-stable codec remains
-// in cipher/FederationProtocol.h; this header describes the legal
-// protocol order around that codec:
-//
-//   Sender  -> Coord    : ContentAddressed<FederationEntryHeader>
-//   Coord   -> Sender   : Ack<KeyTag>
-//   Coord   -> Receiver : PullRequest<KeyTag>
-//   Receiver-> Coord    : ContentAddressed<FederationEntryPayload<KeyTag>>
-//   repeat
-//
-// The projected Sender and Receiver views are the production-facing
-// handles.  Coord is included so the global is honest three-party MPST
-// rather than two unrelated binary protocols.
+// The projected sender and receiver views are the production-facing handles.
+// The coordinator role is part of the global type so that the protocol is one
+// honest three-party description rather than two unrelated binary ones.
 
 #include <crucible/Types.h>
 #include <crucible/cipher/FederationProtocol.h>
@@ -34,39 +25,19 @@
 
 namespace crucible::safety::proto::federation {
 
-// ── fixy-CR-13: federation row gate ────────────────────────────────
+// Every send and receive on a role protocol is a network round trip that waits
+// on a remote peer. The row is IO because the channel touches kernel sockets and
+// device queues, and Block because the two operations wait synchronously.
 //
-// Federation channels are heavy-weight cross-machine transports: every
-// Send/Recv on a `SenderProto` / `ReceiverProto` / `CoordProto` lowers
-// to a network round-trip that blocks the calling thread on a remote
-// peer.  The natural effect row is `Row<IO, Block>` — IO because the
-// channel touches kernel sockets / NIC queues, Block because Send and
-// Recv synchronously wait for the peer.
-//
-// Pre fixy-CR-13 the four per-role mints (`mint_sender` /
-// `mint_receiver` / `mint_coord` / `mint_channel`) and the fixy-level
-// wrapper `fixy::sess::mint_federation_channel` only required
-// `IsExecCtx<Ctx>` — a `HotFgCtx` (Fg cap, `Row<>` row, hot-path tier)
-// could mint a federation channel cleanly.  That contradicted both the
-// header-doc invariant ("heavy-weight cross-machine transport") and the
-// general row-flow discipline (call-site ctx must admit the row the
-// callee actually executes).
-//
-// `federation_required_row` is the public anchor for the gate.  Adding
-// `requires Subrow<federation_required_row, typename Ctx::row_type>`
-// to every mint structurally rejects Fg / hot-path call sites: Fg's
-// `cap_permitted_row` is `Row<>`, so a Fg-rooted ctx can never widen
-// its row to include `IO`/`Block` via `.in_row<>()` — the Subrow check
-// is unsatisfiable at construction.  Bg-rooted ctx whose row already
-// includes IO can widen to add `Block` (Bg's permitted row is
-// `Row<Bg, Alloc, IO, Block>`) and mint without friction.
+// A foreground context permits the empty row and can never widen to IO or Block,
+// so the gate below is unsatisfiable there. A background context whose permitted
+// row already covers both widens to them and mints.
 
 using federation_required_row =
     ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
 
-// Diagnostic boundary symbol — passed as the `FnPtr` argument to
-// `CRUCIBLE_ROW_MISMATCH_ASSERT` so the user sees a grep-discoverable
-// name in the error message.  Never invoked; address-of only.
+// Never called. Its address is passed to the row-mismatch assertion so the
+// diagnostic carries a name the reader can search for.
 [[noreturn]] inline void federation_mint_boundary() noexcept { std::abort(); }
 
 template <typename Ctx>
@@ -149,48 +120,14 @@ struct role_protocol_matches<CoordRole, CoordProto<KeyTag>, KeyTag> : std::true_
 template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
 inline constexpr bool role_protocol_matches_v = role_protocol_matches<Role, Proto, KeyTag>::value;
 
-// ── fixy-A2-009: per-role admittance witness, fractional discipline ─
+// Every per-role mint takes a share of the admittance permission for the remote
+// organization. A share proves that the local peer was admitted to that
+// organization. It also proves that a live guard holds the pool refcount above
+// zero. The share is fractional rather than exclusive, so one admittance backs
+// many mints through that refcount instead of by aliasing one token.
 //
-// Every per-role mint requires a `SharedPermission<tag::FederatedPeer
-// <Org>>` witness — proof that the local Cog was admitted to converse
-// with the remote `Org` peer through `mint_federation_admittance`,
-// AND that an outstanding `SharedPermissionGuard` is keeping the
-// admittance pool's refcount above zero.  The original fixy-CR-07
-// fix took the admittance by `Permission<...> const&`, which defeated
-// CSL linearity: one Permission could be silently re-used across an
-// unbounded number of mints without any structural type-system
-// witness of the share count.  The current encoding splits the
-// pattern into the canonical three-piece fractional-permission shape
-// (CLAUDE.md §IX, Permission.h:863-879):
-//
-//   Permission<FederatedPeer<Org>>             — exclusive, linear.
-//   SharedPermissionPool<FederatedPeer<Org>>   — parks the exclusive;
-//       atomic refcount; lend() bumps it, Guard destructor decrements.
-//   SharedPermissionGuard<FederatedPeer<Org>>  — RAII; live in the
-//       caller's frame for the duration of mint+use.
-//   SharedPermission<FederatedPeer<Org>>       — empty proof token
-//       (sizeof = 1, EBO-collapsible), produced by Guard::token().
-//
-// `Org` is the FIRST template parameter — non-deducible, must be
-// supplied explicitly at every call site:
-//
-//   auto admitted = std::move(*::crucible::permissions::
-//       mint_federation_admittance<OrgB,
-//           policy::admit_orgs<OrgB>>(local_cipher, handshake));
-//   auto pool  = federation::mint_federation_pool<OrgB>(
-//       std::move(admitted));
-//   auto guard = pool.lend();                  // refcount bumped
-//   auto sender = federation::mint_sender<OrgB, TraceKey>(
-//       ctx, endpoint, guard->token());        // SharedPermission
-//
-// The witness type carries Org in its tag, so passing a
-// `SharedPermission<FederatedPeer<OrgA>>` to `mint_sender<OrgB, ...>`
-// is a hard type mismatch — closes the cross-org session
-// impersonation gap that paralleled the cross-org permission-split
-// gap closed in fixy-CR-05.  The fractional discipline closes the
-// linearity gap reported in fixy-A2-009: the type system now reflects
-// "show admittance once, mint many" by routing the many through the
-// pool's refcount rather than aliasing one Permission.
+// The organization tag rides in the witness type, so a share for one peer does
+// not type-check against a mint for another.
 
 template <typename Org>
 [[nodiscard]] constexpr auto mint_federation_pool(

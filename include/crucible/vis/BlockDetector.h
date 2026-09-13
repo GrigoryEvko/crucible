@@ -1,19 +1,7 @@
 #pragma once
 
-// BlockDetector: group ops into blocks using Vessel scope_hash.
-//
-// The Vessel records scope_hash per op from torch.nn.Module forward
-// pre-hooks. Each unique scope path = one block. No architecture
-// heuristics — the module hierarchy IS the block structure.
-//
-// Three data sources (all from Crucible's recording pipeline):
-//   1. scope_hash  → nn.Module path (block boundaries)
-//   2. CKernelId   → compute pattern (op classification)
-//   3. TensorMeta  → requires_grad, grad_fn_hash, shapes
-//
-// Forward: scope-based grouping at configurable depth.
-// Backward: scope is stale → chunked by size.
-// Optimizer: detected by OpFamily::OPTIM.
+// The scope hash on each op is recorded from the forward pre-hook of the
+// enclosing module, so one scope path is one module.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
@@ -28,10 +16,6 @@
 #include <vector>
 
 namespace crucible::vis {
-
-// ═══════════════════════════════════════════════════════════════════
-// Op family — from CKernel taxonomy, not ATen names
-// ═══════════════════════════════════════════════════════════════════
 
 enum class OpFamily : uint8_t {
     GEMM,
@@ -82,15 +66,14 @@ enum class OpFamily : uint8_t {
     }
 }
 
-// Block kind: scope-based.
 enum class BlockKind : uint8_t {
-    MODULE,  // forward: nn.Module scope group
-    MODULE_BWD,  // backward: mirrors forward
-    OPTIMIZER,  // parameter updates
-    EPILOGUE,  // trailing cleanup
-    ROOT,  // ops outside any module scope
-    BRANCH,  // live Merkle DAG guard node
-    LOOP,  // live Merkle DAG loop node
+    MODULE,
+    MODULE_BWD,
+    OPTIMIZER,
+    EPILOGUE,
+    ROOT,  // Ops that sit in no module scope.
+    BRANCH,
+    LOOP,
 };
 
 [[nodiscard]] constexpr const char* block_kind_name(BlockKind k) {
@@ -146,10 +129,6 @@ enum class Architecture : uint8_t {
     GENERIC
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// Op — lightweight per-op view
-// ═══════════════════════════════════════════════════════════════════
-
 struct Op {
     uint32_t idx = 0;
     SchemaHash schema{};
@@ -165,10 +144,6 @@ struct Op {
     uint64_t data_ptr_in[8]{};
     uint64_t data_ptr_out[4]{};
 };
-
-// ═══════════════════════════════════════════════════════════════════
-// Block
-// ═══════════════════════════════════════════════════════════════════
 
 struct Block {
     BlockKind kind = BlockKind::ROOT;
@@ -190,10 +165,6 @@ struct DetectionResult {
     uint32_t bwd_end = 0;
     uint32_t optim_start = 0;
 };
-
-// ═══════════════════════════════════════════════════════════════════
-// Op family from schema name
-// ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline OpFamily classify_family(std::string_view name) {
     if (name.empty()) return OpFamily::OTHER;
@@ -219,10 +190,6 @@ struct DetectionResult {
     return OpFamily::OTHER;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Build Op array
-// ═══════════════════════════════════════════════════════════════════
-
 [[nodiscard]] inline std::vector<Op> build_ops(const LoadedTrace& trace) {
     std::vector<Op> ops(trace.num_ops);
     for (uint32_t i = 0; i < trace.num_ops; i++) {
@@ -232,7 +199,8 @@ struct DetectionResult {
         op.schema = e.schema_hash;
         op.scope = trace.scope_hashes[i];
         op.name = schema_short_name(e.schema_hash).value().data();
-        // Scope names registered in SchemaTable under their hash value
+        // Scope names live in the same table, keyed by the raw hash value.
+        // That is why the scope hash is rewrapped as a schema hash here.
         op.scope_name = global_schema_table().lookup(SchemaHash{trace.scope_hashes[i].raw()}).value().data();
         op.family = classify_family(op.name ? std::string_view{op.name} : "");
         op.n_in = e.num_inputs;
@@ -272,7 +240,7 @@ struct DetectionResult {
     return s;
 }
 
-// Truncate scope to depth N: "a.b.c.d.e" at depth 3 → "a.b.c"
+// Depth 3 of "a.b.c.d.e" is "a.b.c".
 [[nodiscard]] inline std::string truncate_scope(const char* path, uint32_t depth) {
     if (!path || !*path) return {};
     std::string_view sv{path};
@@ -285,7 +253,7 @@ struct DetectionResult {
     return std::string{sv.substr(0, pos > 0 ? pos - 1 : 0)};
 }
 
-// Last N components: "a.b.c.d.e" with tail=2 → "d.e"
+// Tail 2 of "a.b.c.d.e" is "d.e".
 [[nodiscard]] inline std::string scope_tail(const char* path, uint32_t tail = 2) {
     if (!path || !*path) return "(root)";
     std::string_view sv{path};
@@ -298,10 +266,6 @@ struct DetectionResult {
     return std::string{sv.substr(pos + 1)};
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Emit one block from an op range
-// ═══════════════════════════════════════════════════════════════════
-
 inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, BlockKind kind, Phase phase,
                         std::string label, std::string scope_path = {}) {
     Block b;
@@ -311,7 +275,6 @@ inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, B
     b.end_op = end;
     b.num_ops = end - start + 1;
     b.scope_path = std::move(scope_path);
-    // Output shape from last op with valid shape
     for (uint32_t j = end + 1; j > start; j--) {
         if (ops[j - 1].out_ndim > 0) {
             b.out_shape = shape_string(ops[j - 1]);
@@ -327,17 +290,11 @@ inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, B
     return b;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Detect blocks from scope_hash grouping
-// ═══════════════════════════════════════════════════════════════════
-
 [[nodiscard]] inline DetectionResult detect_blocks(const LoadedTrace& trace, uint32_t scope_depth = 4) {
     DetectionResult result;
     auto ops = build_ops(trace);
     if (ops.empty()) return result;
     const auto n = static_cast<uint32_t>(ops.size());
-
-    // ── Phase boundaries ──────────────────────────────────────────────
 
     uint32_t first_bwd = n;
     for (uint32_t i = 0; i < n; i++) {
@@ -358,8 +315,6 @@ inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, B
     result.bwd_end = optim_start > 0 ? optim_start - 1 : n - 1;
     result.optim_start = optim_start;
 
-    // ── Forward: group by scope path at configured depth ──────────────
-
     std::string prev_scope;
     uint32_t block_start = 0;
 
@@ -379,8 +334,8 @@ inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, B
     }
     if (block_start <= result.fwd_end) emit_fwd_block(block_start, result.fwd_end);
 
-    // ── Backward: chunked (scope stale during autograd) ───────────────
-
+    // The scope hash is stale during autograd, so the backward range cannot
+    // be grouped by scope. It is chunked by op count instead.
     if (first_bwd < optim_start) {
         constexpr uint32_t CHUNK = 30;
         uint32_t bwd_start = first_bwd;
@@ -392,8 +347,6 @@ inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, B
             }
         }
     }
-
-    // ── Optimizer ─────────────────────────────────────────────────────
 
     if (optim_start < n) {
         uint32_t n_params = 0, last = optim_start;
@@ -410,8 +363,6 @@ inline Block make_block(std::span<const Op> ops, uint32_t start, uint32_t end, B
             result.blocks.push_back(
                 make_block(ops, last + 1, n - 1, BlockKind::EPILOGUE, Phase::OPTIMIZER, "Epilogue"));
     }
-
-    // ── Architecture detection ────────────────────────────────────────
 
     std::vector<int32_t> res;
     for (const auto& b : result.blocks)

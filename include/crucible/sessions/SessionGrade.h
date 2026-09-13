@@ -1,25 +1,5 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — protocol grade projection
-//
-// GAPS-069.  Projects a session protocol into a compile-time product
-// grade over the payload axes that already have shipped lattices:
-//
-//   ProductLattice<
-//       VendorLattice::At<V>,
-//       ToleranceLattice::At<N>,
-//       CipherTierLattice::At<C>,
-//       CrashLattice::At<K>,
-//       PresenceLattice::At<EpochVersioned>,
-//       PresenceLattice::At<NumaPlacement>>
-//
-// This is deliberately a compile-time introspection layer.  GAPS-070
-// consumes protocol_grade_t<P> as the orthogonal subtype filter.
-// Every operation below is type-level or constexpr.  No runtime
-// verification path is introduced in the headers.
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/algebra/lattices/ProductLattice.h>
@@ -235,11 +215,10 @@ struct payload_grade<::crucible::safety::Crash<K, T>> {
         payload_grade_t<T>>;
 };
 
-// EpochVersioned<T> and NumaPlacement<T> carry runtime coordinates,
-// not type-pinned epoch/node values.  The protocol grade records the
-// compile-time evidence that the wrapper is present, so subtype checks
-// can reject unauthorised attempts to regain that evidence from a bare
-// payload.  Per-instance leq remains at the wrapper admission gate.
+// These two wrappers carry runtime coordinates rather than type-pinned values,
+// so the grade records only that the wrapper is present. A subtype check can
+// then refuse an attempt to recover that evidence from a bare payload. The
+// per-instance comparison stays at the wrapper admission gate.
 template <typename T>
 struct payload_grade<::crucible::safety::EpochVersioned<T>> {
     using type = detail::session_grade::join_t<

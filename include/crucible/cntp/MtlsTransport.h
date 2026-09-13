@@ -1,54 +1,5 @@
 #pragma once
 
-// GAPS-126.  CNT-P mutual-TLS federation transport substrate.
-//
-// This header owns typed admission for the policy and identity facts that
-// a future TLS backend must enforce.  It deliberately does not claim a real
-// TLS handshake, OpenSSL/BoringSSL binding, kTLS install, or Cipher audit
-// write until those substrates exist.  Runtime connect/send/recv therefore
-// report BackendUnavailable rather than fabricating security.
-//
-// fixy-A5-001 honesty marker.  The header is split into TWO tiers; flipping
-// `data_plane_implemented` from false to true is the contract a backend
-// author MUST satisfy before claiming live mTLS:
-//
-//   LIVE TIER (functional — verified by test_cntp_mtls_transport):
-//     • admit_x509_certificate_pem          (PEM blob admission)
-//     • admit_private_key_pem<Algo>         (PEM blob admission)
-//     • admit_certificate_fingerprint       (32-byte SHA-256 admission)
-//     • MtlsDnsName::from                   (RFC-1035-ish label validation)
-//     • mint_mtls_config<Min, P, S>         (typed config construction)
-//     • validate_mtls_config / _policy      (TLS 1.3 + AES-256-GCM /
-//                                            CHACHA20-POLY1305 enforcement)
-//     • admit_mtls_peer_from_handshake      (policy + cipher + pin match)
-//     • mtls_policy_allows_*                (predicate accessors)
-//     • MtlsPolicy::allow_peer_with_pin     (bounded peer list mutation)
-//
-//   STUB TIER (returns BackendUnavailable / KtlsOffloadDeferred):
-//     • connect_mtls                        (admission runs; then aborts)
-//     • mtls_send / mtls_recv               (no socket path)
-//     • enable_ktls_offload                 (no kTLS install)
-//
-// What flipping `data_plane_implemented = true` requires:
-//   1. connect_mtls performs a real TLS 1.3 handshake — the cipher chosen
-//      by the peer is admitted via admit_mtls_peer_from_handshake, the
-//      peer fingerprint is computed from the live cert chain, the pin
-//      match is enforced.
-//   2. mtls_send / mtls_recv route bytes through the negotiated AEAD
-//      record layer (BoringSSL SSL_write / SSL_read, or equivalent).
-//   3. enable_ktls_offload installs TLS_TX / TLS_RX socket options when
-//      the cipher is in the kTLS-supported set, else returns
-//      KtlsOffloadDeferred.
-//   4. Cipher audit write captures the handshake summary (peer DNS,
-//      pinned fingerprint, negotiated cipher, timestamp).
-//   5. FIXY-U-087 sweep flips `data_plane_implemented` and updates
-//      test_cntp_mtls_transport to exercise the live data-plane path.
-//
-// Until then: this header refuses to fabricate security.  The trait is
-// a compile-time honesty marker — call-site `static_assert`s and
-// runtime sentinel tests pin the current contract so a partial flip is
-// caught at translation time, not at production breach time.
-
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/Pacing.h>
 #include <crucible/safety/Bits.h>
@@ -67,23 +18,12 @@
 
 namespace crucible::cntp {
 
-// fixy-A5-001 honesty marker.  See the file-level doc-block for the
-// precise live-vs-stub tier split.  This `inline constexpr` is the
-// machine-readable form of that contract:
-//
-//   while data_plane_implemented == false:
-//     connect_mtls         → MtlsError::BackendUnavailable
-//     mtls_send / mtls_recv → MtlsError::BackendUnavailable
-//     enable_ktls_offload  → MtlsError::KtlsOffloadDeferred
-//
-//   when data_plane_implemented flips to true:
-//     all four perform real work; the runtime sentinel test in
-//     test_cntp_mtls_transport.cpp::test_data_plane_is_stub must be
-//     updated in lockstep to exercise the live data-plane path.
-//
-// FIXY-U-087 is the cross-substrate sweep that flips this for every
-// stub'd transport surface (NicConfig / RoceConfig / SrIov / Tcam /
-// AfXdp).  Until that sweep, this header refuses to fabricate security.
+// False while the data plane is a stub.  connect_mtls, mtls_send and
+// mtls_recv return MtlsError::BackendUnavailable, and enable_ktls_offload
+// returns MtlsError::KtlsOffloadDeferred.  No handshake runs, no TLS library
+// is bound and no kTLS socket option is installed, so nothing here
+// authenticates a peer or encrypts a byte.  Everything above the data plane
+// is typed admission of the facts such a backend must enforce.
 inline constexpr bool data_plane_implemented = false;
 
 enum class MtlsError : std::uint8_t {
@@ -402,35 +342,25 @@ template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = Mtl
 admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config, MtlsDnsName peer_dns,
                                MtlsCertificateFingerprint peer_fingerprint, MtlsCipherSuite chosen_cipher) noexcept;
 
-// FIXY-U-087: stub-vs-live deprecation discipline.  The four data-plane
-// entrypoints below are STUBS (see `data_plane_implemented = false` above).
-// Every call site emits a `-Wdeprecated-declarations` warning so the substrate
-// surface is grep-discoverable at compile time, not only at runtime sentinel
-// (`MtlsError::BackendUnavailable` / `KtlsOffloadDeferred`).  Authorized test
-// sites (`test/test_cntp_mtls_transport.cpp`, `test/test_cntp_ktls_offload.cpp`)
-// suppress the warning with `#pragma GCC diagnostic push/ignored
-// "-Wdeprecated-declarations"/pop`.  When `data_plane_implemented` flips to
-// true the attribute is removed in lockstep with the pragma teardown.
-[[nodiscard, deprecated("CRUCIBLE_STUB: TLS 1.3 handshake not yet implemented; "
-                        "returns MtlsError::BackendUnavailable until BoringSSL/kTLS backend ships; "
-                        "see fixy-A5-001 / FIXY-U-087")]]
+// The four entrypoints below carry [[deprecated]] not because they are going
+// away but because the attribute makes every call site warn, so a stub cannot
+// be reached without notice at compile time.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no TLS 1.3 handshake is performed; "
+                        "returns MtlsError::BackendUnavailable")]]
 std::expected<MtlsConnection, MtlsError> connect_mtls(SocketFd socket, DeclaredMtlsConfig const& config,
                                                       MtlsDnsName peer_dns,
                                                       MtlsCertificateFingerprint peer_fingerprint) noexcept;
 
-[[nodiscard, deprecated("CRUCIBLE_STUB: mTLS record-layer send not yet "
-                        "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
-                        "FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: there is no record layer to send on; "
+                        "returns MtlsError::BackendUnavailable")]]
 std::expected<std::size_t, MtlsError> mtls_send(MtlsConnection& connection, std::span<const std::byte> bytes) noexcept;
 
-[[nodiscard, deprecated("CRUCIBLE_STUB: mTLS record-layer recv not yet "
-                        "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
-                        "FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: there is no record layer to receive on; "
+                        "returns MtlsError::BackendUnavailable")]]
 std::expected<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, std::span<std::byte> bytes) noexcept;
 
-[[nodiscard, deprecated("CRUCIBLE_STUB: kTLS TLS_TX/TLS_RX socket-option "
-                        "install not yet implemented; returns MtlsError::KtlsOffloadDeferred; "
-                        "see fixy-A5-001 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no TLS_TX/TLS_RX socket option is installed; "
+                        "returns MtlsError::KtlsOffloadDeferred")]]
 std::expected<void, MtlsError> enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept;
 
 static_assert(sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));

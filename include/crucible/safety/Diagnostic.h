@@ -1,150 +1,17 @@
 #pragma once
 
-// ── crucible::safety::diag — wrapper-axis diagnostic foundation ──────
-//
-// The classified-diagnostic vocabulary for the safety/ wrappers, the
-// effects/ row carrier, the dispatcher's concept gates, the Cipher
-// row-fence, and every other foundation primitive that needs to emit
-// a structured error.  This header IS the FOUND-E01 deliverable per
-// 28_04_2026_effects.md §7 and the foundation that subsequent
-// FOUND-E0{2..20} tasks build on.
-//
-// ── Architecture ────────────────────────────────────────────────────
-//
-// Three pillars:
-//
-//   (1) `tag_base` — an empty class that every diagnostic tag inherits
-//       from.  `is_diagnostic_class_v<T>` detects tags via
-//       `is_base_of_v<tag_base, T>`.  No trait specialization
-//       required; new tags plug in with three lines.
-//
-//   (2) `Diagnostic<Tag, Ctx...>` — a metafunction-friendly wrapper
-//       pairing a tag with arbitrary type-level context.  Used as the
-//       failure return type for metafunctions that need to propagate
-//       both a result AND the classified reason for failure (mirrors
-//       `sessions/SessionDiagnostic.h`'s precedent at line 570).
-//
-//   (3) `CRUCIBLE_DIAG_ASSERT(cond, tag, msg)` — a routed `static_assert`
-//       whose message is prefixed with the bracketed tag name for
-//       greppable build logs.  Stringification (#tag) ensures the tag
-//       name appears literally in the diagnostic.
-//
-// Tags are TYPES, not enum values.  The Category enum exists as a
-// runtime convenience surface (switch-on-failure-class patterns) and
-// is bridged to the type-level catalog via `category_of_v` /
-// `tag_of_t`.  The self-test block at file end asserts the bijection
-// holds: every Catalog entry maps to exactly one Category, every
-// Category maps back to exactly one tag.
-//
-// ── Why a parallel surface to SessionDiagnostic.h ───────────────────
-//
-// `sessions/SessionDiagnostic.h` is the SESSION-PROTOCOL vocabulary
-// (ProtocolViolation_*, CrashBranch_Missing, SubtypeMismatch, etc.).
-// This header is the WRAPPER-AXIS vocabulary (HotPathViolation,
-// DetSafeLeak, NumericalTierMismatch, etc.).  Distinct concerns;
-// distinct namespaces (`proto::diagnostic` vs `safety::diag`).
-//
-// They share NO tag types — every concept that could plausibly apply
-// to both layers (PermissionImbalance for example) is owned by
-// exactly one side.  PermissionImbalance lives in SessionDiagnostic.h
-// because the session-protocol layer is its primary emitter; if a
-// foundation-layer call site needs to emit it, it `using`-imports the
-// session-side tag rather than introducing a duplicate.  The two
-// surfaces compose through `Diagnostic<Tag, Ctx...>` since both
-// inherit from `tag_base` (this header's version is the canonical
-// `tag_base` and SessionDiagnostic.h will be retrofitted to import
-// it; for now the two ship parallel `tag_base` markers, intentionally,
-// per 28_04 design D10 — refactor is orthogonal and not in critical
-// path).
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe   — concept rejections produce structured `static_assert`
-//                output with category + offending function/type.
-//                Tag types are non-convertible — accidental cross-
-//                category propagation is a compile error.
-//   InitSafe   — every tag carries NON-EMPTY name / description /
-//                remediation, asserted by the self-test block.
-//   DetSafe    — output is consteval-built; no runtime formatting on
-//                the hot path; output is bit-stable across compiles.
-//   LeakSafe   — zero-state types; no resources to leak.
-//
-// ── Runtime cost ────────────────────────────────────────────────────
-//
-// Zero on the hot path.  Diagnostic infrastructure is consteval at
-// the failure point (compile error) and `[[gnu::cold]]` at runtime
-// reporting paths (FOUND-E06, separate header).  Hot-path TUs compile
-// contracts with `ignore` semantic; the runtime report_violation
-// surface NEVER fires there.  Per CLAUDE.md §XII.
-//
-// ── Extension policy ────────────────────────────────────────────────
-//
-// Adding a new wrapper category is a four-step structural change:
-//
-//   1. Add the tag struct (inherit `tag_base`, three constexpr
-//      string_views).  Append to the tag definitions section below.
-//   2. Add the type to `Catalog` tuple.  APPEND-ONLY — never
-//      reorder existing entries (the cache row_hash discipline in
-//      FOUND-I depends on stable indices).
-//   3. Add the enumerator to `Category` at the same index.
-//      APPEND-ONLY — same rationale.
-//   4. The self-test block re-fires automatically; if the tag is
-//      added to one place but not the other, build fails with a
-//      named assertion identifying the gap.
-//
-// User code that wants a project-local diagnostic class extends the
-// catalog by inheriting `tag_base` in its own header.  The local tag
-// participates in `is_diagnostic_class_v<T>`, `Diagnostic<Tag, Ctx...>`,
-// and `CRUCIBLE_DIAG_ASSERT` without further registration.  It does
-// NOT appear in `Category` / `Catalog` — those are the foundation's
-// closed catalog used by the dispatcher's switch dispatch.  Local
-// tags coexist; they just don't enter the foundation's enumerated
-// universe.
-//
-// ── References ──────────────────────────────────────────────────────
-//
-//   28_04_2026_effects.md §7         — design rationale + format spec
-//   sessions/SessionDiagnostic.h      — the precedent header (~826 LoC,
-//                                       23 session-protocol tags)
-//   algebra/GradedTrait.h             — the cheat-probe pattern
-//   misc/diagnostic_format.md         — structured row-mismatch format
-//                                       (FOUND-E19, follow-up)
-//
-// FOUND-E01 — implements the foundation tag catalog + macro + self-test.
-//             Subsequent FOUND-E tasks ship satellite headers under
-//             `safety/diag/`:
-//               E02-E04: function/type display name + macro hookup
-//               E05    : cheat_probe<FnPtr, Category> harness
-//               E06    : runtime report_violation cold path
-//               E07-E10: stable_name_of / stable_type_id /
-//                        stable_function_id / canonicalize_pack
-//               E16-E20: per-new-wrapper extensions, F* alias diag,
-//                        IDE/clangd integration.  Runtime JSON
-//                        emission lives in safety/diag/JsonEmitter.h:
-//                        set CRUCIBLE_DIAG_FORMAT=json to make the
-//                        default violation sink emit format-versioned
-//                        records for clangd/IDE consumers.
-
 #include <crucible/Platform.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <meta>  // FIXY-FOUND-139: reflection-derived Category ceiling
+#include <meta>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 namespace crucible::safety::diag {
-
-// ═════════════════════════════════════════════════════════════════════
-// ── tag_base — the inheritance marker ──────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Every diagnostic tag in this header inherits `tag_base`.  Detection
-// is structural via `is_base_of_v<tag_base, T>`; no per-tag trait
-// specialization required.  New tags plug in by inheritance alone.
 
 struct tag_base {
     constexpr tag_base() noexcept = default;
@@ -155,22 +22,9 @@ struct tag_base {
     ~tag_base() = default;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── The 22 wrapper-axis diagnostic tags ────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Each tag carries three constexpr string_view fields:
-//
-//   ::name         short identifier (also used in CRUCIBLE_DIAG_ASSERT)
-//   ::description  one-paragraph explanation of the BUG CLASS
-//   ::remediation  one-paragraph actionable hint for FIXING IT
-//
-// Discipline: descriptions answer WHAT the bug class is; remediations
-// answer HOW to fix it.  Both must be readable as standalone
-// sentences.  Per the self-test block: every tag has non-empty
-// description and remediation; every name is unique.
-
-// ── 1. EffectRowMismatch ───────────────────────────────────────────
+// Authoring rule for every tag below: the description states what the bug
+// class is, the remediation states how to fix an instance of it. Both read as
+// standalone sentences, because a build log shows them without this file.
 struct EffectRowMismatch : tag_base {
     static constexpr std::string_view name = "EffectRowMismatch";
     static constexpr std::string_view description = "Met(X) Subrow<R_callee, R_caller> failed: a function declared "
@@ -187,7 +41,6 @@ struct EffectRowMismatch : tag_base {
         "atoms are missing.  See effects/EffectRow.h for the row algebra.";
 };
 
-// ── 2. UnknownParameterShape ───────────────────────────────────────
 struct UnknownParameterShape : tag_base {
     static constexpr std::string_view name = "UnknownParameterShape";
     static constexpr std::string_view description = "The dispatcher (FOUND-D) could not classify the function's "
@@ -204,7 +57,6 @@ struct UnknownParameterShape : tag_base {
         "27_04_2026.md §3 for the full shape catalog.";
 };
 
-// ── 3. GradedWrapperViolation ──────────────────────────────────────
 struct GradedWrapperViolation : tag_base {
     static constexpr std::string_view name = "GradedWrapperViolation";
     static constexpr std::string_view description = "An attempt to construct a Graded-backed wrapper (Linear, "
@@ -225,7 +77,6 @@ struct GradedWrapperViolation : tag_base {
                                                     "harness (test/test_concept_cheat_probe.cpp) after fixing.";
 };
 
-// ── 4. LinearityViolation ──────────────────────────────────────────
 struct LinearityViolation : tag_base {
     static constexpr std::string_view name = "LinearityViolation";
     static constexpr std::string_view description = "A linear value (Linear<T>, Permission<Tag>, OwnedRegion<T, "
@@ -243,7 +94,6 @@ struct LinearityViolation : tag_base {
                                                     "the CSL primitive surface.";
 };
 
-// ── 5. RefinementViolation ─────────────────────────────────────────
 struct RefinementViolation : tag_base {
     static constexpr std::string_view name = "RefinementViolation";
     static constexpr std::string_view description = "A Refined<Pred, T> constructor was called with a value that "
@@ -261,7 +111,6 @@ struct RefinementViolation : tag_base {
                                                     "See safety/Refined.h for the predicate catalog.";
 };
 
-// ── 6. HotPathViolation ────────────────────────────────────────────
 struct HotPathViolation : tag_base {
     static constexpr std::string_view name = "HotPathViolation";
     static constexpr std::string_view description = "A function declared as HotPath<Hot, T> (the foreground recording "
@@ -278,7 +127,6 @@ struct HotPathViolation : tag_base {
                                                     "atomic counter increment (Hot) and drain to a bg formatter.";
 };
 
-// ── 7. DetSafeLeak ─────────────────────────────────────────────────
 struct DetSafeLeak : tag_base {
     static constexpr std::string_view name = "DetSafeLeak";
     static constexpr std::string_view description = "The 8th axiom (DetSafe per CLAUDE.md §II.8) is violated: a "
@@ -300,7 +148,6 @@ struct DetSafeLeak : tag_base {
                                                     "constructed from impure values.";
 };
 
-// ── 8. NumericalTierMismatch ───────────────────────────────────────
 struct NumericalTierMismatch : tag_base {
     static constexpr std::string_view name = "NumericalTierMismatch";
     static constexpr std::string_view description = "A function pinned at NumericalTier<BITEXACT_STRICT> or "
@@ -319,7 +166,6 @@ struct NumericalTierMismatch : tag_base {
                                                     "the application's accuracy requirement.";
 };
 
-// ── 9. MemOrderViolation ───────────────────────────────────────────
 struct MemOrderViolation : tag_base {
     static constexpr std::string_view name = "MemOrderViolation";
     static constexpr std::string_view description = "A function in concurrent/* used or required MemOrder<SeqCst>.  "
@@ -338,7 +184,6 @@ struct MemOrderViolation : tag_base {
                                                     "argument.";
 };
 
-// ── 10. AllocClassViolation ────────────────────────────────────────
 struct AllocClassViolation : tag_base {
     static constexpr std::string_view name = "AllocClassViolation";
     static constexpr std::string_view description = "A function pinned at AllocClass<Stack>, AllocClass<Pool>, or "
@@ -356,7 +201,6 @@ struct AllocClassViolation : tag_base {
                                                     "document why the hot-path discipline is being relaxed.";
 };
 
-// ── 11. VendorBackendMismatch ──────────────────────────────────────
 struct VendorBackendMismatch : tag_base {
     static constexpr std::string_view name = "VendorBackendMismatch";
     static constexpr std::string_view description = "A kernel pinned at Vendor<NV>, Vendor<AMD>, Vendor<TPU>, "
@@ -374,7 +218,6 @@ struct VendorBackendMismatch : tag_base {
                                                     "tag downstream.";
 };
 
-// ── 12. CrashClassMismatch ─────────────────────────────────────────
 struct CrashClassMismatch : tag_base {
     static constexpr std::string_view name = "CrashClassMismatch";
     static constexpr std::string_view description = "A function pinned at Crash<NoThrow> invoked a callee declared "
@@ -392,7 +235,6 @@ struct CrashClassMismatch : tag_base {
                                                     "case (documents the assumption).";
 };
 
-// ── 13. ConsistencyMismatch ────────────────────────────────────────
 struct ConsistencyMismatch : tag_base {
     static constexpr std::string_view name = "ConsistencyMismatch";
     static constexpr std::string_view description = "A Forge Phase K BatchPolicy axis pinned at "
@@ -410,7 +252,6 @@ struct ConsistencyMismatch : tag_base {
                                                     "See FORGE.md §K for the per-axis specification.";
 };
 
-// ── 14. LifetimeViolation ──────────────────────────────────────────
 struct LifetimeViolation : tag_base {
     static constexpr std::string_view name = "LifetimeViolation";
     static constexpr std::string_view description = "An OpaqueLifetime<PER_REQUEST, T> value crossed a boundary "
@@ -429,7 +270,6 @@ struct LifetimeViolation : tag_base {
                                                     "cold tier (S3); never promote across tiers via aliasing.";
 };
 
-// ── 15. WaitStrategyViolation ──────────────────────────────────────
 struct WaitStrategyViolation : tag_base {
     static constexpr std::string_view name = "WaitStrategyViolation";
     static constexpr std::string_view description = "A function pinned at Wait<SpinPause> (intra-core wait, "
@@ -448,7 +288,6 @@ struct WaitStrategyViolation : tag_base {
                                                     "comment.";
 };
 
-// ── 16. ProgressClassViolation ─────────────────────────────────────
 struct ProgressClassViolation : tag_base {
     static constexpr std::string_view name = "ProgressClassViolation";
     static constexpr std::string_view description = "A function declared with Progress<Bounded> (terminates within "
@@ -465,7 +304,6 @@ struct ProgressClassViolation : tag_base {
                                                     "wrap the call in a wall-clock-bounded supervisor.";
 };
 
-// ── 17. CipherTierViolation ────────────────────────────────────────
 struct CipherTierViolation : tag_base {
     static constexpr std::string_view name = "CipherTierViolation";
     static constexpr std::string_view description = "A Cipher operation pinned at CipherTier<Hot> (other Relays' "
@@ -483,7 +321,6 @@ struct CipherTierViolation : tag_base {
                                                     "fsync); to Cold via promote_to_cold() (cost: network).";
 };
 
-// ── 18. ResidencyHeatViolation ─────────────────────────────────────
 struct ResidencyHeatViolation : tag_base {
     static constexpr std::string_view name = "ResidencyHeatViolation";
     static constexpr std::string_view description = "A storage-tier operation (KernelCache L1/L2/L3, runtime metrics "
@@ -499,7 +336,6 @@ struct ResidencyHeatViolation : tag_base {
                                                     "three-level cache architecture and the federation discipline.";
 };
 
-// ── 19. EpochMismatch ──────────────────────────────────────────────
 struct EpochMismatch : tag_base {
     static constexpr std::string_view name = "EpochMismatch";
     static constexpr std::string_view description = "An EpochVersioned<Epoch, Generation, T> value carried an "
@@ -516,7 +352,6 @@ struct EpochMismatch : tag_base {
                                                     "operation that consumes it.";
 };
 
-// ── 20. BudgetExceeded ─────────────────────────────────────────────
 struct BudgetExceeded : tag_base {
     static constexpr std::string_view name = "BudgetExceeded";
     static constexpr std::string_view description = "A Budgeted<{BitsBudget, PeakBytes}, T> operation exceeded its "
@@ -534,7 +369,6 @@ struct BudgetExceeded : tag_base {
                                                     "— the diagnostic must fire so the choice is explicit.";
 };
 
-// ── 21. NumaPlacementMismatch ──────────────────────────────────────
 struct NumaPlacementMismatch : tag_base {
     static constexpr std::string_view name = "NumaPlacementMismatch";
     static constexpr std::string_view description = "A NumaPlacement<Node, Affinity, T> value was consumed at a "
@@ -551,7 +385,6 @@ struct NumaPlacementMismatch : tag_base {
                                                     "model recommends NumaLocal placement.";
 };
 
-// ── 22. RecipeSpecMismatch ─────────────────────────────────────────
 struct RecipeSpecMismatch : tag_base {
     static constexpr std::string_view name = "RecipeSpecMismatch";
     static constexpr std::string_view description = "A RecipeSpec<Tier, Family, T> value was consumed at a Forge "
@@ -569,33 +402,11 @@ struct RecipeSpecMismatch : tag_base {
                                                     "remediations.";
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── F*-style alias diagnostics (FOUND-E18) ─────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Three new categories specialize EffectRowMismatch (Category 0) for
-// the F* alias predicates from effects/FxAliases.h.  They fire when a
-// templated caller's `requires IsX<R>` fails — same row-mismatch shape
-// as EffectRowMismatch, but the failure cause is the F* lattice bound
-// rather than an arbitrary Subrow comparison.
-//
-// Why three (not four/six):
-//
-//   PureRow == TotRow == GhostRow — all three are Row<>, and so all
-//   three violations are STRUCTURALLY the same.  One PureFunctionViolation
-//   tag covers any of {IsPure, IsTot, IsGhost} that fails; the
-//   description distinguishes the F* intent in prose.
-//
-//   AllRow is the universe — the lattice top.  IsAll<R> is satisfied
-//   by every row (Subrow<R, AllRow> always holds), so an AllViolation
-//   would be unreachable.  Not a tag.
-//
-//   The two remaining intermediate aliases (Div, ST) get a category
-//   each because the failure shape is genuinely different: Div bans
-//   state effects (Alloc / IO), ST bans context tags (Bg / Init / Test).
-//   Same diagnostic surface = wrong remediation.
-
-// ── 23. PureFunctionViolation ──────────────────────────────────────
+// The next three tags cover the alias predicates over effect rows. There are
+// three and not more. The pure, total and ghost rows are all the empty row, so
+// a single tag classifies a failure against any of them. The universal row is
+// the lattice top, satisfied by every row, so a violation of it is unreachable
+// and carries no tag.
 struct PureFunctionViolation : tag_base {
     static constexpr std::string_view name = "PureFunctionViolation";
     static constexpr std::string_view description = "A function declared as IsPure<R> / IsTot<R> / IsGhost<R> was "
@@ -618,7 +429,6 @@ struct PureFunctionViolation : tag_base {
                                                     "to every caller.";
 };
 
-// ── 24. DivergenceBudgetViolation ──────────────────────────────────
 struct DivergenceBudgetViolation : tag_base {
     static constexpr std::string_view name = "DivergenceBudgetViolation";
     static constexpr std::string_view description = "A function declared as IsDiv<R> was called with a row R "
@@ -637,7 +447,6 @@ struct DivergenceBudgetViolation : tag_base {
                                                     "effects/FxAliases.h for the full alias-row catalog.";
 };
 
-// ── 25. StateBudgetViolation ───────────────────────────────────────
 struct StateBudgetViolation : tag_base {
     static constexpr std::string_view name = "StateBudgetViolation";
     static constexpr std::string_view description = "A function declared as IsST<R> was called with a row R "
@@ -657,7 +466,6 @@ struct StateBudgetViolation : tag_base {
                                                     "AllRow includes the context-tag atoms.";
 };
 
-// ── 26. InsufficientWitness (FIXY-G9) ──────────────────────────────
 struct InsufficientWitness : tag_base {
     static constexpr std::string_view name = "InsufficientWitness";
     static constexpr std::string_view description = "A binding's proof-relevance witness is below the floor demanded "
@@ -676,7 +484,6 @@ struct InsufficientWitness : tag_base {
                                                     "CrossValidated<id> references safety/diag/CiRunRegistry.h.";
 };
 
-// ── 27. ModalityMismatch (FIXY-G10) ────────────────────────────────
 struct ModalityMismatch : tag_base {
     static constexpr std::string_view name = "ModalityMismatch";
     static constexpr std::string_view description = "Two grants engaging the same fixy dim carry incompatible "
@@ -697,7 +504,6 @@ struct ModalityMismatch : tag_base {
                                                     "witness-producing claim.";
 };
 
-// ── 28. LinearAliasViolation (FIXY-G10 R017) ───────────────────────
 struct LinearAliasViolation : tag_base {
     static constexpr std::string_view name = "LinearAliasViolation";
     static constexpr std::string_view description = "Two Linear-modality grants on the same Permission tag in a "
@@ -715,16 +521,6 @@ struct LinearAliasViolation : tag_base {
                                                     "explicit fractional borrow via SharedPermissionPool<Tag>.";
 };
 
-// ─── SharedPermissionPoolSaturated (fixy-A1-015) ──────────────────────
-//
-// SharedPermissionPool<Tag>::lend_raw_() drives an atomic state word
-// whose low 63 bits track outstanding fractional borrows.  When that
-// count saturates at COUNT_MASK (2^63 - 1) a new lend would silently
-// wrap, then alias an unrelated holder's permission — catastrophic
-// loss of CSL frame discipline.  Pre-fix the saturation site called
-// std::abort() with no diagnostic, leaving an operator with only a
-// core dump and no breadcrumb.  Post-fix the abort path emits this
-// tag's name/description/remediation before terminating.
 struct SharedPermissionPoolSaturated : tag_base {
     static constexpr std::string_view name = "SharedPermissionPoolSaturated";
     static constexpr std::string_view description = "SharedPermissionPool<Tag>::lend_raw_() observed an outstanding-"
@@ -749,16 +545,6 @@ struct SharedPermissionPoolSaturated : tag_base {
                                                     "EXCLUSIVE_OUT_BIT for lock-free upgrade signaling.";
 };
 
-// ─── HugePageAllocationFailed (fixy-A1-022) ──────────────────────────
-//
-// safety/HugePageBuffer<T>::allocate(n) drives std::aligned_alloc with
-// a 2-MB alignment and a round_up_huge(n*sizeof(T)) byte count.  When
-// the kernel cannot satisfy the request (insufficient hugepage pool,
-// fragmented address space, ulimit exhaustion) aligned_alloc returns
-// nullptr.  Pre-fix the saturation site called std::abort() with no
-// diagnostic, leaving an operator with a core dump and no breadcrumb
-// pointing at /proc/sys/vm/nr_hugepages.  Post-fix the abort path
-// emits this tag's name/description/remediation before terminating.
 struct HugePageAllocationFailed : tag_base {
     static constexpr std::string_view name = "HugePageAllocationFailed";
     static constexpr std::string_view description = "safety::HugePageBuffer<T>::allocate(count) observed a null "
@@ -787,24 +573,6 @@ struct HugePageAllocationFailed : tag_base {
                                                     "cannot proceed without a 2-MB-aligned region.";
 };
 
-// ─── PublishOnceDoublePublish (fixy-A1-031) ──────────────────────────
-//
-// handles/PublishOnce<T>::publish(T*) implements first-call-wins
-// publication via a single CAS on the slot from nullptr → ptr.  The
-// single-publisher property is a soundness invariant: a second
-// successful CAS would silently overwrite the published payload, race
-// against readers that have already acquired the prior value, and
-// break the "channel resource handoff is monotone" contract that
-// LazyEstablishedChannel and federation-cache slot publication rely
-// on.  Pre-fix the post-CAS check was a `contract_assert(claimed)`
-// only — under -fcontract-evaluation-semantic=ignore (the hot-path
-// default per CLAUDE.md §V) the assert is elided, so a second
-// publish_ZX caller silently no-ops and downstream observers receive
-// the FIRST published pointer with no signal that a collision
-// occurred.  Post-fix the publish path emits this tag's
-// name/description/remediation via a CRUCIBLE_COLD abort helper
-// before terminating, restoring the soundness gate independent of
-// the contract-evaluation semantic.
 struct PublishOnceDoublePublish : tag_base {
     static constexpr std::string_view name = "PublishOnceDoublePublish";
     static constexpr std::string_view description = "handles::PublishOnce<T>::publish(T*) observed a non-nullptr "
@@ -837,15 +605,6 @@ struct PublishOnceDoublePublish : tag_base {
                                                     "or a duplicate compile entry in flight.";
 };
 
-// WRAP-Bits-Borrowed-Diagnostic (task #1092) — runtime violations from
-// safety/Bits.h's invariant gates (out-of-range mask via from_raw,
-// future mutual-exclusion / subsumption checks landing with
-// WRAP-Bits-Integration-4) and safety/Borrowed.h's bounds-aware accessors
-// (operator[] / subspan offset+count beyond size()).  Both wrappers
-// currently document these as "not contract-checked" in their headers;
-// publishing a Catalog Category lets a future tightening route via
-// CRUCIBLE_PRE → safety::diag::report<Category::X> instead of falling
-// through to UB on out-of-range read / re-decoded enum.
 struct BitsInvariantViolation : tag_base {
     static constexpr std::string_view name = "BitsInvariantViolation";
     static constexpr std::string_view description = "safety::Bits<EnumType> observed a runtime value outside the "
@@ -910,39 +669,18 @@ struct BorrowedBoundsViolation : tag_base {
                                                     "advanced past size().";
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_diagnostic_class_v<T> ───────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Inheritance-based detection: T is a diagnostic class iff T is
-// derived from `tag_base` AND T is not `tag_base` itself.  Mirrors
-// SessionDiagnostic.h's pattern (line 480-481).
-
 template <typename T>
 inline constexpr bool is_diagnostic_class_v = std::is_base_of_v<tag_base, T> && !std::is_same_v<T, tag_base>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Accessors (require T to be a diagnostic class) ─────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// The natural form would be:
-//
-//     template <typename T>
-//         requires is_diagnostic_class_v<T>
-//     inline constexpr std::string_view diagnostic_name_v = T::name;
-//
-// but a `requires`-clause failure on a variable template emits
-// compiler-version-specific text (per SessionDiagnostic.h's
-// rationale at line 487-500).  Route through a helper struct that
-// fires a framework-controlled `static_assert` — stable diagnostic
-// across GCC versions.
-
 namespace detail {
 
+// The direct form constrains the variable template itself with
+// `requires is_diagnostic_class_v<T>`. A requires-clause failure on a variable
+// template reports in compiler-chosen wording, which drifts between releases.
+// Routing through a helper struct puts the wording under our control.
 template <typename T, bool IsTag>
 struct accessor_check;
 
-// Valid: T IS a diagnostic class.  Forward the three string fields.
 template <typename T>
 struct accessor_check<T, true> {
     static constexpr std::string_view name = T::name;
@@ -950,8 +688,6 @@ struct accessor_check<T, true> {
     static constexpr std::string_view remediation = T::remediation;
 };
 
-// Invalid: T is NOT a diagnostic class.  Fire a stable framework-
-// controlled `static_assert`.
 template <typename T>
 struct accessor_check<T, false> {
     static_assert(is_diagnostic_class_v<T>, "crucible::safety::diag [DiagnosticAccessor_NonTag]: "
@@ -979,27 +715,6 @@ template <typename T>
 inline constexpr std::string_view diagnostic_remediation_v =
     detail::accessor_check<T, is_diagnostic_class_v<T>>::remediation;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Diagnostic<Tag, Ctx...> wrapper ────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// A type-level wrapper pairing a diagnostic tag with arbitrary type-
-// level context.  Use as the FAILURE return type of metafunctions
-// that need to propagate both a result AND the classified reason for
-// failure.  Mirrors SessionDiagnostic.h:570-589.
-//
-// Example:
-//
-//   template <typename CallerRow, typename CalleeRow>
-//   struct check_subrow_result {
-//       using type = std::conditional_t<
-//           Subrow<CalleeRow, CallerRow>,
-//           std::true_type,
-//           Diagnostic<EffectRowMismatch, CallerRow, CalleeRow,
-//                      row_difference_t<CalleeRow, CallerRow>>
-//       >;
-//   };
-
 template <typename DiagnosticClass, typename... Context>
     requires is_diagnostic_class_v<DiagnosticClass>
 struct Diagnostic {
@@ -1011,7 +726,6 @@ struct Diagnostic {
     static constexpr std::string_view remediation = DiagnosticClass::remediation;
 };
 
-// Shape trait for Diagnostic<...>.
 template <typename T>
 struct is_diagnostic : std::false_type {};
 
@@ -1021,48 +735,10 @@ struct is_diagnostic<Diagnostic<C, Ctx...>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Catalog tuple — the closed type-level universe ─────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// APPEND-ONLY.  Adding a new tag at position N requires a matching
-// Category enum entry at integer value N.  Reordering existing entries
-// would invalidate cache row_hash values that depend on stable
-// indices (FOUND-I cache key infrastructure).
-//
-// Index discipline:
-//   [ 0] EffectRowMismatch
-//   [ 1] UnknownParameterShape
-//   [ 2] GradedWrapperViolation
-//   [ 3] LinearityViolation
-//   [ 4] RefinementViolation
-//   [ 5] HotPathViolation
-//   [ 6] DetSafeLeak
-//   [ 7] NumericalTierMismatch
-//   [ 8] MemOrderViolation
-//   [ 9] AllocClassViolation
-//   [10] VendorBackendMismatch
-//   [11] CrashClassMismatch
-//   [12] ConsistencyMismatch
-//   [13] LifetimeViolation
-//   [14] WaitStrategyViolation
-//   [15] ProgressClassViolation
-//   [16] CipherTierViolation
-//   [17] ResidencyHeatViolation
-//   [18] EpochMismatch
-//   [19] BudgetExceeded
-//   [20] NumaPlacementMismatch
-//   [21] RecipeSpecMismatch
-//   [22] PureFunctionViolation       (FOUND-E18)
-//   [23] DivergenceBudgetViolation   (FOUND-E18)
-//   [24] StateBudgetViolation        (FOUND-E18)
-//   [25] InsufficientWitness         (FIXY-G9)
-//   [26] ModalityMismatch            (FIXY-G10)
-//   [27] LinearAliasViolation        (FIXY-G10 R017)
-//   [28] SharedPermissionPoolSaturated (fixy-A1-015)
-//   [29] HugePageAllocationFailed     (fixy-A1-022)
-//   [30] PublishOnceDoublePublish    (fixy-A1-031)
-
+// Append-only. A new tag goes at the end of this tuple and gets a Category
+// enumerator at the same integer value. Reordering existing entries changes
+// the indices that federation cache keys are built from, which invalidates
+// every stored key.
 using Catalog = std::tuple<EffectRowMismatch,  //  0
                            UnknownParameterShape,  //  1
                            GradedWrapperViolation,  //  2
@@ -1094,34 +770,11 @@ using Catalog = std::tuple<EffectRowMismatch,  //  0
                            SharedPermissionPoolSaturated,  // 28
                            HugePageAllocationFailed,  // 29
                            PublishOnceDoublePublish,  // 30
-                           BitsInvariantViolation,  // 31  WRAP-Bits-Borrowed-Diagnostic #1092
-                           BorrowedBoundsViolation  // 32  WRAP-Bits-Borrowed-Diagnostic #1092
+                           BitsInvariantViolation,  // 31
+                           BorrowedBoundsViolation  // 32
                            >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Category enum — runtime convenience surface ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Mirrors `Catalog`'s indices.  Underlying type uint8_t admits up to
-// 256 categories — comfortable headroom.  APPEND-ONLY discipline:
-// adding a new tag means adding a new enumerator at the END, with
-// integer value matching the Catalog's tuple index.  The self-test
-// block at file end asserts the bijection holds.
-//
-// Use Category for runtime switch-on-failure-class patterns:
-//
-//   void handle_diagnostic(Category cat, std::string_view detail) {
-//       switch (cat) {
-//           case Category::EffectRowMismatch: ...
-//           case Category::HotPathViolation:  ...
-//           // ... etc
-//       }
-//   }
-//
-// Use the type-level tags for compile-time dispatch.  The bidirectional
-// map (tag_of_t / category_of_v) bridges the two surfaces.
 
 enum class Category : std::uint8_t {
     EffectRowMismatch = 0,
@@ -1159,19 +812,8 @@ enum class Category : std::uint8_t {
     BorrowedBoundsViolation = 32,
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── tag_of_t<Category> — Category → tag type ───────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Indexes Catalog by Category's integer value.  Foundation primitive
-// for the diagnostic dispatch layer (FOUND-D + the report_violation
-// runtime side in FOUND-E06).
-//
-// Implementation: struct template + alias so we can carry a routed
-// `static_assert` for out-of-range Category values.  C++20 alias
-// templates do not accept requires-clauses directly; the struct
-// template carries the constraint via static_assert.
-
+// An alias template cannot carry a requires-clause, so the constraint on the
+// Category value lives on a struct template that the alias forwards to.
 namespace detail {
 
 template <Category C>
@@ -1189,29 +831,13 @@ struct tag_of_impl {
 template <Category C>
 using tag_of_t = typename detail::tag_of_impl<C>::type;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── category_of_v<Tag> — tag type → Category ───────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Walks Catalog at compile time and returns the matching Category
-// value.  Uses fold expression rather than recursive template
-// instantiation (cheaper compile time, single TU template depth).
-//
-// Implementation: struct template + variable alias so we can carry a
-// routed `static_assert` for tags that are not in the closed Catalog.
-// User-defined tags satisfy `is_diagnostic_class_v` (inheritance-based)
-// but do NOT belong to the foundation's value-level `Category` enum;
-// `category_of_v<UserTag>` fires the static_assert with a remediation
-// pointing at the type-level accessor surface instead.
-
 namespace detail {
 
 template <typename Tag, std::size_t... Is>
 [[nodiscard]] consteval std::size_t category_index_fold(std::index_sequence<Is...>) noexcept {
     std::size_t result = sizeof...(Is);  // sentinel: not found
-    // Fold-or with side-effect: assigns `result` when Tag matches.
-    // Each match overwrites; since Catalog is unique-by-tag (asserted
-    // by self-test), exactly one match fires per Tag in Catalog.
+    // A later match overwrites an earlier one. No tag type appears twice in
+    // the catalog, so at most one term of the fold ever assigns.
     ((std::is_same_v<Tag, std::tuple_element_t<Is, Catalog>> ? (void)(result = Is) : (void)0), ...);
     return result;
 }
@@ -1244,30 +870,9 @@ struct category_of_impl {
 template <typename Tag>
 inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Category-keyed accessors ───────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Forward through tag_of_t to the type-level accessors.  Use these
-// in runtime dispatch paths:
-//
-//   void report(Category cat) {
-//       fprintf(stderr, "[CRUCIBLE-DIAG] %s: %s\n  remediation: %s\n",
-//               name_of(cat).data(),
-//               description_of(cat).data(),
-//               remediation_of(cat).data());
-//   }
-//
-// Implementation: switch over Category, return the corresponding tag
-// type's static field.  `constexpr` (NOT `consteval`) so callers may
-// invoke at runtime with non-constant Category values; the switch
-// folds to a constant jump table under -O2 and to a direct return
-// when the Category is constant-foldable.  The `default:` case
-// satisfies CLAUDE.md §VI's `-Werror=switch-default`; it is only
-// reachable when a wild Category value is passed via reinterpret_cast
-// / static_cast from out-of-range integer.  Self-test block asserts
-// every in-range Category value returns a non-sentinel string.
-
+// The switches below are exhaustive over Category. The default arm exists to
+// satisfy -Werror=switch-default and is reachable only for a value cast in
+// from an out-of-range integer.
 [[nodiscard]] constexpr std::string_view name_of(Category c) noexcept {
     switch (c) {
         case Category::EffectRowMismatch:
@@ -1487,15 +1092,6 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── categories_v — constexpr array of every Category value ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Foundation primitive for downstream consumers (FOUND-D dispatcher,
-// FOUND-E06 runtime side) that need to iterate the Category universe
-// without re-discovering it via reflection.  Bounded by `catalog_size`;
-// generated once at compile time via index-sequence fold.
-
 namespace detail {
 
 template <std::size_t... Is>
@@ -1507,37 +1103,6 @@ template <std::size_t... Is>
 }  // namespace detail
 
 inline constexpr auto categories_v = detail::categories_array_impl(std::make_index_sequence<catalog_size>{});
-
-// ═════════════════════════════════════════════════════════════════════
-// ── enumerate_categories<F> — fold F over every Category value ─────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Foundation primitive for FOUND-D dispatcher's diagnostic dispatch
-// builders.  Calls F.template operator()<C>() for every Category C
-// in the closed catalog, in stable Catalog order.
-//
-// Usage:
-//
-//   // Compile-time: build a static lookup table.
-//   constexpr auto names = []() consteval {
-//       std::array<std::string_view, catalog_size> a{};
-//       std::size_t i = 0;
-//       enumerate_categories([&]<Category C>() noexcept {
-//           a[i++] = name_of(C);
-//       });
-//       return a;
-//   }();
-//
-//   // Runtime: dispatch a per-category handler.
-//   enumerate_categories([&runtime_state]<Category C>() noexcept {
-//       runtime_state.register_handler(C, &handler<C>);
-//   });
-//
-// The fold is `constexpr` (NOT `consteval`) so the same primitive
-// serves both compile-time and runtime use; the lambda must be
-// invocable as a template-member-function (NTTP-templated) and
-// noexcept.  Passes are silent; failures fire the lambda's static_
-// assert (or constraint failure).
 
 namespace detail {
 
@@ -1553,23 +1118,6 @@ constexpr void enumerate_categories(F&& f) noexcept {
     detail::enumerate_categories_impl(std::forward<F>(f), std::make_index_sequence<catalog_size>{});
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── mint_diagnostic<Tag>(ctx...) — Universal Mint Pattern ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Token mint per CLAUDE.md §XXI — constructs a Diagnostic<Tag, Ctx...>
-// with the context pack deduced from argument types, sparing the
-// caller from spelling `Diagnostic<Tag, decltype(args)...>` explicitly.
-//
-// Authority derives from the `is_diagnostic_class_v<Tag>` proof: only
-// types deriving from safety::diag::tag_base may name a diagnostic.
-// This is the canonical authorization point for emitting a typed
-// diagnostic at a metafunction failure site.
-//
-// Note: Ctx... is deduced from `Args&&...`; types are decayed via
-// std::remove_cvref_t to match the type-level Diagnostic<Tag, Ctx...>
-// surface (which expects unqualified types in the pack).
-
 template <typename Tag, typename... Args>
     requires is_diagnostic_class_v<Tag>
 [[nodiscard]] consteval auto mint_diagnostic(Args&&...) noexcept -> Diagnostic<Tag, std::remove_cvref_t<Args>...> {
@@ -1578,63 +1126,24 @@ template <typename Tag, typename... Args>
 
 }  // namespace crucible::safety::diag
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CRUCIBLE_DIAG_ASSERT macro ─────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Routed `static_assert` whose message is prefixed with the bracketed
-// tag name for greppable build logs.  Stringification (#tag) embeds
-// the tag name as a literal — same trick as
-// CRUCIBLE_SESSION_ASSERT_CLASSIFIED at SessionDiagnostic.h:659.
-//
-// Usage:
-//
-//   CRUCIBLE_DIAG_ASSERT(
-//       (Subrow<CalleeRow, CallerRow>),
-//       EffectRowMismatch,
-//       "callee row not a subrow of caller row at "
-//       "crucible::vessel::dispatch_op");
-//
-// IMPORTANT: if the condition contains a comma (template-arg list,
-// tuple-of-types, etc.), parenthesise the entire condition so the
-// preprocessor doesn't split at the comma.
-//
-// Produces (on failure):
-//   error: static assertion failed: crucible::safety::diag
-//          [EffectRowMismatch]: callee row not a subrow of caller
-//          row at crucible::vessel::dispatch_op
-
+// A condition holding a comma, such as a template argument list, must be
+// parenthesised whole, or the preprocessor splits it across the parameters.
 #define CRUCIBLE_DIAG_ASSERT(cond, tag, msg) static_assert(cond, "crucible::safety::diag [" #tag "]: " msg)
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block — invariants asserted at header inclusion ──────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Every claim this header makes is mechanically verified.  If any
-// assertion fires at header-inclusion time, the catalog has drifted
-// and the compile fails with a named assertion.  This is the
-// load-bearing discipline that keeps the Catalog ↔ Category bijection
-// honest as new tags are added.
-
 namespace crucible::safety::diag::detail::diag_self_test {
-
-// ─── tag_base detection — positive and negative ───────────────────
 
 static_assert(is_diagnostic_class_v<EffectRowMismatch>);
 static_assert(is_diagnostic_class_v<DetSafeLeak>);
 static_assert(is_diagnostic_class_v<NumericalTierMismatch>);
 
-// tag_base itself is not a tag — it's the marker.
 static_assert(!is_diagnostic_class_v<tag_base>);
 
-// Plain types and primitives are not tags.
 static_assert(!is_diagnostic_class_v<int>);
 static_assert(!is_diagnostic_class_v<void>);
 
 struct random_struct_for_test {};
 static_assert(!is_diagnostic_class_v<random_struct_for_test>);
 
-// User-defined extension works automatically via inheritance.
 struct user_defined_tag : tag_base {
     static constexpr std::string_view name = "UserDefinedTag";
     static constexpr std::string_view description = "user-extension test";
@@ -1643,18 +1152,6 @@ struct user_defined_tag : tag_base {
 static_assert(is_diagnostic_class_v<user_defined_tag>);
 static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
-// ─── Catalog cardinality matches Category enum cardinality ────────
-//
-// 33 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
-// + 3 F*-style alias tags from FOUND-E18 + 1 witness FIXY-G9 + 2
-// modality FIXY-G10 + 1 SharedPermissionPool saturation fixy-A1-015 +
-// 1 HugePageBuffer allocation failure fixy-A1-022 + 1 PublishOnce
-// double-publish fixy-A1-031 + 2 WRAP-Bits-Borrowed-Diagnostic #1092
-// for Bits invariant + Borrowed bounds).
-// Adding a tag bumps both the Catalog tuple size AND requires a
-// Category enumerator at the same integer value.  The bijection
-// self-test below asserts both in lock step.
-
 static_assert(catalog_size == 33, "Catalog cardinality drifted from the 33-tag inventory "
                                   "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
                                   "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015 + 1 HugePage "
@@ -1662,18 +1159,10 @@ static_assert(catalog_size == 33, "Catalog cardinality drifted from the 33-tag i
                                   "WRAP-Bits-Borrowed-Diagnostic #1092) — confirm the new tag was "
                                   "added to Catalog AND to Category at the same integer index.");
 
-// FIXY-FOUND-139: reflection-derived Category enum ceiling.
-//
-// `enumerate_categories_count()` below (line ~1885) visits indices
-// 0..catalog_size-1 via a make_index_sequence-based fold; it does
-// NOT directly count the Category enum's enumerators.  That means a
-// future Category enumerator added without bumping catalog_size
-// would NOT trip the existing checks — the visitor would still
-// return catalog_size, and the bijection self-test would only see
-// the first catalog_size enumerators.
-//
-// This ceiling reflects directly over the enum.  Adding a Category
-// without bumping Catalog (or vice versa) reddens here.
+// The visitor further down walks indices 0 to catalog_size - 1 and so counts
+// the tuple, never the enum. An enumerator appended without a matching tag
+// would pass every other check here. This count reflects over the enum itself
+// and closes that gap.
 inline constexpr std::size_t category_count = std::meta::enumerators_of(^^Category).size();
 
 static_assert(category_count == catalog_size, "FIXY-FOUND-139: Category enum cardinality and Catalog tuple "
@@ -1685,12 +1174,6 @@ static_assert(category_count == catalog_size, "FIXY-FOUND-139: Category enum car
                                               "shipping the Category enumerator.  This reflection-derived "
                                               "pin is independent of catalog_size's hand-pinned 33 — both "
                                               "must agree.");
-
-// ─── Catalog ↔ Category bijection ─────────────────────────────────
-//
-// For every Catalog entry at index I, the Category enum's I-th
-// value must map back to the same tag type.  Asserted exhaustively
-// via index_sequence fold.
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_category_bijection_impl(std::index_sequence<Is...>) noexcept {
@@ -1708,11 +1191,6 @@ static_assert(catalog_category_bijection(), "Catalog tuple ordering drifted from
                                             "(violates the APPEND-ONLY discipline) or the enum value was given "
                                             "a non-matching integer.");
 
-// ─── category_of_v reverse-map correctness ────────────────────────
-//
-// For every Catalog entry at index I, category_of_v<tag> must equal
-// static_cast<Category>(I).
-
 template <std::size_t... Is>
 [[nodiscard]] consteval bool category_of_reverse_map_impl(std::index_sequence<Is...>) noexcept {
     return ((category_of_v<std::tuple_element_t<Is, Catalog>> == static_cast<Category>(Is)) && ...);
@@ -1726,11 +1204,6 @@ static_assert(category_of_reverse_map(), "category_of_v<Tag> does not round-trip
                                          "Likely cause: catalog_category_bijection drift (see preceding "
                                          "assertion) or category_index_fold's match dispatch was modified "
                                          "to break uniqueness.");
-
-// ─── Pairwise name distinctness ────────────────────────────────────
-//
-// O(N²) pairwise check.  N=22 → 231 comparisons, negligible at
-// compile time.  Lifted from SessionDiagnostic.h:803-820.
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_names_distinct_impl(std::index_sequence<Is...>) noexcept {
@@ -1751,8 +1224,6 @@ static_assert(catalog_names_distinct(), "Two or more tags in Catalog share the s
                                         "Diagnostic names must be unique so build-log greps return one "
                                         "tag per match.");
 
-// ─── Non-empty description and remediation per tag ─────────────────
-
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_fields_nonempty_impl(std::index_sequence<Is...>) noexcept {
     return ((!std::tuple_element_t<Is, Catalog>::description.empty()
@@ -1769,13 +1240,6 @@ static_assert(catalog_fields_nonempty(), "One or more tags in Catalog has empty 
                                          "remediation.  Every tag must carry user-readable prose for all "
                                          "three fields — diagnostic output without remediation guidance "
                                          "is half a diagnostic.");
-
-// ─── name_of / description_of / remediation_of cover every Category ─
-//
-// Each switch in name_of / description_of / remediation_of must
-// return a non-sentinel string for every Category value.  The
-// fall-through "<unknown Category>" should fire only on bogus values
-// produced by reinterpret_cast (out-of-band).
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool name_of_covers_catalog_impl(std::index_sequence<Is...>) noexcept {
@@ -1794,11 +1258,6 @@ static_assert(name_of_covers_catalog(), "name_of / description_of / remediation_
                                         "Catalog and Category requires adding a corresponding `case` arm "
                                         "to all three switches above.");
 
-// ─── name_of returns the SAME string as the tag's static field ────
-//
-// Catches drift between the type-level forwarders (T::name) and the
-// runtime accessors (name_of(C)).
-
 template <std::size_t... Is>
 [[nodiscard]] consteval bool name_of_matches_tag_impl(std::index_sequence<Is...>) noexcept {
     return ((name_of(static_cast<Category>(Is)) == std::tuple_element_t<Is, Catalog>::name) && ...);
@@ -1812,10 +1271,8 @@ static_assert(name_of_matches_tag(), "name_of(Category) and tag::name diverge fo
                                      "Catalog entry.  Likely cause: a new tag's `case` arm in "
                                      "name_of() returns the wrong tag type's `name` field.");
 
-// ─── Diagnostic<Tag, Ctx...> construction and field access ────────
-
 using d1_t = Diagnostic<EffectRowMismatch, int, float>;
-using d2_t = Diagnostic<HotPathViolation>;  // empty context
+using d2_t = Diagnostic<HotPathViolation>;
 
 static_assert(is_diagnostic_v<d1_t>);
 static_assert(is_diagnostic_v<d2_t>);
@@ -1829,16 +1286,11 @@ static_assert(std::is_same_v<typename d2_t::context, std::tuple<>>);
 static_assert(d1_t::name == "EffectRowMismatch");
 static_assert(d2_t::name == "HotPathViolation");
 
-// ─── Macro compile-test (happy path) ──────────────────────────────
-
 CRUCIBLE_DIAG_ASSERT(true, EffectRowMismatch, "Self-test happy path: condition is true, macro compiles silently.");
 
-// Comma-protected condition (template-arg list).
 CRUCIBLE_DIAG_ASSERT((std::is_same_v<int, int>), HotPathViolation,
                      "Comma in condition protected by parentheses; preprocessor "
                      "passes the entire is_same_v expression to static_assert.");
-
-// ─── categories_v has correct cardinality and ordering ────────────
 
 static_assert(categories_v.size() == catalog_size, "categories_v cardinality drifted from catalog_size — both must "
                                                    "track the same source of truth.");
@@ -1859,11 +1311,6 @@ static_assert(categories_array_matches_enum(), "categories_v ordering drifted fr
                                                "in-range I — this is the runtime mirror of catalog_category_"
                                                "bijection.");
 
-// ─── enumerate_categories<F> hits every Category exactly once ─────
-//
-// Compile-time witness: the visitor's accumulator grows by 1 per
-// invocation; expect the final accumulator to equal catalog_size.
-
 [[nodiscard]] consteval std::size_t enumerate_categories_count() noexcept {
     std::size_t count = 0;
     enumerate_categories([&count]<Category /*C*/>() noexcept { ++count; });
@@ -1875,8 +1322,6 @@ static_assert(enumerate_categories_count() == catalog_size,
               "Likely cause: index_sequence dispatch broken or fold expression "
               "regression.");
 
-// ─── mint_diagnostic<Tag>(args...) deduces context correctly ──────
-
 static_assert(std::is_same_v<decltype(mint_diagnostic<EffectRowMismatch>(int{}, float{})),
                              Diagnostic<EffectRowMismatch, int, float>>);
 
@@ -1884,33 +1329,12 @@ static_assert(std::is_same_v<decltype(mint_diagnostic<HotPathViolation>()), Diag
 
 }  // namespace crucible::safety::diag::detail::diag_self_test
 
-// ═════════════════════════════════════════════════════════════════════
-// ── runtime_smoke_test — non-constant-args execution probe ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Per the project memory rule (feedback_algebra_runtime_smoke_test_
-// discipline): every algebra/* and effects/* (and equivalent
-// foundation) header MUST ship `inline void runtime_smoke_test()`
-// exercising every public consteval/constexpr surface with NON-
-// CONSTANT args.  Pure static_assert tests evaluate consteval bodies
-// at compile time only — runtime invocation catches inline-body bugs
-// that compile-time evaluation hides (different code path in the
-// constexpr evaluator vs. the runtime evaluator).
-//
-// Call this from any `.cpp` TU that includes Diagnostic.h to verify
-// the runtime accessors cover every Category value and return non-
-// sentinel strings for the entire enum range.
-
 namespace crucible::safety::diag {
 
 namespace detail::smoke {
 
-// Namespace-scope user-extension tag.  C++26 [class.local]/4 forbids
-// local classes from having static data members, so we declare the
-// tag at namespace scope and use it from the smoke-test function
-// body.  The ::detail::smoke nesting keeps it out of the public
-// surface while letting the smoke test instantiate
-// is_diagnostic_class_v<smoke_local_tag> at runtime.
+// A local class may not have static data members, so the fixture tag for the
+// smoke test below lives at namespace scope.
 struct smoke_local_tag : tag_base {
     static constexpr std::string_view name = "SmokeLocalTag";
     static constexpr std::string_view description = "runtime smoke probe";
@@ -1919,11 +1343,12 @@ struct smoke_local_tag : tag_base {
 
 }  // namespace detail::smoke
 
+// The static assertions above run every surface through the constant
+// evaluator. This probe runs the same surfaces at runtime, where the compiler
+// takes a different path through the same inline bodies.
 inline void runtime_smoke_test() noexcept {
-    // Non-constant Category value (cycled through every enum entry).
-    // The volatile prevents the optimizer from folding the loop into
-    // a compile-time evaluation; we genuinely exercise the runtime
-    // path through the switch statements.
+    // The volatile bound stops the optimizer from folding the loop back into a
+    // constant, which would put the switches back on the compile-time path.
     volatile std::size_t const cap = catalog_size;
     for (std::size_t i = 0; i < cap; ++i) {
         Category const c = static_cast<Category>(i);
@@ -1931,7 +1356,6 @@ inline void runtime_smoke_test() noexcept {
         std::string_view const d = description_of(c);
         std::string_view const r = remediation_of(c);
 
-        // Sink to volatile to force the optimizer to keep the calls.
         volatile std::size_t sink = 0;
         sink ^= n.size();
         sink ^= d.size();
@@ -1939,12 +1363,10 @@ inline void runtime_smoke_test() noexcept {
         (void)sink;
     }
 
-    // is_diagnostic_class_v on a non-foundation user-extension tag.
     bool const is_tag = is_diagnostic_class_v<detail::smoke::smoke_local_tag>;
     volatile bool sink_b = is_tag;
     (void)sink_b;
 
-    // Diagnostic<Tag, Ctx...> instantiation under runtime context.
     using d_t = Diagnostic<EffectRowMismatch, int, float>;
     volatile std::size_t sink_n = d_t::name.size();
     (void)sink_n;

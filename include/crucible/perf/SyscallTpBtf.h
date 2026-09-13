@@ -1,80 +1,12 @@
 #pragma once
 
-// crucible::perf::SyscallTpBtf — BTF-typed sys_enter/sys_exit facade.
-//
-// GAPS-004f sibling of SyscallLatency.  Wire-equivalent (writes the
-// same `TimelineSyscallEvent` struct into a `BPF_F_MMAPABLE` ring
-// buffer); the only difference is the BPF program uses
-// SEC("tp_btf/sys_enter") + SEC("tp_btf/sys_exit") instead of
-// SEC("tracepoint/raw_syscalls/sys_{enter,exit}").
-//
-// ─── Why a parallel facade and not a flag on SyscallLatency ────────
-//
-// `tp_btf` and `tracepoint` are both raw tracepoint classes from
-// libbpf's perspective, but they cost differently and have different
-// kernel-availability gates:
-//
-//   • Legacy `tracepoint/raw_syscalls/sys_{enter,exit}` — present
-//     on every kernel with CONFIG_FTRACE_SYSCALLS, parses a per-
-//     tracepoint format string at dispatch time, ~150-250 ns per
-//     event.  Available since ~3.7.
-//
-//   • BTF-typed `tp_btf/sys_{enter,exit}` — direct CO-RE access to
-//     `struct pt_regs *regs` via BPF_CORE_READ.  ~30% lower
-//     overhead (~100-180 ns) because the format string parse is
-//     skipped.  Requires CONFIG_DEBUG_INFO_BTF=y AND kernel ≥ 5.5.
-//
-// On a syscall-heavy workload (1M syscalls/sec), the per-event
-// difference compounds:
-//   • Legacy: 1M × 200 ns = 200 ms/sec ≈ 20% of one core
-//   • BTF:    1M × 130 ns = 130 ms/sec ≈ 13% of one core
-// — a 7-percentage-point CPU saving for the same observability.
-//
-// ─── Promote-First architecture (CLAUDE.md) ────────────────────────
-//
-// Seventh per-program facade after SenseHub, SchedSwitch, PmuSample,
-// LockContention, SyscallLatency, SchedTpBtf.  Same hand-coded
-// loader as the others, same Tagged source tags, same
-// inplace_vector<...,8> link cap.  GAPS-004x will surface the
-// duplication as a shared BpfLoader after we have ≥7 production
-// loaders to generalize from.
-//
-// ─── Production usage ──────────────────────────────────────────────
-//
-//     if (auto h = crucible::perf::SyscallTpBtf::load(crucible::effects::testing::init())) {
-//         const uint64_t syscalls_pre = h->total_syscalls();
-//         // ... run workload ...
-//         const uint64_t syscalls_delta =
-//             h->total_syscalls() - syscalls_pre;
-//
-//         const auto timeline = h->timeline_view();
-//         // Same TimelineSyscallEvent shape as SyscallLatency —
-//         // readers walk it identically.
-//     }
-//
-// Returns nullopt when:
-//   • CAP_BPF / CAP_PERFMON missing.
-//   • CONFIG_DEBUG_INFO_BTF=n.
-//   • Kernel < 5.5.
-//   • Either of the two tp_btf programs fails to attach (a half-
-//     attach would leak syscall_start map entries until LRU eviction
-//     kicks in — same all-or-nothing policy as SyscallLatency).
-//
-// Senses aggregator pairs SyscallTpBtf with SyscallLatency: callers
-// that want syscall observability ask for both, the aggregator
-// reports whichever attached.
+#include <crucible/perf/SyscallLatency.h>  // for TimelineSyscallEvent, TimelineHeader, TIMELINE_CAPACITY
 
-// SyscallLatency.h provides TimelineSyscallEvent (32-byte struct);
-// it transitively includes SchedSwitch.h for TimelineHeader /
-// TIMELINE_CAPACITY / TIMELINE_MASK.  Wire-equivalent for the BTF
-// variant — we just re-use them.
-#include <crucible/perf/SyscallLatency.h>
-
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/syscall/Per.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -82,17 +14,17 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>  // FIXY-V-179
+#include <tuple>
 
 namespace crucible::perf {
 
 class SyscallTpBtf {
 public:
-    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
-    //
-    // Same shape as SyscallLatency::Snapshot — BTF-typed syscalls
-    // produce the same TimelineSyscallEvent layout, so consumers that
-    // accept either facade can use the same Snapshot diff idiom.
+    // Both fields count upward forever, so an ordered post-minus-pre
+    // subtraction never underflows.  The saturation below guards
+    // against a caller that swapped the two snapshots.  A
+    // timeline_index delta larger than the ring capacity means the
+    // window overwrote its own oldest events.
     struct Snapshot {
         uint64_t total_syscalls = 0;
         uint64_t timeline_index = 0;
@@ -111,53 +43,39 @@ public:
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // Load the embedded BPF program (syscall_tp_btf.bpf.c), set
-    // target_tgid to getpid(), attach the tp_btf/sys_enter +
-    // tp_btf/sys_exit programs, mmap the syscall_timeline ring.
-    // Returns std::nullopt on:
-    //   • missing CAP_BPF / CAP_PERFMON
-    //   • CONFIG_DEBUG_INFO_BTF=n
-    //   • kernel < 5.5
-    //   • fewer than 2 programs attach (half-attach forbidden)
+    // Both the syscall-enter and the syscall-exit program must
+    // attach.  A half attach records entry timestamps that no exit
+    // ever consumes, so the load fails instead.
     //
-    // Same `effects::Init` capability gate as every other facade in
-    // the GAPS-004 series.
+    // The BTF-typed raw tracepoints need a kernel built with
+    // CONFIG_DEBUG_INFO_BTF=y, which also puts the type information
+    // at /sys/kernel/btf/vmlinux.  Returns nullopt on a kernel that
+    // carries no such type information, and when CAP_BPF or
+    // CAP_PERFMON is missing or the verifier rejects the program.
     [[nodiscard]] static std::optional<SyscallTpBtf> load(::crucible::effects::Init) noexcept;
 
-    // Total syscalls recorded for our process since load().  ~1 µs
-    // (one bpf_map_lookup_elem against the total_syscalls ARRAY map).
-    // 0 on moved-from / un-loaded.
-    //
-    // Each event represents ONE syscall return — including the
-    // bpf_map_lookup_elem this method itself issues, so calling
-    // total_syscalls() in a tight loop measures the loop, not the
-    // workload.  Use pre/post deltas across a workload region.
+    // Reading the count costs a map-lookup syscall, and that syscall
+    // is itself counted.  A tight loop over this accessor therefore
+    // measures the loop rather than the workload.  Take one count
+    // before the region and one after it.
     [[nodiscard]] uint64_t total_syscalls() const noexcept;
 
-    // Borrowed view over the syscall_timeline ring buffer.  Element
-    // type is the SAME `TimelineSyscallEvent` struct as
-    // SyscallLatency — the BPF program writes the identical 32-byte
-    // layout, so a reader that handles SyscallLatency's timeline
-    // handles this one unchanged.  See SyscallLatency.h for the
-    // ts_ns-LAST completion discipline and ACQUIRE-load reader
-    // idiom.  Empty span on moved-from / un-loaded.
+    // The element type is const rather than const volatile because
+    // libstdc++ cannot instantiate std::span over a volatile
+    // non-scalar element.  The kernel writes this memory while the
+    // reader walks it, so read ts_ns through an acquire load of its
+    // own and trust the rest of the slot only when ts_ns is non-zero.
     [[nodiscard]] safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> timeline_view() const noexcept;
 
-    // Current write_idx of the syscall_timeline ring buffer.  Reader
-    // uses this to find the latest valid slot via
-    // `(write_idx - 1) & TIMELINE_MASK`.  ~1 ns volatile load.  0 on
-    // moved-from / un-loaded.
+    // The index counts events forever, so the most recently written
+    // slot is `(write_idx - 1) & TIMELINE_MASK`.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
 
-    // Programs attached.  syscall_tp_btf.bpf.c contains exactly TWO
-    // tp_btf programs (sys_enter + sys_exit); both must attach for
-    // load() to succeed.  Cap of 8 matches the
-    // inplace_vector<...,8> shape used by every other facade.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
-    // bpf_program__attach failures.  Same bound as attached_programs.
-    // Non-zero means BTF is unavailable on this kernel — set
-    // CRUCIBLE_PERF_VERBOSE=1 to see why.
+    // A non-zero count means this kernel carries no BTF type
+    // information.  Set CRUCIBLE_PERF_VERBOSE=1 in the environment
+    // for the detail.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     SyscallTpBtf(const SyscallTpBtf&) =
@@ -175,29 +93,16 @@ private:
     std::unique_ptr<State> state_;
 };
 
-// ── §XXI Universal Mint Pattern — mint_syscall_tp_btf (FIXY-U-083) ────
-//
-// CtxFitsSyscallTpBtfMint admits only contexts whose effect row
-// carries the Init capability.  SyscallTpBtf::load() attaches a
-// CO-RE BPF program to the raw_syscalls sys_enter/sys_exit raw
-// tracepoints and mmaps the per-CPU histogram array — startup-only
-// operations belonging to the Init row.  Hot foreground and
-// background-drain contexts must not engage this surface; the
-// Ctx-fit gate enforces that at the type level.
+// Loading the program attaches to the raw syscall tracepoints and
+// maps the timeline ring.  Those are startup-only operations, so only
+// a context carrying the Init capability may reach this surface.
 template <class Ctx>
 concept CtxFitsSyscallTpBtfMint = ::crucible::effects::IsExecCtx<Ctx>
                                && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
-// ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
-//
-// `mint_syscall_tp_btf_syscall_grants` enumerates every privileged
-// Linux syscall SyscallTpBtf::load() issues.  Audit-trail discipline
-// mirroring FIXY-V-180's mint_hardening (warden/Hardening.h).
-//
-// Family-tier table:
-//   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
-//   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
-//   mmap            (21) → MemoryMapping  → Row<IO>
+// These grants classify the privileged syscalls the load path issues.
+// They do not tighten the effect row.  Init is a startup pass-through
+// capability that admits blocking work without Block in the row.
 using mint_syscall_tp_btf_syscall_grants =
     std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
@@ -212,16 +117,14 @@ static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::pe
 static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
               == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_syscall_tp_btf_syscall_grants> == 3,
-              "FIXY-V-179: mint_syscall_tp_btf_syscall_grants drifted from 3 entries.");
+              "mint_syscall_tp_btf_syscall_grants must list exactly 3 syscalls.");
 }  // namespace detail::v179_syscall_tp_btf_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallTpBtfMint<Ctx>
-// §XXI carve-out: cx=alloc — SyscallTpBtf::load() attaches a CO-RE
-// BPF program to the raw_syscalls sys_enter/sys_exit raw
-// tracepoints, mmaps the per-CPU histogram array, and heap-
-// allocates std::unique_ptr<State>.  CLAUDE.md §XXI: compile-time
-// evaluation would lie about the runtime cost.
+// §XXI carve-out: cx=alloc — the load path maps the timeline ring and
+// heap-allocates State.  Compile-time evaluation would lie about the
+// runtime cost.
 [[nodiscard]] inline std::optional<SyscallTpBtf> mint_syscall_tp_btf(Ctx const&,
                                                                      ::crucible::effects::Init init) noexcept {
     return SyscallTpBtf::load(init);

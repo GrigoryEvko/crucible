@@ -1,58 +1,10 @@
 #pragma once
 
-// ── crucible::effects::OsUniverse ───────────────────────────────────
-//
-// FOUND-H02.  The type-level descriptor binding the OS-effect catalog
-// (Capabilities.h's `Effect` enum) to the Met(X) row substrate.  Per
-// 28_04_2026_effects.md §5.2 + §14.3, every per-category lattice has a
-// matching Universe — a typedef carrying:
-//
-//   - `atom_t`      : the underlying atom type (Effect)
-//   - `cardinality` : the number of atoms (effect_count)
-//   - `lattice`     : the value-level lattice instance (EffectRowLattice)
-//   - `name()`      : a consteval string for diagnostics
-//   - `atom_name()` : a consteval string for individual atoms
-//
-// The Universe is the type-level *catalog descriptor*; the Lattice is
-// the value-level *algebra*.  Together they let downstream code:
-//
-//   1. Reflect over the atom catalog (cardinality + atom_name)
-//   2. Compute on row bitmasks (lattice ops)
-//   3. Round-trip type-level rows through the substrate (At<Atoms...>)
-//   4. Federate cache keys via row_hash composition (FOUND-I-series)
-//
-// ── Scope of this header ────────────────────────────────────────────
-//
-// This header lands ONLY the `OsUniverse` descriptor.  It does NOT:
-//
-//   - Define the lattice (lives in EffectRowLattice.h)
-//   - Define `Computation<R, T>` as a Graded alias (FOUND-H03)
-//   - Provide the Computation façade methods (FOUND-H04)
-//   - Touch the legacy fx::* tree (deleted in FOUND-B07 / METX-5)
-//
-// ── Forward link to FOUND-H03 ────────────────────────────────────────
-//
-// H03 ships `Computation<R, T>` as:
-//
-//   template <typename R, typename T>
-//   using Computation = ::crucible::algebra::Graded<
-//       ::crucible::algebra::ModalityKind::Relative,
-//       EffectRowLattice::At< /* atoms unpacked from R */ >,
-//       T>;
-//
-// The `At<Atoms...>` slot is a type-level singleton sub-lattice
-// (EBO-collapsed grade carrier) so the alias preserves Computation's
-// zero-runtime-cost claim.  See EffectRowLattice.h's At<> doc-block.
-//
-// ── Per-Universe atom_name discipline (FOUND-H01-AUDIT-4) ───────────
-//
-// Each per-category Universe ships its own consteval atom-name
-// emitter via the same shape: `static consteval std::string_view
-// atom_name(atom_t a) noexcept`.  OsUniverse forwards to the existing
-// `effect_name(Effect)` consteval emitter from Capabilities.h; future
-// Universes (DetSafeUniverse, HotPathUniverse, ...) follow the same
-// contract.  The emitter is the diagnostic surface every reflection-
-// driven error message (FOUND-E18) reads.
+// The type-level descriptor that binds the OS-effect atom catalog to
+// the row substrate.  The Universe is the catalog descriptor and the
+// lattice is the value-level algebra over row bitmasks.  Every
+// per-category Universe publishes the same surface, so downstream code
+// reflects over any catalog through one shape.
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRowLattice.h>
@@ -63,138 +15,50 @@
 
 namespace crucible::effects {
 
-// ── OsUniverse — the OS-effect catalog descriptor ───────────────────
-//
-// The OS Universe is the Met(X) atom catalog used by the foreground/
-// background context machinery (Capabilities.h's cap::Alloc / cap::IO
-// / cap::Block + the Bg / Init / Test contexts).  Every Computation
-// in production today targets this Universe; per-axis Universes
-// (DetSafe, HotPath, ...) will land alongside their own lattices in
-// the FOUND-G series of wrappers.
-
 struct OsUniverse {
-    // The atom enum.  Underlying value type is uint8_t per
-    // Capabilities.h:41-48; bit positions in the parent lattice's
-    // bitmask carrier are derived from these underlying values.
     using atom_t = Effect;
 
-    // Number of atoms in the catalog.  Reflection-derived from the
-    // Effect enum at Capabilities.h:54-55 — adding a new atom auto-
-    // bumps this constant.  The carrier-width invariant in
-    // EffectRowLattice.h asserts cardinality <= 64.
     static constexpr std::size_t cardinality = effect_count;
 
-    // ── Carrier-width pins (fixy-A3-018) ────────────────────────────
-    //
-    // EffectRowLattice carries row bitmasks in `std::uint64_t`
-    // (RowHashFold.h:184-186 / EffectRowLattice.h documents the
-    // "≤ 64 atoms by axiom" invariant).  Per FOUND-I04 append-only
-    // Universe extension, new atoms can land at the next free
-    // underlying value — but if a 65th atom is added at value ≥ 64,
-    // `bit_position(atom)` produces a shift past the carrier width
-    // and the row encoding silently overflows.  Same root cause as
-    // A3-011's pin in Capabilities.h, but on the descriptor side.
-    //
-    // Two pins enforce the invariant at the type-system boundary:
-    //
-    //   1. `cardinality <= 64` — caps the number of atoms.
-    //   2. `underlying_type_t<atom_t> == uint8_t` — pins the atom
-    //      encoding so a future `enum class Effect : uint16_t`
-    //      widening doesn't silently expand the bit range without
-    //      explicit attention.
-    //
-    // Both fire at compile time; the discipline scales to every
-    // future per-axis Universe (DetSafeUniverse, HotPathUniverse,
-    // ...) following the same pattern.
-    static_assert(cardinality <= 64, "[OsUniverse_Overflow] fixy-A3-018: OsUniverse cardinality "
-                                     "exceeds EffectRowLattice's uint64_t bitmask carrier width. "
-                                     "FOUND-I04 append-only Universe extension landed atom #65 — "
-                                     "either widen the carrier to uint128_t (touches every "
-                                     "row_hash / row_descriptor consumer) or split the Universe "
-                                     "into multiple disjoint Universes (preferred, follows the "
-                                     "per-axis Universe roadmap in FOUND-G).");
+    // The lattice carries a row as a 64-bit mask, one bit per atom, so
+    // an atom whose underlying value reaches 64 shifts past the carrier
+    // and the row encoding silently overflows.
+    static_assert(cardinality <= 64, "[OsUniverse_Overflow] The atom count exceeds the 64-bit bitmask carrier that "
+                                     "the row lattice uses.  Either widen the carrier, which touches every row-hash "
+                                     "and row-descriptor consumer, or split the catalog into disjoint Universes.");
 
-    // FIXY-FOUND-109 reframe: bit_position now derives its
-    // intermediate cast width from `underlying_type_t<atom_t>`, so
-    // this static_assert is no longer the load-bearing defense
-    // against silent truncation — it's a TRIPWIRE.  A maintainer
-    // widening Effect to uint16_t will trip this assert; that's
-    // intentional, because widening typically signals "we need more
-    // than 256 atoms" and the surrounding row_descriptor /
-    // row_hash consumers (RowHashFold.h, EffectMask) must be
-    // audited regardless of whether bit_position itself is now
-    // truncation-proof.  Keep the assert; reframe the rationale.
+    // A tripwire, not the truncation defense: bit_position derives its
+    // cast width from the underlying type and is safe on its own.
+    // Widening the atom encoding signals a catalog large enough to need
+    // an audit of every consumer of the row encoding, so it stops here
+    // first.
     static_assert(std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
-                  "[OsUniverse_Underlying] fixy-A3-018 + FIXY-FOUND-109: "
-                  "OsUniverse::atom_t underlying type changed away from "
-                  "uint8_t.  bit_position is now structurally safe via "
-                  "underlying_type_t derivation, but a widening still demands "
-                  "an audit of row_descriptor / row_hash / EffectMask "
-                  "consumers because cardinality > 64 would overflow the "
-                  "uint64_t bitmask carrier independently of this site.  "
-                  "Address the audit, then update this assert.");
+                  "[OsUniverse_Underlying] The atom underlying type is no longer uint8_t.  bit_position derives its "
+                  "cast width from that type and stays truncation-free, but a widening still demands an audit of "
+                  "every row-descriptor, row-hash and effect-mask consumer, because a catalog of more than 64 atoms "
+                  "overflows the bitmask carrier regardless.  Do the audit, then update this assertion.");
 
-    // The value-level lattice instance — bounded distributive lattice
-    // over `std::uint64_t` bitmasks, satisfying Lattice +
-    // BoundedLattice + the Birkhoff distributivity witness.  See
-    // EffectRowLattice.h for the algebra; this typedef pins the
-    // identity so downstream code can write `OsUniverse::lattice` and
-    // get back the canonical lattice for the OS Universe.
     using lattice = EffectRowLattice;
 
-    // Diagnostic name — consumed by FOUND-E18 row-mismatch error
-    // formatter.  Must be stable across compiler versions / TU-context
-    // (the consteval surface; not the reflection-driven
-    // display_string_of which has documented TU-fragility per
-    // algebra/Graded.h:156-186).
+    // A literal rather than a reflected type name.  The reflected
+    // spelling varies with translation-unit context, and this name goes
+    // into diagnostics that must read the same everywhere.
     [[nodiscard]] static consteval std::string_view name() noexcept { return "OsUniverse"; }
 
-    // Per-atom name emitter (FOUND-H01-AUDIT-4).  Forwards to the
-    // canonical `effect_name(Effect)` from Capabilities.h:58-68.  The
-    // forwarding is intentional: the catalog and its names live in
-    // one place (Capabilities.h), the Universe descriptor is a thin
-    // bridge.  Adding a new atom to Effect requires updating
-    // effect_name's switch; the OsUniverse::atom_name picks up the
-    // change automatically through this forwarder.
-    //
-    // constexpr (not consteval) per the runtime smoke-test discipline
-    // (feedback_algebra_runtime_smoke_test_discipline) so the smoke
-    // test can drive atom_name with a non-constant argument.  Still
-    // constant-evaluated when called from consteval contexts (e.g.,
-    // detail::os_universe_self_test::every_atom_has_name below).
     [[nodiscard]] static constexpr std::string_view atom_name(atom_t a) noexcept { return effect_name(a); }
 
-    // Bit position of an atom in the parent lattice's bitmask carrier.
-    // Stable across append-only Universe extensions (28_04 §8.5.3,
-    // FOUND-I04) — the bit position derives from the atom's
-    // underlying enumerator value, NOT from enumeration order.
+    // The bit position is the atom's own underlying value, never its
+    // ordinal in the enumeration.  Atoms are therefore append-only: a
+    // new atom takes the next free value, and every already-published
+    // row encoding and federated cache key keeps its meaning.
     //
-    // FIXY-FOUND-109: the intermediate cast width is derived from
-    // `std::underlying_type_t<atom_t>` rather than hardcoded `uint8_t`.
-    // The original `static_cast<std::uint8_t>(a)` form silently
-    // truncates if Effect's underlying type ever widens (e.g., to
-    // `uint16_t` to host > 256 atoms in one Universe).  With the
-    // derived cast, truncation is structurally impossible: the cast
-    // width tracks the enum's underlying type automatically, and the
-    // `cardinality <= 64` pin above remains the load-bearing
-    // bitmask-carrier check.  The companion `underlying_type ==
-    // uint8_t` static_assert above becomes a softer tripwire — it
-    // still catches accidental widening so the maintainer audits the
-    // surrounding row_descriptor / row_hash consumers, but the
-    // truncation hole that motivated it is closed at this site.
+    // The cast width tracks the underlying type instead of naming
+    // uint8_t, so a later widening of the atom encoding cannot truncate
+    // here.
     [[nodiscard]] static constexpr std::size_t bit_position(atom_t a) noexcept {
         return static_cast<std::size_t>(static_cast<std::underlying_type_t<atom_t>>(a));
     }
 };
-
-// ── Universe concept gate ───────────────────────────────────────────
-//
-// Concept-overloaded specialization (FOUND-D-series) consumes Universe
-// types via a uniform shape.  The `Universe` concept enforces the
-// minimum surface every Universe descriptor must publish — atom_t,
-// cardinality, lattice, name, atom_name.  Future per-axis Universes
-// must satisfy this concept; the dispatcher reads the surface
-// uniformly via `is_universe_v<U>` (planned in the FOUND-D extension).
 
 template <typename U>
 concept Universe = requires {
@@ -204,8 +68,6 @@ concept Universe = requires {
     { U::name() } -> std::convertible_to<std::string_view>;
     { U::atom_name(std::declval<typename U::atom_t>()) } -> std::convertible_to<std::string_view>;
 };
-
-// ── Concept-conformance assertions ──────────────────────────────────
 
 static_assert(Universe<OsUniverse>, "OsUniverse must satisfy the Universe concept — every per-category "
                                     "Universe descriptor exposes atom_t / cardinality / lattice / "
@@ -222,8 +84,6 @@ static_assert(OsUniverse::atom_name(Effect::Bg) == "Bg");
 static_assert(OsUniverse::atom_name(Effect::Init) == "Init");
 static_assert(OsUniverse::atom_name(Effect::Test) == "Test");
 
-// Bit-position bridge agrees with the parent lattice's encoding.
-// row_descriptor_v<Row<Effect::Alloc>> sets bit at bit_position(Alloc).
 static_assert(OsUniverse::bit_position(Effect::Alloc) == 0);
 static_assert(OsUniverse::bit_position(Effect::IO) == 1);
 static_assert(OsUniverse::bit_position(Effect::Block) == 2);
@@ -231,24 +91,14 @@ static_assert(OsUniverse::bit_position(Effect::Bg) == 3);
 static_assert(OsUniverse::bit_position(Effect::Init) == 4);
 static_assert(OsUniverse::bit_position(Effect::Test) == 5);
 
-// Bridge: every atom's bit position matches the parent lattice's
-// row_descriptor_v encoding for the singleton row containing only
-// that atom.
+// The descriptor encoding of a singleton row agrees with this
+// Universe's bit position for that atom.
 static_assert(row_descriptor_v<Row<Effect::Alloc>>
               == (EffectRowLattice::element_type{1} << OsUniverse::bit_position(Effect::Alloc)));
 static_assert(row_descriptor_v<Row<Effect::Bg>>
               == (EffectRowLattice::element_type{1} << OsUniverse::bit_position(Effect::Bg)));
 
-// ── Self-test block ─────────────────────────────────────────────────
-
 namespace detail::os_universe_self_test {
-
-// Reflection-driven exhaustive coverage: every Effect enumerator must
-// have a non-empty atom_name from the Universe.  Mirrors the
-// every_effect_has_name pattern in Capabilities.h's self-test, but
-// targets the Universe's atom_name surface specifically — catches the
-// case where Capabilities.h's effect_name is updated but a future
-// Universe overrides atom_name and forgets to mirror the addition.
 
 [[nodiscard]] consteval bool every_atom_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
@@ -264,34 +114,18 @@ namespace detail::os_universe_self_test {
     return true;
 }
 static_assert(every_atom_has_name(), "OsUniverse::atom_name must produce a non-empty, non-sentinel "
-                                     "name for every Effect atom.  Add the missing arm to "
-                                     "effect_name() in Capabilities.h or the new atom leaks the "
-                                     "'<unknown Effect>' sentinel into Universe-driven diagnostics.");
+                                     "name for every Effect atom.  Add the missing arm to the atom-name "
+                                     "emitter, or the new atom leaks the '<unknown Effect>' sentinel "
+                                     "into Universe-driven diagnostics.");
 
-// Pairwise distinctness — the Universe's atom_name surface inherits
-// effect_name's distinctness, but the sanity check is cheap.
 static_assert(OsUniverse::atom_name(Effect::Alloc) != OsUniverse::atom_name(Effect::IO));
 static_assert(OsUniverse::atom_name(Effect::Bg) != OsUniverse::atom_name(Effect::Init));
 
-// Layout: OsUniverse is a stateless type — sizeof(OsUniverse) is
-// implementation-defined for empty structs (1 byte under most ABIs)
-// but the Universe is never instantiated; only its static surface is
-// consumed.  Document the expectation rather than assert — sizeof(1)
-// is a microarch trivia, not a load-bearing invariant.
-
-// ── FIXY-FOUND-109: bit_position underlying_type derivation ────
-//
-// Witness that bit_position's cast goes through Effect's actual
-// underlying_type, not a hardcoded uint8_t.  For the current
-// uint8_t backing the values are observationally identical, so the
-// witness compares against the derived expression — proving the
-// SHAPE of the cast, not just its value.  If a maintainer reverts
-// to `static_cast<std::uint8_t>(a)` while ALSO widening Effect's
-// underlying_type, the values diverge for atoms beyond uint8_t's
-// range and the witness reddens.  For uint8_t-backed Effect today
-// the witness is tautological — that's the intended forward-compat
-// shape: the underlying_type derivation tracks the enum, so the
-// witness becomes load-bearing the moment underlying_type widens.
+// While the atom encoding is uint8_t these comparisons are
+// tautological.  What they pin is the form of bit_position's cast, not
+// its value.  A cast rewritten to name a fixed width diverges from the
+// derived one as soon as the encoding widens, and the comparison
+// reddens then instead of truncating in silence.
 
 template <Effect E>
 [[nodiscard]] consteval std::size_t derived_bit_position_of() noexcept {
@@ -307,32 +141,20 @@ static_assert(OsUniverse::bit_position(Effect::Test) == derived_bit_position_of<
 
 }  // namespace detail::os_universe_self_test
 
-// ── Runtime smoke test ──────────────────────────────────────────────
-//
-// Per the runtime smoke-test discipline (auto-memory feedback): drive
-// every consteval/constexpr accessor with non-constant arguments so
-// inline-body / consteval-vs-constexpr regressions surface alongside
-// the static_assert wall.
-
+// Drives every accessor with non-constant arguments, where inline-body
+// and constant-evaluation regressions surface that the assertions above
+// cannot see.
 inline void runtime_smoke_test_os_universe() noexcept {
     [[maybe_unused]] auto nm = OsUniverse::name();
     [[maybe_unused]] auto card = OsUniverse::cardinality;
 
-    // Drive atom_name via a non-constant argument so the consteval
-    // accessor's inline body actually instantiates at the boundary.
     Effect e_runtime = Effect::Alloc;
     [[maybe_unused]] auto an = OsUniverse::atom_name(e_runtime);
 
     [[maybe_unused]] std::size_t bp = OsUniverse::bit_position(e_runtime);
 
-    // Concept-based capability check at the boundary (per
-    // feedback_algebra_runtime_smoke_test_discipline) — confirms the
-    // Universe concept-gate is satisfied at the boundary, not just
-    // at the static_assert wall above.
     static_assert(Universe<OsUniverse>);
 
-    // Surface the lattice typedef so downstream code that goes
-    // OsUniverse::lattice gets a reachable instantiation here.
     using L = OsUniverse::lattice;
     [[maybe_unused]] L::element_type b = L::bottom();
     [[maybe_unused]] L::element_type t = L::top();

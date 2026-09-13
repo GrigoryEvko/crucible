@@ -1,115 +1,11 @@
 #pragma once
 
-// ── crucible::algebra::lattices::SimdIsaLattice ─────────────────────
+// Two chains that share a bottom and a top, not one chain.  Each architecture's
+// extensions subsume the ones below them, but nothing relates one architecture
+// to the other: code built for one does not execute on the other at all.
 //
-// NON-DISTRIBUTIVE partial-order lattice over the SIMD-ISA capability
-// spectrum.  Two MUTUALLY-INCOMPARABLE internal chains — the x86 trunk
-// and the ARM trunk — joined only at a shared bottom (Scalar, no SIMD)
-// and a shared top (Portable, the all-or-any kernel).  The grading axis
-// underlying the SimdWidthPinned wrapper (FIXY-V-256, Agent 11 §3.7).
-//
-// ── Structural shape (two chains sharing ⊤ and ⊥) ──────────────────
-//
-//                          ┌──────────────┐
-//                          │  Portable ⊤  │  strongest claim
-//                          └──────┬───────┘  (runs everywhere)
-//                  ┌──────────────┴──────────────┐
-//                  │                              │
-//             ┌────┴─────┐                  ┌─────┴────┐
-//             │ AVX512BW │ (x86 top)        │   SVE2   │ (ARM top)
-//             │ AVX512F  │                  │   SVE    │
-//             │ AVX2     │                  │ NEON-Dot │
-//             │ SSE4.2   │                  │ NEON-FP16│
-//             │ SSE4.1   │                  │   NEON   │ (ARM bottom)
-//             │ SSSE3    │                  └─────┬────┘
-//             │ SSE3     │                        │
-//             │ SSE2     │ (x86 bottom)           │
-//             └────┬─────┘                        │
-//                  └──────────────┬───────────────┘
-//                                 ▼
-//                          ┌──────────────┐
-//                          │  Scalar  ⊥   │  weakest claim
-//                          └──────────────┘  (no SIMD; satisfies no gate)
-//
-// Each trunk is an INTERNAL CHAIN (totally ordered: SSE2 ⊑ SSE3 ⊑ ... ⊑
-// AVX512BW; NEON ⊑ NEON-FP16 ⊑ ... ⊑ SVE2).  Across trunks every pair is
-// INCOMPARABLE — an AVX2 binary does not run on an ARM CPU and vice
-// versa; neither subsumes the other.  Like VendorLattice, this is a
-// hand-written partial order, NOT a ChainLattice.
-//
-// THE LOAD-BEARING USE CASE (Agent 11 §3.7, consumed by V-256
-// SimdWidthPinned + V-260 collision rule S001): a function declared
-// `requires SimdIsa<Avx2>::satisfies<RuntimeFloor>` admits a load on an
-// AVX-512 CPU (Avx2 ⊑ Avx512F) but rejects an SSE2 CPU (Avx2 ⋢ Sse2) AND
-// rejects every ARM CPU (cross-trunk incomparable).  The `satisfies`
-// wrapper is V-256's deliverable; this header ships only the lattice
-// (leq / join / meet / At<>), mirroring the VendorLattice → safety/
-// Vendor.h split exactly.
-//
-// ── Direction convention (matches the audit-verified universal) ────
-//
-// Stronger capability = HIGHER in the lattice.  `leq(consumer, provider)`
-// reads "a consumer pinned at ISA `consumer` is satisfied by a provider
-// CPU at ISA `provider`" — i.e. the compiled-for ISA must be at-or-below
-// the runtime CPU's ISA for the binary to run.
-//
-//   leq(Sse2,   Avx2)     = true  (within x86 trunk; AVX2 CPU runs SSE2 code)
-//   leq(Avx2,   Sse2)     = false (SSE2 CPU lacks AVX2 — would #UD)
-//   leq(Avx2,   Sve2)     = false (cross-trunk: x86 code never runs on ARM)
-//   leq(Scalar, Avx2)     = true  (⊥: scalar code runs anywhere)
-//   leq(Avx2,   Portable) = true  (⊤: a Portable provider runs every ISA's code)
-//   leq(Portable, Avx2)   = false (a Portable kernel is not "satisfied by" AVX2-only)
-//
-// ── Algebraic shape ─────────────────────────────────────────────────
-//
-// Carrier: enum class SimdIsa.  Underlying encoding packs the trunk into
-// the high nibble (x86 = 0x1_, ARM = 0x2_) with the per-trunk rank in the
-// low nibble, so the integer order WITHIN a trunk equals the capability
-// rank.  Scalar = 0x00 (⊥), Portable = 0xFF (⊤).  The underlying-integer
-// order is NOT the lattice order across trunks — SimdIsa is a partial
-// order, not a chain.
-//
-// Bottom = Scalar    (weakest — no SIMD; satisfies no SIMD gate)
-// Top    = Portable  (strongest — universal kernel; satisfies every gate)
-// Join (LUB):
-//   - x ∨ x                    = x
-//   - Scalar ∨ x               = x        (bottom is identity for ∨)
-//   - x ∨ Portable             = Portable
-//   - same trunk               = the higher-rank element (max)
-//   - distinct trunks          = Portable (their only common upper bound is ⊤)
-// Meet (GLB):
-//   - x ∧ x                    = x
-//   - x ∧ Portable             = x        (top is identity for ∧)
-//   - Scalar ∧ x               = Scalar
-//   - same trunk               = the lower-rank element (min)
-//   - distinct trunks          = Scalar (their only common lower bound is ⊥)
-//
-// NOT distributive — verified below.  Like VendorLattice, a partial order
-// that is bounded by a single ⊤/⊥ AND has two incomparable internal
-// chains CANNOT be distributive.  The canonical failure (each operand in
-// a different trunk, with one trunk-internal pair related):
-//   (AVX2 ∨ NEON) ∧ SVE = Portable ∧ SVE = SVE
-//   (AVX2 ∧ SVE) ∨ (NEON ∧ SVE) = Scalar ∨ NEON = NEON   (NEON ⊑ SVE in ARM trunk)
-//   SVE ≠ NEON — hence non-distributive.
-// (The Agent 11 §3.1 worked example writes the RHS as Scalar; the precise
-// value is NEON because NEON ⊑ SVE are both ARM-trunk, so NEON ∧ SVE =
-// NEON, not Scalar.  Either way LHS ≠ RHS — the lattice is non-
-// distributive, which is the load-bearing property.)
-//
-//   Axiom coverage:
-//     TypeSafe — SimdIsa is a strong scoped enum; cross-tier mixing
-//                requires `std::to_underlying`.
-//   Runtime cost:
-//     leq / join / meet — a handful of integer compares over a 15-element
-//     domain; the carrier compiles to a 1-byte field.  Type-pinned via
-//     `SimdIsaLattice::At<ISA>`, the grade EBO-collapses to zero bytes.
-//
-// See FIXY-V-251 (HwInstructionLattice) + FIXY-V-252 (BarrierStrengthLattice)
-// for the sibling HW-axis lattices; FIXY-V-256 (safety/SimdWidthPinned.h)
-// for the type-pinned wrapper that ships `satisfies<>` + the
-// `row_hash_contribution` federation-cache discriminator (deferred to the
-// wrapper exactly as VendorLattice defers to safety/Vendor.h — the lattice
-// layer pulls no safety/diag header).
+// A richer instruction set sits higher, so a leq that holds reads as code built
+// for the lower level running on a processor that offers the higher one.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -122,30 +18,25 @@
 
 namespace crucible::algebra::lattices {
 
-// ── SimdIsa — partial order over SIMD-ISA capability ──────────────
-//
-// Encoding: high nibble = trunk (1 = x86, 2 = ARM), low nibble = rank.
-// Scalar = 0x00 (⊥), Portable = 0xFF (⊤).  Within a trunk the integer
-// order IS the capability rank; across trunks the integer order is
-// meaningless (the lattice is a partial order).
+// The high nibble names the chain and the low nibble the rank within it, so
+// comparing the underlying integers of two values from the same chain gives
+// their order directly.  Across chains the integers mean nothing.
 enum class SimdIsa : std::uint8_t {
-    Scalar = 0x00,  // ⊥: no SIMD — runs on any CPU, satisfies no SIMD gate
-    // x86 trunk (bottom → top)
+    Scalar = 0x00,  // no SIMD at all, so it runs on any processor
     Sse2 = 0x10,
     Sse3 = 0x11,
     Ssse3 = 0x12,
     Sse41 = 0x13,
     Sse42 = 0x14,
-    Avx2 = 0x15,  // AVX2 + BMI2 + FMA (the Haswell baseline)
+    Avx2 = 0x15,  // AVX2 together with BMI2 and FMA
     Avx512F = 0x16,
     Avx512Bw = 0x17,
-    // ARM trunk (bottom → top)
     Neon = 0x20,
     NeonFp16 = 0x21,
     NeonDotProduct = 0x22,
     Sve = 0x23,
     Sve2 = 0x24,
-    Portable = 0xFF,  // ⊤: vendor/ISA-agnostic — satisfies every gate
+    Portable = 0xFF,  // one kernel that runs under any instruction set
 };
 
 inline constexpr std::size_t simd_isa_count = std::meta::enumerators_of(^^SimdIsa).size();
@@ -187,7 +78,6 @@ inline constexpr std::size_t simd_isa_count = std::meta::enumerators_of(^^SimdIs
     }
 }
 
-// ── Trunk classification (the partial-order discriminator) ─────────
 [[nodiscard]] constexpr bool simd_isa_is_x86(SimdIsa x) noexcept {
     const auto u = std::to_underlying(x);
     return u >= std::to_underlying(SimdIsa::Sse2) && u <= std::to_underlying(SimdIsa::Avx512Bw);
@@ -196,27 +86,19 @@ inline constexpr std::size_t simd_isa_count = std::meta::enumerators_of(^^SimdIs
     const auto u = std::to_underlying(x);
     return u >= std::to_underlying(SimdIsa::Neon) && u <= std::to_underlying(SimdIsa::Sve2);
 }
-// Two ISAs share a trunk iff both are x86-trunk or both are ARM-trunk.
-// Scalar and Portable belong to NEITHER trunk (they are the shared
-// sentinels), so same_trunk(Scalar, x) and same_trunk(Portable, x) are
-// always false — leq/join/meet special-case them before this check.
+// Scalar and Portable belong to neither chain, so this answers false for both
+// of them against anything.  Every caller therefore has to settle those two
+// cases before asking.
 [[nodiscard]] constexpr bool simd_isa_same_trunk(SimdIsa a, SimdIsa b) noexcept {
     return (simd_isa_is_x86(a) && simd_isa_is_x86(b)) || (simd_isa_is_arm(a) && simd_isa_is_arm(b));
 }
 
-// ── Full SimdIsaLattice (partial order) ─────────────────────────────
 struct SimdIsaLattice {
     using element_type = SimdIsa;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return SimdIsa::Scalar; }
     [[nodiscard]] static constexpr element_type top() noexcept { return SimdIsa::Portable; }
 
-    // leq(a, b) — partial-order check.  Priority order:
-    //   1. Reflexive: x ⊑ x.
-    //   2. Bottom: Scalar ⊑ x for every x.
-    //   3. Top: x ⊑ Portable for every x.
-    //   4. Same trunk: compare per-trunk rank (the low-nibble integer).
-    //   5. Otherwise (cross-trunk) incomparable.
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         if (a == b) return true;
         if (a == SimdIsa::Scalar) return true;
@@ -227,7 +109,9 @@ struct SimdIsaLattice {
         return false;
     }
 
-    // join(a, b) — least upper bound.  Cross-trunk pairs route through ⊤.
+    // Two instruction sets from different chains have nothing between them, so
+    // their least upper bound can only be the top and their greatest lower
+    // bound only the bottom.
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
         if (a == b) return a;
         if (a == SimdIsa::Scalar) return b;
@@ -238,10 +122,9 @@ struct SimdIsaLattice {
         if (simd_isa_same_trunk(a, b)) {
             return std::to_underlying(a) >= std::to_underlying(b) ? a : b;
         }
-        return SimdIsa::Portable;  // distinct trunks: LUB is ⊤
+        return SimdIsa::Portable;
     }
 
-    // meet(a, b) — greatest lower bound.  Cross-trunk pairs route through ⊥.
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
         if (a == b) return a;
         if (a == SimdIsa::Portable) return b;
@@ -252,18 +135,11 @@ struct SimdIsaLattice {
         if (simd_isa_same_trunk(a, b)) {
             return std::to_underlying(a) <= std::to_underlying(b) ? a : b;
         }
-        return SimdIsa::Scalar;  // distinct trunks: GLB is ⊥
+        return SimdIsa::Scalar;
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return "SimdIsaLattice"; }
 
-    // ── At<ISA> — per-ISA singleton sub-lattice ───────────────────
-    //
-    // Mirrors VendorLattice::At<B>.  Empty element_type for regime-1 EBO
-    // collapse; within a single fixed ISA there is one element, so leq is
-    // trivially true and join/meet return the singleton.  The full
-    // SimdIsaLattice partial order is consulted when the dispatcher checks
-    // `satisfies<>` between two distinct fixed-ISA wrappers (V-256).
     template <SimdIsa I>
     struct At {
         struct element_type {
@@ -319,7 +195,6 @@ struct SimdIsaLattice {
     };
 };
 
-// ── Convenience aliases ─────────────────────────────────────────────
 namespace simd_isa {
 using ScalarIsa = SimdIsaLattice::At<SimdIsa::Scalar>;
 using Sse2Isa = SimdIsaLattice::At<SimdIsa::Sse2>;
@@ -338,13 +213,11 @@ using Sve2Isa = SimdIsaLattice::At<SimdIsa::Sve2>;
 using PortableIsa = SimdIsaLattice::At<SimdIsa::Portable>;
 }  // namespace simd_isa
 
-// ── Self-test ───────────────────────────────────────────────────────
 namespace detail::simd_isa_lattice_self_test {
 
-static_assert(simd_isa_count == 15, "SimdIsa catalog diverged from {Scalar, 8 x86 trunk, 5 ARM trunk, "
-                                    "Portable}; confirm intent and update the trunk-classification helpers "
-                                    "(simd_isa_is_x86 / simd_isa_is_arm bound the trunk ranges) AND the "
-                                    "V-256 SimdWidthPinned wrapper's satisfies<> + V-260 collision rule.");
+static_assert(simd_isa_count == 15, "The SimdIsa catalog changed size.  Confirm the intent, then update "
+                                    "simd_isa_is_x86 and simd_isa_is_arm, which bound the two chains by "
+                                    "underlying value, and kAll in the verifier below.");
 
 [[nodiscard]] consteval bool every_simd_isa_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SimdIsa));
@@ -376,11 +249,9 @@ static_assert(std::is_empty_v<simd_isa::Avx2Isa::element_type>);
 static_assert(std::is_empty_v<simd_isa::SveIsa::element_type>);
 static_assert(std::is_empty_v<simd_isa::PortableIsa::element_type>);
 
-// ── Bottom + top witnesses ────────────────────────────────────────
 static_assert(SimdIsaLattice::bottom() == SimdIsa::Scalar);
 static_assert(SimdIsaLattice::top() == SimdIsa::Portable);
 
-// ── Trunk-classification witnesses ────────────────────────────────
 static_assert(simd_isa_is_x86(SimdIsa::Sse2));
 static_assert(simd_isa_is_x86(SimdIsa::Avx512Bw));
 static_assert(!simd_isa_is_x86(SimdIsa::Neon));
@@ -397,27 +268,22 @@ static_assert(!simd_isa_same_trunk(SimdIsa::Avx2, SimdIsa::Sve));
 static_assert(!simd_isa_same_trunk(SimdIsa::Scalar, SimdIsa::Neon));
 static_assert(!simd_isa_same_trunk(SimdIsa::Portable, SimdIsa::Avx2));
 
-// ── Reflexivity at every ISA ──────────────────────────────────────
 static_assert(SimdIsaLattice::leq(SimdIsa::Scalar, SimdIsa::Scalar));
 static_assert(SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Avx2));
 static_assert(SimdIsaLattice::leq(SimdIsa::Sve, SimdIsa::Sve));
 static_assert(SimdIsaLattice::leq(SimdIsa::Portable, SimdIsa::Portable));
 
-// ── Scalar ⊑ everything ───────────────────────────────────────────
 static_assert(SimdIsaLattice::leq(SimdIsa::Scalar, SimdIsa::Sse2));
 static_assert(SimdIsaLattice::leq(SimdIsa::Scalar, SimdIsa::Avx512Bw));
 static_assert(SimdIsaLattice::leq(SimdIsa::Scalar, SimdIsa::Neon));
 static_assert(SimdIsaLattice::leq(SimdIsa::Scalar, SimdIsa::Sve2));
 static_assert(SimdIsaLattice::leq(SimdIsa::Scalar, SimdIsa::Portable));
 
-// ── everything ⊑ Portable ─────────────────────────────────────────
 static_assert(SimdIsaLattice::leq(SimdIsa::Sse2, SimdIsa::Portable));
 static_assert(SimdIsaLattice::leq(SimdIsa::Avx512Bw, SimdIsa::Portable));
 static_assert(SimdIsaLattice::leq(SimdIsa::Neon, SimdIsa::Portable));
 static_assert(SimdIsaLattice::leq(SimdIsa::Sve2, SimdIsa::Portable));
 
-// ── x86 trunk subsumption chain (the LOAD-BEARING positive) ───────
-// SSE2 ⊑ SSE3 ⊑ SSSE3 ⊑ SSE4.1 ⊑ SSE4.2 ⊑ AVX2 ⊑ AVX512F ⊑ AVX512BW
 static_assert(SimdIsaLattice::leq(SimdIsa::Sse2, SimdIsa::Sse3));
 static_assert(SimdIsaLattice::leq(SimdIsa::Sse3, SimdIsa::Ssse3));
 static_assert(SimdIsaLattice::leq(SimdIsa::Ssse3, SimdIsa::Sse41));
@@ -425,25 +291,21 @@ static_assert(SimdIsaLattice::leq(SimdIsa::Sse41, SimdIsa::Sse42));
 static_assert(SimdIsaLattice::leq(SimdIsa::Sse42, SimdIsa::Avx2));
 static_assert(SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Avx512F));
 static_assert(SimdIsaLattice::leq(SimdIsa::Avx512F, SimdIsa::Avx512Bw));
-// Transitive endpoints + the use-case witness from the docblock.
 static_assert(SimdIsaLattice::leq(SimdIsa::Sse2, SimdIsa::Avx512Bw));
-static_assert(SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Avx512F));  // AVX-512 CPU runs AVX2 code
-static_assert(!SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Sse2));  // SSE2 CPU rejects AVX2 code
-static_assert(!SimdIsaLattice::leq(SimdIsa::Avx512Bw, SimdIsa::Avx2));  // descending direction is false
+static_assert(SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Avx512F));
+static_assert(!SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Sse2));
+static_assert(!SimdIsaLattice::leq(SimdIsa::Avx512Bw, SimdIsa::Avx2));
 
-// ── ARM trunk subsumption chain (the LOAD-BEARING positive) ───────
-// NEON ⊑ NEON-FP16 ⊑ NEON-Dot ⊑ SVE ⊑ SVE2
 static_assert(SimdIsaLattice::leq(SimdIsa::Neon, SimdIsa::NeonFp16));
 static_assert(SimdIsaLattice::leq(SimdIsa::NeonFp16, SimdIsa::NeonDotProduct));
 static_assert(SimdIsaLattice::leq(SimdIsa::NeonDotProduct, SimdIsa::Sve));
 static_assert(SimdIsaLattice::leq(SimdIsa::Sve, SimdIsa::Sve2));
-static_assert(SimdIsaLattice::leq(SimdIsa::Neon, SimdIsa::Sve2));  // transitive
-static_assert(!SimdIsaLattice::leq(SimdIsa::Sve2, SimdIsa::Neon));  // descending is false
+static_assert(SimdIsaLattice::leq(SimdIsa::Neon, SimdIsa::Sve2));
+static_assert(!SimdIsaLattice::leq(SimdIsa::Sve2, SimdIsa::Neon));
 
-// ── Cross-trunk incomparability (THE LOAD-BEARING NEGATIVE) ───────
-// Every x86 × ARM pair MUST be mutually incomparable — this is what the
-// SimdWidthPinned wrapper's safety guarantee depends on (an x86 binary
-// must never be admitted on an ARM CPU and vice versa).
+// Every pair drawn from the two different chains must stay incomparable in both
+// directions.  Ordering one against the other would admit a binary on a
+// processor that cannot decode a single one of its instructions.
 static_assert(!SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Sve));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Sve, SimdIsa::Avx2));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Sse2, SimdIsa::Neon));
@@ -453,42 +315,31 @@ static_assert(!SimdIsaLattice::leq(SimdIsa::Sve2, SimdIsa::Avx512Bw));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Neon));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Neon, SimdIsa::Avx512F));
 
-// ── Reverse rules — Portable ⊑ X false, X ⊑ Scalar false ──────────
 static_assert(!SimdIsaLattice::leq(SimdIsa::Portable, SimdIsa::Avx2));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Portable, SimdIsa::Sve));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Portable, SimdIsa::Scalar));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Avx2, SimdIsa::Scalar));
 static_assert(!SimdIsaLattice::leq(SimdIsa::Sve, SimdIsa::Scalar));
 
-// ── Join / meet witnesses ─────────────────────────────────────────
-// Same trunk → join = higher rank, meet = lower rank.
 static_assert(SimdIsaLattice::join(SimdIsa::Sse2, SimdIsa::Avx2) == SimdIsa::Avx2);
 static_assert(SimdIsaLattice::meet(SimdIsa::Sse2, SimdIsa::Avx2) == SimdIsa::Sse2);
 static_assert(SimdIsaLattice::join(SimdIsa::Neon, SimdIsa::Sve) == SimdIsa::Sve);
 static_assert(SimdIsaLattice::meet(SimdIsa::Neon, SimdIsa::Sve) == SimdIsa::Neon);
-// Cross-trunk → join = Portable, meet = Scalar.
 static_assert(SimdIsaLattice::join(SimdIsa::Avx2, SimdIsa::Sve) == SimdIsa::Portable);
 static_assert(SimdIsaLattice::meet(SimdIsa::Avx2, SimdIsa::Sve) == SimdIsa::Scalar);
 static_assert(SimdIsaLattice::join(SimdIsa::Sse2, SimdIsa::Neon) == SimdIsa::Portable);
 static_assert(SimdIsaLattice::meet(SimdIsa::Sse2, SimdIsa::Neon) == SimdIsa::Scalar);
-// Scalar identity for join; Portable identity for meet.
 static_assert(SimdIsaLattice::join(SimdIsa::Scalar, SimdIsa::Avx2) == SimdIsa::Avx2);
 static_assert(SimdIsaLattice::join(SimdIsa::Scalar, SimdIsa::Portable) == SimdIsa::Portable);
 static_assert(SimdIsaLattice::meet(SimdIsa::Portable, SimdIsa::Sve) == SimdIsa::Sve);
 static_assert(SimdIsaLattice::meet(SimdIsa::Portable, SimdIsa::Scalar) == SimdIsa::Scalar);
-// Scalar absorbs in meet; Portable absorbs in join.
 static_assert(SimdIsaLattice::meet(SimdIsa::Scalar, SimdIsa::Avx2) == SimdIsa::Scalar);
 static_assert(SimdIsaLattice::join(SimdIsa::Portable, SimdIsa::Neon) == SimdIsa::Portable);
-// Idempotence.
 static_assert(SimdIsaLattice::join(SimdIsa::Avx2, SimdIsa::Avx2) == SimdIsa::Avx2);
 static_assert(SimdIsaLattice::meet(SimdIsa::Sve, SimdIsa::Sve) == SimdIsa::Sve);
 
-// ── Exhaustive lattice-axiom verification — (15 ISAs)³ = 3375 ──────
-//
-// Hand-written exhaustive verifier (cannot reuse the chain verifier —
-// SimdIsa is NOT a chain).  Mirrors VendorLattice's: reflexivity /
-// antisymmetry / transitivity of leq + idempotence / commutativity /
-// associativity / absorption / bounds of meet+join + leq-consistency.
+// The shared chain verifier does not apply to a partial order, so the axioms
+// are walked by hand over every triple of the fifteen elements.
 inline constexpr SimdIsa kAll[] = {
     SimdIsa::Scalar,   SimdIsa::Sse2,           SimdIsa::Sse3,    SimdIsa::Ssse3,    SimdIsa::Sse41,
     SimdIsa::Sse42,    SimdIsa::Avx2,           SimdIsa::Avx512F, SimdIsa::Avx512Bw, SimdIsa::Neon,
@@ -524,28 +375,26 @@ inline constexpr SimdIsa kAll[] = {
     return true;
 }
 static_assert(verify_partial_order_exhaustive(),
-              "SimdIsaLattice's partial-order axioms must hold at every (SimdIsa)³ "
-              "triple over the 15 elements.  If this fires, one of leq / join / meet "
-              "has a bug for some pair OR the trunk routing (Scalar / Portable / "
-              "same-trunk-rank / cross-trunk) is wrong.");
+              "The partial-order axioms must hold at every triple of the fifteen "
+              "instruction sets.  A failure means leq, join or meet is wrong for some "
+              "pair, or the routing between Scalar, Portable, same-chain rank and "
+              "cross-chain is wrong.");
 
-// ── Non-distributivity witness ────────────────────────────────────
+// A bounded order with a single top and bottom and with two unordered internal
+// chains cannot be distributive, so the failure below is structural rather than
+// a defect.  It is pinned so that anyone merging the two chains has to confront
+// the assertion first.
 [[nodiscard]] consteval bool non_distributive_witness() noexcept {
     using L = SimdIsaLattice;
-    // (AVX2 ∨ NEON) ∧ SVE = Portable ∧ SVE = SVE
-    // (AVX2 ∧ SVE) ∨ (NEON ∧ SVE) = Scalar ∨ NEON = NEON   (NEON ⊑ SVE)
-    // SVE ≠ NEON — hence non-distributive.
     auto lhs = L::meet(L::join(SimdIsa::Avx2, SimdIsa::Neon), SimdIsa::Sve);
     auto rhs = L::join(L::meet(SimdIsa::Avx2, SimdIsa::Sve), L::meet(SimdIsa::Neon, SimdIsa::Sve));
     return lhs == SimdIsa::Sve && rhs == SimdIsa::Neon && lhs != rhs;
 }
-static_assert(non_distributive_witness(), "SimdIsaLattice MUST be non-distributive (see docblock).  If this "
-                                          "fires, either (a) the two trunks were collapsed into one chain — "
-                                          "DEFEATING the cross-trunk incomparability the SimdWidthPinned safety "
-                                          "guarantee depends on — or (b) a synthetic intermediate element closed "
-                                          "the distributivity gap.  Audit before resolving.");
+static_assert(non_distributive_witness(), "SimdIsaLattice must stay non-distributive.  A failure means either the "
+                                          "two chains were collapsed into one, which destroys their "
+                                          "incomparability, or an intermediate element was added that closed the "
+                                          "distributivity gap.  Audit before resolving.");
 
-// ── Names ────────────────────────────────────────────────────────
 static_assert(SimdIsaLattice::name() == "SimdIsaLattice");
 static_assert(simd_isa::ScalarIsa::name() == "SimdIsaLattice::At<Scalar>");
 static_assert(simd_isa::Avx2Isa::name() == "SimdIsaLattice::At<Avx2>");
@@ -573,7 +422,6 @@ static_assert(simd_isa::SveIsa::isa == SimdIsa::Sve);
 static_assert(simd_isa::ScalarIsa::isa == SimdIsa::Scalar);
 static_assert(simd_isa::PortableIsa::isa == SimdIsa::Portable);
 
-// ── Layout invariants ───────────────────────────────────────────────
 struct OneByteValue {
     char c{0};
 };
@@ -606,8 +454,8 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] SimdIsa topv = SimdIsaLattice::top();
 
     SimdIsa sse2 = SimdIsa::Sse2;
-    [[maybe_unused]] bool within = SimdIsaLattice::leq(sse2, a);  // Sse2 ⊑ Avx2
-    [[maybe_unused]] bool xtrunk = simd_isa_same_trunk(a, b);  // false
+    [[maybe_unused]] bool within = SimdIsaLattice::leq(sse2, a);
+    [[maybe_unused]] bool xtrunk = simd_isa_same_trunk(a, b);
 
     OneByteValue v{42};
     PortableIsaGraded<OneByteValue> initial{v, simd_isa::PortableIsa::bottom()};

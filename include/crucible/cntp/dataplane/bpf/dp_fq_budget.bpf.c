@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P dataplane fq-budget stub.
- *
- * Future role: publish fq/qdisc send-budget evidence for dataplane admission and
- * CNT-P pacing policy. Current behavior: TC_ACT_OK for every skb.
- */
-
 #include "net_common.h"
 
 #ifndef TC_ACT_OK

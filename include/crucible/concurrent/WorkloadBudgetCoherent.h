@@ -1,93 +1,40 @@
 #pragma once
 
-// crucible::concurrent::WorkloadBudgetCoherent — type-level coherence
-// gate between a Ctx's cost-model axes (Workload, Alloc, NUMA) and a
-// Pipeline's compile-time aggregate working set (FIXY-V-075).
+// Catches a context whose cost-model claims its pipeline contradicts.
+// The admission check elsewhere asks whether the pipeline engages a
+// capability the context forbids.  This asks a different question: are
+// the context's declared numbers consistent with what the pipeline
+// measurably does?
 //
-// ─── PURPOSE ──────────────────────────────────────────────────────────
+// Three claims a context can make can be contradicted structurally.
 //
-// CtxFitsPipeline<Ctx, Stages...> (Pipeline.h) already checks ctx row
-// admission — the pipeline must not engage capabilities the ctx forbids.
-// What it does NOT check is whether the COST-MODEL axes the ctx
-// declared cohere with the pipeline's measured working-set facts.
+// A byte budget says the context runs over at most so much data.  A
+// pipeline whose per-call working set exceeds it makes every decision
+// the budget authorized, from placement to batch size, rest on a figure
+// that is wrong.
 //
-// Three load-bearing claims a ctx can make that the type system can
-// CONTRADICT structurally:
+// An allocation class of stack says the frames live on the call stack.
+// A pipeline of several megabytes there overflows it.  The pthread
+// default stack is eight megabytes and this reserves one for the
+// pipeline, leaving the rest as margin for the call tree beneath it.
 //
-//   (1) Workload byte budget — `ctx_workload::ByteBudget<N>` says "this
-//       ctx runs over ≤ N bytes of data".  A Pipeline whose aggregate
-//       per-call working set EXCEEDS N is a type-level lie: every cost
-//       model decision the ctx authorized (NUMA, batch size,
-//       prefetch hints) was based on a budget the pipeline overshoots.
+// A NUMA policy of spread says to distribute workers across nodes,
+// which pays only once the working set is DRAM-bound.  Below that the
+// cross-socket cost swamps the parallel gain, so spread over a small
+// working set is a regression by construction.
 //
-//   (2) Alloc class — `ctx_alloc::Stack` says "this ctx allocates on
-//       the call stack".  A Pipeline with multi-MiB aggregate WS would
-//       guarantee a stack overflow.  Linux pthread default stack is
-//       8 MiB; we reserve 1 MiB as the call-tree margin and forbid
-//       Stack ctx + pipeline WS > 1 MiB.
+// A pipeline that exposes no static working set admits every context:
+// no measurement means no contradiction, not a hidden one.  The same
+// goes for a context that declares no budget, allocates anywhere but
+// the stack, or places workers by any policy but spread.
 //
-//   (3) NUMA policy — `ctx_numa::Spread` says "distribute workers
-//       across NUMA nodes".  Only profitable for DRAM-bound workloads
-//       (working set ≥ L3).  Below that the cross-socket access cost
-//       dwarfs any parallel speedup.  Below L3, Spread + small WS is
-//       a guaranteed regression — the cache-tier rule (CLAUDE.md §IX).
-//
-// All three are structural type-level facts.  The runtime cost model
-// (AdaptiveScheduler / WorkloadProfiler) handles the dynamic
-// decisions; this concept catches the cases where the runtime would
-// observe an incoherent type-level claim and report a degenerate
-// decision.
-//
-// ─── WHEN TO USE ──────────────────────────────────────────────────────
-//
-// `WorkloadBudgetCoherent` is a STANDALONE, OPT-IN concept.  Existing
-// mint_pipeline call sites are NOT retroactively gated on it — the gate
-// would be a breaking change to every ctx that didn't yet declare a
-// workload budget.  Production sites that DO declare workload budgets
-// can opt in by spelling
-//
-//     static_assert(
-//         crucible::concurrent::WorkloadBudgetCoherent<MyCtx, MyPipeline>,
-//         "ctx/pipeline workload-budget incoherence — see concept doc");
-//
-// at the call site, or by combining it with `CtxFitsPipeline` in a new
-// `WorkloadCoherentMintGate<Ctx, Stages...>` concept (future V-V-075
-// follow-on).
-//
-// ─── TRIVIALLY-TRUE CASES ─────────────────────────────────────────────
-//
-// The concept is TRUE (admissible) when there is NO measurable
-// contradiction:
-//
-//   • `Pipeline::aggregate_working_set_known == false` — no static
-//     working-set fact exists; absence of evidence is not evidence
-//     of incoherence.  Default-drain-loop stages don't expose a static
-//     per-call working set; pipelines containing them admit any ctx.
-//
-//   • `Ctx::workload_hint == ctx_workload::Unspecified` — the ctx made
-//     no byte-budget claim; check (1) trivially passes.
-//
-//   • `Ctx::alloc_class != ctx_alloc::Stack` — no stack-overflow risk;
-//     check (2) trivially passes (other alloc classes have no ceiling).
-//
-//   • `Ctx::numa_policy != ctx_numa::Spread` — Spread is the only
-//     NUMA policy with a WS floor; check (3) trivially passes for
-//     Any / Local / Pinned<N>.
-//
-// ─── SAFETY POSTURE ───────────────────────────────────────────────────
-//
-//   • InitSafe:   all helper traits are pure metafunctions over types.
-//   • TypeSafe:   strong-typed extractors; no raw integer punning.
-//   • NullSafe:   no pointers; type-level facts only.
-//   • MemSafe:    no heap; concept is consteval-only.
-//   • BorrowSafe: no aliasing; no runtime state.
-//   • ThreadSafe: no shared state.
-//   • LeakSafe:   no resources owned.
-//   • DetSafe:    identical inputs (Ctx, Pipeline types) → identical
-//                 admit/reject decision; pure type-level evaluation.
+// The concept is opt-in and gates nothing on its own.  Making it a
+// precondition of building a pipeline would reject every context that
+// has not yet declared a budget.  A site that has declared one asserts
+// on the concept itself.
 
-#include <crucible/effects/ExecCtx.h>  // ctx_workload, ctx_alloc, ctx_numa
-#include <crucible/concurrent/WorkingSet.h>  // unknown_per_call_working_set (concept) — implicit via Pipeline
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/concurrent/WorkingSet.h>
 
 #include <cstddef>
 #include <limits>
@@ -95,15 +42,8 @@
 
 namespace crucible::concurrent {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── workload_hint_byte_budget — extract bytes from a workload hint ──
-// ═════════════════════════════════════════════════════════════════════
-//
-// Maps a `ctx_workload::*` type to a concrete byte budget at compile
-// time.  Unspecified / ItemBudget hints return SIZE_MAX (unconstrained)
-// — the concept can't enforce a budget the ctx didn't declare.  Byte-
-// bearing hints (ByteBudget, ChannelBudget, ProducerOnlyChannel,
-// ConsumerOnlyChannel) return the declared byte count.
+// A hint that names no byte count yields the maximum, since a budget
+// the context never declared cannot be enforced.
 
 template <class WorkloadHint>
 struct workload_hint_byte_budget {
@@ -120,8 +60,7 @@ struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ByteBudget<N
     static constexpr std::size_t value = N;
 };
 
-// ItemBudget — items are not bytes; without an item-size oracle we
-// cannot infer a byte budget.  Conservatively unconstrained.
+// Items are not bytes, and nothing here knows how large an item is.
 template <std::size_t N>
 struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ItemBudget<N>> {
     static constexpr std::size_t value = std::numeric_limits<std::size_t>::max();
@@ -146,23 +85,11 @@ struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ConsumerOnly
 template <class WorkloadHint>
 inline constexpr std::size_t workload_hint_byte_budget_v = workload_hint_byte_budget<WorkloadHint>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── alloc_class_max_working_set — per-alloc-class WS ceiling ────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Stack allocation has a hard practical ceiling: Linux pthread default
-// stack is 8 MiB.  Reserving 1 MiB for the call tree (recursive
-// callees, libstdc++ buffers, etc.) leaves 7 MiB raw — we declare the
-// per-frame WS budget as 1 MiB so a pipeline ≤ 1 MiB safely shares a
-// stack with reasonable call-tree depth.  Pipelines above this floor
-// MUST use Arena / Pool / HugePage / Heap.
-//
-// Other alloc classes (Unbound, Arena, Pool, HugePage, Heap) have no
-// type-level ceiling — heap is malloc-bound (TB-scale), arena/pool/
-// hugepage are configurable at allocation time.
+// One eighth of the default pthread stack, leaving the rest for the
+// call tree below the pipeline.  Every other allocation class sizes
+// itself at allocation time and has no ceiling to state here.
 
-inline constexpr std::size_t stack_alloc_max_working_set_bytes =
-    1 * 1024 * 1024;  // 1 MiB safety budget within an 8 MiB pthread stack
+inline constexpr std::size_t stack_alloc_max_working_set_bytes = 1 * 1024 * 1024;
 
 template <class AllocClass>
 struct alloc_class_max_working_set {
@@ -177,28 +104,12 @@ struct alloc_class_max_working_set<::crucible::effects::ctx_alloc::Stack> {
 template <class AllocClass>
 inline constexpr std::size_t alloc_class_max_working_set_v = alloc_class_max_working_set<AllocClass>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── numa_policy_min_working_set — NUMA-spread profitability floor ───
-// ═════════════════════════════════════════════════════════════════════
-//
-// `ctx_numa::Spread` distributes workers across NUMA nodes.  This is
-// only profitable when the workload is DRAM-bound — the parallel
-// memory channels saturate and cross-socket transfer cost is amortised
-// by larger sequential reads on each thread.  Below DRAM tier the
-// cross-socket access cost dwarfs the speedup; CLAUDE.md §IX
-// cache-tier rule.
-//
-// Conservative L3 floor: the smallest x86-64 / aarch64 cores we ship
-// to (Zen 3 with 32 MiB L3, Sapphire Rapids with 96 MiB L3, Graviton 3
-// with 32 MiB L3) all meet the 4 MiB threshold; we use this as the
-// type-level minimum for Spread.  A pipeline below 4 MiB paired with
-// Spread is a guaranteed regression and a structural contradiction.
-//
-// Any / Local / Pinned<N> have no minimum WS — those are unconditional
-// claims about thread placement, not workload distribution.
+// A floor below every supported host's shared cache, so a working set
+// under it is certainly not DRAM-bound and spreading it certainly does
+// not pay.  The other placement policies say where a thread runs rather
+// than how work divides, so they carry no floor.
 
-inline constexpr std::size_t conservative_l3_total_bytes =
-    4 * 1024 * 1024;  // 4 MiB — meet-or-exceed on every supported chip
+inline constexpr std::size_t conservative_l3_total_bytes = 4 * 1024 * 1024;
 
 template <class NumaPolicy>
 struct numa_policy_min_working_set {
@@ -213,37 +124,18 @@ struct numa_policy_min_working_set<::crucible::effects::ctx_numa::Spread> {
 template <class NumaPolicy>
 inline constexpr std::size_t numa_policy_min_working_set_v = numa_policy_min_working_set<NumaPolicy>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── WorkloadBudgetCoherent<Ctx, Pipeline> ───────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// The load-bearing concept.  Three conjunctive coherence claims — all
-// trivially true when the pipeline's aggregate working set is unknown.
-
 template <class Ctx, class Pipeline>
 concept WorkloadBudgetCoherent =
-    // No measured fact to compare against → admit.
     !Pipeline::aggregate_working_set_known
-    || (
-        // (1) Workload byte budget admits the pipeline's WS.
-        Pipeline::aggregate_per_call_working_set <= workload_hint_byte_budget_v<typename Ctx::workload_hint>
-        // (2) Alloc class admits the pipeline's WS.
+    || (Pipeline::aggregate_per_call_working_set <= workload_hint_byte_budget_v<typename Ctx::workload_hint>
         && Pipeline::aggregate_per_call_working_set <= alloc_class_max_working_set_v<typename Ctx::alloc_class>
-        // (3) NUMA policy admits the pipeline's WS (Spread floor).
         && Pipeline::aggregate_per_call_working_set >= numa_policy_min_working_set_v<typename Ctx::numa_policy>);
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Smoke checks — type-level sanity for the extractor traits ────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Concept-level checks live alongside the production fixtures
-// (test/test_workload_budget_coherent.cpp + test/effects_neg/...).
-// Here we ship just enough to catch a regression at every consumer's
-// include time — same pattern as fixy::* self_test sentinels.
+// Enough of a check to catch a regression wherever this header is
+// included.  The behavioural cases live in the test tree.
 
 namespace workload_budget_coherent_self_test {
 
-// (a) workload_hint_byte_budget extractor — point spot checks.
 static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::Unspecified>
               == std::numeric_limits<std::size_t>::max());
 
@@ -256,12 +148,10 @@ static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::Pro
 
 static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ConsumerOnlyChannel<1024, 2>> == 1024);
 
-// ItemBudget is unconstrained (items, not bytes).
 static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ItemBudget<100>>
               == std::numeric_limits<std::size_t>::max());
 
-// (b) alloc_class_max_working_set extractor — Stack has the only
-//     ceiling; other classes are unconstrained.
+// Stack carries the only ceiling.
 static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Stack>
               == stack_alloc_max_working_set_bytes);
 
@@ -280,8 +170,7 @@ static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Heap
 static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Unbound>
               == std::numeric_limits<std::size_t>::max());
 
-// (c) numa_policy_min_working_set extractor — Spread has the only
-//     floor; other policies are unconstrained.
+// Spread carries the only floor.
 static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Spread> == conservative_l3_total_bytes);
 
 static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Any> == 0);

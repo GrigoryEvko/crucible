@@ -1,42 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// crucible — src/ContractHandler.cpp
-//
-// Two violation entry points share one diagnostic + abort discipline:
-//
-//   1. `handle_contract_violation` — P2900R14 weak hook called by GCC's
-//      contract runtime when a `pre()` / `post()` / `contract_assert`
-//      clause fires under semantic={observe,enforce}.
-//   2. `crucible::detail::contract_failed` — CRUCIBLE_PRE / CRUCIBLE_POST
-//      / CRUCIBLE_PRE_FAST / CRUCIBLE_POST_FAST runtime branch entry
-//      point (see safety/Pre.h).  Hand-rolled because we don't try to
-//      construct a `std::contracts::contract_violation` object (its
-//      `__impl*` field is libstdc++-internal).
-//
-// Both produce the same human-readable output and follow the same
-// debugger-aware abort discipline.  Production Keeper/Vessel can
-// override either with a strong symbol that routes into
-// crucible_abort() for coordinated teardown.
-//
-// Output format (uniform across both paths):
-//   crucible: contract violation: <comment>
-//     at <file>:<line> in <function>
-//     [optionally annotated message]
-//     stack trace (most recent call first):
-//        #0 <demangled fn> at <file>:<line>
-//        #1 ...
-//
-// Stack trace via C++23 `<stacktrace>` (libstdc++ 16 with -lstdc++exp,
-// which is already linked because we use `<contracts>`).  When trace
-// capture costs more than the abort path can spend (security-sensitive
-// crash where attacker may probe via SIGABRT timing), define
-// CRUCIBLE_CONTRACT_NO_STACKTRACE at compile time.
-//
-// On unattended CI, breakpoint_if_debugging() no-ops and execution
-// falls through to std::abort(), producing the core dump that
-// post-mortem tooling expects.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Pre.h>  // crucible::detail::contract_failed declaration
+#include <crucible/safety/Pre.h>
 
 #include <contracts>
 #include <cstdio>
@@ -49,7 +14,6 @@
 #endif
 #endif
 
-// ─── Internal helpers ──────────────────────────────────────────────
 namespace {
 
 [[gnu::cold]]
@@ -60,8 +24,8 @@ void emit_stack_trace_() noexcept {
     std::fprintf(stderr, "  stack trace (most recent call first):\n");
     int depth = 0;
     for (auto const& entry : trace) {
-        if (depth >= 16) break;  // bound at 16 frames; deeper traces
-        auto desc = entry.description();  // are noise on a hot path
+        if (depth >= 16) break;
+        auto desc = entry.description();
         auto file = entry.source_file();
         auto line = entry.source_line();
         std::fprintf(stderr, "    #%-2d %s", depth, desc.empty() ? "(unknown)" : desc.c_str());
@@ -90,7 +54,6 @@ void emit_violation_diagnostic(char const* comment, char const* file, unsigned l
 
 }  // namespace
 
-// ─── P2900 weak hook ───────────────────────────────────────────────
 extern "C++" [[gnu::weak, noreturn]]
 void handle_contract_violation(const std::contracts::contract_violation& v) noexcept;
 
@@ -103,15 +66,10 @@ void handle_contract_violation(const std::contracts::contract_violation& v) noex
     std::abort();
 }
 
-// ─── CRUCIBLE_PRE / CRUCIBLE_POST runtime entry points ─────────────
-// Two-arity surface: `contract_failed(expr, file, line, fn)` is the
-// cheap form (predicate text only); `contract_failed_msg(expr, file,
-// line, fn, msg)` is the annotated form for CRUCIBLE_PRE_MSG /
-// CRUCIBLE_POST_MSG sites where the predicate alone is cryptic.
-//
-// Both are declared in safety/Pre.h and route through
-// emit_violation_diagnostic so debug output is uniform regardless of
-// which macro family or variant fired the violation.
+// These duplicate the abort discipline of handle_contract_violation rather
+// than calling it.  A std::contracts::contract_violation cannot be built by
+// user code, because its implementation pointer is internal to the standard
+// library.
 namespace crucible::detail {
 
 [[noreturn, gnu::cold]]

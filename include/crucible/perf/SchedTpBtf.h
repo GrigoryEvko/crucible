@@ -1,76 +1,12 @@
 #pragma once
 
-// crucible::perf::SchedTpBtf — BTF-typed sched_switch off-CPU facade.
-//
-// GAPS-004f sibling of SchedSwitch.  Wire-equivalent (writes the same
-// `TimelineSchedEvent` struct into a `BPF_F_MMAPABLE` ring buffer);
-// the only difference is the BPF program uses
-// SEC("tp_btf/sched_switch") instead of
-// SEC("tracepoint/sched/sched_switch").
-//
-// ─── Why a parallel facade and not a flag on SchedSwitch ───────────
-//
-// `tp_btf` and `tracepoint` are both "raw tracepoint" classes from
-// libbpf's perspective, but they cost differently and have different
-// kernel-availability gates:
-//
-//   • Legacy `tracepoint/sched/sched_switch` — present on every kernel
-//     with CONFIG_FTRACE, parses a per-tracepoint format string at
-//     dispatch time, ~150-250 ns per event.  Available since ~3.5.
-//
-//   • BTF-typed `tp_btf/sched_switch` — direct CO-RE access to
-//     `struct task_struct *prev/next` via BPF_CORE_READ.  ~30% lower
-//     overhead (~100-180 ns) because the format string parse is
-//     skipped.  Requires CONFIG_DEBUG_INFO_BTF=y AND kernel ≥ 5.5.
-//
-// Production callers that know they're on a recent kernel and care
-// about the per-event budget pick SchedTpBtf.  Callers that need to
-// run on older kernels (CentOS 7, Ubuntu 18.04 LTS) pick SchedSwitch.
-// `Senses::load_*` masks let the caller pick at runtime; this facade
-// is the BTF half of that pair.
-//
-// ─── Promote-First architecture (CLAUDE.md) ────────────────────────
-//
-// This is the SIXTH per-program facade (after SenseHub, SchedSwitch,
-// PmuSample, LockContention, SyscallLatency).  The duplication
-// between SchedTpBtf and SchedSwitch is INTENTIONAL — same
-// hand-coded loader as the others, same field shapes, same Tagged
-// source tags.  GAPS-004x (BpfLoader extraction) will surface the
-// commonality after we have ≥6 production loaders to generalize from.
-//
-// ─── Production usage ──────────────────────────────────────────────
-//
-//     if (auto h = crucible::perf::SchedTpBtf::load(crucible::effects::testing::init())) {
-//         const uint64_t cs_pre = h->context_switches();
-//         // ... run workload ...
-//         const uint64_t cs_delta = h->context_switches() - cs_pre;
-//
-//         const auto timeline = h->timeline_view();
-//         // Same TimelineSchedEvent shape as SchedSwitch — readers
-//         // walk it identically.
-//     }
-//
-// Returns nullopt when:
-//   • CAP_BPF / CAP_PERFMON missing.
-//   • CONFIG_DEBUG_INFO_BTF=n (kernel built without BTF debug info).
-//   • Kernel < 5.5 (tp_btf raw tracepoints unavailable).
-//   • bpf_object__load() rejects the program (verifier failure).
-//
-// The fallback story for older kernels: SchedSwitch.h works on every
-// kernel ≥ 3.5; SchedTpBtf.h works on every kernel ≥ 5.5.  Senses
-// aggregator can attempt both and report whichever attached via
-// coverage().
-
-// SchedSwitch.h provides TimelineSchedEvent (32-byte struct), plus
-// TimelineHeader / TIMELINE_CAPACITY / TIMELINE_MASK constants.  All
-// wire-equivalent for the BTF variant; we just re-use them.
 #include <crucible/perf/SchedSwitch.h>
 
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/syscall/Per.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -78,17 +14,15 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>  // FIXY-V-179
+#include <tuple>
 
 namespace crucible::perf {
 
 class SchedTpBtf {
 public:
-    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
-    //
-    // Same shape as SchedSwitch::Snapshot — BTF-typed sched_switch
-    // produces the same TimelineSchedEvent layout, so consumers that
-    // accept either facade can use the same Snapshot diff idiom.
+    // Both fields count upward forever, so an ordered post-minus-pre
+    // subtraction never underflows.  The saturation below guards
+    // against a caller that swapped the two snapshots.
     struct Snapshot {
         uint64_t ctx_switches = 0;
         uint64_t timeline_index = 0;
@@ -107,49 +41,39 @@ public:
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // Load the embedded BPF program (sched_tp_btf.bpf.c), set
-    // target_tgid to getpid(), populate our_tids with the main TID,
-    // attach the tp_btf/sched_switch program, mmap the
-    // sched_timeline ring.  Returns std::nullopt on:
-    //   • missing CAP_BPF / CAP_PERFMON
-    //   • CONFIG_DEBUG_INFO_BTF=n (no /sys/kernel/btf/vmlinux)
-    //   • kernel < 5.5 (no tp_btf support)
-    //   • verifier rejection (corrupt embedded bytecode)
-    //
-    // Same `effects::Init` capability gate as the other GAPS-004
-    // facades — hot-path code holds no Init token, so this can never
-    // be called from a hot frame.
+    // The BTF-typed raw tracepoint needs a kernel built with
+    // CONFIG_DEBUG_INFO_BTF=y, which also puts the type information
+    // at /sys/kernel/btf/vmlinux.  Returns nullopt on a kernel that
+    // carries no such type information, and when CAP_BPF or
+    // CAP_PERFMON is missing or the verifier rejects the program.
     [[nodiscard]] static std::optional<SchedTpBtf> load(::crucible::effects::Init) noexcept;
 
-    // Total context switches recorded for our process since load().
-    // ~1 µs (one bpf_map_lookup_elem against the cs_count ARRAY map).
-    // 0 on moved-from / un-loaded.
+    // Counts only this process, from the load onward.  Reading it
+    // costs a map-lookup syscall: the counter lives in a one-element
+    // array map, and the kernel-side program does not declare that
+    // map mmap-able.
     [[nodiscard]] uint64_t context_switches() const noexcept;
 
-    // Borrowed view over the sched_timeline ring buffer.  Element
-    // type is the SAME `TimelineSchedEvent` struct as SchedSwitch —
-    // the BPF program writes the identical 32-byte layout, so a
-    // reader that handles SchedSwitch's timeline handles this one
-    // unchanged.  See SchedSwitch.h for the ts_ns-LAST completion
-    // discipline and ACQUIRE-load reader idiom.  Empty span on
-    // moved-from / un-loaded.
+    // Only the loading thread is registered with the kernel-side
+    // program, so off-CPU events on the other threads of this process
+    // never reach the ring.
+    //
+    // The element type is const rather than const volatile because
+    // libstdc++ cannot instantiate std::span over a volatile
+    // non-scalar element.  The kernel writes this memory while the
+    // reader walks it, so read ts_ns through an acquire load of its
+    // own and trust the rest of the slot only when ts_ns is non-zero.
     [[nodiscard]] safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> timeline_view() const noexcept;
 
-    // Current write_idx of the sched_timeline ring buffer.  Reader
-    // uses this to find the latest valid slot via
-    // `(write_idx - 1) & TIMELINE_MASK`.  ~1 ns volatile load.  0 on
-    // moved-from / un-loaded.
+    // The index counts events forever, so the most recently written
+    // slot is `(write_idx - 1) & TIMELINE_MASK`.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
 
-    // Programs attached.  sched_tp_btf.bpf.c contains exactly ONE
-    // SEC("tp_btf/sched_switch") program; cap of 8 matches the
-    // inplace_vector<...,8> shape used by every other facade for
-    // uniformity.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
-    // bpf_program__attach failures.  Same bound as attached_programs.
-    // Non-zero means BTF is unavailable on this kernel — set
-    // CRUCIBLE_PERF_VERBOSE=1 to see why.
+    // A non-zero count means this kernel carries no BTF type
+    // information.  Set CRUCIBLE_PERF_VERBOSE=1 in the environment
+    // for the detail.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     SchedTpBtf(const SchedTpBtf&) = delete("SchedTpBtf owns unique BPF object + mmap — copying would double-close");
@@ -166,28 +90,16 @@ private:
     std::unique_ptr<State> state_;
 };
 
-// ── §XXI Universal Mint Pattern — mint_sched_tp_btf (FIXY-U-083) ──────
-//
-// CtxFitsSchedTpBtfMint admits only contexts whose effect row carries
-// the Init capability.  SchedTpBtf::load() attaches a CO-RE BPF
-// program to the sched_switch raw tracepoint and mmaps the per-CPU
-// histogram array — startup-only operations belonging to the Init
-// row.  Hot foreground and background-drain contexts must not engage
-// this surface; the Ctx-fit gate enforces that at the type level.
+// Loading the program attaches to the sched_switch raw tracepoint and
+// maps the timeline ring.  Those are startup-only operations, so only
+// a context carrying the Init capability may reach this surface.
 template <class Ctx>
 concept CtxFitsSchedTpBtfMint = ::crucible::effects::IsExecCtx<Ctx>
                              && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
-// ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
-//
-// `mint_sched_tp_btf_syscall_grants` enumerates every privileged Linux
-// syscall SchedTpBtf::load() issues.  Audit-trail discipline mirroring
-// FIXY-V-180's mint_hardening (warden/Hardening.h).
-//
-// Family-tier table:
-//   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
-//   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
-//   mmap            (21) → MemoryMapping  → Row<IO>
+// These grants classify the privileged syscalls the load path issues.
+// They do not tighten the effect row.  Init is a startup pass-through
+// capability that admits blocking work without Block in the row.
 using mint_sched_tp_btf_syscall_grants =
     std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
@@ -202,15 +114,13 @@ static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::pe
 static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
               == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_sched_tp_btf_syscall_grants> == 3,
-              "FIXY-V-179: mint_sched_tp_btf_syscall_grants drifted from 3 entries.");
+              "mint_sched_tp_btf_syscall_grants must list exactly 3 syscalls.");
 }  // namespace detail::v179_sched_tp_btf_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSchedTpBtfMint<Ctx>
-// §XXI carve-out: cx=alloc — SchedTpBtf::load() attaches a CO-RE
-// BPF program to the sched_switch raw tracepoint, mmaps the per-CPU
-// histogram array, and heap-allocates std::unique_ptr<State>.
-// CLAUDE.md §XXI: compile-time evaluation would lie about the
+// §XXI carve-out: cx=alloc — the load path maps the timeline ring and
+// heap-allocates State.  Compile-time evaluation would lie about the
 // runtime cost.
 [[nodiscard]] inline std::optional<SchedTpBtf> mint_sched_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SchedTpBtf::load(init);

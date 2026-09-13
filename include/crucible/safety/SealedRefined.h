@@ -1,93 +1,25 @@
 #pragma once
 
-// ── crucible::safety::SealedRefined<Pred, T> ───────────────────────
+// A refinement with no way to extract the value back out.  Every
+// change to a sealed value therefore goes through a fresh
+// construction, which re-runs the predicate.  That closes the pattern
+// of extracting a value, mutating it behind the predicate's back and
+// quietly re-wrapping it.
 //
-// `Refined<Pred, T>` minus the destructive `into()` rvalue extraction.
-// Forces every post-construction transformation through a fresh
-// re-construction (which re-runs the predicate), eliminating the
-// "extract → mutate behind the predicate's back → silently re-wrap"
-// footgun.
+// Reach for it when the predicate is an invariant downstream code
+// relies on continuously rather than only at construction, and
+// especially when the wrapped type has a mutation surface of its own.
 //
-//   Axiom coverage: TypeSafe (predicate-checked construction),
-//                   InitSafe (no escape hatch leaves an unchecked
-//                   value flowing through internal APIs).
-//   Runtime cost:   zero — sizeof(SealedRefined<P, T>) ==
-//                   sizeof(Refined<P, T>) == sizeof(T) when the
-//                   underlying Graded<Absolute, BoolLattice<P>, T>
-//                   collapses via EBO.
-//
-// ── When to use SealedRefined<P, T> over Refined<P, T> ─────────────
-//
-// `Refined<P, T>` is the right primitive when callers occasionally
-// need to extract the underlying T (e.g., to consume it into an
-// API that takes a bare T, then immediately discard the wrapper).
-// The `into() &&` rvalue method makes the extraction explicit and
-// auditable — the act of consuming is grep-discoverable.
-//
-// `SealedRefined<P, T>` is the right primitive when:
-//
-//   - The predicate captures an INVARIANT that downstream code
-//     depends on continuously (not just at the moment of
-//     construction).  Extracting the value to mutate it is a
-//     LOAD-BEARING discipline violation, not just a discouraged
-//     pattern.
-//
-//   - Future maintainers will be tempted to write
-//     `auto x = sealed.into(); mutate(x); auto re = SealedRefined{x};`
-//     — but this loses the predicate continuity if `mutate` violates
-//     P transiently between the two re-checks.  SealedRefined deletes
-//     `into()` so the only path is to construct a NEW SealedRefined
-//     directly from a (mutated) input that satisfies P.
-//
-//   - The wrapped T has its OWN mutation surface (vector::push_back,
-//     string::operator+=, etc.).  Refined<P, vector<int>> can be
-//     consumed into the underlying vector and grown past whatever
-//     bound P enforces; SealedRefined<P, vector<int>> can only be
-//     read.
-//
-// ── Why not just `const Refined<P, T>` ─────────────────────────────
-//
-// `const Refined<P, T>` is almost the right discipline, but suffers
-// two problems:
-//
-//   1. const-correctness leaks: `Refined<P, T>` is movable, so a
-//      `const Refined<P, T>&` parameter accepts a moved-from rvalue
-//      that the caller can re-assign behind the API's back.  The
-//      const qualifier on the parameter doesn't propagate to the
-//      caller's value.
-//
-//   2. into() is `&&`-qualified: even with `const Refined<P, T>`,
-//      a `std::move(refined).into()` call by an unrelated caller
-//      pulls the value out.  const-as-discipline is reviewer-only,
-//      not type-system-enforced.
-//
-// SealedRefined deletes `into()` AT THE TYPE LEVEL: any caller
-// attempting `std::move(sealed).into()` produces a compile error,
-// regardless of const-qualification or move-from chains.
-//
-// ── MIGRATE-11 (replaces dropped #248) ─────────────────────────────
-//
-// 25_04_2026.md §2 graded foundation refactor enumerated this as a
-// new wrapper to ship alongside the migrated Linear/Refined/Tagged/
-// Secret/Monotonic/AppendOnly/SharedPermission family.  The original
-// Lean task #248 was dropped; this wrapper realizes the C++-side
-// implementation independently.
-//
-// Sits over the same Graded<Absolute, BoolLattice<P>, T> substrate
-// as Refined<P, T>.  Same lattice, same modality, same storage —
-// only the API surface differs (no into() rvalue extractor, no
-// destructive consume path).  The graded_type alias is identical
-// to Refined's, so the GradedWrapper concept (#499) accepts both
-// uniformly.
-//
-// See safety/Refined.h for the underlying refinement discipline,
-// algebra/Graded.h for the substrate, algebra/lattices/BoolLattice.h
-// for the predicate-lattice machinery.
+// A const-qualified ordinary refinement is not the same discipline.
+// Const on a parameter does not propagate to the caller's own value,
+// and the extractor is rvalue-qualified, so any caller can still move
+// from it and pull the value out.  Removing the extractor from the
+// type is what makes the discipline unavoidable.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/BoolLattice.h>
-#include <crucible/safety/Refined.h>  // for predicate concepts
+#include <crucible/safety/Refined.h>
 
 #include <compare>
 #include <cstdlib>
@@ -102,62 +34,44 @@ class [[nodiscard]] SealedRefined {
 public:
     using value_type = T;
     using predicate_type = decltype(Pred);
-    // Same Graded substrate as Refined<Pred, T> — identical lattice,
-    // modality, storage layout.  The wrapper adds no state; the
-    // "sealed" property is enforced by the absence of a destructive
-    // extractor in the public surface.
     using lattice_type = ::crucible::algebra::lattices::BoolLattice<std::remove_cv_t<decltype(Pred)>>;
-    // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
     static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
-    // Public per GRADED-TRAIT-1 — see safety/Linear.h for the rationale.
     using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     graded_type impl_;
 
 public:
-    // Trusted-construction tag.  Mirrors Refined::Trusted — the
-    // caller has already proven the invariant (re-wrapping internal
-    // already-validated data, deserializing from a content-hashed
-    // source whose hash has been verified).
+    // Names a construction whose caller has already proven the
+    // invariant, so the predicate is not run again.
     struct Trusted {};
 
-    // Checked construction — fires the predicate's contract.  The
-    // PredicateInvocableOn concept upgrades a Pred(T) invocability
-    // mismatch from a contract-clause SFINAE wall into a clean
-    // concept-violation diagnostic at the call site.
+    // The invocability concept is what turns a predicate that does not
+    // accept a T into a readable diagnostic at the call site, instead
+    // of a substitution failure inside the contract clause.
     constexpr explicit SealedRefined(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires PredicateInvocableOn<Pred, T>
     pre(Pred(v)) : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
-    // Trusted construction — no predicate check.
     constexpr SealedRefined(T v, Trusted) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
-    // Conversion from Refined<Pred, T>.  Trusted because Refined's
-    // own invariant proves Pred(value).  Consumes the Refined.
+    // No check is needed here: the source's own invariant is the proof.
     constexpr explicit SealedRefined(Refined<Pred, T>&& r) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(r).into(), typename lattice_type::element_type{}} {}
 
-    // Copy/move are defaulted — moving a SealedRefined doesn't
-    // violate sealing because the moved-to value carries the same
-    // (predicate-satisfying) bytes.  The discipline is "no destructive
-    // EXTRACTION", not "no MOVEMENT".
+    // Moving is allowed.  The destination carries the same bytes, and
+    // they still satisfy the predicate.  What is forbidden is
+    // extraction, not movement.
     SealedRefined(const SealedRefined&) = default;
     SealedRefined(SealedRefined&&) = default;
     SealedRefined& operator=(const SealedRefined&) = default;
     SealedRefined& operator=(SealedRefined&&) = default;
 
-    // Read-only access — forwards through Graded::peek().  This is
-    // the ONLY way to observe the underlying T.
+    // The only way to observe the value.  There is deliberately no
+    // extractor and no mutable accessor.
     [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
 
-    // No `into() &&` — the load-bearing difference from Refined.
-    // No `value_mut()` — no mutable accessor.  Any change to the
-    // wrapped value requires constructing a fresh SealedRefined,
-    // which re-fires the predicate.
-
-    // Equality / ordering on the underlying value.
     friend constexpr bool operator==(const SealedRefined& a,
                                      const SealedRefined& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
         return a.impl_.peek() == b.impl_.peek();
@@ -170,58 +84,20 @@ public:
         return a.impl_.peek() <=> b.impl_.peek();
     }
 
-    // ── Diagnostic names (forwarded from Graded substrate) ─────────
-    //
-    // value_type_name(): T's display string via reflection (P2996R13).
-    //
-    // lattice_name(): "BoolLattice<Pred>" — same as Refined<Pred, T>
-    // (same substrate, different API surface).  External code can
-    // distinguish SealedRefined from Refined by the wrapper class
-    // identity, not by the lattice name.
-    //
-    // Audit-Tier-2 cross-wrapper parity sweep — every migrated
-    // wrapper ships these two consteval forwarders.
+    // The lattice name is shared with the unsealed refinement, since
+    // the substrate is the same.  What tells the two apart is the
+    // wrapper's own identity.
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
     [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
-// Zero-cost guarantee — SealedRefined adds zero state over
-// Graded<Absolute, BoolLattice<P>, T>, which is itself zero-cost
-// over T (BoolLattice's element_type is empty).  Identical sizeof
-// to Refined<P, T> and to bare T.
-//
-// Witness instantiations.  Use the same `positive` / `non_null` /
-// `power_of_two` etc. predicates that Refined.h uses (they are in
-// scope through the Refined.h include above).
 static_assert(sizeof(SealedRefined<positive, int>) == sizeof(int));
 static_assert(sizeof(SealedRefined<non_null, void*>) == sizeof(void*));
 
-// ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
-//
-// `mint_sealed_refined<Pred, T>(value)` synthesizes an authoritative
-// `SealedRefined<Pred, T>` at the §XXI grep-discoverable boundary.
-// Per CLAUDE.md §XXI: every cross-tier composition factory is named
-// `mint_<noun>` so `grep "mint_"` finds every authorization point.
-// Constructing `SealedRefined<Pred, T>{value}` directly bypasses
-// the §XXI grep — production code admitting a value into the
-// SEALED refinement type-system MUST route through this factory.
-//
-// HS14 gate: `PredicateInvocableOn<Pred, T>` — same load-bearing
-// concept as `mint_refined` / `Refined`'s ctor / `SealedRefined`'s
-// ctor.  The SealedRefined / Refined distinguishing property
-// (absent destructive `into()`) is structural to the type and is
-// NOT enforced by the mint factory itself; the mint's gate is the
-// shared predicate-invocability check.  Two HS14 neg-compile
-// fixtures at test/safety_neg/ witness both predicate failure
-// modes (arg-mismatch and return-mismatch), mirroring the
-// mint_refined coverage.
-//
-// Template parameter order: `<Pred, T>` — same convention as
-// `mint_refined` and the underlying `SealedRefined<Pred, T>`
-// class.
-
+// Production code admits a value into the sealed refinement here, so
+// that a search finds every such admission.
 template <auto Pred, typename T>
     requires PredicateInvocableOn<Pred, T>
 [[nodiscard]] constexpr SealedRefined<Pred, T>
@@ -231,40 +107,29 @@ mint_sealed_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
 
 namespace detail::sealed_refined_self_test {
 
-// ── Runtime smoke test ──────────────────────────────────────────────
-//
-// Exercise checked construction / trusted bypass / Refined→Sealed
-// conversion / comparison / mint forwarder.  The discipline is to
-// PROVE absence of destructive `into()` indirectly — the type itself
-// has no such method, so a body that compiles without one is the
-// witness.
 inline void runtime_smoke_test() {
-    int seed = 5;  // non-constant
+    int seed = 5;
 
     SealedRefined<positive, int> sp{seed};
     if (sp.value() != 5) std::abort();
 
-    // Mint forwarder.
     auto spm = mint_sealed_refined<positive, int>(seed);
     if (spm.value() != 5) std::abort();
 
-    // Trusted bypass — invariant predicate skipped.
+    // The trusted path admits a value the predicate would reject.
     int sentinel = -3;
     SealedRefined<positive, int> tp{sentinel, SealedRefined<positive, int>::Trusted{}};
     if (tp.value() != -3) std::abort();
 
-    // Conversion from Refined — consumes Refined, preserves invariant.
     Refined<positive, int> r{seed * 2};
     SealedRefined<positive, int> from_r{std::move(r)};
     if (from_r.value() != 10) std::abort();
 
-    // Comparison + ordering.
     SealedRefined<positive, int> sp_eq{seed};
     if (!(sp == sp_eq)) std::abort();
     SealedRefined<positive, int> sp_lt{seed - 1};
     if ((sp_lt <=> sp) != std::strong_ordering::less) std::abort();
 
-    // Copy + move preserve the sealed invariant.
     SealedRefined<positive, int> sp_copy = sp;
     if (sp_copy.value() != 5) std::abort();
     SealedRefined<positive, int> sp_move = std::move(sp_copy);

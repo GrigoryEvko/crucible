@@ -1,18 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_sched_class_v ─────────────────────
-//
-// FIXY-V-186 — wrapper-detection predicate for `SchedClass<Policy, T,
-// ...>` (the V-183 SchedulerPolicy-axis carrier).  Mechanical sibling of
-// IsClockSource / IsScopedFence — the partial spec captures the
-// SchedulerPolicy NTTP (and the SCHED_DEADLINE budget NTTPs) alongside the
-// wrapped type, so a thread pool can read the pinned policy off the type
-// without instantiating the wrapper.
-//
-// The detector keys on the wrapper class identity, not the lattice value:
-// a `SchedClass<Fifo, T>` and a look-alike struct carrying a
-// SchedulerPolicy field are NOT confused.
-
 #include <crucible/safety/SchedClass.h>
 
 #include <cstdint>
@@ -58,8 +45,6 @@ template <typename T>
     requires is_sched_class_v<T>
 inline constexpr SchedulerPolicy_v sched_class_policy_v = detail::is_sched_class_impl<std::remove_cvref_t<T>>::policy;
 
-// ── Self-test ─────────────────────────────────────────────────────
-
 namespace detail::is_sched_class_self_test {
 
 using F_int = ::crucible::safety::SchedClass<SchedulerPolicy_v::Fifo, int>;
@@ -94,7 +79,6 @@ static_assert(sched_class_policy_v<O_int> == SchedulerPolicy_v::Other);
 static_assert(sched_class_policy_v<DL_int> == SchedulerPolicy_v::Deadline);
 static_assert(sched_class_policy_v<F_int> != sched_class_policy_v<O_int>);
 
-// The DEADLINE budget is recoverable from the type.
 static_assert(detail::is_sched_class_impl<DL_int>::deadline_ns == 10'000);
 static_assert(detail::is_sched_class_impl<F_int>::runtime_ns == 0);
 

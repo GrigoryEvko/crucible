@@ -1,14 +1,5 @@
 #pragma once
 
-// ChainEdgeSession.h — typed-session facade for PermissionedChainEdge.
-//
-// ChainEdge is one-shot causal sequencing between two execution plans:
-// the upstream role emits a SemaphoreSignal, and the downstream role
-// waits for the same value.  The session surface mirrors that shape:
-//
-//   SignalerProto = Send<SemaphoreSignal, End>
-//   WaiterProto   = Recv<SemaphoreSignal, End>
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedChainEdge.h>
 #include <crucible/permissions/Permission.h>
@@ -86,24 +77,9 @@ using WaiterSessionHandle = decltype(mint_chainedge_waiter_session<Edge>(std::de
 
 inline constexpr auto signal_transport = [](auto& hp, const Signal& signal) noexcept { hp->signal(signal); };
 
-// FIXY-FOUND-123: canonical waiter retry shape — adaptive backoff.
-//
-// WaiterHandle::try_wait is a single acquire-load + compare (CPU
-// oracle today, blocking on real vendor backends tomorrow); the
-// caller owns the retry policy.  Pause-only spin burns the waiter's
-// core for the signaler's full scheduling quantum (10ms+) if the
-// signaler is descheduled between completing its plan and calling
-// SignalerHandle::signal — same defense as MpmcRing's two-phase
-// publish wait (FIXY-FOUND-111) and SpinLock::lock (FIXY-FOUND-119).
-// Pause for kPauseBeforeYield iterations (intra-core MESI propagation:
-// ~64 × 40ns ≈ 2.5 μs), then escalate to std::this_thread::yield()
-// so the scheduler can run the signaler.  Common case (signal
-// observed within a few pauses) unchanged; bounded-waste worst case
-// ~2.5 μs of burned CPU before yield-loop kicks in.
-//
-// This lambda is the canonical session-level retry pattern that
-// PermissionedChainEdge::WaiterHandle::try_wait's doc-block cites —
-// Session<> consumers inherit the correct backoff by composition.
+// A pause-only spin holds the waiter core for the whole scheduling quantum of
+// the signaler when the signaler is descheduled before it signals. Escalating
+// to a yield lets the scheduler run the signaler instead.
 inline constexpr auto wait_transport = [](auto& hp) noexcept {
     constexpr std::size_t kPauseBeforeYield = 64;
     std::size_t spin_iters = 0;

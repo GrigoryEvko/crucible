@@ -1,42 +1,22 @@
-// crucible::perf::SyscallLatency — libbpf binding implementation.
-//
-// Fourth per-program facade in the GAPS-004 series.  Mirrors
-// LockContention.cpp's loader shape 1:1 — same 7-step Phase loop,
-// same WriteOnce/Tagged/Monotonic/NonMovable wrapper toolkit, same
-// env-var conventions.  The fourth instance of this loader pattern
-// makes the GAPS-004x BpfLoader extraction shape unambiguous:
-// SenseHub + SchedSwitch + PmuSample + LockContention + SyscallLatency
-// share ~95% of the loader body.
-//
-// Differences vs LockContention.cpp:
-//   • `total_syscalls` (1-element ARRAY) replaces `lock_wait_count` —
-//     same syscall-per-read shape, just a different name.
-//   • `syscall_timeline` (BPF_F_MMAPABLE) replaces `lock_timeline` —
-//     same mmap shape, same TimelineHeader+events[] layout, just
-//     TimelineSyscallEvent (32 B) instead of TimelineLockEvent (32 B).
-//   • Tracepoints: raw_syscalls/sys_enter + sys_exit (vs
-//     syscalls/sys_enter_futex + sys_exit_futex).  Both pairs;
-//     load() insists on >= 2 attached.
-
 #include <crucible/perf/SyscallLatency.h>
 
-#include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
+#include <crucible/perf/detail/BpfLoader.h>
 
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
+#include <crucible/safety/OwnedMmap.h>
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
 
-#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>
 
 #include <inplace_vector>
-#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>
 
 extern "C" {
 extern const unsigned char syscall_latency_bpf_bytecode[];
@@ -47,7 +27,6 @@ namespace crucible::perf {
 
 namespace {
 
-// Shared loader helpers from detail::BpfLoader (GAPS-004x).
 namespace source = ::crucible::perf::detail::source;
 using ::crucible::perf::detail::Tgid;
 using ::crucible::perf::detail::Tid;
@@ -63,10 +42,10 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
-// FIXY-V-236: phantom-typed Tag + Prot + Share for the per-hub mmap'd
-// BPF ringbuf.  Distinct Tag per hub forces compile-time rejection of
-// any cross-hub mapping swap; Prot/Share are residency-tier metadata
-// the OwnedMmap wrapper never interprets.
+// The distinct phantom tag makes one facade's ring buffer mapping unusable
+// as another facade's mapping at compile time.  The protection and sharing
+// types are residency-tier metadata that the mapping wrapper never
+// interprets.
 struct SyscallLatencyRingbufTag {};
 struct ReadOnlyProt {};
 struct SharedShare {};
@@ -75,9 +54,6 @@ struct SyscallLatency::State : crucible::safety::NonMovable<SyscallLatency::Stat
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
-    // <volatile uint8_t*>, WriteOnce<size_t>} pair.  ~State no longer
-    // carries an explicit ::munmap clause.
     using TimelineMmap = ::crucible::safety::OwnedMmap<SyscallLatencyRingbufTag, ReadOnlyProt, SharedShare>;
     std::optional<TimelineMmap> timeline_mmap{};
 
@@ -90,7 +66,6 @@ struct SyscallLatency::State : crucible::safety::NonMovable<SyscallLatency::Stat
     ~State() {
         for (struct bpf_link* l : links)
             if (l != nullptr) bpf_link__destroy(l);
-        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -114,7 +89,6 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
 
     auto state = std::make_unique<State>();
 
-    // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
     opts.sz = sizeof(opts);
     opts.object_name = "crucible_syscall_latency";
@@ -128,7 +102,6 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
     }
     state->obj = obj;
 
-    // ── 2. Rewrite target_tgid in .rodata to our PID ───────────────
     if (struct bpf_map* rodata = find_rodata(state->obj); rodata != nullptr) {
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
@@ -141,10 +114,8 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
         }
     }
 
-    // ── 3. Skip programs whose tracepoints aren't on this kernel ──
     disable_unavailable_programs(state->obj);
 
-    // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
                "verifier rejected, missing CAP_BPF, or kernel too old)",
@@ -152,9 +123,6 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
         return std::nullopt;
     }
 
-    // ── 5. (No our_tids registration — filters on target_tgid only.)
-
-    // ── 6. Attach every autoload-enabled program ───────────────────
     struct bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
@@ -180,10 +148,10 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
         }
         state->links.push_back(link);
     }
-    // Both raw_syscalls/sys_enter AND sys_exit required.  A half-
-    // attach (only enter, no exit) would leak syscall_start entries
-    // — LRU_HASH would auto-evict them but we'd record useless
-    // half-events.  Insist on at least 2 links.
+    // The attach is all-or-nothing.  With the enter tracepoint attached but
+    // the exit one missing, every recorded start entry stays unconsumed and
+    // the facade records useless half-events until the LRU hash map evicts
+    // them.
     if (state->links.size() < 2) {
         report("expected 2 tracepoint attachments (raw_syscalls/sys_enter + "
                "sys_exit), got fewer — kernel missing raw_syscalls "
@@ -191,7 +159,6 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
         return std::nullopt;
     }
 
-    // ── 7. mmap the syscall_timeline ring buffer ───────────────────
     struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "syscall_timeline");
     if (timeline_map == nullptr) {
         report("syscall_timeline map not found in object (bytecode/header out of sync — rebuild)");
@@ -205,8 +172,6 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
         return std::nullopt;
     }
     const size_t page = static_cast<size_t>(page_l);
-    // sizeof(TimelineHeader) + sizeof(events[TIMELINE_CAPACITY])
-    //   = 64 + (4096 * 32) = 131136 bytes.  Round to page granularity.
     const size_t bytes = sizeof(TimelineHeader) + TIMELINE_CAPACITY * sizeof(TimelineSyscallEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
     void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
@@ -216,10 +181,8 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
                errno);
         return std::nullopt;
     }
-    // FIXY-V-236: structural RAII closure via OwnedMmap.
     state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
-    // Capture the total_syscalls FD for total_syscalls() lookups.
     if (struct bpf_map* ts = bpf_object__find_map_by_name(state->obj, "total_syscalls"); ts != nullptr) {
         state->total_syscalls_fd = map_fd(ts);
     } else {
@@ -255,14 +218,13 @@ safety::Borrowed<const TimelineSyscallEvent, SyscallLatency> SyscallLatency::tim
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{};
     }
-    // §III-clean: bit_cast handles volatile-drop, start_lifetime_as_array
-    // begins typed-array lifetime in the BPF mmap'd byte storage.  See
-    // SchedSwitch.cpp::timeline_view for the full rationale.
-    // FIXY-V-236: OwnedMmap::data() returns void*; bit_cast to typed ptr.
+    // The mapping is untyped byte storage, so start_lifetime_as_array begins
+    // the typed array lifetime inside it.  The bit_cast drops volatile,
+    // because libstdc++ has no span<const volatile T> for a non-scalar T.
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // _Tp non-const: const-void* overload returns const _Tp*; passing
-    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
-    // through a const-qualified array location.
+    // The element type stays non-const.  The const-void* overload already
+    // returns a const pointer, and a const element type makes libstdc++ emit
+    // an asm clobber that writes through a const-qualified array location.
     auto* events = std::start_lifetime_as_array<TimelineSyscallEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{events, TIMELINE_CAPACITY};
@@ -271,7 +233,8 @@ safety::Borrowed<const TimelineSyscallEvent, SyscallLatency> SyscallLatency::tim
 uint64_t SyscallLatency::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: implicit qualification adds const to the volatile pointee.
+    // The added const selects the overload taking const volatile void*, which
+    // returns a const volatile pointer to the header.
     const volatile uint8_t* qbase = base;
     auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;

@@ -173,6 +173,25 @@ extract_qualifiers() {
         probe=$(( probe - 1 ))
     done
 
+    # Tighten the forward window the same way.  Without this, a short mint
+    # whose body ends within five lines lets the NEXT mint's template line
+    # and qualifiers leak in.  Canonical defect: mint_snapshot_reader
+    # (plain `auto`, takes `Snap&`) sits four lines above
+    # mint_snapshot_writer_session (`constexpr`, takes `Ctx const&`), so the
+    # fixed five-line window reported the reader as cx=Y and ctx-bound.
+    # Walk forward from `line`; the first line whose stripped form starts
+    # with `}` closes this mint's body, so the window ends there.
+    probe=$(( line + 1 ))
+    while (( probe <= end )); do
+        local fwd_text
+        fwd_text="$(sed -n "${probe}p" "$file" 2>/dev/null)"
+        local fwd_stripped="${fwd_text#"${fwd_text%%[![:space:]]*}"}"
+        case "$fwd_stripped" in
+            '}'*) end=$probe; break ;;
+        esac
+        probe=$(( probe + 1 ))
+    done
+
     local window
     window="$(sed -n "${start},${end}p" "$file" 2>/dev/null || true)"
 

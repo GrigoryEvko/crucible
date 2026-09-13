@@ -1,192 +1,95 @@
 #pragma once
 
-// ── crucible::algebra::lattices — umbrella ──────────────────────────
+// Every concrete lattice in one include.  A translation unit that needs
+// only one of them includes that header directly and pays less.
 //
-// Aggregates every concrete lattice instantiation under
-// algebra/lattices/.  Pulled in by algebra/Algebra.h; individual
-// per-lattice headers can be included directly to minimize per-TU
-// compile cost.
+// Each lattice ships its own self-test: exhaustive over the carrier when
+// the carrier is finite, spot-checked at representative witnesses when
+// it is not, plus a runtime smoke test whose operands are non-constant.
+// Compile-time assertions alone would not exercise the runtime bodies.
 //
-// Each per-lattice header MUST:
-//   - include <crucible/algebra/Lattice.h>
-//   - publish a `name()` for diagnostic emission
-//   - emit a self-test block invoking the `verify_*` helpers from
-//     Lattice.h at every representative element witness — exhaustive
-//     when the carrier is finite (e.g. enums); spot-check at a
-//     representative span when the carrier is infinite (e.g. ℕ, ℚ)
-//   - emit a runtime smoke test (`inline void runtime_smoke_test()`)
-//     exercising lattice ops AND Graded<...,L,T>::weaken / compose
-//     with non-constant arguments, to catch the consteval-vs-constexpr
-//     trap that pure static_assert tests miss
-//   - be free of per-instance allocations in lattice operations
-//     themselves (the lattice is stateless; the smoke harness may
-//     use stack values)
-//
-// The forward declarations below let dependent code (MIGRATE-1..11
-// alias headers, future ProductLattice instantiations) name a lattice
-// before its full header lands — useful during the staggered rollout
-// of ALGEBRA-4..15.  Forward-declared lattices DO NOT yet satisfy the
-// Lattice concept; instantiating Graded<> over them fails until the
-// per-lattice header is included.
-//
-// Lattice                     | Task    | Used by
-// ----------------------------+---------+---------------------------------
-// QttSemiring                 | #449    | Linear<T>, Permission<Tag>
-// BoolLattice<Pred>           | #450    | Refined<Pred, T>
-// ConfLattice                 | #451    | Secret<T>
-// TrustLattice<Source>        | #452    | Tagged<T, Source>
-// FractionalLattice           | #453    | SharedPermission<Tag>
-// MonotoneLattice<T, Cmp>     | #454    | Monotonic<T, Cmp>
-// SeqPrefixLattice            | #455    | AppendOnly<T>
-// StalenessSemiring           | #456    | Stale<T>             (NEW)
-// HappensBeforeLattice        | #458    | TimeOrdered<T, Clk>  (NEW)
-// LifetimeLattice /           | #459    | SessionOpaqueState,
-//   ConsistencyLattice /      |         | BatchPolicy axes,
-//   ToleranceLattice          |         | precision-budget calibrator
-// ProductLattice<L₁, L₂, ...> | #460    | every multi-grade composition
-//
-// NOTE: Latency-budget and energy-budget lattices were dropped from
-// the roadmap.  Both quantities are not reliably measurable as
-// type-level dimensions on the deployment surface (system-load-
-// dependent latency, vendor-spotty / noisy RAPL-style energy
-// counters), so committing them as graded-modality grades would push
-// non-actionable contract obligations into the type system.  The
-// related Budgeted<...> alias and its task entries (formerly #457
-// ALGEBRA-12 Budget.h, #469 MIGRATE-9 Budgeted.h) are deleted.
-// Bytes / sequence length / staleness / consistency / tolerance
-// budgets remain — they ARE measurable at the type-level
-// granularity Crucible needs.
+// There is deliberately no latency lattice and no energy lattice.
+// Neither quantity is measurable well enough on the deployment surface
+// to grade a type by, so committing one would put obligations into the
+// type system that no consumer can honour.  Budgets over bytes, sequence
+// length, staleness, consistency and tolerance stay, because those are
+// measurable at the granularity the grade claims.
 
-#include <crucible/algebra/Lattice.h>  // HasLatticeName concept (fixy-A3-017)
+#include <crucible/algebra/Lattice.h>  // HasLatticeName
 
-#include <cstdint>  // LatticeNameProbeElement::v (fixy-A3-017)
-#include <functional>  // std::less for MonotoneLattice canonical instantiation (fixy-A3-017)
+#include <cstdint>  // LatticeNameProbeElement::v
+#include <functional>  // std::less, for the MonotoneLattice probe instantiation
 
-// ── Shipped lattices ────────────────────────────────────────────────
-#include <crucible/algebra/lattices/AffinityLattice.h>  // FOUND-G71  — shipped (2/2 NumaPlacement axes)
-#include <crucible/algebra/lattices/AllocClassLattice.h>  // FOUND-G38  — shipped
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-252 — shipped (7-tier memory-fence strength chain)
-#include <crucible/algebra/lattices/BitsBudgetLattice.h>  // FOUND-G63  — shipped (1/2 Budgeted axes)
-#include <crucible/algebra/lattices/BoolLattice.h>  // ALGEBRA-5  (#450) — shipped
-#include <crucible/algebra/lattices/CallShapeLattice.h>  // FIXY-V-240 — shipped (5-tier dispatch-shape chain)
-#include <crucible/algebra/lattices/CipherTierLattice.h>  // FOUND-G43  — shipped
-#include <crucible/algebra/lattices/ClockSourceLattice.h>  // FIXY-V-184 — shipped (DetSafe×Suspend×Pinning product composite + 9-source projection)
-#include <crucible/algebra/lattices/ConfLattice.h>  // ALGEBRA-6  (#451) — shipped
-#include <crucible/algebra/lattices/ConsistencyLattice.h>  // ALGEBRA-14 (#459) — shipped (2/3)
-#include <crucible/algebra/lattices/ControlFlowLattice.h>  // FIXY-V-239 — shipped (5-tier control-flow-escape chain)
-#include <crucible/algebra/lattices/CrashLattice.h>  // FOUND-G58  — shipped
-#include <crucible/algebra/lattices/DetSafeLattice.h>  // FOUND-G13  — shipped
-#include <crucible/algebra/lattices/EpochLattice.h>  // FOUND-G67  — shipped (1/2 EpochVersioned axes)
-#include <crucible/algebra/lattices/FpModeLattice.h>  // FIXY-V-088/089 — shipped (11 FP-mode sub-axes)
-#include <crucible/algebra/lattices/FractionalLattice.h>  // ALGEBRA-8  (#453) — shipped
-#include <crucible/algebra/lattices/GenerationLattice.h>  // FOUND-G67  — shipped (2/2 EpochVersioned axes)
-#include <crucible/algebra/lattices/GlobalStateLattice.h>  // FIXY-V-241 — shipped (4-tier global-state-hazard chain)
-#include <crucible/algebra/lattices/HappensBefore.h>  // ALGEBRA-13 (#458) — shipped
-#include <crucible/algebra/lattices/HotPathLattice.h>  // FOUND-G18  — shipped
-#include <crucible/algebra/lattices/HwInstructionLattice.h>  // FIXY-V-251 — shipped (5-tier hw-instruction capability chain)
-#include <crucible/algebra/lattices/JoinPolicyLattice.h>  // FIXY-V-078 — shipped (6-tier join-policy chain)
-#include <crucible/algebra/lattices/LifetimeLattice.h>  // ALGEBRA-14 (#459) — shipped (1/3)
-#include <crucible/algebra/lattices/MemOrderLattice.h>  // FOUND-G28  — shipped
-#include <crucible/algebra/lattices/ProgressLattice.h>  // FOUND-G33  — shipped
-#include <crucible/algebra/lattices/MonotoneLattice.h>  // ALGEBRA-9  (#454) — shipped
-#include <crucible/algebra/lattices/NumaNodeLattice.h>  // FOUND-G71  — shipped (1/2 NumaPlacement axes)
-#include <crucible/algebra/lattices/PeakBytesLattice.h>  // FOUND-G63  — shipped (2/2 Budgeted axes)
-#include <crucible/algebra/lattices/PinningRequirementLattice.h>  // FIXY-V-182 — shipped (4-element CPU-coherence-domain chain)
-#include <crucible/algebra/lattices/ProductLattice.h>  // ALGEBRA-15 (#460) — shipped
-#include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4  (#449) — shipped
-#include <crucible/algebra/lattices/RecipeFamilyLattice.h>  // FOUND-G75  — shipped (1/2 RecipeSpec axes)
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h>  // FOUND-G48  — shipped
-#include <crucible/algebra/lattices/SchedulerPolicyLattice.h>  // FIXY-V-183 — shipped (6-element Linux scheduler-class preemption chain)
-#include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
-#include <crucible/algebra/lattices/SimdIsaLattice.h>  // FIXY-V-250 — shipped (non-distributive x86×ARM ISA partial order)
-#include <crucible/algebra/lattices/StackUseLattice.h>  // FIXY-V-241 — shipped (4-tier stack-bound chain)
-#include <crucible/algebra/lattices/StalenessSemiring.h>  // ALGEBRA-11 (#456) — shipped
-#include <crucible/algebra/lattices/StdioLattice.h>  // FIXY-V-241 — shipped (4-tier stdio-surface chain)
-#include <crucible/algebra/lattices/SuspendBehaviorLattice.h>  // FIXY-V-181 — shipped (3-element clock-pause-on-suspend chain)
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-097 — shipped (9-tier syscall-family chain)
-#include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)
-#include <crucible/algebra/lattices/TrustLattice.h>  // ALGEBRA-7  (#452) — shipped
-#include <crucible/algebra/lattices/VendorLattice.h>  // FOUND-G53  — shipped
-#include <crucible/algebra/lattices/WaitLattice.h>  // FOUND-G23  — shipped
-#include <crucible/algebra/lattices/WitnessLattice.h>  // FIXY-V-053 — shipped (4-tier proof-strength chain)
+#include <crucible/algebra/lattices/AffinityLattice.h>
+#include <crucible/algebra/lattices/AllocClassLattice.h>
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/BitsBudgetLattice.h>
+#include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/algebra/lattices/CallShapeLattice.h>
+#include <crucible/algebra/lattices/CipherTierLattice.h>
+#include <crucible/algebra/lattices/ClockSourceLattice.h>
+#include <crucible/algebra/lattices/ConfLattice.h>
+#include <crucible/algebra/lattices/ConsistencyLattice.h>
+#include <crucible/algebra/lattices/ControlFlowLattice.h>
+#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/lattices/EpochLattice.h>
+#include <crucible/algebra/lattices/FpModeLattice.h>
+#include <crucible/algebra/lattices/FractionalLattice.h>
+#include <crucible/algebra/lattices/GenerationLattice.h>
+#include <crucible/algebra/lattices/GlobalStateLattice.h>
+#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/HotPathLattice.h>
+#include <crucible/algebra/lattices/HwInstructionLattice.h>
+#include <crucible/algebra/lattices/JoinPolicyLattice.h>
+#include <crucible/algebra/lattices/LifetimeLattice.h>
+#include <crucible/algebra/lattices/MemOrderLattice.h>
+#include <crucible/algebra/lattices/ProgressLattice.h>
+#include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/lattices/NumaNodeLattice.h>
+#include <crucible/algebra/lattices/PeakBytesLattice.h>
+#include <crucible/algebra/lattices/PinningRequirementLattice.h>
+#include <crucible/algebra/lattices/ProductLattice.h>
+#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/lattices/RecipeFamilyLattice.h>
+#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
+#include <crucible/algebra/lattices/SeqPrefixLattice.h>
+#include <crucible/algebra/lattices/SimdIsaLattice.h>
+#include <crucible/algebra/lattices/StackUseLattice.h>
+#include <crucible/algebra/lattices/StalenessSemiring.h>
+#include <crucible/algebra/lattices/StdioLattice.h>
+#include <crucible/algebra/lattices/SuspendBehaviorLattice.h>
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
+#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/lattices/TrustLattice.h>
+#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/WaitLattice.h>
+#include <crucible/algebra/lattices/WitnessLattice.h>
 
-// FIXY-FOUND-046 — per-enumerator underlying-value pin sweep for every
-// lattice enum consumed by row_hash_contribution_v.  Pins ride this
-// umbrella header so the static_asserts fire on every TU that includes
-// AllLattices.h (the umbrella all production sites pull).
+// The underlying-value pins ride the umbrella so that their assertions
+// fire in every translation unit that pulls any lattice at all.
 #include <crucible/algebra/lattices/EnumValuePins.h>
 
 namespace crucible::algebra::lattices {
 
-// ── Forward declarations (full definitions land per ALGEBRA-8..15) ──
-
-// BoolLattice<Pred> — already included above (ALGEBRA-5 shipped).
-
-// ConfLattice — already included above (ALGEBRA-6 shipped).
-
-// TrustLattice<Source> — already included above (ALGEBRA-7 shipped).
-
-// FractionalLattice — already included above (ALGEBRA-8 shipped).
-
-// MonotoneLattice<T, Cmp> — already included above (ALGEBRA-9 shipped).
-
-// SeqPrefixLattice<Element> — already included above (ALGEBRA-10 shipped).
-
-// StalenessSemiring — already included above (ALGEBRA-11 shipped).
-
-// HappensBeforeLattice — already included above (ALGEBRA-13 shipped).
-// Vector-clock partial order over N participants with optional Tag
-// for cross-protocol distinction.
-
-// LifetimeLattice — already included above (ALGEBRA-14 part 1/3 shipped).
-// Three-element chain: PER_REQUEST < PER_PROGRAM < PER_FLEET.
-
-// ConsistencyLattice — already included above (ALGEBRA-14 part 2/3 shipped).
-// Five-element chain: EVENTUAL < READ_YOUR_WRITES < CAUSAL_PREFIX <
-// BOUNDED_STALENESS < STRONG.
-
-// ToleranceLattice — already included above (ALGEBRA-14 part 3/3 shipped).
-// Seven-tier chain over numeric-tolerance budgets:
-// RELAXED < ULP_INT8 < ULP_FP8 < ULP_FP16 < ULP_FP32 < ULP_FP64 < BITEXACT.
-
-// Componentwise product over N lattices.
 template <typename... Ls>
 struct ProductLattice;
 
-// ── Name-coverage assertion (fixy-A3-017) ───────────────────────────
+// A lattice with no name() member renders as an "<unnamed lattice>"
+// sentinel in every diagnostic that mentions it, which no test sees.
+// The pack below is the guard, and it is maintained by hand: adding a
+// header to the includes above without adding the lattice here does not
+// fire.  The pack is the grep point for that discipline.
 //
-// `lattice_name<L>()` (algebra/Lattice.h:114-123) falls back to the
-// sentinel `"<unnamed lattice>"` when `HasLatticeName<L>` is false.
-// Without this assertion, a future contributor could ship a lattice
-// in `lattices/` without a `static consteval std::string_view name()
-// noexcept` member — every diagnostic that mentions the lattice
-// would silently render the sentinel instead of the lattice name, a
-// failure mode invisible to tests but visible in production
-// telemetry.  Mirrors `effects::detail::every_effect_has_name()`
-// (Capabilities.h:502-521) — the load-bearing reflection-driven
-// coverage assertion for the Effect catalog.
-//
-// Each shipped lattice MUST appear in this pack in its canonical
-// concrete instantiation form.  Adding a new lattice header to the
-// includes above WITHOUT adding it to this pack does NOT fire (the
-// pack is the discipline grep-point).  Adding a lattice WITHOUT a
-// `name()` AND adding it to this pack DOES fire — the fold below
-// rejects the pack and the diagnostic names the offending lattice.
-//
-// Templated lattices (BoolLattice<Pred>, TrustLattice<Source>,
-// MonotoneLattice<T, Cmp>, HappensBeforeLattice<N>, SeqPrefixLattice
-// <Element>, ProductLattice<Ls...>) appear under representative
-// concrete instantiations — since each template's name() is
-// parameter-agnostic at the source level (returns a fixed string),
-// covering one canonical instantiation per template suffices to
-// detect a removed/missing name() member at compile time.
+// A templated lattice's name() does not depend on its arguments, so one
+// representative instantiation per template is enough to catch a
+// removed member.
 
 namespace detail::lattice_name_coverage {
 
-// Witness predicates / payloads for parameterized lattices.  Each is
-// a stateless tag struct, used only to satisfy the template-parameter
-// shape — no runtime state, no lattice operations exercised here
-// (those live in per-lattice self-test blocks).
+// Stateless tags that exist only to fill a template parameter.  No
+// lattice operation is exercised here.
 struct LatticeNameProbeTruePred {
     template <typename T>
     [[nodiscard]] static constexpr bool check(T const&) noexcept {
@@ -214,11 +117,9 @@ static_assert(
         FractionalLattice, GenerationLattice, GlobalStateLattice, HappensBeforeLattice<4>, HotPathLattice,
         HwInstructionLattice, LifetimeLattice, MemOrderLattice, MonotoneLattice<int, std::less<int>>, NumaNodeLattice,
         PeakBytesLattice, PinningRequirementLattice, ProductLattice<HotPathLattice, DetSafeLattice>,
-        // FIXY-V-090 — FpModeProductLattice composite (11-way ProductLattice
-        // over the V-089 per-axis ChainLattices).  Already covered structurally
-        // by the binary ProductLattice witness above, but pinning the 11-way
-        // form here guards against an FpModeLattice.h alias rename / arity
-        // refactor breaking the umbrella discovery contract.
+        // The binary product above already covers the template
+        // structurally.  Pinning the eleven-way form as well guards
+        // against an arity refactor slipping past this pack.
         ProductLattice<FpRoundingLattice, FpFtzLattice, FpContractLattice, FpTrapMaskLattice, FpDenormalInputLattice,
                        FpNanPolicyLattice, FpInfPolicyLattice, FpComplexLayoutLattice, FpLibmPolicyLattice,
                        FpReassociateLattice, FpConstantRoundingLattice>,
@@ -227,11 +128,10 @@ static_assert(
         SuspendBehaviorLattice, SyscallFamilyLattice, ToleranceLattice, TrustLattice<LatticeNameProbeSource>,
         VendorLattice, WaitLattice, WitnessLattice>(),
     "[Lattice_Missing_Name] At least one shipped lattice does not "
-    "satisfy HasLatticeName<L> — `lattice_name<L>()` would return the "
-    "`<unnamed lattice>` sentinel and degrade diagnostics silently. "
-    "Add `static consteval std::string_view name() noexcept` to the "
-    "lattice; the existing per-lattice self-test blocks contain "
-    "examples (e.g. HotPathLattice.h, DetSafeLattice.h).");
+    "satisfy HasLatticeName<L>, so `lattice_name<L>()` returns the "
+    "`<unnamed lattice>` sentinel and every diagnostic naming that "
+    "lattice degrades silently.  Add `static consteval "
+    "std::string_view name() noexcept` to the lattice.");
 
 }  // namespace detail::lattice_name_coverage
 

@@ -1,12 +1,5 @@
 #pragma once
 
-// GAPS-141.  Synthetic per-peer/per-transport probe substrate.
-//
-// This header owns the fixed-size registration and statistics surface.
-// It does not execute RDMA, AF_XDP, QUIC, TCP, collective, or federation
-// traffic; those transport-specific executors land with their respective
-// CNT/PERF tasks and feed this runner with measured outcomes.
-
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -181,16 +174,12 @@ namespace detail {
          + static_cast<std::uint32_t>(transport_probe_index(kind) * 2u) + lane;
 }
 
-// fixy-A5-011: alignas(64) is load-bearing.  The struct is embedded in a
-// 2D `std::array<std::array<AtomicProbeStats, transport_kind_count>, MaxPeers>`
-// grid (SyntheticProbeRunner::stats_) where adjacent (peer, kind) slots are
-// recorded concurrently by per-transport probe threads under BgDrainCtx.
-// Without the alignment the ~57-byte struct lets two slots share one 64-byte
-// line — the classic false-sharing trap (CLAUDE.md §VIII).  The eight
-// intra-struct atomics are co-mutated by the SAME producer (whoever recorded
-// this peer-kind outcome), so packing them on one line is intentional and
-// beneficial for last-write-wins reads; the alignment only isolates ACROSS
-// (peer, kind) slots.
+// alignas(64) is load-bearing. The struct is embedded in a per-peer,
+// per-kind grid whose adjacent slots are recorded concurrently by different
+// probe threads. Unaligned, the struct is smaller than a cache line and two
+// slots share one, which is false sharing. The atomics inside one struct are
+// mutated by the same producer, so packing those on one line is intentional.
+// The alignment isolates across slots only.
 struct alignas(64) AtomicProbeStats {
     std::atomic<std::uint64_t> scheduled{0};
     std::atomic<std::uint64_t> succeeded{0};
@@ -205,19 +194,15 @@ struct alignas(64) AtomicProbeStats {
 static_assert(alignof(AtomicProbeStats) >= 64, "AtomicProbeStats must be cache-line-aligned so that adjacent "
                                                "(peer, transport_kind) slots in the SyntheticProbeRunner "
                                                "stats_ grid land on distinct lines under concurrent recording");
-static_assert(sizeof(AtomicProbeStats) >= 64, "AtomicProbeStats occupies a full cache line; trailing padding "
-                                              "is intentional — see false-sharing rationale above");
+static_assert(sizeof(AtomicProbeStats) >= 64, "AtomicProbeStats occupies a full cache line. The trailing padding "
+                                              "is intentional.");
 
-// fixy-A5-029: cross-thread atomics on the probe-recording path must be
-// lock-free on every supported target.  libstdc++ silently substitutes
-// mutex-backed atomic ops on ISAs lacking the required intrinsic — a hidden
-// mutex inside every probe outcome's fetch_add would invert the observe
-// hot-path latency budget.  Refuse to build instead of regressing silently.
+// A standard library may substitute mutex-backed operations where the target
+// lacks the intrinsic, silently putting a lock inside every recorded outcome.
+// Refuse to build instead.
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-              "std::atomic<uint64_t> must be lock-free on this target — "
-              "fixy-A5-029");
-static_assert(std::atomic<std::uint8_t>::is_always_lock_free, "std::atomic<uint8_t> must be lock-free on this target — "
-                                                              "fixy-A5-029");
+              "std::atomic<uint64_t> must be lock-free on this target.");
+static_assert(std::atomic<std::uint8_t>::is_always_lock_free, "std::atomic<uint8_t> must be lock-free on this target.");
 
 }  // namespace detail
 
@@ -281,14 +266,11 @@ public:
         return peer_index != peers_.size() && peers_[peer_index].enabled_kinds.test(kind);
     }
 
-    // fixy-A5-012: schedule_probe is the dispatch-side counter — call once
-    // when a probe is sent (or otherwise committed to the wire), BEFORE
-    // record_outcome reports its result.  Pre-fix the scheduled counter was
-    // incremented inside record_outcome, which made it a duplicate of
-    // (succeeded + failed) and erased the "lost probe" signal entirely: a
-    // probe that never reported back was simply invisible.  Splitting the
-    // dispatch and outcome counters gives the operator a real loss-rate
-    // metric (scheduled - succeeded - failed = unreported / in-flight).
+    // Call this once when a probe is committed to the wire, before
+    // record_outcome reports its result. Counting dispatch separately from
+    // outcome is what makes scheduled minus succeeded minus failed a real
+    // loss rate. One shared counter would hide a probe that never reports
+    // back.
     template <effects::IsExecCtx Ctx>
         requires CtxFitsSyntheticProbeRecord<Ctx>
     [[nodiscard]] bool schedule_probe(Ctx const&, cog::CogIdentity const& peer, TransportProbeKind kind) noexcept {
@@ -311,9 +293,8 @@ public:
         }
 
         auto& counters = stats_[peer_index][detail::transport_probe_index(outcome.kind)];
-        // fixy-A5-012: NO scheduled.fetch_add here — outcomes are independent
-        // of dispatches.  Production callers must invoke schedule_probe()
-        // when the probe is committed to the wire.
+        // The scheduled counter is deliberately not touched here. Dispatch is
+        // counted by schedule_probe.
         counters.last_latency_ns.store(outcome.latency_ns, std::memory_order_relaxed);
         counters.last_sequence.store(outcome.sequence, std::memory_order_release);
         counters.last_failure.store(static_cast<std::uint8_t>(outcome.failure), std::memory_order_release);

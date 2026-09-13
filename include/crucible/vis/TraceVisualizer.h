@@ -1,16 +1,5 @@
 #pragma once
 
-// TraceVisualizer: end-to-end trace / live Merkle DAG → SVG rendering.
-//
-// Forensic pipeline: load .crtrace → detect blocks → build edges → layout → render SVG
-// Live pipeline: TraceNode/RegionNode → block view → Sugiyama layout → render SVG
-//
-// Two rendering modes:
-//   - Block-level: blocks as containers with labels, inter-block edges
-//   - Op-level: individual ops as nodes inside block containers
-//
-// Uses SugiyamaLayout for both intra-block and inter-block positioning.
-
 #include <crucible/MerkleDag.h>
 #include <crucible/vis/BlockDetector.h>
 #include <crucible/vis/SugiyamaLayout.h>
@@ -319,10 +308,6 @@ struct MerkleDagViewState {
     return extract_blocks(static_cast<const TraceNode*>(&root));
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Color selection by op family / block kind
-// ═══════════════════════════════════════════════════════════════════
-
 struct NodeColors {
     Color fill;
     Color border;
@@ -396,26 +381,20 @@ struct NodeColors {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Inter-block edge construction
-// ═══════════════════════════════════════════════════════════════════
-
 struct BlockEdge {
     uint32_t src_block = 0;
     uint32_t dst_block = 0;
-    bool is_skip = false;  // skip connection (spans >1 block)
+    bool is_skip = false;  // True when the edge spans more than one block.
 };
 
 [[nodiscard]] inline std::vector<BlockEdge> build_block_edges(const std::vector<Block>& blocks,
                                                               const std::vector<Op>& ops) {
-    // Map op_idx → block_idx
     std::unordered_map<uint32_t, uint32_t> op_to_block;
     for (uint32_t bi = 0; bi < blocks.size(); bi++) {
         for (uint32_t oi = blocks[bi].start_op; oi <= blocks[bi].end_op; oi++)
             op_to_block[oi] = bi;
     }
 
-    // Map data_ptr → producing op_idx
     std::unordered_map<uint64_t, uint32_t> ptr_producer;
     for (const auto& op : ops) {
         for (uint32_t j = 0; j < op.n_out && j < 4; j++) {
@@ -423,7 +402,6 @@ struct BlockEdge {
         }
     }
 
-    // Find block-level edges
     std::unordered_set<uint64_t> seen_edges;
     std::vector<BlockEdge> edges;
 
@@ -442,9 +420,8 @@ struct BlockEdge {
             if (sit == op_to_block.end()) continue;
             uint32_t src_bi = sit->second;
 
-            if (src_bi == dst_bi) continue;  // intra-block
+            if (src_bi == dst_bi) continue;
 
-            // Deduplicate
             uint64_t key = (static_cast<uint64_t>(src_bi) << 32) | dst_bi;
             if (!seen_edges.insert(key).second) continue;
 
@@ -453,10 +430,9 @@ struct BlockEdge {
         }
     }
 
-    // Add implicit sequential edges: block N → block N+1.
-    // These form the "spine" that creates vertical ordering in the layout.
-    // Without them, blocks with no data-flow connection get assigned to
-    // the same layer and pile up horizontally.
+    // Consecutive blocks are joined even where no data flows between them.
+    // That chain is what forces a vertical ordering. Without it, unconnected
+    // blocks land on one layer and pile up sideways.
     for (uint32_t i = 0; i + 1 < blocks.size(); i++) {
         uint64_t key = (static_cast<uint64_t>(i) << 32) | (i + 1);
         if (seen_edges.insert(key).second) edges.push_back({i, i + 1, false});
@@ -465,31 +441,25 @@ struct BlockEdge {
     return edges;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Phase-aware grid layout
-//
-// Two columns: forward (left) + backward (right, reversed to mirror).
-// Optimizer centered below. Skip connections as horizontal arrows.
-// No Sugiyama needed — blocks are in execution order, backward
-// mirrors forward by autograd construction.
-// ═══════════════════════════════════════════════════════════════════
+// No graph solver is needed here. Blocks already arrive in execution order,
+// and autograd makes the backward sequence mirror the forward one, so rows
+// follow directly from those two orders.
 
 struct GridPos {
-    float x = 0;  // left edge
-    float y = 0;  // top edge
-    float w = 0;  // width
-    float h = 0;  // height
-    uint32_t col = 0;  // 0=forward, 1=backward, 2=optimizer
+    float x = 0;  // Left edge.
+    float y = 0;  // Top edge.
+    float w = 0;
+    float h = 0;
+    uint32_t col = 0;  // 0 is forward, 1 is backward, 2 is optimizer.
     uint32_t row = 0;
 };
 
-// Detect encoder/mid/decoder within a phase's blocks using spatial resolution.
-// Returns (encoder_end, decoder_start) indices into the phase_idx array.
-// encoder = [0..encoder_end], mid = [encoder_end+1..decoder_start-1],
-// decoder = [decoder_start..end]
+// The two indices split phase_idx into an encoder over [0, enc_end], a mid
+// section over [enc_end + 1, dec_start - 1] and a decoder over
+// [dec_start, end].
 struct UShapeSplit {
-    uint32_t enc_end = 0;  // last encoder index
-    uint32_t dec_start = 0;  // first decoder index
+    uint32_t enc_end = 0;
+    uint32_t dec_start = 0;
     bool is_unet = false;
 };
 
@@ -497,34 +467,29 @@ struct UShapeSplit {
                                                 const std::vector<uint32_t>& phase_idx) {
     if (phase_idx.size() < 6) return {0, 0, false};
 
-    // Get spatial resolution per block (0 if not 4D)
+    // spatial_h is zero unless the block's output has four dimensions.
     std::vector<int32_t> res(phase_idx.size(), 0);
     for (uint32_t i = 0; i < phase_idx.size(); i++)
         res[i] = blocks[phase_idx[i]].spatial_h;
 
-    // Find blocks with valid resolution
     std::vector<std::pair<uint32_t, int32_t>> valid_res;
     for (uint32_t i = 0; i < res.size(); i++)
         if (res[i] > 0) valid_res.push_back({i, res[i]});
 
     if (valid_res.size() < 4) return {0, 0, false};
 
-    // Find minimum resolution (bottleneck)
+    // The lowest resolution is the bottleneck.
     int32_t min_res = valid_res[0].second;
     for (const auto& [idx, r] : valid_res) {
         if (r < min_res) min_res = r;
     }
 
-    // Check if there's a U-shape: resolution decreases then increases
     int32_t max_res = valid_res[0].second;
     if (max_res < 2 * min_res) return {0, 0, false};
 
-    // Find last block before bottleneck with max resolution (encoder end region)
-    // and first block after bottleneck with increasing resolution (decoder start)
     uint32_t enc_end = 0;
     uint32_t dec_start = static_cast<uint32_t>(phase_idx.size()) - 1;
 
-    // Encoder: find where resolution first reaches minimum
     for (uint32_t i = 0; i < phase_idx.size(); i++) {
         if (res[i] == min_res || (res[i] > 0 && res[i] <= min_res)) {
             enc_end = (i > 0) ? i - 1 : 0;
@@ -532,7 +497,6 @@ struct UShapeSplit {
         }
     }
 
-    // Decoder: find where resolution starts increasing after bottleneck
     bool past_mid = false;
     for (uint32_t i = enc_end + 1; i < phase_idx.size(); i++) {
         if (res[i] == min_res) {
@@ -550,7 +514,6 @@ struct UShapeSplit {
 
 [[nodiscard]] inline std::vector<GridPos> grid_layout(const std::vector<Block>& blocks,
                                                       const std::vector<BlockEdge>& /*edges*/, Architecture arch) {
-    // Separate by phase
     std::vector<uint32_t> fwd_idx, bwd_idx, opt_idx;
     for (uint32_t i = 0; i < blocks.size(); i++) {
         switch (blocks[i].phase) {
@@ -568,10 +531,9 @@ struct UShapeSplit {
         }
     }
 
-    // Geometry
-    constexpr float SUB_COL_W = 220;  // sub-column width (encoder/decoder)
-    constexpr float SUB_GAP = 10;  // gap between encoder and decoder sub-columns
-    constexpr float PHASE_GAP = 50;  // gap between forward U and backward U
+    constexpr float SUB_COL_W = 220;
+    constexpr float SUB_GAP = 10;
+    constexpr float PHASE_GAP = 50;
     constexpr float ROW_GAP = 3;
     constexpr float PAD = 25;
     constexpr float HEADER = 50;
@@ -584,20 +546,15 @@ struct UShapeSplit {
         return std::min(SUB_COL_W, std::max(90.0f, static_cast<float>(blocks[bi].label.size()) * 7.0f + 12));
     };
 
-    // ── UNet layout: two U-shapes side by side ──────────────────────────
     if (arch == Architecture::UNET) {
         auto fwd_u = detect_u_shape(blocks, fwd_idx);
 
-        // Layout one U-shape phase into sub-columns.
-        // Encoder: left sub-column, going DOWN (highest res at top).
-        // Decoder: right sub-column, going DOWN in REVERSED order
-        //          (highest res at top, matching encoder rows).
-        // Mid: centered below both, at the bottom.
-        // The U-shape is visual: skip connections between matching
-        // resolution rows create horizontal lines.
+        // The decoder column runs in reverse so that a decoder block sits on
+        // the same row as the encoder block of matching resolution. That is
+        // what makes a skip connection between them draw as a horizontal
+        // line. The mid section sits below both columns.
         auto layout_u = [&](const std::vector<uint32_t>& idx, const UShapeSplit& u, float base_x) -> uint32_t {
             if (!u.is_unet || idx.empty()) {
-                // Fallback: single column
                 for (uint32_t r = 0; r < idx.size(); r++) {
                     float lw = label_width(idx[r]);
                     pos[idx[r]] = {
@@ -615,11 +572,8 @@ struct UShapeSplit {
             uint32_t enc_count = u.enc_end + 1;
             uint32_t dec_count = static_cast<uint32_t>(idx.size()) - u.dec_start;
 
-            // Encoder and decoder go DOWN in parallel columns.
-            // Use max(enc, dec) rows for the paired section, then mid below.
             uint32_t paired_rows = std::max(enc_count, dec_count);
 
-            // Encoder: left sub-column, rows 0..enc_count-1 (top to bottom)
             for (uint32_t i = 0; i < enc_count && i < idx.size(); i++) {
                 float lw = label_width(idx[i]);
                 pos[idx[i]] = {
@@ -632,11 +586,8 @@ struct UShapeSplit {
                 };
             }
 
-            // Decoder: right sub-column, REVERSED order so highest resolution
-            // is at top (row 0) matching encoder's first blocks.
-            // decoder_blocks = [dec_start..end], reversed = [end..dec_start]
             for (uint32_t i = 0; i < dec_count; i++) {
-                uint32_t block_i = u.dec_start + dec_count - 1 - i;  // reverse
+                uint32_t block_i = u.dec_start + dec_count - 1 - i;
                 float lw = label_width(idx[block_i]);
                 pos[idx[block_i]] = {
                     .x = base_x + SUB_COL_W + SUB_GAP + (SUB_COL_W - lw) / 2,
@@ -648,7 +599,6 @@ struct UShapeSplit {
                 };
             }
 
-            // Mid: centered below both columns
             uint32_t mid_row = paired_rows;
             float mid_center = base_x + SUB_COL_W + SUB_GAP / 2;
             for (uint32_t i = u.enc_end + 1; i < u.dec_start && i < idx.size(); i++) {
@@ -664,19 +614,16 @@ struct UShapeSplit {
                 mid_row++;
             }
 
-            return mid_row;  // total rows used by this U
+            return mid_row;  // Total rows used.
         };
 
-        // Forward U: left side
         float fwd_base = PAD;
         uint32_t fwd_rows = layout_u(fwd_idx, fwd_u, fwd_base);
 
-        // Backward U: right side
         float bwd_base = PAD + 2 * SUB_COL_W + SUB_GAP + PHASE_GAP;
         auto bwd_u = detect_u_shape(blocks, bwd_idx);
         uint32_t bwd_rows = layout_u(bwd_idx, bwd_u, bwd_base);
 
-        // Optimizer: centered below everything
         uint32_t max_used_rows = std::max(fwd_rows, bwd_rows);
         float opt_y = HEADER + static_cast<float>(max_used_rows) * (ROW_H + ROW_GAP) + 20;
         float total_w = 2 * (2 * SUB_COL_W + SUB_GAP) + PHASE_GAP;
@@ -697,7 +644,6 @@ struct UShapeSplit {
         return pos;
     }
 
-    // ── Default layout: two columns (forward + backward) ────────────────
     uint32_t n_fwd = static_cast<uint32_t>(fwd_idx.size());
     uint32_t n_bwd = static_cast<uint32_t>(bwd_idx.size());
     uint32_t max_rows = std::max(n_fwd, n_bwd);
@@ -715,12 +661,12 @@ struct UShapeSplit {
             .row = r,
         };
     }
-    // Backward column: REVERSED order. Autograd generates backward ops
-    // in reverse order of forward. backward[0] = Loss BWD (mirrors
-    // forward[-1] = Loss). Reversing puts Loss BWD at the bottom,
-    // matching Loss on the left. Skip connections become horizontal.
+    // Autograd emits backward blocks in reverse order of the forward ones,
+    // so the first backward block mirrors the last forward one. Reversing
+    // this column puts each backward block level with its forward
+    // counterpart, and the edges between them draw as horizontal lines.
     for (uint32_t r = 0; r < n_bwd; r++) {
-        uint32_t rev_r = n_bwd - 1 - r;  // reverse: last bwd block at row 0
+        uint32_t rev_r = n_bwd - 1 - r;
         float lw = label_width(bwd_idx[r]);
         pos[bwd_idx[r]] = {
             .x = PAD + COL_WIDTH + COL_GAP + (COL_WIDTH - lw) / 2,
@@ -750,18 +696,10 @@ struct UShapeSplit {
     return pos;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Block-level rendering with phase-aware grid layout
-// ═══════════════════════════════════════════════════════════════════
-
-// ── Rendering sub-steps ─────────────────────────────────────────────
-// Each function handles one visual layer, keeping render_block_svg clean.
-
 inline void render_skip_edges(SvgRenderer& svg, const DetectionResult& detection, const std::vector<Block>& blocks,
                               const std::vector<GridPos>& pos, const std::vector<BlockEdge>& block_edges) {
     svg.begin_group("skip-edges");
     if (detection.architecture == Architecture::UNET) {
-        // Resolution-paired skip connections within each U
         auto draw_u_skips = [&](const std::vector<uint32_t>& phase_idx) {
             std::unordered_map<int32_t, std::vector<uint32_t>> enc_by_res, dec_by_res;
             for (uint32_t bi : phase_idx) {
@@ -776,7 +714,6 @@ inline void render_skip_edges(SvgRenderer& svg, const DetectionResult& detection
                 float x2 = pos[b].x - 3, y2 = pos[b].y + pos[b].h / 2;
                 float mx = (x1 + x2) / 2;
                 svg.bezier_arrow(x1, y1, mx, y1, mx, y2, x2, y2, palette::EDGE_SKIP, 0.6f, true);
-                // Shape label at midpoint
                 if (!blocks[a].out_shape.empty()) {
                     float label_y = (y1 + y2) / 2 - 2;
                     svg.text_mono(mx, label_y, blocks[a].out_shape, 5.0f, Color::hex(0xB0B0B0));
@@ -791,14 +728,14 @@ inline void render_skip_edges(SvgRenderer& svg, const DetectionResult& detection
         draw_u_skips(fwd_phase);
         draw_u_skips(bwd_phase);
 
-        // Cross-phase saved-activation edges (limited)
+        // A forward-to-backward edge is a saved activation. At most eight
+        // are drawn.
         std::unordered_set<uint32_t> drawn;
         uint32_t count = 0;
         for (const auto& e : block_edges) {
             if (count >= 8) break;
             if (blocks[e.src_block].phase != Phase::FORWARD) continue;
             if (blocks[e.dst_block].phase != Phase::BACKWARD) continue;
-            // Only draw from forward MODULE blocks (not ROOT/EPILOGUE)
             if (blocks[e.src_block].kind != BlockKind::MODULE) continue;
             if (!drawn.insert(e.src_block).second) continue;
             svg.orthogonal_edge(pos[e.src_block].x + pos[e.src_block].w + 2,
@@ -807,7 +744,6 @@ inline void render_skip_edges(SvgRenderer& svg, const DetectionResult& detection
             count++;
         }
     } else {
-        // Non-UNet: filtered data-flow edges
         std::unordered_set<uint32_t> drawn;
         for (const auto& e : block_edges) {
             if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
@@ -944,10 +880,6 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     svg.end_group();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Block-level rendering — orchestrator
-// ═══════════════════════════════════════════════════════════════════
-
 [[nodiscard]] inline std::string render_block_svg(const DetectionResult& detection, const std::vector<Op>& ops,
                                                   std::string_view title = "Crucible Trace") {
     const auto& blocks = detection.blocks;
@@ -956,7 +888,6 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     auto block_edges = build_block_edges(blocks, ops);
     auto pos = grid_layout(blocks, block_edges, detection.architecture);
 
-    // Compute total size
     float max_x = 0, max_y = 0;
     for (uint32_t i = 0; i < blocks.size(); i++) {
         max_x = std::max(max_x, pos[i].x + pos[i].w);
@@ -968,7 +899,6 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     SvgRenderer svg;
     svg.begin(svg_w, svg_h, std::string{title});
 
-    // Column headers — computed from actual block positions per phase
     auto phase_center_x = [&](Phase phase) -> float {
         float xmin = 1e9f, xmax = 0;
         for (uint32_t i = 0; i < blocks.size(); i++) {
@@ -983,7 +913,7 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     if (fwd_cx < 1e8f) svg.text(fwd_cx, 42, "FORWARD", 12, Color::hex(0x1E40AF), "middle", true);
     if (bwd_cx < 1e8f) svg.text(bwd_cx, 42, "BACKWARD", 12, Color::hex(0x9A3412), "middle", true);
 
-    // Render layers (back to front)
+    // SVG paints in document order, so these run back to front.
     if (detection.architecture == Architecture::UNET) render_resolution_bands(svg, svg_w, blocks, pos);
     render_skip_edges(svg, detection, blocks, pos, block_edges);
     render_seq_connectors(svg, blocks, pos);
@@ -995,10 +925,6 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     svg.end();
     return svg.take();
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// Live Merkle DAG rendering — structural edges supplied by block extraction
-// ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline std::string render_live_block_svg(const MerkleDagBlockView& view,
                                                        std::string_view title = "Crucible Live Trace") {

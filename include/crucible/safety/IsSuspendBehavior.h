@@ -1,14 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_suspend_behavior_v ────────────────
-//
-// FIXY-V-188 — wrapper-detection predicate for `SuspendBehavior<Behavior,
-// T>` (the V-181 pause-on-suspend witness).  Mechanical sibling of
-// IsClockSource / IsSchedClass — the partial spec captures the
-// SuspendBehavior NTTP alongside the wrapped type, so the V-194
-// DeadlineWatchdog can read the pinned behavior off the type without
-// instantiating the wrapper.
-
 #include <crucible/safety/SuspendBehavior.h>
 
 #include <type_traits>
@@ -48,8 +39,6 @@ template <typename T>
     requires is_suspend_behavior_v<T>
 inline constexpr SuspendBehavior_v suspend_behavior_v =
     detail::is_suspend_behavior_impl<std::remove_cvref_t<T>>::behavior;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_suspend_behavior_self_test {
 

@@ -1,53 +1,18 @@
 #pragma once
 
-// ── crucible::safety::ScopedView<Carrier, Tag> ──────────────────────
+// Non-owning typed reference to a Carrier, proving the Carrier is in
+// the state denoted by Tag.  The Carrier never moves, so it stays
+// non-movable; only the view travels.
 //
-// Non-owning typed reference to a Carrier proving Carrier is in the
-// state denoted by Tag.  The right type-state primitive for Crucible's
-// shape — non-movable carriers, in-place state mutation, multi-site
-// read access, hot-path-friendly.
+// A view is checked once, where it is minted.  Every method that takes
+// one as proof of state performs no further check.
 //
-//   Axiom coverage: TypeSafe + state-discipline (code_guide §II + §XVI).
-//   Runtime cost:   sizeof(ScopedView<C, T>) == sizeof(Carrier*).
-//                   Construction performs ONE contract check; methods
-//                   that take a View as proof do zero further checks.
+// Copy construction is allowed, so several read-only views of one
+// carrier may coexist.  Assignment is not, because reassigning a view
+// hides the state transition that should have re-minted it.
 //
-// Compared to Linear/Machine: doesn't require Carrier to be movable.
-// The Carrier stays put; its existing `= delete("interior pointers")`
-// stays.  Only the View moves around.
-//
-// ── Discipline (the four enforcement tiers) ─────────────────────────
-//
-// Tier 1 — Compiler-enforced (this header):
-//   - [[nodiscard]] at class level — caller MUST capture a freshly-
-//     minted view, otherwise warn-as-error.
-//   - Constructor parameter Carrier& tagged CRUCIBLE_LIFETIMEBOUND so
-//     -Wdangling-reference fires when a view of a local is returned
-//     from the function that minted it.
-//   - Constructor private + only crucible::safety::mint_view friended;
-//     callers cannot fabricate views by hand.  The single chokepoint
-//     is grep-discoverable (`mint_view<`).
-//   - Copy/move ASSIGNMENT deleted with a reason string.  Kills both
-//     "store in vector then overwrite" and "reassign to a fresh view
-//     of a different state" — the two main escape patterns.
-//   - Copy/move CONSTRUCTION allowed; multiple read-only views can
-//     coexist (e.g. one in an optional, one passed to a callee).
-//
-// Tier 2 — Reflection audit (this header, see no_scoped_view_field_check):
-//   - consteval helper that walks T's nonstatic data members (and
-//     known wrapper types optional/vector/array/pair/tuple/variant)
-//     and static_asserts that no field is a ScopedView.  Catches
-//     "stored in a struct field" at compile time.
-//   - Each Carrier opts in by adding
-//         static_assert(crucible::safety::no_scoped_view_field_check<MyType>());
-//     near the top-level declaration.
-//
-// Tier 4 — Negative-compile tests (test/safety/scoped_view_neg_*.cpp):
-//   - CMake target with WILL_FAIL=TRUE; each .cpp exercises one of
-//     the violations Tier 1+2 should catch.
-//
-// Tier 3 (CI grep lint) is NOT included — Tiers 1+2+4 are sufficient
-// in practice; see the design discussion in misc/.
+// A carrier opts into the field audit by writing a static_assert on
+// no_scoped_view_field_check for its own type.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Linear.h>
@@ -66,7 +31,6 @@
 
 namespace crucible::safety {
 
-// Forward decl + trait.
 template <typename Carrier, typename Tag>
 class ScopedView;
 
@@ -79,19 +43,14 @@ struct is_scoped_view<ScopedView<Carrier, Tag>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_scoped_view_v = is_scoped_view<std::remove_cvref_t<T>>::value;
 
-// ── ScopedView ──────────────────────────────────────────────────────
-
 template <typename Carrier, typename Tag>
 class [[nodiscard]] ScopedView {
-    // Const pointer — the view is proof-only, never a mutable handle.
-    // Methods that mutate the carrier already hold their own `this`
-    // reference; they don't need write access through the view.
-    // Storing const* lets mint_view accept `Carrier const&` and keeps
-    // const member functions minting-capable (e.g. diagnostic reads
-    // on a `Carrier const&` accessor).
+    // The pointer is const because the view is proof, not a handle.  A
+    // method that mutates the carrier already holds its own reference.
+    // Holding a const pointer is also what lets a const member
+    // function mint a view of itself.
     Carrier const* ptr_;
 
-    // Private constructor.  Only mint_view (friended below) may call.
     constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept : ptr_{&c} {}
 
     template <typename Tag_, typename Carrier_>
@@ -101,18 +60,14 @@ public:
     using carrier_type = Carrier;
     using tag_type = Tag;
 
-    // Default-construction is meaningless — a view must witness a
-    // specific Carrier instance.  The user-declared private
-    // converting ctor would already implicitly suppress the default
-    // ctor, but an explicit `= delete("reason")` gives the diagnostic
-    // a STABLE framework-controlled string instead of GCC's
-    // version-specific "no matching function for call to" wrapper
-    // text.  Per task #371, this is the pattern Crucible uses to
-    // keep neg-compile tests robust across toolchain bumps.
+    // The private converting constructor already suppresses the
+    // default one.  The explicit delete is here for its message: a
+    // string this project controls survives a compiler upgrade, where
+    // the compiler's own wording does not, and the negative-compile
+    // tests match on it.
     ScopedView() = delete(
         "ScopedView default-construction is meaningless — every view must witness a specific Carrier instance; use mint_view<Tag>(carrier) at the construction site");
 
-    // Tier 1: copy-construct allowed, assignment deleted.
     constexpr ScopedView(const ScopedView&) noexcept = default;
     constexpr ScopedView(ScopedView&&) noexcept = default;
     ScopedView&
@@ -120,19 +75,14 @@ public:
     ScopedView& operator=(ScopedView&&) = delete("ScopedView is single-binding; assignment hides state transitions");
     constexpr ~ScopedView() = default;
 
-    // Access is always const.  A caller that needs to mutate the
-    // carrier does so via a direct reference (typically `this` in a
-    // non-const member that accepts a view as proof of state).
     [[nodiscard]] constexpr Carrier const* operator->() const noexcept { return ptr_; }
     [[nodiscard]] constexpr Carrier const& carrier() const noexcept { return *ptr_; }
 
-    // Tier 1: forbid heap allocation.  Without these deletes, a caller
-    // could do `new ScopedView<...>(existing)` via the public copy
-    // ctor and escape the stack frame.  The placement-new overload
-    // (void* operator new(size_t, void*)) is NOT deleted — it's used
-    // by std::optional, std::variant, and any arena or bump-pointer
-    // allocator that stores Views inline.  Those in-place storage
-    // sites still have to pass the Tier 2 field audit.
+    // Without these deletes a caller could reach the public copy
+    // constructor through `new` and escape the stack frame.  The
+    // placement-new overload stays available, because optional,
+    // variant and any bump-pointer allocator that stores a view inline
+    // need it, and those storage sites still face the field audit.
     static void* operator new(std::size_t) =
         delete("ScopedView must live on the stack; heap allocation defeats the lifetime contract");
     static void* operator new[](std::size_t) = delete("ScopedView arrays on the heap defeat the lifetime contract");
@@ -145,85 +95,44 @@ public:
     static void operator delete[](void*, std::align_val_t) = delete;
 };
 
-// ── mint_view: the single chokepoint for state assertion ───────────
+// The single point at which a state is asserted.  view_ok is found by
+// argument-dependent lookup on the carrier.
 //
-// mint_view<Tag>(carrier) calls `view_ok(carrier, type_identity<Tag>{})`
-// (found via ADL on Carrier) as a contract precondition.  Returns a
-// freshly-constructed view.  Anyone may call it — but every call is
-// discoverable via grep `mint_view<`, and every call pays one runtime
-// state check.  Per §XXI: `view_ok` is value-dependent (inspects the
-// Carrier's runtime state, not just template arguments), so the gate
-// is a P2900 `pre(...)` clause instead of a `requires`-clause concept.
-// SFINAE / concept machinery cannot inspect this gate — mint_view
-// appears always-callable until the call fires the pre at runtime or
-// consteval.  HS14 floor satisfied by 10 existing fixtures; per-check
-// exemption at scripts/mint-pattern-allowlist.txt:161:requires-ok.
-// §XXI carve-out: rq=pre — FIXY-FOUND-082, inventory grep-target.
+// The gate is a precondition and not a requires-clause because view_ok
+// inspects the carrier's run-time state rather than its type alone.
+// One consequence matters at call sites: overload resolution and
+// concepts cannot see the gate, so this factory looks callable
+// everywhere and only rejects when the precondition fires.
+// §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
 template <typename Tag, typename Carrier>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag> mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
     pre(view_ok(c, std::type_identity<Tag>{})) {
     return ScopedView<Carrier, Tag>{c};
 }
 
-// ── LinearScopedView: Linear<ScopedView<...>> ───────────────────────
+// A one-shot state proof, for a transition the holder must prove the
+// right to make and hands over rather than shares.  The token is gone
+// after it is consumed, so the transition happens at most once.
 //
-// Nested composition of two primitives: Linear<T>'s move-only "consumed
-// exactly once" semantics wrapping ScopedView<Carrier, Tag>'s typed
-// state proof.  The resulting view is:
-//
-//   - move-only (Linear deletes copy),
-//   - move-only for ASSIGNMENT too (ScopedView's move-assignment is
-//     deleted, which structurally deletes Linear's move-assignment as
-//     well — no reassignment to a fresh state),
-//   - consumable once via .consume() &&.
-//
-// Use when a method represents a one-shot transition that the caller
-// must prove they have the right to make — and whose right is handed
-// over (not shared).  The type-system guarantee is "at most one call"
-// per minted token: the token is gone after consume().
-//
-// NB: this does NOT prevent the carrier from being observed by separate
-// copyable ScopedViews minted in parallel; it only enforces linearity
-// on the lifecycle token itself.  Pair with state-check preconditions
-// on the transition method for stale-view-after-transition coverage.
-//
-//   Axiom coverage: composes ScopedView's TypeSafe + Linear's BorrowSafe.
-//   Runtime cost:   sizeof == sizeof(void*); same as ScopedView.
-
+// This bounds the token, not observation of the carrier: separate
+// copyable views minted in parallel still read it.  Guard the
+// transition method with its own state precondition to cover a view
+// that has gone stale.
 template <typename Carrier, typename Tag>
 using LinearScopedView = Linear<ScopedView<Carrier, Tag>>;
 
-// Factory: mint a LinearScopedView.  Fires the same view_ok precondition
-// as mint_view but wraps the result in Linear<> so the caller has a
-// move-only lifecycle token.
-//
-// §XXI carve-out: rq=pre — same value-dependent rationale as mint_view
-// above (view_ok inspects Carrier's runtime state, no template-only
-// lifting possible).  Per-check exemption at scripts/mint-pattern-
-// allowlist.txt:200:requires-ok.  (FIXY-FOUND-082.)
+// §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
 template <typename Tag, typename Carrier>
 [[nodiscard]] constexpr LinearScopedView<Carrier, Tag>
 mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
     return LinearScopedView<Carrier, Tag>{mint_view<Tag>(c)};
 }
 
-// ── Tier 2: reflection-driven storage audit ─────────────────────────
-//
-// contains_scoped_view<T>() returns true iff T is a ScopedView, OR T
-// is a known wrapper (std::optional<X>, std::vector<X>, std::array<X,N>,
-// std::pair<X,Y>, std::tuple<...>, std::variant<...>) whose parameter
-// type contains a ScopedView, OR T is a class type with a non-static
-// data member whose type contains a ScopedView.
-//
-// no_scoped_view_field_check<T>() static_asserts the negation, naming
-// the failing type in the diagnostic.
-
 template <typename T>
-consteval bool contains_scoped_view();  // forward decl for recursion
+consteval bool contains_scoped_view();
 
 namespace detail {
 
-// Single-element wrappers (optional, vector, array, smart pointers, etc.).
 template <typename T>
 struct sv_unwrap_single {
     using type = void;
@@ -252,16 +161,13 @@ template <typename X>
 struct sv_unwrap_single<std::weak_ptr<X>> {
     using type = X;
 };
-// C arrays in struct fields — `ScopedView<...> views[N];` escape vector.
 template <typename X, std::size_t N>
 struct sv_unwrap_single<X[N]> {
     using type = X;
 };
-// Linear<T> is a single-element wrapper (private `value_`).  Without
-// this specialization the access-controlled reflection walk would miss
-// Linear<ScopedView<...>>, defeating the audit on composed tokens
-// (LinearScopedView).  The recursion proceeds through X identically to
-// the optional/vector path.
+// The reflection walk respects access control and so cannot see
+// Linear's private member.  Without this entry a view wrapped in a
+// Linear would slip past the audit.
 template <typename X>
 struct sv_unwrap_single<crucible::safety::Linear<X>> {
     using type = X;
@@ -270,8 +176,6 @@ struct sv_unwrap_single<crucible::safety::Linear<X>> {
 template <typename T>
 using sv_unwrap_single_t = typename sv_unwrap_single<T>::type;
 
-// Multi-element wrappers (pair, tuple, variant) — converted to a
-// tuple of element types for uniform iteration.
 template <typename T>
 struct sv_pack_for {
     using type = void;
@@ -334,11 +238,9 @@ consteval bool no_scoped_view_field_check() {
     static_assert(!contains_scoped_view<T>(), "Type contains a safety::ScopedView<> in some field. "
                                               "Views must not escape their construction scope; storing a "
                                               "view in a struct, container, optional, variant, etc. defeats "
-                                              "the lifetime contract.  See safety/ScopedView.h discipline.");
+                                              "the lifetime contract.");
     return true;
 }
-
-// ── Zero-cost contract lock ─────────────────────────────────────────
 
 namespace detail {
 struct sv_test_carrier {};

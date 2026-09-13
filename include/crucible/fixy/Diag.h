@@ -1,66 +1,9 @@
 #pragma once
 
-// ── crucible::fixy::diag — Diagnostic infrastructure ───────────────
-//
-// Re-export per misc/16_05_2026_fixy.md.  Surfaces the
-// classified-diagnostic substrate — `Category` enum, `tag_base`,
-// the 30-entry `Catalog` tuple, bidirectional `tag_of_t` /
-// `category_of_v` map, `Diagnostic<DiagnosticClass, Ctx...>`
-// wrapper, stable-name introspection (`stable_name_of`,
-// `stable_type_id`, `stable_function_id`, `canonicalize_pack`),
-// per-tag `insight_provider`, and the `row_hash_contribution<W>`
-// fold over the canonical wrapper-nesting order — under
-// `fixy::diag::` so callers who include only the fixy umbrella
-// never have to descend into the safety/diag/ tree.
-//
-// Per CLAUDE.md §XXI Universal Mint Pattern: there are no mints in
-// this header — these are pure type-system witnesses and consteval
-// helpers.  Aliases preserve substrate template identity exactly.
-//
-// ── Substrate consumed ─────────────────────────────────────────────
-//
-//   safety/Diagnostic.h        — Category, tag_base, Catalog,
-//                                tag_of_t, category_of_v, Diagnostic,
-//                                28 diagnostic tag classes
-//   safety/diag/StableName.h   — stable_name_of / stable_type_id /
-//                                canonicalize_pack / stable_function_id
-//   safety/diag/Insights.h     — insight_provider / quality thresholds
-//   safety/diag/RowHashFold.h  — row_hash_contribution / EMPTY_ROW_HASH
-//
-// ── FixyCatalog reconciliation surface ─────────────────────────────
-//
-// Substrate `Catalog` (31 entries) and `Category` enum are CLOSED to
-// the foundation per FOUND-E01.  Fixy's twenty `FixyNotEngaged_*`
-// per-axis diagnostic tags live in a parallel closed enumeration
-// `fixy::diag::FixyCatalog` defined in `fixy/Reject.h` (because the
-// tag classes themselves are defined there).
-//
-// Callers who want the fixy-side catalog enumeration + `is_fixy_diag_v`
-// discriminator + `axis_for_tag_v` reverse lookup include
-// `crucible/fixy/Reject.h` (or the Fixy.h umbrella).  This header
-// stays focused on the substrate re-exports and does not pull the
-// engagement gate machinery in.
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   InitSafe — tag classes are stateless structs; stable_type_id is
-//              consteval — every value is bit-exact at compile time.
-//   TypeSafe — Catalog tuple uses tag-class types directly; alias
-//              passes through.  Category enum has uint8_t underlying
-//              type; bijection enforced by self-test.
-//   NullSafe — diagnostic surface carries no pointers; string_views
-//              point into constexpr literals only.
-//   MemSafe  — every diagnostic value is a constexpr / consteval
-//              entity; no heap, no lifetime concerns.
-//   DetSafe  — stable_type_id<T> is deterministic across build
-//              (FNV-1a + fmix64); same T always produces same id.
-//              row_hash_contribution federation cache keys depend on
-//              this bit-stability; alias is zero-symbol.
-//
-// ── Cost ───────────────────────────────────────────────────────────
-//
-// Zero.  using-declarations + namespace-alias; no new types, no new
-// constexpr values.  Same compile-time hash output via either path.
+// The substrate catalog and its category enum are closed. The fixy per-axis
+// diagnostic tags therefore live in a separate closed enumeration, next to the
+// tag classes that define them. This header stays on the substrate re-exports
+// and does not pull the engagement-gate machinery in.
 
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/diag/Insights.h>
@@ -69,13 +12,8 @@
 
 namespace crucible::fixy::diag {
 
-// ═══════════════════════════════════════════════════════════════════
-// Diagnostic catalog — tag_base + 31 tag classes + Catalog tuple
-// ═══════════════════════════════════════════════════════════════════
-
 using ::crucible::safety::diag::tag_base;
 
-// 31 diagnostic tag classes (FOUND-E01 Catalog, closed enumeration).
 using ::crucible::safety::diag::EffectRowMismatch;
 using ::crucible::safety::diag::UnknownParameterShape;
 using ::crucible::safety::diag::GradedWrapperViolation;
@@ -107,14 +45,12 @@ using ::crucible::safety::diag::LinearAliasViolation;
 using ::crucible::safety::diag::SharedPermissionPoolSaturated;
 using ::crucible::safety::diag::HugePageAllocationFailed;
 using ::crucible::safety::diag::PublishOnceDoublePublish;
-using ::crucible::safety::diag::BitsInvariantViolation;  // WRAP-Bits-Borrowed-Diagnostic #1092
-using ::crucible::safety::diag::BorrowedBoundsViolation;  // WRAP-Bits-Borrowed-Diagnostic #1092
+using ::crucible::safety::diag::BitsInvariantViolation;
+using ::crucible::safety::diag::BorrowedBoundsViolation;
 
-// Catalog tuple + cardinality.
 using ::crucible::safety::diag::Catalog;
 using ::crucible::safety::diag::catalog_size;
 
-// is_diagnostic_class_v + accessors.
 template <typename T>
 inline constexpr bool is_diagnostic_class_v = ::crucible::safety::diag::is_diagnostic_class_v<T>;
 
@@ -127,33 +63,22 @@ inline constexpr std::string_view diagnostic_description_v = ::crucible::safety:
 template <typename T>
 inline constexpr std::string_view diagnostic_remediation_v = ::crucible::safety::diag::diagnostic_remediation_v<T>;
 
-// Diagnostic<DiagnosticClass, Ctx...> wrapper + shape trait.
 template <typename DiagnosticClass, typename... Context>
 using Diagnostic = ::crucible::safety::diag::Diagnostic<DiagnosticClass, Context...>;
 
 template <typename T>
 inline constexpr bool is_diagnostic_v = ::crucible::safety::diag::is_diagnostic_v<T>;
 
-// ═══════════════════════════════════════════════════════════════════
-// Category enum + bidirectional map (tag_of_t / category_of_v)
-// ═══════════════════════════════════════════════════════════════════
-
 using ::crucible::safety::diag::Category;
 
-// Category → tag type.
 template <Category C>
 using tag_of_t = ::crucible::safety::diag::tag_of_t<C>;
 
-// Tag type → Category.
 template <typename Tag>
 inline constexpr Category category_of_v = ::crucible::safety::diag::category_of_v<Tag>;
 
-// constexpr array of every Category in catalog order.
+// The array holds every Category in catalog order.
 using ::crucible::safety::diag::categories_v;
-
-// ═══════════════════════════════════════════════════════════════════
-// StableName — type / function display-name + 64-bit fingerprint
-// ═══════════════════════════════════════════════════════════════════
 
 template <typename T>
 inline constexpr std::string_view stable_name_of = ::crucible::safety::diag::stable_name_of<T>;
@@ -167,23 +92,14 @@ inline constexpr std::uint64_t stable_function_id = ::crucible::safety::diag::st
 template <typename... Ts>
 using canonicalize_pack_t = ::crucible::safety::diag::canonicalize_pack_t<Ts...>;
 
-// FNV-1a constants (re-exported for fixy-side custom folds).
 inline constexpr std::uint64_t FNV1A_OFFSET_BASIS = ::crucible::safety::diag::detail::FNV1A_OFFSET_BASIS;
 inline constexpr std::uint64_t FNV1A_PRIME = ::crucible::safety::diag::detail::FNV1A_PRIME;
-
-// ═══════════════════════════════════════════════════════════════════
-// Insights — per-tag explanatory provider
-// ═══════════════════════════════════════════════════════════════════
 
 template <typename Tag>
 using insight_provider = ::crucible::safety::diag::insight_provider<Tag>;
 
 template <typename Tag>
 using insights_quality_thresholds = ::crucible::safety::diag::insights_quality_thresholds<Tag>;
-
-// ═══════════════════════════════════════════════════════════════════
-// RowHashFold — canonical wrapper-nesting hash fold (FOUND-I02)
-// ═══════════════════════════════════════════════════════════════════
 
 template <typename T>
 using row_hash_contribution = ::crucible::safety::diag::row_hash_contribution<T>;
@@ -193,74 +109,44 @@ inline constexpr std::uint64_t row_hash_contribution_v = ::crucible::safety::dia
 
 inline constexpr std::uint64_t EMPTY_ROW_HASH = ::crucible::safety::diag::detail::EMPTY_ROW_HASH;
 
-// ═══════════════════════════════════════════════════════════════════
-// mint_diagnostic<Tag, Ctx...>(ctx...) — §XXI Universal Mint Pattern
-// ═══════════════════════════════════════════════════════════════════
-//
-// Single grep-target for Diagnostic<Tag, Ctx...> construction in fixy-
-// only code (FIXY-U-115).  Direct `Diagnostic<Tag, Ctx...>{}` ctor
-// bypasses the §XXI authorization surface per fixy-A4-018 precedent.
-//
-// Note: mint_diagnostic is consteval; its reach proof lives in the
-// self_test sub-namespace as a return-type identity (pointer-to-
-// consteval is not freely formable outside immediate-function
-// context).
+// Every diagnostic construction goes through this factory so the
+// authorization points stay on one grep target. Calling the Diagnostic
+// constructor directly bypasses that surface.
 using ::crucible::safety::diag::mint_diagnostic;
 
 }  // namespace crucible::fixy::diag
 
-// ── Self-test ──────────────────────────────────────────────────────
-//
-// Witness that every alias preserves substrate identity.  Full
-// coverage in test_fixy_diag.cpp.
-
 namespace crucible::fixy::diag::self_test {
 
-// Category enum identity.
 static_assert(Category::EffectRowMismatch == ::crucible::safety::diag::Category::EffectRowMismatch);
 static_assert(Category::LinearAliasViolation == ::crucible::safety::diag::Category::LinearAliasViolation);
 
-// FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling split: the
-// EXACT ceiling pin (`== 31`) lives in safety/Diagnostic.h:1562
-// colocated with the source-of-truth constant; THIS fixy-side header
-// only holds the FLOOR pin (`>= 31`).  Bumps to the substrate
-// catalog are append-only and now auto-track here — only removals
-// red-light this floor.
+// The exact ceiling pin sits beside the substrate constant. This side holds
+// only a floor, so an append-only catalog bump tracks here on its own and only
+// a removal reddens.
 static_assert(catalog_size >= 31, "fixy::diag::catalog_size floor: regressed below 31 — a Catalog "
-                                  "entry was removed without updating both Diagnostic.h's "
-                                  "colocated ceiling pin AND this floor witness.");
+                                  "entry was removed without updating both the substrate ceiling "
+                                  "pin AND this floor witness.");
 
-// Tag-class identity.
 static_assert(std::is_same_v<HotPathViolation, ::crucible::safety::diag::HotPathViolation>,
               "fixy::diag::HotPathViolation must alias the substrate tag class");
 
-// Diagnostic wrapper template identity.
 static_assert(
     std::is_same_v<Diagnostic<HotPathViolation, int, float>,
                    ::crucible::safety::diag::Diagnostic<::crucible::safety::diag::HotPathViolation, int, float>>,
     "fixy::diag::Diagnostic must alias safety::diag::Diagnostic");
 
-// Bidirectional map round-trip.
 static_assert(category_of_v<HotPathViolation> == Category::HotPathViolation);
 static_assert(std::is_same_v<tag_of_t<Category::HotPathViolation>, HotPathViolation>);
 
-// is_diagnostic_class_v witness.
 static_assert(is_diagnostic_class_v<HotPathViolation>);
 static_assert(!is_diagnostic_class_v<int>);
 static_assert(!is_diagnostic_class_v<tag_base>);
 
-// stable_name_of probe — value is a non-empty string for in-house type.
 struct DiagSentinelStableName_TypeA {};
 static_assert(!stable_name_of<DiagSentinelStableName_TypeA>.empty());
 
-// EMPTY_ROW_HASH passes through.
 static_assert(EMPTY_ROW_HASH == ::crucible::safety::diag::detail::EMPTY_ROW_HASH);
-
-// ── FIXY-U-064: full 31-tag coverage witness ───────────────────────
-//
-// Closes the regression where the substrate added 3 tags (28-30)
-// without surfacing through fixy::diag::.  The 3 new tags MUST resolve
-// to substrate identity AND round-trip through the bidirectional map.
 
 static_assert(std::is_same_v<SharedPermissionPoolSaturated, ::crucible::safety::diag::SharedPermissionPoolSaturated>,
               "fixy::diag::SharedPermissionPoolSaturated must alias substrate tag");
@@ -273,7 +159,6 @@ static_assert(std::is_same_v<BitsInvariantViolation, ::crucible::safety::diag::B
 static_assert(std::is_same_v<BorrowedBoundsViolation, ::crucible::safety::diag::BorrowedBoundsViolation>,
               "fixy::diag::BorrowedBoundsViolation must alias substrate tag");
 
-// Bidirectional map round-trips for the 5 new entries.
 static_assert(category_of_v<SharedPermissionPoolSaturated> == Category::SharedPermissionPoolSaturated);
 static_assert(category_of_v<HugePageAllocationFailed> == Category::HugePageAllocationFailed);
 static_assert(category_of_v<PublishOnceDoublePublish> == Category::PublishOnceDoublePublish);
@@ -285,17 +170,12 @@ static_assert(std::is_same_v<tag_of_t<Category::PublishOnceDoublePublish>, Publi
 static_assert(std::is_same_v<tag_of_t<Category::BitsInvariantViolation>, BitsInvariantViolation>);
 static_assert(std::is_same_v<tag_of_t<Category::BorrowedBoundsViolation>, BorrowedBoundsViolation>);
 
-// is_diagnostic_class_v witnesses.
 static_assert(is_diagnostic_class_v<SharedPermissionPoolSaturated>);
 static_assert(is_diagnostic_class_v<HugePageAllocationFailed>);
 static_assert(is_diagnostic_class_v<PublishOnceDoublePublish>);
 static_assert(is_diagnostic_class_v<BitsInvariantViolation>);
 static_assert(is_diagnostic_class_v<BorrowedBoundsViolation>);
 
-// insight_provider non-empty witnesses — the 5 new tags MUST carry
-// substantive content per the U-064 "sweep" requirement.  Empty
-// defaults would indicate the substrate-side insight_provider
-// specializations regressed.
 static_assert(!insight_provider<SharedPermissionPoolSaturated>::why_this_matters.empty(),
               "SharedPermissionPoolSaturated insight_provider must be specialized");
 static_assert(!insight_provider<HugePageAllocationFailed>::why_this_matters.empty(),
@@ -307,17 +187,13 @@ static_assert(!insight_provider<BitsInvariantViolation>::why_this_matters.empty(
 static_assert(!insight_provider<BorrowedBoundsViolation>::why_this_matters.empty(),
               "BorrowedBoundsViolation insight_provider must be specialized");
 
-// ── FIXY-U-115: mint_diagnostic re-export reach proof ──────────────
-//
-// Return-type identity rather than pointer-identity — mint_diagnostic
-// is consteval (P3068R5 immediate function), and pointer-to-consteval
-// can't be formed outside an immediate-function context.  static_assert
-// IS such a context, so calling the function and comparing the deduced
-// return type works cleanly.  Drift between the fixy:: re-export and
-// the substrate symbol fails here.
+// The witness compares deduced return types rather than function pointers.
+// mint_diagnostic is an immediate function, and a pointer to one cannot be
+// formed outside an immediate-function context. A static_assert is such a
+// context, so the call itself is well formed here.
 static_assert(
     std::is_same_v<decltype(::crucible::fixy::diag::mint_diagnostic<::crucible::fixy::diag::HotPathViolation>()),
                    decltype(::crucible::safety::diag::mint_diagnostic<::crucible::safety::diag::HotPathViolation>())>,
-    "FIXY-U-115: fixy::diag::mint_diagnostic must alias safety::diag::mint_diagnostic.");
+    "fixy::diag::mint_diagnostic must alias safety::diag::mint_diagnostic.");
 
 }  // namespace crucible::fixy::diag::self_test

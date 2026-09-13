@@ -1,58 +1,15 @@
 #pragma once
 
-// Philox4x32-10: counter-based PRNG for deterministic computation.
-//
-// From "Parallel Random Numbers: As Easy as 1, 2, 3" (Salmon et al., 2011).
-// Properties that matter for Crucible:
-//   - Stateless: same (counter, key) → same output on any hardware
-//   - Fast: ~10 integer ops per round, 4 outputs per call (~2.5 ops/output)
-//   - Parallelizable: independent per-element, no sequential state
-//   - Cryptographically inspired: 10 rounds of S-box-like mixing
-//
-// Usage in the Crucible pipeline:
-//   auto key = Philox::op_key_det(master_counter, op_index, content_hash);
-//   auto [r0, r1, r2, r3] =
-//       Philox::generate_det(element_offset, key).peek();
-//   float u = Philox::to_uniform(r0);        // [0, 1)
-//   auto [n0, n1] = Philox::box_muller(r0, r1);  // N(0,1)
-//
-// Master counter increments per iteration (from Cipher).
-// op_key_det() mixes op identity into the key space.
-// element_offset is the flat index into the output tensor.
-// Result: deterministic per-element, per-op, per-iteration randomness
-// that reproduces identically across CPU/CUDA/ROCm/XLA.
-//
-// ── Raw generator + DetSafe-pinned production surface (FOUND-G17) ──
-//
-// `Philox::generate` / `to_uniform` / `to_uniform_d` / `box_muller`
-// are RAW primitives — they return primitive types (uint32_t, Ctr,
-// float, std::pair) without any determinism-tier metadata.  Used by:
-//   - SIMD bit-equality oracle (PhiloxSimd.h's lane-by-lane
-//     verification calls scalar Philox::generate as the truth)
-//   - Test fuzzers (test_philox.cpp / test_philox_simd.cpp /
-//     fuzz/property/prop_philox_*) where bit-level introspection
-//     is the entire point of the test
-//   - Bench harness (bench_philox.cpp) which measures the raw
-//     primitive's cycle cost
-//
-// `Philox::generate_det` / `to_uniform_det` / `to_uniform_d_det` /
-// `box_muller_det` / `op_key_det` are DetSafe-PINNED surfaces — they
-// return `crucible::fixy::wrap::DetSafe<DetSafeTier_v::PhiloxRng, T>` (or `Pure`
-// for `op_key_det` whose inputs are themselves Pure).  Production
-// callers (kernel emit, dropout op, sampling op, normal-init op,
-// Box-Muller-based gradient noise) MUST use the `_det` variants;
-// the type-level pin satisfies the Cipher write-fence
-// (`requires DetSafe<...>::satisfies<PhiloxRng>`) at compile time
-// per CLAUDE.md §II.8 (the 8th axiom).
-//
-// The two surfaces are bit-equal: `generate(a, b) ==
-// generate_det(a, b).peek()` for all (a, b).  Verified by
-// `test_philox_det.cpp`.
+// Two surfaces, bit-equal by construction: the raw primitives return plain
+// values, and each `_det` wrapper returns the same bits carrying a
+// determinism tier in its type. Production code takes the `_det` form so the
+// tier survives into whatever consumes the bytes. Test and bench code takes
+// the raw form because bit-level inspection is the point there.
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096q: DetSafe / DetSafeTier_v / DetSafeLattice via the fixy umbrella
-#include <crucible/fixy/fp/Polynomial.h>  // FIXY-V-095: box_muller_polynomial_det implementation
+#include <crucible/fixy/Wrap.h>
+#include <crucible/fixy/fp/Polynomial.h>
 
 #include <array>
 #include <cmath>
@@ -61,27 +18,24 @@
 
 namespace crucible {
 
-// ═══════════════════════════════════════════════════════════════════
-// Philox4x32-10 core
-// ═══════════════════════════════════════════════════════════════════
-
 struct Philox {
-    // Weyl sequence constants (golden ratio–derived).
+    // These four constants and the ten-round count are fixed by the
+    // Philox4x32-10 specification. Changing any of them changes every stream
+    // the runtime has ever produced, so replay of older state breaks.
+    //
+    // The first pair are the Weyl increments applied to the key between
+    // rounds. The second pair are the round multipliers.
     static constexpr uint32_t W0 = 0x9E3779B9;
     static constexpr uint32_t W1 = 0xBB67AE85;
 
-    // Philox S-box multiplier constants.
     static constexpr uint32_t M0 = 0xD2511F53;
     static constexpr uint32_t M1 = 0xCD9E8D57;
 
     using Ctr = std::array<uint32_t, 4>;
     using Key = std::array<uint32_t, 2>;
 
-    // ── Core bijection: 10 rounds ──────────────────────────────────
-
     [[nodiscard]] static constexpr Ctr generate(Ctr ctr, Key key) {
         for (int round = 0; round < 10; round++) {
-            // Single round: two parallel multiply-xor-swap operations.
             uint32_t hi0 = mulhi_(M0, ctr[0]);
             uint32_t lo0 = ctr[0] * M0;
             uint32_t hi1 = mulhi_(M1, ctr[2]);
@@ -94,17 +48,11 @@ struct Philox {
                 lo0,
             };
 
-            // Key schedule: Weyl sequence bump.
             key[0] += W0;
             key[1] += W1;
         }
         return ctr;
     }
-
-    // ── Convenience: 64-bit offset + 64-bit key ────────────────────
-    //
-    // Splits the 64-bit values into the 4×32 counter and 2×32 key.
-    // Produces 4 independent uint32 random values per call.
 
     [[nodiscard]] static constexpr Ctr generate(uint64_t offset, uint64_t key) {
         Ctr ctr = {
@@ -120,24 +68,19 @@ struct Philox {
         return generate(ctr, k);
     }
 
-    // ── Float conversions ──────────────────────────────────────────
-
-    // Uniform float in [0, 1). Maps full uint32 range to [0, 1).
-    // 2^-32 = 2.3283064365386963e-10
+    // The multiplier is 2^-32, which carries the whole uint32 range onto
+    // [0, 1). One IEEE 754 multiplication is bit-stable everywhere, so both
+    // conversions keep the tier of the value they are given.
     [[nodiscard]] static constexpr float to_uniform(uint32_t x) {
         return static_cast<float>(x) * 2.3283064365386963e-10f;
     }
 
-    // Uniform double in [0, 1). Higher precision.
     [[nodiscard]] static constexpr double to_uniform_d(uint32_t x) {
         return static_cast<double>(x) * 2.3283064365386963e-10;
     }
 
-    // Box-Muller transform: two uniform → two normal N(0,1).
-    // Consumes 2 uint32 values, produces 2 floats.
-    // Uses the polar form for better numerical stability.
     [[nodiscard]] static std::pair<float, float> box_muller(uint32_t u1_raw, uint32_t u2_raw) {
-        // Map to (0, 1] to avoid log(0). Use (x+1) * 2^-32.
+        // The bias to (0, 1] is what keeps a zero input out of log().
         float u1 = (static_cast<float>(u1_raw) + 1.0f) * 2.3283064365386963e-10f;
         float u2 = (static_cast<float>(u2_raw) + 1.0f) * 2.3283064365386963e-10f;
 
@@ -147,97 +90,11 @@ struct Philox {
         return {r * std::cos(theta), r * std::sin(theta)};
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // FOUND-G17: DetSafe-pinned production surface
-    // ═══════════════════════════════════════════════════════════════
-    //
-    // These wrappers return `crucible::fixy::wrap::DetSafe<DetSafeTier_v::PhiloxRng,
-    // T>` (or `Pure` for `op_key_det`).  Production callers MUST
-    // route through the `_det` surface; the type-level pin is what
-    // the Cipher write-fence consumes to refuse non-deterministic
-    // event-recording at compile time.
-    //
-    // Tier rationale:
-    //   - generate_det:      PhiloxRng — bytes derive from the Philox
-    //                        chain.  This is the load-bearing tier
-    //                        for the 8th axiom: PhiloxRng-pinned
-    //                        bytes are admissible to the replay log;
-    //                        non-pinned bytes are not.
-    //   - to_uniform_det:    PhiloxRng — derived from a PhiloxRng-tier
-    //                        uint32 by deterministic float math (a
-    //                        single multiplication).  IEEE 754 makes
-    //                        this bit-stable across hardware, so the
-    //                        PhiloxRng promise (cross-hardware bit-
-    //                        equality) is honest.
-    //   - box_muller_det:    MonotonicClockRead (FIXY-V-095 downgrade
-    //                        from PhiloxRng).  Bytes ARE Philox-
-    //                        derived, but libm sin/cos/log break
-    //                        cross-platform bit-equality.  Same-run
-    //                        replay only — Cipher write-fence
-    //                        REJECTS this tier.
-    //   - box_muller_polynomial_det:
-    //                        PhiloxRng (FIXY-V-095 new variant).
-    //                        Uses crucible-source polynomial sin/
-    //                        cos/log + correctly-rounded std::sqrt
-    //                        (fixy/fp/Polynomial.h).  No libm.
-    //                        Cross-platform bit-stable; admissible
-    //                        to the Cipher write-fence.
-    //   - op_key_det:        Pure — bit-mix of three Pure inputs
-    //                        (master_counter, op_index, content_hash
-    //                        are all DAG/Cipher-derived deterministic
-    //                        scalars).  Stronger than PhiloxRng;
-    //                        relax<PhiloxRng>() admits it as a key.
-    //
-    // Bit-equality contract: `generate_det(a, b).peek() ==
-    // generate(a, b)` for ALL (a, b).  Same for `to_uniform_det`,
-    // `to_uniform_d_det`, `op_key_det`.  `box_muller_det` is bit-
-    // equal to `box_muller` ON THE SAME PLATFORM (see caveat below);
-    // `box_muller_polynomial_det` is bit-equal across ALL platforms.
-    // Verified by test_philox_det.cpp.
-    //
-    // ── Libm bit-stability caveat for box_muller_det (FOUND-G17-AUDIT) ─
-    //
-    // box_muller invokes `std::sin / cos / log / sqrt` from libm, and
-    // these are NOT bit-stable across glibc / musl / Apple libm /
-    // MSVC CRT — different libm implementations may emit different
-    // bits in the last 1-3 ULPs even at identical inputs.  The
-    // DetSafe::PhiloxRng tier classification is HONEST in terms of
-    // SOURCE CLASS — the bytes ARE Philox-derived (the two uint32
-    // inputs come from the Philox chain) — but cross-PLATFORM bit-
-    // equality is conditional on libm consistency.
-    //
-    // For SAME-PLATFORM replay (the common case — replay happens on
-    // the same Relay or within the same fleet): box_muller_det is
-    // bit-stable and admissible to the Cipher write-fence.
-    //
-    // For CROSS-PLATFORM replay: production callers MUST route
-    // through a recipe-tier-pinned numerical recipe with a bit-
-    // stable transcendental implementation (e.g., the polynomial
-    // approximation in mimic/cpu/Math.h) instead of invoking
-    // box_muller_det directly.  This is a recipe-tier concern
-    // (see FORGE.md §20 for the four-tier numerical determinism
-    // model — UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT),
-    // not a DetSafe-tier concern.
-    //
-    // The to_uniform / to_uniform_d wrappers are exempt from this
-    // caveat: they perform a single IEEE 754 multiplication that
-    // is bit-stable across all conforming implementations.
-
     using DetSafePhiloxCtr = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, Ctr>;
     using DetSafePhiloxFloat = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, float>;
     using DetSafePhiloxDouble = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, double>;
-    // FIXY-V-095: box_muller_det's libm call (sin/cos/log) is NOT bit-
-    // stable across glibc/musl/Apple libm/MSVC CRT — bytes are only
-    // same-fleet/same-platform deterministic.  Downgraded to
-    // MonotonicClockRead tier (replay-deterministic within one run on
-    // one Relay).  Cipher write-fence REJECTS this tier; production
-    // call sites that record samples to the replay chain MUST route
-    // through box_muller_polynomial_det (PhiloxRng tier — see below).
     using DetSafeMonoClockFloatPair =
         crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::MonotonicClockRead, std::pair<float, float>>;
-    // FIXY-V-095: PhiloxRng-tier float pair from polynomial Box-Muller.
-    // Bit-stable across vendors via crucible-source polynomial sin/cos/
-    // log (see fixy/fp/Polynomial.h).  Admissible to Cipher write-fence.
     using DetSafePhiloxFloatPair =
         crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
     using DetSafePureKey = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::Pure, uint64_t>;
@@ -250,23 +107,9 @@ struct Philox {
         return DetSafePhiloxCtr{generate(offset, key)};
     }
 
-    // ── Type-level chain composition (FOUND-G17-AUDIT) ──────────────
-    //
-    // Third overload: accept a DetSafe-typed key and verify at compile
-    // time that its tier subsumes PhiloxRng (i.e., the key's source
-    // class is at PhiloxRng or stronger).  Production callers can
-    // chain `op_key_det(...) → relax<PhiloxRng>()` (or pass the
-    // Pure-tier result directly via subsumption, since Pure ⊒ PhiloxRng
-    // in the lattice direction) into this overload, and the type
-    // system enforces "the key is PhiloxRng-or-stronger" at the
-    // call site without `.peek()`-ing the type-level promise away.
-    //
-    // Negative witness — passing a `DetSafe<MonotonicClockRead,
-    // uint64_t>` would fail the requires-clause: the
-    // MonotonicClockRead-tier key cannot satisfy the PhiloxRng-or-
-    // stronger gate.  This is the LOAD-BEARING REJECTION at the
-    // chain composition surface.
-
+    // Taking the key as a tier-carrying type lets a caller chain a key
+    // straight in. The alternative, peeking the key out first, discards the
+    // very promise this overload checks.
     template <crucible::fixy::wrap::DetSafeTier_v KeyTier>
         requires(crucible::fixy::wrap::DetSafeLattice::leq(crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, KeyTier))
     [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset,
@@ -282,23 +125,17 @@ struct Philox {
         return DetSafePhiloxDouble{to_uniform_d(x)};
     }
 
-    // FIXY-V-095: libm-backed Box-Muller — same-platform deterministic
-    // ONLY.  Tier downgraded from PhiloxRng to MonotonicClockRead because
-    // glibc / musl / Apple libm / MSVC CRT differ in the low 1-3 ULPs.
-    // Production callers that need cross-fleet replay admissibility
-    // MUST use box_muller_polynomial_det instead.  The Cipher write-
-    // fence REJECTS MonotonicClockRead-tier bytes.
+    // The bytes are Philox-derived, but the transform reaches sin, cos and
+    // log in the platform math library, and those agree only to within a few
+    // units in the last place across implementations. The tier says so: this
+    // result replays on the machine that produced it and nowhere else.
     [[nodiscard]] static DetSafeMonoClockFloatPair box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
         return DetSafeMonoClockFloatPair{box_muller(u1_raw, u2_raw)};
     }
 
-    // FIXY-V-095: polynomial Box-Muller — cross-platform PhiloxRng-tier
-    // determinism.  Routes through fixy::fp::box_muller_polynomial
-    // (crucible-source polynomial sin/cos/log + IEEE-754-correctly-
-    // rounded std::sqrt).  No libm dependency.  Admissible to the
-    // Cipher write-fence; safe for cross-fleet replay logs.  Defined
-    // in Philox.h (not Polynomial.h) because the DetSafe<PhiloxRng,...>
-    // type-level promise lives next to the rest of the Philox surface.
+    // Same transform with in-tree polynomial sin, cos and log and a correctly
+    // rounded square root. No platform math library, so the result is
+    // bit-identical everywhere and carries the stronger tier.
     [[nodiscard]] static DetSafePhiloxFloatPair box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
         return DetSafePhiloxFloatPair{crucible::fixy::fp::box_muller_polynomial(u1_raw, u2_raw)};
     }
@@ -309,12 +146,10 @@ struct Philox {
     }
 
 private:
-    // High 32 bits of a 32×32→64 multiply.
     [[nodiscard]] static constexpr uint32_t mulhi_(uint32_t a, uint32_t b) {
         return static_cast<uint32_t>((static_cast<uint64_t>(a) * static_cast<uint64_t>(b)) >> 32);
     }
 
-    // FNV-1a mix of a 64-bit value into hash state.
     [[nodiscard]] static constexpr uint64_t fnv_mix_(uint64_t h, uint64_t v) {
         for (int i = 0; i < 8; i++) {
             h ^= (v >> (i * 8)) & 0xFFULL;
@@ -323,14 +158,12 @@ private:
         return h;
     }
 
-    // Mixes master counter + op identity into a 64-bit key.
-    // Same (master, op_index, content_hash) → same key → same sequence.
-    // Different ops or iterations → statistically independent. Private so
-    // production callers cannot erase the DetSafe<Pure> key provenance.
+    // Private so that a caller cannot obtain these bytes without the tier
+    // that op_key_det attaches to them.
     [[nodiscard]] static constexpr uint64_t op_key_bytes_(uint64_t master_counter, uint32_t op_index,
                                                           ContentHash content_hash) {
-        // FNV-1a–style mixing. Not cryptographic, but sufficient
-        // for decorrelating Philox streams across ops.
+        // The mix is not cryptographic. It only has to decorrelate the
+        // streams of two different operations.
         uint64_t h = 0xcbf29ce484222325ULL;
         h = fnv_mix_(h, master_counter);
         h = fnv_mix_(h, static_cast<uint64_t>(op_index));

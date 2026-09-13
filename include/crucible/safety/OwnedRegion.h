@@ -1,73 +1,12 @@
 #pragma once
 
-// ─── crucible::safety::OwnedRegion<T, Tag> ───────────────────────────
+// A pointer and a count over one contiguous buffer, carried together
+// with a Permission that proves exclusive ownership of the bytes in
+// [base, base + count) for as long as the region is alive.
 //
-// THE contiguous-buffer model that substitutes for Rust's borrow
-// checker WITHOUT Rust's allocation fragmentation.
-//
-//   sizeof(OwnedRegion<T, Tag>) == sizeof(T*) + sizeof(size_t)
-//                                                                 == 16 bytes
-//   No virtual, no atomic, no allocation in any method.
-//
-// An OwnedRegion is a (T*, size_t) pair PLUS a phantom Permission<Tag>
-// that proves exclusive ownership over a contiguous arena-backed
-// buffer.  Same memory layout as std::span<T>, but the type system
-// proves no other thread can read or write the bytes in [base, base+count)
-// while this OwnedRegion is alive.
-//
-// ─── The structural inversion of Rust's allocation model ────────────
-//
-// In Rust:                                       In Crucible:
-//   Vec<Box<T>>      → N+1 allocations            OwnedRegion<T, Tag>  → 1 allocation
-//   Arc<Mutex<T>>    → atomic refcount + mutex    Permission<Tag>      → 0 bytes, compile-time
-//   Rc<Vec<T>>       → refcount + vector          OwnedRegion          → 16 bytes total
-//   par_iter()       → rayon thread pool          parallel_for_views<N> → stack jthreads
-//   Iterator chains  → boxed dyn Iterator         std::span<T>          → native pointer
-//
-// The Permission tag carries the safety proof; the buffer is
-// contiguous; partitioning slices the INDEX SPACE (not the
-// allocation); workers iterate with zero indirection.  This is the
-// strict opposite of fragmented allocation.
-//
-// ─── The Slice<Parent, I> partition pattern ─────────────────────────
-//
-// `split_into<N>()` partitions an OwnedRegion<T, Whole> into a
-// std::tuple of N sub-regions, each tagged Slice<Whole, I> for
-// distinct compile-time I in [0, N).  All sub-regions point INTO
-// THE SAME ARENA BUFFER at consecutive chunk offsets — no copy, no
-// allocation.  The Permission tags prove disjointness; the buffer is
-// physically contiguous.
-//
-// One partial-specialization of splits_into_pack handles all N values
-// via index-pack deduction:
-//
-//   template <typename Parent, std::size_t... Is>
-//   struct splits_into_pack<Parent, Slice<Parent, Is>...>
-//       : std::true_type {};
-//
-// mint_permission_split_n then succeeds for any (Parent, N) pair without
-// per-N user-side declaration.
-//
-// ─── Why this composes with everything else ─────────────────────────
-//
-// OwnedRegion is move-only by virtue of its embedded Permission's
-// linearity (deleted copy with reason).  It plays cleanly with:
-//
-//   * Linear<>  — already linear; double-wrapping is redundant
-//   * Refined<> — wrap to add value-level invariants over the buffer
-//   * Tagged<>  — combine Tag with provenance/access markers
-//   * Pinned<>  — handles holding an OwnedRegion typically Pinned
-//   * Permission<>/SharedPermission — compose for exclusive vs shared
-//
-// And with the Workload primitives (safety/Workload.h):
-//
-//   * parallel_for_views<N>(region, body)
-//   * parallel_reduce_views<N, R>(region, init, mapper, reducer)
-//   * parallel_apply_pair<N>(rA, rB, body)
-//
-// All zero-allocation (jthreads stack-array; sub-regions are span
-// subranges).  All zero user-level atomics (RAII join provides
-// happens-before).
+// split_into partitions the index space, not the allocation.  Every
+// sub-region points into the same buffer at a distinct chunk offset,
+// and the distinct Slice tags are what prove the chunks are disjoint.
 
 #include <crucible/Arena.h>
 #include <crucible/effects/Capabilities.h>
@@ -85,45 +24,27 @@
 
 namespace crucible::safety {
 
-// Slice<Parent, I> + the index-pack splits_into_pack<Parent,
-// Slice<Parent, Is>...> partial specialization moved to
-// safety/PermissionTreeGenerator.h (FOUND-A21).  OwnedRegion consumes
-// them via the include above.
-
-// ── OwnedRegion<T, Tag> ──────────────────────────────────────────────
-
 template <typename T, typename Tag>
 class [[nodiscard]] OwnedRegion {
     T* base_ = nullptr;
     std::size_t count_ = 0;
     [[no_unique_address]] Permission<Tag> perm_;
 
-    // Private constructor — only friended factories may construct.
     constexpr OwnedRegion(T* base, std::size_t count, Permission<Tag>&& p) noexcept
         : base_{base}, count_{count}, perm_{std::move(p)} {}
 
-    // Allow split_into to construct sub-regions of different Slice<...> types.
+    // split_into builds sub-regions whose tag differs from its own.
     template <typename U, typename UTag>
     friend class OwnedRegion;
 
-    // parallel_for_views and friends in safety/Workload.h need to
-    // reconstruct the parent OwnedRegion after worker join.  The
-    // helper rebuild_parent_ takes a (base, count) pair plus a
-    // freshly-rebuilt Permission and constructs the OwnedRegion.
-    //
-    // fixy-A1-009: rebuild is passkey-gated.  OwnedRegion is friended
-    // by `detail::ForkRebuildKey` (declared in
-    // permissions/Permission.h), so this template is one of the two
-    // places that can legitimately produce a post-join
-    // `Permission<Parent>` — it goes through
-    // `detail::rebuild_parent_after_fork_<Parent>()`, which is itself
-    // friended by `ForkRebuildKey`.
+    // Reconstructs the parent after the workers join.  Producing a
+    // post-join parent permission is passkey gated, and this is one of
+    // the two places allowed to do it.
     template <typename Parent>
     static OwnedRegion<T, Parent> rebuild_parent_(T* base, std::size_t count) noexcept {
         return OwnedRegion<T, Parent>{base, count, ::crucible::safety::detail::rebuild_parent_after_fork_<Parent>()};
     }
 
-    // Friend the Workload primitives so they may rebuild parents.
     template <std::size_t N, typename U, typename Whole, typename Body>
     friend OwnedRegion<U, Whole> parallel_for_views(OwnedRegion<U, Whole>&&, Body) noexcept;
 
@@ -131,9 +52,6 @@ class [[nodiscard]] OwnedRegion {
     friend std::pair<R, OwnedRegion<U, Whole>> parallel_reduce_views(OwnedRegion<U, Whole>&&, R, Mapper,
                                                                      Reducer) noexcept;
 
-    // FOUND-F02 — parallel_apply_pair<N> takes TWO regions and
-    // rebuilds both after worker join; needs friendship to call
-    // rebuild_parent_ on each.
     template <std::size_t N, typename T1, typename W1, typename T2, typename W2, typename Body>
     friend std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>
     parallel_apply_pair(OwnedRegion<T1, W1>&&, OwnedRegion<T2, W2>&&, Body) noexcept;
@@ -142,7 +60,6 @@ public:
     using value_type = T;
     using tag_type = Tag;
 
-    // Move-only by virtue of Permission's linearity.
     OwnedRegion(const OwnedRegion&) = delete("OwnedRegion owns a Permission — copy would duplicate the linear token");
     OwnedRegion& operator=(const OwnedRegion&) =
         delete("OwnedRegion owns a Permission — assignment would overwrite the linear token");
@@ -150,78 +67,44 @@ public:
     constexpr OwnedRegion& operator=(OwnedRegion&&) noexcept = default;
     ~OwnedRegion() = default;
 
-    // ── Static factories ──────────────────────────────────────────
-
-    // adopt(arena, count, perm) — single arena bump-pointer alloc, then
-    // wrap with the consumed Permission.  Caller proves exclusive
-    // ownership by surrendering the Permission token.
-    //
-    // count == 0: returns OwnedRegion with base_ == nullptr, count_ == 0.
+    // The caller proves exclusive ownership by surrendering the
+    // Permission token.
     [[nodiscard]] static OwnedRegion adopt(effects::Alloc alloc_token, Arena& arena, std::size_t count,
                                            Permission<Tag>&& perm) noexcept {
         T* base = (count == 0) ? nullptr : arena.alloc_array<T>(alloc_token, count);
         return OwnedRegion{base, count, std::move(perm)};
     }
 
-    // wrap(base, count, perm) — wrap an externally-allocated buffer.
-    // Caller is responsible for buffer lifetime; the OwnedRegion does
-    // NOT own the storage (just the Permission proof).  Useful for
-    // migration: existing (T*, size_t) pairs can be wrapped without
-    // re-allocation.
+    // Wraps storage allocated elsewhere.  The region owns the
+    // Permission proof but not the storage, so the caller keeps
+    // responsibility for the buffer's lifetime.
     [[nodiscard]] static OwnedRegion wrap(T* base, std::size_t count, Permission<Tag>&& perm) noexcept {
         return OwnedRegion{base, count, std::move(perm)};
     }
 
-    // ── Views (zero indirection over contiguous bytes) ────────────
-
     [[nodiscard]] constexpr std::span<T> span() noexcept { return std::span<T>{base_, count_}; }
     [[nodiscard]] constexpr std::span<T const> cspan() const noexcept { return std::span<T const>{base_, count_}; }
-
-    // ── Accessors ─────────────────────────────────────────────────
 
     [[nodiscard]] constexpr T* data() noexcept { return base_; }
     [[nodiscard]] constexpr T const* data() const noexcept { return base_; }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
     [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
 
-    // Range-based for support — iteration over native pointer.
     [[nodiscard]] constexpr T* begin() noexcept { return base_; }
     [[nodiscard]] constexpr T* end() noexcept { return base_ + count_; }
     [[nodiscard]] constexpr T const* begin() const noexcept { return base_; }
     [[nodiscard]] constexpr T const* end() const noexcept { return base_ + count_; }
 
-    // ── Partition (index-space, not memory-space) ─────────────────
-    //
-    // split_into<N>() && yields a std::tuple<OwnedRegion<T, Slice<Tag, I>>...>
-    // where each sub-region points INTO THE SAME arena buffer at a
-    // distinct chunk offset.  No copy, no allocation.  The Permission
-    // tags prove the slices don't overlap.
-    //
-    // Heterogeneous types (each I is a distinct Slice<Tag, I>) require
-    // std::tuple — std::array is homogeneous-only and won't work here.
-    // Structured bindings on the tuple destructure cleanly:
-    //
-    //   auto [s0, s1, s2, s3] = std::move(region).split_into<4>();
-    //
-    // For very large N where std::tuple destructuring becomes verbose,
-    // consider parallel_for_views<N> which manages the tuple internally.
-    //
-    // Chunk math: chunk_size = ceil(count / N).  For count = 1000, N = 8:
-    //   chunks 0..6 have 125 elements, chunk 7 has 125 elements (1000/8).
-    // For count = 1001, N = 8:
-    //   chunk = 126, chunks 0..6 have 126 elements (882 total),
-    //   chunk 7 has 119 elements (1001 - 882).
-    // For count = 5, N = 8:
-    //   chunk = 1, chunks 0..4 have 1 element, chunks 5..7 are empty.
+    // The result is a tuple and not an array because each shard has a
+    // distinct Slice tag, so the element types differ.
     template <std::size_t N>
     [[nodiscard]] auto split_into() && noexcept;
 
 private:
-    // Index-sequence-driven implementation of split_into<N>.
     template <std::size_t N, std::size_t... Is>
     auto split_into_impl_(std::index_sequence<Is...>) && noexcept;
 
-    // Per-shard chunk math — returns (start_offset, length) for shard I.
+    // Returns the start offset and the length of shard i.
     static constexpr std::pair<std::size_t, std::size_t> chunk_range_(std::size_t total, std::size_t n,
                                                                       std::size_t i) noexcept {
         if (n == 0) return {0, 0};
@@ -233,8 +116,6 @@ private:
         return {start, bound - start};
     }
 };
-
-// ── split_into<N> — out-of-line definition ──────────────────────────
 
 template <typename T, typename Tag>
 template <std::size_t N>
@@ -248,53 +129,37 @@ template <std::size_t N, std::size_t... Is>
 auto OwnedRegion<T, Tag>::split_into_impl_(std::index_sequence<Is...>) && noexcept {
     static_assert(sizeof...(Is) == N, "index_sequence size mismatch");
 
-    // Snapshot base+count BEFORE consuming the permission.  After
-    // mint_permission_split_n the parent's `perm_` is moved-from but base_/
-    // count_ remain readable until *this destructs.
+    // Snapshot the base and the count before the permission is
+    // consumed.  The split leaves perm_ moved-from, while base_ and
+    // count_ stay readable until this object is destroyed.
     T* base = base_;
     const std::size_t total = count_;
 
-    // Split the parent permission into N child Slice<Tag, I> permissions.
     auto sub_perms = mint_permission_split_n<Slice<Tag, Is>...>(std::move(perm_));
 
-    // Construct one OwnedRegion<T, Slice<Tag, I>> per shard, pointing
-    // into the same buffer at chunk offsets.
     return std::tuple<OwnedRegion<T, Slice<Tag, Is>>...>{
         OwnedRegion<T, Slice<Tag, Is>>{base + chunk_range_(total, N, Is).first, chunk_range_(total, N, Is).second,
                                        std::move(std::get<Is>(sub_perms))}...};
 }
 
-// ── Zero-cost guarantees ────────────────────────────────────────────
-
 namespace detail {
 struct owned_region_test_tag {};
 }  // namespace detail
 
-// sizeof = (T*) + (size_t).  Permission EBO-collapses to 0.
 static_assert(sizeof(OwnedRegion<int, detail::owned_region_test_tag>) == sizeof(int*) + sizeof(std::size_t),
               "OwnedRegion<T, Tag> must be exactly (T*, size_t); Permission EBO-collapses");
 
-// Move-only.
 static_assert(!std::is_copy_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
 static_assert(std::is_move_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
 static_assert(std::is_nothrow_move_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
 
-// Slice<> tag is a 1-byte empty class.
 static_assert(sizeof(Slice<detail::owned_region_test_tag, 0>) == 1);
 static_assert(std::is_trivially_destructible_v<Slice<detail::owned_region_test_tag, 0>>);
 
-// splits_into_pack auto-specialization.
 static_assert(splits_into_pack_v<detail::owned_region_test_tag, Slice<detail::owned_region_test_tag, 0>,
                                  Slice<detail::owned_region_test_tag, 1>, Slice<detail::owned_region_test_tag, 2>,
                                  Slice<detail::owned_region_test_tag, 3>>,
               "Slice<Parent, 0..N-1> must auto-specialize splits_into_pack");
-
-// ── runtime_smoke_test ──────────────────────────────────────────────
-//
-// Sentinel TU exercises every named op with non-constant input.  The
-// runtime_smoke_test discipline (feedback_algebra_runtime_smoke_test)
-// catches consteval/SFILE/inline-body bugs that pure static_assert
-// tests miss when the header is compiled under project warning flags.
 
 namespace detail::owned_region_self_test {
 
@@ -302,11 +167,9 @@ struct smoke_tag {};
 
 inline void runtime_smoke_test() {
     int seed = 7;
-    // fixy-A3-005: Test ctor private — route through testing minter.
     auto test_ctx = effects::testing::test();
     Arena arena{};
 
-    // adopt(arena, count, perm) — single arena bump-pointer alloc + perm.
     auto perm = mint_permission_root<smoke_tag>();
     auto region =
         OwnedRegion<int, smoke_tag>::adopt(test_ctx.alloc, arena, static_cast<std::size_t>(seed + 1), std::move(perm));
@@ -314,7 +177,6 @@ inline void runtime_smoke_test() {
     if (region.empty()) std::abort();
     if (region.data() == nullptr) std::abort();
 
-    // Native pointer iteration zero-cost over contiguous bytes.
     for (std::size_t i = 0; i < region.size(); ++i) {
         region.data()[i] = static_cast<int>(i) * seed;
     }
@@ -323,14 +185,12 @@ inline void runtime_smoke_test() {
         sum += v;
     if (sum != (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7) * seed) std::abort();
 
-    // span() + cspan() — zero-indirection views.
     std::span<int> view = region.span();
     if (view.size() != 8u) std::abort();
     if (view.data() != region.data()) std::abort();
     std::span<int const> cview = region.cspan();
     if (cview.size() != 8u) std::abort();
 
-    // split_into<N>() && — partition into 4 disjoint slices.
     auto shards = std::move(region).split_into<4>();
     auto& s0 = std::get<0>(shards);
     auto& s1 = std::get<1>(shards);
@@ -340,7 +200,6 @@ inline void runtime_smoke_test() {
     if (s0.data()[0] != 0 || s0.data()[1] != seed) std::abort();
     if (s3.data()[1] != 7 * seed) std::abort();
 
-    // wrap(base, count, perm) — adopt externally-allocated storage.
     int storage[3] = {seed, seed + 1, seed + 2};
     auto wrap_perm = mint_permission_root<smoke_tag>();
     auto wrapped = OwnedRegion<int, smoke_tag>::wrap(storage, 3u, std::move(wrap_perm));
@@ -348,7 +207,6 @@ inline void runtime_smoke_test() {
     if (wrapped.data() != storage) std::abort();
     if (wrapped.data()[2] != seed + 2) std::abort();
 
-    // Empty-region path: count == 0 → nullptr base.
     auto empty_perm = mint_permission_root<smoke_tag>();
     auto empty = OwnedRegion<int, smoke_tag>::adopt(test_ctx.alloc, arena, 0u, std::move(empty_perm));
     if (!empty.empty()) std::abort();

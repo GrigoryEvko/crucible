@@ -1,16 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_permissioned_snapshot — SWMR worked example (SEPLOG-B2)
-//
-// Exercises PermissionedSnapshot<T, Tag> built on AtomicSnapshot
-// (QUEUE-1) + SharedPermissionPool (A2).  Demonstrates:
-//
-//   * Compile-time type discrimination of writer vs reader
-//   * Pool refcount tracks active readers
-//   * mint_permission_fork integration: 1 writer + N readers, TSan-clean
-//   * Mode transition: with_drained_access succeeds iff readers
-//     are quiesced
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
@@ -27,17 +14,14 @@
 using namespace crucible::concurrent;
 using namespace crucible::safety;
 
-// ── Test harness ─────────────────────────────────────────────────
-
 struct TestFailure {};
 
-#define CRUCIBLE_TEST_REQUIRE(...)                                          \
-    do {                                                                    \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                  \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n",                      \
-                         #__VA_ARGS__, __FILE__, __LINE__);                 \
-            throw TestFailure{};                                            \
-        }                                                                   \
+#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
+    do {                                                                                  \
+        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
+            throw TestFailure{};                                                          \
+        }                                                                                 \
     } while (0)
 
 namespace {
@@ -58,29 +42,25 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-// Trivially-copyable payload satisfying SnapshotValue.
 struct Metrics {
-    std::uint64_t requests   = 0;
-    std::uint64_t errors     = 0;
+    std::uint64_t requests = 0;
+    std::uint64_t errors = 0;
     std::uint64_t latency_ns = 0;
 };
 static_assert(std::is_trivially_copyable_v<Metrics>);
 
-// Distinct UserTags for distinct test channels.
 struct AppMetrics {};
 struct LatencyTrack {};
 struct ConfigBcast {};
 
-// ── Tier 1: compile-time structural ─────────────────────────────
-
 void test_compile_time_properties() {
     using Snap = PermissionedSnapshot<Metrics, AppMetrics>;
 
-    // Pinned (the snapshot's atomic state IS its identity).
+    // The atomic state is the channel identity, so a copy or a move
+    // would produce a second channel claiming to be the first.
     static_assert(!std::is_copy_constructible_v<Snap>);
     static_assert(!std::is_move_constructible_v<Snap>);
 
-    // WriterHandle / ReaderHandle are move-only.
     using W = Snap::WriterHandle;
     using R = Snap::ReaderHandle;
     static_assert(!std::is_copy_constructible_v<W>);
@@ -88,65 +68,49 @@ void test_compile_time_properties() {
     static_assert(!std::is_copy_constructible_v<R>);
     static_assert(std::is_move_constructible_v<R>);
 
-    // EBO collapse: WriterHandle holds Permission<Writer>
-    // (sizeof 1, EBO 0) plus the snap_ pointer.
-    static_assert(sizeof(W) == sizeof(void*),
-                  "WriterHandle EBO must collapse Permission<Writer> to 0 bytes");
+    static_assert(sizeof(W) == sizeof(void*), "WriterHandle EBO must collapse Permission<Writer> to 0 bytes");
 
-    // splits_into specialization auto-derived for the tag tree.
-    static_assert(splits_into_v<
-        snapshot_tag::Whole<AppMetrics>,
-        snapshot_tag::Writer<AppMetrics>,
-        snapshot_tag::Reader<AppMetrics>>);
+    // The split of the tag tree is derived, not hand-written.
+    static_assert(splits_into_v<snapshot_tag::Whole<AppMetrics>, snapshot_tag::Writer<AppMetrics>,
+                                snapshot_tag::Reader<AppMetrics>>);
 }
-
-// ── Tier 2: single-thread basic ─────────────────────────────────
 
 void test_single_thread_publish_and_load() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{};
 
-    auto writer_perm = mint_permission_root<
-        snapshot_tag::Writer<AppMetrics>>();
+    auto writer_perm = mint_permission_root<snapshot_tag::Writer<AppMetrics>>();
 
     auto writer = snap.writer(std::move(writer_perm));
     auto reader_opt = snap.reader();
     CRUCIBLE_TEST_REQUIRE(reader_opt.has_value());
 
-    // Initial state — version 0 (no publish yet).
     const auto initial_version = writer.version();
 
-    // Publish.
     writer.publish(Metrics{42, 7, 1234});
     CRUCIBLE_TEST_REQUIRE(writer.version() == initial_version + 1);
 
-    // Reader sees the published value.
     const auto loaded = reader_opt->load();
     CRUCIBLE_TEST_REQUIRE(loaded.requests == 42);
     CRUCIBLE_TEST_REQUIRE(loaded.errors == 7);
     CRUCIBLE_TEST_REQUIRE(loaded.latency_ns == 1234);
 
-    // Pool diagnostics.
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 1);
     CRUCIBLE_TEST_REQUIRE(!snap.is_exclusive_active());
 
-    // FIXY-FOUND-122: Stale-wrapped diagnostic companions return the
-    // same observed value, but type-document the τ=∞ staleness so
-    // downstream callers must explicitly .peek() the value and
-    // acknowledge the unsynchronized snapshot.
+    // The wrapped companions observe the same value, but their type
+    // records that the staleness bound is unbounded.  A caller has to
+    // peek through the wrapper, which is the acknowledgement that the
+    // reading was never synchronized.
     const auto readers_stale = snap.outstanding_readers_stale();
     CRUCIBLE_TEST_REQUIRE(readers_stale.peek() == 1);
     CRUCIBLE_TEST_REQUIRE(readers_stale.is_infinite());
     const auto exclusive_stale = snap.is_exclusive_active_stale();
     CRUCIBLE_TEST_REQUIRE(exclusive_stale.peek() == false);
     CRUCIBLE_TEST_REQUIRE(exclusive_stale.is_infinite());
-    static_assert(
-        std::is_same_v<decltype(snap.outstanding_readers_stale()),
-                       crucible::safety::Stale<std::uint64_t>>,
-        "outstanding_readers_stale must return Stale<uint64_t>");
-    static_assert(
-        std::is_same_v<decltype(snap.is_exclusive_active_stale()),
-                       crucible::safety::Stale<bool>>,
-        "is_exclusive_active_stale must return Stale<bool>");
+    static_assert(std::is_same_v<decltype(snap.outstanding_readers_stale()), crucible::safety::Stale<std::uint64_t>>,
+                  "outstanding_readers_stale must return Stale<uint64_t>");
+    static_assert(std::is_same_v<decltype(snap.is_exclusive_active_stale()), crucible::safety::Stale<bool>>,
+                  "is_exclusive_active_stale must return Stale<bool>");
 }
 
 void test_multiple_readers_coexist() {
@@ -161,13 +125,10 @@ void test_multiple_readers_coexist() {
     CRUCIBLE_TEST_REQUIRE(r3.has_value());
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 3);
 
-    // All see the same initial value.
     CRUCIBLE_TEST_REQUIRE(r1->load().requests == 1);
     CRUCIBLE_TEST_REQUIRE(r2->load().errors == 2);
     CRUCIBLE_TEST_REQUIRE(r3->load().latency_ns == 3);
 }
-
-// ── Tier 3: ReaderHandle destruction releases share ─────────────
 
 void test_reader_handle_destruction_decrements() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{};
@@ -176,16 +137,12 @@ void test_reader_handle_destruction_decrements() {
         auto r = snap.reader();
         CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 1);
     }
-    // r out of scope; share returned.
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 0);
 }
 
-// ── Tier 4: mode transition (with_drained_access) ─────────────
-
 void test_with_drained_access_succeeds_when_idle() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{Metrics{0, 0, 0}};
-    auto writer = snap.writer(
-        mint_permission_root<snapshot_tag::Writer<AppMetrics>>());
+    auto writer = snap.writer(mint_permission_root<snapshot_tag::Writer<AppMetrics>>());
 
     bool body_ran = false;
     const bool ok = snap.with_drained_access([&] {
@@ -196,7 +153,6 @@ void test_with_drained_access_succeeds_when_idle() {
     CRUCIBLE_TEST_REQUIRE(ok);
     CRUCIBLE_TEST_REQUIRE(body_ran);
 
-    // After exclusive scope, reader works again.
     auto r = snap.reader();
     CRUCIBLE_TEST_REQUIRE(r.has_value());
     CRUCIBLE_TEST_REQUIRE(r->load().requests == 99);
@@ -216,69 +172,48 @@ void test_with_drained_access_fails_when_readers_present() {
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 1);
 }
 
-// ── Tier 5: SWMR concurrency stress (TSan-validated) ────────────
-//
-// 1 writer + 8 readers via mint_permission_fork-style spawning.  Writer
-// publishes increments to a counter pair (lo, hi) — an SWMR test
-// where both halves must always read consistently (otherwise the
-// reader sees a torn write).  No user-level atomics on the data.
-
-// CounterPair: SWMR test payload.  lo/hi must always move together
-// across publishes — any reader that sees lo != hi has observed a
-// torn read (which the seqlock retry must prevent).
+// The writer only ever publishes a pair whose halves are equal, so a
+// reader that observes lo != hi has observed a torn read.  The payload
+// carries no atomics of its own: every ordering guarantee under test
+// comes from the snapshot.
 struct CounterPair {
     std::uint64_t lo = 0;
     std::uint64_t hi = 0;
 };
 static_assert(std::is_trivially_copyable_v<CounterPair>);
 
-// AtomicSnapshot's seqlock has documented byte-level UB-adjacency
-// (see AtomicSnapshot.h §UB-adjacency, lines 64-91).  The seq retry
-// protocol catches torn reads at the user-observable boundary; the
-// torn-read INVARIANT below (assert lo == hi after every load) is
-// what actually proves the protocol is sound at the user level.
-//
-// TSan would flag the inner memcpy race regardless — that's
-// suppressed via test/tsan-suppressions.txt (race:AtomicSnapshot.h),
-// applied automatically when tests run through ctest under the
-// `tsan` preset.  Same trade-off as Linux seqcount_t / Folly seqlock.
+// The seqlock copies the payload while a publish may be in flight and
+// relies on its sequence retry to reject an incoherent result, rather
+// than preventing the racing copy.  The lo == hi check after every load
+// is therefore the thing that actually proves the protocol sound at the
+// user-visible boundary.  A race detector flags the inner copy whatever
+// the protocol does, and the suite carries a suppression for it that
+// applies when the tests run under the thread-sanitizer preset.
 
 void test_swmr_under_load() {
     constexpr int NUM_READERS = 8;
     constexpr int NUM_PUBLISHES = 10'000;
 
-    PermissionedSnapshot<CounterPair, LatencyTrack> snap{
-        CounterPair{0, 0}};
+    PermissionedSnapshot<CounterPair, LatencyTrack> snap{CounterPair{0, 0}};
 
-    auto writer_perm = mint_permission_root<
-        snapshot_tag::Writer<LatencyTrack>>();
+    auto writer_perm = mint_permission_root<snapshot_tag::Writer<LatencyTrack>>();
 
-    std::atomic<int>          publishes_done{0};
-    std::atomic<bool>         writer_done{false};
-    std::atomic<int>          torn_reads_observed{0};
+    std::atomic<int> publishes_done{0};
+    std::atomic<bool> writer_done{false};
+    std::atomic<int> torn_reads_observed{0};
     std::atomic<std::uint64_t> total_loads{0};
 
-    // Synchronized startup gate.  Without this barrier, under host
-    // contention (j24 ctest, busy box) the writer's jthread can run
-    // its full 10K publish loop before any reader's jthread has even
-    // entered its main loop — readers then see writer_done==true on
-    // first check, exit immediately, and `total_loads == 0` fails the
-    // post-condition.  std::latch{N+1} is the project-canonical
-    // starting-line gate (mirrors test_permission_shared,
-    // test_fair_permission_shared, test_concurrency_collision_fuzzer,
-    // test_safety).  All N readers + the writer rendezvous before
-    // any work happens; this guarantees ≥1 reader load is concurrent
-    // with ≥1 publish.  PermissionedSnapshot's seqlock provides the
-    // (orthogonal) atomicity guarantee — the latch only synchronises
-    // start-of-life; correctness during the loop comes entirely from
-    // the Pool refcount + AtomicSnapshot retry.
+    // Without this barrier, on a contended host the writer can finish
+    // its whole publish loop before any reader thread reaches its own
+    // loop.  Every reader then sees writer_done on its first check,
+    // exits, and the total_loads check at the end fails on a run that
+    // proved nothing.  All readers and the writer rendezvous here, so
+    // at least one load overlaps at least one publish.  The gate
+    // synchronizes start of life only: correctness during the loop
+    // comes from the pool refcount and the seqlock retry.
     std::latch start_gate{NUM_READERS + 1};
 
-    // Writer thread — publishes (i, i) repeatedly; lo and hi must
-    // move together.
-    std::jthread writer_t([&snap, &writer_perm, &publishes_done,
-                           &writer_done, &start_gate]
-                          (std::stop_token) noexcept {
+    std::jthread writer_t([&snap, &writer_perm, &publishes_done, &writer_done, &start_gate](std::stop_token) noexcept {
         auto handle = snap.writer(std::move(writer_perm));
         start_gate.arrive_and_wait();
         for (int i = 1; i <= NUM_PUBLISHES; ++i) {
@@ -289,64 +224,48 @@ void test_swmr_under_load() {
         writer_done.store(true, std::memory_order_release);
     });
 
-    // N reader threads — load and check lo == hi.  Plain non-atomic
-    // T type; sync entirely from PermissionedSnapshot (Pool refcount
-    // + AtomicSnapshot's seqlock retry).
     std::vector<std::jthread> readers;
     for (int i = 0; i < NUM_READERS; ++i) {
-        readers.emplace_back([&snap, &writer_done,
-                              &torn_reads_observed, &total_loads,
-                              &start_gate]
-                             (std::stop_token) noexcept {
-            start_gate.arrive_and_wait();
-            while (!writer_done.load(std::memory_order_acquire)) {
-                total_loads.fetch_add(1, std::memory_order_relaxed);
+        readers.emplace_back(
+            [&snap, &writer_done, &torn_reads_observed, &total_loads, &start_gate](std::stop_token) noexcept {
+                start_gate.arrive_and_wait();
+                while (!writer_done.load(std::memory_order_acquire)) {
+                    total_loads.fetch_add(1, std::memory_order_relaxed);
 
-                auto r = snap.reader();
-                if (!r) {
-                    // Exclusive mode active (shouldn't happen in this
-                    // test); skip.
-                    CRUCIBLE_SPIN_PAUSE;
-                    continue;
+                    auto r = snap.reader();
+                    if (!r) {
+                        // Only exclusive mode denies a reader, and nothing
+                        // in this test enters it.
+                        CRUCIBLE_SPIN_PAUSE;
+                        continue;
+                    }
+                    const auto pair = r->load();
+                    if (pair.lo != pair.hi) {
+                        torn_reads_observed.fetch_add(1, std::memory_order_acq_rel);
+                    }
                 }
-                const auto pair = r->load();
-                if (pair.lo != pair.hi) {
-                    torn_reads_observed.fetch_add(1,
-                        std::memory_order_acq_rel);
-                }
-            }
-        });
+            });
     }
 
     writer_t.join();
-    for (auto& r : readers) r.join();
+    for (auto& r : readers)
+        r.join();
 
     CRUCIBLE_TEST_REQUIRE(publishes_done.load() == NUM_PUBLISHES);
-    // The seqlock protocol guarantees no torn reads observable to
-    // the user.  AtomicSnapshot's load() retries until coherent.
     CRUCIBLE_TEST_REQUIRE(torn_reads_observed.load() == 0);
     CRUCIBLE_TEST_REQUIRE(total_loads.load() > 0);
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 0);
 }
 
-// ── Tier 6: mint_permission_fork integration ─────────────────────────
-//
-// Demonstrates the canonical pattern: one Permission<Whole> at
-// startup, split into Writer + Reader (note: Reader is parked in
-// the Pool internally via the Snapshot's constructor).  The Writer
-// permission is moved through mint_permission_fork into the writer body.
-
 void test_mint_permission_fork_integration() {
     PermissionedSnapshot<std::uint64_t, ConfigBcast> snap{0};
 
-    // Mint just the Writer permission externally — Reader is
-    // managed internally by the Pool.
-    auto writer_perm = mint_permission_root<
-        snapshot_tag::Writer<ConfigBcast>>();
+    // Only the writer permission is minted here.  The reader side of
+    // the split is parked in the pool by the snapshot's constructor.
+    auto writer_perm = mint_permission_root<snapshot_tag::Writer<ConfigBcast>>();
 
     std::atomic<int> reader_observations{0};
 
-    // Single-thread writer + scoped read in main thread.
     {
         auto writer = snap.writer(std::move(writer_perm));
         for (std::uint64_t v = 100; v <= 110; ++v) {
@@ -354,8 +273,8 @@ void test_mint_permission_fork_integration() {
         }
     }
 
-    // After writer goes out of scope (consuming its Permission),
-    // we still hold the snapshot.  Read the final value.
+    // The writer's permission is consumed when its scope ends, and the
+    // snapshot outlives it.
     auto r = snap.reader();
     CRUCIBLE_TEST_REQUIRE(r.has_value());
     CRUCIBLE_TEST_REQUIRE(r->load() == 110);
@@ -371,20 +290,14 @@ int main() {
 
     test_compile_time_properties();  // pure compile-time
 
-    run_test("test_single_thread_publish_and_load",
-             test_single_thread_publish_and_load);
-    run_test("test_multiple_readers_coexist",
-             test_multiple_readers_coexist);
-    run_test("test_reader_handle_destruction_decrements",
-             test_reader_handle_destruction_decrements);
-    run_test("test_with_drained_access_succeeds_when_idle",
-             test_with_drained_access_succeeds_when_idle);
+    run_test("test_single_thread_publish_and_load", test_single_thread_publish_and_load);
+    run_test("test_multiple_readers_coexist", test_multiple_readers_coexist);
+    run_test("test_reader_handle_destruction_decrements", test_reader_handle_destruction_decrements);
+    run_test("test_with_drained_access_succeeds_when_idle", test_with_drained_access_succeeds_when_idle);
     run_test("test_with_drained_access_fails_when_readers_present",
              test_with_drained_access_fails_when_readers_present);
-    run_test("test_swmr_under_load",
-             test_swmr_under_load);
-    run_test("test_mint_permission_fork_integration",
-             test_mint_permission_fork_integration);
+    run_test("test_swmr_under_load", test_swmr_under_load);
+    run_test("test_mint_permission_fork_integration", test_mint_permission_fork_integration);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

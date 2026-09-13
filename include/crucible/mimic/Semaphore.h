@@ -1,22 +1,5 @@
 #pragma once
 
-// Stubbed Mimic semaphore surface for ChainEdge.
-//
-// Real vendor backends will lower these calls to driver pushbuffer /
-// queue / executor primitives.  Until those backends exist in-tree,
-// every namespace below delegates to the CPU oracle: a release store
-// for signal and an acquire load for the wait-side check.  This gives
-// ChainEdge a stable call boundary without pretending to ship vendor
-// driver code.
-//
-// fixy-V-205: the wait-side oracle is named `semaphore_poll_oracle`
-// because the CPU stub is exactly that — a single acquire load + value
-// compare returning a bool, with NO spin, NO yield, NO blocking.  The
-// vendor-facing entry points (`nv::semaphore_wait` etc.) keep their
-// "wait" spelling because real backends will land blocking semantics
-// behind those names; the oracle delegate makes the stub's true
-// (non-blocking) shape unambiguous at the substrate boundary.
-
 #include <crucible/algebra/lattices/VendorLattice.h>
 
 #include <atomic>
@@ -38,10 +21,6 @@ inline void semaphore_signal_oracle(DeviceSemaphore sem, std::uint64_t value) no
     sem.value->store(value, std::memory_order_release);
 }
 
-// fixy-V-205: poll-not-wait.  One acquire load, one compare, returns
-// bool — the caller spins / yields / does something else on `false`.
-// Real vendor backends override the per-namespace `semaphore_wait`
-// entry points with blocking implementations; this stub never blocks.
 [[nodiscard]] inline bool semaphore_poll_oracle(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return sem.value->load(std::memory_order_acquire) >= expected;
 }

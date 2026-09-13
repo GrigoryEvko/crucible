@@ -1,23 +1,3 @@
-// fixy-A3-009 sentinel TU: HotPath dimensional reclassification.
-//
-// Pre-fix:  wrapper_dimension<HotPath<Tier, T>> == DimensionAxis::Complexity
-//           wrapper_dimension<Progress<Cls, T>> == DimensionAxis::Complexity
-// Post-fix: HotPath → DimensionAxis::Regime (new axis 22)
-//           Progress stays on Complexity (legitimate Termination/cost-class
-//                  fit — Bounded / Terminating / Diverges is asymptotic cost).
-//
-// Complexity (fixy.md §24.1) classifies asymptotic cost / termination
-// posture.  HotPath classifies foreground-vs-background OPERATING REGIME
-// (Hot / Warm / Cold tier residency).  Folding both onto Complexity
-// erased the orthogonality between "what work this does" (Progress) and
-// "where this work is allowed to run" (HotPath).  Regime is the new
-// per-axis identity: a Tier-S (Semiring) axis with par=join (hottest-
-// wins) and seq=join semantics, peer to Synchronization.
-//
-// Tier preservation: HotPath stays at TierKind::Semiring under the new
-// Regime axis (same Tier S surface).  GAPS-091's verify_quadruple<W>()
-// continues to hold because lattice/modality/tier remain the same.
-
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Progress.h>
@@ -26,99 +6,60 @@ namespace cs = ::crucible::safety;
 
 namespace {
 
-using HotInt    = cs::HotPath<cs::HotPathTier_v::Hot,  int>;
-using WarmInt   = cs::HotPath<cs::HotPathTier_v::Warm, int>;
-using ColdInt   = cs::HotPath<cs::HotPathTier_v::Cold, int>;
+using HotInt = cs::HotPath<cs::HotPathTier_v::Hot, int>;
+using WarmInt = cs::HotPath<cs::HotPathTier_v::Warm, int>;
+using ColdInt = cs::HotPath<cs::HotPathTier_v::Cold, int>;
 
-using TermInt   = cs::Progress<cs::ProgressClass_v::Terminating, int>;
-using BoundInt  = cs::Progress<cs::ProgressClass_v::Bounded,     int>;
-using DivInt    = cs::Progress<cs::ProgressClass_v::MayDiverge, int>;
+using TermInt = cs::Progress<cs::ProgressClass_v::Terminating, int>;
+using BoundInt = cs::Progress<cs::ProgressClass_v::Bounded, int>;
+using DivInt = cs::Progress<cs::ProgressClass_v::MayDiverge, int>;
 
-// ── Post-fix dimensional identity — HotPath on Regime, not Complexity.
-static_assert(cs::wrapper_dimension_v<HotInt>
-              == cs::DimensionAxis::Regime,
-    "fixy-A3-009: HotPath<Hot> must classify on Regime, not Complexity.  "
-    "HotPath wraps foreground/background operating-regime residency; "
-    "Complexity tracks asymptotic cost / termination class.");
-static_assert(cs::wrapper_dimension_v<WarmInt>
-              == cs::DimensionAxis::Regime,
-    "fixy-A3-009: HotPath<Warm> must classify on Regime.");
-static_assert(cs::wrapper_dimension_v<ColdInt>
-              == cs::DimensionAxis::Regime,
-    "fixy-A3-009: HotPath<Cold> must classify on Regime.");
+static_assert(cs::wrapper_dimension_v<HotInt> == cs::DimensionAxis::Regime,
+              "HotPath<Hot> must classify on Regime, not Complexity. HotPath wraps "
+              "foreground and background residency. Complexity tracks asymptotic "
+              "cost and termination class.");
+static_assert(cs::wrapper_dimension_v<WarmInt> == cs::DimensionAxis::Regime, "HotPath<Warm> must classify on Regime.");
+static_assert(cs::wrapper_dimension_v<ColdInt> == cs::DimensionAxis::Regime, "HotPath<Cold> must classify on Regime.");
 
-// ── Progress stays on Complexity (legitimate cost-class fit).
-static_assert(cs::wrapper_dimension_v<TermInt>
-              == cs::DimensionAxis::Complexity,
-    "fixy-A3-009: Progress<Terminating> stays on Complexity — Bounded / "
-    "Terminating / Diverges is asymptotic cost class, not an operating "
-    "regime.  Only HotPath migrated off Complexity.");
-static_assert(cs::wrapper_dimension_v<BoundInt>
-              == cs::DimensionAxis::Complexity,
-    "fixy-A3-009: Progress<Bounded> stays on Complexity.");
-static_assert(cs::wrapper_dimension_v<DivInt>
-              == cs::DimensionAxis::Complexity,
-    "fixy-A3-009: Progress<MayDiverge> stays on Complexity.");
+static_assert(cs::wrapper_dimension_v<TermInt> == cs::DimensionAxis::Complexity,
+              "Progress<Terminating> stays on Complexity. Bounded, Terminating and "
+              "Diverges name an asymptotic cost class, not an operating regime.");
+static_assert(cs::wrapper_dimension_v<BoundInt> == cs::DimensionAxis::Complexity,
+              "Progress<Bounded> stays on Complexity.");
+static_assert(cs::wrapper_dimension_v<DivInt> == cs::DimensionAxis::Complexity,
+              "Progress<MayDiverge> stays on Complexity.");
 
-// ── Negative-direction guards — HotPath is NOT on Complexity.
-static_assert(cs::wrapper_dimension_v<HotInt>
-              != cs::DimensionAxis::Complexity,
-    "fixy-A3-009 regression: HotPath leaked back onto Complexity.");
-static_assert(cs::wrapper_dimension_v<ColdInt>
-              != cs::DimensionAxis::Complexity,
-    "fixy-A3-009 regression: HotPath<Cold> leaked back onto Complexity.");
+static_assert(cs::wrapper_dimension_v<HotInt> != cs::DimensionAxis::Complexity, "HotPath leaked back onto Complexity.");
+static_assert(cs::wrapper_dimension_v<ColdInt> != cs::DimensionAxis::Complexity,
+              "HotPath<Cold> leaked back onto Complexity.");
 
-// ── HotPath and Progress are dimensionally distinct under the fix.
-static_assert(cs::wrapper_dimension_v<HotInt>
-              != cs::wrapper_dimension_v<TermInt>,
-    "fixy-A3-009: HotPath and Progress must live on distinct axes — they "
-    "answer different questions (regime vs. cost-class).");
+static_assert(cs::wrapper_dimension_v<HotInt> != cs::wrapper_dimension_v<TermInt>,
+              "HotPath and Progress must live on distinct axes. They answer "
+              "different questions: where work runs, and what it costs.");
 
-// ── Tier preservation — Regime is Tier S (Semiring).
-static_assert(cs::tier_of_axis(cs::DimensionAxis::Regime)
-              == cs::TierKind::Semiring,
-    "fixy-A3-009: Regime classifies on Tier S (par=join, seq=join — "
-    "hottest-wins semantics).");
-static_assert(cs::wrapper_tier_v<HotInt>  == cs::TierKind::Semiring,
-    "fixy-A3-009: HotPath wrappers preserve Tier-S surface post-reclassify.");
-static_assert(cs::wrapper_tier_v<ColdInt> == cs::TierKind::Semiring,
-    "fixy-A3-009: HotPath<Cold> preserves Tier-S surface post-reclassify.");
+static_assert(cs::tier_of_axis(cs::DimensionAxis::Regime) == cs::TierKind::Semiring,
+              "Regime classifies on Tier S, with par=join and seq=join, so the "
+              "hottest tier wins.");
+static_assert(cs::wrapper_tier_v<HotInt> == cs::TierKind::Semiring, "HotPath wrappers carry a Tier-S surface.");
+static_assert(cs::wrapper_tier_v<ColdInt> == cs::TierKind::Semiring, "HotPath<Cold> carries a Tier-S surface.");
 
-// ── GAPS-091 cross-product verifier — still passes after reclassify.
-static_assert(cs::verify_quadruple<HotInt>(),
-    "fixy-A3-009: GAPS-091 verify_quadruple<HotPath<Hot>> must hold under "
-    "the new Regime classification.");
-static_assert(cs::verify_quadruple<WarmInt>(),
-    "fixy-A3-009: GAPS-091 verify_quadruple<HotPath<Warm>> must hold.");
-static_assert(cs::verify_quadruple<ColdInt>(),
-    "fixy-A3-009: GAPS-091 verify_quadruple<HotPath<Cold>> must hold.");
-static_assert(cs::verify_quadruple<TermInt>(),
-    "fixy-A3-009: GAPS-091 verify_quadruple<Progress<Terminating>> must "
-    "hold — Progress stays on Complexity.");
+static_assert(cs::verify_quadruple<HotInt>(), "verify_quadruple<HotPath<Hot>> must hold under the Regime "
+                                              "classification.");
+static_assert(cs::verify_quadruple<WarmInt>(), "verify_quadruple<HotPath<Warm>> must hold.");
+static_assert(cs::verify_quadruple<ColdInt>(), "verify_quadruple<HotPath<Cold>> must hold.");
+static_assert(cs::verify_quadruple<TermInt>(), "verify_quadruple<Progress<Terminating>> must hold. Progress stays "
+                                               "on Complexity.");
 
-// ── Catalog cardinality — Regime grew the axis count from 21 to 22.
-//
-// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
-// (`== 22`) lives in safety/DimensionTraits.h:600 colocated with the
-// source-of-truth enum; THIS TU only holds the FLOOR pin (`>= 22`)
-// which catches the inverse direction — an accidental REMOVAL of a
-// DimensionAxis enumerator post-Regime.
-static_assert(cs::DIMENSION_AXIS_COUNT >= 22,
-    "fixy-A3-009 floor: DimensionAxis cardinality regressed below 22 "
-    "— a post-Regime enumerator was removed without updating both "
-    "DimensionTraits.h's colocated ceiling pin AND this floor "
-    "witness.");
+// A floor, not an exact count. The exact count is pinned beside the
+// enumerator definition, so this witness catches only the removal of an
+// arm, which that pin cannot see.
+static_assert(cs::DIMENSION_AXIS_COUNT >= 22, "floor: DimensionAxis cardinality regressed below 22. An enumerator "
+                                              "was removed without updating the exact pin beside the enumerator "
+                                              "definition and this floor witness.");
 
-// ── Regime carries a non-empty, non-sentinel name.
-static_assert(cs::dimension_axis_name(cs::DimensionAxis::Regime)
-              == std::string_view{"Regime"},
-    "fixy-A3-009: dimension_axis_name must return \"Regime\" for the new "
-    "axis; sentinel leak indicates a missing switch arm.");
-
-// ── Tier S (Semiring) growth — covered by DimensionTraits.h's internal
-//     count_dims_in_tier(Semiring) == 17 static_assert at file scope.
-//     Surfacing the count here would require exposing detail:: helpers;
-//     the substrate's own self-test is the authoritative witness.
+static_assert(cs::dimension_axis_name(cs::DimensionAxis::Regime) == std::string_view{"Regime"},
+              "dimension_axis_name must return \"Regime\" for this axis. A sentinel "
+              "leak means a missing switch arm.");
 
 }  // namespace
 

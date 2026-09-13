@@ -1,17 +1,5 @@
 #pragma once
 
-// MetaLogSession.h — typed-session facade for PermissionedMetaLog.
-//
-// MetaLog's production shape is an infinite foreground-to-background
-// stream of TensorMeta records.  PermissionedMetaLog enforces the raw
-// role split; this header adds the protocol shape:
-//
-//   Producer: Loop<Send<TensorMeta, Continue>>
-//   Consumer: Loop<Recv<TensorMeta, Continue>>
-//
-// EmptyPermSet is deliberate.  Producer/consumer authority stays in
-// the endpoint handles; TensorMeta payloads do not transfer permissions.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/permissions/Permission.h>

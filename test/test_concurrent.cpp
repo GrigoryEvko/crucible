@@ -1,19 +1,8 @@
-// Sentinel TU for include/crucible/effects/Concurrent.h.
-//
-// Per feedback_header_only_static_assert_blind_spot.md: header-only
-// static_asserts inside Concurrent.h are only evaluated under the
-// project's full warning + standard flags when SOMEONE includes the
-// header from a TU that lands in the build graph.  This sentinel
-// makes the inclusion explicit so the concurrent_row_self_test block
-// is exercised by every default build.
-//
-// The runtime portion exercises the empty `ConcurrentRow` carrier
-// type via runtime instantiation — there's no per-instance state to
-// poke at since rows are pure type-level constructs, but constructing
-// instances confirms the empty-base-optimization claim and the
-// concept-gate accepts representative tag packs.
-//
-// GAPS-190.
+// A header-only surface is only checked where a translation unit pulls it
+// in. Compiling this file runs the included header's own static_asserts
+// under the project warning flags. The rows are pure type-level constructs
+// with no per-instance state, so the runtime body constructs them to
+// confirm the empty-base claim and to reach the concept gate.
 
 #include <crucible/effects/Concurrent.h>
 #include <crucible/effects/Resources.h>
@@ -25,21 +14,17 @@
 
 namespace eff = crucible::effects;
 
-// ── Empty-base-optimization smoke test ──────────────────────────────
-//
-// ConcurrentRow holds only static-constexpr template parameters.  At
-// runtime the row carries no fields, so sizeof must be 1 (empty
-// struct floor) and the type must be trivially constructible.
+// The row holds only static template parameters and carries no fields at
+// runtime, so one byte is its floor and it must be trivially constructible.
 
 static void test_concurrent_row_layout() {
     eff::ConcurrentRow<> empty{};
     eff::ConcurrentRow<eff::resource::SmBudget<32>> single{};
-    eff::ConcurrentRow<eff::resource::SmBudget<32>,
-                       eff::resource::NicQp<4>> pair{};
+    eff::ConcurrentRow<eff::resource::SmBudget<32>, eff::resource::NicQp<4>> pair{};
 
-    static_assert(sizeof(empty)  == 1, "Empty row must be 1 byte (empty struct floor).");
+    static_assert(sizeof(empty) == 1, "Empty row must be 1 byte (empty struct floor).");
     static_assert(sizeof(single) == 1);
-    static_assert(sizeof(pair)   == 1);
+    static_assert(sizeof(pair) == 1);
 
     static_assert(std::is_empty_v<decltype(empty)>);
     static_assert(std::is_empty_v<decltype(single)>);
@@ -48,50 +33,36 @@ static void test_concurrent_row_layout() {
     static_assert(std::is_trivially_default_constructible_v<decltype(empty)>);
     static_assert(std::is_trivially_copyable_v<decltype(empty)>);
 
-    // Volatile barrier prevents the optimizer from constant-folding
-    // the size readout via the static_asserts above and silently
-    // masking a runtime layout divergence.
+    // The volatile barrier keeps the optimizer from folding the size readout
+    // through the assertions above, which would mask a layout divergence.
     volatile std::size_t s = sizeof(pair);
     assert(s == 1);
 
     std::printf("  test_concurrent_row_layout:           PASSED\n");
 }
 
-// ── Type-level sum smoke test ───────────────────────────────────────
-//
-// Most of the algebra is consteval-only and thus already pinned via
-// in-header static_asserts.  This runtime portion validates that the
-// resulting types can be reified at runtime (instantiated, sized,
-// passed by value) — not just that the alias machinery resolves.
+// The algebra itself is consteval and already pinned in the header. What
+// this adds is that the resulting types can be reified at runtime, that is,
+// instantiated, sized and passed by value, not merely resolved.
 
 static void test_concurrent_row_sum_runtime() {
-    using R1 = eff::ConcurrentRow<eff::resource::SmBudget<32>,
-                                  eff::resource::NicQp<4>>;
-    using R2 = eff::ConcurrentRow<eff::resource::SmBudget<64>,
-                                  eff::resource::NicQp<2>>;
+    using R1 = eff::ConcurrentRow<eff::resource::SmBudget<32>, eff::resource::NicQp<4>>;
+    using R2 = eff::ConcurrentRow<eff::resource::SmBudget<64>, eff::resource::NicQp<2>>;
     using Sum = eff::concurrent_row_sum_t<R1, R2>;
 
     Sum s{};
     static_assert(sizeof(s) == 1);
 
-    // Recovery of the per-kind sums via concurrent_row_value_v matches
-    // the materialized canonical row.
-    static_assert(eff::concurrent_row_value_v<eff::ResourceKind::Sm, Sum>
-                  == 96);
-    static_assert(eff::concurrent_row_value_v<eff::ResourceKind::NicQp, Sum>
-                  == 6);
+    static_assert(eff::concurrent_row_value_v<eff::ResourceKind::Sm, Sum> == 96);
+    static_assert(eff::concurrent_row_value_v<eff::ResourceKind::NicQp, Sum> == 6);
 
-    // Volatile barrier: confirm the type-level sum's runtime
-    // instantiation lives in this TU's section, not just in the
-    // consteval evaluation context.
-    volatile auto sm_total = eff::concurrent_row_value_v<
-        eff::ResourceKind::Sm, Sum>;
+    // The volatile barrier puts the sum's instantiation in this unit's own
+    // section, not only in the consteval evaluation context.
+    volatile auto sm_total = eff::concurrent_row_value_v<eff::ResourceKind::Sm, Sum>;
     assert(sm_total == 96);
 
     std::printf("  test_concurrent_row_sum_runtime:      PASSED\n");
 }
-
-// ── Variadic N-way smoke test ───────────────────────────────────────
 
 static void test_concurrent_row_n_way() {
     using R1 = eff::ConcurrentRow<eff::resource::SmBudget<10>>;
@@ -100,17 +71,15 @@ static void test_concurrent_row_n_way() {
     using R4 = eff::ConcurrentRow<eff::resource::SmBudget<40>>;
     using Total = eff::concurrent_row_n_t<R1, R2, R3, R4>;
 
-    static_assert(eff::concurrent_row_value_v<eff::ResourceKind::Sm, Total>
-                  == 100);
+    static_assert(eff::concurrent_row_value_v<eff::ResourceKind::Sm, Total> == 100);
 
-    // 4-way scheduling that fits AND doesn't overflow on any kind.
+    // A four-way schedule that fits, and overflows on no resource kind.
     static_assert(eff::ConcurrentlySchedulable<R1, R2>);
     static_assert(eff::ConcurrentlySchedulable<R3, R4>);
 
     Total t{};
     static_assert(sizeof(t) == 1);
-    volatile auto v = eff::concurrent_row_value_v<
-        eff::ResourceKind::Sm, Total>;
+    volatile auto v = eff::concurrent_row_value_v<eff::ResourceKind::Sm, Total>;
     assert(v == 100);
 
     std::printf("  test_concurrent_row_n_way:            PASSED\n");

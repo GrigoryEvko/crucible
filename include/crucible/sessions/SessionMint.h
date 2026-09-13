@@ -1,97 +1,23 @@
 #pragma once
 
-// ── crucible::safety::proto::mint_permissioned_session ─────────────
+// The whole protocol is certified once, when the session is minted, so no send
+// or receive carries a context check.  Three alternatives were rejected: a
+// per-operation context parameter and a context template parameter on the
+// handle both change every existing session operation, and a decorator wrapper
+// adds an indirection the eager walk does not need.  The handle returned here
+// is the unmodified session primitive.
 //
-// Eager whole-protocol ctx-check at session-mint time.  Walks Proto
-// recursively, asserts every Send/Recv payload's effect-row is admitted
-// by Ctx::row, and returns a PermissionedSessionHandle with a concrete
-// PermSet.  Subsequent send/recv operations run at full speed with no
-// per-op ctx check — the whole protocol was certified at construction.
-//
-// This is the canonical session-side instance of the universal mint
-// pattern shipped across Tier 1: `mint_X(ctx, args...) → X`
-// constrained on `CtxFitsX<X, Ctx>`.  Symmetric to
-// effects::mint_cap, effects::mint_from_ctx, concurrent::mint_endpoint,
-// concurrent::mint_stage, and concurrent::mint_pipeline.
-//
-//   Axiom coverage: TypeSafe — proto_row_admitted_by walks the tree
-//                   at template-instantiation; mismatches surface
-//                   as concept-violation diagnostics at the mint
-//                   call site.
-//                   InitSafe — pure metafunction during walk.
-//                   DetSafe — consteval throughout.
-//   Runtime cost:   zero.  The walkers resolve at template
-//                   substitution; the returned PSH is the existing
-//                   PermissionedSession.h primitive.
-//
-// ── Concept and factory ─────────────────────────────────────────────
-//
-//   proto_row_admitted_by<Proto, Ctx>::value — recursive row walker
-//   CtxFitsProtocol<Proto, Ctx>              — row-admission concept
-//   ProtocolVendorAdmittedByLoopCtx<Proto, L>
-//                                           — VendorPinned / Vendor<T>
-//                                             admission against LoopCtx
-//   ProtocolEpochAdmittedByLoopCtx<Proto, L>
-//                                           — EpochedDelegate / Accept
-//                                             admission against LoopCtx
-//   CtxFitsPermissionedProtocol<Proto, Ctx,
-//                               PS, L>      — row + local PS closure +
-//                                             vendor + epoch admission
-//   mint_permissioned_session<Proto>(ctx,
-//       resource, perms...)                  — factory; returns PSH
-//   mint_channel<Proto>(ctxA, ctxB, rA, rB)  — paired endpoint mint;
-//                                             checks Proto against ctxA
-//                                             and dual(Proto) against ctxB
-//
-// ── Walk shape ──────────────────────────────────────────────────────
-//
-//   End                       → true (terminal)
-//   Continue                  → true (loop closes back; payloads checked at Loop)
-//   Send<T, K>                → payload_effect_row_t<T> ⊆ Ctx::row ∧ walk(K)
-//   Recv<T, K>                → payload_effect_row_t<T> ⊆ Ctx::row ∧ walk(K)
-//   Loop<B>                   → walk(B)
-//   Select<Branches...>       → ∀ branch. walk(branch)
-//   Offer<Branches...>        → ∀ branch. walk(branch)
-//   Offer<Sender<R>, Bs...>   → ∀ branch. walk(branch)
-//
-// Composed payloads (Refined<P, Linear<Computation<R, T>>>) unwrap
-// transparently via payload_effect_row_t while payload_row_t preserves
-// non-effect grades such as NumericalTier — see SessionRowExtraction.h.
-// Vendor<T> payloads are different: their grade is a wire-placement
-// obligation, not an effect row.  GAPS-068 admits them only when the
-// surrounding session has an explicit VendorCtx and
-// VendorLattice::leq(payload_vendor, session_vendor) holds.
-//
-// EpochedDelegate / EpochedAccept add a second LoopCtx-side admission
-// gate for cross-Relay reshard handoffs.  Sender-side delegate mints
-// require an exact (CurrentEpoch, CurrentGeneration) match so a fresh
-// sender cannot weaken the handoff threshold; recipient-side accepts
-// allow any context at or above the declared threshold.
-//
-// ── Why eager whole-protocol ────────────────────────────────────────
-//
-// Alternatives (per-operation ctx parameter, ctx as PSH template
-// parameter, decorator wrapper) all require either modifying
-// existing session machinery (~10,000 LOC, 102+ tests) or adding
-// runtime overhead.  Eager whole-protocol mint validates ONCE at
-// construction; the resulting handle is the existing unchanged
-// primitive.  Zero session-side disturbance.
-//
-// Call sites construct through the canonical factory even when the initial
-// PermSet is empty:
-//
-//     auto h = mint_permissioned_session<Proto>(ctx, resource);
-//
-// Lower-level wrappers that intentionally test bare SessionHandle mechanics
-// may still call mint_session_handle<Proto>(resource) directly.
+// A vendor grade on a payload is a wire-placement obligation rather than an
+// effect row, so it is admitted on its own axis instead of through the row
+// check.
 
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/safety/IsVendor.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
-#include <crucible/sessions/SessionCrash.h>  // Stop terminator
-#include <crucible/sessions/SessionDelegate.h>  // Delegate / Accept
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 
@@ -103,11 +29,6 @@
 
 namespace crucible::safety::proto {
 
-// EpochExecCtx<E, G, InnerCtx> is the ctx-bound mint bridge for
-// EpochedDelegate / EpochedAccept.  The ordinary effects::ExecCtx
-// axes still come from InnerCtx; this wrapper adds only the
-// compile-time Canopy epoch + Relay generation used to seed the
-// returned PermissionedSessionHandle's LoopCtx.
 template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, ::crucible::effects::IsExecCtx InnerCtx>
 struct [[nodiscard]] EpochExecCtx {
     using inner_ctx = InnerCtx;
@@ -143,93 +64,68 @@ struct is_exec_ctx<::crucible::safety::proto::EpochExecCtx<CurrentEpoch, Current
 
 namespace crucible::safety::proto {
 
-// ── proto_row_admitted_by<Proto, Ctx> — recursive protocol walker ──
-//
-// Primary template: false_type (unrecognized protocol shape).
-// Specializations cover every Session.h combinator.
-
 template <class Proto, class Ctx>
 struct proto_row_admitted_by : std::false_type {};
 
-// End: terminal; vacuously admitted.
 template <class Ctx>
 struct proto_row_admitted_by<End, Ctx> : std::true_type {};
 
-// Stop: BSYZ22 crash-stop terminator (`sessions/SessionCrash.h`).
-// Same semantics as End for the row walker — the protocol stops here,
-// nothing more to admit.
 template <class Ctx>
 struct proto_row_admitted_by<Stop, Ctx> : std::true_type {};
 
-// Continue: closes back to enclosing Loop; the loop body's payloads
-// were already checked when Loop was visited.  Vacuously admitted.
+// Continue closes back to the enclosing Loop, whose body this walk already
+// visited, so admitting it unconditionally does not skip a payload.
 template <class Ctx>
 struct proto_row_admitted_by<Continue, Ctx> : std::true_type {};
 
-// Send<T, K>: payload_effect_row_t<T> must be a Subrow of Ctx's row, AND
-// the continuation K must be admitted.
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Send<T, K>, Ctx>
     : std::bool_constant<::crucible::effects::is_subrow_v<payload_effect_row_t<T>, typename Ctx::row_type>
                          && proto_row_admitted_by<K, Ctx>::value> {};
 
-// Recv<T, K>: symmetric to Send.  Receiving a payload that carries
-// row R obliges the receiver to authorize R in its surrounding
-// context.
+// A receiver must itself hold authority for the row its payload carries, so
+// the check runs in the same direction as the sender's rather than inverting.
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Recv<T, K>, Ctx>
     : std::bool_constant<::crucible::effects::is_subrow_v<payload_effect_row_t<T>, typename Ctx::row_type>
                          && proto_row_admitted_by<K, Ctx>::value> {};
 
-// Loop<B>: walk the body.  The body may contain Continue, which
-// closes the loop — handled by the Continue specialization above
-// (vacuously admitted, since the body's payloads were already
-// validated on this Loop walk).
 template <class B, class Ctx>
 struct proto_row_admitted_by<Loop<B>, Ctx> : proto_row_admitted_by<B, Ctx> {};
 
 template <VendorBackend V, class P, class Ctx>
 struct proto_row_admitted_by<VendorPinned<V, P>, Ctx> : proto_row_admitted_by<P, Ctx> {};
 
-// Select<Branches...>: every branch must be admitted (the proposer
-// may pick any of them, so all must fit).
+// Which branch runs is a runtime choice on one side or the other, so every
+// branch has to be admitted rather than just one.
 template <class... Branches, class Ctx>
 struct proto_row_admitted_by<Select<Branches...>, Ctx>
     : std::bool_constant<(proto_row_admitted_by<Branches, Ctx>::value && ...)> {};
 
-// Offer<Branches...>: symmetric.  The offerer must support every
-// branch the peer might pick.
 template <class... Branches, class Ctx>
 struct proto_row_admitted_by<Offer<Branches...>, Ctx>
     : std::bool_constant<(proto_row_admitted_by<Branches, Ctx>::value && ...)> {};
 
-// Offer<Sender<Role>, Bs...>: sender-typed Offer; same per-branch
-// walk as untagged Offer (the Sender wrapper carries no payload).
+// The leading Sender annotation names the peer and carries no payload, so only
+// the branches after it are walked.
 template <class Role, class... Branches, class Ctx>
 struct proto_row_admitted_by<Offer<Sender<Role>, Branches...>, Ctx>
     : std::bool_constant<(proto_row_admitted_by<Branches, Ctx>::value && ...)> {};
 
-// CheckpointedSession<Base, Rollback>: BOTH branches are reachable
-// (Base when checkpoint succeeds, Rollback when it doesn't).  Both
-// must be admitted by the surrounding Ctx.
+// The rollback arm is reachable whenever the checkpoint fails, so its row
+// counts as much as the base arm's.
 template <class Base, class Rollback, class Ctx>
 struct proto_row_admitted_by<CheckpointedSession<Base, Rollback>, Ctx>
     : std::bool_constant<proto_row_admitted_by<Base, Ctx>::value && proto_row_admitted_by<Rollback, Ctx>::value> {};
 
-// Delegate<T, K>: send my endpoint of a T-typed channel; continue as
-// K.  The DELEGATED protocol T is the recipient's responsibility —
-// they will execute it under their own Ctx.  We only walk K (our own
-// continuation).  This mirrors the crash-walker's discipline (see
-// SessionDelegate.h:124-141) which also bypasses T.
+// The delegated protocol T runs under the recipient's context, not this one,
+// so only the continuation K is walked here.
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Delegate<T, K>, Ctx> : proto_row_admitted_by<K, Ctx> {};
 
-// Accept<T, K>: symmetric to Delegate.  We receive an endpoint and
-// the SENDER had to validate T against their own Ctx.  We walk only
-// K because we don't execute T's protocol — we hand it off further
-// or store it.  If the receiver actually wants to RUN the accepted
-// session, they call mint_permissioned_session<T>(ctx, accepted_resource) at
-// that point, which re-runs the row check against their Ctx.
+// Accepting an endpoint does not run its protocol, so T is skipped here too.
+// A recipient that wants to run T mints a session for it, and that mint
+// re-runs the row check against the recipient's own context.
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Accept<T, K>, Ctx> : proto_row_admitted_by<K, Ctx> {};
 
@@ -243,12 +139,6 @@ struct proto_row_admitted_by<EpochedAccept<T, K, MinEpoch, MinGeneration>, Ctx>
 
 template <class Proto, class Ctx>
 inline constexpr bool proto_row_admitted_by_v = proto_row_admitted_by<Proto, Ctx>::value;
-
-// ── CtxFitsProtocol<Proto, Ctx> ────────────────────────────────────
-//
-// User-facing concept: `mint_permissioned_session<Proto>(ctx, res) requires
-// CtxFitsProtocol<Proto, Ctx>`.  The constraint also gates Tier 3
-// Stage's body-row check (which composes pipelined sessions).
 
 template <class Proto, class Ctx>
 concept CtxFitsProtocol = ::crucible::effects::IsExecCtx<Ctx> && proto_row_admitted_by_v<Proto, Ctx>;
@@ -537,6 +427,11 @@ struct protocol_epoch_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx> : protocol_e
 template <class T, class K, class LoopCtx>
 struct protocol_epoch_admitted_by_loop_ctx<Accept<T, K>, LoopCtx> : protocol_epoch_admitted_by_loop_ctx<K, LoopCtx> {};
 
+// The two sides of a handoff are deliberately asymmetric.  A sender must match
+// the declared epoch and generation exactly, so it cannot mint a handoff at a
+// threshold weaker than the one it is running at.  A recipient only has to be
+// at or above the threshold, so a context that has already moved on may still
+// accept.
 template <class T, class K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, class LoopCtx>
 struct protocol_epoch_admitted_by_loop_ctx<EpochedDelegate<T, K, MinEpoch, MinGeneration>, LoopCtx>
     : std::bool_constant<session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>
@@ -655,22 +550,9 @@ struct protocol_permissioned_runnable<Loop<B>> : protocol_permissioned_runnable<
 template <VendorBackend V, class P>
 struct protocol_permissioned_runnable<VendorPinned<V, P>> : protocol_permissioned_runnable<P> {};
 
-// fixy-CR-15: empty Select<> / Offer<> / Offer<Sender<R>> are NOT
-// runnable.  Without these explicit specializations, the variadic
-// AND-fold below collapses to `true` for an empty branch pack (the
-// identity of `&&`), which would let `CtxFitsChannel<Select<>, ...>`
-// admit an unrunnable protocol at the channel mint boundary — the
-// `is_empty_choice_v` guard inside mint_session_handle /
-// permissioned_session_with_loc_ catches it eventually, but
-// only at the inner per-endpoint mint; the outer CtxFitsChannel
-// concept short-circuits earlier and must reject on its own.  These
-// three specializations sit ABOVE the variadic ones in the partial
-// ordering (zero-branch shapes), so they fire for the empty cases
-// while the variadic specs handle ≥1 branches via the recursive
-// AND-fold.  Pairs with fixy-CR-14: CR-14 recurses
-// is_empty_choice<P> through reachable positions for the mint-side
-// static_assert, CR-15 fixes the trait itself at the runnable
-// layer so the empty-choice gate fires at every consumer.
+// A choice with no branches offers nothing to run.  The variadic fold below
+// would report it runnable, because the identity of && over an empty pack is
+// true, so the zero-branch shapes need their own specializations.
 template <>
 struct protocol_permissioned_runnable<Select<>> : std::false_type {};
 
@@ -737,29 +619,15 @@ concept CtxFitsPermissionedProtocol =
     CtxFitsProtocol<Proto, Ctx> && detail::session_mint::permission_flow_closes_v<Proto, InitialPS, LoopCtx>
     && ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx> && ProtocolEpochAdmittedByLoopCtx<Proto, LoopCtx>;
 
-// ── CtxFitsChannel<Proto, CtxA, CtxB> ───────────────────────────────
-//
-// A channel has two local protocols: endpoint A runs Proto; endpoint B runs
-// dual(Proto).  Row admission must hold on BOTH sides, otherwise a sender can
-// legally transmit a payload whose receiver's surrounding Ctx has no authority
-// to hold.  The EmptyPermSet closure reuses the GAPS-002 permission-balance
-// machinery already carried by mint_session; channel-specific non-empty initial
-// PermSets remain a future extension because mint_channel has no permission
-// token parameters to consume.
+// A channel has two local protocols: one endpoint runs Proto and the other its
+// dual.  Admission has to hold on both sides.  Checking only the sender would
+// let it transmit a payload the receiver's context has no authority to hold.
 
 template <class Proto, class CtxA, class CtxB>
 concept CtxFitsChannel =
     ::crucible::effects::IsExecCtx<CtxA> && ::crucible::effects::IsExecCtx<CtxB> && ProtocolPermissionedRunnable<Proto>
     && ProtocolPermissionedRunnable<dual_of_t<Proto>> && CtxFitsPermissionedProtocol<Proto, CtxA, EmptyPermSet>
     && CtxFitsPermissionedProtocol<dual_of_t<Proto>, CtxB, EmptyPermSet>;
-
-// ── mint_permissioned_session<Proto>(ctx, resource, perms...) ───────
-//
-// Ctx-bound factory.  Requires row admission AND local permission-flow
-// closure at the construction boundary, then returns the concrete PSH.
-// The rvalue Permission parameters are consumed into InitialPS exactly
-// like the resource-consuming token mint in PermissionedSession.h; this
-// overload adds the ctx gate and the local close-balance check.
 
 template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource, class... InitPerms>
     requires CtxFitsPermissionedProtocol<Proto, Ctx, PermSet<InitPerms...>>
@@ -773,12 +641,8 @@ template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource, class
                                                                                        std::source_location::current());
 }
 
-// ── Removed mint_session spellings ──────────────────────────────────
-//
-// The live construction surface is mint_permissioned_session<Proto>(ctx,
-// resource, perms...).  These deleted declarations keep stale call sites
-// failing with the intended diagnostic instead of drifting into unrelated
-// overload-resolution text.
+// These deletions exist so that a call written in the older spelling fails
+// against a direct message instead of unrelated overload-resolution text.
 
 template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
 void mint_session(Ctx const&, Resource&&, std::source_location = std::source_location::current()) noexcept =
@@ -790,15 +654,6 @@ template <class Proto, class Resource>
 void mint_session(Resource&&) noexcept = delete("mint_session<Proto>(resource) is removed; use "
                                                 "mint_permissioned_session<Proto>(ctx, resource, perms...) — "
                                                 "structured diagnostic: fixy::sess::diag::FixyMintSessionRemoved");
-
-// ── mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) ───────
-//
-// Paired ctx-bound channel mint.  This is the only channel construction
-// surface: both local protocols must be admitted by their own execution
-// contexts before endpoint handles exist.  Both endpoints are minted as
-// PermissionedSessionHandle instances with EmptyPermSet and with the
-// row/vendor/epoch/permission closure checks resolved entirely at template
-// substitution.
 
 template <class Proto, ::crucible::effects::IsExecCtx CtxA, ::crucible::effects::IsExecCtx CtxB, class ResourceA,
           class ResourceB>
@@ -820,69 +675,50 @@ template <class Proto, ::crucible::effects::IsExecCtx CtxA, ::crucible::effects:
                          std::forward<ResourceB>(resource_b), loc)};
 }
 
-// ── Self-test block ─────────────────────────────────────────────────
 namespace detail::session_mint_self_test {
 
 namespace eff = ::crucible::effects;
 
-// ── End / Continue: vacuously admitted by any Ctx ──────────────────
 static_assert(proto_row_admitted_by_v<End, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<End, eff::BgDrainCtx>);
 static_assert(proto_row_admitted_by_v<Continue, eff::HotFgCtx>);
 
-// ── Send<T, End> with bare T (Row<>) admitted by any Ctx ───────────
 using SendInt = Send<int, End>;
 static_assert(proto_row_admitted_by_v<SendInt, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<SendInt, eff::BgDrainCtx>);
 static_assert(proto_row_admitted_by_v<SendInt, eff::ColdInitCtx>);
 
-// ── Send<Computation<Row<Bg>, T>, End> ─────────────────────────────
-//
-// HotFgCtx (row = Row<>) does NOT admit a Bg-effect payload.
-// BgDrainCtx (row = Row<Bg, Alloc>) DOES admit Bg-effect payload.
 using SendBgComp = Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>;
 static_assert(!proto_row_admitted_by_v<SendBgComp, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<SendBgComp, eff::BgDrainCtx>);
 static_assert(proto_row_admitted_by_v<SendBgComp, eff::BgCompileCtx>);
 
-// ── Multi-step Send chain ──────────────────────────────────────────
 using SendChain = Send<int, Send<eff::Computation<eff::Row<eff::Effect::Alloc>, int>, End>>;
-static_assert(!proto_row_admitted_by_v<SendChain, eff::HotFgCtx>);  // Alloc not in Fg row
-static_assert(proto_row_admitted_by_v<SendChain, eff::BgDrainCtx>);  // Alloc in Bg row
+static_assert(!proto_row_admitted_by_v<SendChain, eff::HotFgCtx>);
+static_assert(proto_row_admitted_by_v<SendChain, eff::BgDrainCtx>);
 
-// ── Loop<Send<T, Continue>> — the canonical SPSC producer pattern ──
 using LoopSendBg = Loop<Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Continue>>;
 static_assert(!proto_row_admitted_by_v<LoopSendBg, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<LoopSendBg, eff::BgDrainCtx>);
 
-// ── Loop<Recv<T, Continue>> — the canonical SPSC consumer pattern ──
 using LoopRecvBg = Loop<Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Continue>>;
 static_assert(!proto_row_admitted_by_v<LoopRecvBg, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<LoopRecvBg, eff::BgDrainCtx>);
 
-// ── Capability transmission ────────────────────────────────────────
-//
-// Send<Capability<Alloc, Bg>, End>: payload conveys Effect::Alloc.
-// Admitted by BgDrainCtx (Alloc in row); not by HotFgCtx (empty row).
 using SendCap = Send<eff::Capability<eff::Effect::Alloc, eff::Bg>, End>;
 static_assert(!proto_row_admitted_by_v<SendCap, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<SendCap, eff::BgDrainCtx>);
 
-// ── Select / Offer fan-out ─────────────────────────────────────────
-using SelectMix = Select<Send<int, End>,  // Row<>
-                         Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;  // Row<Bg>
-// HotFgCtx: branch 0 fits, branch 1 doesn't → entire Select fails.
+using SelectMix = Select<Send<int, End>, Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
 static_assert(!proto_row_admitted_by_v<SelectMix, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<SelectMix, eff::BgDrainCtx>);
 
-// ── CtxFitsProtocol concept ────────────────────────────────────────
 static_assert(CtxFitsProtocol<End, eff::HotFgCtx>);
 static_assert(CtxFitsProtocol<SendInt, eff::HotFgCtx>);
 static_assert(!CtxFitsProtocol<SendBgComp, eff::HotFgCtx>);
 static_assert(CtxFitsProtocol<SendBgComp, eff::BgDrainCtx>);
-static_assert(!CtxFitsProtocol<int, eff::HotFgCtx>);  // int isn't a protocol → false_type primary
+static_assert(!CtxFitsProtocol<int, eff::HotFgCtx>);
 
-// ── CtxFitsChannel concept ─────────────────────────────────────────
 static_assert(CtxFitsChannel<SendInt, eff::HotFgCtx, eff::HotFgCtx>);
 static_assert(!CtxFitsChannel<SendBgComp, eff::HotFgCtx, eff::BgDrainCtx>);
 static_assert(!CtxFitsChannel<SendBgComp, eff::BgDrainCtx, eff::HotFgCtx>);
@@ -899,22 +735,12 @@ static_assert(ProtocolPermissionedRunnable<SendInt>);
 static_assert(!ProtocolPermissionedRunnable<Delegate<SendInt, End>>);
 static_assert(ProtocolPermissionedRunnable<Delegate<DelegatedSession<SendInt, EmptyPermSet>, End>>);
 
-// fixy-CR-15: empty Select<> / Offer<> / Offer<Sender<R>> are NOT
-// runnable.  Without the explicit-empty-case specializations added
-// alongside protocol_permissioned_runnable<Select<Branches...>>,
-// the variadic AND-fold collapses to true on the empty branch pack
-// (the identity of `&&`), and CtxFitsChannel<Select<>, ...> admits
-// an unrunnable protocol at channel-mint time.  Witness the gate
-// at the trait level here so a regression in the spec ordering
-// (e.g. swapping the empty cases below the variadic ones) reddens
-// the header sentinel TU at compile time.
 static_assert(!ProtocolPermissionedRunnable<Select<>>);
 static_assert(!ProtocolPermissionedRunnable<Offer<>>);
 namespace fixy_cr15_sender_role_tag {
 struct Probe {};
 }  // namespace fixy_cr15_sender_role_tag
 static_assert(!ProtocolPermissionedRunnable<Offer<Sender<fixy_cr15_sender_role_tag::Probe>>>);
-// Non-empty cases continue to walk the AND-fold correctly.
 static_assert(ProtocolPermissionedRunnable<Select<End>>);
 static_assert(ProtocolPermissionedRunnable<Offer<End>>);
 static_assert(ProtocolPermissionedRunnable<Offer<Sender<fixy_cr15_sender_role_tag::Probe>, End>>);
@@ -1018,56 +844,30 @@ using EpochMint = decltype(mint_permissioned_session<FreshEpochDelegate>(std::de
 static_assert(std::is_same_v<typename EpochMint::protocol, FreshEpochDelegate>);
 static_assert(std::is_same_v<typename EpochMint::loop_ctx, EpochCtx<5, 3>>);
 
-// ── Stop terminator (BSYZ22 crash-stop) ────────────────────────────
 static_assert(proto_row_admitted_by_v<Stop, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<Stop, eff::BgDrainCtx>);
-// Send<T, Stop> behaves like Send<T, End> for the row walker.
 using SendThenStop = Send<int, Stop>;
 static_assert(proto_row_admitted_by_v<SendThenStop, eff::HotFgCtx>);
 using SendBgThenStop = Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Stop>;
 static_assert(!proto_row_admitted_by_v<SendBgThenStop, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<SendBgThenStop, eff::BgDrainCtx>);
 
-// ── CheckpointedSession<Base, Rollback> ────────────────────────────
-//
-// BOTH branches must fit.  If Base is row-admitted by Ctx but
-// Rollback isn't, the whole thing fails — the rollback path is
-// reachable on checkpoint failure, so its row counts.
-
 using CkptSafe = CheckpointedSession<Send<int, End>, Recv<int, End>>;
 static_assert(proto_row_admitted_by_v<CkptSafe, eff::HotFgCtx>);
 
-using CkptBgRollback = CheckpointedSession<Send<int, End>,  // Row<>
-                                           Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;  // Row<Bg>
-static_assert(!proto_row_admitted_by_v<CkptBgRollback, eff::HotFgCtx>);  // rollback row unfit
-static_assert(proto_row_admitted_by_v<CkptBgRollback, eff::BgDrainCtx>);  // both fit
+using CkptBgRollback = CheckpointedSession<Send<int, End>, Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
+static_assert(!proto_row_admitted_by_v<CkptBgRollback, eff::HotFgCtx>);
+static_assert(proto_row_admitted_by_v<CkptBgRollback, eff::BgDrainCtx>);
 
-// ── Delegate<T, K> / Accept<T, K> ──────────────────────────────────
-//
-// The delegated/accepted protocol T is the PEER'S problem.  Only the
-// continuation K matters for our row-fit.  This means a Hot-fg ctx
-// CAN delegate a Bg-effect channel — the recipient validates T at
-// their own mint_permissioned_session<T>(...) site.
-
-using DelegateBgChannel =
-    Delegate<Loop<Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Continue>>,  // T (recipient's row)
-             End>;  // K (our continuation)
+using DelegateBgChannel = Delegate<Loop<Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Continue>>, End>;
 static_assert(proto_row_admitted_by_v<DelegateBgChannel, eff::HotFgCtx>);
-// But if our CONTINUATION K has Bg payload, that DOES fail Hot-fg.
-using DelegateBgChannelBgK = Delegate<Loop<Recv<int, Continue>>,  // T (free)
-                                      Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;  // K (Bg!)
+using DelegateBgChannelBgK =
+    Delegate<Loop<Recv<int, Continue>>, Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
 static_assert(!proto_row_admitted_by_v<DelegateBgChannelBgK, eff::HotFgCtx>);
 
-using AcceptThenSendBg = Accept<Send<int, End>,  // T
-                                Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;  // K
+using AcceptThenSendBg = Accept<Send<int, End>, Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
 static_assert(!proto_row_admitted_by_v<AcceptThenSendBg, eff::HotFgCtx>);
 static_assert(proto_row_admitted_by_v<AcceptThenSendBg, eff::BgDrainCtx>);
-
-// ── ContentAddressed payload via Send/Recv ─────────────────────────
-//
-// ContentAddressed<T> unwraps transparently in payload_row, so the
-// protocol walker treats Send<ContentAddressed<T>, K> exactly like
-// Send<T, K>.  Verifies the unwrap composes through Send/Recv.
 
 using SendCa = Send<ContentAddressed<int>, End>;
 static_assert(proto_row_admitted_by_v<SendCa, eff::HotFgCtx>);
@@ -1078,18 +878,12 @@ static_assert(proto_row_admitted_by_v<SendCaBg, eff::BgDrainCtx>);
 
 }  // namespace detail::session_mint_self_test
 
-// ── Runtime smoke test ──────────────────────────────────────────────
-
 [[gnu::cold]] inline void runtime_smoke_test_session_mint() noexcept {
     namespace eff = ::crucible::effects;
 
-    // ── Empty-PS mint against HotFgCtx for a bare-T protocol ────────
-    //
-    // The protocol Loop<Send<int, Continue>> sends bare ints
-    // (Row<>); admitted by any Ctx including HotFgCtx.  We don't
-    // actually instantiate a real session here (the Resource type
-    // would need a Pinned channel); the static_asserts confirm
-    // mint_permissioned_session is *callable* with the right concept gate.
+    // No session is instantiated here, because a real resource would have to be
+    // a pinned channel.  The assertions establish only that the mint is
+    // callable behind its concept gate.
 
     using PureLoop = Loop<Send<int, Continue>>;
     eff::HotFgCtx fg;
@@ -1097,7 +891,6 @@ static_assert(proto_row_admitted_by_v<SendCaBg, eff::BgDrainCtx>);
     static_assert(CtxFitsProtocol<PureLoop, eff::HotFgCtx>);
     static_assert(CtxFitsProtocol<PureLoop, eff::BgDrainCtx>);
 
-    // ── BgDrainCtx admits a Bg-effect protocol ─────────────────────
     using BgLoop = Loop<Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Continue>>;
     static_assert(!CtxFitsProtocol<BgLoop, eff::HotFgCtx>);
     static_assert(CtxFitsProtocol<BgLoop, eff::BgDrainCtx>);

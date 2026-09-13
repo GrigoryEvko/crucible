@@ -1,82 +1,25 @@
 #pragma once
 
-// ── crucible::fixy::safety — Safety wrapper minters under fixy:: ───
-//
-// Re-export per misc/16_05_2026_fixy.md.  Surfaces the
-// safety-wrapper token mints (Linear / Secret / ScopedView) under
-// `fixy::safety::` so callers who include only the fixy umbrella
-// never have to descend into the safety/ tree to wrap a value.
-//
-// ── Cross-reference (fixy-A4-011) ─────────────────────────────────
-//
-// Linear / Secret / mint_linear / mint_secret / drop are ALSO
-// re-exported via `fixy::wrap::` (the "one-stop value-wrapping"
-// directory; see Wrap.h header doc, line 17-18 + line 32-33).  The
-// dual export is intentional: by-feature carve-outs here, one-stop
-// directory there.  Both paths name the SAME substrate symbol via
-// `using ::crucible::safety::*` — type identity is drift-checked at
-// compile time by `test/test_fixy_umbrella.cpp` (search
-// "fixy-A4-011" for the static_assert family).  Callers should pick
-// ONE namespace path per TU and stick to it; mixing
-// `using namespace fixy::safety; using namespace fixy::wrap;` works
-// today only because the using-declarations point at identical
-// substrate symbols, and would degenerate to ADL ambiguity the
-// moment one path acquires a divergent re-export — the drift-check
-// static_asserts catch that the same build.
-//
-// Per CLAUDE.md §XXI Universal Mint Pattern: every re-export
-// preserves the substrate's `std::is_constructible_v<T, Args...>`
-// token-mint gate (or the lifetime-bound `Carrier const&` gate for
-// ScopedView), the `[[nodiscard]] constexpr noexcept(...)`
-// qualifiers, and the wrapper's linearity / classification /
-// lifetime-bound discipline.
-//
-// ── Substrate consumed ─────────────────────────────────────────────
-//
-//   safety::Linear<T>              — move-only linear carrier
-//   safety::mint_linear<T>(args)   — token mint
-//   safety::Secret<T>              — classified-by-default carrier
-//   safety::mint_secret<T>(args)   — token mint
-//   safety::ScopedView<C, Tag>     — lifetime-bound borrow
-//   safety::mint_view<Tag>(c)      — view mint (single chokepoint
-//                                    for state-assertion)
-//   safety::mint_linear_view<...>  — linear-typed view mint
-//
-// ── Axiom coverage ─────────────────────────────────────────────────
-//
-//   InitSafe — substrate forwards args; alias preserves.
-//   TypeSafe — using-declarations preserve concept gates.
-//   NullSafe — wrappers are value-typed.
-//   MemSafe  — Linear<T>/Secret<T> are move-only; carrier
-//              lifetime-bounded views.  Alias preserves.
-//   BorrowSafe — ScopedView's CRUCIBLE_LIFETIMEBOUND attribute
-//              propagates through the using-declaration.
-//   DetSafe  — pure value wrap; bit-exact.
-//
-// ── Cost ───────────────────────────────────────────────────────────
-//
-// Zero.  using-declarations are pure name-lookup directives.
+// Most of this surface is also re-exported by the one-stop wrapping
+// namespace. Both paths name the same substrate symbol, so a caller may
+// open both today, but pick one path per translation unit: the day
+// either path acquires a re-export the other does not have, an
+// unqualified call becomes ambiguous.
 
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Secret.h>
 
-#include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
+#include <type_traits>
 
 namespace crucible::fixy::safety {
-
-// ── Linear (move-only consume-once) ───────────────────────────────
 
 using ::crucible::safety::Linear;
 using ::crucible::safety::mint_linear;
 using ::crucible::safety::drop;
 
-// ── Secret (classified-by-default) ────────────────────────────────
-
 using ::crucible::safety::Secret;
 using ::crucible::safety::mint_secret;
-
-// ── ScopedView (lifetime-bound borrow) ────────────────────────────
 
 using ::crucible::safety::ScopedView;
 using ::crucible::safety::mint_view;
@@ -84,40 +27,20 @@ using ::crucible::safety::mint_linear_view;
 
 }  // namespace crucible::fixy::safety
 
-// ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
-//
-// Drift-catch for the 8 using-decls above: Linear / mint_linear / drop
-// (Linear axis), Secret / mint_secret (Classification axis), ScopedView
-// / mint_view / mint_linear_view (Borrow-lifetime axis).  Same recipe
-// as fixy/Pipe.h / fixy/Struct.h / fixy/Substr.h sentinels.
-//
-// Type-identity witnesses for each substrate-aliased template; mint
-// reachability is implicit (using-declarations carry the function
-// templates' name into the namespace; consumers exercise them via
-// test/test_fixy_umbrella.cpp).
-//
-// Note the dual-export with fixy::wrap:: (fixy-A4-011): identity-equal
-// because both paths name the SAME substrate symbol.  Drift between
-// the two paths is caught by test_fixy_umbrella.cpp's cross-namespace
-// static_asserts; this sentinel only checks fixy::safety:: ↔ substrate.
-
 namespace crucible::fixy::safety::self_test {
 
 static_assert(std::is_same_v<::crucible::fixy::safety::Linear<int>, ::crucible::safety::Linear<int>>,
-              "fixy::safety::Linear must alias safety::Linear");
+              "Linear must alias the substrate template.");
 
 static_assert(std::is_same_v<::crucible::fixy::safety::Secret<int>, ::crucible::safety::Secret<int>>,
-              "fixy::safety::Secret must alias safety::Secret");
+              "Secret must alias the substrate template.");
 
-// ScopedView is template <typename C, typename Tag>; use void/void.
 static_assert(
     std::is_same_v<::crucible::fixy::safety::ScopedView<int, void>, ::crucible::safety::ScopedView<int, void>>,
-    "fixy::safety::ScopedView must alias safety::ScopedView");
-
-// ── Cardinality witness ──────────────────────────────────────────
+    "ScopedView must alias the substrate template.");
 
 constexpr int safety_using_cardinality = 8;
-static_assert(safety_using_cardinality == 8, "fixy::safety:: surface drifted from 8 using-decls — Safety.h "
-                                             "and its sentinel must update in lockstep.");
+static_assert(safety_using_cardinality == 8, "This namespace re-exports eight names. The count and the "
+                                             "using-declarations must move together.");
 
 }  // namespace crucible::fixy::safety::self_test

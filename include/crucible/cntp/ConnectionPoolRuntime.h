@@ -1,11 +1,5 @@
 #pragma once
 
-// Runtime ownership for GAPS-136 connection-pool state.
-//
-// The pool is fixed-size, array-backed, and protected by a short spin gate.
-// That keeps the substrate deterministic and avoids mutex/futex paths while
-// still allowing a LeaseGuard destructor to return a connection safely.
-
 #include <crucible/Platform.h>
 #include <crucible/cntp/ConnectionPool.h>
 #include <crucible/effects/Capabilities.h>
@@ -50,51 +44,27 @@ class ConnectionPool : public safety::Pinned<ConnectionPool<T, MaxRemotes, MaxPe
     };
 
 public:
-    // FIXY-V-071: GateTag is the CSL region tag pinning the pool's
-    // spin gate to a Permission<GateTag> ownership token at the type
-    // level.  Nested in ConnectionPool so the tag is per-instantiation
-    // unique (one per <T, MaxRemotes, MaxPerRemote, MaxEvents> tuple)
-    // — separate pools cannot accidentally share spin-gate authority.
+    // Nested in the class template so every instantiation gets a distinct
+    // tag.  Two pools cannot then share spin-gate authority.
     struct GateTag {};
 
 private:
     std::array<Slot, MaxRemotes * MaxPerRemote> slots_{};
     std::array<cntp::PoolEvent, MaxEvents> events_{};
-    // fixy-A5-009 + FIXY-U-085 + FIXY-V-071: gate_ alone on its cache
-    // line so spinners on test_and_set don't false-share with the
-    // counter writes below.  fixy::concurrent::SpinLock<GateTag>
-    // inherits alignas(64) from the substrate (fixy-A5-022) AND adds
-    // (1) Permission<GateTag>-witnessed acquire, (2) cache_tier::Hot
-    // annotation, (3) optional ctx-gated lock_in<Ctx> that rejects
-    // Bg.  This pool's 9 acquire sites use the no-ctx form because
-    // the member functions are already CtxFitsConnectionPoolRuntime-
-    // gated (Bg or Test).
     mutable ::crucible::fixy::concurrent::SpinLock<GateTag> gate_{};
-    // Permission<GateTag> proof — born at construction via the no-ctx
-    // root-mint factory (GateTag carries Row<>, so no Ctx-row
-    // admission is required).  Borrowed (lvalue ref) at every gate_
-    // acquire site; never moved or consumed.  EBO-collapses to zero
-    // bytes via [[no_unique_address]].
-    //
-    // `mutable` mirrors gate_ above — the Permission is a phantom-typed
-    // empty struct with NO observable state, and the spin gate's
-    // lock()/unlock() pair preserves logical const-ness (read paths
-    // that consult event_count_ etc. need to hold the gate to serialize
-    // against concurrent writers).  Without `mutable`, the const-
-    // qualified accessors (event_count, distinct_remote_count,
-    // available_count, event_at) cannot bind a non-const Permission&
-    // to the SpinGuard ctor.
+    // The const accessors still take the gate to serialize against writers,
+    // and the guard constructor binds a non-const Permission&, so this is
+    // mutable.  The permission is an empty phantom type with no observable
+    // state, so logical const-ness holds.
     [[no_unique_address]] mutable ::crucible::safety::Permission<GateTag> gate_perm_{
         ::crucible::safety::mint_permission_root<GateTag>()};
-    // fixy-A5-009: counter group starts a fresh cache line, isolated
-    // from gate_ so each producer store invalidates only one line.
+    // A fresh cache line, so a counter store does not invalidate the line the
+    // spin gate spinners are polling.
     alignas(64) std::size_t next_event_ = 0;
     std::size_t event_count_ = 0;
     std::uint64_t sequence_ = 0;
-    // fixy-A5-009: cached distinct-remote count collapses the prior
-    // O(N²) loop (run under gate_ on every add_connection) to O(1).
-    // Maintained by add_connection on first-slot-for-remote and by
-    // each drain path on last-slot-for-remote.
+    // Cached rather than recomputed.  add_connection increments it on the
+    // first slot for a remote and every drain path decrements it on the last.
     std::uint16_t distinct_remotes_ = 0;
     cntp::PoolConfig config_{};
 
@@ -167,10 +137,6 @@ private:
                                            : cntp::PoolEventKind::EvictedUnhealthy,
                          slot->connection);
             *slot = Slot{};
-            // fixy-A5-009: if this was the last slot for the remote,
-            // distinct_remotes_ shrinks by one.  has_remote() is O(N)
-            // per drain; acceptable because return_index drains at
-            // most one slot per call.
             if (!has_remote(drained_uuid)) {
                 --distinct_remotes_;
             }
@@ -244,10 +210,6 @@ public:
         }
 
         ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
-        // fixy-A5-009: capture has_remote() once (O(N)); the value is
-        // load-bearing for BOTH the MaxRemotes gate AND the post-add
-        // increment.  Pre-fix this section ran has_remote() then a
-        // separate O(N²) distinct_remote_count(), both under gate_.
         const bool is_new_remote = !has_remote(raw.remote_uuid);
         if (is_new_remote && distinct_remotes_ >= static_cast<std::uint16_t>(MaxRemotes)) {
             return std::unexpected(cntp::PoolError::PoolFull);
@@ -330,9 +292,6 @@ public:
             return;
         }
         ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
-        // fixy-A5-009: was_present before / has_remote after is O(N)
-        // each, total O(N) per call — strictly better than recomputing
-        // distinct_remote_count() (O(N²)) per-slot drain.
         const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
             if (slot.occupied && same_uuid(slot.connection.remote_uuid, remote.uuid) && !slot.leased
@@ -368,8 +327,6 @@ public:
             return;
         }
         ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
-        // fixy-A5-009: O(N) bracket around the loop maintains the
-        // cached distinct_remotes_ counter at amortized O(1).
         const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
             if (!slot.occupied || slot.leased || !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
@@ -392,9 +349,8 @@ public:
             return;
         }
         ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
-        // fixy-A5-009: was_present check is loop-bounded; the leased
-        // slot retains the remote, so distinct_remotes_ only drops
-        // when every slot for the remote was already unleased.
+        // A quarantined slot that is still leased keeps its slot, so the
+        // remote can survive this call and distinct_remotes_ must not drop.
         const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
             if (!slot.occupied || !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
@@ -416,8 +372,6 @@ public:
         return event_count_;
     }
 
-    // fixy-A5-009: O(1) cached read.  Pre-fix walked every slot pair
-    // (O(N²)) while holding gate_ on every add_connection call.
     [[nodiscard]] std::uint16_t distinct_remote_count() const noexcept {
         ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         return distinct_remotes_;
@@ -428,12 +382,11 @@ public:
         if (index >= event_count_) {
             return std::unexpected(cntp::PoolError::InvalidConnectionId);
         }
-        // fixy-A5-010: events_[index] indexes the PHYSICAL slot, not the
-        // chronological position.  After wrap, the oldest event lives at
-        // events_[next_event_] (the slot about to be overwritten) and the
-        // physical-zero slot holds a far-newer event.  Unified formula
-        // collapses both regimes: pre-wrap next_event_ ≡ event_count_ so
-        // the subtraction is zero modulo size, returning slot 0.
+        // index is chronological, events_ is physical.  After a wrap the
+        // oldest event lives at events_[next_event_], the slot about to be
+        // overwritten, and physical slot 0 holds a much newer one.  Before a
+        // wrap next_event_ equals event_count_, so the subtraction is zero
+        // modulo size and base lands on slot 0.  One formula covers both.
         const std::size_t size = events_.size();
         const std::size_t base = (next_event_ + size - event_count_) % size;
         const std::size_t physical = (base + index) % size;

@@ -1,19 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_cpu_pinned_v ──────────────────────
-//
-// FIXY-V-187 — wrapper-detection predicate for `CpuPinned<Mask, Posture,
-// T>` (the V-182 affinity × pinning-posture proof token).  Mechanical
-// sibling of IsClockSource / IsSchedClass — the partial spec captures the
-// AffinityMask + PinningPosture NTTPs alongside the wrapped type, so a TSC
-// reader (V-190) can read the pinned mask + posture off the type without
-// instantiating the wrapper.
-//
-// The detector keys on the wrapper class identity, not the lattice value:
-// a `CpuPinned<...>` and a look-alike struct carrying a mask field are NOT
-// confused.  The `IsCpuPinned` concept is the "proof required" gate the
-// rdtsc-reader fixture leans on.
-
 #include <crucible/safety/CpuPinned.h>
 
 #include <type_traits>
@@ -55,8 +41,6 @@ template <typename T>
     requires is_cpu_pinned_v<T>
 inline constexpr PinningPosture cpu_pinned_posture_v = detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::posture;
 
-// ── Self-test ─────────────────────────────────────────────────────
-
 namespace detail::is_cpu_pinned_self_test {
 
 inline constexpr AffinityMask kC0 = AffinityMask::single(0);
@@ -91,7 +75,6 @@ static_assert(cpu_pinned_posture_v<P_int> == PinningPosture::PinnedExplicit);
 static_assert(cpu_pinned_posture_v<A_int> == PinningPosture::PinnedAuto);
 static_assert(cpu_pinned_posture_v<P_int> != cpu_pinned_posture_v<A_int>);
 
-// The pinned mask is recoverable from the type.
 static_assert(detail::is_cpu_pinned_impl<P_int>::mask == kC0);
 static_assert(detail::is_cpu_pinned_impl<P_dbl>::mask == kC3);
 

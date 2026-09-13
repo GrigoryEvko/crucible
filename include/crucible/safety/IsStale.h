@@ -1,7 +1,5 @@
 #pragma once
 
-// Wrapper-detection predicate for safety::Stale<T>.
-
 #include <crucible/safety/Stale.h>
 
 #include <type_traits>

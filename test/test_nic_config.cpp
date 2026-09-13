@@ -5,11 +5,11 @@
 #include <string_view>
 #include <type_traits>
 
-// FIXY-U-087: this fixture deliberately exercises nic::apply_config /
-// apply_ethtool / apply_qdisc / apply_sysctl / query_current — every one
-// is a [[deprecated("CRUCIBLE_STUB:...")]] entrypoint until the
-// CAP_NET_ADMIN ethtool/sysctl/tc-qdisc backend ships.  Authorized
-// suppression at the fixture boundary.
+// Every apply and query entry point this file calls carries a
+// [[deprecated("CRUCIBLE_STUB:...")]] attribute, because no
+// privileged backend stands behind it yet.  Calling them on purpose
+// is the whole point here, so the warning is suppressed for this file
+// alone.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
@@ -85,12 +85,9 @@ void test_mint_and_apply_boundaries() {
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
     assert(valid_sysctl.has_value());
 
-    auto minted = nic::mint_nic_config(
-        eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, qdisc, sysctl);
+    auto minted = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, qdisc, sysctl);
     assert(minted.has_value());
-    static_assert(std::same_as<
-                  std::remove_cvref_t<decltype(*minted)>,
-                  nic::DeclaredNicConfig>);
+    static_assert(std::same_as<std::remove_cvref_t<decltype(*minted)>, nic::DeclaredNicConfig>);
     assert(minted->value().identity.kind == cog::CogKind::NicPort);
     assert(minted->value().ethtool.interface.view() == "eth0");
     assert(minted->value().qdisc.interface.view() == "eth0");
@@ -101,24 +98,19 @@ void test_mint_and_apply_boundaries() {
     assert(!apply.has_value());
     assert(apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto ethtool_apply =
-        nic::apply_ethtool(nic::declare_ethtool_config(minted->value().ethtool));
+    auto ethtool_apply = nic::apply_ethtool(nic::declare_ethtool_config(minted->value().ethtool));
     assert(!ethtool_apply.has_value());
-    assert(ethtool_apply.error()
-           == nic::NicConfigError::PrivilegedApplyDeferred);
+    assert(ethtool_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto qdisc_apply =
-        nic::apply_qdisc(nic::declare_qdisc_config(minted->value().qdisc));
+    auto qdisc_apply = nic::apply_qdisc(nic::declare_qdisc_config(minted->value().qdisc));
     assert(!qdisc_apply.has_value());
     assert(qdisc_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto privileged = nic::mint_nic_config(
-        eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, qdisc, sysctl, true);
+    auto privileged = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, qdisc, sysctl, true);
     assert(privileged.has_value());
     auto privileged_apply = nic::apply_config(*privileged);
     assert(!privileged_apply.has_value());
-    assert(privileged_apply.error()
-           == nic::NicConfigError::PrivilegedBackendUnavailable);
+    assert(privileged_apply.error() == nic::NicConfigError::PrivilegedBackendUnavailable);
 
     std::printf("  test_mint_and_apply_boundaries: PASSED\n");
 }
@@ -145,8 +137,7 @@ void test_identity_and_sysctl_validation() {
     assert(!declared.has_value());
     assert(declared.error() == nic::NicConfigError::InvalidTcpMemoryTriple);
 
-    auto empty_ethtool =
-        nic::apply_ethtool(nic::declare_ethtool_config(nic::EthtoolConfig{}));
+    auto empty_ethtool = nic::apply_ethtool(nic::declare_ethtool_config(nic::EthtoolConfig{}));
     assert(!empty_ethtool.has_value());
     assert(empty_ethtool.error() == nic::NicConfigError::InvalidInterfaceName);
 
@@ -154,8 +145,7 @@ void test_identity_and_sysctl_validation() {
     mismatch.identity = nic_identity();
     mismatch.ethtool.interface = *iface;
     mismatch.qdisc.interface = cntp::NicInterfaceName::from("eth1").value();
-    auto mismatched_apply =
-        nic::apply_config(nic::DeclaredNicConfig{mismatch});
+    auto mismatched_apply = nic::apply_config(nic::DeclaredNicConfig{mismatch});
     assert(!mismatched_apply.has_value());
     assert(mismatched_apply.error() == nic::NicConfigError::InterfaceMismatch);
 
@@ -166,43 +156,25 @@ void test_identity_and_sysctl_validation() {
     std::printf("  test_identity_and_sysctl_validation: PASSED\n");
 }
 
-// fixy-A5-002 honesty-marker fixture.  Proves three machine-readable
-// claims that together define "the NicConfig substrate currently does
-// nothing privileged":
+// Nothing here touches the kernel yet, and three separate claims say
+// so rather than one.  A caller that did not ask for privileged work
+// is told the work was deferred.  A caller that did ask is told the
+// backend is absent, which is different from being quietly admitted
+// and ignored.  A reader of the current settings is told the query
+// was deferred, so the read side cannot fabricate defaults while the
+// write side does nothing.
 //
-//   (a) the compile-time honesty marker `privileged_apply_implemented`
-//       is `false` — a backend author who wires a real ethtool /
-//       sysctl / tc-qdisc installer MUST flip this in lockstep, or
-//       the static_assert in main() reds and points them at this
-//       sentinel;
-//   (b) every apply_* entrypoint with a fresh DeclaredNicConfig
-//       (allow_privileged_apply=false) returns
-//       PrivilegedApplyDeferred — proving the substrate honestly
-//       advertises "not attempted" rather than fabricating success;
-//   (c) every apply_* entrypoint with allow_privileged_apply=true
-//       returns PrivilegedBackendUnavailable — proving the privileged
-//       path is genuinely absent (NOT a silent admit-and-do-nothing);
-//   (d) query_current returns QueryDeferred — proving the read side
-//       is structurally stubbed in lockstep with the write side, NOT
-//       returning fabricated "defaults".
-//
-// When a CAP_NET_ADMIN backend lands, the migration is:
-//   (1) flip nic::privileged_apply_implemented to true,
-//   (2) replace this fixture's "stub-returns-Deferred" assertions
-//       with live-NIC fixtures that exercise ethtool ioctls / sysctl
-//       writes / tc-qdisc installs against a probe interface,
-//   (3) re-validate query_current against a known interface state.
-// Tracked by FIXY-U-087.
+// A real backend means flipping the marker, replacing these
+// assertions with ones driven against a live interface, and checking
+// the query against a known interface state.
 void test_apply_paths_are_stubbed() {
     static_assert(nic::privileged_apply_implemented == false,
-        "fixy-A5-002: NicConfig apply paths are substrate stubs.  "
-        "Flipping privileged_apply_implemented to true requires "
-        "(a) a CAP_NET_ADMIN backend (ethtool / sysctl / tc-qdisc), "
-        "(b) test_apply_paths_are_stubbed replaced with live-NIC "
-        "fixtures, and (c) FIXY-U-087 sweep audit.");
-    static_assert(std::is_same_v<decltype(nic::privileged_apply_implemented),
-                                 const bool>,
-        "fixy-A5-002: honesty trait must be a compile-time bool");
+                  "The privileged apply paths are still stubs.  Setting this "
+                  "marker true requires a backend that can change interface "
+                  "settings, and these assertions replaced by ones driven "
+                  "against a live interface.");
+    static_assert(std::is_same_v<decltype(nic::privileged_apply_implemented), const bool>,
+                  "The marker must be a compile-time bool.");
 
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(iface.has_value());
@@ -211,37 +183,29 @@ void test_apply_paths_are_stubbed() {
     ethtool.tx_queues = *nic::admit_queue_count(8);
     ethtool.rx_queues = *nic::admit_queue_count(8);
 
-    // (b) Deferred path: allow_privileged_apply defaults to false.
-    auto deferred = nic::mint_nic_config(
-        eff::ColdInitCtx{}, nic_identity(), *iface, ethtool);
+    // A configuration that does not ask for privileged work.
+    auto deferred = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool);
     assert(deferred.has_value());
     auto deferred_apply = nic::apply_config(*deferred);
     assert(!deferred_apply.has_value());
-    assert(deferred_apply.error()
-           == nic::NicConfigError::PrivilegedApplyDeferred);
+    assert(deferred_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto deferred_ethtool =
-        nic::apply_ethtool(nic::declare_ethtool_config(deferred->value().ethtool));
+    auto deferred_ethtool = nic::apply_ethtool(nic::declare_ethtool_config(deferred->value().ethtool));
     assert(!deferred_ethtool.has_value());
-    assert(deferred_ethtool.error()
-           == nic::NicConfigError::PrivilegedApplyDeferred);
+    assert(deferred_ethtool.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto deferred_qdisc =
-        nic::apply_qdisc(nic::declare_qdisc_config(deferred->value().qdisc));
+    auto deferred_qdisc = nic::apply_qdisc(nic::declare_qdisc_config(deferred->value().qdisc));
     assert(!deferred_qdisc.has_value());
-    assert(deferred_qdisc.error()
-           == nic::NicConfigError::PrivilegedApplyDeferred);
+    assert(deferred_qdisc.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    // (c) Backend-unavailable path: allow_privileged_apply=true.
-    auto requested = nic::mint_nic_config(
-        eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, {}, {}, true);
+    // One that does ask, and is told the backend is missing.
+    auto requested = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, {}, {}, true);
     assert(requested.has_value());
     auto requested_apply = nic::apply_config(*requested);
     assert(!requested_apply.has_value());
-    assert(requested_apply.error()
-           == nic::NicConfigError::PrivilegedBackendUnavailable);
+    assert(requested_apply.error() == nic::NicConfigError::PrivilegedBackendUnavailable);
 
-    // (d) Query side stubbed in lockstep with write side.
+    // The read side defers in the same way the write side does.
     auto query = nic::query_current(nic_identity(), *iface);
     assert(!query.has_value());
     assert(query.error() == nic::NicConfigError::QueryDeferred);
@@ -250,14 +214,10 @@ void test_apply_paths_are_stubbed() {
 }
 
 void test_audit_mapping() {
-    assert(nic::qdisc_kind_name(nic::QdiscKind::Fq)
-           == std::string_view{"fq"});
-    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Fq)
-           == cog::NicTxQdisc::Fq);
-    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::FqCodel)
-           == cog::NicTxQdisc::FqCodel);
-    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Prio)
-           == cog::NicTxQdisc::Unknown);
+    assert(nic::qdisc_kind_name(nic::QdiscKind::Fq) == std::string_view{"fq"});
+    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Fq) == cog::NicTxQdisc::Fq);
+    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::FqCodel) == cog::NicTxQdisc::FqCodel);
+    assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Prio) == cog::NicTxQdisc::Unknown);
 
     saf::Bits<nic::NicOffload> offloads{
         nic::NicOffload::Tso,
@@ -278,23 +238,20 @@ void test_audit_mapping() {
 int main() {
     static_assert(sizeof(nic::NicRingSize) == sizeof(std::uint16_t));
     static_assert(sizeof(nic::DeclaredNicConfig) == sizeof(nic::NicConfigPlan));
-    static_assert(std::same_as<
-                  nic::DeclaredNicConfig::tag_type,
-                  saf::source::NicConfig>);
+    static_assert(std::same_as<nic::DeclaredNicConfig::tag_type, saf::source::NicConfig>);
     static_assert(nic::CtxFitsNicConfigMint<eff::ColdInitCtx>);
     static_assert(!nic::CtxFitsNicConfigMint<eff::BgDrainCtx>);
     static_assert(std::is_trivially_copyable_v<nic::EthtoolConfig>);
     static_assert(std::is_trivially_copyable_v<nic::QdiscConfig>);
     static_assert(std::is_trivially_copyable_v<nic::SysctlConfig>);
 
-    static_assert(!nic::privileged_apply_implemented,
-        "fixy-A5-002: NicConfig substrate is documented stub — every "
-        "apply_* path returns PrivilegedApplyDeferred (no-backend) or "
-        "PrivilegedBackendUnavailable (backend-requested-but-absent); "
-        "query_current returns QueryDeferred.  Flipping the trait to "
-        "true requires (a) a CAP_NET_ADMIN backend, (b) live-NIC "
-        "fixtures replacing test_apply_paths_are_stubbed, and (c) "
-        "FIXY-U-087 sweep audit.");
+    // The same marker, checked at translation time, so that flipping
+    // it without rewriting the runtime witness fails the build.
+    static_assert(!nic::privileged_apply_implemented, "The configuration substrate is still a stub: every apply "
+                                                      "path defers or reports the backend missing, and every query "
+                                                      "defers.  Setting this marker true requires a backend that "
+                                                      "can change interface settings, and fixtures driven against a "
+                                                      "live interface.");
 
     std::printf("test_nic_config:\n");
     test_admission();

@@ -1,34 +1,3 @@
-// FOUND-G52 — KernelCache ResidencyHeat-pinned three-level cache surface.
-//
-// Verifies the lookup_l1/l2/l3 + publish_l1/l2/l3 variants added to
-// KernelCache.  These are the production call sites for the
-// ResidencyHeat wrapper (FOUND-G49 substrate, FOUND-G51 negative-
-// compile fixtures).
-//
-//   lookup_l1 / publish_l1  → ResidencyHeat<Hot,  T>  — REAL today
-//                              (wraps existing single-tier cache)
-//   lookup_l2 / publish_l2  → ResidencyHeat<Warm, T>  — Phase 5 stub
-//                              (per-vendor-family federation)
-//   lookup_l3 / publish_l3  → ResidencyHeat<Cold, T>  — Phase 5 stub
-//                              (per-chip compiled-bytes archive)
-//
-// Test surface coverage (T01-T13):
-//   T01 — lookup_l1 round-trip vs raw lookup
-//   T02 — publish_l1 round-trip vs raw insert
-//   T03 — lookup_l1 type-identity (Hot-pinned)
-//   T04 — lookup_l2 type-identity (Warm-pinned, stub returns nullptr)
-//   T05 — lookup_l3 type-identity (Cold-pinned, stub returns nullptr)
-//   T06 — publish_l{1,2,3} type-identity (returns ResidencyHeat-
-//          pinned expected<void, InsertError>)
-//   T07 — fence-acceptance: Hot subsumes Warm and Cold
-//   T08 — fence-acceptance: Warm rejected at Hot fence
-//   T09 — fence-acceptance: Cold rejected at higher fences
-//   T10 — relax DOWN-the-lattice (Hot → Warm → Cold)
-//   T11 — layout invariant (sizeof preservation)
-//   T12 — end-to-end Hot-fence consumer
-//   T13 — phase-5-stub semantics (l2/l3 lookups always miss; l2/l3
-//          publishes return success-marker but don't persist)
-
 #include <crucible/MerkleDag.h>
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/effects/Capabilities.h>
@@ -50,16 +19,14 @@ using crucible::CompiledKernel;
 using crucible::safety::ResidencyHeat;
 using crucible::safety::ResidencyHeatTag_v;
 
-// Stand-in for the real CompiledKernel (test-local type punning).
-struct FakeKernel { int x; };
+struct FakeKernel {
+    int x;
+};
 
-// Treat a FakeKernel allocation as an opaque CompiledKernel handle. The cache
-// never dereferences the pointer, so the test only needs stable identity.
-static CompiledKernel* fk_ptr(FakeKernel* fk) noexcept {
-    return static_cast<CompiledKernel*>(static_cast<void*>(fk));
-}
+// The cache never dereferences the kernel pointer, so an unrelated allocation
+// supplies the stable identity the test compares against.
+static CompiledKernel* fk_ptr(FakeKernel* fk) noexcept { return static_cast<CompiledKernel*>(static_cast<void*>(fk)); }
 
-// ── T01 — lookup_l1 round-trip vs raw lookup ────────────────────
 static void test_lookup_l1_round_trip() {
     KernelCache cache;
     FakeKernel fk{42};
@@ -67,7 +34,6 @@ static void test_lookup_l1_round_trip() {
     auto pub_result = std::move(pub).consume();
     assert(pub_result.has_value());
 
-    // lookup_l1 must find the kernel, value bytes match raw lookup.
     auto raw = cache.lookup(ContentHash{0xAAAA}, RowHash{0});
     auto pinned = cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0});
     CompiledKernel* via_wrapper = std::move(pinned).consume();
@@ -75,62 +41,52 @@ static void test_lookup_l1_round_trip() {
     assert(via_wrapper == fk_ptr(&fk));
 }
 
-// ── T02 — publish_l1 round-trip vs raw insert ───────────────────
 static void test_publish_l1_round_trip() {
     KernelCache cache;
     FakeKernel fk{99};
 
-    // publish_l1 wraps insert(); raw insert() at the same key
-    // performs a variant-update (overwrite-same-slot).
     auto pub = cache.publish_l1(ContentHash{0xBBBB}, RowHash{0}, fk_ptr(&fk));
     auto result = std::move(pub).consume();
     assert(result.has_value());
 
-    // lookup must find what publish_l1 wrote.
     assert(cache.lookup(ContentHash{0xBBBB}, RowHash{0}) == fk_ptr(&fk));
 }
 
-// ── T03 — lookup_l1 type-identity ───────────────────────────────
 static void test_lookup_l1_type_identity() {
     KernelCache cache;
-    using Got  = decltype(cache.lookup_l1(ContentHash{1}, RowHash{0}));
+    using Got = decltype(cache.lookup_l1(ContentHash{1}, RowHash{0}));
     using Want = ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>;
-    static_assert(std::is_same_v<Got, Want>,
-        "lookup_l1 must return ResidencyHeat<Hot, CompiledKernel*>");
+    static_assert(std::is_same_v<Got, Want>, "lookup_l1 must return ResidencyHeat<Hot, CompiledKernel*>");
     static_assert(Got::tier == ResidencyHeatTag_v::Hot);
 }
 
-// ── T04 — lookup_l2 type-identity (Phase 5 stub) ────────────────
 static void test_lookup_l2_type_identity() {
     KernelCache cache;
-    using Got  = decltype(cache.lookup_l2(ContentHash{1}, RowHash{0}));
+    using Got = decltype(cache.lookup_l2(ContentHash{1}, RowHash{0}));
     using Want = ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>;
-    static_assert(std::is_same_v<Got, Want>,
-        "lookup_l2 must return ResidencyHeat<Warm, CompiledKernel*>");
+    static_assert(std::is_same_v<Got, Want>, "lookup_l2 must return ResidencyHeat<Warm, CompiledKernel*>");
     static_assert(Got::tier == ResidencyHeatTag_v::Warm);
 
-    // Phase 5 stub: always misses.
+    // L2 has no backing store, so the miss is unconditional rather than a
+    // consequence of this key being absent.
     auto pinned = cache.lookup_l2(ContentHash{0x1234}, RowHash{0});
     CompiledKernel* k = std::move(pinned).consume();
     assert(k == nullptr);
 }
 
-// ── T05 — lookup_l3 type-identity (Phase 5 stub) ────────────────
 static void test_lookup_l3_type_identity() {
     KernelCache cache;
-    using Got  = decltype(cache.lookup_l3(ContentHash{1}, RowHash{0}));
+    using Got = decltype(cache.lookup_l3(ContentHash{1}, RowHash{0}));
     using Want = ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>;
-    static_assert(std::is_same_v<Got, Want>,
-        "lookup_l3 must return ResidencyHeat<Cold, CompiledKernel*>");
+    static_assert(std::is_same_v<Got, Want>, "lookup_l3 must return ResidencyHeat<Cold, CompiledKernel*>");
     static_assert(Got::tier == ResidencyHeatTag_v::Cold);
 
-    // Phase 5 stub: always misses.
+    // L3 has no backing store either, so the miss is unconditional.
     auto pinned = cache.lookup_l3(ContentHash{0x1234}, RowHash{0});
     CompiledKernel* k = std::move(pinned).consume();
     assert(k == nullptr);
 }
 
-// ── T06 — publish_l{1,2,3} type-identity ────────────────────────
 static void test_publish_l_type_identity() {
     KernelCache cache;
     FakeKernel fk{1};
@@ -140,7 +96,7 @@ static void test_publish_l_type_identity() {
     using GotL3 = decltype(cache.publish_l3(ContentHash{1}, RowHash{0}, fk_ptr(&fk)));
 
     using ExpectedT = std::expected<void, KernelCache::InsertError>;
-    using WantL1 = ResidencyHeat<ResidencyHeatTag_v::Hot,  ExpectedT>;
+    using WantL1 = ResidencyHeat<ResidencyHeatTag_v::Hot, ExpectedT>;
     using WantL2 = ResidencyHeat<ResidencyHeatTag_v::Warm, ExpectedT>;
     using WantL3 = ResidencyHeat<ResidencyHeatTag_v::Cold, ExpectedT>;
 
@@ -148,7 +104,7 @@ static void test_publish_l_type_identity() {
     static_assert(std::is_same_v<GotL2, WantL2>);
     static_assert(std::is_same_v<GotL3, WantL3>);
 
-    // Drain so [[nodiscard]] doesn't complain.
+    // Drain each result to satisfy [[nodiscard]].
     auto p1 = cache.publish_l1(ContentHash{2}, RowHash{0}, fk_ptr(&fk));
     auto p2 = cache.publish_l2(ContentHash{2}, RowHash{0}, fk_ptr(&fk));
     auto p3 = cache.publish_l3(ContentHash{2}, RowHash{0}, fk_ptr(&fk));
@@ -157,33 +113,29 @@ static void test_publish_l_type_identity() {
     (void)std::move(p3).consume();
 }
 
-// ── T07 — Hot subsumes Warm and Cold ────────────────────────────
 static void test_hot_satisfies_weaker_tiers() {
     using Hot = ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>;
-    static_assert( Hot::satisfies<ResidencyHeatTag_v::Hot>);
-    static_assert( Hot::satisfies<ResidencyHeatTag_v::Warm>);
-    static_assert( Hot::satisfies<ResidencyHeatTag_v::Cold>);
+    static_assert(Hot::satisfies<ResidencyHeatTag_v::Hot>);
+    static_assert(Hot::satisfies<ResidencyHeatTag_v::Warm>);
+    static_assert(Hot::satisfies<ResidencyHeatTag_v::Cold>);
 }
 
-// ── T08 — Warm rejected at Hot fence ────────────────────────────
 static void test_warm_rejected_at_hot_fence() {
     using Warm = ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>;
-    static_assert( Warm::satisfies<ResidencyHeatTag_v::Warm>);
-    static_assert( Warm::satisfies<ResidencyHeatTag_v::Cold>);
+    static_assert(Warm::satisfies<ResidencyHeatTag_v::Warm>);
+    static_assert(Warm::satisfies<ResidencyHeatTag_v::Cold>);
     static_assert(!Warm::satisfies<ResidencyHeatTag_v::Hot>,
-        "Warm MUST NOT satisfy Hot — load-bearing rejection for the "
-        "L1 hot-dispatch admission gate.");
+                  "Warm does not satisfy Hot. The L1 hot-dispatch admission gate "
+                  "rests on that rejection.");
 }
 
-// ── T09 — Cold rejected at Warm/Hot fences ──────────────────────
 static void test_cold_rejected_at_higher_fences() {
     using Cold = ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>;
-    static_assert( Cold::satisfies<ResidencyHeatTag_v::Cold>);
+    static_assert(Cold::satisfies<ResidencyHeatTag_v::Cold>);
     static_assert(!Cold::satisfies<ResidencyHeatTag_v::Warm>);
     static_assert(!Cold::satisfies<ResidencyHeatTag_v::Hot>);
 }
 
-// ── T10 — relax DOWN-the-lattice ────────────────────────────────
 static void test_relax_to_weaker_tiers() {
     KernelCache cache;
     FakeKernel fk{77};
@@ -192,35 +144,23 @@ static void test_relax_to_weaker_tiers() {
 
     auto hot = cache.lookup_l1(ContentHash{0xCCCC}, RowHash{0});
     auto warm = std::move(hot).relax<ResidencyHeatTag_v::Warm>();
-    static_assert(std::is_same_v<decltype(warm),
-        ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>>);
+    static_assert(std::is_same_v<decltype(warm), ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>>);
 
     auto cold = std::move(warm).relax<ResidencyHeatTag_v::Cold>();
-    static_assert(std::is_same_v<decltype(cold),
-        ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>>);
+    static_assert(std::is_same_v<decltype(cold), ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>>);
 
     CompiledKernel* k = std::move(cold).consume();
     assert(k == fk_ptr(&fk));
 }
 
-// ── T11 — layout invariant ──────────────────────────────────────
 static void test_layout_invariant() {
-    static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot,  CompiledKernel*>)
-                  == sizeof(CompiledKernel*));
-    static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>)
-                  == sizeof(CompiledKernel*));
-    static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>)
-                  == sizeof(CompiledKernel*));
+    static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>) == sizeof(CompiledKernel*));
+    static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>) == sizeof(CompiledKernel*));
+    static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>) == sizeof(CompiledKernel*));
 }
 
-// ── T12 — end-to-end Hot-fence consumer ─────────────────────────
-//
-// Production-like consumer: hot-dispatch path admits only L1 (Hot)
-// kernels.  Models the per-op recording site that needs a
-// ~5 ns kernel lookup; cold-cache penalties (~hundreds of ns) here
-// would blow the per-call shape budget.
 template <typename W>
-    requires (W::template satisfies<ResidencyHeatTag_v::Hot>)
+    requires(W::template satisfies<ResidencyHeatTag_v::Hot>)
 static CompiledKernel* hot_dispatch_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -236,28 +176,25 @@ static void test_e2e_hot_dispatch_consumer() {
     assert(k == fk_ptr(&fk));
 }
 
-// ── T13 — phase-5-stub semantics ────────────────────────────────
 static void test_phase5_stub_semantics() {
     KernelCache cache;
     FakeKernel fk{1};
 
-    // Stubs are noexcept-callable.
     static_assert(noexcept(cache.lookup_l2(ContentHash{1}, RowHash{0})));
     static_assert(noexcept(cache.lookup_l3(ContentHash{1}, RowHash{0})));
     static_assert(noexcept(cache.publish_l2(ContentHash{1}, RowHash{0}, fk_ptr(&fk))));
     static_assert(noexcept(cache.publish_l3(ContentHash{1}, RowHash{0}, fk_ptr(&fk))));
 
-    // l2/l3 lookups always miss today (no underlying store).
+    // Neither tier has a store, so the lookups miss for every key.
     auto l2_hit = cache.lookup_l2(ContentHash{0xEEEE}, RowHash{0});
     auto l3_hit = cache.lookup_l3(ContentHash{0xEEEE}, RowHash{0});
     assert(std::move(l2_hit).consume() == nullptr);
     assert(std::move(l3_hit).consume() == nullptr);
 
-    // FIXY-FOUND-060: l2/l3 publishes return InsertError::NotYetImplemented
-    // until Phase 5 wires real backing stores.  Pre-fix this returned a
-    // vacuous success marker, which silently hid Phase-5 wire-up gaps from
-    // every caller; the error channel now exposes the gap explicitly so
-    // downstream consumers branch on it.
+    // The publishes report an error rather than a success marker. A vacuous
+    // success would let a caller mistake a missing store for a completed
+    // write, so the gap travels on the error channel where it can be branched
+    // on.
     auto pub_l2 = cache.publish_l2(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk));
     auto pub_l3 = cache.publish_l3(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk));
     auto r2 = std::move(pub_l2).consume();
@@ -267,18 +204,11 @@ static void test_phase5_stub_semantics() {
     assert(r2.error() == KernelCache::InsertError::NotYetImplemented);
     assert(r3.error() == KernelCache::InsertError::NotYetImplemented);
 
-    // Verify the stubs DON'T leak into the L1 path either — a
-    // publish_l2 of a kernel under (FFFF, 0) is invisible to lookup_l1.
+    // A publish into L2 stays invisible to L1 at the same key.
     auto check_l1 = cache.lookup_l1(ContentHash{0xFFFF}, RowHash{0});
     assert(std::move(check_l1).consume() == nullptr);
 }
 
-// ── T14 — three-level publish for the SAME (content, row) ───────
-//
-// Production scenario: a single kernel published to all three
-// federation levels.  Each publication produces an independently-
-// typed value; no cross-tier interchange at the type level.  Today
-// only L1 has a real backing store; L2/L3 are Phase 5 stubs.
 static void test_three_level_federation_publish() {
     KernelCache cache;
     FakeKernel fk{0x42};
@@ -295,33 +225,23 @@ static void test_three_level_federation_publish() {
     auto r2 = std::move(p_l2).consume();
     auto r3 = std::move(p_l3).consume();
     assert(r1.has_value());
-    // FIXY-FOUND-060: l2/l3 publishes report NotYetImplemented until
-    // Phase 5 wires the per-vendor-family / per-chip backing stores.
     assert(!r2.has_value());
     assert(!r3.has_value());
     assert(r2.error() == KernelCache::InsertError::NotYetImplemented);
     assert(r3.error() == KernelCache::InsertError::NotYetImplemented);
 
-    // L1 lookup hits the just-published kernel.
     auto l1_hit = cache.lookup_l1(ContentHash{0x1111}, RowHash{0xAAAA});
     assert(std::move(l1_hit).consume() == fk_ptr(&fk));
 }
 
-// ── T15 — lookup_l1 miss path ──────────────────────────────────
-//
-// Audit-pass test: explicit MISS case via lookup_l1 (the main
-// commit's tests only exercise hits).  An empty cache must return
-// nullptr-pinned-Hot for every lookup, and the type-pin survives
-// the miss.
 static void test_lookup_l1_miss_returns_nullptr_pinned() {
     KernelCache cache;
     auto miss = cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF});
-    static_assert(std::is_same_v<decltype(miss),
-        ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>>);
+    static_assert(std::is_same_v<decltype(miss), ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>>);
     assert(std::move(miss).consume() == nullptr);
 
-    // After publishing under a DIFFERENT key, the original key
-    // still misses (no probe pollution).
+    // A publish under a different key must not make the original key hit
+    // through probe pollution.
     FakeKernel fk{1};
     auto pub = cache.publish_l1(ContentHash{0x1234}, RowHash{0}, fk_ptr(&fk));
     (void)std::move(pub).consume();
@@ -330,41 +250,26 @@ static void test_lookup_l1_miss_returns_nullptr_pinned() {
     assert(std::move(miss2).consume() == nullptr);
 }
 
-// ── T16 — publish_l1 variant-update through the wrapper ────────
-//
-// Audit-pass test: publish_l1 followed by another publish_l1 under
-// the SAME (content, row) pair must overwrite the slot — preserving
-// the existing variant-update semantics of the underlying insert().
-// Without this test, a refactor could accidentally make the wrapper
-// reject re-publication, breaking optimizer-driven kernel-variant
-// rotation (the production pattern where a better-compiled variant
-// replaces an older one at the same key).
+// Re-publishing at the same key overwrites the slot. Kernel-variant rotation
+// replaces an older compiled variant in place, so a wrapper that rejected
+// re-publication would break it.
 static void test_publish_l1_variant_update() {
     KernelCache cache;
     FakeKernel fk_v1{1};
     FakeKernel fk_v2{2};
 
-    // Initial publish.
     auto p1 = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v1));
     assert(std::move(p1).consume().has_value());
 
-    // Variant-update: same key, new kernel pointer.
     auto p2 = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v2));
     assert(std::move(p2).consume().has_value());
 
-    // Lookup observes the newer variant.
     auto hit = cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0});
     assert(std::move(hit).consume() == fk_ptr(&fk_v2));
 }
 
-// ── T17 — publish_l1 row-discrimination (FOUND-I05 inheritance) ─
-//
-// Audit-pass test: identical content_hash with distinct row_hash
-// values must cache to DIFFERENT slots even when accessed via the
-// L1 wrapper.  Pins the row-discrimination invariant (FOUND-I05)
-// across the type-pinned overlay — without this test, a refactor
-// that "simplifies" the wrapper to ignore row_hash would silently
-// break the row-typed cache.
+// One content hash with two row hashes occupies two slots. A wrapper
+// simplified to ignore the row hash would collapse them into one.
 static void test_publish_l1_row_discrimination() {
     KernelCache cache;
     FakeKernel fk_row_a{1};
@@ -375,26 +280,17 @@ static void test_publish_l1_row_discrimination() {
     assert(std::move(pa).consume().has_value());
     assert(std::move(pb).consume().has_value());
 
-    // Each row resolves to its own kernel.
     auto hit_a = cache.lookup_l1(ContentHash{0x1234}, RowHash{0xAAAA});
     auto hit_b = cache.lookup_l1(ContentHash{0x1234}, RowHash{0xBBBB});
     assert(std::move(hit_a).consume() == fk_ptr(&fk_row_a));
     assert(std::move(hit_b).consume() == fk_ptr(&fk_row_b));
 
-    // A third row queries cleanly to nullptr (no cross-row pollution).
     auto miss = cache.lookup_l1(ContentHash{0x1234}, RowHash{0xCCCC});
     assert(std::move(miss).consume() == nullptr);
 }
 
-// ── T18 — cross-lattice non-mixing (ResidencyHeat ≠ CipherTier) ─
-//
-// Audit-pass test: ResidencyHeat<Hot, T> and CipherTier<Hot, T>
-// have IDENTICAL tier-name spelling ("Hot") but are STRUCTURALLY
-// distinct types — they sit on orthogonal lattices (cache-residency
-// vs storage-residency).  Captures the bug class where a refactor
-// folds "the three Hot wrappers" into a single shared template,
-// silently allowing a Cipher RAM-replicated value to flow into a
-// hot-dispatch path expecting an L1-resident kernel.
+// The two wrappers spell their strongest tier the same way, which is what
+// makes an accidental fold into one shared template plausible.
 static void test_cross_lattice_non_mixing() {
     using crucible::safety::CipherTier;
     using crucible::safety::CipherTierTag_v;
@@ -402,32 +298,20 @@ static void test_cross_lattice_non_mixing() {
     using RhHot = ResidencyHeat<ResidencyHeatTag_v::Hot, int>;
     using CtHot = CipherTier<CipherTierTag_v::Hot, int>;
 
-    static_assert(!std::is_same_v<RhHot, CtHot>,
-        "ResidencyHeat<Hot, T> and CipherTier<Hot, T> are orthogonal "
-        "lattices — a Cipher-Hot value MUST NOT silently flow into "
-        "a ResidencyHeat-Hot consumer or vice versa.  If this fires, "
-        "a refactor has folded the wrappers into a single shared "
-        "template, defeating the orthogonal-axis discipline.");
+    static_assert(!std::is_same_v<RhHot, CtHot>, "ResidencyHeat<Hot, T> and CipherTier<Hot, T> sit on orthogonal "
+                                                 "lattices. A Cipher-Hot value does not flow into a "
+                                                 "ResidencyHeat-Hot consumer, nor the reverse. This fires when the "
+                                                 "two wrappers have been folded into one shared template.");
 
-    // Cross-construction is rejected — neither wraps the other.
     static_assert(!std::is_constructible_v<RhHot, CtHot>);
     static_assert(!std::is_constructible_v<CtHot, RhHot>);
 }
 
-// ── T19 — runtime observation diagnostic tier-reader pattern ──────────────────
-//
-// Audit-pass test: the static `tier` accessor permits zero-runtime-
-// cost dispatch on the cache-residency tier.  The runtime observer's drift-
-// attribution logic uses this to label residuals against the
-// appropriate baseline ("L1 lookup miss rate" vs "L3 access
-// latency" — distinct metrics that share the same RowHash but
-// belong to different tier dashboards).  Today the runtime observer is not wired,
-// but the static-tier API is the load-bearing primitive that
-// Runtime observation builds on this; the test pins the API at the
-// production call site, not just at the wrapper definition.
+// Drift attribution labels a residual against a per-tier baseline. The tier
+// reads off the type, so the classification costs nothing at run time.
 template <typename W>
 [[nodiscard]] static constexpr int classify_cache_tier_for_runtime() noexcept {
-    if constexpr (W::tier == ResidencyHeatTag_v::Hot)  return 1;
+    if constexpr (W::tier == ResidencyHeatTag_v::Hot) return 1;
     if constexpr (W::tier == ResidencyHeatTag_v::Warm) return 2;
     if constexpr (W::tier == ResidencyHeatTag_v::Cold) return 3;
     return 0;
@@ -452,84 +336,49 @@ static void test_runtime_cache_tier_classifier() {
     (void)std::move(l3).consume();
 }
 
-// ── T20 — exhaustive cannot-tighten matrix ─────────────────────
-//
-// Audit-pass test: pins the SFINAE detection at the test site for
-// every UPWARD relax<> attempt in the ResidencyHeat lattice.
-// Mirror of the FOUND-G47-AUDIT T17 cannot-tighten test for
-// CipherTier — the discipline is identical across all chain
-// lattices, the test is per-lattice load-bearing.
 template <typename W, ResidencyHeatTag_v T_target>
 concept can_tighten = requires(W&& w) {
     { std::move(w).template relax<T_target>() };
 };
 
 static void test_cannot_tighten_to_stronger_tier() {
-    using HotT  = ResidencyHeat<ResidencyHeatTag_v::Hot,  CompiledKernel*>;
+    using HotT = ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>;
     using WarmT = ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>;
     using ColdT = ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>;
 
-    // Down (relax) — admissible.
-    static_assert( can_tighten<HotT,  ResidencyHeatTag_v::Warm>);
-    static_assert( can_tighten<HotT,  ResidencyHeatTag_v::Cold>);
-    static_assert( can_tighten<WarmT, ResidencyHeatTag_v::Cold>);
+    static_assert(can_tighten<HotT, ResidencyHeatTag_v::Warm>);
+    static_assert(can_tighten<HotT, ResidencyHeatTag_v::Cold>);
+    static_assert(can_tighten<WarmT, ResidencyHeatTag_v::Cold>);
 
-    // Self — admissible (lattice reflexivity).
-    static_assert( can_tighten<HotT,  ResidencyHeatTag_v::Hot>);
-    static_assert( can_tighten<WarmT, ResidencyHeatTag_v::Warm>);
-    static_assert( can_tighten<ColdT, ResidencyHeatTag_v::Cold>);
+    // Relaxing to the tier already held is admissible by reflexivity.
+    static_assert(can_tighten<HotT, ResidencyHeatTag_v::Hot>);
+    static_assert(can_tighten<WarmT, ResidencyHeatTag_v::Warm>);
+    static_assert(can_tighten<ColdT, ResidencyHeatTag_v::Cold>);
 
-    // Up — REJECTED at every step (load-bearing).
     static_assert(!can_tighten<WarmT, ResidencyHeatTag_v::Hot>);
     static_assert(!can_tighten<ColdT, ResidencyHeatTag_v::Warm>);
     static_assert(!can_tighten<ColdT, ResidencyHeatTag_v::Hot>);
 }
 
-// ── T21 — FOUND-I06: L2 row_hash plumbing witness ──────────────
-//
-// FOUND-I06 — "L2 IR003* cache lookup updated to consume row_hash".
-// The L1 cache (FOUND-I05) discriminates entries by (content_hash,
-// row_hash); the L2 path is documented as the per-vendor-family
-// cross-chip federation tier and its API surface accepts the same
-// (ContentHash, RowHash) shape.  Today L2 is a Phase-5 stub
-// (returns Warm-pinned nullptr regardless of inputs), but the
-// row_hash slot MUST be plumbed end-to-end through the API so
-// Phase 5 can wire the actual store without API churn.
-//
-// This test pins:
-//   (a) lookup_l2 accepts diverse non-zero row_hashes — the API
-//       does not silently truncate or special-case RowHash{0}.
-//   (b) Each diverse-row_hash lookup returns Warm-pinned nullptr
-//       (stub behavior — not influenced by row_hash value).
-//   (c) publish_l2 accepts diverse row_hashes and returns the
-//       success-marker for each (stub semantics).
-//   (d) L2 stub with NON-empty L1 cache state does NOT accidentally
-//       leak into or mirror L1 — L2 lookups stay nullptr even when
-//       L1 has a live entry at the same (content, row).
+// L2 carries no store, so what is under test here is only that the row hash
+// reaches the API unchanged. A store can then be added without moving the
+// parameter.
 static void test_l2_row_hash_plumbing_FOUND_I06() {
     KernelCache cache;
     FakeKernel fk{1};
 
-    // (a) + (b) — diverse row_hashes, each lookup_l2 returns nullptr-Warm.
+    // The row values span one bit, a byte boundary, an alternating pattern, a
+    // value that fits 32 bits and the all-ones saturation. A row hash that was
+    // truncated or that special-cased zero would show up against them.
     constexpr RowHash diverse_rows[] = {
-        RowHash{0x0001}, RowHash{0x00FF}, RowHash{0xAAAA},
-        RowHash{0xDEADBEEF}, RowHash{0xFFFFFFFFFFFFFFFFULL},
+        RowHash{0x0001}, RowHash{0x00FF}, RowHash{0xAAAA}, RowHash{0xDEADBEEF}, RowHash{0xFFFFFFFFFFFFFFFFULL},
     };
     for (auto rh : diverse_rows) {
         auto pinned = cache.lookup_l2(ContentHash{0x10000}, rh);
-        // Type identity preserved across all row_hashes.
-        static_assert(std::is_same_v<decltype(pinned),
-            ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>>);
+        static_assert(std::is_same_v<decltype(pinned), ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>>);
         assert(std::move(pinned).consume() == nullptr);
     }
 
-    // (c) — publish_l2 with diverse row_hashes preserves Warm type
-    // pinning and returns InsertError::NotYetImplemented under every
-    // row_hash.  FIXY-FOUND-060: stub no longer reports vacuous success;
-    // a Phase-5 caller sees the gap explicitly via the error channel
-    // for every (content, row) combination.  When Phase 5 wires the
-    // L2 store, this test updates to expect `r.has_value() == true`
-    // and adds an l2-publish-then-l2-lookup hit assertion.
     for (auto rh : diverse_rows) {
         auto pub = cache.publish_l2(ContentHash{0x20000}, rh, fk_ptr(&fk));
         auto r = std::move(pub).consume();
@@ -537,49 +386,30 @@ static void test_l2_row_hash_plumbing_FOUND_I06() {
         assert(r.error() == KernelCache::InsertError::NotYetImplemented);
     }
 
-    // (d) — populate L1 at (0x30000, 0xCAFE), then verify L2 stays
-    // nullptr for the SAME key.  Pins that L2 stub does not mirror
-    // L1's live entries — when Phase 5 wires the L2 store, this
-    // test continues to red ONLY if the implementation correctly
-    // treats L2 as a separate physical store from L1 (not a fallback
-    // to L1).  The test will be UPDATED at that time with explicit
-    // l2-publish-then-l2-lookup expectations.
-    auto pub_l1 = cache.publish_l1(
-        ContentHash{0x30000}, RowHash{0xCAFE}, fk_ptr(&fk));
+    // L2 is a separate store, not a fallback: a live L1 entry stays invisible
+    // to lookup_l2 at the same key.
+    auto pub_l1 = cache.publish_l1(ContentHash{0x30000}, RowHash{0xCAFE}, fk_ptr(&fk));
     (void)std::move(pub_l1).consume();
     auto l1_hit = cache.lookup_l1(ContentHash{0x30000}, RowHash{0xCAFE});
-    assert(std::move(l1_hit).consume() == fk_ptr(&fk));  // L1 has it.
+    assert(std::move(l1_hit).consume() == fk_ptr(&fk));
     auto l2_miss = cache.lookup_l2(ContentHash{0x30000}, RowHash{0xCAFE});
-    assert(std::move(l2_miss).consume() == nullptr);     // L2 doesn't.
+    assert(std::move(l2_miss).consume() == nullptr);
 }
 
-// ── T22 — FOUND-I07: L3 row_hash plumbing witness ──────────────
-//
-// FOUND-I07 — "L3 compiled-bytes cache lookup updated to consume
-// row_hash".  Mirror of T21 for the L3 (per-chip cold archive)
-// tier.  Same Phase-5-stub semantics as L2; same API discipline.
-// Pins the row_hash plumbing through lookup_l3 / publish_l3 so
-// Phase 5's S3-backed L3 store can drop in without API churn.
 static void test_l3_row_hash_plumbing_FOUND_I07() {
     KernelCache cache;
     FakeKernel fk{1};
 
     constexpr RowHash diverse_rows[] = {
-        RowHash{0x0001}, RowHash{0x00FF}, RowHash{0xAAAA},
-        RowHash{0xDEADBEEF}, RowHash{0xFFFFFFFFFFFFFFFFULL},
+        RowHash{0x0001}, RowHash{0x00FF}, RowHash{0xAAAA}, RowHash{0xDEADBEEF}, RowHash{0xFFFFFFFFFFFFFFFFULL},
     };
 
-    // (a) + (b) — diverse row_hashes, each lookup_l3 returns nullptr-Cold.
     for (auto rh : diverse_rows) {
         auto pinned = cache.lookup_l3(ContentHash{0x40000}, rh);
-        static_assert(std::is_same_v<decltype(pinned),
-            ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>>);
+        static_assert(std::is_same_v<decltype(pinned), ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>>);
         assert(std::move(pinned).consume() == nullptr);
     }
 
-    // (c) — publish_l3 with diverse row_hashes preserves Cold type
-    // pinning and returns InsertError::NotYetImplemented under every
-    // row_hash (FIXY-FOUND-060, mirror of T21 L2 case above).
     for (auto rh : diverse_rows) {
         auto pub = cache.publish_l3(ContentHash{0x50000}, rh, fk_ptr(&fk));
         auto r = std::move(pub).consume();
@@ -587,11 +417,8 @@ static void test_l3_row_hash_plumbing_FOUND_I07() {
         assert(r.error() == KernelCache::InsertError::NotYetImplemented);
     }
 
-    // (d) — populate L1 at (0x60000, 0xBABE), then verify L3 stays
-    // nullptr for the SAME key.  Same isolation invariant as T21
-    // for L2.
-    auto pub_l1 = cache.publish_l1(
-        ContentHash{0x60000}, RowHash{0xBABE}, fk_ptr(&fk));
+    // L3 is likewise a separate store from L1.
+    auto pub_l1 = cache.publish_l1(ContentHash{0x60000}, RowHash{0xBABE}, fk_ptr(&fk));
     (void)std::move(pub_l1).consume();
     auto l1_hit = cache.lookup_l1(ContentHash{0x60000}, RowHash{0xBABE});
     assert(std::move(l1_hit).consume() == fk_ptr(&fk));
@@ -599,104 +426,42 @@ static void test_l3_row_hash_plumbing_FOUND_I07() {
     assert(std::move(l3_miss).consume() == nullptr);
 }
 
-// ── T23 — FOUND-I06/I07-AUDIT: L2 ↔ L3 cross-tier isolation ────
-//
-// FOUND-I06/I07-AUDIT (Finding A) — T13 covers L1↔L2 and L1↔L3
-// isolation (publish_l2/l3 don't leak into L1).  But the
-// L2↔L3 pair was never directly witnessed.  When Phase 5 wires
-// the actual L2 (per-vendor-family) and L3 (per-chip cold
-// archive) stores, a refactor that accidentally shared the
-// backing store between the two tiers (e.g., a single shared
-// hash table mistakenly indexed by both lookup_l2 and lookup_l3)
-// would not be caught by any existing test.  T23 closes the
-// final isolation cell: publish_l2 at a key MUST be invisible
-// to lookup_l3 at the same key, and vice-versa.
-//
-// Today the assertion holds trivially because both stubs return
-// nullptr regardless of inputs.  When Phase 5 lands real backing
-// stores, T23 will be the load-bearing witness that those stores
-// are physically separate.
+// Guards against a single backing store shared by both tiers. Neither tier has
+// a store, so both answer nullptr for every key and these assertions hold
+// vacuously.
 static void test_l2_l3_cross_tier_isolation_FOUND_I06_I07_AUDIT() {
     KernelCache cache;
     FakeKernel fk_l2_only{42};
     FakeKernel fk_l3_only{43};
 
-    // Publish ONLY into L2 at (0x70000, 0xD00D).
-    auto p2 = cache.publish_l2(
-        ContentHash{0x70000}, RowHash{0xD00D}, fk_ptr(&fk_l2_only));
+    auto p2 = cache.publish_l2(ContentHash{0x70000}, RowHash{0xD00D}, fk_ptr(&fk_l2_only));
     (void)std::move(p2).consume();
 
-    // L3 at the same key MUST miss — L2 publish does not leak into L3.
     auto l3_miss = cache.lookup_l3(ContentHash{0x70000}, RowHash{0xD00D});
     assert(std::move(l3_miss).consume() == nullptr);
 
-    // Now publish ONLY into L3 at a different key (0x80000, 0xF00D).
-    auto p3 = cache.publish_l3(
-        ContentHash{0x80000}, RowHash{0xF00D}, fk_ptr(&fk_l3_only));
+    auto p3 = cache.publish_l3(ContentHash{0x80000}, RowHash{0xF00D}, fk_ptr(&fk_l3_only));
     (void)std::move(p3).consume();
 
-    // L2 at the same key MUST miss — L3 publish does not leak into L2.
     auto l2_miss = cache.lookup_l2(ContentHash{0x80000}, RowHash{0xF00D});
     assert(std::move(l2_miss).consume() == nullptr);
 
-    // Cross-publication at a SHARED key (0x90000, 0xCEED) — both L2
-    // and L3 should hold their own state independently.
-    auto p2_shared = cache.publish_l2(
-        ContentHash{0x90000}, RowHash{0xCEED}, fk_ptr(&fk_l2_only));
-    auto p3_shared = cache.publish_l3(
-        ContentHash{0x90000}, RowHash{0xCEED}, fk_ptr(&fk_l3_only));
+    // Both tiers take a publish at one shared key. Each side must answer with
+    // its own kernel, never the other side's.
+    auto p2_shared = cache.publish_l2(ContentHash{0x90000}, RowHash{0xCEED}, fk_ptr(&fk_l2_only));
+    auto p3_shared = cache.publish_l3(ContentHash{0x90000}, RowHash{0xCEED}, fk_ptr(&fk_l3_only));
     (void)std::move(p2_shared).consume();
     (void)std::move(p3_shared).consume();
 
-    // Both lookups today return nullptr (Phase-5 stub).  When Phase 5
-    // wires real stores, EACH side should observe its OWN published
-    // kernel (not the other side's).  T23 will be tightened at that
-    // time to assert per-tier kernel identity.
     auto l2_shared = cache.lookup_l2(ContentHash{0x90000}, RowHash{0xCEED});
     auto l3_shared = cache.lookup_l3(ContentHash{0x90000}, RowHash{0xCEED});
     assert(std::move(l2_shared).consume() == nullptr);
     assert(std::move(l3_shared).consume() == nullptr);
 }
 
-// ── T24 — FOUND-I18: KernelCache::publish row-validated end-to-end ─
-//
-// FOUND-I18 — "KernelCache::publish row-validated".  Pins that the
-// F11/I02 row-hash projection (`row_hash_contribution_v<Row>` for
-// typed `effects::Row<...>`) flows through publish_l1 → lookup_l1
-// (and publish_l2/l3 → lookup_l2/l3 stubs) WITH SEMANTICS-PRESERVING
-// ROUND-TRIP.  Closes the integration gap between:
-//
-//   • F11   `computation_cache_key_in_row<FnPtr, Row, Args...>`
-//   • F12   `federation_row_hash<Row>`
-//   • I02   `row_hash_contribution_v<Row>`
-//   • I05/I06/I07  KernelCache::{lookup,publish}_l{1,2,3}
-//
-// PRIOR GAP: T21/T22 use HAND-ROLLED hex literals like
-// `RowHash{0xAAAA}` to populate the row-hash slot.  None of the
-// existing tests pass a row_hash that came from
-// `row_hash_contribution_v<Row<...>>`.  A refactor of the I02 fold
-// could silently break this integration without any existing test
-// failing.  T24 closes that gap.
-//
-// PINS:
-//   (a) row_hash_contribution_v<Row<>> is non-zero (cardinality-
-//       seeded I02 invariant) and lookup_l1 with the projected
-//       row_hash returns nullptr-pinned BEFORE publish.
-//   (b) publish_l1 with (content, row_hash_contribution_v<R>, kernel)
-//       succeeds and the same lookup returns the kernel.
-//   (c) Two distinct rows R1 != R2 produce distinct row_hashes,
-//       publish-then-lookup with R1 returns the kernel, with R2
-//       returns nullptr — row discriminates at the hash level.
-//   (d) Permuted rows (Row<Bg, IO> vs Row<IO, Bg>) project to the
-//       SAME row_hash (sort-fold I02 invariant), so a publish with
-//       Row<Bg, IO>'s projection is observable via Row<IO, Bg>'s
-//       projection — the cache treats them as the same slot, as
-//       it should under semantic equivalence.
-//   (e) federation_row_hash<R> == row_hash_contribution_v<R> at the
-//       byte level — F12's projection is a thin RowHash{} wrap
-//       around the I02 fold, and the cache accepts either form.
-//   (f) L2/L3 stubs accept the projected row_hash without rejection
-//       — pins API plumbing in the future-Phase-5 path.
+// Every row hash above is a hand-written literal. Here it comes from the row
+// projection instead, so a change to the fold that broke the cache
+// integration has somewhere to surface.
 
 namespace test_i18 {
 namespace eff = ::crucible::effects;
@@ -705,9 +470,9 @@ namespace fed = ::crucible::cipher::federation;
 inline void f_unary(int) noexcept {}
 inline void f_binary(int, double) noexcept {}
 
-using R0    = eff::Row<>;
-using RBg   = eff::Row<eff::Effect::Bg>;
-using RIO   = eff::Row<eff::Effect::IO>;
+using R0 = eff::Row<>;
+using RBg = eff::Row<eff::Effect::Bg>;
+using RIO = eff::Row<eff::Effect::IO>;
 using RBgIO = eff::Row<eff::Effect::Bg, eff::Effect::IO>;
 using RIOBg = eff::Row<eff::Effect::IO, eff::Effect::Bg>;
 }  // namespace test_i18
@@ -717,12 +482,9 @@ static void test_publish_row_validated_FOUND_I18() {
     namespace fed = ::crucible::cipher::federation;
     namespace diag = ::crucible::safety::diag;
 
-    // (a) — Projected row_hash for Row<> is non-zero (cardinality-
-    //       seeded I02 invariant); cache miss before any publish.
     static_assert(diag::row_hash_contribution_v<eff::R0> != 0u,
-        "FOUND-I18: even Row<> projects to a non-zero row_hash via "
-        "the I02 cardinality-seeded fold — this is the load-bearing "
-        "invariant for KernelCache slot-id non-collision.");
+                  "The empty row projects to a non-zero row hash. Cache slot identity "
+                  "rests on that, since the seed carries the row cardinality.");
     static_assert(diag::row_hash_contribution_v<eff::RBg> != 0u);
     static_assert(diag::row_hash_contribution_v<eff::RIO> != 0u);
     static_assert(diag::row_hash_contribution_v<eff::RBgIO> != 0u);
@@ -734,26 +496,20 @@ static void test_publish_row_validated_FOUND_I18() {
     constexpr ContentHash ch_a{0xAAAA0001};
     constexpr ContentHash ch_b{0xBBBB0002};
 
-    // (e) — F12's federation_row_hash<R> wraps row_hash_contribution_v
-    //       with no transformation.  The cache accepts either form.
-    static_assert(fed::federation_row_hash<eff::R0>().raw()
-                  == diag::row_hash_contribution_v<eff::R0>);
-    static_assert(fed::federation_row_hash<eff::RBg>().raw()
-                  == diag::row_hash_contribution_v<eff::RBg>);
+    static_assert(fed::federation_row_hash<eff::R0>().raw() == diag::row_hash_contribution_v<eff::R0>);
+    static_assert(fed::federation_row_hash<eff::RBg>().raw() == diag::row_hash_contribution_v<eff::RBg>);
 
     const RowHash rh_empty = fed::federation_row_hash<eff::R0>();
-    const RowHash rh_bg    = fed::federation_row_hash<eff::RBg>();
-    const RowHash rh_io    = fed::federation_row_hash<eff::RIO>();
-    const RowHash rh_bgio  = fed::federation_row_hash<eff::RBgIO>();
-    const RowHash rh_iobg  = fed::federation_row_hash<eff::RIOBg>();
+    const RowHash rh_bg = fed::federation_row_hash<eff::RBg>();
+    const RowHash rh_io = fed::federation_row_hash<eff::RIO>();
+    const RowHash rh_bgio = fed::federation_row_hash<eff::RBgIO>();
+    const RowHash rh_iobg = fed::federation_row_hash<eff::RIOBg>();
 
-    // (a) — pre-publish miss for the projected key.
     {
         auto pre = cache.lookup_l1(ch_a, rh_bg);
         assert(std::move(pre).consume() == nullptr);
     }
 
-    // (b) — publish under projected row, lookup must hit.
     {
         auto pub = cache.publish_l1(ch_a, rh_bg, fk_ptr(&fk_a));
         auto r = std::move(pub).consume();
@@ -763,12 +519,10 @@ static void test_publish_row_validated_FOUND_I18() {
         assert(std::move(post).consume() == fk_ptr(&fk_a));
     }
 
-    // (c) — same content, DIFFERENT row → different slot.
     {
-        // R0 != RBg → distinct row_hash bytes.
         assert(rh_empty != rh_bg);
-        assert(rh_bg    != rh_io);
-        assert(rh_io    != rh_bgio);
+        assert(rh_bg != rh_io);
+        assert(rh_io != rh_bgio);
 
         auto miss_at_empty = cache.lookup_l1(ch_a, rh_empty);
         assert(std::move(miss_at_empty).consume() == nullptr);
@@ -776,30 +530,22 @@ static void test_publish_row_validated_FOUND_I18() {
         assert(std::move(miss_at_io).consume() == nullptr);
     }
 
-    // (d) — permuted rows project to the SAME row_hash; the cache
-    //       treats them as the same slot.  Publish under RBgIO and
-    //       observe via RIOBg.
+    // The projection sorts its atoms, so two permutations of one row share a
+    // hash. The cache keys on the hash bytes rather than on the row type, so
+    // that semantic equivalence becomes slot identity.
     {
-        assert(rh_bgio == rh_iobg);  // sort-fold I02 invariant
+        assert(rh_bgio == rh_iobg);
 
         auto pub = cache.publish_l1(ch_b, rh_bgio, fk_ptr(&fk_b));
         auto r = std::move(pub).consume();
         assert(r.has_value());
 
-        // Same row_hash bytes → cache observes the kernel via either
-        // projection.  This pins that the cache key is the BYTES of
-        // the row_hash, not the underlying Row TYPE — so semantic
-        // equivalences induced by I02's permutation invariance map
-        // to physical slot identity.
         auto via_iobg = cache.lookup_l1(ch_b, rh_iobg);
         assert(std::move(via_iobg).consume() == fk_ptr(&fk_b));
     }
 
-    // (f) — L2/L3 stubs accept projected row_hash without rejection
-    //       and behave per Phase-5-stub semantics (lookup miss; publish
-    //       reports InsertError::NotYetImplemented).  FIXY-FOUND-060:
-    //       pre-fix the publish returned a vacuous success marker; the
-    //       error channel now exposes the Phase-5 gap explicitly.
+    // The storeless tiers accept a projected row hash on the same terms as a
+    // literal one.
     {
         auto l2_miss = cache.lookup_l2(ch_a, rh_bg);
         assert(std::move(l2_miss).consume() == nullptr);
@@ -819,57 +565,23 @@ static void test_publish_row_validated_FOUND_I18() {
     }
 }
 
-// ── T25 — FOUND-I18-AUDIT: 5 audit groups closing T24 gaps ─────────
-//
-// FOUND-I18 (T24) covered the F11/F12/I02 → KernelCache happy-path
-// integration with 6 sub-pins.  This audit closes 5 edge-case classes
-// the base test left open:
-//
-//   AUDIT-A18 — pre-publish miss across ALL projected rows including
-//               saturation row RFull (T24 (a) only does Row<Bg>).
-//   AUDIT-B18 — variant-update under projected row_hash.  Pins
-//               MerkleDag.h:1014 "second-publish-wins" semantics
-//               under F11/I02 projection (T24 (b) does single
-//               publish only).
-//   AUDIT-C18 — F11 direct integration without going through F12.
-//               Uses computation_cache_key_in_row<FnPtr, Row, Args...>
-//               as ContentHash directly + row_hash_contribution_v
-//               <Row> as RowHash.  Pins that the F11 cache key is a
-//               valid ContentHash for KernelCache without any
-//               additional transformation.
-//   AUDIT-D18 — saturation row (RFull = 6 atoms) publish/lookup
-//               round-trip + cross-row distinguishability against
-//               R0/RBg/RIO/RBgIO.  T24 only exercises rows up to
-//               2 atoms.
-//   AUDIT-E18 — 4-key disjointness sweep.  2 distinct content
-//               hashes × 2 distinct rows = 4 cache slots; each
-//               holds a distinct kernel; no aliasing among the
-//               other 12 (= 4×4 − 4) cross-key lookups.
-
 static void test_publish_row_validated_FOUND_I18_AUDIT() {
     namespace eff = ::test_i18;
     namespace fed = ::crucible::cipher::federation;
     namespace diag = ::crucible::safety::diag;
     using crucible::cipher::computation_cache_key_in_row;
 
-    using RFull = ::crucible::effects::Row<
-        ::crucible::effects::Effect::Alloc,
-        ::crucible::effects::Effect::IO,
-        ::crucible::effects::Effect::Block,
-        ::crucible::effects::Effect::Bg,
-        ::crucible::effects::Effect::Init,
-        ::crucible::effects::Effect::Test>;
+    using RFull = ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO,
+                                           ::crucible::effects::Effect::Block, ::crucible::effects::Effect::Bg,
+                                           ::crucible::effects::Effect::Init, ::crucible::effects::Effect::Test>;
 
-    // ── AUDIT-A18 — pre-publish miss across ALL projected rows ─────
     {
         KernelCache cache;
         constexpr ContentHash ch{0xCAFE0001};
 
         const RowHash rows[] = {
-            fed::federation_row_hash<eff::R0>(),
-            fed::federation_row_hash<eff::RBg>(),
-            fed::federation_row_hash<eff::RIO>(),
-            fed::federation_row_hash<eff::RBgIO>(),
+            fed::federation_row_hash<eff::R0>(),  fed::federation_row_hash<eff::RBg>(),
+            fed::federation_row_hash<eff::RIO>(), fed::federation_row_hash<eff::RBgIO>(),
             fed::federation_row_hash<RFull>(),
         };
         for (auto rh : rows) {
@@ -877,10 +589,6 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
             assert(std::move(miss).consume() == nullptr);
         }
 
-        // Pairwise non-equality among all 5 projected rows (5C2 = 10
-        // pairs).  Pins that the I02 fold's distinguishability
-        // covers EVERY pair we exercise — no accidental hash
-        // collision in this row family.
         for (std::size_t i = 0; i < 5; ++i) {
             for (std::size_t j = i + 1; j < 5; ++j) {
                 assert(rows[i] != rows[j]);
@@ -888,14 +596,8 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
         }
     }
 
-    // ── AUDIT-B18 — variant-update under projected row_hash ────────
-    //
-    // MerkleDag.h:1014 documents: "variant update under the SAME
-    // (content_hash, row_hash) pair — row_hash is write-once-per-slot;
-    // mismatched-row siblings get DIFFERENT slots".  T24 only does a
-    // single publish per (content, row).  This sub-audit pins that
-    // the variant-update semantics work CORRECTLY when the row_hash
-    // comes from F11/I02 projection (not a hex literal).
+    // Variant update behaves the same when the row hash comes from the
+    // projection rather than from a literal.
     {
         KernelCache cache;
         FakeKernel fk_a{0xA1};
@@ -903,51 +605,33 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
         constexpr ContentHash ch{0xDEAD0002};
         const RowHash rh_bg = fed::federation_row_hash<eff::RBg>();
 
-        // Publish A.
         auto pa = cache.publish_l1(ch, rh_bg, fk_ptr(&fk_a));
         assert(std::move(pa).consume().has_value());
         auto hit_a = cache.lookup_l1(ch, rh_bg);
         assert(std::move(hit_a).consume() == fk_ptr(&fk_a));
 
-        // Publish B at SAME (content, row) — variant overwrite.
         auto pb = cache.publish_l1(ch, rh_bg, fk_ptr(&fk_b));
         assert(std::move(pb).consume().has_value());
         auto hit_b = cache.lookup_l1(ch, rh_bg);
         assert(std::move(hit_b).consume() == fk_ptr(&fk_b));
-
-        // A is no longer reachable via this slot — variant update
-        // semantics under projected row_hash are bit-identical to
-        // hex-literal row_hash.
     }
 
-    // ── AUDIT-C18 — F11 direct integration without F12 ─────────────
-    //
-    // F12's federation_content_hash<&fn, Row, Args...> wraps F11's
-    // computation_cache_key_in_row<&fn, Row, Args...> in a
-    // ContentHash — i.e., F11's full 64-bit cache key IS a valid
-    // ContentHash for the KernelCache.  Pin that calling sites can
-    // bypass F12 and use F11 directly without any transformation.
+    // The raw computation cache key is a valid ContentHash with no narrowing
+    // or further transformation, so a call site can build the key itself and
+    // still land in the slot the federation helpers reach.
     {
         KernelCache cache;
         FakeKernel fk{0xC3};
 
-        constexpr auto f11_key =
-            computation_cache_key_in_row<&eff::f_unary, eff::RBg, int>;
+        constexpr auto f11_key = computation_cache_key_in_row<&eff::f_unary, eff::RBg, int>;
         const ContentHash ch_from_f11{f11_key};
-        const RowHash rh = RowHash{
-            diag::row_hash_contribution_v<eff::RBg>};
+        const RowHash rh = RowHash{diag::row_hash_contribution_v<eff::RBg>};
 
-        // The F11 path should land in the SAME slot as the F12 path
-        // for the same (FnPtr, Row, Args) tuple.
-        const ContentHash ch_from_f12 =
-            fed::federation_content_hash<&eff::f_unary, eff::RBg, int>();
-        const RowHash    rh_from_f12 =
-            fed::federation_row_hash<eff::RBg>();
+        const ContentHash ch_from_f12 = fed::federation_content_hash<&eff::f_unary, eff::RBg, int>();
+        const RowHash rh_from_f12 = fed::federation_row_hash<eff::RBg>();
         assert(ch_from_f11 == ch_from_f12);
-        assert(rh          == rh_from_f12);
+        assert(rh == rh_from_f12);
 
-        // Publish via F11 keys, lookup via F12 keys (and vice-versa)
-        // — both must hit the same slot.
         auto pub = cache.publish_l1(ch_from_f11, rh, fk_ptr(&fk));
         assert(std::move(pub).consume().has_value());
 
@@ -958,11 +642,8 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
         assert(std::move(via_f11).consume() == fk_ptr(&fk));
     }
 
-    // ── AUDIT-D18 — saturation row (RFull) round-trip ──────────────
-    //
-    // RFull exercises all 6 OsUniverse atoms.  T24 only goes up to
-    // 2 atoms (RBgIO).  Pin that the integration extends to the
-    // current saturation cardinality.
+    // RFull carries every effect atom, so it is the saturation case for the
+    // projection.
     {
         KernelCache cache;
         FakeKernel fk{0xD4};
@@ -970,23 +651,18 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
 
         const RowHash rh_full = fed::federation_row_hash<RFull>();
         const RowHash rh_empty = fed::federation_row_hash<eff::R0>();
-        const RowHash rh_bg    = fed::federation_row_hash<eff::RBg>();
-        const RowHash rh_bgio  = fed::federation_row_hash<eff::RBgIO>();
+        const RowHash rh_bg = fed::federation_row_hash<eff::RBg>();
+        const RowHash rh_bgio = fed::federation_row_hash<eff::RBgIO>();
 
-        // RFull distinguishes from every smaller row.
         assert(rh_full != rh_empty);
         assert(rh_full != rh_bg);
         assert(rh_full != rh_bgio);
 
-        // Publish under RFull, lookup hits.
         auto pub = cache.publish_l1(ch, rh_full, fk_ptr(&fk));
         assert(std::move(pub).consume().has_value());
         auto hit = cache.lookup_l1(ch, rh_full);
         assert(std::move(hit).consume() == fk_ptr(&fk));
 
-        // Lookup at SAME content but different row → miss.  RFull
-        // is the maximally-specific row; RBg / RBgIO / R0 all
-        // produce different slots.
         auto miss_at_empty = cache.lookup_l1(ch, rh_empty);
         assert(std::move(miss_at_empty).consume() == nullptr);
         auto miss_at_bg = cache.lookup_l1(ch, rh_bg);
@@ -995,12 +671,8 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
         assert(std::move(miss_at_bgio).consume() == nullptr);
     }
 
-    // ── AUDIT-E18 — 4-key disjointness sweep ───────────────────────
-    //
-    // 2 contents × 2 rows = 4 cache slots.  Each slot holds a
-    // distinct kernel.  Witnesses that none of the 12 cross-key
-    // lookups (4×4 grid minus the 4 diagonal hits) accidentally
-    // alias to a published kernel.
+    // Two content hashes crossed with two rows give four occupied slots, each
+    // holding a kernel of its own.
     {
         KernelCache cache;
         FakeKernel fk_00{0xE5};
@@ -1013,44 +685,28 @@ static void test_publish_row_validated_FOUND_I18_AUDIT() {
         const RowHash rh_0 = fed::federation_row_hash<eff::R0>();
         const RowHash rh_1 = fed::federation_row_hash<eff::RBg>();
 
-        // Sanity — all 4 keys are pairwise distinct.
         assert(ch_a != ch_b);
         assert(rh_0 != rh_1);
 
-        // Publish into all 4 slots.
-        (void)std::move(
-            cache.publish_l1(ch_a, rh_0, fk_ptr(&fk_00))).consume();
-        (void)std::move(
-            cache.publish_l1(ch_a, rh_1, fk_ptr(&fk_01))).consume();
-        (void)std::move(
-            cache.publish_l1(ch_b, rh_0, fk_ptr(&fk_10))).consume();
-        (void)std::move(
-            cache.publish_l1(ch_b, rh_1, fk_ptr(&fk_11))).consume();
+        (void)std::move(cache.publish_l1(ch_a, rh_0, fk_ptr(&fk_00))).consume();
+        (void)std::move(cache.publish_l1(ch_a, rh_1, fk_ptr(&fk_01))).consume();
+        (void)std::move(cache.publish_l1(ch_b, rh_0, fk_ptr(&fk_10))).consume();
+        (void)std::move(cache.publish_l1(ch_b, rh_1, fk_ptr(&fk_11))).consume();
 
-        // Diagonal hits — each slot returns ITS OWN kernel.
-        assert(std::move(cache.lookup_l1(ch_a, rh_0)).consume()
-               == fk_ptr(&fk_00));
-        assert(std::move(cache.lookup_l1(ch_a, rh_1)).consume()
-               == fk_ptr(&fk_01));
-        assert(std::move(cache.lookup_l1(ch_b, rh_0)).consume()
-               == fk_ptr(&fk_10));
-        assert(std::move(cache.lookup_l1(ch_b, rh_1)).consume()
-               == fk_ptr(&fk_11));
+        assert(std::move(cache.lookup_l1(ch_a, rh_0)).consume() == fk_ptr(&fk_00));
+        assert(std::move(cache.lookup_l1(ch_a, rh_1)).consume() == fk_ptr(&fk_01));
+        assert(std::move(cache.lookup_l1(ch_b, rh_0)).consume() == fk_ptr(&fk_10));
+        assert(std::move(cache.lookup_l1(ch_b, rh_1)).consume() == fk_ptr(&fk_11));
 
-        // Off-diagonal — none of the 4 published kernels appear at
-        // a key they weren't published at.  We test 4 keys not in
-        // the published set (different ContentHash, different RowHash
-        // combinations); each must miss.
+        // Four keys outside the published set: an unpublished content hash
+        // against each published row, and each published content hash against
+        // an unpublished row.
         const ContentHash ch_c{0xCCCC0005};
         const RowHash rh_2 = fed::federation_row_hash<eff::RIO>();
 
-        // (ch_c, rh_0) — content not published at this row.
         assert(std::move(cache.lookup_l1(ch_c, rh_0)).consume() == nullptr);
-        // (ch_c, rh_1) — content not published at this row either.
         assert(std::move(cache.lookup_l1(ch_c, rh_1)).consume() == nullptr);
-        // (ch_a, rh_2) — published content but unpublished row.
         assert(std::move(cache.lookup_l1(ch_a, rh_2)).consume() == nullptr);
-        // (ch_b, rh_2) — same.
         assert(std::move(cache.lookup_l1(ch_b, rh_2)).consume() == nullptr);
     }
 }

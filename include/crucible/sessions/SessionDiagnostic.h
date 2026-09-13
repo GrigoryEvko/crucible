@@ -1,89 +1,5 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto::diagnostic — L11 manifest-bug classification
-//                                       (SEPLOG-H2d, task #342)
-//
-// A vocabulary of TAG TYPES naming every manifest-bug class the
-// session-type literature and Crucible's own protocol layer have
-// identified.  Purpose:
-//
-//   * ROUTED ERROR MESSAGES.  Every static_assert across the session-
-//     type headers can tag its diagnostic with one of these classes.
-//     Build logs become greppable: `[SubtypeMismatch]` finds every
-//     subtyping failure; `[CrashBranch_Missing]` finds every
-//     unreliable-peer-missing-crash-branch violation.
-//
-//   * REMEDIATION HINTS AS FIRST-CLASS DATA.  Each tag carries a
-//     constexpr `::remediation` hint — a short, actionable message
-//     the engineer reads to learn how to fix the bug class, not just
-//     this specific instance.
-//
-//   * A SHARED VOCABULARY for cross-layer cross-referencing.  L6
-//     subtype failures, L5 association failures, L8 crash-branch
-//     checks can all emit the SAME diagnostic class when they
-//     reject the SAME semantic issue.  Users reading the error
-//     get consistent classification independent of which layer
-//     fired it.
-//
-// ─── Classes shipped ──────────────────────────────────────────────
-//
-//   ProtocolViolation_Label      wrong label in Select / Offer
-//   ProtocolViolation_Payload    payload type doesn't match schema
-//   ProtocolViolation_State      op called in wrong protocol state
-//   Deadlock_Detected            causality analysis found a cycle
-//   Livelock_Detected            infinite loop with no progress
-//   StarvationPossible           pending I/O might never fire
-//   CrashBranch_Missing          Offer from unreliable peer lacks
-//                                a Recv<Crash<Peer>, _> branch
-//   PermissionImbalance          CSL permission set diverges at a
-//                                reduction step
-//   SubtypeMismatch              T ⩽ U does not hold
-//   DepthBoundReached            bounded async subtype check hit
-//                                the depth limit; try widening
-//   UnboundedQueue               queue type not balanced-plus
-//                                (Lange-Yoshida 2017 undecidability)
-//
-// ─── Extension design ─────────────────────────────────────────────
-//
-// New tag classes are added by inheriting from `tag_base`.  No
-// trait-specialisation boilerplate required.  Example:
-//
-//   struct MyNewTag : tag_base {
-//     static constexpr std::string_view name = "MyNewTag";
-//     static constexpr std::string_view description = "…";
-//     static constexpr std::string_view remediation = "…";
-//   };
-//
-//   is_diagnostic_class_v<MyNewTag>      // → true, automatically
-//   diagnostic_name_v<MyNewTag>          // → "MyNewTag"
-//
-// ─── Macro for classified diagnostics ─────────────────────────────
-//
-// CRUCIBLE_SESSION_ASSERT_CLASSIFIED(cond, tag, msg) expands to:
-//
-//     static_assert(cond, "crucible::session::diagnostic [<tag>]: <msg>")
-//
-// The `[<tag>]` bracketed prefix is uniform across all session-type
-// headers that adopt it, making build-log filtering cheap:
-//
-//     build.log | grep "\[SubtypeMismatch\]"
-//
-// Existing assert_* helpers in the session-type headers don't yet
-// consistently route through this macro; retrofit is orthogonal
-// scope tracked as a follow-up.  This header ships the vocabulary;
-// adopters route their own diagnostics through it.
-//
-// ─── References ───────────────────────────────────────────────────
-//
-//   session_types.md §III.L11 — the specification of this layer.
-//   P2741R3 — C++26 user-generated static_assert messages.  Allows
-//     constexpr expressions in static_assert messages, which would
-//     make tag-embedded messages more dynamic.  We use the simpler
-//     string-literal-concatenation form here for maximum tool
-//     compatibility.
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/Platform.h>
 
 #include <array>
@@ -95,25 +11,7 @@
 
 namespace crucible::safety::proto::diagnostic {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── tag_base: marker for is_diagnostic_class_v ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Every diagnostic tag inherits from tag_base.  This lets the
-// detection trait work on inheritance rather than requiring a
-// specialisation per tag — new tags plug in with zero churn.
-
 struct tag_base {};
-
-// ═════════════════════════════════════════════════════════════════════
-// ── The 18 manifest-bug tags ───────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Each carries three constexpr string_views:
-//
-//   ::name         short identifier (used in routed messages)
-//   ::description  one-sentence summary of what the bug class is
-//   ::remediation  one-sentence actionable hint for fixing it
 
 struct ProtocolViolation_Label : tag_base {
     static constexpr std::string_view name = "ProtocolViolation_Label";
@@ -227,14 +125,6 @@ struct UnboundedQueue : tag_base {
                                                     "them.";
 };
 
-// ─── Tags added by L11 retrofit (#388) ─────────────────────────────
-//
-// Cover the user-facing assertion paths in the existing session-type
-// headers (Session.h's well-formedness assertion, SessionContext.h's
-// domain-collision and lookup-miss errors, SessionQueue.h's empty-
-// queue dequeue, SessionAssoc.h's domain-mismatch on association,
-// SessionGlobal.h's plain-merge divergence).
-
 struct Continue_Without_Loop : tag_base {
     static constexpr std::string_view name = "Continue_Without_Loop";
     static constexpr std::string_view description = "A `Continue` combinator was used at a protocol position with "
@@ -320,12 +210,6 @@ struct Merge_Branches_Diverge : tag_base {
                                                     "full merging per task SEPLOG-STRUCT-7.";
 };
 
-// ─── Tag added by the Pinned-constraint integration (#406) ─────────
-//
-// Cover the mint_session_handle / mint_channel pin-discipline
-// rejection path: lvalue-reference Resource to a non-Pinned type, or
-// rvalue-reference Resource at all.
-
 struct SessionResource_NotPinned : tag_base {
     static constexpr std::string_view name = "SessionResource_NotPinned";
     static constexpr std::string_view description = "mint_session_handle / mint_channel was called with a "
@@ -344,14 +228,6 @@ struct SessionResource_NotPinned : tag_base {
                                                     "lifetime contract is satisfied by other means and you "
                                                     "deliberately want to opt out of the framework's check.";
 };
-
-// ─── Tags added by SessionSubtypeReason (#380) ──────────────────────
-//
-// Refine the catch-all SubtypeMismatch into specific failure classes
-// emitted by the subtype_rejection_reason metafunction.  Each tag
-// names a distinct STRUCTURAL cause for subtype rejection, letting
-// the diagnostic point AT THE FAILING INNER PAIR rather than at the
-// outermost typing context.
 
 struct ShapeMismatch_SendVsRecv : tag_base {
     static constexpr std::string_view name = "ShapeMismatch_SendVsRecv";
@@ -398,14 +274,6 @@ struct BranchCount_Mismatch : tag_base {
                                                     "ADD branches.";
 };
 
-// ─── Tag added by the self-transmission rejection (#363) ──────────
-//
-// Cover the SessionGlobal.h is_global_well_formed_v rejection of
-// Transmission<X, X, P, G> and Choice<X, X, ...>: a participant
-// cannot send to itself in MPST — the From and To roles must be
-// distinct.  Without this rejection, nonsensical types pass WF
-// check and project to silently-broken local types.
-
 struct ProtocolViolation_Self_Loop : tag_base {
     static constexpr std::string_view name = "ProtocolViolation_Self_Loop";
     static constexpr std::string_view description = "A global type contains a Transmission<X, X, P, G> or "
@@ -423,44 +291,20 @@ struct ProtocolViolation_Self_Loop : tag_base {
                                                     "rather than as a self-Transmission.";
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_diagnostic_class_v<T> ───────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Inheritance-based detection: T is a diagnostic class iff T is
-// derived from tag_base (and T is not tag_base itself).
-
 template <typename T>
 inline constexpr bool is_diagnostic_class_v = std::is_base_of_v<tag_base, T> && !std::is_same_v<T, tag_base>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Accessors (require T be a diagnostic class) ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// ─── Framework-controlled rejection diagnostic ────────────────────
-//
-// The natural definition would be:
-//
-//     template <typename T>
-//         requires is_diagnostic_class_v<T>
-//     inline constexpr std::string_view diagnostic_name_v = T::name;
-//
-// but a `requires`-clause failure on a variable template emits
-// compiler-version-specific text (GCC 16 says "invalid variable
-// template"; GCC 17 may rephrase).  Neg-compile tests that match on
-// that text break on toolchain bumps.  Per task #371, we route the
-// rejection through a helper struct that fires a STATIC_ASSERT with
-// a framework-controlled message — stable across GCC versions.
+// The accessors constrain T through a helper struct rather than a `requires`
+// clause on the variable template.  A `requires`-clause failure on a variable
+// template emits compiler-version-specific text, so neg-compile tests matching
+// on it break on a toolchain bump.  The static_assert message below is
+// framework-controlled and stable.
 
 namespace detail::diag {
 
-// Primary template intentionally undefined — only the two boolean-
-// gated specialisations below are valid instantiations.
 template <typename T, bool IsTag>
 struct accessor_check;
 
-// Valid case: T IS a diagnostic class.  Forward the three string
-// fields; nothing to assert.
 template <typename T>
 struct accessor_check<T, true> {
     static constexpr std::string_view name = T::name;
@@ -468,19 +312,17 @@ struct accessor_check<T, true> {
     static constexpr std::string_view remediation = T::remediation;
 };
 
-// Invalid case: T is NOT a diagnostic class.  Fire a stable framework-
-// controlled static_assert.  The empty defaults exist so that even if
-// the compiler continues past the static_assert (some IDE / sanitizer
-// modes), downstream uses of the accessors get a non-undefined-
-// behaviour empty string rather than a hard error.
+// The empty defaults exist so that a compiler which continues past the
+// static_assert still reads a well-defined string rather than an incomplete
+// type.
 template <typename T>
 struct accessor_check<T, false> {
     static_assert(is_diagnostic_class_v<T>, "crucible::session::diagnostic [DiagnosticAccessor_NonTag]: "
                                             "diagnostic_name_v / diagnostic_description_v / "
                                             "diagnostic_remediation_v requires T to be derived from "
-                                            "diagnostic::tag_base.  See SessionDiagnostic.h's catalog "
-                                            "for the shipped tag classes; user-extensions inherit from "
-                                            "tag_base and provide constexpr name/description/remediation.");
+                                            "diagnostic::tag_base.  A user extension inherits from "
+                                            "tag_base and provides constexpr name, description and "
+                                            "remediation.");
 
     static constexpr std::string_view name = "";
     static constexpr std::string_view description = "";
@@ -500,24 +342,6 @@ template <typename T>
 inline constexpr std::string_view diagnostic_remediation_v =
     detail::diag::accessor_check<T, is_diagnostic_class_v<T>>::remediation;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Diagnostic<Tag, Ctx...> wrapper ────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// A type-level wrapper that pairs a diagnostic class with an
-// arbitrary context tuple.  Used as a RETURN TYPE of metafunctions
-// that need to propagate both a success/failure result AND the
-// classified reason for failure.  Example:
-//
-//   template <typename T, typename U>
-//   struct check_subtype_result {
-//       using type = std::conditional_t<
-//           is_subtype_sync_v<T, U>,
-//           std::true_type,
-//           Diagnostic<SubtypeMismatch, T, U>
-//       >;
-//   };
-
 template <typename DiagnosticClass, typename... Context>
     requires is_diagnostic_class_v<DiagnosticClass>
 struct Diagnostic {
@@ -529,7 +353,6 @@ struct Diagnostic {
     static constexpr std::string_view remediation = DiagnosticClass::remediation;
 };
 
-// Shape trait for Diagnostic<...>.
 template <typename T>
 struct is_diagnostic : std::false_type {};
 
@@ -538,21 +361,6 @@ struct is_diagnostic<Diagnostic<C, Ctx...>> : std::true_type {};
 
 template <typename T>
 inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Catalog enumeration ────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Compile-time tuple of all 23 shipped tag types — useful for
-// reflection-based tooling, catalog printers, and diagnostic UIs.
-// First 11 entries are the original L11 vocabulary; positions 11-17
-// were added by the L11 retrofit (#388) to cover concrete user-
-// facing assertion paths in Session.h, SessionContext.h,
-// SessionQueue.h, SessionAssoc.h, and SessionGlobal.h.  Position 18
-// is the SessionResource pin-discipline tag added by integration
-// task #406.  Positions 19-21 are the structural-mismatch refinements
-// added by the subtype_rejection_reason metafunction (#380).
-// Position 22 is the self-transmission tag added by #363.
 
 using Catalog =
     std::tuple<ProtocolViolation_Label, ProtocolViolation_Payload, ProtocolViolation_State, Deadlock_Detected,
@@ -566,42 +374,12 @@ inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
 
 }  // namespace crucible::safety::proto::diagnostic
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro ───────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Expands to a static_assert whose message is prefixed with the
-// diagnostic class name in square brackets for greppable build logs.
-// Uses stringification (#tag) to embed the tag name as a literal.
-//
-// Usage:
-//   CRUCIBLE_SESSION_ASSERT_CLASSIFIED(
-//       (is_subtype_sync_v<T, U>),
-//       SubtypeMismatch,
-//       "T must be a synchronous subtype of U for this substitution.");
-//
-// IMPORTANT: if the condition contains a comma (e.g., template argument
-// lists like is_subtype_sync_v<T, U>), parenthesise the entire
-// condition so the preprocessor doesn't split it at the comma.
-//
-// Produces (on failure):
-//   error: static assertion failed: crucible::session::diagnostic
-//          [SubtypeMismatch]: T must be a synchronous subtype of U
-//          for this substitution.
-
 #define CRUCIBLE_SESSION_ASSERT_CLASSIFIED(cond, tag, msg) \
     static_assert(cond, "crucible::session::diagnostic [" #tag "]: " msg)
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Framework self-test static_asserts ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace crucible::safety::proto::diagnostic::detail::diag_self_test {
 
-// ─── is_diagnostic_class_v — positive and negative ────────────────
-
-// Positive: every shipped tag is recognised.
 static_assert(is_diagnostic_class_v<ProtocolViolation_Label>);
 static_assert(is_diagnostic_class_v<ProtocolViolation_Payload>);
 static_assert(is_diagnostic_class_v<ProtocolViolation_State>);
@@ -614,8 +392,6 @@ static_assert(is_diagnostic_class_v<SubtypeMismatch>);
 static_assert(is_diagnostic_class_v<DepthBoundReached>);
 static_assert(is_diagnostic_class_v<UnboundedQueue>);
 
-// Negative: tag_base itself is not a tag (it's the marker); plain
-// types are not tags.
 static_assert(!is_diagnostic_class_v<tag_base>);
 static_assert(!is_diagnostic_class_v<int>);
 static_assert(!is_diagnostic_class_v<void>);
@@ -623,7 +399,6 @@ static_assert(!is_diagnostic_class_v<void>);
 struct RandomStruct {};
 static_assert(!is_diagnostic_class_v<RandomStruct>);
 
-// User-defined extension works automatically.
 struct UserDefinedTag : tag_base {
     static constexpr std::string_view name = "UserDefinedTag";
     static constexpr std::string_view description = "custom class";
@@ -631,50 +406,37 @@ struct UserDefinedTag : tag_base {
 };
 static_assert(is_diagnostic_class_v<UserDefinedTag>);
 
-// ─── diagnostic_name_v / description_v / remediation_v ────────────
-
 static_assert(diagnostic_name_v<SubtypeMismatch> == "SubtypeMismatch");
 static_assert(diagnostic_name_v<CrashBranch_Missing> == "CrashBranch_Missing");
 static_assert(diagnostic_name_v<Deadlock_Detected> == "Deadlock_Detected");
 static_assert(diagnostic_name_v<UnboundedQueue> == "UnboundedQueue");
 
-// Description + remediation present on every tag (non-empty).
 static_assert(!diagnostic_description_v<SubtypeMismatch>.empty());
 static_assert(!diagnostic_remediation_v<SubtypeMismatch>.empty());
 static_assert(!diagnostic_description_v<CrashBranch_Missing>.empty());
 static_assert(!diagnostic_remediation_v<CrashBranch_Missing>.empty());
 
-// User-defined tag's accessors work too.
 static_assert(diagnostic_name_v<UserDefinedTag> == "UserDefinedTag");
 static_assert(diagnostic_remediation_v<UserDefinedTag> == "ask the user");
 
-// ─── Diagnostic<Tag, Ctx...> wrapper ──────────────────────────────
-
-// Construction with various context types.
 using D1 = Diagnostic<SubtypeMismatch, int, float>;
-using D2 = Diagnostic<CrashBranch_Missing>;  // no context
+using D2 = Diagnostic<CrashBranch_Missing>;
 
-// Shape predicate.
 static_assert(is_diagnostic_v<D1>);
 static_assert(is_diagnostic_v<D2>);
 static_assert(!is_diagnostic_v<SubtypeMismatch>);
 static_assert(!is_diagnostic_v<int>);
 
-// Field access — diagnostic_class and context.
 static_assert(std::is_same_v<typename D1::diagnostic_class, SubtypeMismatch>);
 static_assert(std::is_same_v<typename D1::context, std::tuple<int, float>>);
 static_assert(std::is_same_v<typename D2::context, std::tuple<>>);
 
-// Name forwarded from the wrapped tag.
 static_assert(D1::name == "SubtypeMismatch");
 static_assert(D2::name == "CrashBranch_Missing");
-
-// ─── Catalog ──────────────────────────────────────────────────────
 
 static_assert(catalog_size == 23);
 static_assert(std::tuple_size_v<Catalog> == 23);
 
-// Each catalog entry is a valid diagnostic class.
 static_assert(is_diagnostic_class_v<std::tuple_element_t<0, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<5, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<10, Catalog>>);
@@ -682,12 +444,6 @@ static_assert(is_diagnostic_class_v<std::tuple_element_t<18, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<21, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<22, Catalog>>);
 
-// The catalog starts with ProtocolViolation_Label and ends with
-// ProtocolViolation_Self_Loop (ordering is deterministic).  The
-// original 11 L11 tags fill positions [0, 10]; the 7 retrofit tags
-// (#388) fill [11, 17]; the SessionResource tag (#406) fills 18;
-// the three subtype-rejection-reason refinements (#380) fill 19-21;
-// the self-transmission tag (#363) fills 22.
 static_assert(std::is_same_v<std::tuple_element_t<0, Catalog>, ProtocolViolation_Label>);
 static_assert(std::is_same_v<std::tuple_element_t<10, Catalog>, UnboundedQueue>);
 static_assert(std::is_same_v<std::tuple_element_t<11, Catalog>, Continue_Without_Loop>);
@@ -698,26 +454,17 @@ static_assert(std::is_same_v<std::tuple_element_t<20, Catalog>, ShapeMismatch_Se
 static_assert(std::is_same_v<std::tuple_element_t<21, Catalog>, BranchCount_Mismatch>);
 static_assert(std::is_same_v<std::tuple_element_t<22, Catalog>, ProtocolViolation_Self_Loop>);
 
-// ─── Macro compile-test ───────────────────────────────────────────
-
-// Happy path — true condition, macro compiles silently.
 CRUCIBLE_SESSION_ASSERT_CLASSIFIED(true, SubtypeMismatch, "This condition is true, so the assertion passes silently.");
 
 CRUCIBLE_SESSION_ASSERT_CLASSIFIED(is_diagnostic_class_v<SubtypeMismatch>, ProtocolViolation_Label,
                                    "Every shipped tag is a recognised diagnostic class.");
 
-// Condition containing a comma (template-arg list) must be
-// parenthesised so the preprocessor doesn't split at the comma.
 CRUCIBLE_SESSION_ASSERT_CLASSIFIED((std::is_same_v<tag_base, tag_base>), Deadlock_Detected,
                                    "tag_base is identical to itself — parenthesised to protect the "
                                    "inner comma from the preprocessor.");
 
-// ─── Uniqueness: every tag's name is distinct ─────────────────────
-//
-// O(N²) pairwise-distinctness check.  11 tags × 55 comparisons is
-// negligible at compile time.  Explicit std::array construction
-// (not CTAD from braced-init-list, which is ambiguous here).
-
+// The std::array element type and extent are written out because CTAD from the
+// braced-init-list is ambiguous here.
 template <std::size_t... Is>
 consteval bool catalog_names_distinct_impl(std::index_sequence<Is...>) {
     constexpr auto names = std::array<std::string_view, sizeof...(Is)>{std::tuple_element_t<Is, Catalog>::name...};

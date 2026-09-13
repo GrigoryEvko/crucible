@@ -1,12 +1,5 @@
 #pragma once
 
-// GAPS-125.  RoCEv2 lossless-fabric configuration substrate.
-//
-// This header owns typed admission and read-only verification for RoCEv2
-// PFC/ECN/DCQCN intent.  It deliberately does not invoke vendor tools,
-// mutate sysfs, install switch policy, or claim DCQCN liveness from
-// unavailable evidence; those are NicConfig/operator-policy tasks.
-
 #include <crucible/cntp/Pacing.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>
@@ -19,17 +12,10 @@
 
 namespace crucible::cntp {
 
-// fixy-A5-002 honesty marker.  Live tier = admission + RoCEv2 typed
-// validation (PFC mask / DSCP / DCQCN alpha + target / CE threshold) +
-// /proc-counter reads; stub tier = privileged apply paths (sysfs / vendor
-// tool mutation) which currently return PrivilegedApplyDeferred or
-// VendorBackendUnavailable, and `verify_dcqcn_active` which returns
-// DcqcnState::BackendUnavailable (per fixy-A5-042, an honest "no live
-// evidence" sentinel — NOT a fabricated Inactive).  Flipping
-// `privileged_apply_implemented` to true requires a vendor-policy
-// installer (Mellanox mlxconfig / Broadcom bnxt_re tools) + a lockstep
-// update to test_cntp_roce_config::test_apply_paths_are_stubbed.
-// Tracked by FIXY-U-087.
+// False: no privileged path mutates sysfs or drives a vendor tool, so
+// apply_roce_config installs no policy.  Typed admission, config validation
+// and the pause-counter reads are real.  The DCQCN probe reports
+// BackendUnavailable, which means no evidence, not off.
 inline constexpr bool privileged_apply_implemented = false;
 
 enum class RoceError : std::uint8_t {
@@ -150,17 +136,12 @@ template <std::uint8_t PfcPriorities = 0b0000'1000, std::uint8_t Dscp = 26>
     return {};
 }
 
-// FIXY-U-087: stub-vs-live deprecation discipline.  `apply_roce_config` is
-// a STUB (see `privileged_apply_implemented = false`).
-// `parse_pfc_pause_counters` and `query_pfc_pause_counters` are LIVE — they
-// parse / read /proc-counter text and ship today.  Authorized stub callers
-// (`test/test_cntp_roce_config.cpp`, `test/safety_neg/neg_roce_raw_config_apply.cpp`)
-// suppress the warning with `#pragma GCC diagnostic push/ignored
-// "-Wdeprecated-declarations"/pop`.
-[[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysfs/vendor-tool RoCEv2 "
-                        "policy install (Mellanox mlxconfig / Broadcom bnxt_re) not yet attached; "
-                        "returns PrivilegedApplyDeferred or VendorBackendUnavailable; see "
-                        "fixy-A5-002 / FIXY-U-087")]]
+// Carries [[deprecated]] not because it is going away but because the
+// attribute makes every call site warn, so a stub cannot be reached without
+// notice at compile time.  The two pause-counter functions below are real and
+// carry no such attribute.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no sysfs or vendor tool installs RoCEv2 "
+                        "policy. Returns PrivilegedApplyDeferred or VendorBackendUnavailable")]]
 std::expected<void, RoceError> apply_roce_config(DeclaredRoceConfig config) noexcept;
 
 [[nodiscard]] std::expected<PfcPauseStats, RoceError> parse_pfc_pause_counters(std::string_view rx_text,
@@ -168,13 +149,9 @@ std::expected<void, RoceError> apply_roce_config(DeclaredRoceConfig config) noex
 
 [[nodiscard]] std::expected<PfcPauseStats, RoceError> query_pfc_pause_counters(NicInterfaceName iface) noexcept;
 
-// fixy-A5-042: explicit unknown discriminator.  Pre-fix
-// `verify_dcqcn_active` returned `std::expected<bool, RoceError>`
-// which forced callers to treat the "no backend can answer" case as
-// an error — indistinguishable in caller flow from "the NIC says
-// DCQCN is genuinely inactive".  `DcqcnState::BackendUnavailable`
-// is the explicit unknown; callers can branch on it without
-// pattern-matching on an error code.
+// BackendUnavailable is an explicit unknown and is not the same fact as
+// Inactive.  A caller that collapses the two reads "nobody could answer" as
+// "the NIC says DCQCN is off".
 enum class DcqcnState : std::uint8_t {
     BackendUnavailable,
     Inactive,
@@ -183,24 +160,15 @@ enum class DcqcnState : std::uint8_t {
 
 [[nodiscard]] std::string_view dcqcn_state_name(DcqcnState state) noexcept;
 
-// Returns the queried DCQCN state.  `BackendUnavailable` means no
-// vendor-specific probe succeeded for this interface — callers
-// should treat it as "unknown" rather than "off".  No allocation,
-// no errno propagation; vendor sysfs / ethtool probes land here as
-// they ship per-vendor.  FIXY-U-087: STUB until a vendor probe ships
-// (today the body returns `DcqcnState::BackendUnavailable` for every
-// interface — the explicit-unknown sentinel of fixy-A5-042).
-[[nodiscard, deprecated("CRUCIBLE_STUB: DCQCN state probe (vendor sysfs / "
-                        "ethtool) not yet wired; returns DcqcnState::BackendUnavailable; see "
-                        "fixy-A5-002 / fixy-A5-042 / FIXY-U-087")]]
+// No vendor probe is wired, so this answers BackendUnavailable for every
+// interface.  A caller must read that as unknown, not as off.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no vendor sysfs or ethtool probe reads the "
+                        "DCQCN state. Returns DcqcnState::BackendUnavailable")]]
 DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept;
 
-// Pure mapping from queried state to the legacy `bool, RoceError`
-// expected shape.  Extracted from `verify_dcqcn_active` so the
-// back-compat contract is testable at compile time without
-// requiring a working backend — the Active→true / Inactive→false
-// branches stay dead until a vendor probe ships, but the mapping
-// must remain correct for that future ship-day.
+// Separate from verify_dcqcn_active so the mapping is checkable without a
+// working backend.  The Active and Inactive arms are unreachable while no
+// probe exists, and the static_asserts below hold them correct.
 [[nodiscard]] constexpr std::expected<bool, RoceError> dcqcn_state_to_bool(DcqcnState state) noexcept {
     switch (state) {
         case DcqcnState::Active:
@@ -213,23 +181,13 @@ DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept;
     }
 }
 
-// Back-compat thin wrapper over `query_dcqcn_state`.  Returns
-// `unexpected(DcqcnStatusUnavailable)` for the no-backend case so
-// existing call sites keep their error path; new code should
-// prefer `query_dcqcn_state` and branch on `DcqcnState` directly.
-// FIXY-U-087: STUB by composition — chains on `query_dcqcn_state` (above),
-// so the only attainable return today is
-// `unexpected(DcqcnStatusUnavailable)`.
-[[nodiscard, deprecated("CRUCIBLE_STUB: DCQCN active-state verification not "
-                        "yet wired (transitively, via query_dcqcn_state); returns "
-                        "RoceError::DcqcnStatusUnavailable; see fixy-A5-002 / fixy-A5-042 / "
-                        "FIXY-U-087")]]
+// A thin wrapper over query_dcqcn_state that folds the unknown back into an
+// error, so an older call site keeps its error path.  New code should call
+// query_dcqcn_state and branch on the state instead.
+[[nodiscard, deprecated("CRUCIBLE_STUB: this chains on query_dcqcn_state, which reads "
+                        "nothing, so it always returns RoceError::DcqcnStatusUnavailable")]]
 std::expected<bool, RoceError> verify_dcqcn_active(NicInterfaceName iface) noexcept;
 
-// fixy-A5-042 follow-up: prove the back-compat mapping covers all
-// three DcqcnState discriminators correctly.  Branches stay dead
-// until a vendor probe ships; the static_assert is the
-// regression net for the ship-day mapping.
 static_assert(dcqcn_state_to_bool(DcqcnState::Active).value() == true);
 static_assert(dcqcn_state_to_bool(DcqcnState::Inactive).value() == false);
 static_assert(!dcqcn_state_to_bool(DcqcnState::BackendUnavailable).has_value());

@@ -1,14 +1,5 @@
 #pragma once
 
-// GAPS-168 WIP. Vendor-neutral Forge comm-phase sketch.
-//
-// This header is deliberately parked under forge/_wip because the real Forge
-// phase model is not settled in this checkout. It does not implement a Forge
-// pass manager, IR002 KernelNode lowering, Mimic backend emission, verbs, eBPF,
-// or runtime scheduling. It only records experimental compile-time gates those
-// later layers might reuse: IR001 provenance, compute/comm pattern shape,
-// recipe-tier legality, and combined resource-row fit against a Cog substrate.
-
 #include <crucible/cog/FitsCog.h>
 #include <crucible/effects/Concurrent.h>
 #include <crucible/forge/Ir001/Comm.h>

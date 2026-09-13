@@ -1,117 +1,16 @@
 #pragma once
 
-// ── crucible::concurrent::Stage<auto FnPtr, Ctx> ─────────────────────
+// A stage is one node of a chain of N bodies joined by N-1 channels.  Its
+// consumer end drains the channel behind it and its producer end fills the
+// channel ahead of it, which is why every body has that same pair of
+// parameters.
 //
-// Tier 3 keystone of the integration stack — bundles a PipelineStage-
-// shaped function pointer (FOUND-D19, safety/PipelineStage.h) with its
-// owning ExecCtx and the pair of typed endpoint handles it will consume
-// on `.run()`.  One Stage = one node in a future Pipeline<Stages...>
-// chain.
-//
-// ── What the spec says (CLAUDE.md §XXI) ─────────────────────────────
-//
-//   🚧 Tier 3 | mint_stage<auto FnPtr>(ctx, in, out)
-//             | PipelineStage<FnPtr> ∧ CtxFitsStage<FnPtr, Ctx>
-//             | Stage<FnPtr, Ctx>
-//
-// This file ships the Tier 3 ROW.  Pipeline<Stages...> + mint_pipeline
-// follow in a separate header (concurrent/Pipeline.h).
-//
-// ── Mental model ────────────────────────────────────────────────────
-//
-// A PipelineStage is a void function taking
-//   (ConsumerHandle&&, ProducerHandle&&)
-// per FOUND-D19.  In a pipeline of N stages connected by N-1 channels,
-// stage_i drains channel_{i-1} (consumer side) and writes to channel_i
-// (producer side).  Stage<FnPtr, Ctx> bundles:
-//
-//   * the FnPtr identifying which stage body to invoke
-//   * the Ctx representing where the body runs (HotFgCtx, BgDrainCtx,
-//     KernelCompileCtx, ColdInitCtx, …)
-//   * the consumer handle (drains from the previous channel)
-//   * the producer handle (writes to the next channel)
-//
-// Construction is via mint_stage<FnPtr>(ctx, in, out) per the Universal
-// Mint Pattern (CLAUDE.md §XXI).  The mint's `requires` clause binds
-// the FnPtr to the PipelineStage shape AND verifies the ctx is a
-// well-formed ExecCtx.  The stage's input and output payload rows must
-// each be a Subrow of Ctx::row_type, enforced by
-// CtxFitsStage<FnPtr, Ctx> through StageInputRowAdmitted and
-// StageOutputRowAdmitted.  The mint boundary emits
-// safety::diag::EffectRowMismatch for row failures, and those failures
-// are pinned by
-// test/effects_neg/neg_mint_stage_{input_row_mismatch,
-// output_row_mismatch,both_rows_mismatch,
-// capability_payload_no_admit}.cpp.
-//
-// SUBSTRATE-FIT NOT RE-VALIDATED HERE.  The two handles passed in came
-// from already-validated Endpoints (Tier 2, concurrent/Endpoint.h), each
-// of which checked SubstrateFitsCtxResidency<Substrate, Ctx> at its own
-// mint boundary.  Re-checking substrate fit at the Stage level would be
-// redundant and would require a `handle_substrate_t<H>` metafunction
-// the codebase does not yet provide.  The chain-level invariant
-// (output type of stage_i == input type of stage_{i+1}) lives in
-// Pipeline's gate, not Stage's.
-//
-// ── Composition with prior tiers ────────────────────────────────────
-//
-//   Tier 1 (concurrent/SubstrateCtxFit.h) — substrate ↔ ctx residency
-//     gates.  Validated when Endpoints were minted.
-//   Tier 2 (concurrent/Endpoint.h)        — typed ctx-aware view of a
-//     single substrate handle.  Stage CONSUMES Endpoint's
-//     `.into_*_handle()` outputs (or raw handles obtained equivalently).
-//   Tier 3 (THIS HEADER)                  — composes a PipelineStage-
-//     shaped function with its ctx and its pair of typed handles.
-//   Tier 3.b (concurrent/Pipeline.h, follow-up) — chain of Stages with
-//     pipeline_chain<Stages...> compatibility check.
-//
-// ── Universal Mint Pattern compliance ───────────────────────────────
-//
-//   * Name: mint_stage  (mint_<noun>, §XXI rule).
-//   * First parameter: Ctx const& (ctx-bound mint, §XXI flavor).
-//   * Single authorization boundary: shape/ctx in the requires clause;
-//     input/output payload-row admission via EffectRowMismatch static
-//     assertions before constructing the Stage.
-//   * [[nodiscard]] constexpr noexcept — pure structural composition,
-//     no allocation.
-//   * Returns concrete Stage<FnPtr, Ctx> — never type-erased.
-//   * Discoverable via `grep "mint_stage"`.
-//   * HS14 negative-compile fixtures shipped alongside (see
-//     test/effects_neg/neg_mint_stage_*).
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe — FnPtr's parameter signature pins the handle types
-//              statically; mismatched handles fail the parameter-type
-//              binding at the mint call site.
-//   InitSafe — pure type-level construction; the held handles are
-//              move-constructed into the Stage's storage.
-//   MemSafe  — Stage owns the two handles by value (stored in-place);
-//              no external references; destructor cleans up via the
-//              handles' own destructors.
-//   BorrowSafe — Stage is move-only (the held Permission tokens in the
-//              handles are linear; copy would duplicate them).
-//   ThreadSafe — Stage holds no atomics; ordering is the underlying
-//              channels' responsibility.
-//   LeakSafe — RAII; handles released at Stage destruction.
-//   DetSafe  — same (FnPtr, Ctx, handles) → same Stage type and
-//              same FnPtr invocation.
-//
-// Runtime cost: sizeof(Stage<FnPtr, Ctx>) ≈ sizeof(ConsumerHandle) +
-// sizeof(ProducerHandle) + sizeof(Ctx).  Ctx is EBO-collapsed via
-// [[no_unique_address]] (~1 byte for context tags).  `.run()` inlines
-// to a direct FnPtr call with the two handles moved in — byte-identical
-// to bare `FnPtr(std::move(in), std::move(out))` under -O3.
-//
-// ── References ──────────────────────────────────────────────────────
-//
-//   safety/PipelineStage.h         — FOUND-D19 shape recognizer
-//   safety/SignatureTraits.h       — arity_v / param_type_t / return_type_t
-//   concurrent/Endpoint.h          — Tier 2 source of typed handles
-//   concurrent/SubstrateCtxFit.h   — Tier 1 substrate ↔ ctx gates
-//   effects/ExecCtx.h              — IsExecCtx concept
-//   CLAUDE.md §XXI                 — Universal Mint Pattern
-//   CLAUDE.md §XVIII HS14          — neg-compile fixture requirement
+// Whether each channel suits the context it runs in is settled where the
+// handles were bound to their contexts, and is deliberately not rechecked
+// here: a handle does not carry its channel type back, so the check would
+// have to be reconstructed from nothing.  Agreement between one stage's output
+// and the next stage's input is a property of the chain, and belongs to
+// whatever assembles the chain.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/WorkingSet.h>
@@ -132,29 +31,10 @@
 
 namespace crucible::concurrent {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CtxFitsStage<auto FnPtr, Ctx> ──────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Soundness gate for mint_stage.  Conjunction of:
-//
-//   1. PipelineStage<FnPtr> — FnPtr has the canonical pipeline-stage
-//      shape (arity 2, param 0 is consumer handle &&, param 1 is
-//      producer handle &&, return void) per FOUND-D19.
-//
-//   2. IsExecCtx<Ctx> — Ctx is a well-formed ExecCtx with the four
-//      static facts (residency_tier, cap_type, row_type, locality_hint).
-//
-//   3. StageInputRowAdmitted / StageOutputRowAdmitted — each payload
-//      effect row carried by the stage boundary is admitted by
-//      Ctx::row_type.  payload_row_t keeps non-effect grades (for
-//      example NumericalTier); payload_effect_row_t is the effect-only
-//      projection used for ctx admission.
-//
-// Substrate-level residency fit is NOT checked here — see header
-// docstring "SUBSTRATE-FIT NOT RE-VALIDATED HERE" for rationale.
-// Pipeline-level chain consistency lives in pipeline_chain<Stages...>
-// (concurrent/Pipeline.h, follow-up).
+// Admission compares effect-only projections of the payload rows.  The
+// unprojected row also carries grades that say nothing about what the context
+// permits, such as a numerical tier, and matching on those would reject
+// payloads the context can in fact run.
 
 template <auto FnPtr, class Ctx>
 concept StageInputRowAdmitted =
@@ -266,21 +146,16 @@ public:
     static constexpr bool value = compute();
 };
 
-// Forward-declared so MpmcStage<>'s class body can `friend` it.  The
-// definition lives in StageEndpointBridge.h (which includes this
-// header) and is the sole call site that constructs an MpmcStage —
-// reached only through mint_mpmc_stage_from_endpoints.
+// Declared here only so the class below can befriend it.  Its definition lives
+// in the bridge header that includes this one, and is the one place a stage of
+// this kind is built.
 template <auto FnPtr, class Ctx, class Tuple>
 [[nodiscard]] constexpr auto make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx, Tuple& endpoints) noexcept;
 
-// Forward-declared so SwmrStage<>'s class body can `friend` it (fix-03).
-// The definition lives in StageEndpointBridge.h and is the sole call site
-// that constructs a SwmrStage — reached only through mint_swmr_stage, which
-// performs the input/output-row-vs-ctx admission (CRUCIBLE_ROW_MISMATCH_
-// ASSERT).  This factory is intentionally UNCONSTRAINED: mint_swmr_stage's
-// CtxFitsSwmrStageFromEndpoint concept lives in the bridge header (included
-// AFTER this one), so the SwmrStage friend declaration cannot reference it.
-// Mirrors make_mpmc_stage_from_endpoint_tuple's role for MpmcStage.
+// Same arrangement for the single-writer stage.  This one carries no
+// constraint of its own: the concept that gates it is declared in the bridge
+// header, which is included after this one, so the friend declaration below
+// could not name it.  The gate runs in the factory that calls this.
 template <auto FnPtr, class Ctx>
 [[nodiscard]] constexpr auto
 make_swmr_stage(Ctx const& ctx, std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 0>>&& in,
@@ -324,15 +199,10 @@ concept CtxFitsSwmrPublishStage =
     SwmrPublishStageBody<FnPtr> && ::crucible::effects::IsExecCtx<Ctx>
     && ::crucible::decide::row_subset<swmr_stage_row_union_t<FnPtr>, typename Ctx::row_type>();
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Stage<auto FnPtr, Ctx> ─────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <auto FnPtr, class Ctx>
     requires CtxFitsStage<FnPtr, Ctx>
 class Stage {
 public:
-    // ── Type-level facts (all static, zero runtime cost) ──────────
     using ctx_type = Ctx;
     using consumer_handle_type = std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 0>>;
     using producer_handle_type = std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 1>>;
@@ -344,27 +214,17 @@ public:
     static constexpr bool is_value_preserving =
         ::crucible::safety::extract::pipeline_stage_is_value_preserving_v<FnPtr>;
 
-    // ── Move-only (handles hold linear Permission tokens) ──────────
     Stage(Stage const&) = delete("Stage holds linear Permission tokens via the consumer/producer handles");
     Stage& operator=(Stage const&) = delete("Stage holds linear Permission tokens via the consumer/producer handles");
     Stage(Stage&&) noexcept = default;
     Stage& operator=(Stage&&) noexcept = default;
 
-    // ── run() — invokes the stage body, consuming the held handles ─
-    //
-    // &&-qualified: running a Stage CONSUMES it.  After .run() returns,
-    // the handles have been moved into FnPtr and the Stage is in a
-    // moved-from state (destructor still runs cleanly — handles are
-    // moved-from but valid).
-    //
-    // The stage body is responsible for the drain loop, the per-call
-    // try_pop / try_push policy, and termination (when its consumer
-    // observes the upstream channel close).  Stage itself is purely
-    // structural.
+    // The body owns the drain loop, the retry policy on a full or empty
+    // channel, and the decision to stop once its consumer sees the upstream
+    // end close.  What is here is only the binding.
 
     void run() && noexcept { FnPtr(std::move(in_), std::move(out_)); }
 
-    // ── Accessors ──────────────────────────────────────────────────
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
 
     [[nodiscard]] constexpr consumer_handle_type& in() & noexcept { return in_; }
@@ -374,23 +234,17 @@ public:
     [[nodiscard]] constexpr producer_handle_type const& out() const& noexcept { return out_; }
 
 private:
-    // ── Construction (used by mint_stage; not user-facing) ─────────
-    //
-    // Private per CLAUDE.md §XXI — mint_stage is the single load-
-    // bearing authorization point.  A direct call site like
-    // `Stage<&body, Ctx>{ctx, in, out}` would bypass CtxFitsStage's
-    // input-row + output-row admission and emit a Stage whose
-    // effect rows never see `Subrow<input/output_row, ctx_row>`.
+    // Private because direct construction would skip the row admission and
+    // produce a stage whose payload effects were never weighed against the
+    // context it runs in.
     [[nodiscard]] explicit constexpr Stage(Ctx const& ctx, consumer_handle_type&& in,
                                            producer_handle_type&& out) noexcept
         : ctx_{ctx}, in_{std::move(in)}, out_{std::move(out)} {}
 
-    // mint_stage is the sole authorized constructor — friend the
-    // entire template family so any (FnPtr, Ctx) instantiation can
-    // reach the private ctor.  The constraint MUST match mint_stage's
-    // requires-clause IDENTICALLY (CtxFitsStage<MintFnPtr, MintCtx>) —
-    // a constrained function template is befriended only when the friend
-    // declaration carries the same associated constraints (fix-12).
+    // The constraint here has to be the factory's constraint written out
+    // identically.  A constrained function template is befriended only when
+    // the friend declaration carries the same associated constraints, so any
+    // drift silently un-friends the factory.
     template <auto MintFnPtr, ::crucible::effects::IsExecCtx MintCtx>
         requires CtxFitsStage<MintFnPtr, MintCtx>
     friend constexpr auto
@@ -402,13 +256,8 @@ private:
     producer_handle_type out_;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── MpmcStage<auto FnPtr, Ctx, Inputs, Outputs> ────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Variadic stage carrier for GAPS-086.  Inputs and Outputs are
-// std::tuple<Handle...> packs whose types match FnPtr's leading
-// consumer-handle and trailing producer-handle parameters exactly.
+// The body's parameters are all consumer handles first and all producer
+// handles after, and the two tuples have to match those two runs exactly.
 
 template <auto FnPtr, class Ctx, class Inputs, class Outputs>
     requires CtxFitsVariadicStage<FnPtr, Ctx> && VariadicStageHandlesMatch<FnPtr, Inputs, Outputs>
@@ -487,23 +336,13 @@ public:
     }
 
 private:
-    // ── Construction (used by mint_mpmc_stage_from_endpoints; not user-facing) ──
-    //
-    // Private per CLAUDE.md §XXI — mint_mpmc_stage_from_endpoints (and
-    // its internal helper `detail::make_mpmc_stage_from_endpoint_tuple`)
-    // is the sole authorization point.  A direct call site like
-    // `MpmcStage<&body, Ctx, ins, outs>{ctx, ins, outs}` would bypass
-    // CtxFitsMpmcStageFromEndpoints' row admission and emit a stage
-    // whose effect row never sees `Subrow<required_row, ctx_row>`.
+    // Private because direct construction would skip the row admission and
+    // produce a stage whose payload effects were never weighed against the
+    // context it runs in.
     [[nodiscard]] explicit constexpr MpmcStage(Ctx const& ctx, input_tuple_type&& inputs,
                                                output_tuple_type&& outputs) noexcept
         : ctx_{ctx}, inputs_{std::move(inputs)}, outputs_{std::move(outputs)} {}
 
-    // The sole authorized constructor lives in
-    // `detail::make_mpmc_stage_from_endpoint_tuple` (invoked from
-    // mint_mpmc_stage_from_endpoints).  Friend the entire template
-    // family so any (FnPtr, Ctx, Tuple) instantiation can reach the
-    // private ctor.
     template <auto MintFnPtr, class MintCtx, class MintTuple>
     friend constexpr auto detail::make_mpmc_stage_from_endpoint_tuple(MintCtx const&, MintTuple&) noexcept;
 
@@ -562,22 +401,15 @@ public:
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
 
 private:
-    // ── Construction (used by mint_swmr_stage; not user-facing) ────
-    //
-    // Private per CLAUDE.md §XXI — mint_swmr_stage is the single load-
-    // bearing authorization point.  A direct call site like
-    // `SwmrStage<&body, Ctx>{ctx, in, writer}` would bypass
-    // CtxFitsSwmrStageFromEndpoint's input/output-row-vs-ctx admission
-    // (the CRUCIBLE_ROW_MISMATCH_ASSERT in mint_swmr_stage) and emit a
-    // SwmrStage whose effect rows never see Subrow<row, ctx_row>.  fix-03.
+    // Private because direct construction would skip the row admission and
+    // produce a stage whose payload effects were never weighed against the
+    // context it runs in.
     [[nodiscard]] explicit constexpr SwmrStage(Ctx const& ctx, consumer_handle_type&& in,
                                                writer_handle_type&& writer) noexcept
         : ctx_{ctx}, in_{std::move(in)}, writer_{std::move(writer)} {}
 
-    // detail::make_swmr_stage (StageEndpointBridge.h) is the sole
-    // authorized constructor — friend the entire template family so any
-    // (FnPtr, Ctx) instantiation can reach the private ctor.  The factory
-    // is unconstrained; mint_swmr_stage's concept gate runs before it.
+    // The befriended factory carries no constraint of its own.  The concept
+    // that gates it runs in the caller above it.
     template <auto MintFnPtr, class MintCtx>
     friend constexpr auto detail::make_swmr_stage(
         MintCtx const&, std::remove_reference_t<::crucible::safety::extract::param_type_t<MintFnPtr, 0>>&&,
@@ -587,21 +419,6 @@ private:
     consumer_handle_type in_;
     writer_handle_type writer_;
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── mint_stage<auto FnPtr>(ctx, in, out) — Universal Mint Pattern ─
-// ═════════════════════════════════════════════════════════════════════
-//
-// Token-mint factory per CLAUDE.md §XXI ctx-bound flavor.  Authority
-// derives from CtxFitsStage<FnPtr, Ctx>; the held handles are
-// move-consumed into the Stage.
-//
-// Why FnPtr is non-deducible:
-// FnPtr appears only in the requires-clause and in the deduced handle
-// types — there is no parameter whose type is "function-pointer of FnPtr"
-// from which deduction could pin FnPtr.  Callers therefore spell
-// `mint_stage<&my_stage_body>(ctx, in, out)` explicitly, which is the
-// load-bearing site that pins WHICH stage body runs.
 
 template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsStage<FnPtr, Ctx>
@@ -616,14 +433,10 @@ mint_stage(Ctx const& ctx, std::remove_reference_t<::crucible::safety::extract::
     using input_offending_row = ::crucible::effects::row_difference_t<input_row, ctx_row>;
     using output_offending_row = ::crucible::effects::row_difference_t<output_row, ctx_row>;
 
-    // Belt-and-suspenders (fix-12): row admission is now the load-bearing
-    // gate in the requires-clause (CtxFitsStage<FnPtr, Ctx>, whose
-    // StageInputRowAdmitted / StageOutputRowAdmitted conjuncts ARE these
-    // two subset checks).  A row mismatch is rejected at the
-    // requires-clause — SFINAE-detectable — before this body instantiates.
-    // These asserts therefore run only as a backstop; they are retained
-    // for defense-in-depth and for the readable EffectRowMismatch
-    // diagnostic (offending-row attribution) the bare concept does not give.
+    // These repeat the two subset checks the requires-clause already makes, so
+    // a mismatch never reaches this body.  They stay because the concept
+    // reports only that the constraint failed, while these name the offending
+    // row.
     CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<input_row, ctx_row>()), EffectRowMismatch, FnPtr,
                                  ctx_row, input_row, input_offending_row);
 
@@ -633,22 +446,10 @@ mint_stage(Ctx const& ctx, std::remove_reference_t<::crucible::safety::extract::
     return Stage<FnPtr, Ctx>{ctx, std::move(in), std::move(out)};
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block ────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// These pin the integration with the FOUND-D19 PipelineStage shape:
-// every ConsumerHandle / ProducerHandle pair recognized by D05/D06 is
-// admitted; non-stage shapes are rejected.
-
 namespace detail::stage_self_test {
 
 namespace eff = ::crucible::effects;
 namespace saf = ::crucible::safety::extract;
-
-// ── Fixture handles satisfying IsConsumerHandle / IsProducerHandle ─
-// (mirror the patterns used by D05/D06 self-tests — try_pop returns
-// std::optional<T>, try_push takes T const& and returns bool).
 
 template <typename T>
 struct FakeConsumer {
@@ -665,11 +466,9 @@ struct FakeProducer {
 static_assert(::crucible::safety::extract::is_consumer_handle_v<FakeConsumer<int>>);
 static_assert(::crucible::safety::extract::is_producer_handle_v<FakeProducer<int>>);
 
-// ── Pipeline-stage-shape function: pass-through int relay ─────────
 inline void stage_pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 static_assert(saf::PipelineStage<&stage_pass_through>);
 
-// ── Pipeline-stage-shape function: int → float transform ──────────
 inline void stage_transform_int_to_float(FakeConsumer<int>&&, FakeProducer<float>&&) noexcept {}
 static_assert(saf::PipelineStage<&stage_transform_int_to_float>);
 
@@ -685,7 +484,6 @@ static_assert(saf::PipelineStage<&stage_bg_input>);
 static_assert(saf::PipelineStage<&stage_io_output>);
 static_assert(saf::PipelineStage<&stage_alloc_cap_input>);
 
-// ── Non-PipelineStage candidates ──────────────────────────────────
 inline void stage_wrong_arity(FakeConsumer<int>&&) noexcept {}
 inline int stage_returns_int(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept { return 0; }
 inline void stage_wrong_param_kind(FakeConsumer<int>&, FakeProducer<int>&&) noexcept {}
@@ -694,7 +492,6 @@ static_assert(!saf::PipelineStage<&stage_wrong_arity>);
 static_assert(!saf::PipelineStage<&stage_returns_int>);
 static_assert(!saf::PipelineStage<&stage_wrong_param_kind>);
 
-// ── CtxFitsStage admits / rejects appropriately ───────────────────
 static_assert(CtxFitsStage<&stage_pass_through, eff::HotFgCtx>);
 static_assert(CtxFitsStage<&stage_pass_through, eff::BgDrainCtx>);
 static_assert(CtxFitsStage<&stage_transform_int_to_float, eff::HotFgCtx>);
@@ -703,13 +500,12 @@ static_assert(CtxFitsStage<&stage_io_output, eff::BgCompileCtx>);
 static_assert(CtxFitsStage<&stage_alloc_cap_input, eff::BgDrainCtx>);
 static_assert(!CtxFitsStage<&stage_wrong_arity, eff::HotFgCtx>);
 static_assert(!CtxFitsStage<&stage_returns_int, eff::HotFgCtx>);
-static_assert(!CtxFitsStage<&stage_pass_through, int>);  // int isn't an ExecCtx
+static_assert(!CtxFitsStage<&stage_pass_through, int>);
 static_assert(!CtxFitsStage<&stage_bg_input, eff::HotFgCtx>);
 static_assert(!CtxFitsStage<&stage_io_output, eff::HotFgCtx>);
 static_assert(!CtxFitsStage<&stage_io_output, eff::BgDrainCtx>);
 static_assert(!CtxFitsStage<&stage_alloc_cap_input, eff::HotFgCtx>);
 
-// ── Stage<...> type-level invariants ───────────────────────────────
 using S1 = Stage<&stage_pass_through, eff::HotFgCtx>;
 
 static_assert(std::is_same_v<typename S1::ctx_type, eff::HotFgCtx>);
@@ -725,23 +521,15 @@ static_assert(std::is_same_v<typename S2::input_value_type, int>);
 static_assert(std::is_same_v<typename S2::output_value_type, float>);
 static_assert(!S2::is_value_preserving);
 
-// ── Move-only enforcement ──────────────────────────────────────────
 static_assert(!std::is_copy_constructible_v<S1>);
 static_assert(!std::is_copy_assignable_v<S1>);
 static_assert(std::is_move_constructible_v<S1>);
 static_assert(std::is_move_assignable_v<S1>);
 
-// ── fix-12: mint_stage row admission is SFINAE-detectable ──────────
-//
-// Before fix-12, row admission lived in an in-body
-// CRUCIBLE_ROW_MISMATCH_ASSERT, so a `requires { mint_stage<bad>(...) }`
-// probe reported the mint CALLABLE even on a row mismatch — the hard
-// error fired inside the body, opaque to SFINAE.  Now the requires-
-// clause IS CtxFitsStage<FnPtr, Ctx>, so a row mismatch is rejected at
-// the constraint and the probe is well-formed-and-false.  These two
-// witnesses pin that visibility (HS14 SFINAE-visibility witnesses).
+// A row mismatch has to be visible to substitution.  Because the gate is in
+// the requires-clause and not in the body, the probe below is well formed and
+// false rather than a hard error, and these witnesses pin that.
 
-// Helper handles for the probe (move-consumed by mint_stage).
 template <auto FnPtr, class Ctx>
 concept MintStageCallable =
     requires(Ctx const& probe_ctx,
@@ -750,13 +538,10 @@ concept MintStageCallable =
         { ::crucible::concurrent::mint_stage<FnPtr>(probe_ctx, std::move(probe_in), std::move(probe_out)) };
     };
 
-// Well-formed rows → mint is SFINAE-callable.
 static_assert(MintStageCallable<&stage_pass_through, eff::HotFgCtx>);
 static_assert(MintStageCallable<&stage_bg_input, eff::BgDrainCtx>);
-// Row mismatch → mint is SFINAE-REJECTED (not a hard body error).
 static_assert(!MintStageCallable<&stage_bg_input, eff::HotFgCtx>);
 static_assert(!MintStageCallable<&stage_io_output, eff::HotFgCtx>);
-// The probe result tracks CtxFitsStage exactly.
 static_assert(MintStageCallable<&stage_pass_through, eff::HotFgCtx>
               == CtxFitsStage<&stage_pass_through, eff::HotFgCtx>);
 static_assert(MintStageCallable<&stage_bg_input, eff::HotFgCtx> == CtxFitsStage<&stage_bg_input, eff::HotFgCtx>);

@@ -1,249 +1,73 @@
 #pragma once
 
-// crucible::perf::PmuSample — Hardware PMU sampling via BPF.
-//
-// Second per-program facade in the GAPS-004 series (sibling to
-// SchedSwitch).  Where SenseHub aggregates and SchedSwitch
-// attributes off-CPU time, PmuSample answers "WHERE in the code
-// is the cache/branch/TLB cost happening" via PMU counter
-// overflow IPs (instruction pointers).
-//
-// ─── What it captures ───────────────────────────────────────────────
-//
-// 8 event types, all flowing into one shared 32K-event mmap'd ring:
-//
-//   2: LlcMiss          — last-level cache miss IP
-//   3: BranchMiss       — branch misprediction IP
-//   4: DtlbMiss         — data TLB miss IP
-//   5: IbsOp            — AMD IBS-Op (PRECISE micro-op IP, zero skid)
-//   6: IbsFetch         — AMD IBS-Fetch (instruction fetch IP)
-//   7: MajorPageFault   — IP of the faulting load/store
-//   8: CpuMigration     — IP at the moment of migration
-//   9: AlignmentFault   — IP of the misaligned access
-//
-// IBS event types (5, 6) auto-detect AMD support at load time;
-// non-AMD systems skip those attachments without failing the
-// load — `attach_failures()` reports the dropped count.
-//
-// ─── Cost model — OPT-IN profiling ─────────────────────────────────
-//
-// Unlike SenseHub (always-on aggregation) and SchedSwitch (cheap
-// off-CPU drill-down), PmuSample is INTRINSICALLY a profiling
-// tool — every overflow event triggers our BPF program in
-// NMI/PMI context.  Per-event BPF cost: ~3-5 µs.
-//
-// At default sample periods:
-//   HW events (LLC/Branch/DTLB): period 10000 → ~10-100 events/sec
-//                                each on typical workloads
-//   IBS:                         period 100000 → ~100-1000/sec
-//   SW events (page faults etc): period 1 → every event, but
-//                                native rate is 10-100/sec
-//
-// Total event rate: ~500-2000/sec → ~2.5-10 ms/sec BPF overhead
-// = 0.25-1% CPU.  Bench harnesses that load PmuSample explicitly
-// pay this cost; one-shot diagnosis runs find it negligible.
-//
-// ─── Production usage ──────────────────────────────────────────────
-//
-//     auto h = crucible::perf::PmuSample::load(crucible::effects::testing::init());
-//     if (h) {
-//         const uint64_t pre  = h->timeline_write_index();
-//         // ... run workload ...
-//         const uint64_t post = h->timeline_write_index();
-//         const auto view = h->timeline_view();
-//         for (uint64_t i = pre; i < post; ++i) {
-//             const uint32_t slot = i & PMU_SAMPLE_MASK;
-//             const uint64_t ts = __atomic_load_n(&view.data()[slot].ts_ns,
-//                                                 __ATOMIC_ACQUIRE);
-//             if (ts == 0) continue;
-//             // ... aggregate by view.data()[slot].ip + event_type ...
-//         }
-//     }
-//
-// If perf_event_open is unavailable (paranoid >2 without
-// CAP_PERFMON, kernel too old), load() returns nullopt.
-//
-// ─── Sample-period env-var knobs (GAPS-004c-AUDIT, #1290) ──────────
-//
-// At load() time, the per-event-type sample periods can be
-// overridden via env vars (read once with the same caching
-// discipline as CRUCIBLE_PERF_QUIET — setenv AFTER load() has no
-// effect):
-//
-//   CRUCIBLE_PERF_PMU_PERIOD_HW   — overrides LLC/Branch/DTLB
-//                                   (default: 10000)
-//   CRUCIBLE_PERF_PMU_PERIOD_IBS  — overrides IBS-Op / IBS-Fetch
-//                                   (default: 100000)
-//   CRUCIBLE_PERF_PMU_PERIOD_SW   — overrides MajorPF / CpuMig /
-//                                   AlignFault (default: 1)
-//
-// Lower → denser sampling → higher BPF cost.  Higher → sparser
-// → lower cost but more aliasing in hot-loop attribution.
-// Recommended ranges:
-//   HW : 1000 (very dense, ~10% CPU on cache-bound) to
-//        100000 (sparse, ~0.1% CPU)
-//   IBS: 10000 (precise, dense) to 1000000 (low overhead)
-//   SW : 1 (every event) to 100 (subsample)
-//
-// CRUCIBLE_PERF_VERBOSE=1 prints which event types attached and
-// at what period — useful for verifying the override took effect.
-//
-// ─── Reader-side guidance ──────────────────────────────────────────
-//
-// When walking timeline_view():
-//   • Always do `__atomic_load_n(&events[slot].ts_ns, ACQUIRE)`
-//     FIRST.  ts_ns == 0 → producer hasn't committed this slot
-//     yet (or never wrote it).  Skip.
-//   • ts_ns != 0 → other fields are safe to read (the BPF
-//     program's compiler barrier ensures ip/tid/event_type
-//     stores retired before ts_ns).
-//   • ip == 0 is unusual but possible — typically means the
-//     instruction at the sample point was at virtual address 0
-//     (extremely rare; usually a corrupt context).  Skip such
-//     samples in your aggregation rather than counting them as
-//     a real instruction.
-//   • event_type values 0 and 1 are RESERVED for cycles + L1D
-//     miss respectively but are NOT emitted by this BPF facade
-//     (those events fire too frequently for BPF — they belong
-//     on a future PerfEventRing path).  A reader that
-//     defensively switch()es on event_type should treat 0/1 as
-//     "unknown / skip" rather than asserting they cannot occur
-//     (a future BPF program might add them).
-//   • **Slot order, not ts_ns, is the wire-time order.**
-//     Multiple cores fire PMI in parallel; two events landing
-//     in the same nanosecond can have ts_ns_A == ts_ns_B but
-//     write_idx_A < write_idx_B.  Within a single bench window
-//     [pre, post), iterate slots in write_idx order — that is
-//     the canonical event sequence.  Use ts_ns for absolute
-//     timestamps (e.g. cross-program correlation), not for
-//     ordering adjacent samples.
-//
-// ─── Sample-period safety guidance ─────────────────────────────────
-//
-// The kernel applies a global per-CPU rate limit
-// (kernel.perf_event_max_sample_rate, default 100 kHz) and will
-// throttle high-frequency event sources, BUT very low
-// sample_period values can still cause:
-//   • Sustained ~100 kHz NMI handler invocation per CPU
-//   • BPF program wakeup at every overflow (~3-5 µs each)
-//   • At 16 cores × 100 kHz: ~5 ms/sec/core = 8% per-core CPU
-//     burnt on PMU bookkeeping alone — competing with the
-//     workload you wanted to profile
-//
-// Practical floors (default sample_period for context):
-//   • PERIOD_HW  ≥ 1000 (default 10000) — values < 1000 risk
-//     kernel-wide NMI flood that throttles other workloads
-//   • PERIOD_IBS ≥ 10000 (default 100000) — IBS events are more
-//     expensive per-overflow than generic PMU
-//   • PERIOD_SW  = 1 is fine (SW events are intrinsically rare:
-//     <100/sec/process baseline)
-//
-// load() does NOT enforce a floor — diagnostic users may
-// legitimately want ultra-dense sampling.  CRUCIBLE_PERF_VERBOSE=1
-// surfaces the effective period so you can verify what got attached.
-//
-// ─── Known limits (GAPS-004c-AUDIT, 2026-05-04) ────────────────────
-//
-// (1) **Main-thread-only coverage.**  perf_event_open(pid=tgid,
-//     cpu=-1) monitors the kernel task whose TID == TGID, which is
-//     the main thread of the process.  Other threads in the same
-//     process are NOT sampled.  Same multi-thread coverage gap as
-//     SchedSwitch's our_tids registration.  Workaround for now:
-//     run profiling-targeted code on the main thread, or accept
-//     partial coverage.  Long-term fix (GAPS-004x): enumerate
-//     /proc/self/task/* and open one perf_event per TID, with
-//     a sched_process_exit hook to clean up dead threads (avoids
-//     TID-reuse hazard).
-//
-// (2) **Ring-buffer slot reuse on wrap.**  Same architectural
-//     limit as SchedSwitch's sched_timeline.  32K events × 24 µs
-//     between samples (typical busy workload) ≈ 768 ms wrap
-//     window — much wider than SchedSwitch's 100 ms but still
-//     bounded.  BPF preempt-disabled execution narrows the
-//     practical race window to microseconds.  Canonical fix is
-//     BPF_MAP_TYPE_RINGBUF; out of scope for this facade.
-
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
-#include <crucible/effects/Capabilities.h>  // effects::Init
-#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
-#include <crucible/safety/Borrowed.h>  // safety::Borrowed
-#include <crucible/safety/Refined.h>  // safety::Refined / bounded_above
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/syscall/Per.h>
+#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/Refined.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>  // FIXY-V-179
+#include <tuple>
 
 namespace crucible::perf {
 
-// Discriminator values for `event_type`.  The numeric values are
-// wire-protocol with the kernel-side BPF program at
-// include/crucible/perf/bpf/pmu_sample.bpf.c — must NOT renumber.
+// These numeric values are wire protocol with the kernel-side BPF
+// program and must not be renumbered.  Values 0 and 1 are reserved
+// for cycles and L1D misses, which fire far too often to route
+// through BPF, so this facade never emits them.  A reader that
+// switches on the discriminator treats 0 and 1 as unknown rather
+// than unreachable.
 enum class PmuEventType : uint8_t {
-    // 0, 1 reserved (cycles, L1D miss flow through perf_event ring,
-    // not BPF — they're too frequent).
     LlcMiss = 2,
     BranchMiss = 3,
     DtlbMiss = 4,
-    IbsOp = 5,  // AMD precise (zero skid), non-AMD: skipped
-    IbsFetch = 6,  // AMD precise instruction fetch
+    IbsOp = 5,  // AMD only, skipped elsewhere
+    IbsFetch = 6,  // AMD only, skipped elsewhere
     MajorPageFault = 7,
     CpuMigration = 8,
     AlignmentFault = 9,
 };
 
-// Mirrors `struct pmu_sample_event` in include/crucible/perf/bpf/common.h.
-// 32 bytes (24 B payload + 8 B trailing pad) for cache-line
-// coresidence — see GAPS-004c (2026-05-04) — without the pad,
-// 32-byte slots in the ring would straddle 64 B lines and torn
-// reads would silently violate the "ts_ns LAST as completion
-// marker" contract for the slots crossing a boundary.
+// The trailing pad brings the struct to 32 bytes, which divides the
+// 64-byte cache line evenly, so no slot in the ring straddles two
+// lines.  A straddling reader can see a committed ts_ns in the second
+// line while the fields in the first line are still stale, which
+// breaks the rule that ts_ns marks a complete slot.
 struct PmuSampleEvent {
-    uint64_t ip;  //  8 B  userspace virtual address
-    uint32_t tid;  //  4 B  thread ID
-    uint8_t event_type;  //  1 B  PmuEventType discriminator
-    uint8_t _pad[3];  //  3 B  align ts_ns to 8 bytes
-    uint64_t ts_ns;  //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
-    uint64_t _pad8;  //  8 B  cache-line-coresidence pad
+    uint64_t ip;
+    uint32_t tid;
+    uint8_t event_type;
+    uint8_t _pad[3];
+    uint64_t ts_ns;  // kernel monotonic clock
+    uint64_t _pad8;
 };
 static_assert(sizeof(PmuSampleEvent) == 32, "PmuSampleEvent must be 32 B = ip(8) + tid(4) + event_type(1) + "
                                             "_pad[3] + ts_ns(8) + _pad8(8); the trailing pad makes 32 divide "
                                             "64 evenly so each slot is cache-line-coresident");
 
-// Same TimelineHeader shape as SchedSwitch.  Defined separately
-// here to keep the headers independent (GAPS-004x extraction will
-// unify).
 struct PmuSampleHeader {
-    uint64_t write_idx;  //  8 B  monotonically increasing
-    uint64_t _pad[7];  // 56 B  pad to one cache line
+    uint64_t write_idx;
+    uint64_t _pad[7];
 };
 static_assert(sizeof(PmuSampleHeader) == 64, "PmuSampleHeader must be exactly one cache line so the events "
                                              "array starts at offset 64");
 
-// 32K events × 32 B = 1 MB ring buffer.  Bigger than SchedSwitch's
-// 4K (96 KB) because PMU sampling rates can briefly burst much
-// higher than sched_switch rates, especially under cache-thrashing
-// workloads where a single hot loop can fire 10K+ LLC misses/sec.
+// This value mirrors the ring size the kernel-side program was built
+// with.  Changing one side alone breaks the shared layout.
 constexpr uint32_t PMU_SAMPLE_CAPACITY = 32768;
 [[maybe_unused]] constexpr uint32_t PMU_SAMPLE_MASK = PMU_SAMPLE_CAPACITY - 1;
 
 class PmuSample {
 public:
-    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
-    //
-    // PmuSample's primary metric is the count of recorded perf samples,
-    // which equals the timeline_write_index (each ring slot is one
-    // sample).  No separate scalar accessor is needed — the index IS
-    // the sample count.
-    //
-    // Mirrors the Snapshot/operator- pattern shipped on every other
-    // GAPS-004 facade.  `delta.samples` is the count of samples
-    // recorded between pre and post.
+    // One ring slot is one sample, so the write index is also the
+    // sample count and no separate scalar accessor exists.
     struct Snapshot {
-        uint64_t samples = 0;  // matches timeline_write_index() at snapshot
+        uint64_t samples = 0;
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
@@ -254,61 +78,49 @@ public:
         }
     };
 
-    // Capture the sample count.  Cost: single volatile load on the
-    // mmap'd page header (~1 ns).  Cheaper than the other facades'
-    // snapshots because PmuSample has no syscall-backed scalar.
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // Load embedded BPF program, set target_tgid to getpid(),
-    // perf_event_open all 8 event types tracking this PID across
-    // all CPUs (cpu=-1), attach BPF programs, mmap the
-    // pmu_sample_buf.  Returns nullopt if any of:
-    //   - missing CAP_PERFMON (and paranoid > 2)
-    //   - perf_event_open returns -1 for ALL event types
-    //   - bpf_object__load fails (verifier reject)
+    // An event type the machine does not support is skipped, so a
+    // partial attach still yields a usable facade.  Returns nullopt
+    // only when perf_event_open refuses every event type, when
+    // CAP_PERFMON is missing on a host with perf_event_paranoid above
+    // 2, or when the verifier rejects the program.
     //
-    // Partial success is OK: if 6 of 8 event types attach
-    // successfully (e.g. non-AMD system: IBS skipped), load()
-    // returns the populated PmuSample and `attach_failures()`
-    // reports the count.
+    // Three environment variables override the per-event sample
+    // period.  They are read once during the load, so setting them
+    // afterwards has no effect.
     //
-    // First parameter is `effects::Init` capability tag — same
-    // hot-path-cannot-construct-it gate as SenseHub/SchedSwitch.
+    //   CRUCIBLE_PERF_PMU_PERIOD_HW    cache, branch and TLB, default 10000
+    //   CRUCIBLE_PERF_PMU_PERIOD_IBS   the two AMD events, default 100000
+    //   CRUCIBLE_PERF_PMU_PERIOD_SW    the software events, default 1
+    //
+    // A smaller period samples more densely.  No floor is enforced,
+    // because a diagnostic run may legitimately want a very dense
+    // sample, but a hardware period below 1000 can drive a sustained
+    // NMI flood across every CPU on the machine.
     [[nodiscard]] static std::optional<PmuSample> load(::crucible::effects::Init) noexcept;
 
-    // Borrowed view over the timeline event ring buffer.  Spans
-    // exactly PMU_SAMPLE_CAPACITY events; reader uses
-    // timeline_write_index() to find the latest valid slot.  The
-    // returned span is empty (`empty() == true`) on a moved-from
-    // / un-loaded PmuSample.  Element type is `const PmuSampleEvent`
-    // (not `const volatile`) for the same libstdc++ <span>
-    // composability reason as SchedSwitch — readers must do
-    // `__atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE)`
-    // first; ts_ns != 0 means the producer-side compiler-barrier
-    // store has retired and other fields are safe.
+    // The kernel samples the task whose TID equals the process TGID,
+    // so only the main thread of this process appears here.
+    //
+    // The element type is const rather than const volatile because
+    // libstdc++ cannot instantiate std::span over a volatile
+    // non-scalar element.  The kernel writes this memory while the
+    // reader walks it, so read ts_ns through an acquire load of its
+    // own and trust the rest of the slot only when ts_ns is non-zero.
     [[nodiscard]] safety::Borrowed<const PmuSampleEvent, PmuSample> timeline_view() const noexcept;
 
-    // Volatile load of the ring header's write_idx (monotonically
-    // increasing).  ~1 ns; no syscall.
+    // Slot order, not ts_ns, is the order in which samples were
+    // recorded.  Cores overflow in parallel, so two samples can carry
+    // the same ts_ns while landing at different indices.  Walk a
+    // window in index order and use ts_ns only as an absolute time.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
 
-    // Number of perf_event programs the kernel accepted.  Bounded
-    // above by 8 (one per PmuEventType) — non-AMD systems get 6
-    // (IBS-Op / IBS-Fetch skipped); systems with paranoid >= 1
-    // for HW events get 3 (just SW); etc.  `(post)/8` is the
-    // structural rate.
-    //
-    // GAPS-004c-AUDIT-2 (2026-05-04) caveat: this is a COARSE
-    // count — it doesn't tell you WHICH event types attached.
-    // For per-event-type attribution, set CRUCIBLE_PERF_VERBOSE=1
-    // and read the "[crucible::perf] pmu_sample attached <name> ..."
-    // log lines on stderr at load time.  A future GAPS-004x
-    // refactor may expose a per-type bitmask accessor.
+    // The count is coarse and does not say which event types
+    // attached.  Set CRUCIBLE_PERF_VERBOSE=1 in the environment to
+    // get that per-type detail on stderr at load time.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
-    // Number of perf_event_open + bpf_program__attach calls that
-    // failed.  `attached_programs() + attach_failures()` ≤ 8.
-    // Set CRUCIBLE_PERF_VERBOSE=1 to see why each one failed.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     PmuSample(const PmuSample&) = delete("PmuSample owns unique BPF object + perf_event FDs + mmap");
@@ -323,28 +135,16 @@ private:
     std::unique_ptr<State> state_;
 };
 
-// ── §XXI Universal Mint Pattern — mint_pmu_sample (FIXY-U-083) ────────
-//
-// CtxFitsPmuSampleMint admits only contexts whose effect row carries
-// the Init capability.  PmuSample::load() opens per-CPU
-// perf_event_open file descriptors and mmaps the kernel sample ring
-// — startup-only operations belonging to the Init row.  Hot
-// foreground and background-drain contexts must not engage this
-// surface; the Ctx-fit gate enforces that at the type level.
+// Loading the program opens per-CPU perf event descriptors and maps
+// the sample ring.  Those are startup-only operations, so only a
+// context carrying the Init capability may reach this surface.
 template <class Ctx>
 concept CtxFitsPmuSampleMint = ::crucible::effects::IsExecCtx<Ctx>
                             && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
-// ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
-//
-// `mint_pmu_sample_syscall_grants` enumerates every privileged Linux
-// syscall PmuSample::load() issues.  Audit-trail discipline mirroring
-// FIXY-V-180's mint_hardening (warden/Hardening.h).
-//
-// Family-tier table (V-097 SyscallFamily; V-100 Bridge.h row-lift):
-//   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
-//   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
-//   mmap            (21) → MemoryMapping  → Row<IO>
+// These grants classify the privileged syscalls the load path issues.
+// They do not tighten the effect row.  Init is a startup pass-through
+// capability that admits blocking work without Block in the row.
 using mint_pmu_sample_syscall_grants =
     std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
@@ -359,15 +159,14 @@ static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::pe
 static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
               == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_pmu_sample_syscall_grants> == 3,
-              "FIXY-V-179: mint_pmu_sample_syscall_grants drifted from 3 entries.");
+              "mint_pmu_sample_syscall_grants must list exactly 3 syscalls.");
 }  // namespace detail::v179_pmu_sample_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsPmuSampleMint<Ctx>
-// §XXI carve-out: cx=alloc — PmuSample::load() opens per-CPU
-// perf_event_open file descriptors, mmaps the kernel sample ring,
-// and heap-allocates std::unique_ptr<State>.  CLAUDE.md §XXI:
-// compile-time evaluation would lie about the runtime cost.
+// §XXI carve-out: cx=alloc — the load path opens per-CPU perf event
+// descriptors, maps the sample ring, and heap-allocates State.
+// Compile-time evaluation would lie about the runtime cost.
 [[nodiscard]] inline std::optional<PmuSample> mint_pmu_sample(Ctx const&, ::crucible::effects::Init init) noexcept {
     return PmuSample::load(init);
 }

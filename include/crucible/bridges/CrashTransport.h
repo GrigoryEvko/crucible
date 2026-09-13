@@ -1,136 +1,38 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — OneShotFlag × runtime crash transport
-// for sessions  (#400 SAFEINT-A11, §11)
+// This header joins a runtime death signal to a compile-time session
+// protocol.  One flag exists per remote peer.  Whatever detects the death —
+// a transport completion error, a membership protocol, a closed socket —
+// signals that flag once.  Every consumer method of the watched handle peeks
+// the flag before its protocol step, and on the true path takes an acquire
+// fence that pairs with the signalling release, moves the resource out of the
+// inner handle, detaches it, mints the inherited survivor permissions and
+// returns them as the error arm of an expected.
 //
-// SessionCrash.h ships the TYPE-LEVEL crash semantics (Stop combinator,
-// Crash<Peer> payload, ReliableSet, has_crash_branch_for_peer_v) and
-// notes that the runtime mechanism transitioning a live SessionHandle
-// to Stop on peer death is "out of scope for L8."  This header is that
-// runtime mechanism.
+// The mapping is deliberately lossy in one direction.  A crash does not move
+// the session into its Stop state: the inner handle is destroyed and the
+// recovered resource handed back instead, so the caller re-establishes rather
+// than continues.  What the protocol declared as a crash continuation is not
+// entered by this wrapper.
 //
-// ─── The wire ─────────────────────────────────────────────────────
+// The peer tag carries no runtime state.  It exists so that the returned
+// event names the responsible peer at compile time.  A session with several
+// peers nests one watched handle per peer, and the resulting type records
+// every watched peer.
 //
-// Each session that crosses a process / node boundary owns one
-// `OneShotFlag` per remote peer.  CNTP completion-error handlers,
-// SWIM confirmed-dead handlers, kernel-driver socket-close detectors
-// — all of these PRODUCERS call `flag.signal()` exactly once when the
-// peer dies.  The session-handle CONSUMERS (the per-op Send/Recv/
-// Select/Offer/close) check the flag with a relaxed atomic peek
-// before each operation; on the unlikely true path they take the
-// acquire fence, detach the permissioned inner handle, mint inherited
-// survivor permissions, and return a `CrashEvent<PeerTag, Resource,
-// SurvivorTags...>` via `std::expected`.
+// The flag is held by pointer and never owned.  Whoever allocates it has to
+// outlive the session that watches it.
 //
-// `CrashWatchedHandle<Proto, Resource, PeerTag, CrashClass C, LoopCtx, PS>`
-// wraps a `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` and a
-// `OneShotFlag&`.  `C` is the declared Stop_g crash grade observed by
-// this runtime watcher; the default is CrashClass::Abort for the
-// historical, strongest recovery path.  The public mint also accepts a bare
-// `SessionHandle<Proto, Resource, LoopCtx>` and admits it into the
-// permissioned crash surface with `PS = EmptyPermSet`.
-// Each consumer method:
+// On death, permissions pass only along the declared survivor lattice.  A
+// peer tag with no declared survivors cannot be watched at all, because there
+// would be no answer to the question of who inherits.
 //
-//   1. Peeks the flag (one relaxed load + branch — the spec's
-//      ~1 cycle / op overhead budget).
-//   2. On no-crash: forwards to the inner handle's consumer, marks
-//      itself consumed, re-wraps the next-state handle in another
-//      `CrashWatchedHandle` (bound to the same flag and peer tag).
-//   3. On crash: takes an acquire fence (paired with the producer's
-//      release in OneShotFlag::signal), marks itself consumed,
-//      returns std::unexpected(CrashEvent<PeerTag, Resource,
-//      SurvivorTags...>{recovered Resource, inherited permissions}).
-//      The Resource flows out so callers can re-establish a new
-//      channel with whatever endpoint state survived; the inherited
-//      Permission tokens flow out per `survivors_t<PeerTag>`.
+// A watched handle cannot be graded no-throw.  A peer guarded by a crash flag
+// is by construction one that can crash, so declaring it unable to is a
+// contradiction rather than an optimisation.
 //
-// ─── Design decisions ─────────────────────────────────────────────
-//
-// 1.  **`std::expected` over exceptions**: Crucible bans exceptions
-//     on the hot path (`-fno-exceptions`).  `std::expected` is a
-//     union + tag, ~1ns to test `.has_value()`, perfect fit.
-//
-// 2.  **Per-Proto specialization** (End / Send / Recv / Select /
-//     Offer): mirrors `RecordingSessionHandle`'s scaffolding from
-//     #404.  Each specialization mirrors the bare `SessionHandle`'s
-//     consumer surface but with the `expected<...>` return wrap.
-//
-// 3.  **Stop is NOT auto-entered**: the wrapper does NOT mutate the
-//     inner handle into a `SessionHandle<Stop, R>` on crash — it
-//     destroys the inner handle and returns the recovered Resource.
-//     Phase 2 (deferred) could auto-dispatch Crash<Peer> branches
-//     when the wrapped handle is at an Offer with such a branch, by
-//     inspecting `has_crash_branch_for_peer_v<Proto, PeerTag>`.
-//
-// 4.  **PeerTag is phantom**: the wrapper stores no per-peer runtime
-//     state beyond the flag pointer; PeerTag exists purely so the
-//     CrashEvent's compile-time signature names the responsible
-//     peer.  Multi-peer sessions wrap the inner handle in nested
-//     CrashWatchedHandles (one per peer); the type alias chain
-//     records every watched peer at the type level.
-//
-// 5.  **Pinned by reference**: the `OneShotFlag` is held by raw
-//     pointer (always non-null after construction).  Lifetime is
-//     the caller's responsibility — typically the SessionEstab-
-//     lishmentService allocates the flag, hands a reference to the
-//     CrashWatchedHandle, and outlives the session.  The wrapper
-//     itself is move-only (single-consumer linearity preserved).
-//
-// 6.  **Permission inheritance is explicit**: on peer death, surviving
-//     permissions inherit only through the `inherits_from<DeadTag,
-//     SurvivorTag>` / `survivor_registry<DeadTag>` lattice from
-//     permissions/PermissionInherit.h.  Specializing that registry at
-//     the peer tag declaration site is load-bearing: a PeerTag with no
-//     declared survivor list is rejected before CrashWatchedHandle can
-//     be minted.
-//
-// ─── Row-typed surface (FOUND-G62) ────────────────────────────────
-//
-// Each CrashWatchedHandle instance and consumer call site has a static
-// CrashClass per CrashLattice (Abort ⊑ Throw ⊑ ErrorReturn ⊑ NoThrow).
-// The handle-level class is the Stop_g grade expected in protocol
-// continuations.  NoThrow is rejected for watched crash transport because
-// an unreliable peer cannot be declared "cannot crash" while still being
-// guarded by a crash flag.  The call-site classifications are enforced at
-// the type level via OneShotFlag's pinned-surface methods
-// (handles/OneShotFlag.h, FOUND-G62):
-//
-//     site                              underlying       CrashClass
-//     ────────────────────────────────  ─────────────    ──────────
-//     producer-side: signal()           atomic store     Throw
-//                  → signal_throw()     (FOUND-G62)
-//
-//     consumer-side: peek() steady      atomic load      NoThrow
-//       (the false-on-flag path)        + branch
-//                  → peek_nothrow()     (FOUND-G62)
-//
-//     recovery-handler: peek() true     acquire-fence    ErrorReturn
-//       (the unlikely true path that    + recovery
-//        returns CrashEvent via         + std::expected
-//        std::expected; FOUND-C v1 PSH  return
-//        composition)
-//                  → try_acknowledge_error_return(F)  (FOUND-G62)
-//
-// New code wiring CrashWatchedHandle into a NEW protocol arm should
-// use the pinned surface so the handle carries its CrashClass
-// classification at the type level.  Existing call sites (Send /
-// Recv / Select / Offer / close specializations below) continue to
-// use the raw peek() — the additive overlay preserves the per-call
-// shape without churn.  Audit migration is a follow-up task.
-//
-// ─── References ───────────────────────────────────────────────────
-//
-//   misc/24_04_2026_safety_integration.md §11 — design rationale
-//   misc/28_04_2026_effects.md §4.3.10        — FOUND-G62 type-level
-//                                               classification rationale
-//   safety/OneShotFlag.h          — the underlying signal primitive
-//                                   + FOUND-G62 pinned-surface methods
-//   safety/Crash.h                — the CrashClass wrapper type
-//   safety/SessionCrash.h          — type-level crash semantics
-//   safety/RecordingSessionHandle.h — sibling wrapper using the same
-//                                     per-Proto specialization scaffold
-// ═══════════════════════════════════════════════════════════════════
+// The mint accepts a bare handle as well as a permissioned one.  A bare
+// handle enters the permissioned crash surface with an empty permission set.
 
 #include <crucible/Platform.h>
 #include <crucible/handles/OneShotFlag.h>
@@ -151,62 +53,18 @@
 
 namespace crucible::safety::proto {
 
-// Forward-declared so the pass-key class can friend it (#430).  Real
-// definition appears below CrashEvent.
 template <typename PeerTag, typename InnerHandle, typename Resource, typename Reason>
 [[nodiscard]] constexpr auto wrap_crash_return(InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashEvent<PeerTag, Resource, SurvivorTags...> ─────────────────
-// ═════════════════════════════════════════════════════════════════════
+// A crash event may only be constructed together with the detach of the inner
+// handle it recovers from.  A crash path that built the event and forgot the
+// detach would leave the inner handle at a non-terminal protocol state, and
+// its destructor would abort for abandonment.  Bundling both into one helper
+// and keeping the event constructible only by that helper makes the omission
+// unspellable rather than merely discouraged.
 //
-// Carries the peer identity (compile-time) and the recovered
-// Resource value (runtime — the inner handle's Resource is moved
-// out before the wrapper returns the unexpected branch, so callers
-// can salvage state for a re-establishment attempt).
-//
-// Resource is captured by-value to give the caller exclusive
-// ownership; the wrapper is destroyed in the act of returning.
-//
-// ─── Construction is RESTRICTED (#430) ──────────────────────────────
-//
-// The constructor is PRIVATE.  The ONLY type permitted to construct a
-// CrashEvent is the friend factory `wrap_crash_return`, which bundles
-// the construction with the mandatory `inner.detach(reason)` step that
-// every wrapper crash-path must perform.  This makes the bug from
-// #400 — wrapper crash-paths that returned `std::unexpected(CrashEvent
-// {...})` WITHOUT first detaching their inner handle, causing
-// a silent abandonment abort via the inner's destructor — STRUCTURALLY
-// IMPOSSIBLE.
-//
-// Callers READ via the public `resource` field (left public so existing
-// `event.resource.field` access patterns in tests / recovery handlers
-// keep working unchanged).
-//
-// Audit:
-//   grep "wrap_crash_return"   — every detach + unexpected pair
-//   grep "CrashEvent<.*>{"     — should match only wrap_crash_return's
-//                                 body and (legacy) doc-comment text
-
-// ─── Pass-key for CrashEvent's restricted ctor (#430) ──────────────
-//
-// The pass-key idiom: an empty type whose ctor is private, with the
-// only friend being the helper that's authorized to construct CrashEvent.
-// Anyone else attempting to spell `CrashEvent<P, R>{key, r}` cannot
-// produce a `key` of type `WrapCrashReturnKey` to begin with.
-//
-// fixy-A2-021: the friend MUST NOT be the variadic
-// `wrap_crash_return` function template directly.  Template-friend
-// signature matching is parameter-order brittle on GCC 16 — any
-// future evolution that touches `wrap_crash_return`'s template
-// parameter list or function parameter list (a `std::source_location
-// loc = std::source_location::current()` is the standard idiom in
-// this codebase, see mint_session_handle at sessions/Session.h) would
-// silently de-friend the helper and surface as
-// "WrapCrashReturnKey's default ctor is private" at distant
-// CrashEvent construction sites.  The fix routes minting through a
-// non-template authorizer struct in `detail::` — friendship matches
-// by class identity, immune to parameter-pack drift.
+// The pass-key below is the token that helper holds: an empty type whose
+// constructor is private, so no other caller can produce the first argument.
 namespace detail {
 struct WrapCrashReturnAuthorizer;
 }  // namespace detail
@@ -214,68 +72,37 @@ struct WrapCrashReturnAuthorizer;
 class WrapCrashReturnKey {
     constexpr WrapCrashReturnKey() noexcept = default;
 
-    // fixy-A2-032: deny copy/move so the passkey cannot be aliased
-    // post-mint.  Even after an authorized
-    // `detail::WrapCrashReturnAuthorizer::mint()` produces a prvalue,
-    // no path may duplicate it — this forecloses an attack class where
-    // a key is exfiltrated via lambda capture, template-friend cheat,
-    // or returning by value from a hypothetical friend method.  The
-    // C++17 mandatory copy-elision rule keeps the production paths
-    // intact: `mint()` → prvalue → value parameter (CrashEvent's ctor)
-    // and prvalue → const-ref binding (crash_witness_key's ctor) both
-    // bypass copy/move construction entirely, so this deletion is
-    // defense-in-depth at zero call-site cost.  Companion to fixy-H-25
-    // (PermissionInherit.h) and fixy-A2-021 (the non-template
-    // authorizer routing) — together they make the H-25 closure
-    // structurally unforgeable rather than discipline-only.
-    WrapCrashReturnKey(const WrapCrashReturnKey&) = delete("fixy-A2-032: passkey cannot be copied");
-    WrapCrashReturnKey(WrapCrashReturnKey&&) = delete("fixy-A2-032: passkey cannot be moved");
+    // A key that can be duplicated can be exfiltrated, through a lambda
+    // capture or a friend method that hands one back.  Deleting copy and move
+    // costs the production paths nothing: mandatory copy elision carries the
+    // minted prvalue straight into a value parameter or a reference binding
+    // without ever constructing a second key.
+    WrapCrashReturnKey(const WrapCrashReturnKey&) = delete("passkey cannot be copied");
+    WrapCrashReturnKey(WrapCrashReturnKey&&) = delete("passkey cannot be moved");
 
-    // Only `detail::WrapCrashReturnAuthorizer::mint()` can produce a
-    // key — and that helper is itself only callable from inside
-    // `wrap_crash_return` (the authorizer's `mint()` is named and
-    // located by deliberate design so call-site grep ("authorizer")
-    // finds every minting site in one pass; out-of-tree code cannot
-    // call it without becoming structurally visible).
     friend struct detail::WrapCrashReturnAuthorizer;
 };
 
-// fixy-A2-032: structural guard.  Pre-fix the compiler implicitly
-// synthesized public copy/move ctors on `WrapCrashReturnKey` (an
-// empty class), so `std::is_copy_constructible_v` evaluated true.
-// Post-fix it evaluates false because the copy/move ctors are
-// `= delete`d.  These asserts fire eagerly via `CrashTransport.h`'s
-// pervasive inclusion, locking the non-fungibility property against
-// future regression.
-static_assert(!std::is_copy_constructible_v<WrapCrashReturnKey>,
-              "fixy-A2-032: WrapCrashReturnKey must not be copy-constructible");
-static_assert(!std::is_move_constructible_v<WrapCrashReturnKey>,
-              "fixy-A2-032: WrapCrashReturnKey must not be move-constructible");
-static_assert(!std::is_copy_assignable_v<WrapCrashReturnKey>,
-              "fixy-A2-032: WrapCrashReturnKey must not be copy-assignable");
-static_assert(!std::is_move_assignable_v<WrapCrashReturnKey>,
-              "fixy-A2-032: WrapCrashReturnKey must not be move-assignable");
+// An empty class gets copy and move implicitly, so the property these asserts
+// name is one a future edit can silently give back.
+static_assert(!std::is_copy_constructible_v<WrapCrashReturnKey>, "WrapCrashReturnKey must not be copy-constructible");
+static_assert(!std::is_move_constructible_v<WrapCrashReturnKey>, "WrapCrashReturnKey must not be move-constructible");
+static_assert(!std::is_copy_assignable_v<WrapCrashReturnKey>, "WrapCrashReturnKey must not be copy-assignable");
+static_assert(!std::is_move_assignable_v<WrapCrashReturnKey>, "WrapCrashReturnKey must not be move-assignable");
 
 namespace detail {
 
-// fixy-A2-021: the sole authorized mint path for WrapCrashReturnKey.
-// Non-template by design so the friend declaration above matches by
-// class identity rather than parameter-pack signature.
-//
-// FIXY-V-013: extended with `mint_event_<>` — the sole authorized
-// constructor of CrashEvent.  Routing through this non-template
-// authorizer keeps the friend match by class identity (immune to
-// parameter-pack drift per fixy-A2-021) and pins the §XXI ctor
-// privacy gate inside CrashEvent's class body.
+// This authorizer is a struct rather than the crash-path function template
+// itself.  Template friendship matches on the exact signature, so friending
+// the function would come undone the moment its parameter list gained a
+// source location or another template parameter, and the breakage would
+// appear as a private-constructor error at unrelated construction sites.
+// Friendship on a non-template class matches by identity and cannot drift.
 struct WrapCrashReturnAuthorizer {
     [[nodiscard]] static constexpr WrapCrashReturnKey mint() noexcept { return WrapCrashReturnKey{}; }
 
-    // V-013: only authorized constructor for CrashEvent.  Because
-    // CrashEvent's ctor is private and `WrapCrashReturnAuthorizer` is
-    // friended on it, this is the single grep-discoverable
-    // construction site for CrashEvent in the whole tree.  The
-    // CrashEvent type is supplied by the caller (`wrap_crash_return`)
-    // via the `crash_event_for_t<PeerTag, Resource>` alias.
+    // The one place a crash event is constructed.  The event type comes from
+    // the caller, so this stays non-template as a class.
     template <typename Event, typename Resource, typename Perms>
     [[nodiscard]] static constexpr Event mint_event_(Resource&& r, Perms&& perms) noexcept {
         return Event{WrapCrashReturnKey{}, std::forward<Resource>(r), std::forward<Perms>(perms)};
@@ -292,62 +119,21 @@ public:
     using survivors = ::crucible::permissions::inheritance_list<SurvivorTags...>;
     using permissions_type = std::tuple<::crucible::safety::Permission<SurvivorTags>...>;
 
-    // Public read-access for handlers that inspect recovered resource state.
     Resource resource;
     [[no_unique_address]] permissions_type permissions;
 
-    // fixy-A2-033: Resource must be nothrow-move-constructible.  The
-    // ctor is `noexcept` and constructs the field via `std::move(r)`,
-    // so a throwing move would call `std::terminate` mid-crash-path —
-    // exactly the wrong place to silently kill the process.  The
-    // static_assert pins the discipline at every CrashEvent
-    // instantiation site, so a Resource that loses noexcept-move
-    // (e.g., a refactor that adds a non-noexcept member) is caught at
-    // compile time instead of at the crash-recovery moment.
+    // The whole crash path is noexcept, so a resource whose move can throw
+    // would terminate the process during recovery, which is the worst moment
+    // for it.  The assert moves that failure to compile time.
     static_assert(std::is_nothrow_move_constructible_v<Resource>,
-                  "fixy-A2-033: CrashEvent Resource must be nothrow-move-"
+                  "CrashEvent Resource must be nothrow-move-"
                   "constructible.  The crash-path is noexcept and a throwing "
                   "move would call std::terminate during recovery.");
 
 private:
-    // ── Construction (used by detail::WrapCrashReturnAuthorizer::mint_event_;
-    //     not user-facing) ────────────────────────────────────────────
-    //
-    // FIXY-V-013: §XXI Universal Mint Pattern compliance.  The ctor
-    // moved from public to private — even with a hand-minted
-    // WrapCrashReturnKey, direct `CrashEvent<...>{key, r, perms}`
-    // construction is now ill-formed at the access-control check.
-    // The sole authorized constructor is
-    // `detail::WrapCrashReturnAuthorizer::mint_event_<Event>(r, perms)`,
-    // which `wrap_crash_return` invokes; the authorizer is
-    // non-template so friendship matches by class identity (per
-    // fixy-A2-021), immune to parameter-pack drift.
-    //
-    // Defense-in-depth rationale: pre-V-013 the only barrier was
-    // WrapCrashReturnKey's unforgeability.  An attacker who could
-    // somehow obtain a key (compiler bug, unsafe code, or
-    // accidentally-public authorizer evolution) could construct
-    // CrashEvent directly.  With V-013, even a forged key cannot
-    // produce a CrashEvent — the access check fires at every
-    // construction site outside the friend.
-    //
-    // The pass-key parameter is retained as a runtime witness of
-    // authorization (the authorizer is the only entity that mints
-    // both key and event).
-    //
-    // fixy-A2-033: `Resource&& r` (rvalue-ref) instead of `Resource r`
-    // (by value).  Previously the by-value parameter forced one move
-    // construction at the ctor boundary, on top of the move from
-    // `wrap_crash_return`'s `recovered` parameter and the final move
-    // into the `resource` field — three moves for a path the design
-    // wants fast.  An rvalue-ref binds the caller's xvalue directly,
-    // eliminating the boundary move; the only remaining moves are
-    // (1) caller into `wrap_crash_return::recovered` and (2) `r` into
-    // `resource`.  For a 16 KB Resource at ~5 GB/s memcpy this
-    // recovers ~3 µs per crash event.  Resources that aren't
-    // move-constructible become ill-formed at instantiation per the
-    // `is_nothrow_move_constructible_v` static_assert above — better
-    // diagnostic than the pre-fix silent fall-back to copy.
+    // Access control, not the key, is what makes this unreachable: a forged
+    // key still cannot name a private constructor.  The key parameter stays
+    // as the runtime witness that the authorizer minted both.
     constexpr CrashEvent(WrapCrashReturnKey, Resource&& r, permissions_type perms) noexcept
         : resource{std::move(r)}, permissions{std::move(perms)} {}
 
@@ -461,42 +247,11 @@ consteval void require_crash_watched_contract_() {
 template <typename Event>
 concept CrashEventMatchesSurvivors = detail::crash_event_matches_survivors_v<Event>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── wrap_crash_return — wrapper-side crash-path bundler (#430) ─────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Every wrapper around PermissionedSessionHandle that returns
-// `std::expected<NextHandle, detail::crash_event_for_t<PeerTag, Resource>>` on a
-// crash path MUST perform two operations atomically:
-//
-//   1. Detach the inner PermissionedSessionHandle (`inner.detach(reason_tag)`) so
-//      its destructor sees the consumed flag and skips the abandonment
-//      abort.  Without this, the inner — at non-terminal protocol state
-//      — fires SessionHandleBase's destructor abort when the wrapper's
-//      crash-path stack frame unwinds.  This is exactly the bug shipped
-//      in #400's first replace_all that caught only Send's path,
-//      leaving recv / select / pick / branch silently aborting via the
-//      inner's destructor; debug-instrumentation localised the hole and
-//      the fix was a second pass that applied detach uniformly.
-//
-//   2. Construct the survivor-aware CrashEvent and wrap it in
-//      `std::unexpected{...}` so the caller gets the recovered Resource
-//      plus Permission tokens minted from `survivors_t<PeerTag>`.
-//
-// `wrap_crash_return` BUNDLES the two operations.  It is the ONLY
-// construction site for `CrashEvent` (per the friend declaration above),
-// so wrapper crash-paths that try to spell the unexpected return
-// manually (`return std::unexpected(CrashEvent<P, R>{...})`) get a
-// crisp compile error pointing at the private ctor — the bug from
-// #400 becomes structurally impossible.
-//
-// Audit (review-discoverable, grep-mechanical):
-//
-//   grep "wrap_crash_return"   — every wrapper crash-path site
-//   grep "CrashEvent<.*>{"     — must match ONLY wrap_crash_return's
-//                                 body and doc comments; any other
-//                                 hit is a wrapper trying to bypass
-//                                 the discipline (review-reject)
+// A crash path detaches the inner handle and returns the survivor-aware event
+// as one step.  Detach is what lets the inner handle's destructor see a
+// consumed handle instead of one abandoned mid-protocol.  Every crash path in
+// this file goes through here, which is also the only construction site for
+// the event, so the two halves cannot come apart.
 
 template <typename PeerTag, typename InnerHandle, typename Resource, typename Reason>
 [[nodiscard]] constexpr auto wrap_crash_return(InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept {
@@ -505,38 +260,17 @@ template <typename PeerTag, typename InnerHandle, typename Resource, typename Re
                   "wrap_crash_return recovered resource type must match inner "
                   "resource_type.");
 
-    // The detach call is what saves the inner from firing its
-    // destructor's abandonment abort.  detach()'s `requires
-    // DetachReason<Reason>` constraint enforces that `reason_tag`
-    // is a tag from `detach_reason::*`; mismatched / missing tags
-    // produce the named diagnostic from #376.
     std::move(inner).detach(reason_tag);
-    // fixy-A2-021: mint via the non-template authorizer.  This routing
-    // is immune to parameter-order drift (the prior implementation
-    // friended `wrap_crash_return` directly, which would silently
-    // de-friend on any future template-parameter-list evolution).
     detail::require_crash_survivors_declared_<PeerTag>();
 
-    // H-25: mint a `crash_witness_key` as proof-of-death.  Its public
-    // ctor takes a WrapCrashReturnKey; the only authorized way to
-    // produce one is `detail::WrapCrashReturnAuthorizer::mint()`,
-    // which this body has class-scope friend access to.  We've already
-    // executed `inner.detach(reason_tag)` above, which is the dynamic
-    // death witness the key represents (a `detach_reason::*` tag from
-    // the bridge layer).
-    // V-013: route construction through the authorizer's mint_event_
-    // helper.  CrashEvent's ctor is now private (per §XXI); the
-    // authorizer is friended and provides the sole grep-discoverable
-    // construction site for CrashEvent in the entire tree.
+    // The witness key stands for the death having been observed.  The detach
+    // above is that observation, which is why the key is minted here and
+    // nowhere earlier.
     return std::unexpected{detail::WrapCrashReturnAuthorizer::mint_event_<detail::crash_event_for_t<PeerTag, Resource>>(
         std::move(recovered),
         ::crucible::permissions::mint_permission_inherit<PeerTag>(
             ::crucible::permissions::crash_witness_key{detail::WrapCrashReturnAuthorizer::mint()}))};
 }
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Forward declaration + factory ──────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename Proto, typename Resource, typename PeerTag, CrashClass C = CrashClass::Abort,
           typename LoopCtx = void, typename PS = EmptyPermSet>
@@ -578,9 +312,6 @@ struct permissioned_loop_ctx_from_bare<VendorCtx<V, InnerLoopCtx>, PS> {
 template <typename LoopCtx, typename PS>
 using permissioned_loop_ctx_from_bare_t = typename permissioned_loop_ctx_from_bare<LoopCtx, PS>::type;
 
-// Build a CrashWatchedHandle around a freshly-stepped inner handle,
-// preserving the framework's Continue / Loop resolution.  Mirrors
-// safety/RecordingSessionHandle.h's wrap_next_.
 template <typename PeerTag, CrashClass C, typename NextHandle>
 [[nodiscard]] constexpr auto wrap_crash_next_(NextHandle inner, OneShotFlag& flag) noexcept {
     using NextProto = typename NextHandle::protocol;
@@ -592,15 +323,10 @@ template <typename PeerTag, CrashClass C, typename NextHandle>
 
 }  // namespace detail
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashWatchedHandle<End, …> ─────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// End is terminal — close() succeeds even if the flag is set, since
-// the protocol completed normally before the crash signal arrived.
-// (Different from mid-protocol Send/Recv where a crash means we
-// can't actually deliver the next message.)  Still peek for symmetry
-// in the audit trail; do not gate on it.
+// Closing at the terminal state does not consult the flag.  The protocol has
+// already completed, so a death signal arriving afterwards changes nothing
+// that the caller could act on.  This is the one consumer that never takes
+// the crash arm.
 
 template <typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>
@@ -648,13 +374,9 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashWatchedHandle<Stop_g<C>, …> ───────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Stop_g is terminal like End, but its crash class is load-bearing:
-// a watched handle declared with CrashClass::Throw must terminate in
-// Stop_g<Throw>, not a silently widened Stop_g<Abort>.
+// A crash terminal is terminal like the end state, but its grade has to equal
+// the watcher's own.  Widening one against the other would let a session
+// declare one recovery family and terminate in another.
 
 template <CrashClass StopC, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
@@ -702,10 +424,6 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashWatchedHandle<Send<T, R>, …> ──────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <typename T, typename R, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<Send<T, R>, CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>> {
@@ -750,22 +468,16 @@ public:
         decltype(detail::wrap_crash_next_<PeerTag, C>(
             std::declval<inner_type>().send(std::move(value), std::move(transport)), std::declval<OneShotFlag&>())),
         detail::crash_event_for_t<PeerTag, Resource>> {
-        // Hot-path peek: one relaxed atomic load.  No fence on the
-        // happy path.
+        // The peek is a relaxed load, so the happy path carries no fence.
+        // The crash arm pays for one, and it pairs with the release the
+        // signalling side performs.
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
-            // Recover Resource via the diagnostic borrow then move it
-            // out before detaching the inner.  detach() is the typed
-            // escape hatch for non-terminal abandonment;
-            // TransportClosedOutOfBand exactly names the audit class
-            // (peer-crash detected at a lower layer).
+            // The resource has to come out before the detach: detach ends the
+            // inner handle, and nothing can be borrowed from it afterwards.
+            // Every crash arm below repeats this order for that reason.
             Resource recovered = std::move(inner_.resource());
             this->mark_consumed_();
-            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
-            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
-            // ctor is private; this helper is its only friend, so a
-            // wrapper that returned unexpected without detaching would
-            // not compile (the bug from #400's first replace_all).
             return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
                                               std::move(recovered));
         }
@@ -778,10 +490,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashWatchedHandle<Recv<T, R>, …> ──────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, C, LoopCtx, PS>
@@ -821,9 +529,8 @@ public:
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
-    // recv: on crash, return CrashEvent with no message (the message
-    // never arrived).  On no-crash, return std::expected<pair<T,
-    // NextHandle>, CrashEvent>.
+    // The crash arm carries no message.  A receive that took it never had one
+    // to hand back, so the pair exists only on the success side.
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
     [[nodiscard]] constexpr auto recv(Transport transport) && -> std::expected<
@@ -832,15 +539,8 @@ public:
         detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
-            // Recover Resource then explicitly detach the inner
-            // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
             this->mark_consumed_();
-            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
-            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
-            // ctor is private; this helper is its only friend, so a
-            // wrapper that returned unexpected without detaching would
-            // not compile (the bug from #400's first replace_all).
             return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
                                               std::move(recovered));
         }
@@ -853,10 +553,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashWatchedHandle<Select<Bs...>, …> ───────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>
@@ -898,7 +594,6 @@ public:
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
-    // Transport-driven select: signal choice; route to crash if flag set.
     template <std::size_t I, typename Transport>
         requires(I < sizeof...(Branches)) && std::is_invocable_v<Transport, Resource&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && -> std::expected<
@@ -907,15 +602,8 @@ public:
         detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
-            // Recover Resource then explicitly detach the inner
-            // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
             this->mark_consumed_();
-            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
-            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
-            // ctor is private; this helper is its only friend, so a
-            // wrapper that returned unexpected without detaching would
-            // not compile (the bug from #400's first replace_all).
             return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
                                               std::move(recovered));
         }
@@ -924,12 +612,9 @@ public:
         return detail::wrap_crash_next_<PeerTag, C>(std::move(next), *flag_);
     }
 
-    // No-transport select.
-    // Renamed from `select<I>()` to `select_local<I>()` (#377) so the
-    // wire ABSENCE is visible at the call site.  CrashWatchedHandle's
-    // crash-detection still applies — peer crash before the local
-    // .select_local<I>() call returns crash event; otherwise the
-    // local handle advances to branch I without signalling the peer.
+    // Nothing reaches the peer here, yet the crash arm still applies: a peer
+    // that died before this call is a peer this handle must not keep
+    // advancing against, whether or not the step would have touched the wire.
     template <std::size_t I>
         requires(I < sizeof...(Branches))
     [[nodiscard]] constexpr auto select_local() && -> std::expected<
@@ -938,15 +623,8 @@ public:
         detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
-            // Recover Resource then explicitly detach the inner
-            // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
             this->mark_consumed_();
-            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
-            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
-            // ctor is private; this helper is its only friend, so a
-            // wrapper that returned unexpected without detaching would
-            // not compile (the bug from #400's first replace_all).
             return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
                                               std::move(recovered));
         }
@@ -955,12 +633,9 @@ public:
         return detail::wrap_crash_next_<PeerTag, C>(std::move(next), *flag_);
     }
 
-    // Deleted `select<I>()` overload (#377) — forces every call site
-    // to choose between the wire variant `.select<I>(transport)` and
-    // the wire-omitting `.select_local<I>()`.
     template <std::size_t I>
     void select() && = delete("[Wire_Variant_Required] CrashWatchedHandle<Select<...>>::"
-                              "select<I>() without arguments is no longer allowed (#377).  "
+                              "select<I>() without arguments is not available.  "
                               "Choose `select<I>(transport)` for the wire path, or "
                               "`select_local<I>()` for the in-memory variant.  See "
                               "SessionHandle<Select<...>>::select for the full discipline.");
@@ -970,16 +645,10 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CrashWatchedHandle<Offer<Bs...>, …> ────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// pick<I>() — peer's choice already known by caller; flag-gated.
-// branch(transport, handler) — would need to interpose on transport
-//   like RecordingSessionHandle does for Offer; for #400 Phase 1 we
-//   ship pick<I> only.  branch() with auto-dispatch into Crash<Peer>
-//   branches is the natural Phase 2 (combines #368's "walk every
-//   Offer for crash branches" with this header's runtime wire).
+// Only the local pick is offered.  A transport-driven branch would have to
+// read the peer's label out of a transport that may fail because the peer is
+// the one that died, and the crash arm and the label arm are not separable
+// without interposing on the transport, which this wrapper does not do.
 
 template <typename... Branches, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>
@@ -1021,9 +690,8 @@ public:
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
-    // Renamed to `pick_local<I>()` (#377) — surfaces the wire absence
-    // for the Offer side too.  Same crash-detection semantics; the
-    // local handle assumes branch I without receiving the peer label.
+    // The branch is assumed, not received.  The crash arm still applies for
+    // the same reason it does on the local select.
     template <std::size_t I>
         requires(I < sizeof...(Branches))
     [[nodiscard]] constexpr auto pick_local() && -> std::expected<
@@ -1032,15 +700,8 @@ public:
         detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
-            // Recover Resource then explicitly detach the inner
-            // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
             this->mark_consumed_();
-            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
-            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
-            // ctor is private; this helper is its only friend, so a
-            // wrapper that returned unexpected without detaching would
-            // not compile (the bug from #400's first replace_all).
             return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
                                               std::move(recovered));
         }
@@ -1049,12 +710,9 @@ public:
         return detail::wrap_crash_next_<PeerTag, C>(std::move(next), *flag_);
     }
 
-    // Deleted `pick<I>()` overload (#377) — same discipline as
-    // CrashWatchedHandle<Select<...>>::select; force every call site
-    // to make the wire choice explicit.
     template <std::size_t I>
     void pick() && = delete("[Wire_Variant_Required] CrashWatchedHandle<Offer<...>>::"
-                            "pick<I>() without arguments is no longer allowed (#377).  "
+                            "pick<I>() without arguments is not available.  "
                             "Use `pick_local<I>()` to advance without receiving a peer "
                             "label, or call the peer-receiving variant when one is "
                             "available.  See SessionHandle<Offer<...>>::pick for the "
@@ -1065,59 +723,15 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── mint_crash_watched_session<PeerTag> — Universal Mint Pattern ───
-// ═════════════════════════════════════════════════════════════════════
+// Ownership of the incoming handle is the proof of authority, so these mints
+// take no context.  The peer tag is explicit rather than deduced, because one
+// handle can be watched against several peers and each watch is its own
+// wrapper in the chain.
 //
-// Token mint per CLAUDE.md §XXI — wraps either an existing bare
-// SessionHandle or a PermissionedSessionHandle in a CrashWatchedHandle
-// bound to the supplied OneShotFlag and compile-time PeerTag.  Bare
-// handles are adapted to `PS = EmptyPermSet`; permissioned handles
-// preserve their exact consumer-side PermSet through every next-state
-// wrapper.
-//
-// PeerTag must be specified explicitly — it is NOT deducible from the
-// handle's type because the same handle can be watched against
-// different peers (multi-peer sessions wrap a chain of CrashWatched-
-// Handles, one per peer).
-//
-// `PeerTag` must have a non-empty `survivor_registry<PeerTag>`.
-// On peer death, surviving permissions inherit per the
-// `survivor_registry` / `inherits_from<DeadTag, SurvivorTag>` lattice
-// in PermissionInherit.h.  Specializing the survivor registry at the
-// peer tag declaration site is the load-bearing discipline.
-//
-// Convention compliance (CLAUDE.md §XXI):
-//   * Name follows mint_<noun>: mint_crash_watched_session.
-//   * Signature is a TOKEN MINT (no Ctx parameter); ownership of the
-//     incoming handle is the proof of authority.
-//   * [[nodiscard]] constexpr noexcept — purely structural wrap.
-//   * Returns the concrete type CrashWatchedHandle<Proto, Resource,
-//     PeerTag, LoopCtx, PS>; never type-erased.
-//   * Discoverable via `grep "mint_crash_watched_session"`.
-//
-// Negative-compile fixtures (HS14):
-//   test/safety_neg/neg_mint_crash_watched_session_non_handle.cpp
-//   test/safety_neg/neg_mint_crash_watched_session_missing_peer_tag.cpp
-
-// fixy-A2-026: §XXI Universal Mint Pattern — explicit single-concept
-// requires-clause naming IsSessionHandle<H>.  The clause is
-// tautologically satisfied here (both SessionHandle and
-// PermissionedSessionHandle inherit publicly from SessionHandleBase),
-// so it does NOT replace the in-body
-// `require_crash_watched_contract_<Proto, C>()` and
-// `require_crash_survivors_declared_<PeerTag>()` static_asserts —
-// those gate the crash-class / peer-survivor contracts which
-// IsSessionHandle does NOT.  The two layers compose:
-//
-//   1. requires IsSessionHandle<H>  (mint-discipline §XXI gate)
-//      ← grep-discoverable, surfaces every mint factory in one pass.
-//   2. body static_asserts          (crash-contract + survivor gate)
-//      ← specific diagnostics for crash-class / survivor mismatches.
-//
-// HS14 fixtures (test/safety_neg/neg_mint_crash_watched_session_*)
-// continue to fire via parameter-type SFINAE; the requires-clause is
-// additive.
+// The requires clause is satisfied by construction: the parameter type is
+// already a handle.  It stays because it is the grep target that makes every
+// authorisation point findable, and it does not stand in for the in-body
+// asserts, which gate the crash grade and the survivor list instead.
 
 template <typename PeerTag, CrashClass C = CrashClass::Abort, typename Proto, typename Resource, typename LoopCtx>
     requires ::crucible::safety::extract::IsSessionHandle<SessionHandle<Proto, Resource, LoopCtx>>
@@ -1146,58 +760,13 @@ template <typename PeerTag, CrashClass C = CrashClass::Abort, typename Proto, ty
     return CrashWatchedHandle<Proto, Resource, PeerTag, C, LoopCtx, PS>{std::move(handle), flag};
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Stop-aware unwrap helper (fixy-A2-030) ─────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Convenience for the common caller pattern: try a session op, fall
-// through to crash recovery on the unexpected branch.  The recovery
-// callback receives the survivor-aware CrashEvent BY VALUE and IS
-// expected to perform whatever downstream recovery the caller needs
-// (re-establishment, typed-error propagation, audit-log emission).
-//
-// ── Returns void.  See fixy-A2-030. ────────────────────────────────
-//
-// Pre-fix this helper returned the input `Expected` after moving out
-// `result.error()` into the handler.  The returned Expected then
-// carried a MOVED-FROM error: a caller who inspected `result.error()`
-// or chained `.transform_error()` post-call silently read undefined
-// data (CrashEvent with moved-out Resource — nullptr for unique_ptr,
-// zero-bytes for trivially-moved structs).  The footgun was
-// indistinguishable at the type level: nothing structurally prevented
-// the inspection.
-//
-// Post-fix the helper returns `void`.  Inspection of the original
-// `Expected` AFTER on_crash returns is the caller's responsibility:
-// the caller MUST keep their own non-discarded handle on `result`
-// BEFORE calling on_crash if they want to inspect the success arm.
-// The Expected is intentionally an rvalue-bindable parameter — the
-// crash arm consumes the error into the handler, so post-call reads
-// would be moved-from regardless.
-//
-// Idiomatic usage (post-fix):
-//
-//     auto result = std::move(h).send(msg, tx);
-//     on_crash(result, [](detail::crash_event_for_t<PeerTag, R> ev) {
-//         ...recover...
-//     });
-//     if (result) {
-//         // Success arm — `result` is still live; use *result.
-//     }
-//     // Error arm: handler ran, result.error() is moved-from.
-//     // DO NOT read result.error() here.
-//
-// For callers that want a chaining value, write the dispatch
-// explicitly:
-//
-//     auto outcome = result
-//         ? std::move(*result)
-//         : make_recovered_outcome(std::move(result.error()));
-//
-// HS14 fixtures witness the post-fix discipline by demonstrating that
-// a previously-compilable inspection pattern (capturing the helper's
-// return and dereferencing it) now produces a clean type error
-// (void is not assignable, void has no members).
+// The handler consumes the error, so this returns nothing.  Returning the
+// expected would be the more chainable shape and is the reason the void is
+// deliberate: the returned value would hold a moved-from error, and a caller
+// reading it back or chaining on it would see a recovered resource that has
+// already been handed to the handler.  Nothing in the type distinguishes that
+// from a live one.  A caller who needs the success arm keeps its own
+// reference to the expected across this call.
 
 template <typename Expected, typename CrashHandler>
 constexpr void on_crash(Expected&& result, CrashHandler&& handler) noexcept(

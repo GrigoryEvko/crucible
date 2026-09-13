@@ -1,12 +1,7 @@
 #pragma once
 
-// GAPS-136. CNT-P connection-pool substrate.
-//
-// CNT-P owns typed connection facts and lease-event provenance. The runtime
-// pool in cntp/ConnectionPoolRuntime.h owns mutable bounded reuse state. This substrate
-// deliberately does not create RDMA queue pairs, perform TLS handshakes,
-// schedule health probes, or mutate quarantine policy; those producers feed
-// already-owned Connection<T> values into the pool.
+// A Connection<T> arrives already established.  Nothing here creates an RDMA
+// queue pair, performs a TLS handshake or probes a peer for health.
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/CongestionControl.h>

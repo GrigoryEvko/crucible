@@ -1,155 +1,25 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto::PermissionedSessionHandle<Proto, PS,
-// Resource, LoopCtx> — the central thesis of FOUND-C.
+// A PermissionedSessionHandle carries a type-level permission set beside the
+// protocol state.  The set evolves on every send and receive according to the
+// payload's flow marker:
 //
-// Phase 3 of FOUND-C (#610–#615).  See `misc/27_04_csl_permission_
-// session_wiring.md` §8 for the full spec.  Phase 4 ships
-// session_fork; Phase 5 ships OneShotFlag crash transport.
+//   Send<Transferable<T, X>, K>      drops X
+//   Send<Returned<T, X>, K>          drops X
+//   Send<Borrowed<T, X>, K>          unchanged, the lend is scoped
+//   Send<DelegatedSession<P, S>, K>  drops every tag in S
+//   Recv<Transferable<T, X>, K>      gains X
+//   Recv<Returned<T, X>, K>          gains X
+//   Recv<Borrowed<T, X>, K>          unchanged, the receiver gets a read view
+//   Recv<DelegatedSession<P, S>, K>  gains every tag in S
 //
-// ─── Three-axis composition ────────────────────────────────────────
+// A plain payload never moves a tag.
 //
-//   Axis 1 — Graded value invariants     (Refined / Tagged / Secret …)
-//   Axis 2 — CSL permissions             (Permission<Tag>, splits_into …)
-//   Axis 3 — Session protocols           (Send / Recv / Loop / End …)
-//
-// PermissionedSessionHandle weaves all three.  It is a CRTP-inheriting
-// wrapper over `SessionHandle<Proto, Resource, LoopCtx>` from
-// `sessions/Session.h` that adds a phantom type-level PermSet<Tags...>
-// (carried as `[[no_unique_address]] PS` for zero-byte cost) and
-// evolves it on every send / recv / pick / branch / close per the
-// payload's permission-flow marker (`SessionPermPayloads.h`).
-//
-// ─── Design decisions (from the wiring plan §0.4) ──────────────────
-//
-//   D1 — All fifteen FOUND-C tasks ship in v1; no deferrals.
-//   D2 — session_fork ships in v1 (Phase 4) for plain-mergeable
-//        protocols; diverging-multiparty waits on coinductive merging.
-//   D3 — Loop body permission balance is MANDATORY at compile time:
-//        every Continue site asserts perm_set_equal_v<PS_at_continue,
-//        PS_at_loop_entry>.  Forces each iteration to balance.
-//   D4 — Select / Offer cross-branch PermSet convergence is enforced
-//        STRUCTURALLY: every branch's terminal head (End / Stop /
-//        Continue) carries its own static_assert on PS, so all branches
-//        meeting at the same terminal must converge to the same PS by
-//        construction.  No separate convergence metafunction needed.
-//   D5 — Debug-mode abandonment-tracker enrichment lists the LEAKED
-//        permission tags before the base SessionHandleBase destructor
-//        prints its standard diagnostic and aborts.  Zero release cost.
-//   D6 — is_permission_balanced_v<Γ, InitialPerms> SHIPPED standalone
-//        (GAPS-002) in `sessions/SessionContext.h` as the structural
-//        delta-fold over Γ's entries.  NOT conjuncted with is_safe_v
-//        (unshipped, Task #346 / wiring plan §11 bounded-LTS walk)
-//        per the Part IX honest-assessment discipline.
-//   D7 — VendorCtx<V, InnerLoopCtx> is the LoopCtx-axis extension
-//        for per-vendor session pinning (GAPS-067).  Unpinned LoopCtx
-//        values are interpreted as VendorCtx<Portable, LoopCtx>;
-//        explicitly pinned handles compare with
-//        VendorLattice::leq(consumer_vendor, provider_vendor), so
-//        Portable providers can satisfy vendor-specific consumers while
-//        NV and AMD remain mutually incompatible.
-//   D8 — Doc-update sweep is bundled with the implementation PR.
-//
-// ─── Why CRTP over composition ─────────────────────────────────────
-//
-//   * Diagnostic naming.  SessionHandleBase's wrapper-name reflection
-//     reads "PermissionedSessionHandle" when Derived is passed; the
-//     abandonment diagnostic distinguishes a PSH abort from a bare
-//     SessionHandle abort, a CrashWatchedHandle abort, or a
-//     RecordingSessionHandle abort even when all four share the same
-//     Proto.  Composition would force a misreport.
-//   * Zero-overhead sizeof.  PS is empty (sizeof = 1, EBO-collapsible
-//     to 0); SessionHandleBase's tracker_ is empty in release; the
-//     handle's only non-empty member is the Resource.  Composition
-//     would add a pointer-to-inner-handle, breaking the zero-cost
-//     claim.
-//   * Existing precedent.  bridges/CrashTransport.h::CrashWatchedHandle
-//     and bridges/RecordingSessionHandle.h::RecordingSessionHandle
-//     already use CRTP per protocol head.  Following the same pattern
-//     keeps the framework's mental model consistent.
-//
-// ─── PermSet evolution per protocol head ───────────────────────────
-//
-//   Send<Plain T, K>             PS' = PS                    (unchanged)
-//   Send<Transferable<T, X>, K>  PS' = perm_set_remove_t<PS, X>
-//   Send<Borrowed<T, X>, K>      PS' = PS                    (scoped lend)
-//   Send<Returned<T, X>, K>      PS' = perm_set_remove_t<PS, X>
-//   Send<DelegatedSession<P, S>, K>
-//                                PS' = perm_set_difference_t<PS, S>
-//   Recv<Plain T, K>             PS' = PS                    (unchanged)
-//   Recv<Transferable<T, X>, K>  PS' = perm_set_insert_t<PS, X>
-//   Recv<Borrowed<T, X>, K>      PS' = PS                    (ReadView only)
-//   Recv<Returned<T, X>, K>      PS' = perm_set_insert_t<PS, X>
-//   Recv<DelegatedSession<P, S>, K>
-//                                PS' = perm_set_union_t<PS, S>
-//
-// All four payload markers are normalised to the same dispatch via
-// compute_perm_set_after_send_t / compute_perm_set_after_recv_t in
-// `sessions/SessionPermPayloads.h`.
-//
-// ─── Delegate / Accept integration (GAPS-058) ──────────────────────
-//
-// Higher-order session delegation uses `DelegatedSession<P, InnerPS>`
-// as the protocol payload in `Delegate<DelegatedSession<P, InnerPS>, K>`
-// and `Accept<DelegatedSession<P, InnerPS>, K>`.
-//
-//   Delegate consumes a PermissionedSessionHandle<P, ActualInnerPS, ...>
-//   and statically requires ActualInnerPS == InnerPS.  The delegator
-//   loses the inner permissions because the inner handle is consumed.
-//
-//   Accept receives the endpoint resource and mints a
-//   PermissionedSessionHandle<P, InnerPS, ...>.  The accepter gains
-//   those permissions through the returned inner handle.  Its carrier
-//   PS must be disjoint from InnerPS so the same CSL token is not held
-//   simultaneously by the carrier and the delegated endpoint.
-//
-// ─── Crash transport composition (FOUND-C Phase 5) ─────────────────
-//
-// PSH composes with the existing OneShotFlag-based crash signal
-// (`safety::OneShotFlag`, `bridges/CrashTransport.h::CrashWatchedHandle`)
-// via the framework's typed-detach idiom.  v1 ships the COMPOSITION
-// PATTERN — the `with_crash_check_or_detach` helper below + a
-// worked-example test in `test_permissioned_session_handle.cpp` —
-// rather than a fused `CrashWatchedPermissionedSessionHandle` class.
-// Per the wiring plan §10.3, the crash-stop discipline is:
-//
-//   1. Peek the OneShotFlag before each PSH op.
-//   2. If set: `std::move(h).detach(detach_reason::TransportClosedOutOfBand{})`
-//      drops the type-level PS (permissions are NOT recovered from a
-//      crashed peer — BSYZ22 crash-stop), and leaves the underlying
-//      Resource recoverable via the channel reference the user holds
-//      separately.
-//   3. If clear: proceed with the normal PSH op (send/recv/...).
-//
-// The pattern preserves PSH's send/recv API (no std::expected wrapping,
-// no API breakage) while giving the framework a typed escape hatch
-// for crash-driven cleanup.  Production callers wanting the type
-// system to AUTOMATICALLY check the flag at every PSH op (and return
-// std::expected<NextHandle, CrashEvent>) should use
-// `bridges/CrashTransport.h::CrashWatchedHandle` directly (which
-// gives crash-aware send/recv) and layer permission tracking outside
-// the type system, OR wait for v2's
-// `CrashWatchedPermissionedSessionHandle` fused class.
-//
-// ─── Scope (what this header does NOT include) ─────────────────────
-//
-//   * session_fork — Phase 4.  Stub provided that fires
-//     static_assert(false) directing the caller to Phase 4 once it
-//     lands.
-//   * Fused CrashWatchedPermissionedSessionHandle (single class with
-//     BOTH crash awareness AND PS evolution) — v2.  v1 composes via
-//     the `with_crash_check_or_detach` helper below (Phase 5 lite).
-//   * is_permission_balanced_v<Γ, InitialPerms> — SHIPPED (GAPS-002)
-//     in `sessions/SessionContext.h`.  Structural delta-fold over Γ's
-//     entries: balanced iff per-Tag send/recv counts match AND every
-//     transferred tag is in InitialPerms.  Borrowed contributes
-//     nothing.  Not conjuncted with the unshipped is_safe_v (Task
-//     #346, bounded LTS walk per wiring plan §11).
-//   * Negative-compile harness — Phase 7 (shipped).
-//   * Bench — Phase 8 (shipped).
-//   * Doc-update sweep — Phase 9.
-// ═══════════════════════════════════════════════════════════════════
+// The handle derives from the session base through CRTP rather than holding a
+// bare session handle by composition.  Composition would add a pointer to the
+// inner handle, so the permissioned handle would no longer match the bare
+// handle in size, and the base's abandonment diagnostic would name the inner
+// wrapper instead of this one.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/VendorLattice.h>
@@ -175,42 +45,15 @@
 
 namespace crucible::safety::proto {
 
-// ═════════════════════════════════════════════════════════════════
-// ── LoopContext<Body, EntryPS> — Loop-balance bookkeeping ───────
-// ═════════════════════════════════════════════════════════════════
-//
-// PermissionedSessionHandle's LoopCtx parameter carries BOTH the
-// Loop body (so Continue knows where to step back to) AND the entry
-// PermSet (so Continue can static_assert balance against it per
-// Decision D3).  The bare SessionHandle's LoopCtx parameter is just
-// the Body, with no PS bookkeeping — the bare framework has no PS
-// to balance.
-
 template <typename Body, typename EntryPS>
 struct LoopContext {
     using body = Body;
     using entry_perm_set = EntryPS;
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── VendorCtx<V, InnerLoopCtx> — per-vendor PSH pinning ─────────
-// ═════════════════════════════════════════════════════════════════
-//
-// VendorCtx is a zero-size LoopCtx wrapper that threads
-// VendorLattice through PermissionedSessionHandle without adding a
-// fifth top-level template parameter.  Handles with LoopCtx = void or
-// LoopContext<...> are treated as Portable by the traits below.  CNTP /
-// collective protocols opt into VendorCtx<NV, ...>, VendorCtx<AMD, ...>,
-// etc.
-//
-// Admittance direction:
-//   provider satisfies consumer iff
-//     VendorLattice::leq(consumer_vendor, provider_vendor)
-//
-// That matches safety/Vendor.h's convention: Portable is the strongest
-// provider claim, specific vendors satisfy only themselves, and None
-// is an uninitialized sentinel rejected by the session-composition
-// helper rather than admitted through the lattice's bottom rule.
+// Portable is the strongest provider claim, so a portable provider satisfies
+// a vendor-specific consumer.  None is an uninitialized sentinel, rejected
+// outright rather than admitted through the lattice's bottom rule.
 
 using ::crucible::algebra::lattices::VendorBackend;
 using ::crucible::algebra::lattices::VendorLattice;
@@ -317,14 +160,6 @@ template <typename ProviderLoopCtx, typename ConsumerLoopCtx>
 inline constexpr bool loop_ctx_vendor_satisfies_v =
     session_vendor_satisfies_v<loop_ctx_vendor_v<ProviderLoopCtx>, loop_ctx_vendor_v<ConsumerLoopCtx>>;
 
-// ═════════════════════════════════════════════════════════════════
-// ── Forward declaration ──────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════
-//
-// LoopCtx defaults to `void` to mirror SessionHandle's signature, so
-// the top-level handle (no enclosing Loop) names just (Proto, PS,
-// Resource).
-
 template <typename Proto, typename PS, typename Resource, typename LoopCtx = void>
 class PermissionedSessionHandle;
 
@@ -361,10 +196,8 @@ consteval void assert_permissioned_session_vendor_compatible() {
                   "such as NV and AMD are intentionally incomparable.");
 }
 
-// Permission-aware delegation protocol marker.  `DelegatedSession` is
-// not a standalone protocol head, but Delegate/Accept treat it as the
-// payload that names the inner protocol plus the PermSet traveling
-// with that endpoint.
+// DelegatedSession is a payload, not a protocol head.  It names the inner
+// protocol together with the permission set that travels with that endpoint.
 template <typename InnerProto, typename InnerPS, typename K, typename LoopCtx>
 struct is_well_formed<Delegate<DelegatedSession<InnerProto, InnerPS>, K>, LoopCtx>
     : std::bool_constant<is_well_formed<InnerProto, void>::value && is_well_formed<K, LoopCtx>::value> {};
@@ -388,20 +221,6 @@ struct is_well_formed<EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K, Mi
                          && is_well_formed<InnerProto, void>::value && is_well_formed<K, LoopCtx>::value
                          && session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>> {};
 
-// ═════════════════════════════════════════════════════════════════
-// ── detail::step_to_next_permissioned ────────────────────────────
-// ═════════════════════════════════════════════════════════════════
-//
-// Mirror of detail::step_to_next from Session.h, augmented with PS
-// evolution and Loop balance enforcement.  Resolves:
-//
-//   * R = Continue  → step back to LoopCtx::body, asserting
-//                     perm_set_equal_v<PS, LoopCtx::entry_perm_set>
-//                     (Decision D3).
-//   * R = Loop<B>   → enter inner Loop with LoopContext<B, PS> as
-//                     the new LoopCtx (PS becomes the new entry PS).
-//   * R = anything  → wrap in PermissionedSessionHandle<R, PS, Res, L>.
-
 namespace detail {
 
 template <typename R, typename PS, typename Resource, typename LoopCtx>
@@ -409,9 +228,8 @@ template <typename R, typename PS, typename Resource, typename LoopCtx>
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = loop_ctx_inner_t<LoopCtx>;
 
-        // Continue must have an enclosing Loop.  This is also enforced
-        // by the bare framework's step_to_next, but checking here gives
-        // a PSH-specific diagnostic that points at the right header.
+        // The base framework already rejects a Continue with no enclosing
+        // Loop.  This check repeats it so the diagnostic names this handle.
         static_assert(!std::is_void_v<ActiveLoopCtx>, "crucible::session::diagnostic [Continue_Without_Loop]: "
                                                       "PermissionedSessionHandle: Continue appears outside any "
                                                       "enclosing Loop.  Wrap the protocol prefix containing "
@@ -421,12 +239,6 @@ template <typename R, typename PS, typename Resource, typename LoopCtx>
         using LoopBody = typename ActiveLoopCtx::body;
         using LoopEntryPS = typename ActiveLoopCtx::entry_perm_set;
 
-        // Decision D3 / Risk R1 — Loop body permission balance
-        // enforcement.  Each iteration must leave the PS exactly as it
-        // entered.  An iteration that drains a permission without
-        // surrender or that gains a permission without surrender at end
-        // would violate the loop invariant; the type system catches it
-        // at the syntactic Continue site.
         static_assert(perm_set_equal_v<PS, LoopEntryPS>, "crucible::session::diagnostic [PermissionImbalance]: "
                                                          "PermissionedSessionHandle: Loop body's terminal PermSet "
                                                          "differs from the Loop entry PermSet — the iteration's "
@@ -444,15 +256,9 @@ template <typename R, typename PS, typename Resource, typename LoopCtx>
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
         using InnerCtx = loop_ctx_rebind_inner_t<LoopCtx, LoopContext<InnerBody, PS>>;
-        // Enter inner Loop: shadow LoopCtx with a fresh context whose
-        // entry_perm_set captures the PS at Loop entry.  This is what
-        // gives nested Loops their own balance check.
         return PermissionedSessionHandle<InnerBody, PS, Resource, InnerCtx>{permissioned_session_construct_key{},
                                                                             std::forward<Resource>(r), loc};
     } else {
-        // Plain head (End / Stop / Send / Recv / Select / Offer).  Wrap
-        // and continue.  No PS evolution at the wrap step itself —
-        // evolution happens on the consumer call (send/recv/etc.).
         return PermissionedSessionHandle<R, PS, Resource, LoopCtx>{permissioned_session_construct_key{},
                                                                    std::forward<Resource>(r), loc};
     }
@@ -463,18 +269,6 @@ template <typename R, typename PS, typename Resource, typename LoopCtx>
     return step_to_next_permissioned<R, PS, Resource, LoopCtx>(std::forward<Resource>(r),
                                                                std::source_location::current());
 }
-
-// ── Debug-mode abandonment enrichment (Decision D5 / Risk R3) ───
-//
-// In debug builds, when a non-terminal handle is destroyed without
-// being consumed, this prints the LEAKED permission tags BEFORE the
-// SessionHandleBase destructor prints its standard diagnostic and
-// aborts.  Zero release cost — the entire body is `#ifndef NDEBUG`.
-//
-// The PS template parameter is the type-level set of permissions the
-// handle was holding at abandonment.  Empty sets emit nothing (the
-// base diagnostic is sufficient); non-empty sets emit a one-line
-// header naming each leaked tag's display string.
 
 template <typename PS>
 inline void emit_leaked_permissions_debug() noexcept {
@@ -496,10 +290,6 @@ inline void emit_leaked_permissions_debug() noexcept {
 }
 
 }  // namespace detail
-
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<End, PS, Resource, LoopCtx> ────────
-// ═════════════════════════════════════════════════════════════════
 
 template <typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<End, PS, Resource, LoopCtx>
@@ -532,32 +322,17 @@ public:
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
-    // Debug-only destructor enrichment.  In release this is a no-op
-    // (the if-constexpr collapses) and EBO continues to make the
-    // handle the same size as the bare SessionHandle.  When the base
-    // destructor runs after this Derived destructor, it sees
-    // is_terminal_state_v<End> == true and skips its own abandonment
-    // check, so this destructor's emit-leaked is the only place that
-    // can fire for an End handle that was constructed but never
-    // explicitly close()'d AND held a non-empty PS.
+    // The base exempts a terminal state from its own abandonment check, so
+    // this destructor is the only place that reports a handle abandoned at
+    // End while its permission set was still non-empty.
     ~PermissionedSessionHandle() {
 #ifndef NDEBUG
         if (!this->is_consumed_()) {
-            // For End specifically: the base's check is_terminal_state_v
-            // exempts End so it doesn't fire abort.  But a non-empty PS
-            // at End still represents a leak — the user reached End
-            // without surrendering Transferable-acquired permissions.
-            // Print the leaked tags here even though base will not
-            // abort.
             detail::emit_leaked_permissions_debug<PS>();
         }
 #endif
     }
 
-    // Terminal close.  Decision D6 enforcement: PS must be empty —
-    // every permission the handle ever acquired must have been
-    // surrendered before reaching End.  This is the structural
-    // convergence point the cross-branch enforcement (D4) relies on.
     [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(perm_set_equal_v<PS, EmptyPermSet>, "crucible::session::diagnostic [PermissionImbalance]: "
                                                           "PermissionedSessionHandle: reached End with a non-empty "
@@ -575,14 +350,6 @@ public:
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
-
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Stop, PS, Resource, LoopCtx> ───────
-// ═════════════════════════════════════════════════════════════════
-//
-// Stop is the crash-stop terminal from SessionCrash.h (BSYZ22).
-// is_terminal_state<Stop> is specialised true.  Same close()
-// semantics as End: PS must be empty.
 
 template <CrashClass C, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>
@@ -627,10 +394,11 @@ public:
     [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(perm_set_equal_v<PS, EmptyPermSet>, "crucible::session::diagnostic [PermissionImbalance]: "
                                                           "PermissionedSessionHandle<Stop>: reached Stop with a "
-                                                          "non-empty PermSet.  Crash-stop discipline (BSYZ22) drops "
-                                                          "permissions on the floor at Stop; if that's the intended "
-                                                          "behaviour, surrender the permissions explicitly before "
-                                                          "Stop instead of relying on close to do it implicitly.");
+                                                          "non-empty PermSet.  The crash-stop discipline drops "
+                                                          "permissions on the floor at Stop.  If that is the "
+                                                          "intended behaviour, surrender the permissions "
+                                                          "explicitly before Stop rather than relying on close to "
+                                                          "do it implicitly.");
         this->mark_consumed_();
         return std::forward<Resource>(resource_);
     }
@@ -638,10 +406,6 @@ public:
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
-
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
-// ═════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
@@ -684,19 +448,11 @@ public:
 #endif
     }
 
-    // Send via Transport.  Two compile-time gates:
-    //   * SendablePayload<T, PS> (body static_assert): sender holds
-    //     the permission demanded by T's marker (or T is plain /
-    //     Borrowed).  Encoded as a body static_assert with the
-    //     framework-controlled [PermissionImbalance] prefix so the
-    //     neg-compile harness can pattern-match it (a requires-clause
-    //     would emit GCC-text "constraints not satisfied" instead).
-    //     Decision D6 foundation — Phase 6 composes into the broader
-    //     is_permission_balanced_v witness.
-    //   * Transport invocability (requires-clause): matches bare
-    //     SessionHandle's send contract.  Stays in the requires
-    //     because Transport-shape mismatch is a structural signature
-    //     mismatch, not a permission-flow issue.
+    // The payload permission check is a body static_assert rather than a
+    // requires clause.  A requires clause reports only that constraints were
+    // not satisfied, losing the message that names the missing tag.  Transport
+    // invocability stays in the requires clause, because a mismatch there is a
+    // signature error rather than a permission-flow error.
     template <typename U = T, typename Transport>
         requires is_subsort_v<std::remove_cvref_t<U>, T> && std::is_invocable_v<Transport, Resource&, U&&>
     [[nodiscard]] constexpr auto
@@ -726,10 +482,6 @@ public:
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
-
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
-// ═════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
@@ -772,11 +524,8 @@ public:
 #endif
     }
 
-    // Receive via Transport.  Returns pair{payload value, next handle}
-    // mirroring bare SessionHandle::recv.  The payload value itself
-    // carries any embedded Permission tokens (Transferable / Returned)
-    // that the sender bundled — extract via structured binding in
-    // user code.  PS evolves per compute_perm_set_after_recv_t.
+    // The received value carries whatever permission tokens the sender bundled
+    // into the payload.  The type-level set grows to match them.
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
     [[nodiscard]] constexpr auto
@@ -794,14 +543,9 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Delegate<DelegatedSession<P, IPS>, K>>
-// ═════════════════════════════════════════════════════════════════
-//
-// Permission-aware Honda throw/catch.  The carrier handle does not
-// copy InnerPS into its own PS; the transferred inner endpoint owns
-// those tokens.  Delegate consumes that inner PSH, and Accept mints
-// the matching inner PSH on the recipient side.
+// The carrier never absorbs the inner permission set.  The delegated endpoint
+// owns those tokens, which is why the carrier's own set must stay disjoint
+// from them.
 
 template <typename InnerProto, typename InnerPS, typename K, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Delegate<DelegatedSession<InnerProto, InnerPS>, K>, PS, Resource, LoopCtx>
@@ -928,15 +672,10 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<EpochedDelegate<DelegatedSession<...>>>
-// ═════════════════════════════════════════════════════════════════
-//
-// Epoch-versioned permission-aware delegation reuses the ordinary
-// DelegatedSession transfer implementation, but its construction is
-// gated by an exact sender epoch/generation match.  The exact match
-// prevents a sender at (E,G) from weakening the handoff by declaring
-// a lower minimum that stale peers could satisfy.
+// The sender side demands an exact epoch and generation match, not a minimum.
+// A sender free to declare a minimum below the epoch it actually runs at could
+// weaken the handoff until stale peers satisfied it.  The recipient side, by
+// contrast, admits any epoch at or above the minimum.
 
 template <typename InnerProto, typename InnerPS, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration,
           typename PS, typename Resource, typename LoopCtx>
@@ -1072,10 +811,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Accept<DelegatedSession<P, IPS>, K>>
-// ═════════════════════════════════════════════════════════════════
-
 template <typename InnerProto, typename InnerPS, typename K, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Accept<DelegatedSession<InnerProto, InnerPS>, K>, PS, Resource, LoopCtx>
     : public SessionHandleBase<
@@ -1175,13 +910,6 @@ public:
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
-
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<EpochedAccept<DelegatedSession<...>>>
-// ═════════════════════════════════════════════════════════════════
-//
-// The recipient side may be newer than the declared minimum, but it
-// must not be stale or unannotated.
 
 template <typename InnerProto, typename InnerPS, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration,
           typename PS, typename Resource, typename LoopCtx>
@@ -1295,10 +1023,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<CheckpointedSession<B, R>, PS, ...>
-// ═════════════════════════════════════════════════════════════════
-
 template <typename ProtoBase, typename ProtoRollback, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, PS, Resource, LoopCtx>
     : public SessionHandleBase<
@@ -1359,22 +1083,12 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Select<Bs…>, PS, Resource, LoopCtx>
-// ═════════════════════════════════════════════════════════════════
-//
-// Decision D4 — branch convergence is enforced STRUCTURALLY.  Each
-// branch's terminal head (End / Stop / Continue) carries its own PS
-// static_assert (close() requires EmptyPermSet; Continue requires PS
-// == LoopEntryPS).  Branches that all reach End must converge on
-// EmptyPermSet by construction; branches that all loop-back must
-// converge on LoopEntryPS by construction.  No separate convergence
-// metafunction is needed — the type system enforces convergence at
-// the convergence point itself.
-//
-// This is a tighter design than a metafunction-driven check because
-// it's compositional: any future Select<Bs..., NewBranch> only adds
-// to the convergence requirement at the existing terminal points.
+// Branch convergence needs no check of its own.  Every branch ends at a
+// terminal head that already constrains the permission set: close demands an
+// empty set, and Continue demands the loop entry set.  Branches meeting at the
+// same terminal agree by construction.  A convergence metafunction
+// would have to be extended for every branch added, while the terminal heads
+// absorb new branches unchanged.
 
 template <typename... Branches, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>
@@ -1423,10 +1137,6 @@ public:
 #endif
     }
 
-    // Pick branch I and signal the choice over the wire.  Mirrors the
-    // bare framework's select<I>(transport).  PS does not evolve at
-    // the pick itself — branch I's first head is what triggers the
-    // next PS evolution.
     template <std::size_t I, typename Transport>
         requires std::is_invocable_v<Transport, Resource&, std::size_t>
     [[nodiscard]] constexpr auto
@@ -1441,9 +1151,6 @@ public:
         return detail::step_to_next_permissioned<Chosen, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    // Wire-omitting variant — same naming discipline as the bare
-    // framework (#377 force-explicit-discipline).  Use only for
-    // in-memory channels and unit tests.
     template <std::size_t I>
     [[nodiscard]] constexpr auto select_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
@@ -1454,25 +1161,18 @@ public:
         return detail::step_to_next_permissioned<Chosen, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    // Match the bare framework's deletion of bare select<I>() to keep
-    // user code from accidentally bypassing the wire-vs-local choice.
     template <std::size_t I>
     void select() && = delete("[Wire_Variant_Required] PermissionedSessionHandle<Select<...>>"
-                              "::select<I>() without arguments is not allowed (mirror of "
-                              "Session.h:#377).  Choose select<I>(transport) for wire-based "
-                              "sessions or select_local<I>() for in-memory channels.");
+                              "::select<I>() without arguments is not allowed.  Choose "
+                              "select<I>(transport) for wire-based sessions or "
+                              "select_local<I>() for in-memory channels.");
 
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── PermissionedSessionHandle<Offer<Bs…>, PS, Resource, LoopCtx>
-// ═════════════════════════════════════════════════════════════════
-//
-// Same convergence story as Select.  branch(transport, handler)
-// calls handler with the chosen branch's PSH; per-branch PS evolves
-// according to that branch's first head.
+// Branch convergence holds for the same reason it holds on the sending side:
+// every branch ends at a terminal head that constrains the permission set.
 
 template <typename... Branches, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>
@@ -1530,7 +1230,6 @@ public:
                                 std::make_index_sequence<sizeof...(Branches)>{});
     }
 
-    // Wire-omitting variant — mirrors bare Offer::pick_local.
     template <std::size_t I>
     [[nodiscard]] constexpr auto pick_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
@@ -1543,9 +1242,9 @@ public:
 
     template <std::size_t I>
     void pick() && = delete("[Wire_Variant_Required] PermissionedSessionHandle<Offer<...>>"
-                            "::pick<I>() without arguments is not allowed (mirror of "
-                            "Session.h:#377).  Use pick_local<I>() for in-memory channels "
-                            "or branch(transport, handler) for wire-based sessions.");
+                            "::pick<I>() without arguments is not allowed.  Use "
+                            "pick_local<I>() for in-memory channels or "
+                            "branch(transport, handler) for wire-based sessions.");
 
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
@@ -1595,20 +1294,10 @@ private:
     }
 };
 
-// ═════════════════════════════════════════════════════════════════
-// ── detail factory: permissioned_session_with_loc_ ─────────────
-// ═════════════════════════════════════════════════════════════════
-//
-// Internal construction hook used by SessionMint.h and by negative
-// fixtures that deliberately need to reach a lower PSH static_assert.
-// The public construction surface is ctx-bound:
-//   mint_permissioned_session<Proto>(ctx, resource, perms...)
-// and consumes Permission tokens before calling this detail layer with
-// the resulting InitialPS.
-//
-// Loop-prefixed protocols are unrolled the same way bare
-// mint_session_handle does it.  Continue at the top level is
-// rejected — same diagnostic shape as bare framework.
+// The public construction surface is the ctx-bound mint.  It consumes the
+// caller's Permission tokens and passes the resulting set here as a type.
+// This layer takes no tokens, so it mints authority it cannot check, which is
+// why it stays in detail.
 
 namespace detail {
 
@@ -1621,12 +1310,12 @@ template <typename Proto, typename InitialPS, typename Resource, typename LoopCt
                                              "handle on Proto with a reachable empty Select<> / Offer<> / "
                                              "Offer<Sender<R>> (top-level or nested under Send/Recv/Loop/"
                                              "branch/Delegate/Accept).  The is_empty_choice trait walks "
-                                             "recursively (fixy-CR-14) so empty choices anywhere in the "
-                                             "protocol tree are caught at mint time, not at the eventual "
-                                             ".pick<I>() / .recv() that hits the dead-end.");
+                                             "recursively, so empty choices anywhere in the protocol tree "
+                                             "are caught at mint time, not at the eventual .pick<I>() / "
+                                             ".recv() that hits the dead-end.");
     static_assert(SessionResource<Resource>, "crucible::session::diagnostic [SessionResource_NotPinned]: "
                                              "mint_permissioned_session<Proto, Resource>: Resource fails the "
-                                             "pin-discipline.  See SessionResource concept in Session.h.");
+                                             "pin-discipline required by the SessionResource concept.");
 
     if constexpr (is_vendor_pinned_v<Proto>) {
         using InnerProto = protocol_inner_t<Proto>;
@@ -1653,57 +1342,15 @@ template <typename Proto, typename InitialPS, typename Resource>
 
 }  // namespace detail
 
-// ═════════════════════════════════════════════════════════════════
-// ── with_crash_check_or_detach — Phase 5 crash transport composition
-// ═════════════════════════════════════════════════════════════════
+// Detaching on a crash drops the type-level permission set.  Permissions are
+// not recovered from a crashed peer, so every tag the set still held is gone
+// and the value-level tokens destruct with the handle.  The resource goes with
+// the handle too, so a caller that wants the channel back must hold its own
+// reference to it.
 //
-// Light-touch crash transport composition (per the wiring plan §10).
-// Peeks the OneShotFlag once; if signalled, detaches the handle with
-// `detach_reason::TransportClosedOutOfBand` and returns std::nullopt.
-// If clear, invokes `body(std::move(h))` and returns its result.
-//
-// This is the v1 composition pattern — no PSH API change, no fused
-// CrashWatchedPermissionedSessionHandle class (deferred to v2).  The
-// caller threads the OneShotFlag through their own production loop:
-//
-//   while (more_work) {
-//       auto next_opt = with_crash_check_or_detach(
-//           std::move(h), peer_flag,
-//           [&](auto h_in) { return std::move(h_in).send(...); });
-//       if (!next_opt) {
-//           // Crash detected: PS dropped (BSYZ22 crash-stop), Resource
-//           // recoverable via separately-held channel reference.
-//           break;
-//       }
-//       h = std::move(*next_opt);
-//   }
-//
-// Discipline:
-//
-//   * Detach on crash drops the type-level PermSet entirely.  Per the
-//     crash-stop discipline (BSYZ22), permissions are NOT recovered
-//     from a crashed peer — the type system reflects this by dropping
-//     PS at the abandonment point.  Any Transferable-acquired tokens
-//     in PS are leaked (correct: their value-level Permission objects
-//     destruct as PSH drops them).
-//
-//   * The Resource held by the handle is also lost from PSH's view
-//     when detached.  Callers wanting to recover the underlying
-//     channel must hold a separate reference (e.g. `Channel&` outside
-//     the handle).
-//
-//   * Body must be invocable as `Body(PSHType&&) -> NextHandleType`.
-//     std::optional<NextHandleType> is the return type; std::nullopt
-//     iff crash was detected before body ran.
-//
-//   * peek() is relaxed-ordered (per OneShotFlag::peek doc).  For
-//     production crash discipline, the producer's signal() is release-
-//     ordered, so any state mutations the producer made before signal
-//     are visible after the recipient's check_and_run pairs an
-//     acquire-fence.  This helper uses peek (not check_and_run) for
-//     the hot path — the discipline assumption is that a crash flag,
-//     once set, is monotonic (never cleared during a session), so the
-//     relaxed peek is sound.
+// The peek is relaxed rather than a full acquiring read.  That is sound
+// because a crash flag is monotonic: once set it is never cleared for the rest
+// of the session, so a stale read can only be early, never wrong.
 
 template <typename PSH, typename Body>
     requires std::is_invocable_v<Body, PSH&&>
@@ -1711,10 +1358,8 @@ template <typename PSH, typename Body>
                                                         Body&& body) noexcept(std::is_nothrow_invocable_v<Body, PSH&&>)
     -> std::optional<std::invoke_result_t<Body, PSH&&>> {
     if (flag.peek()) [[unlikely]] {
-        // Acquire-fence pairs with the producer's release-store in
-        // OneShotFlag::signal(), so any state the producer mutated
-        // before signal is visible here (matches CrashWatchedHandle's
-        // hot-path peek pattern from bridges/CrashTransport.h:354).
+        // The fence pairs with the release store in the flag's signal, so
+        // state the producer mutated before signalling is visible here.
         std::atomic_thread_fence(std::memory_order_acquire);
         std::move(h).detach(detach_reason::TransportClosedOutOfBand{});
         return std::nullopt;
@@ -1722,92 +1367,31 @@ template <typename PSH, typename Body>
     return std::optional{std::forward<Body>(body)(std::forward<PSH>(h))};
 }
 
-// ═════════════════════════════════════════════════════════════════
-// ── session_fork — multi-party session establishment ─────────────
-// ═════════════════════════════════════════════════════════════════
+// Spawns one thread per role, each running that role's projection of the
+// global type with the role's permission as its initial set, and rebuilds the
+// whole permission once every role has joined.
 //
-// Phase 4 of FOUND-C (Task #616).  Establishes a multi-party session
-// from a global type G + per-role permissions, spawning one jthread
-// per role with the role's projected protocol view.  Composes:
+// Each role body must drive its projected protocol to a terminal state.  It
+// either surrenders its role permission through the protocol before close, or
+// detaches to drop the set without the close-time surrender check.  A role
+// whose projection never sends the permission back over the wire uses the
+// second form: there the permission is proof of participation, and the type
+// system checks only that the role held it for the duration of its session.
 //
-//   * sessions/SessionGlobal.h::Project<G, Role> for per-role local-
-//     protocol projection.  v1 supports protocols that DON'T require
-//     plain-merging at non-sender/non-receiver roles.  Diverging
-//     multiparty (Raft, 2PC-with-multi-followers) requires full
-//     coinductive merging (Task #381) — until that lands, those
-//     globals fail at the Project<...> instantiation site, naming
-//     the divergent branch.
-//   * permissions/PermissionFork.h::mint_permission_fork for the structured
-//     fork-join over std::jthread + RAII Whole rebuild on join.
-//   * splits_into_pack<Whole, RolePerms...> manifest must be declared
-//     by the user in the same TU as the role-tag definitions (per
-//     the CSL discipline in permissions/Permission.h).
-//
-// API:
-//
-//   template <typename G, typename Whole, typename... RolePerms,
-//             typename SharedChannel, typename... Bodies>
-//   [[nodiscard]] Permission<Whole> session_fork(
-//       SharedChannel& ch,
-//       Permission<Whole>&& whole,
-//       Bodies&&... bodies);
-//
-//   * G            — a global protocol type from SessionGlobal.h
-//                    (Transmission / Choice / Rec_G / End_G / StopG)
-//   * Whole        — the parent permission tag the user holds
-//   * RolePerms... — one tag per participating role; order matches Bodies
-//   * SharedChannel — Pinned channel shared by all roles' transports
-//                    (passed by lvalue reference); each role's PSH binds
-//                    its Resource = SharedChannel&
-//   * Bodies       — one callable per role, signature
-//                    `Body_i(PermissionedSessionHandle<project_t<G, Role_i>,
-//                                                       PermSet<Role_i>,
-//                                                       SharedChannel&>&&)
-//                    -> void`
-//                    (must be noexcept, per mint_permission_fork's invariant)
-//
-// Returns: the rebuilt Permission<Whole> after all role threads join.
-//
-// Discipline:
-//
-//   * Each role's body is responsible for advancing its projected
-//     protocol to a terminal state (End / Stop) AND for either
-//     surrendering its role permission via the protocol (Send<Returned
-//     <..., RolePerm>>) before close, OR for calling .detach(reason)
-//     to drop PS without the close-time perm-surrender check.
-//   * For protocols where each role's projected local type doesn't
-//     consume its role permission via the wire, the body uses
-//     detach(detach_reason::TestInstrumentation{} or similar) to
-//     terminate cleanly with non-empty PS.  This is the "role
-//     permission as proof of participation" pattern — the type
-//     system only checks that the role HOLDS the perm during its
-//     session; surrender is at the body author's discretion.
-//
-// What this does NOT support (v1 limitations):
-//
-//   * Diverging multiparty (Raft, MoE all-to-all): blocked on Task
-//     #381 (full coinductive merging in SessionGlobal.h::plain_merge_t).
-//     Project<G, ThirdPartyRole> for diverging G fails with the
-//     framework's existing plain-merge diagnostic.
-//   * Cross-process roles (CNTP): the SharedChannel reference is a
-//     within-process abstraction.  Cross-process forks need cross-
-//     process Permission semantics — open question in 24_04 §C, v2.
+// The shared channel is taken by reference, so every role runs in this
+// process.
 
 namespace detail {
 
-// Build the per-role lambda that detail-mints the role endpoint and
-// invokes body.  session_fork is already a checked construction
-// boundary; the public ctx-bound mint is intentionally not in this
-// header to avoid a SessionMint.h include cycle.
-// Pulled out so the parameter pack expansion at the call site stays
-// readable.
+// session_fork has already checked the construction, so the role endpoint
+// comes from the detail factory rather than from the ctx-bound mint, whose
+// header this one cannot include without a cycle.
 template <typename G, typename Role, typename SharedChannel, typename Body>
 [[nodiscard]] constexpr auto session_fork_role_lambda(SharedChannel& ch, Body&& body) noexcept {
     return [&ch, body = std::forward<Body>(body)](Permission<Role>&& role_perm, auto const&) mutable noexcept {
         using LocalProto = typename Project<G, Role>::type;
-        // The role Permission is consumed into the endpoint's initial
-        // PermSet.  LocalProto may begin with Loop; the detail mint
-        // unrolls it the same way as the public ctx-bound factory.
+        // The role token is dropped here.  Its authority is re-expressed as
+        // the endpoint's type-level permission set.
         static_cast<void>(role_perm);
         auto handle = permissioned_session_with_loc_<LocalProto, PermSet<Role>, SharedChannel&, void>(
             ch, std::source_location::current());
@@ -1837,12 +1421,6 @@ template <typename G, typename Whole, typename... RolePerms, typename SharedChan
                                                    "must be stable across the spawned threads' lifetimes).  "
                                                    "Derive your channel from safety::Pinned<ChannelType>.");
 
-    // Compose: each role's lambda calls mint_permissioned_session with
-    // the role's projected protocol + the role permission token; then
-    // invokes the user's body with the constructed PSH.  mint_permission_fork
-    // does the heavy lifting: split Whole into per-role tokens, spawn
-    // one jthread per role, join via RAII array destructor, rebuild
-    // Whole on return.
     return mint_permission_fork<RolePerms...>(
         PermissionForkSpawnCtx{}, std::move(whole_perm),
         detail::session_fork_role_lambda<G, RolePerms, SharedChannel, Bodies>(ch, std::forward<Bodies>(bodies))...);
@@ -1850,38 +1428,19 @@ template <typename G, typename Whole, typename... RolePerms, typename SharedChan
 
 }  // namespace crucible::safety::proto
 
-// ═══════════════════════════════════════════════════════════════════
-// Embedded smoke test — exercises construction and the type-level
-// dispatch.  Runtime smoke verifies that a single-step Send +
-// matching Recv composes (no transport actually invoked; just shapes).
-// ═══════════════════════════════════════════════════════════════════
-
 namespace crucible::safety::proto::detail::permissioned_session_smoke {
 
-// Synthetic tags for compile-time exercises.
 struct WorkPerm {};
 struct HotPerm {};
 
-// Simple value Resource (FakeChannel).  Pinned not required for
-// value-type Resources.
+// A value resource does not have to be pinned.
 struct FakeChannel {
     int last_sent = 0;
 };
 
-// ── Sizeof equality with bare SessionHandle ─────────────────────────
-//
-// PermissionedSessionHandle<P, PS, R> must be the SAME size as the
-// bare SessionHandle<P, R> for ALL build modes.  In release, both
-// collapse to sizeof(R) (PS is empty + EBO; tracker is empty + EBO).
-// In debug, the tracker contributes one byte + alignment but both
-// wrappers pay the SAME tracker cost — sizeof equality holds in
-// every mode.
-//
-// Asserting `==` (not `<=`) catches a future regression where PS or
-// LoopContext accidentally gains a non-empty member, or where
-// [[no_unique_address]] gets dropped.  The proof of zero overhead is
-// load-bearing for the wiring plan §13 bench harness's machine-code-
-// parity claim.
+// The size assertions demand equality rather than an upper bound.  Equality is
+// what catches a permission set or a loop context that gains a non-empty
+// member, or a dropped [[no_unique_address]].
 
 static_assert(std::is_empty_v<EmptyPermSet>);
 static_assert(std::is_empty_v<PermSet<WorkPerm>>);
@@ -1896,13 +1455,6 @@ static_assert(sizeof(PermissionedSessionHandle<End, PermSet<WorkPerm, HotPerm>, 
 static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet, FakeChannel>)
               == sizeof(SessionHandle<Send<int, End>, FakeChannel>));
 
-// ── Type-level shape verification for Send permission flow ─────────
-//
-// Build a PSH for Send<Transferable<int, WorkPerm>, End> with PS
-// containing WorkPerm.  Compute the type after a hypothetical send
-// (without invoking transport): the next handle's PS should lose
-// WorkPerm.
-
 using WorkChannel = FakeChannel;
 using SendProto = Send<Transferable<int, WorkPerm>, End>;
 using PSWith = PermSet<WorkPerm>;
@@ -1911,19 +1463,11 @@ using DelegatedPayload = DelegatedSession<SendProto, PSWith>;
 using DelegateProto = Delegate<DelegatedPayload, End>;
 using AcceptProto = Accept<DelegatedPayload, End>;
 
-// The next-PS metafunction matches PSWithout for this Transferable.
 static_assert(perm_set_equal_v<compute_perm_set_after_send_t<PSWith, Transferable<int, WorkPerm>>, PSWithout>);
-
-// ── Type-level shape verification for Recv permission flow ─────────
-//
-// Recv of a Transferable<int, HotPerm> grows PS by HotPerm.
 
 static_assert(
     perm_set_equal_v<compute_perm_set_after_recv_t<EmptyPermSet, Transferable<int, HotPerm>>, PermSet<HotPerm>>);
 
-// Permission-aware Delegate/Accept shape: carrier PS stays separate
-// from the inner endpoint's InnerPS; the accepted/delegated endpoint
-// itself carries PSWith.
 static_assert(is_well_formed_v<DelegateProto>);
 static_assert(is_well_formed_v<AcceptProto>);
 static_assert(std::is_same_v<dual_of_t<DelegateProto>, AcceptProto>);
@@ -1933,8 +1477,6 @@ static_assert(sizeof(PermissionedSessionHandle<DelegateProto, EmptyPermSet, Fake
               == sizeof(SessionHandle<DelegateProto, FakeChannel>));
 static_assert(sizeof(PermissionedSessionHandle<AcceptProto, EmptyPermSet, FakeChannel>)
               == sizeof(SessionHandle<AcceptProto, FakeChannel>));
-
-// ── VendorCtx<Backend, InnerLoopCtx> shape and composition ─────────
 
 using NvBareCtx = VendorCtx<VendorBackend::NV>;
 using AmdBareCtx = VendorCtx<VendorBackend::AMD>;
@@ -1987,26 +1529,17 @@ static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle, AmdEndHandl
 static_assert(!permissioned_session_vendor_compatible_v<AmdEndHandle, NvEndHandle>);
 static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle, RawEndHandle>);
 
-// ── runtime_smoke_test (per the discipline) ────────────────────────
-//
-// Construct a PSH on End with EmptyPermSet, close it, and observe the
-// returned Resource.  Construct a PSH on Send and verify the type
-// machinery resolves correctly.  No transport is invoked.
-
 inline void runtime_smoke_test() noexcept {
-    // End-handle close round-trip.
     {
         FakeChannel ch{42};
         auto h =
             detail::permissioned_session_with_loc_<End, EmptyPermSet, FakeChannel>(ch, std::source_location::current());
         FakeChannel out = std::move(h).close();
-        // Resource was moved through; identity preserved.
         if (out.last_sent != 42) std::abort();
     }
 
-    // The public mint is ctx-bound in SessionMint.h.  This embedded
-    // smoke uses the detail factory because this header cannot include
-    // SessionMint.h without a cycle.
+    // The public mint lives in a header this one cannot include without a
+    // cycle, so the smoke test reaches for the detail factory instead.
     {
         auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
         ::crucible::safety::permission_drop(std::move(perm));
@@ -2017,7 +1550,6 @@ inline void runtime_smoke_test() noexcept {
         if (out.last_sent != 7) std::abort();
     }
 
-    // Send/recv shape check via static_asserts.
     {
         using PSHSend = PermissionedSessionHandle<SendProto, PSWith, FakeChannel>;
         using PSHEnd = PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>;
@@ -2027,7 +1559,6 @@ inline void runtime_smoke_test() noexcept {
         static_assert(std::is_same_v<typename PSHEnd::protocol, End>);
     }
 
-    // LoopContext basics — body/entry_perm_set typedefs.
     {
         using Ctx = LoopContext<Send<int, Continue>, EmptyPermSet>;
         static_assert(std::is_same_v<typename Ctx::body, Send<int, Continue>>);
@@ -2036,12 +1567,8 @@ inline void runtime_smoke_test() noexcept {
         static_assert(std::is_same_v<loop_ctx_inner_t<PinnedCtx>, Ctx>);
     }
 
-    // Establish Loop unrolls one iteration: top-level Loop<Body> with
-    // initial PS becomes a PSH on Body with PS = initial and a
-    // LoopContext<Body, initial> in LoopCtx.  Verify the type
-    // machinery resolves correctly.
     {
-        using LoopProto = Loop<Send<int, Continue>>;  // plain int — no PS
+        using LoopProto = Loop<Send<int, Continue>>;
         using LoopHandle = decltype(detail::permissioned_session_with_loc_<LoopProto, EmptyPermSet, FakeChannel>(
             FakeChannel{}, std::source_location::current()));
         static_assert(std::is_same_v<typename LoopHandle::protocol, Send<int, Continue>>);
@@ -2049,15 +1576,12 @@ inline void runtime_smoke_test() noexcept {
         static_assert(std::is_same_v<typename LoopHandle::loop_ctx, LoopContext<Send<int, Continue>, EmptyPermSet>>);
     }
 
-    // step_to_next_permissioned: plain head wraps directly.
     {
         using NextEnd =
             decltype(detail::step_to_next_permissioned<End, EmptyPermSet, FakeChannel, void>(FakeChannel{}));
         static_assert(std::is_same_v<NextEnd, PermissionedSessionHandle<End, EmptyPermSet, FakeChannel, void>>);
     }
 
-    // step_to_next_permissioned: Loop<B> head shadows LoopCtx with the
-    // new context whose entry_perm_set captures the current PS.
     {
         using NextLoop =
             decltype(detail::step_to_next_permissioned<Loop<Send<int, Continue>>, PermSet<WorkPerm>, FakeChannel, void>(
@@ -2067,9 +1591,6 @@ inline void runtime_smoke_test() noexcept {
         static_assert(std::is_same_v<typename NextLoop::loop_ctx, LoopContext<Send<int, Continue>, PermSet<WorkPerm>>>);
     }
 
-    // step_to_next_permissioned: entering a loop from a pinned context
-    // preserves the vendor tag while replacing only the loop-balance
-    // inner context.
     {
         using PinnedLoop =
             decltype(detail::step_to_next_permissioned<Loop<Send<int, Continue>>, EmptyPermSet, FakeChannel,
@@ -2079,10 +1600,6 @@ inline void runtime_smoke_test() noexcept {
         static_assert(PinnedLoop::vendor_backend == VendorBackend::NV);
     }
 
-    // detail::emit_leaked_permissions_debug compiles and is callable
-    // without a live PSH (the call is a no-op for empty PS in release;
-    // in debug it would fprintf for non-empty PS but we pass empty so
-    // nothing is printed even in debug).
     detail::emit_leaked_permissions_debug<EmptyPermSet>();
 }
 

@@ -1,78 +1,61 @@
-// FIXY-V-008: row_hash distinctness × wire-format-break ceremony.
+// The federation cache key discriminates by row_hash, so two wrappers
+// that fold to the same value share a cache slot and silently mis-route
+// lookups between peers.  Nothing else in the tree notices: a changed
+// salt, a stale combine_ids ordering, or a copy-paste between two
+// row_hash_contribution specializations all still produce a working
+// build.
 //
-// Closes the federation-cache regression surface opened by FIXY-V-001
-// + FIXY-V-002.  Once `safety::fn::Fn` + `fixy::fn` started carrying a
-// real row_hash, the KernelCacheKey gained capability-divergent
-// discrimination — but discrimination is only as strong as the
-// pairwise distinctness of every `row_hash_contribution` specialization
-// it covers.  A subtle change to a salt, a stale combine_ids ordering,
-// or a copy-paste between two `row_hash_contribution<>` specializations
-// could silently collapse two wrappers' hashes and nobody would notice
-// until cross-org cache misses spiked.  This TU is the cheat-probe of
-// the federation cache key: it enumerates every canonical wrapper ×
-// every canonical stance, asserts all `n*(n-1)/2` pairs are pairwise
-// distinct, and pins a single rolling-fold anchor that captures the
-// whole matrix.  Drift in ANY entry's hash flips the anchor; the
-// CI build reddens; review notices the wire-format-break.
+// This translation unit is the cheat-probe for that surface.  It
+// enumerates every canonical wrapper and every canonical stance, asserts
+// all n*(n-1)/2 pairs are pairwise distinct, and folds the whole matrix
+// into one pinned anchor literal.  Drift in any single entry flips the
+// anchor and reddens the build, which puts the wire-format break in front
+// of a reviewer before it ships.
 //
-// Entries: 37 canonical wrappers (the CLAUDE.md §XVI canonical 16
-// outer-nesting plus the 10 off-tree extensions documented in
-// DimensionTraits.h §822-§847, expanded to 37 by FIXY-FOUND-047) × 7
-// single-parameter fixy stances (`fixy::stance::*`) = 44 distinct
-// hashes.  Pair count is 44 * 43 / 2 = 946 ≥ 240 (the original task
-// description's lower bound gross-counted the "rough" matrix size;
-// the actual exercised surface is ~3.9× larger by construction).
-//
-// Discipline aligned with `test_row_hash_fold.cpp` (FOUND-I02 peer):
-//   * static_assert distinctness via consteval O(n²) sweep
-//   * static_assert sentinel guards (≠ 0, ≠ UINT64_MAX)
-//   * static_assert fold anchor pinned to a single literal
-//   * runtime peers via volatile sinks defeat consteval-only fast-path
-//     miscompiles per feedback_algebra_runtime_smoke_test_discipline
-//   * wire-format-break ceremony: any commit that changes a
-//     `row_hash_contribution<>` specialization MUST update kFoldAnchor
-//     and document the cache-slot change in commit history.
+// Every property is asserted twice, once at consteval and once at runtime
+// through volatile sinks, so a consteval-only fast path cannot hide a
+// collision that the runtime fold would produce.
 
-#include <crucible/Expr.h>                       // detail::fmix64
-#include <crucible/fixy/Fn.h>                    // fixy::fn + stance::*
+#include <crucible/Expr.h>
+#include <crucible/fixy/Fn.h>
 #include <crucible/safety/AllocClass.h>
-#include <crucible/safety/BarrierGuarded.h>      // FIXY-FOUND-047 (W29)
+#include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/CipherTier.h>
-#include <crucible/safety/ClockSource.h>         // FIXY-FOUND-047 (W32)
+#include <crucible/safety/ClockSource.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/FpMode.h>              // FIXY-FOUND-047 (W36/W37)
-#include <crucible/safety/Hw.h>                  // FIXY-FOUND-047 (W28)
-#include <crucible/safety/JoinPolicy.h>          // FIXY-FOUND-047 (W34)
-#include <crucible/safety/Fn.h>                  // safety::fn::Fn (V-002 peer)
+#include <crucible/safety/FpMode.h>
+#include <crucible/safety/Hw.h>
+#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/Fn.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/MemOrder.h>
-#include <crucible/safety/Mutation.h>            // Monotonic
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
-#include <crucible/safety/Refined.h>             // positive predicate
+#include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/SchedClass.h>          // FIXY-FOUND-047 (W35)
-#include <crucible/safety/ScopedFence.h>         // FIXY-FOUND-047 (W31)
+#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/ScopedFence.h>
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
-#include <crucible/safety/SimdWidthPinned.h>     // FIXY-FOUND-047 (W30)
+#include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/Stale.h>
-#include <crucible/safety/SuspendBehavior.h>     // FIXY-FOUND-047 (W33)
-#include <crucible/safety/Tagged.h>              // Tagged + source::FromUser
+#include <crucible/safety/SuspendBehavior.h>
+#include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
-#include <crucible/safety/Witness.h>             // FIXY-V-054 / V-055
+#include <crucible/safety/Witness.h>
 #include <crucible/safety/diag/RowHashFold.h>
-#include <crucible/safety/diag/StableName.h>     // detail::combine_ids
+#include <crucible/safety/diag/StableName.h>
 
 #include "test_assert.h"
 
@@ -88,101 +71,72 @@ using cd::row_hash_contribution_v;
 
 namespace {
 
-// Local 4-channel TimeOrdered tag — independent of any production
-// concurrency channel so this test never tugs at a wire format.
+// A tag owned by this test.  Reusing a production concurrency channel's
+// tag would make the matrix depend on a wire format it does not control.
 struct DistinctnessQuadTag {};
 
-// ── 26 canonical wrappers (mirrors DimensionTraits.h §822-§847) ────
-//
-// The W* aliases below match the `wrapper_dimension<W>` quadruples
-// pinned in DimensionTraits.h.  Adding a 27th canonical wrapper
-// requires (a) extending this list and (b) updating kEntryCount AND
-// kFoldAnchor below — the ceremony anchor catches forgotten entries.
-using W01_Linear         = cs::Linear<int>;
-using W02_Refined        = cs::Refined<cs::positive, int>;
-using W03_SealedRefined  = cs::SealedRefined<cs::positive, int>;
-using W04_Tagged         = cs::Tagged<int, cs::source::FromUser>;
-using W05_Secret         = cs::Secret<int>;
-using W06_Stale          = cs::Stale<int>;
-using W07_TimeOrdered    = cs::TimeOrdered<int, 4, DistinctnessQuadTag>;
-using W08_Monotonic      = cs::Monotonic<std::uint64_t>;
-using W09_AppendOnly     = cs::AppendOnly<int>;
-using W10_HotPath        = cs::HotPath<cs::HotPathTier_v::Hot, int>;
-using W11_DetSafe        = cs::DetSafe<cs::DetSafeTier_v::Pure, int>;
-using W12_NumericalTier  = cs::NumericalTier<cs::Tolerance::BITEXACT, int>;
-using W13_Vendor         = cs::Vendor<cs::VendorBackend_v::Portable, int>;
-using W14_ResidencyHeat  = cs::ResidencyHeat<cs::ResidencyHeatTag_v::Hot, int>;
-using W15_CipherTier     = cs::CipherTier<cs::CipherTierTag_v::Hot, int>;
-using W16_AllocClass     = cs::AllocClass<cs::AllocClassTag_v::Arena, int>;
-using W17_Wait           = cs::Wait<cs::WaitStrategy_v::SpinPause, int>;
-using W18_MemOrder       = cs::MemOrder<cs::MemOrderTag_v::SeqCst, int>;
-using W19_Progress       = cs::Progress<cs::ProgressClass_v::Bounded, int>;
-using W20_Consistency    = cs::Consistency<cs::Consistency_v::STRONG, int>;
+using W01_Linear = cs::Linear<int>;
+using W02_Refined = cs::Refined<cs::positive, int>;
+using W03_SealedRefined = cs::SealedRefined<cs::positive, int>;
+using W04_Tagged = cs::Tagged<int, cs::source::FromUser>;
+using W05_Secret = cs::Secret<int>;
+using W06_Stale = cs::Stale<int>;
+using W07_TimeOrdered = cs::TimeOrdered<int, 4, DistinctnessQuadTag>;
+using W08_Monotonic = cs::Monotonic<std::uint64_t>;
+using W09_AppendOnly = cs::AppendOnly<int>;
+using W10_HotPath = cs::HotPath<cs::HotPathTier_v::Hot, int>;
+using W11_DetSafe = cs::DetSafe<cs::DetSafeTier_v::Pure, int>;
+using W12_NumericalTier = cs::NumericalTier<cs::Tolerance::BITEXACT, int>;
+using W13_Vendor = cs::Vendor<cs::VendorBackend_v::Portable, int>;
+using W14_ResidencyHeat = cs::ResidencyHeat<cs::ResidencyHeatTag_v::Hot, int>;
+using W15_CipherTier = cs::CipherTier<cs::CipherTierTag_v::Hot, int>;
+using W16_AllocClass = cs::AllocClass<cs::AllocClassTag_v::Arena, int>;
+using W17_Wait = cs::Wait<cs::WaitStrategy_v::SpinPause, int>;
+using W18_MemOrder = cs::MemOrder<cs::MemOrderTag_v::SeqCst, int>;
+using W19_Progress = cs::Progress<cs::ProgressClass_v::Bounded, int>;
+using W20_Consistency = cs::Consistency<cs::Consistency_v::STRONG, int>;
 using W21_OpaqueLifetime = cs::OpaqueLifetime<cs::Lifetime_v::PER_REQUEST, int>;
-using W22_Crash          = cs::Crash<cs::CrashClass_v::NoThrow, int>;
-using W23_Budgeted       = cs::Budgeted<int>;
+using W22_Crash = cs::Crash<cs::CrashClass_v::NoThrow, int>;
+using W23_Budgeted = cs::Budgeted<int>;
 using W24_EpochVersioned = cs::EpochVersioned<int>;
-using W25_NumaPlacement  = cs::NumaPlacement<int>;
-using W26_RecipeSpec     = cs::RecipeSpec<int>;
-using W27_Witness        = cs::Witness<cs::Witness_v::FORMALLY_VERIFIED, int>;
+using W25_NumaPlacement = cs::NumaPlacement<int>;
+using W26_RecipeSpec = cs::RecipeSpec<int>;
+using W27_Witness = cs::Witness<cs::Witness_v::FORMALLY_VERIFIED, int>;
 
-// ── FIXY-FOUND-047 — 10 additional wrappers (W28..W37) ────────────
-//
-// Pre-FOUND-047 the matrix shipped only 27 of the 33+ canonical
-// row_hash_contribution<W> specializations (RowHashFold.h:699-1144).
-// The 10 wrappers below close that coverage gap:
-//
-//   * Tier-L (Representation neighborhood) — Hw, BarrierGuarded,
-//     SimdWidthPinned, ScopedFence
-//   * Tier-L (off-tree from §XVI canonical nesting) — ClockSource,
-//     SuspendBehavior, SchedClass
-//   * Synchronization neighborhood — JoinPolicy
-//   * FpMode multi-sub-axis — FpModePinned<FpRounding>, <FpFtz>
-//     (representative of the 11 per-sub-axis row_hash specializations
-//     at RowHashFold.h:1073-1148; each Mode-enum-type produces a
-//     distinct WRAPPER_FP_*_TAG salt so cross-sub-axis distinctness
-//     is the same load-bearing property as cross-wrapper)
-using W28_Hw             = cs::Hw<cs::HwInstruction_v::PrivilegedMsr, int>;
+using W28_Hw = cs::Hw<cs::HwInstruction_v::PrivilegedMsr, int>;
 using W29_BarrierGuarded = cs::BarrierGuarded<cs::BarrierStrength_v::SeqCst, int>;
 using W30_SimdWidthPinned = cs::SimdWidthPinned<cs::SimdIsa_v::Avx2, int>;
-using W31_ScopedFence    = cs::ScopedFence<cs::MemoryScope_v::Cta, int>;
-using W32_ClockSource    = cs::ClockSource<cs::ClockSource_v::TscRaw, int>;
+using W31_ScopedFence = cs::ScopedFence<cs::MemoryScope_v::Cta, int>;
+using W32_ClockSource = cs::ClockSource<cs::ClockSource_v::TscRaw, int>;
 using W33_SuspendBehavior = cs::SuspendBehavior<cs::SuspendBehavior_v::KeepsTicking, int>;
-using W34_JoinPolicy     = cs::JoinPolicy<cs::JoinPolicy_v::WAIT_DEADLINE, int>;
-using W35_SchedClass     = cs::SchedClass<cs::SchedulerPolicy_v::Fifo, int>;
+using W34_JoinPolicy = cs::JoinPolicy<cs::JoinPolicy_v::WAIT_DEADLINE, int>;
+using W35_SchedClass = cs::SchedClass<cs::SchedulerPolicy_v::Fifo, int>;
+// Two sub-axes of one wrapper.  Each mode-enum type carries its own
+// salt, so a collision between sub-axes of the same wrapper aliases a
+// cache slot exactly as a collision between two different wrappers does.
 using W36_FpModePinned_R = cs::FpModePinned<cs::FpRounding::RoundToNearestEven, int>;
 using W37_FpModePinned_F = cs::FpModePinned<cs::FpFtz::FlushToZero, int>;
 
-// ── 7 canonical single-parameter fixy stances ─────────────────────
-//
-// `fixy::fn<T, Grants...>` resolves to `safety::fn::Fn<T, ...>` via
-// 19-axis per-axis grant resolution; FIXY-V-002 specialized
-// `row_hash_contribution<safety::fn::Fn<...>>` to fold all 19 axes.
-// These 7 stances exercise the axis-engagement combinatorics:
-//   * PureLinear/PureCopy differ on Usage axis
-//   * IoFunction/BgWorker differ on Effect axis
-//   * CtCrypto differs on Representation axis (constant-time)
-//   * AsyncEndpoint differs on Reentrancy axis
-//   * RealtimeHot differs on Effect (empty row) + Regime/HotPath
-//
-// (CooperativeBg removed — FIXY-FOUND-071 R003 proves Coroutine×Bg
-// structurally unsafe; the de-coroutined remnant was a verbatim
-// BgWorker duplicate that collapsed this very distinctness matrix.)
-using S01_PureLinear     = cf::stance::PureLinear<int>;
-using S02_PureCopy       = cf::stance::PureCopy<int>;
-using S03_IoFunction     = cf::stance::IoFunction<int>;
-using S04_BgWorker       = cf::stance::BgWorker<int>;
-using S05_CtCrypto       = cf::stance::CtCrypto<int>;
-using S06_AsyncEndpoint  = cf::stance::AsyncEndpoint<int>;
-using S07_RealtimeHot    = cf::stance::RealtimeHot<int>;
+// The stances are picked so that each one engages a different axis of
+// the grant resolution, which is what makes their hashes differ:
+//   * PureLinear and PureCopy differ on the Usage axis
+//   * IoFunction and BgWorker differ on the Effect axis
+//   * CtCrypto differs on Representation (constant-time)
+//   * AsyncEndpoint differs on Reentrancy
+//   * RealtimeHot differs on Effect (empty row) and on Regime
+using S01_PureLinear = cf::stance::PureLinear<int>;
+using S02_PureCopy = cf::stance::PureCopy<int>;
+using S03_IoFunction = cf::stance::IoFunction<int>;
+using S04_BgWorker = cf::stance::BgWorker<int>;
+using S05_CtCrypto = cf::stance::CtCrypto<int>;
+using S06_AsyncEndpoint = cf::stance::AsyncEndpoint<int>;
+using S07_RealtimeHot = cf::stance::RealtimeHot<int>;
 
-// ── 44-entry hash matrix ──────────────────────────────────────────
-//
-// Order is contractual — the fold ceremony pins acc-after-each-entry,
-// so reshuffling indices changes the anchor literal even if every
-// individual hash stays the same.  When adding an entry, append at
-// the END of the wrapper bucket (preserves all upstream fold state for
-// the stance bucket).
+// The order of this array is contractual.  The anchor below folds the
+// accumulator through the entries in sequence, so reshuffling indices
+// moves the anchor even when every individual hash is unchanged.  Append
+// a new wrapper at the end of the wrapper bucket, which leaves the fold
+// state feeding the stance bucket intact.
 inline constexpr std::array<std::uint64_t, 44> kHashes = {
     row_hash_contribution_v<W01_Linear>,
     row_hash_contribution_v<W02_Refined>,
@@ -211,7 +165,6 @@ inline constexpr std::array<std::uint64_t, 44> kHashes = {
     row_hash_contribution_v<W25_NumaPlacement>,
     row_hash_contribution_v<W26_RecipeSpec>,
     row_hash_contribution_v<W27_Witness>,
-    // FIXY-FOUND-047 additions — Tier-L Repr neighborhood + FpMode
     row_hash_contribution_v<W28_Hw>,
     row_hash_contribution_v<W29_BarrierGuarded>,
     row_hash_contribution_v<W30_SimdWidthPinned>,
@@ -232,20 +185,12 @@ inline constexpr std::array<std::uint64_t, 44> kHashes = {
 };
 
 inline constexpr std::size_t kEntryCount = kHashes.size();
-inline constexpr std::size_t kPairCount  = (kEntryCount * (kEntryCount - 1)) / 2;
+inline constexpr std::size_t kPairCount = (kEntryCount * (kEntryCount - 1)) / 2;
 
-// ── Pairwise distinctness at consteval ────────────────────────────
-//
-// O(n²) sweep; for n=44 that's 946 comparisons.  Returns the index
-// of the first collision (or sentinel sentinel-pair on success) so
-// the diagnostic message in `static_assert` can point at the
-// colliding row.
 struct CollisionIndices {
     std::size_t i = static_cast<std::size_t>(-1);
     std::size_t j = static_cast<std::size_t>(-1);
-    [[nodiscard]] constexpr bool ok() const noexcept {
-        return i == static_cast<std::size_t>(-1);
-    }
+    [[nodiscard]] constexpr bool ok() const noexcept { return i == static_cast<std::size_t>(-1); }
 };
 
 [[nodiscard]] consteval CollisionIndices find_collision() noexcept {
@@ -257,21 +202,12 @@ struct CollisionIndices {
     return {};
 }
 
-static_assert(find_collision().ok(),
-    "FIXY-V-008: row_hash collision in the canonical wrapper × stance "
-    "matrix.  A new wrapper or stance MUST produce a row_hash distinct "
-    "from every existing entry; check that its row_hash_contribution<> "
-    "specialization includes a unique WRAPPER_*_TAG salt (RowHashFold.h "
-    ":~190-235).  The colliding (i, j) indices map to the kHashes "
-    "array order documented above the array literal.");
+static_assert(find_collision().ok(), "row_hash collision in the canonical wrapper by stance matrix.  Every "
+                                     "wrapper and stance must produce a row_hash distinct from every other "
+                                     "entry; check that its row_hash_contribution specialization carries a "
+                                     "unique WRAPPER_*_TAG salt.  The colliding (i, j) indices are indices "
+                                     "into kHashes in declaration order.");
 
-// ── Sentinel guards ───────────────────────────────────────────────
-//
-// The federation cache uses two reserved values: UINT64_MAX is the
-// EMPTY-slot sentinel (FoundI04 + RowHash::sentinel()), and 0 is the
-// bare-T payload-blind contribution.  Neither value may be produced
-// by ANY wrapper or stance, or its slot would be indistinguishable
-// from an empty / unaddressed cache state.
 [[nodiscard]] consteval bool no_sentinel_collisions() noexcept {
     for (auto h : kHashes) {
         if (h == 0) return false;
@@ -280,175 +216,76 @@ static_assert(find_collision().ok(),
     return true;
 }
 
-static_assert(no_sentinel_collisions(),
-    "FIXY-V-008: a wrapper or stance row_hash collided with the "
-    "EMPTY-slot sentinel (UINT64_MAX) or the bare-T payload-blind "
-    "default (0).  This collapses federation cache slot assignment "
-    "and would silently mis-route lookups.");
+static_assert(no_sentinel_collisions(), "a wrapper or stance row_hash collided with a reserved value.  The "
+                                        "federation cache reserves UINT64_MAX for an empty slot and 0 for the "
+                                        "payload-blind contribution of a bare T, so a wrapper producing "
+                                        "either is indistinguishable from an unaddressed cache state.");
 
-// ── Wire-format-break ceremony anchor ─────────────────────────────
-//
-// Fold every entry into one literal via the SAME `combine_ids` used
-// by RowHashFold.h, seeded with a TU-stable constant.  Drift in ANY
-// entry's hash flips this value; reviewers see the static_assert
-// failure, must add a commit-message ceremony note documenting which
-// federation cache slot moved, and update the literal in lockstep.
-//
-// `kFoldSeed` is arbitrary — pick something memorable but not
-// FNV1A_OFFSET_BASIS so a confused reviewer can't paste-confuse this
-// anchor with the row-hash internal seed.
+// kFoldSeed is arbitrary, but deliberately not the FNV-1a offset basis:
+// a reviewer who confuses this anchor with the seed inside the row-hash
+// fold itself would update the wrong constant.
 inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
-    for (auto h : kHashes) acc = cd::detail::combine_ids(acc, h);
+    for (auto h : kHashes)
+        acc = cd::detail::combine_ids(acc, h);
     return acc;
 }
 
-// PINNED ANCHOR — recompute and update when a row_hash specialization
-// changes salt / order / Inner contribution.  Document the change in
-// the commit message via "FIXY-V-008: anchor rolled OLD → NEW because
-// <reason>" — the OLD value tells reviewers which prior cache slots
-// were affected.
-//
-// V-055 (2026-05-22): rolled OLD=0x6C5E81D4DA13027B →
-// NEW=0xCF47CF6C1D6D6AAA after appending W27_Witness at wrapper-bucket
-// position 27.  Inserting mid-array DOES re-fold the trailing 8 stance
-// entries, but the entries themselves did not change; this is a
-// fold-position drift, not a hash drift, and is the expected
-// federation-key wire-format-break for an Observability-axis carrier
-// joining the universe.  See V-055 commit.
-//
-// FIXY-FOUND-034 (2026-05-25): rolled OLD=0xCF47CF6C1D6D6AAA →
-// NEW=0x33366794620504E6 after flipping the Trust strict-default
-// from safety::trust::Verified to safety::trust::Unverified at the
-// substrate Fn<> default-arg slot AND the fixy strict_default_for<
-// DimensionAxis::Trust> specialization.  Every stance::* alias that
-// strict-defaults Trust (all 14 of them) now folds Unverified into
-// the row_hash where Verified used to live, so trailing fold state
-// across the entire stance matrix moves uniformly.  This is the
-// EXPECTED wire-format break for closing the Biba upside-down-
-// lattice defect; federation cache keys for every existing kernel
-// MUST be reindexed in coordination with this ship.  See FOUND-034.
-//
-// FIXY-FOUND-047 (2026-05-25): rolled OLD=0x33366794620504E6 →
-// NEW=0x4D91646D23F8B6FD after appending 10 wrappers (W28..W37) at
-// the END of the wrapper bucket to close the FIXY-V-008 coverage
-// gap.  The new wrappers — Hw, BarrierGuarded, SimdWidthPinned,
-// ScopedFence, ClockSource, SuspendBehavior, JoinPolicy, SchedClass,
-// and two representative FpModePinned sub-axis variants — bring the
-// matrix from 27 wrappers to 37, exercising the full row_hash_
-// contribution surface for the §XVI canonical wrappers + Tier-L
-// off-tree extensions (ClockSource/SuspendBehavior/SchedClass) +
-// multi-sub-axis FpModePinned.  Trailing 8 stance entries re-fold but
-// their individual hashes don't change; this is fold-position drift
-// from APPENDING 10 entries past the prior wrapper-bucket terminus
-// (W27_Witness), NOT a hash drift.  Federation cache keys for every
-// existing kernel MUST be reindexed in coordination with this ship.
-//
-// FIXY-FOUND-049 (2026-05-25): rolled OLD=0x4D91646D23F8B6FD →
-// NEW=0x4DC454CD4512E7F2 after AppendOnly<T, Storage> row_hash
-// specialization started folding `stable_type_id<Storage<
-// StorageProbe>>` (previously ignored).  W09_AppendOnly<int> uses
-// default Storage=std::vector, so its individual hash CHANGES even
-// though the cell still uses the same (T, default-Storage) shape.
-// All 36 entries after position 9 re-fold positionally as a result.
-// This is a TRUE hash drift (not fold-position drift) — the AppendOnly
-// row_hash function itself emits a different value.  Federation cache
-// keys for every AppendOnly-using kernel slot MUST be reindexed; pre-
-// FOUND-049 peers and post-FOUND-049 peers will silently route to
-// different slots, which is the EXPECTED wire-format break for
-// closing the storage-discrimination cache aliasing defect.
-// FIXY-FOUND-071 (2026-05-25): rolled OLD=0x4DC454CD4512E7F2 →
-// NEW=0x5EB752331374FB74 after REMOVING the S07_CooperativeBg stance
-// (down to 44 entries, 7 stances).  R003 (FIXY-FOUND-071) proves
-// Reentrancy::Coroutine × Row<Bg> structurally unsafe (cross-thread
-// resume hazard).  CooperativeBg's de-coroutined remnant had become a
-// verbatim BgWorker duplicate, collapsing this matrix's distinctness
-// invariant (S04_BgWorker == S07_CooperativeBg).  Removing the stance
-// drops one entry and re-folds the trailing position; every existing
-// kernel's federation-cache slot past the removed index moves.  This
-// is the EXPECTED wire-format break for retiring an unsound stance.
-//
-// fix-14 (2026-05-30): rolled OLD=0x5EB752331374FB74 →
-// NEW=0x7A48BBE6D5D97B9D after replacing the SchedClass SCHED_DEADLINE
-// budget pre-mix `RuntimeNs ^ (DeadlineNs << 1) ^ (PeriodNs << 2)` with
-// SEPARATE per-field `combine_ids` steps (one per budget NTTP).  The
-// shift-XOR pre-mix was trivially collidable — distinct (runtime,
-// deadline, period) triples could share one pre-mix value, and the
-// downstream combine_ids→fmix64 avalanche cannot UNDO a collision that
-// already happened.  W35_SchedClass uses the zero-budget Fifo shape, so
-// its individual hash changes (the fold STRUCTURE changed uniformly even
-// for the zero-budget case); all 9 trailing entries re-fold positionally
-// as a consequence.  This is a TRUE hash drift for SchedClass-wrapped
-// types — federation cache keys for any SCHED_DEADLINE kernel slot MUST
-// be reindexed.  Only the SchedClass fold changed; every other wrapper's
-// row_hash is byte-identical (golden diff touches exactly W35 + anchor).
+// Recompute and update this literal whenever a row_hash_contribution
+// specialization changes its salt, its fold order, or the contribution
+// of its inner type.  Rolling the anchor is a wire-format break: the
+// federation cache slot of every affected kernel moves, and peers on
+// either side of the roll route to different slots.
 inline constexpr std::uint64_t kFoldAnchor = 0x7A48BBE6D5D97B9DULL;
 
-static_assert(fold_anchor() == kFoldAnchor,
-    "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "
-    "specialization changed (different salt, different combine_ids "
-    "order, different Inner fold, or different bit-mix).  This is a "
-    "wire-format break for federation cache keys — every peer's "
-    "KernelCacheKey index moves.  Update kFoldAnchor to the new "
-    "fold_anchor() value AND document the cause in the commit "
-    "message: which wrapper/stance changed, what slot moved, and "
-    "why the break is acceptable.  See FIXY-V-001/002 for the "
-    "original mint of the salt vocabulary.");
+static_assert(fold_anchor() == kFoldAnchor, "ceremony anchor drift.  A row_hash_contribution specialization "
+                                            "changed its salt, its combine_ids order, its inner fold, or its "
+                                            "bit-mix.  This is a wire-format break for federation cache keys: "
+                                            "every peer's cache index moves.  Update kFoldAnchor to the new "
+                                            "fold_anchor() value and record in the commit message which wrapper "
+                                            "or stance changed, which slot moved, and why the break is "
+                                            "acceptable.");
 
-// Cardinality pin — adding a new entry without updating kEntryCount
-// would compile silently otherwise.  This anchors the size to
-// review.
-static_assert(kEntryCount == 44,
-    "FIXY-V-008: matrix cardinality changed.  Update kEntryCount, "
-    "extend kHashes at the end (NOT the middle — preserves upstream "
-    "fold state), and recompute kFoldAnchor.");
+static_assert(kEntryCount == 44, "matrix cardinality changed.  Extend kHashes at the end rather than "
+                                 "in the middle, which preserves the upstream fold state, then update "
+                                 "this pin and recompute kFoldAnchor.");
 
-static_assert(kPairCount == 946,
-    "FIXY-V-008: 44 * 43 / 2 = 946.  If you see this fire, "
-    "kEntryCount changed without updating kPairCount.");
+static_assert(kPairCount == 946, "pair count no longer matches a 44-entry matrix.  Update this pin "
+                                 "together with the entry-count pin above.");
 
-// ── Cross-bucket distinctness — wrappers vs stances ───────────────
-//
-// Belt-and-suspenders: even though the global pairwise sweep above
-// already enforces no two entries collide, this narrower check
-// documents the load-bearing property that NO wrapper hashes to ANY
-// stance — they live in disjoint cache regions by construction.
+// The global sweep above already forbids any two entries colliding, so
+// this narrower check is redundant by construction.  It is kept because
+// wrapper hashes and stance hashes come from disjoint salt families, and
+// a collision across that boundary means a salt leaked from one family
+// into the other rather than an ordinary duplicate.
 inline constexpr std::size_t kWrapperCount = 37;
-inline constexpr std::size_t kStanceCount  = 7;
+inline constexpr std::size_t kStanceCount = 7;
 
 static_assert(kWrapperCount + kStanceCount == kEntryCount);
 
 [[nodiscard]] consteval bool wrappers_disjoint_from_stances() noexcept {
     for (std::size_t i = 0; i < kWrapperCount; ++i) {
-        for (std::size_t j = kWrapperCount;
-             j < kWrapperCount + kStanceCount; ++j)
-        {
+        for (std::size_t j = kWrapperCount; j < kWrapperCount + kStanceCount; ++j) {
             if (kHashes[i] == kHashes[j]) return false;
         }
     }
     return true;
 }
 
-static_assert(wrappers_disjoint_from_stances(),
-    "FIXY-V-008: a wrapper row_hash collided with a stance row_hash.  "
-    "These hash regions must stay disjoint: wrappers come from the "
-    "Graded-substrate salt family (0x01-0x1C), stances come from "
-    "WRAPPER_FIXY_FN_TAG (0x1E) and its inner safety::fn::Fn fold "
-    "(0x1D).  A collision here means the WRAPPER_SAFETY_FN_TAG or "
-    "WRAPPER_FIXY_FN_TAG salt drifted into a wrapper region.");
+static_assert(wrappers_disjoint_from_stances(), "a wrapper row_hash collided with a stance row_hash.  These regions "
+                                                "must stay disjoint: wrappers come from the Graded-substrate salt "
+                                                "family (0x01-0x1C), stances come from WRAPPER_FIXY_FN_TAG (0x1E) "
+                                                "and its inner fold (0x1D).  A collision here means one of those "
+                                                "salts drifted into the wrapper region.");
 
 }  // namespace
 
-// ── Runtime peer — defeats consteval-only fast-path miscompile ────
-//
-// `feedback_algebra_runtime_smoke_test_discipline` requires every
-// algebra/* + effects/* header that asserts identities at consteval
-// to also assert them at runtime via volatile sinks — otherwise a
-// rare consteval-runtime divergence in the optimizer would be
-// invisible.  We extend the same discipline to the federation cache
-// key surface.
+// The consteval sweep above proves distinctness at compile time only.
+// A consteval-runtime divergence in the optimizer would leave the
+// static_assert green while the shipped fold produced collisions, so the
+// same property is re-proved here through volatile sinks.
 static void test_runtime_distinctness() {
     bool seen_collision = false;
     std::size_t ci = 0, cj = 0;
@@ -465,14 +302,13 @@ static void test_runtime_distinctness() {
     }
     if (seen_collision) {
         std::fprintf(stderr,
-            "test_row_hash_distinctness: runtime collision at "
-            "[%zu, %zu] — consteval was clean but runtime fold "
-            "differed, indicating compiler miscompile.\n",
-            ci, cj);
+                     "test_row_hash_distinctness: runtime collision at "
+                     "[%zu, %zu] — consteval was clean but runtime fold "
+                     "differed, indicating compiler miscompile.\n",
+                     ci, cj);
     }
     assert(!seen_collision);
-    std::printf("  test_runtime_distinctness:    PASSED (%zu pairs)\n",
-                kPairCount);
+    std::printf("  test_runtime_distinctness:    PASSED (%zu pairs)\n", kPairCount);
 }
 
 static void test_runtime_sentinel_guards() {
@@ -484,20 +320,13 @@ static void test_runtime_sentinel_guards() {
     std::printf("  test_runtime_sentinel_guards: PASSED\n");
 }
 
-// Re-derive the ceremony anchor at runtime using THE SAME
-// `combine_ids` that the consteval fold uses.  FIXY-FOUND-050 weakened
-// `combine_ids` from `consteval` to `constexpr` exactly so this
-// runtime fold goes through a single source of truth — no parallel
-// `combine_ids_runtime` body to drift out of sync with the consteval
-// algebra.  If a future maintainer adds back a runtime-only duplicate,
-// the CI grep guard at scripts/check-no-combine-ids-duplicate.sh
-// reddens the build.
+// combine_ids is constexpr rather than consteval so that this runtime
+// fold calls the same body the consteval fold_anchor() calls.  A separate
+// runtime-only mixing function would be free to drift out of sync with
+// the consteval algebra, and the anchor would stop proving anything.
 static void test_runtime_fold_anchor() {
     std::uint64_t acc = kFoldSeed;
     for (auto h : kHashes) {
-        // `cd::detail::combine_ids` is constexpr post-FIXY-FOUND-050,
-        // so this call resolves to the SAME body the consteval
-        // `fold_anchor()` calls.
         acc = cd::detail::combine_ids(acc, h);
     }
     volatile std::uint64_t runtime_acc = acc;

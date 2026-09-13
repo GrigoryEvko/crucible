@@ -1,80 +1,5 @@
 #pragma once
 
-// ── crucible::concurrent::SubstrateSessionBridge ────────────────────
-//
-// The substrate→session bridge.  Generalizes
-// `sessions/SpscSession.h::mint_producer_session` /
-// `mint_consumer_session` to ALL Permissioned* substrate types via the
-// `default_proto_for<Substr, Dir>` metafunction.  Implements the
-// Universal Mint Pattern (CLAUDE.md §XXI) for substrate-shaped
-// sessions:
-//
-//     mint_substrate_session<Substr, Dir, LoopCtx>(ctx, channel, perm)
-//                                                 → PSH<default_proto, ...>
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   Direction                — enum tag for the per-substrate role
-//                              (Producer / Consumer / SwmrWriter /
-//                              SwmrReader / Owner / Thief).
-//
-//   handle_for<Substr, Dir>  — metafunction: substrate × direction →
-//                              the concrete handle type
-//                              (Substr::ProducerHandle, etc.).
-//
-//   default_proto_for<Substr, Dir>
-//                            — metafunction: substrate × direction →
-//                              the canonical session protocol
-//                              (Loop<Send<T, Continue>> /
-//                              Loop<Recv<T, Continue>>).
-//
-//   mint_substrate_session<Substr, Dir, LoopCtx>(ctx, channel, perm)
-//                            — factory.  Validates SubstrateFitsCtx
-//                              Residency at construction; returns the
-//                              standard PermissionedSessionHandle from
-//                              `sessions/PermissionedSession.h` typed
-//                              over `default_proto_for_t<Substr, Dir>`
-//                              with EmptyPermSet (the substrate's
-//                              Permission discipline already enforces
-//                              single-producer-or-multi-producer
-//                              linearity at the handle layer).  LoopCtx
-//                              defaults to void for vendor-free payloads;
-//                              vendor-pinned payloads require an explicit
-//                              proto::VendorCtx<V>.
-//
-// ── Why this extends SpscSession.h ─────────────────────────────────
-//
-// SpscSession.h ships the SPSC-specific worked example.  This header
-// generalizes the same pattern to every supported substrate via the
-// metafunction trio above.  Production callers can now write:
-//
-//     auto sess = mint_substrate_session<TraceRingSubstrate,
-//                                         Direction::Producer>(
-//         eff::HotFgCtx{}, *trace_ring, std::move(producer_perm));
-//
-// — one line; substrate × direction × ctx all checked at construction;
-// returns the canonical PSH ready for send/recv at full speed.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe — every metafunction is closed over recognized
-//              (Substrate, Direction) pairs; non-axis combinations
-//              fall through the primary undefined template.
-//   InitSafe — pure metafunctions during type resolution.
-//   DetSafe  — consteval throughout; same inputs → same handle type.
-//   MemSafe  — Permission token is consumed by mint at the boundary;
-//              the underlying handle's reference-to-channel
-//              guarantees the channel's address is the Pinned identity.
-//   Runtime cost: zero.  The mint factory inlines through to the
-//                 existing `mint_permissioned_session<...>` factory
-//                 from `sessions/PermissionedSession.h`.
-//
-// ── Status ──────────────────────────────────────────────────────────
-//
-// v1 covers: SPSC, MPSC, MPMC, Snapshot, ChaseLevDeque, ShardedGrid,
-//            CalendarGrid, ShardedCalendarGrid.
-// Agent 6 #6.4 deferred-substrate list is closed.
-
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedMpscChannel.h>
@@ -98,18 +23,13 @@
 
 namespace crucible::concurrent {
 
-// ── Direction enum ──────────────────────────────────────────────────
-//
-// Per-substrate role tag.  Each (Substrate, Direction) pair selects
-// one concrete handle type via handle_for<S, D> below.
-
 enum class Direction : std::uint8_t {
-    Producer = 0,  // SPSC/MPSC/MPMC: try_push side
-    Consumer = 1,  // SPSC/MPSC/MPMC: try_pop side
-    SwmrWriter = 2,  // Snapshot: publish side
-    SwmrReader = 3,  // Snapshot: load side
-    Owner = 4,  // ChaseLevDeque: push_bottom + pop_bottom
-    Thief = 5,  // ChaseLevDeque: steal_top only
+    Producer = 0,
+    Consumer = 1,
+    SwmrWriter = 2,
+    SwmrReader = 3,
+    Owner = 4,
+    Thief = 5,
 };
 
 template <std::size_t I>
@@ -126,15 +46,9 @@ struct CalendarConsumerId {
     static constexpr std::size_t value = 0;
 };
 
-// ── handle_for<Substr, Dir>: substrate × direction → handle ────────
-//
-// Primary template undefined; partial specs map every recognized
-// (Substrate, Direction) pair.
-
 template <class Substr, Direction Dir, class Shard = void>
 struct handle_for;
 
-// SPSC: Producer/Consumer
 template <class T, std::size_t Cap, class UserTag>
 struct handle_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Producer> {
     using type = typename PermissionedSpscChannel<T, Cap, UserTag>::ProducerHandle;
@@ -144,7 +58,6 @@ struct handle_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Consumer>
     using type = typename PermissionedSpscChannel<T, Cap, UserTag>::ConsumerHandle;
 };
 
-// MPSC: Producer/Consumer
 template <class T, std::size_t Cap, class UserTag>
 struct handle_for<PermissionedMpscChannel<T, Cap, UserTag>, Direction::Producer> {
     using type = typename PermissionedMpscChannel<T, Cap, UserTag>::ProducerHandle;
@@ -154,9 +67,8 @@ struct handle_for<PermissionedMpscChannel<T, Cap, UserTag>, Direction::Consumer>
     using type = typename PermissionedMpscChannel<T, Cap, UserTag>::ConsumerHandle;
 };
 
-// MPMC: Producer/Consumer (uses the Active-specialized aliases from
-// PermissionedMpmcChannel.h; the non-Active Closed handles aren't
-// session-bridge-able since they're terminal).
+// Only the handles of an open channel bridge to a session.  The closed-channel
+// handles are terminal and have no protocol left to run.
 template <class T, std::size_t Cap, class UserTag>
 struct handle_for<PermissionedMpmcChannel<T, Cap, UserTag>, Direction::Producer> {
     using type = typename PermissionedMpmcChannel<T, Cap, UserTag>::ProducerHandle;
@@ -166,7 +78,6 @@ struct handle_for<PermissionedMpmcChannel<T, Cap, UserTag>, Direction::Consumer>
     using type = typename PermissionedMpmcChannel<T, Cap, UserTag>::ConsumerHandle;
 };
 
-// Snapshot: WriterHandle / ReaderHandle (one writer, many readers)
 template <class T, class UserTag>
 struct handle_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrWriter> {
     using type = typename PermissionedSnapshot<T, UserTag>::WriterHandle;
@@ -176,7 +87,6 @@ struct handle_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrReader> {
     using type = typename PermissionedSnapshot<T, UserTag>::ReaderHandle;
 };
 
-// ChaseLevDeque: OwnerHandle / ThiefHandle
 template <class T, std::size_t Cap, class UserTag>
 struct handle_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Owner> {
     using type = typename PermissionedChaseLevDeque<T, Cap, UserTag>::OwnerHandle;
@@ -186,8 +96,6 @@ struct handle_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Thief> 
     using type = typename PermissionedChaseLevDeque<T, Cap, UserTag>::ThiefHandle;
 };
 
-// ShardedGrid: ProducerHandle<I> / ConsumerHandle<J>, where the shard
-// index is explicit in the bridge type through ShardId<I>.
 template <class T, std::size_t M, std::size_t N, std::size_t Cap, class UserTag, class Routing, std::size_t I>
 struct handle_for<PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>, Direction::Producer, ShardId<I>> {
     static_assert(I < M, "crucible::concurrent::diagnostic "
@@ -204,11 +112,8 @@ struct handle_for<PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>, Direc
     using type = typename PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>::template ConsumerHandle<J>;
 };
 
-// CalendarGrid: ProducerHandle<P> for each producer row plus one
-// ConsumerHandle for the whole priority-bucket calendar queue.  The
-// producer row is explicit in CalendarProducerId<P>; the consumer is a
-// singleton endpoint because PermissionedCalendarGrid has exactly one
-// drain consumer.
+// One producer handle per producer row, but a single consumer handle for the
+// whole calendar, because the calendar drains through one consumer.
 template <class T, std::size_t NumProducers, std::size_t NumBuckets, std::size_t BucketCap, class KeyExtractor,
           std::uint64_t QuantumNs, class UserTag, std::size_t P>
 struct handle_for<PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>,
@@ -228,10 +133,8 @@ struct handle_for<PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCa
                                                    UserTag>::ConsumerHandle;
 };
 
-// ShardedCalendarGrid: ProducerHandle<S> / ConsumerHandle<S> for each
-// shard-local priority calendar.  ShardId<S> names the shard; bucket
-// slots remain part of the payload key and queue ordering, not handle
-// identity.
+// Handles are per shard.  The bucket a payload lands in follows from its key
+// and affects only ordering, so it is not part of handle identity.
 template <class T, std::size_t NumShards, std::size_t NumBuckets, std::size_t BucketCap, class KeyExtractor,
           std::uint64_t QuantumNs, class UserTag, std::size_t S>
 struct handle_for<
@@ -259,22 +162,13 @@ struct handle_for<
 template <class Substr, Direction Dir, class Shard = void>
 using handle_for_t = typename handle_for<Substr, Dir, Shard>::type;
 
-// ── default_proto_for<Substr, Dir>: substrate × direction → proto ──
-//
-// The canonical session protocol for each (Substrate, Direction) pair.
-// Streaming substrates (SPSC/MPSC/MPMC/Snapshot) all use the same
-// shape: Loop<Send<T, Continue>> for the "push" side,
-// Loop<Recv<T, Continue>> for the "pop" side.
-//
-// Loop without an exit branch is the documented infinite-loop pattern
-// (per SpscSession.h:140-146).  Shutdown is via detach with a typed
-// reason; the channel's Permission discipline at the handle layer
-// handles single-producer-or-multi-producer semantics independently.
+// A loop with no exit branch is the deliberate spelling of a stream that runs
+// until it is torn down.  Shutdown is a detach carrying a typed reason, not a
+// branch the protocol offers.
 
 template <class Substr, Direction Dir, class Shard = void>
 struct default_proto_for;
 
-// Producer-side: streaming send loop
 template <class T, std::size_t Cap, class UserTag>
 struct default_proto_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Producer> {
     using type =
@@ -291,7 +185,6 @@ struct default_proto_for<PermissionedMpmcChannel<T, Cap, UserTag>, Direction::Pr
         ::crucible::safety::proto::Loop<::crucible::safety::proto::Send<T, ::crucible::safety::proto::Continue>>;
 };
 
-// Consumer-side: streaming recv loop
 template <class T, std::size_t Cap, class UserTag>
 struct default_proto_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Consumer> {
     using type =
@@ -308,27 +201,27 @@ struct default_proto_for<PermissionedMpmcChannel<T, Cap, UserTag>, Direction::Co
         ::crucible::safety::proto::Loop<::crucible::safety::proto::Recv<T, ::crucible::safety::proto::Continue>>;
 };
 
-// Snapshot SwmrWriter: publish stream (semantically Send-typed)
+// A publish types as a send and a load as a receive, even though the snapshot
+// keeps only the newest value rather than a queue of them.
 template <class T, class UserTag>
 struct default_proto_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrWriter> {
     using type =
         ::crucible::safety::proto::Loop<::crucible::safety::proto::Send<T, ::crucible::safety::proto::Continue>>;
 };
 
-// Snapshot SwmrReader: load stream (semantically Recv-typed)
 template <class T, class UserTag>
 struct default_proto_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrReader> {
     using type =
         ::crucible::safety::proto::Loop<::crucible::safety::proto::Recv<T, ::crucible::safety::proto::Continue>>;
 };
 
-// ChaseLev owner: local Select chooses push_bottom or pop_bottom.
+// The owner protocol offers a choice between pushing and popping.
 template <class T, std::size_t Cap, class UserTag>
 struct default_proto_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Owner> {
     using type = ::crucible::safety::proto::chaselev_session::OwnerProto<T>;
 };
 
-// ChaseLev thief: Recv-only borrowed steal from top.
+// A thief only receives, and receives a borrow rather than ownership.
 template <class T, std::size_t Cap, class UserTag>
 struct default_proto_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Thief> {
     using type = ::crucible::safety::proto::chaselev_session::ThiefProto<
@@ -394,12 +287,6 @@ struct default_proto_for<
 
 template <class Substr, Direction Dir, class Shard = void>
 using default_proto_for_t = typename default_proto_for<Substr, Dir, Shard>::type;
-
-// ── Recognition concept ────────────────────────────────────────────
-//
-// IsBridgeableDirection<S, D>: true iff (S, D) has a default_proto_for
-// specialization AND a handle_for specialization — i.e., the substrate
-// can be turned into a typed session in this direction.
 
 namespace detail {
 
@@ -494,45 +381,17 @@ concept ShardSubstrateFitsCtxResidency =
     ::crucible::effects::IsExecCtx<Ctx>
     && fits_in_tier_v<detail::shard_per_call_working_set<Substr, Shard, Dir>::value, ctx_residency_tier<Ctx>()>;
 
-// ── mint_substrate_session<Substr, Dir, LoopCtx>(ctx, handle) ──────
-//
-// The Universal Mint factory.  Validates:
-//   * Substrate ↔ Ctx residency fit (SubstrateFitsCtxResidency).
-//     Post-#861 this checks per_call_working_set_v<S> against the
-//     ctx's residency tier — the HOT-PATH access pattern, NOT total
-//     channel storage.  Large-N rings compose honestly with hot
-//     ctxs (the producer/consumer touches O(1) cache lines per call
-//     regardless of capacity).
-//   * Substrate × Direction is bridgeable (has handle_for and
-//     default_proto_for specializations)
-//   * default protocol's Vendor<T> payloads are admitted by LoopCtx.
-//     Raw LoopCtx = void is allowed only for vendor-free payloads.
-//     VendorCtx<Portable> is explicit cross-vendor; VendorCtx<None>
-//     is rejected as uninitialized.
-//
-// Takes the handle BY REFERENCE (the handle has a reference member to
-// its channel; can't be move-assigned, must be bound to enclosing
-// scope).  Internally takes its address and forwards as Resource =
-// Handle*, mirroring the SpscSession.h pattern.
-//
-// Returns the standard PermissionedSessionHandle from
-// sessions/PermissionedSession.h, typed over default_proto_for_t<S,D>
-// with EmptyPermSet.  Substrate's Permission discipline at the handle
-// layer enforces single-producer-or-multi-producer semantics
-// independently of the wire-permission flow.
-
-// FIXY-V-016: §XXI single-concept gate composing the three sub-concepts
-// (bridgeable direction × residency fit × permissioned-protocol fit).
-// Mirrors `CtxFitsEndpointMint` (FIXY-V-014).  Folding the requires-list
-// into one named concept makes the mint-inventory scanner's 8-line
-// window pick up `requires`, and gives reviewers a single grep target
-// when auditing the gate.
+// A payload pinned to one vendor needs the matching loop context.  The default
+// of void admits only payloads that name no vendor at all.
 template <class Substr, Direction Dir, typename LoopCtx, typename Ctx>
 concept CtxFitsSubstrateSessionMint =
     ::crucible::effects::IsExecCtx<Ctx> && IsBridgeableDirection<Substr, Dir> && SubstrateFitsCtxResidency<Substr, Ctx>
     && ::crucible::safety::proto::CtxFitsPermissionedProtocol<default_proto_for_t<Substr, Dir>, Ctx,
                                                               ::crucible::safety::proto::EmptyPermSet, LoopCtx>;
 
+// The handle is taken by reference and its address forwarded.  It holds a
+// reference to its channel, so it cannot be reseated and has to stay bound to
+// the caller's scope.
 template <class Substr, Direction Dir, typename LoopCtx = void, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSubstrateSessionMint<Substr, Dir, LoopCtx, Ctx>
 [[nodiscard]] constexpr auto mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept {
@@ -542,9 +401,6 @@ template <class Substr, Direction Dir, typename LoopCtx = void, ::crucible::effe
         Proto, ::crucible::safety::proto::EmptyPermSet, Handle*, LoopCtx>(&handle, std::source_location::current());
 }
 
-// FIXY-V-016 shard variant: same §XXI single-concept gate composing
-// the bridgeable-shard-direction × shard-residency × permissioned-
-// protocol-fit triple.  Mirrors `CtxFitsSubstrateSessionMint` above.
 template <class Substr, class Shard, Direction Dir, typename LoopCtx, typename Ctx>
 concept CtxFitsShardSubstrateSessionMint =
     ::crucible::effects::IsExecCtx<Ctx> && IsBridgeableShardDirection<Substr, Shard, Dir>
@@ -561,15 +417,12 @@ template <class Substr, class Shard, Direction Dir, typename LoopCtx = void, ::c
         Proto, ::crucible::safety::proto::EmptyPermSet, Handle*, LoopCtx>(&handle, std::source_location::current());
 }
 
-// ── Self-test block ─────────────────────────────────────────────────
 namespace detail::substrate_session_bridge_self_test {
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
 
 struct UserTag {};
-
-// ── handle_for<> resolves to the right nested handle type ──────────
 
 using Spsc = PermissionedSpscChannel<int, 64, UserTag>;
 using Mpsc = PermissionedMpscChannel<int, 64, UserTag>;
@@ -610,8 +463,6 @@ static_assert(std::is_same_v<handle_for_t<ShardedCalendarT, Direction::Producer,
 static_assert(std::is_same_v<handle_for_t<ShardedCalendarT, Direction::Consumer, ShardId<3>>,
                              typename ShardedCalendarT::template ConsumerHandle<3>>);
 
-// ── default_proto_for<> resolves to the canonical Loop<Send/Recv> ──
-
 static_assert(
     std::is_same_v<default_proto_for_t<Spsc, Direction::Producer>, proto::Loop<proto::Send<int, proto::Continue>>>);
 static_assert(
@@ -638,8 +489,6 @@ static_assert(std::is_same_v<default_proto_for_t<ShardedCalendarT, Direction::Pr
 static_assert(std::is_same_v<default_proto_for_t<ShardedCalendarT, Direction::Consumer, ShardId<3>>,
                              proto::sharded_calendar_grid_session::ConsumerProto<int>>);
 
-// ── IsBridgeableDirection concept ──────────────────────────────────
-
 static_assert(IsBridgeableDirection<Spsc, Direction::Producer>);
 static_assert(IsBridgeableDirection<Spsc, Direction::Consumer>);
 static_assert(IsBridgeableDirection<SnapT, Direction::SwmrWriter>);
@@ -653,28 +502,19 @@ static_assert(IsBridgeableShardDirection<CalendarT, CalendarConsumerId, Directio
 static_assert(IsBridgeableShardDirection<ShardedCalendarT, ShardId<0>, Direction::Producer>);
 static_assert(IsBridgeableShardDirection<ShardedCalendarT, ShardId<3>, Direction::Consumer>);
 
-// SPSC has no SwmrWriter direction; the metafunction resolution fails.
 static_assert(!IsBridgeableDirection<Spsc, Direction::SwmrWriter>);
-// Snapshot has no Producer direction; the metafunction resolution fails.
 static_assert(!IsBridgeableDirection<SnapT, Direction::Producer>);
-// ChaseLevDeque has role-specific Owner/Thief directions only.
 static_assert(!IsBridgeableDirection<DequeT, Direction::Producer>);
 static_assert(!IsBridgeableDirection<DequeT, Direction::Consumer>);
-// ShardedGrid requires an explicit ShardId<I>; the non-indexed form is
-// intentionally not bridgeable.
+// The indexed families below are bridgeable only through an explicit shard or
+// row index.  The unindexed form is deliberately left unbridged.
 static_assert(!IsBridgeableDirection<GridT, Direction::Producer>);
-// CalendarGrid is also indexed through CalendarProducerId<P> plus the
-// singleton CalendarConsumerId, not the non-indexed bridge form.
 static_assert(!IsBridgeableDirection<CalendarT, Direction::Producer>);
 static_assert(!IsBridgeableDirection<CalendarT, Direction::Consumer>);
-// ShardedCalendarGrid is per-shard-indexed through ShardId<S>.
 static_assert(!IsBridgeableDirection<ShardedCalendarT, Direction::Producer>);
 static_assert(!IsBridgeableDirection<ShardedCalendarT, Direction::Consumer>);
 
-// Non-substrate types are rejected by IsSubstrate gate.
 static_assert(!IsBridgeableDirection<int, Direction::Producer>);
-
-// ── VendorCtx admission for vendor-pinned payload substrates ───────
 
 static_assert(!proto::CtxFitsPermissionedProtocol<default_proto_for_t<NvSpsc, Direction::Producer>, eff::HotFgCtx,
                                                   proto::EmptyPermSet>);

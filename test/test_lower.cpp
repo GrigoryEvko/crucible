@@ -6,10 +6,7 @@
 
 namespace eff = ::crucible::effects;
 
-// Helper: build a TensorMeta for a 2D float tensor.
-static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
-                                      int8_t dev = 0,
-                                      void* ptr = nullptr) {
+static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, void* ptr = nullptr) {
     crucible::TensorMeta m{};
     m.ndim = 2;
     m.sizes[0] = ::crucible::tensor_dim(d0);
@@ -29,8 +26,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     crucible::Arena arena(1 << 16);
     crucible::ExprPool pool(test.alloc);
 
-    // ════════════════════════════════════════════════════════════════
-    // Build a 3-op TraceGraph:
+    // The fixture graph:
     //
     //   ext(slot0) ─┐
     //   ext(slot1) ─┤→ Op 0: EWISE_ADD  → slot 2
@@ -39,7 +35,6 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     //
     // Slots: 0,1,4 external; 2,3,5 internal.
     // DFG edges: op0→op1, op1→op2.
-    // ════════════════════════════════════════════════════════════════
 
     constexpr uint32_t NUM_OPS = 3;
     constexpr uint32_t NUM_SLOTS = 6;
@@ -47,7 +42,6 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
     std::uninitialized_value_construct_n(ops, NUM_OPS);
 
-    // ── Op 0: EWISE_ADD(ext_slot0, ext_slot1) → slot 2 ─────────
     {
         auto& te = ops[0];
         te.schema_hash = crucible::SchemaHash{0xAA};
@@ -62,8 +56,8 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         te.output_metas[0] = make_meta(4, 8);
 
         te.input_trace_indices = arena.alloc_array<crucible::OpIndex>(test.alloc, 2);
-        te.input_trace_indices[0] = crucible::OpIndex{}; // external
-        te.input_trace_indices[1] = crucible::OpIndex{}; // external
+        te.input_trace_indices[0] = crucible::OpIndex{};  // external
+        te.input_trace_indices[1] = crucible::OpIndex{};  // external
 
         te.input_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 2);
         te.input_slot_ids[0] = crucible::SlotId{0};
@@ -73,7 +67,6 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         te.output_slot_ids[0] = crucible::SlotId{2};
     }
 
-    // ── Op 1: ACT_RELU(op0_out) → slot 3 ───────────────────────
     {
         auto& te = ops[1];
         te.schema_hash = crucible::SchemaHash{0xBB};
@@ -87,7 +80,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         te.output_metas[0] = make_meta(4, 8);
 
         te.input_trace_indices = arena.alloc_array<crucible::OpIndex>(test.alloc, 1);
-        te.input_trace_indices[0] = crucible::OpIndex{0}; // from op 0
+        te.input_trace_indices[0] = crucible::OpIndex{0};  // from op 0
 
         te.input_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 1);
         te.input_slot_ids[0] = crucible::SlotId{2};
@@ -96,7 +89,6 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         te.output_slot_ids[0] = crucible::SlotId{3};
     }
 
-    // ── Op 2: GEMM_MM(op1_out, ext_slot4) → slot 5 ─────────────
     {
         auto& te = ops[2];
         te.schema_hash = crucible::SchemaHash{0xCC};
@@ -111,8 +103,8 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         te.output_metas[0] = make_meta(4, 16);
 
         te.input_trace_indices = arena.alloc_array<crucible::OpIndex>(test.alloc, 2);
-        te.input_trace_indices[0] = crucible::OpIndex{1}; // from op 1
-        te.input_trace_indices[1] = crucible::OpIndex{}; // external
+        te.input_trace_indices[0] = crucible::OpIndex{1};  // from op 1
+        te.input_trace_indices[1] = crucible::OpIndex{};  // external
 
         te.input_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 2);
         te.input_slot_ids[0] = crucible::SlotId{3};
@@ -122,55 +114,101 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         te.output_slot_ids[0] = crucible::SlotId{5};
     }
 
-    // ── Build DFG edges: op0→op1, op1→op2 ───────────────────────
     crucible::Edge edges[2] = {
-        {.src = crucible::OpIndex{0}, .dst = crucible::OpIndex{1},
-         .src_port = 0, .dst_port = 0,
-         .kind = crucible::EdgeKind::DATA_FLOW, .pad = 0},
-        {.src = crucible::OpIndex{1}, .dst = crucible::OpIndex{2},
-         .src_port = 0, .dst_port = 0,
-         .kind = crucible::EdgeKind::DATA_FLOW, .pad = 0},
+        {.src = crucible::OpIndex{0},
+         .dst = crucible::OpIndex{1},
+         .src_port = 0,
+         .dst_port = 0,
+         .kind = crucible::EdgeKind::DATA_FLOW,
+         .pad = 0},
+        {.src = crucible::OpIndex{1},
+         .dst = crucible::OpIndex{2},
+         .src_port = 0,
+         .dst_port = 0,
+         .kind = crucible::EdgeKind::DATA_FLOW,
+         .pad = 0},
     };
 
-    // ── Build TensorSlots ───────────────────────────────────────
     auto* slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, NUM_SLOTS);
     std::uninitialized_value_construct_n(slots, NUM_SLOTS);
-    using crucible::SlotId; using crucible::OpIndex;
-    using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
-    // External slots
-    slots[0] = {.offset_bytes = 0, .nbytes = 128,
-                .birth_op = OpIndex{0}, .death_op = OpIndex{0},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided,
-                .is_external = true, .pad = {}, .slot_id = SlotId{0}, .pad2 = {}};
-    slots[1] = {.offset_bytes = 0, .nbytes = 128,
-                .birth_op = OpIndex{0}, .death_op = OpIndex{0},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided,
-                .is_external = true, .pad = {}, .slot_id = SlotId{1}, .pad2 = {}};
-    slots[4] = {.offset_bytes = 0, .nbytes = 512,
-                .birth_op = OpIndex{0}, .death_op = OpIndex{2},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided,
-                .is_external = true, .pad = {}, .slot_id = SlotId{4}, .pad2 = {}};
-    // Internal slots
-    slots[2] = {.offset_bytes = 0, .nbytes = 128,
-                .birth_op = OpIndex{0}, .death_op = OpIndex{1},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided,
-                .is_external = false, .pad = {}, .slot_id = SlotId{2}, .pad2 = {}};
-    slots[3] = {.offset_bytes = 0, .nbytes = 128,
-                .birth_op = OpIndex{1}, .death_op = OpIndex{2},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided,
-                .is_external = false, .pad = {}, .slot_id = SlotId{3}, .pad2 = {}};
-    slots[5] = {.offset_bytes = 0, .nbytes = 256,
-                .birth_op = OpIndex{2}, .death_op = OpIndex{2},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided,
-                .is_external = false, .pad = {}, .slot_id = SlotId{5}, .pad2 = {}};
+    using crucible::SlotId;
+    using crucible::OpIndex;
+    using crucible::ScalarType;
+    using crucible::DeviceType;
+    using crucible::Layout;
+    slots[0] = {.offset_bytes = 0,
+                .nbytes = 128,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{0},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = true,
+                .pad = {},
+                .slot_id = SlotId{0},
+                .pad2 = {}};
+    slots[1] = {.offset_bytes = 0,
+                .nbytes = 128,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{0},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = true,
+                .pad = {},
+                .slot_id = SlotId{1},
+                .pad2 = {}};
+    slots[4] = {.offset_bytes = 0,
+                .nbytes = 512,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{2},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = true,
+                .pad = {},
+                .slot_id = SlotId{4},
+                .pad2 = {}};
+    slots[2] = {.offset_bytes = 0,
+                .nbytes = 128,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{1},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = false,
+                .pad = {},
+                .slot_id = SlotId{2},
+                .pad2 = {}};
+    slots[3] = {.offset_bytes = 0,
+                .nbytes = 128,
+                .birth_op = OpIndex{1},
+                .death_op = OpIndex{2},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = false,
+                .pad = {},
+                .slot_id = SlotId{3},
+                .pad2 = {}};
+    slots[5] = {.offset_bytes = 0,
+                .nbytes = 256,
+                .birth_op = OpIndex{2},
+                .death_op = OpIndex{2},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = false,
+                .pad = {},
+                .slot_id = SlotId{5},
+                .pad2 = {}};
 
-    // ── Assemble TraceGraph with CSR ────────────────────────────
     auto* graph_tg = crucible::alloc_trace_graph(test.alloc, arena);
     graph_tg->ops = ops;
     graph_tg->slots = slots;
@@ -178,130 +216,96 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     graph_tg->max_meta_end.set(0);
     crucible::build_csr(test.alloc, arena, graph_tg, edges, 2, NUM_OPS);
 
-    // ════════════════════════════════════════════════════════════════
-    // Lower to Graph IR
-    // ════════════════════════════════════════════════════════════════
-
     crucible::Graph graph(test.alloc, &pool);
-    using RecordedTraceGraph =
-        crucible::LowerTraceGraph<crucible::safety::source::Recorded>;
-    using RecordedGraph =
-        crucible::LoweredGraph<crucible::safety::source::Recorded>;
-    using LowerBgAllocRow =
-        eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
+    using RecordedTraceGraph = crucible::LowerTraceGraph<crucible::safety::source::Recorded>;
+    using RecordedGraph = crucible::LoweredGraph<crucible::safety::source::Recorded>;
+    using LowerBgAllocRow = eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
     static_assert(sizeof(RecordedTraceGraph) == sizeof(const crucible::TraceGraph*));
     static_assert(sizeof(RecordedGraph) == sizeof(crucible::Graph*));
-    static_assert(eff::Subrow<crucible::lower_trace_required_row,
-                              LowerBgAllocRow>);
-    static_assert(!eff::Subrow<crucible::lower_trace_required_row,
-                               eff::Row<>>);
-    static_assert(!eff::Subrow<crucible::lower_trace_required_row,
-                               eff::Row<eff::Effect::Alloc>>);
-    static_assert(!eff::Subrow<crucible::lower_trace_required_row,
-                               eff::Row<eff::Effect::Bg>>);
+    static_assert(eff::Subrow<crucible::lower_trace_required_row, LowerBgAllocRow>);
+    static_assert(!eff::Subrow<crucible::lower_trace_required_row, eff::Row<>>);
+    static_assert(!eff::Subrow<crucible::lower_trace_required_row, eff::Row<eff::Effect::Alloc>>);
+    static_assert(!eff::Subrow<crucible::lower_trace_required_row, eff::Row<eff::Effect::Bg>>);
 
     RecordedGraph lowered =
-        crucible::lower_trace_to_graph<LowerBgAllocRow>(
-            test.alloc, RecordedTraceGraph{graph_tg}, pool, graph);
+        crucible::lower_trace_to_graph<LowerBgAllocRow>(test.alloc, RecordedTraceGraph{graph_tg}, pool, graph);
     assert(lowered.value() == &graph);
 
-    // ── Verify node count ───────────────────────────────────────
-    // 3 INPUT nodes (slots 0, 1, 4) + 3 compute nodes = 6 total.
+    // 3 INPUT nodes for slots 0, 1 and 4, plus 3 compute nodes.
     assert(graph.num_nodes() == 6);
 
-    // ── Verify INPUT nodes (ids 0, 1, 2) ────────────────────────
     assert(graph.node(0)->kind == crucible::NodeKind::INPUT);
     assert(graph.node(1)->kind == crucible::NodeKind::INPUT);
     assert(graph.node(2)->kind == crucible::NodeKind::INPUT);
 
-    // INPUT output slot IDs match external slot_ids.
     using crucible::NodeId;
     assert(graph.output_slots(NodeId{0}) != nullptr);
     assert(graph.output_slots(NodeId{0})[0] == SlotId{0});
     assert(graph.output_slots(NodeId{1})[0] == SlotId{1});
     assert(graph.output_slots(NodeId{2})[0] == SlotId{4});
 
-    // ── Verify compute nodes ────────────────────────────────────
-    // Node 3: EWISE_ADD → POINTWISE
+    // Node 3 is op 0: the three INPUT nodes come first.
     assert(graph.node(3)->kind == crucible::NodeKind::POINTWISE);
     assert(graph.node(3)->num_inputs == 2);
     assert(graph.node(3)->ndim == 2);
 
-    // Input slots: reads from slot 0 and slot 1
     assert(graph.input_slots(NodeId{3}) != nullptr);
     assert(graph.input_slots(NodeId{3})[0] == SlotId{0});
     assert(graph.input_slots(NodeId{3})[1] == SlotId{1});
 
-    // Output slots: writes to slot 2
     assert(graph.output_slots(NodeId{3}) != nullptr);
     assert(graph.output_slots(NodeId{3})[0] == SlotId{2});
 
-    // Node 4: ACT_RELU → POINTWISE
     assert(graph.node(4)->kind == crucible::NodeKind::POINTWISE);
     assert(graph.node(4)->num_inputs == 1);
 
-    // Reads from slot 2 (output of EWISE_ADD)
     assert(graph.input_slots(NodeId{4}) != nullptr);
     assert(graph.input_slots(NodeId{4})[0] == SlotId{2});
     assert(graph.output_slots(NodeId{4})[0] == SlotId{3});
 
-    // Node 5: GEMM_MM → EXTERN
     assert(graph.node(5)->kind == crucible::NodeKind::EXTERN);
     assert(graph.node(5)->num_inputs == 2);
 
-    // Reads from slot 3 (relu output) and slot 4 (external weight)
     assert(graph.input_slots(NodeId{5}) != nullptr);
     assert(graph.input_slots(NodeId{5})[0] == SlotId{3});
     assert(graph.input_slots(NodeId{5})[1] == SlotId{4});
     assert(graph.output_slots(NodeId{5})[0] == SlotId{5});
 
-    // ── Verify graph inputs: 3 INPUT nodes ──────────────────────
     assert(graph.num_graph_inputs() == 3);
     assert(graph.graph_input_ids()[0] == NodeId{0});
     assert(graph.graph_input_ids()[1] == NodeId{1});
     assert(graph.graph_input_ids()[2] == NodeId{2});
 
-    // ── Verify graph outputs: only GEMM_MM (no DFG consumers) ───
+    // Only the GEMM has no consumer, so it is the sole graph output.
     assert(graph.num_graph_outputs() == 1);
     assert(graph.graph_output_ids()[0] == NodeId{5});
 
-    // ── Verify input wiring (GraphNode.inputs pointers) ─────────
-    // EWISE_ADD inputs should point to INPUT nodes 0 and 1.
     assert(graph.node(3)->inputs[0] == graph.node(0));
     assert(graph.node(3)->inputs[1] == graph.node(1));
 
-    // ACT_RELU input should point to EWISE_ADD (node 3).
     assert(graph.node(4)->inputs[0] == graph.node(3));
 
-    // GEMM_MM inputs: ACT_RELU (node 4), external INPUT (node 2).
     assert(graph.node(5)->inputs[0] == graph.node(4));
     assert(graph.node(5)->inputs[1] == graph.node(2));
 
-    // ── Verify symbolic sizes survive ───────────────────────────
-    // GEMM_MM output is 4×16, so sizes[0] = 4, sizes[1] = 16.
+    // The GEMM output is 4 × 16.
     const crucible::GraphNode* mm = graph.node(5);
     assert(mm->ndim == 2);
     assert(mm->size[0]->payload == 4);
     assert(mm->size[1]->payload == 16);
 
-    // ── Verify multi-output ops ─────────────────────────────────
-    // All ops in this trace have 1 output.
+    // Every op in this fixture has exactly one output.
     assert(graph.node(3)->num_outputs == 1);
     assert(graph.node(4)->num_outputs == 1);
     assert(graph.node(5)->num_outputs == 1);
 
-    // ── Graph transforms still work after lowering ──────────────
+    // Transforms still work on the lowered graph.
     graph.topological_sort(test.alloc);
-    // INPUT nodes should have lower schedule_order than compute nodes.
     assert(graph.node(0)->schedule_order < graph.node(3)->schedule_order);
     assert(graph.node(3)->schedule_order < graph.node(4)->schedule_order);
     assert(graph.node(4)->schedule_order < graph.node(5)->schedule_order);
 
-    // ════════════════════════════════════════════════════════════════
-    // Test: null input filtering
-    // ════════════════════════════════════════════════════════════════
-
-    // Create a single op with 3 inputs, one of which is null (bias=None).
+    // One op with three inputs, the bias being absent.
     crucible::Arena arena2(1 << 16);
     auto* ops2 = arena2.alloc_array<crucible::TraceEntry>(test.alloc, 1);
     std::uninitialized_value_construct_n(ops2, 1);
@@ -312,43 +316,64 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     ops2[0].num_outputs = 1;
 
     ops2[0].input_metas = arena2.alloc_array<crucible::TensorMeta>(test.alloc, 3);
-    ops2[0].input_metas[0] = make_meta(4, 8); // bias (will be null)
-    ops2[0].input_metas[1] = make_meta(4, 8); // x
-    ops2[0].input_metas[2] = make_meta(8, 8); // weight
+    ops2[0].input_metas[0] = make_meta(4, 8);  // bias (will be null)
+    ops2[0].input_metas[1] = make_meta(4, 8);  // x
+    ops2[0].input_metas[2] = make_meta(8, 8);  // weight
 
     ops2[0].output_metas = arena2.alloc_array<crucible::TensorMeta>(test.alloc, 1);
     ops2[0].output_metas[0] = make_meta(4, 8);
 
     ops2[0].input_trace_indices = arena2.alloc_array<crucible::OpIndex>(test.alloc, 3);
-    ops2[0].input_trace_indices[0] = crucible::OpIndex{}; // null bias
-    ops2[0].input_trace_indices[1] = crucible::OpIndex{}; // external x
-    ops2[0].input_trace_indices[2] = crucible::OpIndex{}; // external weight
+    ops2[0].input_trace_indices[0] = crucible::OpIndex{};  // null bias
+    ops2[0].input_trace_indices[1] = crucible::OpIndex{};  // external x
+    ops2[0].input_trace_indices[2] = crucible::OpIndex{};  // external weight
 
     ops2[0].input_slot_ids = arena2.alloc_array<crucible::SlotId>(test.alloc, 3);
-    ops2[0].input_slot_ids[0] = crucible::SlotId{}; // null — no slot
-    ops2[0].input_slot_ids[1] = crucible::SlotId{0};          // external
-    ops2[0].input_slot_ids[2] = crucible::SlotId{1};          // external
+    ops2[0].input_slot_ids[0] = crucible::SlotId{};  // null — no slot
+    ops2[0].input_slot_ids[1] = crucible::SlotId{0};  // external
+    ops2[0].input_slot_ids[2] = crucible::SlotId{1};  // external
 
     ops2[0].output_slot_ids = arena2.alloc_array<crucible::SlotId>(test.alloc, 1);
     ops2[0].output_slot_ids[0] = crucible::SlotId{2};
 
     auto* slots2 = arena2.alloc_array<crucible::TensorSlot>(test.alloc, 3);
     std::uninitialized_value_construct_n(slots2, 3);
-    slots2[0] = {.offset_bytes = 0, .nbytes = 128,
-                 .birth_op = OpIndex{0}, .death_op = OpIndex{0},
-                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                 .device_idx = 0, .layout = Layout::Strided,
-                 .is_external = true, .pad = {}, .slot_id = SlotId{0}, .pad2 = {}};
-    slots2[1] = {.offset_bytes = 0, .nbytes = 256,
-                 .birth_op = OpIndex{0}, .death_op = OpIndex{0},
-                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                 .device_idx = 0, .layout = Layout::Strided,
-                 .is_external = true, .pad = {}, .slot_id = SlotId{1}, .pad2 = {}};
-    slots2[2] = {.offset_bytes = 0, .nbytes = 128,
-                 .birth_op = OpIndex{0}, .death_op = OpIndex{0},
-                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                 .device_idx = 0, .layout = Layout::Strided,
-                 .is_external = false, .pad = {}, .slot_id = SlotId{2}, .pad2 = {}};
+    slots2[0] = {.offset_bytes = 0,
+                 .nbytes = 128,
+                 .birth_op = OpIndex{0},
+                 .death_op = OpIndex{0},
+                 .dtype = ScalarType::Float,
+                 .device_type = DeviceType::CPU,
+                 .device_idx = 0,
+                 .layout = Layout::Strided,
+                 .is_external = true,
+                 .pad = {},
+                 .slot_id = SlotId{0},
+                 .pad2 = {}};
+    slots2[1] = {.offset_bytes = 0,
+                 .nbytes = 256,
+                 .birth_op = OpIndex{0},
+                 .death_op = OpIndex{0},
+                 .dtype = ScalarType::Float,
+                 .device_type = DeviceType::CPU,
+                 .device_idx = 0,
+                 .layout = Layout::Strided,
+                 .is_external = true,
+                 .pad = {},
+                 .slot_id = SlotId{1},
+                 .pad2 = {}};
+    slots2[2] = {.offset_bytes = 0,
+                 .nbytes = 128,
+                 .birth_op = OpIndex{0},
+                 .death_op = OpIndex{0},
+                 .dtype = ScalarType::Float,
+                 .device_type = DeviceType::CPU,
+                 .device_idx = 0,
+                 .layout = Layout::Strided,
+                 .is_external = false,
+                 .pad = {},
+                 .slot_id = SlotId{2},
+                 .pad2 = {}};
 
     auto* tg2 = crucible::alloc_trace_graph(test.alloc, arena2);
     tg2->ops = ops2;
@@ -360,17 +385,15 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
 
     crucible::Graph graph2(test.alloc, &pool);
     RecordedGraph lowered2 =
-        crucible::lower_trace_to_graph<LowerBgAllocRow>(
-            test.alloc, RecordedTraceGraph{tg2}, pool, graph2);
+        crucible::lower_trace_to_graph<LowerBgAllocRow>(test.alloc, RecordedTraceGraph{tg2}, pool, graph2);
     assert(lowered2.value() == &graph2);
 
-    // 2 INPUT nodes (slots 0, 1) + 1 compute node = 3 total.
-    // The null input (slot UINT32_MAX) was filtered out.
+    // 2 INPUT nodes for slots 0 and 1, plus 1 compute node.  The null
+    // input is filtered out.
     assert(graph2.num_nodes() == 3);
-    assert(graph2.node(2)->kind == crucible::NodeKind::EXTERN); // GEMM_ADDMM
-    assert(graph2.node(2)->num_inputs == 2); // null bias filtered out
+    assert(graph2.node(2)->kind == crucible::NodeKind::EXTERN);  // GEMM_ADDMM
+    assert(graph2.node(2)->num_inputs == 2);  // null bias filtered out
 
-    // Input slots on the compute node: only the 2 real inputs.
     assert(graph2.input_slots(NodeId{2}) != nullptr);
     assert(graph2.input_slots(NodeId{2})[0] == SlotId{0});
     assert(graph2.input_slots(NodeId{2})[1] == SlotId{1});

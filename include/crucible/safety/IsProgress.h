@@ -1,7 +1,5 @@
 #pragma once
 
-// FOUND-D28 — wrapper-detection predicate for `Progress<Class, T>`.
-
 #include <crucible/safety/Progress.h>
 
 #include <type_traits>

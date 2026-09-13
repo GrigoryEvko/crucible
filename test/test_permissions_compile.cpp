@@ -1,17 +1,8 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_permissions_compile — sentinel TU for permissions/* tree
-//
-// Same blind-spot rationale as test_algebra_compile / test_safety_
-// compile (see feedback_header_only_static_assert_blind_spot memory).
-// Forces every permissions/* header through the test target's full
-// -Werror matrix.  Type-level checks live in this TU or in dedicated
-// negative compile fixtures; reaching main proves the include set was
-// processed clean.
-//
-// Coverage: 7 headers (Permission, PermissionFork, PermissionInherit,
-// FairSharedPermissionPool, Permissions, PermSet, ReadView).  When a new permissions/* header
-// ships, add its include below.
-// ═══════════════════════════════════════════════════════════════════
+// Assertions embedded in a header are only verified under the
+// project's warning flags when some translation unit includes that
+// header.  This file exists to be that translation unit for the
+// permission headers, so a new one gets an include here.  Reaching
+// main is itself the claim: the whole include set compiled clean.
 
 #include <crucible/permissions/FairSharedPermissionPool.h>
 #include <crucible/permissions/Permission.h>
@@ -79,9 +70,7 @@ namespace crucible::safety {
 
 template <>
 struct permission_row<permission_row_compile_tags::Whole> {
-    using type = ::crucible::effects::Row<
-        ::crucible::effects::Effect::IO,
-        ::crucible::effects::Effect::Block>;
+    using type = ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
 };
 
 template <>
@@ -95,81 +84,64 @@ struct permission_row<permission_row_compile_tags::BlockChild> {
 };
 
 template <>
-struct splits_into<
-    permission_row_compile_tags::Whole,
-    permission_row_compile_tags::IoChild,
-    permission_row_compile_tags::BlockChild> : std::true_type {};
+struct splits_into<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                   permission_row_compile_tags::BlockChild> : std::true_type {};
 
 template <>
-struct splits_into_pack<
-    permission_row_compile_tags::Whole,
-    permission_row_compile_tags::IoChild,
-    permission_row_compile_tags::BlockChild> : std::true_type {};
-
-// fixy-M-29 authoring witnesses.
-template <>
-struct splits_into_authoring_witness<
-    permission_row_compile_tags::Whole,
-    permission_row_compile_tags::IoChild,
-    permission_row_compile_tags::BlockChild> : std::true_type {};
+struct splits_into_pack<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                        permission_row_compile_tags::BlockChild> : std::true_type {};
 
 template <>
-struct splits_into_pack_authoring_witness<
-    permission_row_compile_tags::Whole,
-    permission_row_compile_tags::IoChild,
-    permission_row_compile_tags::BlockChild> : std::true_type {};
+struct splits_into_authoring_witness<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                                     permission_row_compile_tags::BlockChild> : std::true_type {};
+
+template <>
+struct splits_into_pack_authoring_witness<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                                          permission_row_compile_tags::BlockChild> : std::true_type {};
 
 }  // namespace crucible::safety
 
 namespace {
 
-// FIXY-FOUND-008 sentinel — pin the by-design reentrancy property of
-// mint_permission_root<Tag>().  The audit ticket framed reentrancy as
-// "defeating linearity"; the doc-comment at permissions/Permission.h
-// ~L640 records the audit conclusion (linearity is per-instance move-
-// only, NOT once-per-program cardinality).  Pin the three structural
-// witnesses here so a regression to the misframed premise reds this TU:
-//   (1) PermissionTag concept rejects non-empty / non-class shapes.
-//   (2) Reentrant root mint compiles for empty-row Tags (by design).
-//   (3) Permission<Tag> is move-only (deleted copy) — the actual
-//       linearity carrier.
+// Minting a root permission twice for one tag is allowed.  Linearity
+// is a property of each token, which is move-only and consumed once,
+// not a limit on how many tokens may exist.  The three groups below
+// pin that reading: what the tag concept accepts, that a second root
+// mint compiles, and that a token cannot be copied.
 namespace fixy_found_008_pin {
 struct EmptyTag {};
-struct NonEmptyTag { int payload = 0; };
-union UnionTag { int a; };
+struct NonEmptyTag {
+    int payload = 0;
+};
+union UnionTag {
+    int a;
+};
 
-static_assert(::crucible::safety::PermissionTag<EmptyTag>,
-    "FIXY-FOUND-008: PermissionTag must accept empty class types.");
-static_assert(!::crucible::safety::PermissionTag<int>,
-    "FIXY-FOUND-008: PermissionTag must reject primitives.");
-static_assert(!::crucible::safety::PermissionTag<int*>,
-    "FIXY-FOUND-008: PermissionTag must reject pointers.");
-static_assert(!::crucible::safety::PermissionTag<NonEmptyTag>,
-    "FIXY-FOUND-008: PermissionTag must reject non-empty classes.");
-static_assert(!::crucible::safety::PermissionTag<UnionTag>,
-    "FIXY-FOUND-008: PermissionTag must reject unions.");
+static_assert(::crucible::safety::PermissionTag<EmptyTag>, "A permission tag must be an empty class type.");
+static_assert(!::crucible::safety::PermissionTag<int>, "A permission tag must not be a primitive type.");
+static_assert(!::crucible::safety::PermissionTag<int*>, "A permission tag must not be a pointer type.");
+static_assert(!::crucible::safety::PermissionTag<NonEmptyTag>, "A permission tag must not carry data members.");
+static_assert(!::crucible::safety::PermissionTag<UnionTag>, "A permission tag must not be a union.");
 
-// Reentrant mint is by-design: two roots for the same Tag coexist as
-// independent move-only tokens.  Each is independently consumable.
+// Two roots for one tag coexist as independent tokens, each consumed
+// on its own.
 [[maybe_unused]] constexpr auto reentrant_mint_witness_ = [] {
     auto a = ::crucible::safety::mint_permission_root<EmptyTag>();
     auto b = ::crucible::safety::mint_permission_root<EmptyTag>();
-    (void)a; (void)b;
+    (void)a;
+    (void)b;
     return 0;
 }();
 
-static_assert(!std::is_copy_constructible_v<
-                  ::crucible::safety::Permission<EmptyTag>>,
-    "FIXY-FOUND-008: Permission<Tag> must be non-copyable; copy ctor is "
-    "the linearity carrier.  Reentrant mint produces independent move-"
-    "only tokens, not aliasable copies.");
-static_assert(std::is_move_constructible_v<
-                  ::crucible::safety::Permission<EmptyTag>>,
-    "FIXY-FOUND-008: Permission<Tag> must be move-constructible (the "
-    "only legitimate ownership-transfer mechanism).");
+static_assert(!std::is_copy_constructible_v<::crucible::safety::Permission<EmptyTag>>,
+              "A permission must not be copyable.  The absent copy constructor "
+              "is what makes a token linear.");
+static_assert(std::is_move_constructible_v<::crucible::safety::Permission<EmptyTag>>,
+              "A permission must be move-constructible, which is the only way "
+              "ownership of a token transfers.");
 }  // namespace fixy_found_008_pin
 
-void test_permission_compile()      {}
+void test_permission_compile() {}
 void test_permission_fork_compile() {}
 void test_permission_row_compile() {
     namespace eff = ::crucible::effects;
@@ -206,18 +178,12 @@ void test_permission_row_compile() {
         auto guard = pool.lend(bg_compile);
         if (!guard) std::abort();
     }
-    auto value = saf::with_shared_read(
-        bg_compile,
-        pool,
-        [](saf::SharedPermission<HugePage>) noexcept { return 7; });
+    auto value = saf::with_shared_read(bg_compile, pool, [](saf::SharedPermission<HugePage>) noexcept { return 7; });
     if (!value || *value != 7) std::abort();
 
     auto huge_for_fair = saf::mint_permission_root<HugePage>(bg_compile);
     saf::FairSharedPermissionPool<HugePage> fair{std::move(huge_for_fair)};
-    bool ran = saf::with_shared_read(
-        bg_compile,
-        fair,
-        [](saf::SharedPermission<HugePage>) noexcept {});
+    bool ran = saf::with_shared_read(bg_compile, fair, [](saf::SharedPermission<HugePage>) noexcept {});
     if (!ran) std::abort();
 
     eff::TestRunnerCtx test_ctx{};
@@ -230,89 +196,59 @@ void test_permission_row_compile() {
     using RowRight = permission_row_compile_tags::BlockChild;
 
     auto whole = saf::mint_permission_root<RowWhole>(test_ctx);
-    auto split = saf::mint_permission_split<RowLeft, RowRight>(
-        test_ctx, std::move(whole));
-    auto joined = saf::mint_permission_combine<RowWhole>(
-        test_ctx, std::move(split.first), std::move(split.second));
-    auto split_n = saf::mint_permission_split_n<RowLeft, RowRight>(
-        test_ctx, std::move(joined));
-    auto joined_n = saf::mint_permission_combine_n<RowWhole>(
-        test_ctx, std::move(std::get<0>(split_n)), std::move(std::get<1>(split_n)));
+    auto split = saf::mint_permission_split<RowLeft, RowRight>(test_ctx, std::move(whole));
+    auto joined = saf::mint_permission_combine<RowWhole>(test_ctx, std::move(split.first), std::move(split.second));
+    auto split_n = saf::mint_permission_split_n<RowLeft, RowRight>(test_ctx, std::move(joined));
+    auto joined_n = saf::mint_permission_combine_n<RowWhole>(test_ctx, std::move(std::get<0>(split_n)),
+                                                             std::move(std::get<1>(split_n)));
     saf::permission_drop(std::move(joined_n));
 }
 void test_mint_permission_inherit_compile() {
     namespace pi = ::crucible::permissions;
     using WorkerSurvivors = pi::survivors_t<InheritWorkerTag>;
-    static_assert(pi::inheritance_list_contains_v<
-        WorkerSurvivors, InheritCoordTag>);
-    static_assert(!pi::inheritance_list_contains_v<
-        WorkerSurvivors, InheritNonInheritingTag>);
+    static_assert(pi::inheritance_list_contains_v<WorkerSurvivors, InheritCoordTag>);
+    static_assert(!pi::inheritance_list_contains_v<WorkerSurvivors, InheritNonInheritingTag>);
     static_assert(pi::inherits_from_v<InheritWorkerTag, InheritCoordTag>);
-    static_assert(!pi::inherits_from_v<
-        InheritWorkerTag, InheritNonInheritingTag>);
+    static_assert(!pi::inherits_from_v<InheritWorkerTag, InheritNonInheritingTag>);
 
-    // H-25: the public `mint_permission_inherit<...>()` factory now
-    // requires a `crash_witness_key` parameter — a passkey that ONLY
-    // `bridges::wrap_crash_return` can mint (private ctor, friend-gated).
-    // So this TU cannot CALL the factory directly.  But we can still
-    // assert its RETURN TYPE in an unevaluated context via `declval`,
-    // which materializes a hypothetical key without constructing one.
-    // The neg-compile fixtures (neg_permission_inherit_no_witness*) prove
-    // that ACTUAL invocation without a witness is rejected; this TU
-    // proves the type-level survivor-tuple shape is correct.
-    using ExplicitTuple = decltype(
-        pi::mint_permission_inherit<InheritWorkerTag, InheritCoordTag>(
-            std::declval<pi::crash_witness_key>()));
-    using RegistryTuple = decltype(
-        pi::mint_permission_inherit<InheritWorkerTag>(
-            std::declval<pi::crash_witness_key>()));
-    static_assert(std::is_same_v<
-        ExplicitTuple,
-        std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
+    // The factory takes a key that only one caller can construct, so
+    // this file cannot call it.  An unevaluated operand still yields
+    // the return type, with the key supposed rather than built.  What
+    // is proved here is the shape of the survivor tuple; that a real
+    // call without the key is refused is proved elsewhere.
+    using ExplicitTuple =
+        decltype(pi::mint_permission_inherit<InheritWorkerTag, InheritCoordTag>(std::declval<pi::crash_witness_key>()));
+    using RegistryTuple =
+        decltype(pi::mint_permission_inherit<InheritWorkerTag>(std::declval<pi::crash_witness_key>()));
+    static_assert(std::is_same_v<ExplicitTuple, std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
     static_assert(std::is_same_v<ExplicitTuple, RegistryTuple>);
 
-    using ChainedTuple = decltype(
-        pi::mint_permission_inherit<InheritCoordTag>(
-            std::declval<pi::crash_witness_key>()));
-    static_assert(std::is_same_v<
-        ChainedTuple,
-        std::tuple<::crucible::safety::Permission<InheritMasterTag>>>);
+    using ChainedTuple = decltype(pi::mint_permission_inherit<InheritCoordTag>(std::declval<pi::crash_witness_key>()));
+    static_assert(std::is_same_v<ChainedTuple, std::tuple<::crucible::safety::Permission<InheritMasterTag>>>);
 
-    // fixy-A1-029: the §XXI signature-clarity refactor exposes
-    // `mint_permission_inherit_t<DeadTag, SurvivorTags...>` as the
-    // public-API name for the survivor-tuple type.  Pin the alias to
-    // each `decltype(...)` form so a future refactor that breaks the
-    // identity (e.g. accidentally promoting `survivors_t<DeadTag>` to
-    // a non-inheritance_list shape) reddens here too.
-    static_assert(std::is_same_v<
-        pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>,
-        ExplicitTuple>);
-    static_assert(std::is_same_v<
-        pi::mint_permission_inherit_t<InheritWorkerTag>,
-        RegistryTuple>);
-    static_assert(std::is_same_v<
-        pi::mint_permission_inherit_t<InheritCoordTag>,
-        ChainedTuple>);
-    static_assert(std::is_same_v<
-        pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>,
-        std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
+    // The published alias for the survivor tuple must agree with what
+    // the factory actually returns, in every form of the call.
+    static_assert(std::is_same_v<pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>, ExplicitTuple>);
+    static_assert(std::is_same_v<pi::mint_permission_inherit_t<InheritWorkerTag>, RegistryTuple>);
+    static_assert(std::is_same_v<pi::mint_permission_inherit_t<InheritCoordTag>, ChainedTuple>);
+    static_assert(std::is_same_v<pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>,
+                                 std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
 }
 void test_permissions_umbrella() {}
-void test_perm_set_compile()     {}
-void test_read_view_compile()    {}
+void test_perm_set_compile() {}
+void test_read_view_compile() {}
 
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_permissions_compile:\n");
-    run_test("test_permission_compile",      test_permission_compile);
+    run_test("test_permission_compile", test_permission_compile);
     run_test("test_permission_fork_compile", test_permission_fork_compile);
-    run_test("test_permission_row_compile",  test_permission_row_compile);
-    run_test("test_mint_permission_inherit_compile",
-        test_mint_permission_inherit_compile);
-    run_test("test_permissions_umbrella",    test_permissions_umbrella);
-    run_test("test_perm_set_compile",        test_perm_set_compile);
-    run_test("test_read_view_compile",       test_read_view_compile);
+    run_test("test_permission_row_compile", test_permission_row_compile);
+    run_test("test_mint_permission_inherit_compile", test_mint_permission_inherit_compile);
+    run_test("test_permissions_umbrella", test_permissions_umbrella);
+    run_test("test_perm_set_compile", test_perm_set_compile);
+    run_test("test_read_view_compile", test_read_view_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

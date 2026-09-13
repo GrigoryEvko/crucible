@@ -1,10 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_hot_path_v ────────────────────────
-//
-// FOUND-D25 — wrapper-detection predicate for `HotPath<Tier, T>`.
-// Mechanical extension of the D21-D24 / D30-batch detector template.
-
 #include <crucible/safety/HotPath.h>
 
 #include <type_traits>

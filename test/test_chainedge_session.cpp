@@ -1,6 +1,3 @@
-// GAPS-062 integration test for ChainEdge, PermissionedChainEdge, and
-// ChainEdgeSession.
-
 #include <cstdio>
 #include <utility>
 
@@ -13,15 +10,13 @@ namespace {
 int total_passed = 0;
 int total_failed = 0;
 
-#define CRUCIBLE_TEST_REQUIRE(cond)                                  \
-    do {                                                              \
-        if (!(cond)) {                                                \
-            std::fprintf(stderr,                                      \
-                "  REQUIRE FAILED: %s @ %s:%d\n",                     \
-                #cond, __FILE__, __LINE__);                           \
-            ++total_failed;                                           \
-            return;                                                   \
-        }                                                             \
+#define CRUCIBLE_TEST_REQUIRE(cond)                                                            \
+    do {                                                                                       \
+        if (!(cond)) {                                                                         \
+            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
+            ++total_failed;                                                                    \
+            return;                                                                            \
+        }                                                                                      \
     } while (0)
 
 template <typename Body>
@@ -49,9 +44,7 @@ void test_permissioned_chainedge_backend() {
     Edge edge{PlanId{11}, PlanId{21}, ChainEdgeId{31}, 5};
     auto whole = mint_permission_root<typename Edge::whole_tag>();
     whole = edge.reset_under_quiescence(std::move(whole));
-    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag,
-                                          typename Edge::waiter_tag>(
-        std::move(whole));
+    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag, typename Edge::waiter_tag>(std::move(whole));
 
     auto signaler = edge.signaler(std::move(sp));
     auto waiter = edge.waiter(std::move(wp));
@@ -76,22 +69,16 @@ void test_typed_session_round_trip() {
 
     Edge edge{PlanId{12}, PlanId{22}, ChainEdgeId{32}, 6};
     auto whole = mint_permission_root<typename Edge::whole_tag>();
-    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag,
-                                          typename Edge::waiter_tag>(
-        std::move(whole));
+    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag, typename Edge::waiter_tag>(std::move(whole));
     auto signaler = ses::mint_chainedge_signaler<Edge>(edge, std::move(sp));
     auto waiter = ses::mint_chainedge_waiter<Edge>(edge, std::move(wp));
 
-    auto signaler_psh = ses::mint_chainedge_signaler_session<Edge>(
-        ::crucible::effects::HotFgCtx{}, signaler);
-    auto waiter_psh = ses::mint_chainedge_waiter_session<Edge>(
-        ::crucible::effects::HotFgCtx{}, waiter);
+    auto signaler_psh = ses::mint_chainedge_signaler_session<Edge>(::crucible::effects::HotFgCtx{}, signaler);
+    auto waiter_psh = ses::mint_chainedge_waiter_session<Edge>(::crucible::effects::HotFgCtx{}, waiter);
 
     const SemaphoreSignal signal = signaler.expected_signal();
-    auto signaler_end =
-        std::move(signaler_psh).send(signal, ses::signal_transport);
-    auto [observed, waiter_end] =
-        std::move(waiter_psh).recv(ses::wait_transport);
+    auto signaler_end = std::move(signaler_psh).send(signal, ses::signal_transport);
+    auto [observed, waiter_end] = std::move(waiter_psh).recv(ses::wait_transport);
 
     (void)std::move(signaler_end).close();
     (void)std::move(waiter_end).close();
@@ -111,9 +98,7 @@ void test_signal_identity_rejects_wrong_fields() {
     Edge edge{PlanId{13}, PlanId{23}, ChainEdgeId{33}, 7};
     auto whole = mint_permission_root<typename Edge::whole_tag>();
     whole = edge.reset_under_quiescence(std::move(whole));
-    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag,
-                                          typename Edge::waiter_tag>(
-        std::move(whole));
+    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag, typename Edge::waiter_tag>(std::move(whole));
     auto signaler = edge.signaler(std::move(sp));
     auto waiter = edge.waiter(std::move(wp));
     const SemaphoreSignal expected = signaler.expected_signal();
@@ -166,24 +151,13 @@ int main() {
     using ::crucible::concurrent::VendorBackend;
 
     std::fprintf(stderr, "[test_chainedge_session]\n");
-    run_test("permissioned_cpu", [] {
-        test_permissioned_chainedge_backend<VendorBackend::CPU>();
-    });
-    run_test("permissioned_nv_stub", [] {
-        test_permissioned_chainedge_backend<VendorBackend::NV>();
-    });
-    run_test("permissioned_amd_stub", [] {
-        test_permissioned_chainedge_backend<VendorBackend::AMD>();
-    });
-    run_test("permissioned_tpu_stub", [] {
-        test_permissioned_chainedge_backend<VendorBackend::TPU>();
-    });
-    run_test("permissioned_trn_stub", [] {
-        test_permissioned_chainedge_backend<VendorBackend::TRN>();
-    });
+    run_test("permissioned_cpu", [] { test_permissioned_chainedge_backend<VendorBackend::CPU>(); });
+    run_test("permissioned_nv_stub", [] { test_permissioned_chainedge_backend<VendorBackend::NV>(); });
+    run_test("permissioned_amd_stub", [] { test_permissioned_chainedge_backend<VendorBackend::AMD>(); });
+    run_test("permissioned_tpu_stub", [] { test_permissioned_chainedge_backend<VendorBackend::TPU>(); });
+    run_test("permissioned_trn_stub", [] { test_permissioned_chainedge_backend<VendorBackend::TRN>(); });
     run_test("typed_session_round_trip", test_typed_session_round_trip);
-    run_test("signal_identity_rejects_wrong_fields",
-             test_signal_identity_rejects_wrong_fields);
+    run_test("signal_identity_rejects_wrong_fields", test_signal_identity_rejects_wrong_fields);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

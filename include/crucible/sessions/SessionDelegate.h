@@ -1,129 +1,22 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — session-type delegation (Honda 1998
-//                            throw/catch; higher-order sessions)
+// Delegation hands a whole session endpoint to a peer as a message payload.
+// The delegator holds its side of a T-typed channel, passes that handle on,
+// and proceeds with its own remaining protocol.
 //
-// Delegation is the mechanism by which one session hands a full
-// session endpoint to another, as a first-class message payload.
-// Semantically: "I currently hold my side of a T-typed channel; I
-// pass THAT HANDLE to you; you now own the channel and may use it
-// while I proceed with my remaining K-typed protocol."
+// The delegated protocol T is not dualized anywhere in this header.  What
+// crosses the wire is the endpoint itself, not a copy and not the peer's view
+// of it: the recipient ends up holding the very handle the delegator held, and
+// keeps talking to whoever is on the far side of that T-session.  Dualizing T
+// would describe the far side instead, which is a different conversation.
 //
-// Honda 1998 (§6, "throw/catch") introduced this as the foundational
-// higher-order extension to dyadic session types.  Later formulations
-// (Mostrous-Yoshida 2015 HO-π, DGS12 Kobayashi encoding) show that
-// delegation is representable in the linear-π base calculus but
-// deserves a first-class surface because its type-level behaviour is
-// distinct enough from Send/Recv to warrant its own combinator.
+// The delegator's handle is consumed and the recipient's is produced, never
+// both at once.  Two live handles on one endpoint would let either side act on
+// the same wire.
 //
-// ─── The combinator ─────────────────────────────────────────────────
-//
-//     Delegate<T, K>   — I send my endpoint of a T-typed channel,
-//                         continue as K.
-//     Accept<T, K>     — I receive an endpoint of a T-typed channel,
-//                         continue as K.
-//
-// Duality:
-//     dual(Delegate<T, K>) = Accept<T, dual(K)>
-//     dual(Accept<T, K>)   = Delegate<T, dual(K)>
-//
-// CRITICAL: T is NOT dualised in the dual computation.  The delegated
-// endpoint retains its full session type as-is; what transfers is
-// the actual endpoint handle, not a copy or an inverted-role view.
-// If I Delegate<T, K>, I had a SessionHandle<T, ...> and I give it
-// up; my peer gains the same SessionHandle<T, ...> and may continue
-// its conversation with whoever was the OTHER side of that T-session.
-//
-// ─── Linearity across the handoff ───────────────────────────────────
-//
-// Delegation IS the paradigmatic case for session-handle linearity.
-// The delegator's handle is consumed; the acceptor's handle is
-// produced.  Two handles of the same endpoint existing simultaneously
-// would allow the original delegator and the new acceptor to both
-// attempt ops on the same wire — a linearity violation.  Our
-// SessionHandle's move-only + consumption-on-delegate discipline is
-// exactly what Honda's system needs.
-//
-// ─── Cross-layer CNTP nesting (session_types.md §F.6, §II.12.7) ─────
-//
-// The canonical use in Crucible: CNTP Layer 1 carries Layer 2-5
-// payloads.  Each upper layer's payload IS a session type.  A single
-// Layer 1 channel hands out Layer 2 (SWIM), Layer 3 (Raft), Layer 4
-// (collectives), or Layer 5 (NetworkOffload) endpoints via delegation:
-//
-//   using CntpLayer1 = VendorPinned<Portable, Loop<Select<
-//       Delegate<SwimProto,                   Continue>,
-//       Delegate<RaftProto,                   Continue>,
-//       Delegate<VendorPinned<NV, CollectiveProto>, Continue>,
-//       Delegate<VendorPinned<AMD, CollectiveProto>, Continue>,
-//       Delegate<NetOffloadProto,             Continue>,
-//       End
-//   >>>;
-//
-// The Layer 1 transport hands out higher-layer endpoints to the
-// respective subsystems; each subsystem runs its OWN protocol on top.
-// Layer 1's payload bytes stay opaque at the transport level, but
-// protocol integrity and per-vendor placement stay type-visible at the
-// upper layers via VendorPinned<V, P> and PermissionedSession's
-// VendorCtx<V> mint discipline.
-// Composed φ = (φ_Layer1 ∧ φ_Layer2 ∧ φ_Layer3 ∧ …) by the
-// compositionality theorem (§II.12.4).
-//
-// ─── Cross-Relay reshard with epoch versioning ─────────────────────
-//
-// Cipher reshard handoffs additionally need the Canopy membership
-// epoch and Relay generation to be visible at the delegation boundary.
-// EpochedDelegate<T, K, MinEpoch, MinGen> has the same ownership
-// semantics as Delegate<T, K>, but its peer-side dual is
-// EpochedAccept<T, dual(K), MinEpoch, MinGen>.  Constructing or using
-// the accept side requires a LoopCtx carrying EpochCtx<E, G> with
-// E >= MinEpoch and G >= MinGen.  This is a compile-time admission
-// fact; runtime per-value coordinates still live in
-// safety::EpochVersioned<T>.
-//
-// ─── When NOT to use Delegate ──────────────────────────────────────
-//
-// - For NON-first-class values (plain data types): use Send/Recv.
-//   Delegate is for session endpoints specifically.
-// - For "I need a channel from the peer" where you're ASKING, not
-//   HANDING OFF: use a request/response — the peer returns a channel
-//   they OWN by delegating it with Delegate<T, K>.
-// - For "the peer spawns a new session alongside":  that's not
-//   delegation — that's fresh session establishment via
-//   `mint_channel`.  Delegate transfers an EXISTING session.
-//
-// ─── Event-log integration ─────────────────────────────────────────
-//
-// The bare Delegate/Accept SessionHandle specialisations below do not
-// carry an event log.  Replay/audit users wrap the carrier handle with
-// bridges/RecordingSessionHandle.h; the recording wrapper emits
-// SessionOp::Delegate / SessionOp::Accept with delegated_proto_hash,
-// peer role, and inner_perm_set_hash payload lanes (GAPS-052).
-//
-// ─── References ────────────────────────────────────────────────────
-//
-//   Honda, K. (1993 & 1998).  "Types for Dyadic Interaction" +
-//     "Language Primitives and Type Discipline for Structured
-//     Communication-Based Programming."  Original throw/catch.
-//   Mostrous, D., Yoshida, N. (2015).  "Session Typing and Asynchronous
-//     Subtyping for the Higher-Order π-Calculus."  The full
-//     formalisation of channel-carrying channels.
-//   Dardha, O., Giachino, E., Sangiorgi, D. (2012).  "Session Types
-//     Revisited."  Proves delegation is representable in linear-π
-//     via Channel-carrying values.
-//
-// ─── Crash-stop integration ────────────────────────────────────────
-//
-// Delegate<T, K>'s crash-safety is conjunctive: the delegated
-// recipient-side protocol T must either be cleanly abandonable at its
-// current position, or the carrier continuation K must expose a
-// Recv<Crash<RecipientTag>, RecoveryProto> branch that can recover
-// if the recipient dies after the handoff.  The
-// delegated_crash_propagation<T, RecipientTag, K> metafunction below
-// discharges that bonding rule for the crash walker; it prevents the
-// carrier from treating "recipient's problem" as a proof hole.
-// ═══════════════════════════════════════════════════════════════════
+// The epoch-carrying forms add a freshness threshold to the same ownership
+// transfer.  The threshold is a compile-time admission fact on the recipient's
+// context and has no runtime representation here.
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
@@ -136,27 +29,21 @@
 
 namespace crucible::safety::proto {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Combinator types ──────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
-// Send my endpoint of a T-typed channel; continue as K.
 template <typename T, typename K>
 struct Delegate {
     using delegated_proto = T;
     using next = K;
 };
 
-// Receive an endpoint of a T-typed channel; continue as K.
 template <typename T, typename K>
 struct Accept {
     using delegated_proto = T;
     using next = K;
 };
 
-// Send my endpoint of a T-typed channel; continue as K.  The peer's
-// matching EpochedAccept requires an EpochCtx whose compile-time
-// (epoch, generation) meets the declared minimum.
+// The threshold declared here binds the peer's matching accept, not this
+// sender.  A sender must be running at exactly the declared coordinates, so it
+// cannot offer a handoff weaker than its own position.
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct EpochedDelegate {
     using delegated_proto = T;
@@ -165,8 +52,8 @@ struct EpochedDelegate {
     static constexpr std::uint64_t min_generation = MinGeneration;
 };
 
-// Receive an endpoint of a T-typed channel under an epoch/generation
-// freshness proof; continue as K.
+// A recipient at or above the threshold may accept, so a context that has
+// already advanced still qualifies.
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct EpochedAccept {
     using delegated_proto = T;
@@ -177,25 +64,22 @@ struct EpochedAccept {
 
 }  // namespace crucible::safety::proto
 
-// ─── Delegated-recipient crash propagation ─────────────────────────
+// A handoff creates an obligation on the delegator, not only on the recipient.
+// If the recipient dies holding the delegated endpoint, the delegator is
+// already past the handoff and running its own continuation.  The classifier
+// below decides whether that continuation can survive it.  Either the
+// delegated protocol can be abandoned cleanly where it stands, or the
+// continuation has to offer a branch that receives the recipient's crash.
+// Without this, "the recipient's problem" becomes a hole in the proof.
 //
-// Classifies the carrier-side obligation created by Delegate<T, K>.
-// T is the protocol now held by RecipientTag.  CarrierK is the
-// delegator's continuation after the handoff.
+// The three answers are a recovery continuation, an abort, and a shape whose
+// crash semantics this layer does not define.  A recipient that can only
+// receive is abandonable, so the delegator's own continuation is the recovery.
+// A recipient that can emit, choose, or delegate onward is not, so its crash
+// has to be visible to the delegator.
 //
-//   Recovers<P>  — the carrier has a valid recovery continuation P
-//                  (P may be CarrierK itself when T is receive-only
-//                  and can be cleanly abandoned at this position).
-//   MustAbort    — T can emit / select / delegate before termination,
-//                  so recipient crash must be propagated, but K does
-//                  not expose an immediate Crash<RecipientTag> branch.
-//   IllFormed    — the T/K pair has crash semantics this layer does
-//                  not define.  Delegate<Stop, K> itself is handled
-//                  by the compose rules below: it collapses to Stop
-//                  instead of entering K.
-//
-// The structural recursion is bounded by protocol depth.  Loop bodies
-// are inspected once; Continue is treated as the bounded loop edge.
+// Recursion is bounded by protocol depth.  Each loop body is inspected once
+// and the loop edge terminates the walk.
 
 namespace crucible::safety::proto {
 
@@ -387,13 +271,10 @@ consteval void assert_delegated_crash_propagates() noexcept {
 
 }  // namespace crucible::safety::proto
 
-// ─── #368 crash-walker specialisations for Delegate / Accept ──────
-//
-// Delegate checks BOTH the local continuation K and the delegated
-// protocol T's recipient-crash propagation obligation.  Accept still
-// recurses into K: receiving a handle gives this participant the
-// delegated endpoint, so subsequent crash safety is checked when that
-// endpoint is used as its own local protocol.
+// The two sides are checked differently.  A delegator has to clear both its
+// own continuation and the obligation the handoff leaves behind.  A recipient
+// only clears its continuation, because the endpoint it just received is
+// checked later, when it is run as a protocol in its own right.
 
 namespace crucible::safety::proto::detail::crash {
 
@@ -419,14 +300,6 @@ struct all_offers_have_crash_branch<EpochedAccept<T, K, MinEpoch, MinGeneration>
 }  // namespace crucible::safety::proto::detail::crash
 
 namespace crucible::safety::proto {
-
-// ─── Compositional sugar ────────────────────────────────────────────
-//
-// Convenience aliases built on top of Delegate / Accept for common
-// multi-handoff and proxy patterns.  None adds new machinery — each
-// expands to nested Delegate / Accept combinators and therefore
-// inherits dual, compose, well-formedness, and handle dispatch
-// without needing its own specialisations.
 
 namespace detail {
 
@@ -458,56 +331,25 @@ struct accept_seq_helper<Head, Rest...> {
 
 }  // namespace detail
 
-// Delegate_seq<T1, T2, ..., Tn, K> — sequential multi-handoff:
-// hand off T1, then T2, ..., then Tn, then continue as K.  The LAST
-// type argument is always the continuation; earlier arguments are the
-// delegated session types in hand-off order.  Requires at least one
-// type argument (the continuation itself; 0-arg form is ill-formed).
-//
-// Expands to Delegate<T1, Delegate<T2, ..., Delegate<Tn, K>>>.
-//
-// Duality:  dual(Delegate_seq<Ts..., K>) = Accept_seq<Ts..., dual(K)>
-//           — Ts (delegated protocols) NOT dualised; K IS.
+// The last type argument is the continuation and every earlier one is a
+// delegated protocol, in handoff order.  A single argument is therefore the
+// continuation alone, and the empty form is ill-formed.
 template <typename... Ts>
 using Delegate_seq = typename detail::delegate_seq_helper<Ts...>::type;
 
-// Accept_seq — peer-side companion to Delegate_seq.  A peer receiving
-// the stream of delegated sessions produced by Delegate_seq<Ts..., K>
-// speaks Accept_seq<Ts..., dual(K)>.  Same nesting structure, Accept
-// instead of Delegate.
 template <typename... Ts>
 using Accept_seq = typename detail::accept_seq_helper<Ts...>::type;
 
-// Redelegate<T, K> — middlebox / proxy pattern:  accept a T-typed
-// endpoint, immediately delegate it onward on the same carrier, then
-// continue as K.  The carrier briefly owns the T-session then passes
-// it on; the T-session never interacts with this carrier beyond
-// transport.
-//
-// Canonical Crucible uses:  CNTP Layer 1 → Layer 2 hand-off (Layer 1
-// accepts, then delegates to the Layer 2 worker), Cipher hot-tier
-// promotion to warm-tier (hot accepts the Raft-log endpoint, re-
-// delegates to warm), Keeper proxying an inference session from an
-// admitting peer to the serving worker.
+// A carrier that redelegates owns the inner session only in transit.  It never
+// speaks that protocol, it only moves the endpoint along.
 template <typename T, typename K>
 using Redelegate = Accept<T, Delegate<T, K>>;
 
-// DelegateWithAck<T, Ack, K> — delegate T, then WAIT for a peer
-// acknowledgment of type Ack, then continue as K.  Gives synchronous
-// confirmation of a successful handoff: no dropped handoffs, no
-// silent lost sessions, the delegator learns whether to retry.
-// Useful when the handoff is expensive (large state transfer) or
-// when the session protocol is critical path (a lost inference
-// session should page someone, not just miss an SLA).
 template <typename T, typename Ack, typename K>
 using DelegateWithAck = Delegate<T, Recv<Ack, K>>;
 
-// AcceptWithAck<T, Ack, K> — peer form: accept the delegated endpoint,
-// immediately send an Ack back confirming receipt, continue as K.
 template <typename T, typename Ack, typename K>
 using AcceptWithAck = Accept<T, Send<Ack, K>>;
-
-// ─── Shape traits ───────────────────────────────────────────────────
 
 template <typename P>
 struct is_delegate : std::false_type {};
@@ -528,19 +370,8 @@ inline constexpr bool is_delegate_v = is_delegate<P>::value;
 template <typename P>
 inline constexpr bool is_accept_v = is_accept<P>::value;
 
-// Head-shape predicate (extends Session.h's is_head_v with delegate
-// and accept — these ARE valid protocol heads, i.e., states the
-// SessionHandle can be positioned at).
 template <typename P>
 inline constexpr bool is_delegation_head_v = is_delegate_v<P> || is_accept_v<P>;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Duality ────────────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Delegate ↔ Accept under duality.  The delegated protocol T is NOT
-// dualised — the delegated endpoint's full protocol is transferred
-// as-is; the recipient owns the same endpoint the sender had.
 
 template <typename T, typename K>
 struct dual_of<Delegate<T, K>> {
@@ -562,37 +393,17 @@ struct dual_of<EpochedAccept<T, K, MinEpoch, MinGeneration>> {
     using type = EpochedDelegate<T, typename dual_of<K>::type, MinEpoch, MinGeneration>;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_dual_involutive specializations for Delegate / Accept /
-//    EpochedDelegate / EpochedAccept (fixy-A2-003) ─────────────────
-// ═════════════════════════════════════════════════════════════════════
+// Without these, the default answer would be true for every delegation shape,
+// including one whose delegated protocol or continuation carries a
+// Sender-annotated Offer.  That shape loses its annotation on the round trip
+// and so is not involutive, and any rewrite gated on involution would then
+// produce the wrong type.
 //
-// fixy-A2-003 — without these specializations, the primary template
-// at Session.h:687 (`is_dual_involutive<P> : std::true_type`) would
-// silently report TRUE for any Delegate/Accept/Epoched* shape, even
-// when the inner T or continuation K contains a Sender-annotated
-// Offer (which is the canonical non-involutive shape per fixy-CR-11).
-// Generic code that gates on `is_dual_involutive_v<P>` — e.g.,
-// SessionPatterns.h `refines_self_and_double_dual_v`, dual-commuting
-// rewrites — would then admit a non-involutive protocol and produce
-// wrong types under the round-trip.
-//
-// Soundness: dual_of distributes through Delegate/Accept while
-// keeping T verbatim (the delegated endpoint's protocol is
-// transferred as-is, per SessionDelegate.h:585-587).  Therefore
-// `dual(dual(Delegate<T, K>)) = Delegate<T, dual(dual(K)))` which
-// equals `Delegate<T, K>` iff K is dual-involutive.  However, T is
-// itself a transferable session-handle protocol the recipient will
-// USE — generic rewrites that dualise downstream of the handoff need
-// T to also be involutive for the round-trip to be sound end-to-end.
-// We therefore take the conservative conjunction T ∧ K, matching the
-// "false for any subterm involving Sender-annotated Offer" policy
-// documented at Session.h:680-684.
-//
-// Pattern mirrors Session.h's existing Send / Recv conjunctive
-// propagation (lines 689-693): `is_dual_involutive<Send<T, R>>` only
-// checks R because T is a payload type (not a session), but
-// Delegate/Accept's T IS a session, so we check both.
+// The round trip on the continuation alone would justify checking only K,
+// since the delegated protocol is carried verbatim.  The conjunction over both
+// is deliberate and stricter: unlike a payload, the delegated protocol is a
+// session the recipient goes on to run, and a rewrite that dualizes past the
+// handoff needs it involutive too.
 
 template <typename T, typename K>
 struct is_dual_involutive<Delegate<T, K>>
@@ -602,8 +413,6 @@ template <typename T, typename K>
 struct is_dual_involutive<Accept<T, K>>
     : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
 
-// MinEpoch / MinGeneration are NTTPs and do not contribute to
-// involution — only the carried session protocols T and K do.
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct is_dual_involutive<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
     : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
@@ -612,35 +421,20 @@ template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGener
 struct is_dual_involutive<EpochedAccept<T, K, MinEpoch, MinGeneration>>
     : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Sequential composition ─────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
+// The terminal that composition replaces lives in the continuation, never in
+// the delegated protocol, so composing leaves the delegated protocol alone.
 //
-// compose<Delegate<T, K>, Q> = Delegate<T, compose<K, Q>> — delegation
-// is syntactically like Send/Recv in that the End to be replaced by
-// Q lives within the continuation K, not the delegated T.
+// A handoff of an already-crashed endpoint is the exception: the channel is
+// bottom, so neither side advances into its continuation and composition
+// collapses to the crashed terminal on both the delegating and the accepting
+// side.  Letting the accepting side compose normally would claim a recipient
+// runs on past a crashed handoff, and would also break the identity that
+// dualizing a composition equals composing the duals, since the delegating
+// side already collapses.
 //
-// compose<Delegate<Stop, K>, Q> = Stop — the delegated channel was
-// already crashed before handoff, so the carrier cannot advance into K.
-//
-// compose<Q, Delegate<Stop, K>> is represented at the End-substitution
-// point: compose<End, Delegate<Stop, K>> = Stop.  Existing recursive
-// compose rules then produce Q;;Stop for every structured Q without
-// introducing an ambiguous cross-shape partial specialisation.
-//
-// fixy-A2-002 — the Accept-side parallels (Accept<Stop_g<C>, K> and
-// EpochedAccept<Stop_g<C>, K, E, G>) collapse to Stop_g<C> symmetric
-// to the Delegate side.  A recipient that accepted an already-crashed
-// delegated endpoint cannot run K's continuation: the carrier channel
-// is bottom, so composing any Q onto K is unreachable — composition
-// must short-circuit to Stop_g<C>.  Without this rule, the general
-// Accept specialisation produced Accept<Stop_g<C>, compose<K, Q>>
-// (claiming the recipient still advances past the crashed handoff)
-// AND the duality identity dual(compose<Delegate<...>, Q>) ==
-// compose<dual<Delegate<...>>, dual(Q)> silently broke on the Accept
-// arm.  See `is_subtype_sync_structural<Accept<Stop_g<C>, K>, K>`
-// (below) for the matching subtype rule that mirrors the Delegate-side
-// bottom-preservation.
+// The right-hand position is handled at the point where composition
+// substitutes for the terminal.  Structured protocols then reach it through
+// the ordinary recursion, with no cross-shape specialization needed.
 
 template <typename T, typename K, typename Q>
 struct compose<Delegate<T, K>, Q> {
@@ -662,25 +456,13 @@ struct compose<Accept<T, K>, Q> {
     using type = Accept<T, typename compose<K, Q>::type>;
 };
 
-// fixy-A2-002 — Accept-of-Stop_g<C> composition bottom-preserved.
-// Symmetric to compose<Delegate<Stop_g<C>, K>, Q>: the recipient
-// receives an already-crashed delegated endpoint, so K is unreachable
-// and compose must short-circuit to Stop_g<C>.  Default delegates to
-// `compose<Stop_g<C>, Q>` (SessionCrash.h:197) which produces Stop_g<C>
-// for any Q.
 template <CrashClass C, typename K, typename Q>
 struct compose<Accept<Stop_g<C>, K>, Q> {
     using type = typename compose<Stop_g<C>, Q>::type;
 };
 
-// fixy-A2-002 — right-substitution termination for Accept<Stop_g<C>, K>.
-// Mirrors compose<End, Delegate<Stop_g<C>, K>> = Stop_g<C>: structured
-// Q;;Accept<Stop_g<C>, K> walks Q's recursion until the End leaf, which
-// resolves here to Stop_g<C>.  Without this, the primary compose<End, Q>
-// rule would return Accept<Stop_g<C>, K> as the leaf — semantically
-// "send completes, then the crashed handoff is still ahead" — which
-// contradicts the carrier-side bottom-preservation already shipped for
-// Delegate.
+// Without this, the terminal would resolve to the accept itself, which reads
+// as "the protocol completes, and the crashed handoff is still ahead".
 template <CrashClass C, typename K>
 struct compose<End, Accept<Stop_g<C>, K>> {
     using type = Stop_g<C>;
@@ -706,31 +488,23 @@ struct compose<EpochedAccept<T, K, MinEpoch, MinGeneration>, Q> {
     using type = EpochedAccept<T, typename compose<K, Q>::type, MinEpoch, MinGeneration>;
 };
 
-// fixy-A2-002 — EpochedAccept-of-Stop_g<C> composition bottom-preserved
-// (symmetric to compose<EpochedDelegate<Stop_g<C>, ...>, Q>).  MinEpoch
-// and MinGeneration are dropped because the result is Stop_g<C>: a
-// crashed channel has no epoch/generation discipline left to enforce.
+// The threshold is dropped along with the rest: a crashed channel has no
+// freshness discipline left to enforce.
 template <CrashClass C, typename K, typename Q, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>, Q> {
     using type = typename compose<Stop_g<C>, Q>::type;
 };
 
-// fixy-A2-002 — right-substitution termination for EpochedAccept<...>.
-// Mirrors compose<End, EpochedDelegate<Stop_g<C>, ...>> = Stop_g<C>.
 template <CrashClass C, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<End, EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>> {
     using type = Stop_g<C>;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Crash-stop subtyping for Delegate<Stop, K> ─────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// A delegate-of-Stop is at most as restrictive as its continuation:
-// the stopped delegated endpoint cannot produce any future behaviour
-// that K would not already admit.  This is a type-level relation only;
-// the handle operation itself is deleted below so callers cannot use a
-// Delegate<Stop, K> state to manufacture a live K continuation.
+// A handoff of a crashed endpoint refines its own continuation, because the
+// stopped endpoint can produce no behaviour the continuation does not already
+// admit.  This holds at the type level only.  The corresponding handle
+// operation is deleted, so the relation cannot be used to obtain a live
+// continuation from a crashed handoff.
 
 template <CrashClass C, typename K>
 struct is_subtype_sync_structural<Delegate<Stop_g<C>, K>, K> : std::true_type {};
@@ -768,21 +542,11 @@ struct protocol_grade_satisfies<EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
 
 }  // namespace detail::subtype
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Well-formedness ────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Delegate<T, K> is well-formed iff BOTH T and K are well-formed.
-// T must be a complete, closed session type (no dangling Continue
-// referring to an outer Loop of the delegator — delegated protocols
-// are SELF-CONTAINED and may have their own independent Loops).
-// K is the delegator's remaining protocol, checked in the delegator's
-// LoopCtx.
-//
-// This is stricter than Send/Recv (which only check their continuation
-// K); delegation additionally requires the delegated payload T to be
-// closed-form well-formed (LoopCtx = void — T cannot reference the
-// delegator's outer loop).
+// The delegated protocol is checked in an empty loop context, not the
+// delegator's.  It travels to another participant, so a loop edge inside it
+// cannot refer to a loop the delegator happens to be in.  It may of course
+// carry loops of its own.  This is stricter than a plain send, which checks
+// only its continuation.
 
 template <typename T, typename K, typename LoopCtx>
 struct is_well_formed<Delegate<T, K>, LoopCtx>
@@ -805,15 +569,9 @@ struct is_well_formed<EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
                          && is_well_formed<T, void>::value && is_well_formed<K, LoopCtx>::value
                          && session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>> {};
 
-// ── fixy-CR-14: recursive is_empty_choice ──────────────────────────
-//
-// Delegate/Accept and the Epoched* variants carry BOTH a delegated
-// inner protocol `T` AND a continuation `K`.  An empty choice in
-// either is reachable from the parent handle once the delegate
-// fires: the delegated inner is minted as its own session (so a
-// reachable empty Select<>/Offer<> there leaves the receiver
-// stuck), and the continuation K is mounted on the outer handle
-// itself.  Mirror is_well_formed's "both arms" treatment.
+// An empty choice in either arm is reachable once the handoff fires.  The
+// delegated protocol becomes a session of its own, where an empty choice
+// leaves its holder stuck, and the continuation runs on the outer handle.
 
 template <typename T, typename K>
 struct is_empty_choice<Delegate<T, K>> : std::bool_constant<is_empty_choice<T>::value || is_empty_choice<K>::value> {};
@@ -829,19 +587,6 @@ template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGener
 struct is_empty_choice<EpochedAccept<T, K, MinEpoch, MinGeneration>>
     : std::bool_constant<is_empty_choice<T>::value || is_empty_choice<K>::value> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── SessionHandle specialisations ──────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
-// ── SessionHandle<Delegate<T, K>, Resource, LoopCtx> ───────────────
-//
-// Exposes ONE method: `delegate(delegated_handle, transport)`.
-// Consumes both `*this` and the delegated-handle, returns a handle
-// for the continuation K.  The transport is responsible for
-// physically transferring the delegated endpoint's bytes / identifier
-// / channel-fd to the peer; from our typing perspective it's a void-
-// returning callable.
-
 template <typename T, typename K, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx>
     : public SessionHandleBase<Delegate<T, K>, SessionHandle<Delegate<T, K>, Resource, LoopCtx>> {
@@ -849,17 +594,14 @@ class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L>
     friend class SessionHandle;
-    // detail::make_session_handle (Session.h) is the SOLE authorized
-    // constructor (fix-04) — direct `SessionHandle<Delegate<T,K>, Res,
-    // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
-    // step_to_next gates cannot be bypassed.  Friend reaches across
-    // headers: the factory lives in Session.h, included above.
+    // The private constructor and this single friend leave one authorized way
+    // to build a handle.  Direct construction is rejected, so the minting and
+    // step gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
     friend constexpr auto
         detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
             -> SessionHandle<FProto, FRes, FLoop>;
 
-    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Delegate<T, K>, SessionHandle<Delegate<T, K>, Resource, LoopCtx>>{loc},
@@ -876,27 +618,18 @@ public:
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle() = default;
 
-    // Hand off a session endpoint of type T to the peer.  Both this
-    // delegator-handle AND the delegated handle are consumed; returns
-    // the continuation-K handle with resolution applied.
-    //
-    //   Transport signature: void(Resource&, DelegatedResource&&)
-    //
-    // The transport physically transfers the delegated endpoint (its
-    // underlying resource bytes, channel id, fd, whatever is
-    // appropriate for the transport).  The delegated handle's
-    // resource is moved into the transport call; the delegated
-    // handle's type-state is consumed by the && overload guarantee.
+    // Both handles are consumed: this one and the one being handed off.  The
+    // transport is what actually moves the endpoint to the peer, in whatever
+    // form the medium requires.  The type system tracks the ownership change
+    // and nothing else.
     template <typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
         requires(!is_stop_v<T> && std::is_invocable_v<Transport, Resource&, DelegatedResource &&>)
     [[nodiscard]] constexpr auto
     delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
              Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
                                               && std::is_nothrow_move_constructible_v<Resource>) {
-        // Physically transfer the delegated endpoint.  The peer now
-        // owns a SessionHandle<T, DelegatedResource, DelegatedLoopCtx>.
         std::invoke(transport, resource_, std::move(delegated.resource_));
-        delegated.mark_consumed_();  // caller's delegated handle consumed
+        delegated.mark_consumed_();
         this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
@@ -910,38 +643,19 @@ public:
                                          "recover by handling Stop/crash before this handoff point instead "
                                          "of expecting K's continuation-side authority.");
 
-    // Transport-less variant (#369 / #377 parallel): renamed from
-    // bare `delegate(handle)` to `delegate_local(handle)` so the wire
-    // ABSENCE is visible at every call site.  Pre-#369 the bare
-    // `delegate(handle)` overload was a SILENT FOOTGUN specific to
-    // Delegate: the Delegate combinator's SEMANTIC is "ship the
-    // delegated endpoint to the peer", so omitting the transport
-    // means NOTHING is shipped — the peer's corresponding Accept
-    // call hangs forever waiting for an endpoint that will never
-    // arrive.  The rename makes the wire-omission audit-visible.
+    // Nothing is shipped here.  A peer waiting on the matching accept never
+    // receives an endpoint, so this is only correct where the peer obtains it
+    // some other way, or does not need it at all.  The name carries that
+    // absence to every call site.
     //
-    // Use ONLY for:
-    //   * In-memory channels where the carrier and the delegated
-    //     handle share storage and the peer receives its endpoint
-    //     via a different channel (or not at all — e.g., test stubs).
-    //   * Unit tests where the transport would be a mock no-op.
-    //
-    // The delegated handle's resource is discarded via scope exit
-    // (standard RAII).  If the Resource owns a live wire, its own
-    // destructor closes it; if the user needs to extract the wire,
-    // they should use the transport-taking variant instead.
-    //
-    // Audit:
-    //   grep "delegate_local("    — every wire-omitting delegation
-    //   grep "\.delegate(.*,.*)"  — every wire-based delegation
+    // The delegated handle's resource is destroyed on scope exit.  If it owns
+    // a live wire, that wire closes.  Use the transport-taking form to keep it
+    // open.
     template <typename DelegatedResource, typename DelegatedLoopCtx>
         requires(!is_stop_v<T>)
     [[nodiscard]] constexpr auto
     delegate_local(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) && noexcept(
         std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_destructible_v<DelegatedResource>) {
-        // Consume the delegated handle (its resource's dtor fires
-        // when this lambda scope ends; its consumed_ flag is
-        // marked so the base's destructor check skips).
         delegated.mark_consumed_();
         (void)std::move(delegated);
         this->mark_consumed_();
@@ -956,16 +670,11 @@ public:
                "as K.  Delegate<Stop, K> collapses to Stop; handle recovery "
                "before this state.");
 
-    // Deleted bare `delegate(handle)` overload (#369) — forces every
-    // call site to make the wire-vs-in-memory distinction explicit.
-    // The named `[Wire_Variant_Required]` diagnostic names the
-    // delegation-specific footgun (peer stuck waiting for the
-    // endpoint that was never shipped).
     template <typename DelegatedResource, typename DelegatedLoopCtx>
     void delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && =
         delete("[Wire_Variant_Required] SessionHandle<Delegate<T, K>>::"
-               "delegate(handle) without a transport is no longer allowed "
-               "(#369).  The Delegate combinator's semantic is \"ship the "
+               "delegate(handle) without a transport is not allowed.  The "
+               "Delegate combinator's semantic is \"ship the "
                "delegated endpoint to the peer\"; omitting the transport "
                "means nothing is shipped and the peer's corresponding Accept "
                "call hangs forever.  Choose one: "
@@ -975,24 +684,15 @@ public:
                "(b) `.delegate_local(handle)` — explicitly no wire transfer, "
                "for in-memory channels or test stubs where the peer obtains "
                "the endpoint via a separate path or doesn't need it at all.  "
-               "Per #369, the framework refuses to guess which you meant.");
+               "The framework refuses to guess which you meant.");
 
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ── SessionHandle<Accept<T, K>, Resource, LoopCtx> ─────────────────
-//
-// Exposes `accept(transport)`: consumes `*this`, receives the
-// delegated endpoint, returns the pair (delegated-session-handle,
-// continuation-K-handle).
-//
-//   Transport signature: DelegatedResource(Resource&)
-//
-// The transport returns the DelegatedResource — the underlying
-// physical endpoint (bytes / id / fd / etc.) the peer just sent.
-// We wrap it in a fresh SessionHandle<T, DelegatedResource, void>
-// (no LoopCtx — the delegated protocol is self-contained).
+// The received endpoint is wrapped in a handle with an empty loop context,
+// because the delegated protocol stands on its own and does not sit inside any
+// loop this participant is running.
 
 template <typename T, typename K, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx>
@@ -1001,16 +701,11 @@ class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L>
     friend class SessionHandle;
-    // detail::make_session_handle (Session.h) is the SOLE authorized
-    // constructor (fix-04) — direct `SessionHandle<Accept<T,K>, Res,
-    // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
-    // step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
     friend constexpr auto
         detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
             -> SessionHandle<FProto, FRes, FLoop>;
 
-    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Accept<T, K>, SessionHandle<Accept<T, K>, Resource, LoopCtx>>{loc},
@@ -1027,9 +722,6 @@ public:
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle() = default;
 
-    // Receive the delegated endpoint + advance past Accept.  Returns
-    // (delegated_handle, continuation_handle).  The DelegatedResource
-    // type is deduced from the Transport's return type.
     template <typename Transport, typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
         requires std::is_invocable_v<Transport, Resource&>
     [[nodiscard]] constexpr auto
@@ -1043,11 +735,8 @@ public:
         return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
-    // Transport-less variant: caller provides the DelegatedResource
-    // directly (either because it was handed to them via an out-of-
-    // band channel, or because they're running an in-memory / test
-    // transport where the "receive" is really just a type-state
-    // advance).  Mirrors delegate()'s transport-less form.
+    // The caller supplies the endpoint instead of a transport, so no receive
+    // happens here and the call is only a type-state advance.
     template <typename DelegatedResource>
     [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) && noexcept(
         std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<DelegatedResource>) {
@@ -1061,12 +750,9 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ── SessionHandle<EpochedDelegate<T, K, MinEpoch, MinGen>, ...> ───
-//
-// Same runtime surface as Delegate<T, K>.  The epoch threshold is
-// consumed by the peer-side EpochedAccept; the sender-side handle
-// carries it so duality, event logs, and diagnostics keep the reshard
-// freshness requirement visible in the protocol type.
+// Nothing on the sending side checks the threshold.  This handle only carries
+// it, so that duality, logs and diagnostics keep the freshness requirement
+// visible in the type until the recipient enforces it.
 
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
           typename LoopCtx>
@@ -1079,16 +765,11 @@ class [[nodiscard]] SessionHandle<EpochedDelegate<T, K, MinEpoch, MinGeneration>
 
     template <typename P, typename Res, typename L>
     friend class SessionHandle;
-    // detail::make_session_handle (Session.h) is the SOLE authorized
-    // constructor (fix-04) — direct `SessionHandle<EpochedDelegate<...>,
-    // Res, Ctx>{res}` is rejected ("is private"), so mint_session_handle
-    // / step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
     friend constexpr auto
         detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
             -> SessionHandle<FProto, FRes, FLoop>;
 
-    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Protocol, SessionHandle<Protocol, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
@@ -1155,12 +836,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ── SessionHandle<EpochedAccept<T, K, MinEpoch, MinGen>, ...> ──────
-//
-// Same runtime surface as Accept<T, K>, with one additional
-// compile-time admission fact: LoopCtx must carry EpochCtx<E, G> and
-// E/G must satisfy the declared threshold.
-
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
           typename LoopCtx>
 class [[nodiscard]] SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
@@ -1180,20 +855,15 @@ class [[nodiscard]] SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>, 
 
     template <typename P, typename Res, typename L>
     friend class SessionHandle;
-    // detail::make_session_handle (Session.h) is the SOLE authorized
-    // constructor (fix-04) — direct `SessionHandle<EpochedAccept<...>,
-    // Res, EpochCtx<E,G>>{res}` is rejected ("is private").  This is
-    // the ONE specialization mint_session_handle cannot reach (its
-    // body static_asserts a fresh EpochCtx LoopCtx, but mint always
-    // builds LoopCtx = void); the epoch-versioned recipient path mints
-    // it via detail::make_session_handle<EpochedAccept<...>, Res,
-    // EpochCtx<E,G>>(res).  The factory is the sanctioned site.
+    // This is the one specialization the ordinary mint cannot produce: it
+    // always builds an empty loop context, and this handle demands one
+    // carrying an epoch.  The recipient path therefore goes through the
+    // factory directly, which stays the only authorized construction site.
     template <typename FProto, typename FRes, typename FLoop>
     friend constexpr auto
         detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
             -> SessionHandle<FProto, FRes, FLoop>;
 
-    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Protocol, SessionHandle<Protocol, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
@@ -1237,16 +907,10 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Ergonomic surface ──────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
-// Delegate-compatibility trait.  Plain closed session protocols are
-// delegate-compatible by default: a Delegate<T, K> handoff consumes the
-// sender's SessionHandle<T, ...> and produces the same typed handle at
-// the acceptor.  Protocol families with extra external authority can
-// specialise this trait to false until their handoff semantics are
-// wired explicitly.
+// A closed protocol is delegate-compatible by default, because the handoff
+// moves a handle and nothing else.  A protocol family that carries authority
+// beyond its handle specializes this to false until its handoff semantics are
+// spelled out.
 template <typename Proto>
 struct is_delegate_compatible : std::bool_constant<is_well_formed_v<Proto>> {};
 
@@ -1259,9 +923,6 @@ inline constexpr bool can_delegate_v = is_delegate_compatible_v<Proto> && is_wel
 template <typename Proto, typename RecipientTag>
 concept CanDelegate = can_delegate_v<Proto, RecipientTag>;
 
-// Concept: is CarrierProto's head a Delegate/Accept of a T-typed
-// session?  Use at boundary functions that demand a specific
-// delegation contract.
 template <typename CarrierProto, typename DelegatedProto>
 concept DelegatesTo =
     is_delegate_v<CarrierProto> && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
@@ -1270,40 +931,20 @@ template <typename CarrierProto, typename DelegatedProto>
 concept AcceptsFrom =
     is_accept_v<CarrierProto> && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
 
-// Concept describing a callable usable as the Transport argument to
-// SessionHandle<Delegate<T, K>, Resource>::delegate(delegated, transport).
-// Required signature:
-//     void transport(CarrierRes&, DelegatedRes&&)
-//
-// Use at boundary APIs that accept a user-supplied transport so the
-// diagnostic fires at the call site naming Transport / CarrierRes /
-// DelegatedRes rather than deep in delegate()'s template instantiation:
-//
-//     template <typename T>
-//     void handoff_via(
-//         SessionHandle<Delegate<T, End>, MyCarrier>&& h,
-//         SessionHandle<T,               MyDelegated>&& d,
-//         TransportForDelegate<MyCarrier, MyDelegated> auto transport);
-//
-// Zero runtime cost; composable with the other session-type concepts.
+// Constraining a user-supplied transport at a boundary puts the diagnostic at
+// the call site rather than inside the handoff's instantiation.
 template <typename Transport, typename CarrierRes, typename DelegatedRes>
 concept TransportForDelegate = std::is_invocable_v<Transport, CarrierRes&, DelegatedRes&&>;
 
-// Concept describing a callable usable as the Transport argument to
-// SessionHandle<Accept<T, K>, Resource>::accept(transport).  Required:
-//     DelegatedRes transport(CarrierRes&)
-//
-// Checks BOTH invocability AND return-type agreement.  A transport
-// that returns the wrong type is rejected at the call site rather than
-// silently changing the deduced DelegatedResource of accept() through
-// template argument deduction on the default template parameter.
+// The return type is checked as well as invocability.  A transport returning
+// the wrong type would otherwise be accepted, silently redefining the deduced
+// endpoint type through the defaulted template parameter on the accept call.
 template <typename Transport, typename CarrierRes, typename DelegatedRes>
 concept TransportForAccept = std::is_invocable_v<Transport, CarrierRes&>
                           && std::is_same_v<std::invoke_result_t<Transport, CarrierRes&>, DelegatedRes>;
 
-// Assertion helpers — one-liner at call sites that demand a specific
-// delegation contract.  Emits the diagnostic right at the assert site
-// instead of deep in a template instantiation.
+// These place the diagnostic at the assertion site instead of deep inside a
+// template instantiation.
 template <typename CarrierProto, typename DelegatedProto>
 consteval void assert_delegates_to() noexcept {
     static_assert(DelegatesTo<CarrierProto, DelegatedProto>,
@@ -1324,46 +965,28 @@ consteval void assert_accepts_from() noexcept {
                                                              "Accept<DelegatedProto, K> for some K.");
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Framework self-test static_asserts ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Verify the Delegate/Accept combinator set is internally consistent
-// under duality, composition, and well-formedness.  Catches regressions
-// to this header or to Session.h's primary templates.
-
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::delegate_self_test {
 
-// Small placeholder session used as the delegated protocol.
 struct Req {};
 struct Ack {};
 using DelegatedProto = Send<Req, Recv<Ack, End>>;
 
-// ── Duality ────────────────────────────────────────────────────────
-
-// dual(Delegate<T, End>) = Accept<T, End>
 static_assert(std::is_same_v<dual_of_t<Delegate<DelegatedProto, End>>, Accept<DelegatedProto, End>>);
 
-// dual(Accept<T, End>) = Delegate<T, End>
 static_assert(std::is_same_v<dual_of_t<Accept<DelegatedProto, End>>, Delegate<DelegatedProto, End>>);
 
-// Involution: dual(dual(Delegate<T, K>)) == Delegate<T, K>
 static_assert(std::is_same_v<dual_of_t<dual_of_t<Delegate<DelegatedProto, Send<int, End>>>>,
                              Delegate<DelegatedProto, Send<int, End>>>);
 
-// T is NOT dualised — critical invariant: the delegated endpoint's
-// protocol stays as-is through the dual operation.
-using DelegatedAsymmetric = Send<Req, End>;  // dual would be Recv<Req, End>
+// The delegated protocol here is asymmetric: its own dual is Recv<Req, End>.
+// The assertion below shows it crossing the dual unchanged.
+using DelegatedAsymmetric = Send<Req, End>;
 static_assert(std::is_same_v<dual_of_t<Delegate<DelegatedAsymmetric, End>>, Accept<DelegatedAsymmetric, End>>);
-// Note the Accept still references DelegatedAsymmetric (not its dual).
 
-// Dual interacts with continuation dual (the K side flips, T does not).
 static_assert(
     std::is_same_v<dual_of_t<Delegate<DelegatedProto, Send<int, End>>>, Accept<DelegatedProto, Recv<int, End>>>);
 
-// Epoched delegation preserves T, dualises only K, and carries the
-// reshard freshness threshold to the peer-side accept state.
 using EpochedDelegator = EpochedDelegate<DelegatedProto, Recv<Ack, End>, 5, 3>;
 using EpochedAcceptor = EpochedAccept<DelegatedProto, Send<Ack, End>, 5, 3>;
 
@@ -1373,32 +996,21 @@ static_assert(std::is_same_v<dual_of_t<dual_of_t<EpochedDelegator>>, EpochedDele
 static_assert(EpochedDelegator::min_epoch == 5);
 static_assert(EpochedDelegator::min_generation == 3);
 
-// ── Composition ────────────────────────────────────────────────────
-
-// compose<Delegate<T, End>, Q> = Delegate<T, Q>
 static_assert(
     std::is_same_v<compose_t<Delegate<DelegatedProto, End>, Send<int, End>>, Delegate<DelegatedProto, Send<int, End>>>);
 
-// compose<Delegate<T, Send<int, End>>, Recv<bool, End>>
-//   = Delegate<T, Send<int, Recv<bool, End>>>
 static_assert(std::is_same_v<compose_t<Delegate<DelegatedProto, Send<int, End>>, Recv<bool, End>>,
                              Delegate<DelegatedProto, Send<int, Recv<bool, End>>>>);
 
-// Composition leaves T untouched (same semantics as Send/Recv — the
-// composition-Q only flows into the continuation).
 static_assert(std::is_same_v<compose_t<Accept<DelegatedAsymmetric, End>, End>, Accept<DelegatedAsymmetric, End>>);
 
 static_assert(std::is_same_v<compose_t<EpochedDelegator, Send<int, End>>,
                              EpochedDelegate<DelegatedProto, Recv<Ack, Send<int, End>>, 5, 3>>);
 
-// Delegate<Stop, K> composition: the delegated endpoint is already
-// crashed, so the handoff does not enter K.
 static_assert(std::is_same_v<compose_t<Delegate<Stop, Send<int, End>>, Recv<Ack, End>>, Stop>);
 static_assert(std::is_same_v<compose_t<Delegate<Stop_g<CrashClass::Throw>, Send<int, End>>, Recv<Ack, End>>,
                              Stop_g<CrashClass::Throw>>);
 
-// Right-side Delegate<Stop, K> is sequenced as Q;;Stop by the End
-// substitution rule.
 using ComposeThenDelegateStop = compose_t<Send<int, End>, Delegate<Stop, Recv<Ack, End>>>;
 static_assert(std::is_same_v<ComposeThenDelegateStop, Send<int, Stop>>);
 static_assert(is_well_formed_v<ComposeThenDelegateStop>);
@@ -1407,22 +1019,11 @@ using ComposeThenDelegateStopG = compose_t<Send<int, End>, Delegate<Stop_g<Crash
 static_assert(std::is_same_v<ComposeThenDelegateStopG, Send<int, Stop_g<CrashClass::ErrorReturn>>>);
 static_assert(is_well_formed_v<ComposeThenDelegateStopG>);
 
-// Stop on either side stays Stop.
 static_assert(std::is_same_v<compose_t<Stop, Delegate<Stop, Recv<Ack, End>>>, Stop>);
 static_assert(std::is_same_v<compose_t<Delegate<Stop, Send<int, End>>, Stop>, Stop>);
 
-// ─── Accept<Stop_g<C>, K> composition (fixy-A2-002) ──────────────
-//
-// Symmetric to compose<Delegate<Stop_g<C>, K>, Q>: a recipient that
-// accepted an already-crashed endpoint cannot enter K — composition
-// short-circuits to Stop_g<C>.  Pre-fix the general Accept<T, K>
-// specialization produced Accept<Stop_g<C>, compose<K, Q>>; post-fix
-// the bottom-preserving rule fires.
-
-// Plain Accept<Stop, K> bottom-collapse (default Abort tier).
 static_assert(std::is_same_v<compose_t<Accept<Stop, Send<int, End>>, Recv<Ack, End>>, Stop>);
 
-// All four CrashClass tiers round-trip through Accept-side compose.
 static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::Abort>, Send<int, End>>, Recv<Ack, End>>,
                              Stop_g<CrashClass::Abort>>);
 static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::Throw>, Send<int, End>>, Recv<Ack, End>>,
@@ -1432,8 +1033,6 @@ static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::ErrorReturn>, S
 static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::NoThrow>, Send<int, End>>, Recv<Ack, End>>,
                              Stop_g<CrashClass::NoThrow>>);
 
-// Right-side Accept<Stop, K> sequenced as Q;;Stop_g<C> via the
-// End-substitution rule.
 using ComposeThenAcceptStop = compose_t<Send<int, End>, Accept<Stop, Recv<Ack, End>>>;
 static_assert(std::is_same_v<ComposeThenAcceptStop, Send<int, Stop>>);
 static_assert(is_well_formed_v<ComposeThenAcceptStop>);
@@ -1442,14 +1041,9 @@ using ComposeThenAcceptStopG = compose_t<Send<int, End>, Accept<Stop_g<CrashClas
 static_assert(std::is_same_v<ComposeThenAcceptStopG, Send<int, Stop_g<CrashClass::NoThrow>>>);
 static_assert(is_well_formed_v<ComposeThenAcceptStopG>);
 
-// Stop on either side stays Stop (analogous to the Delegate-side
-// pair above).
 static_assert(std::is_same_v<compose_t<Stop, Accept<Stop, Recv<Ack, End>>>, Stop>);
 static_assert(std::is_same_v<compose_t<Accept<Stop, Send<int, End>>, Stop>, Stop>);
 
-// EpochedAccept<Stop_g<C>, K, E, G> bottom-collapse — mirrors
-// EpochedDelegate-of-Stop_g.  Epoch/Generation are dropped because the
-// result is Stop_g<C>: a crashed channel has no epoch discipline.
 static_assert(std::is_same_v<compose_t<EpochedAccept<Stop_g<CrashClass::Throw>, End, 5, 3>, Recv<Ack, End>>,
                              Stop_g<CrashClass::Throw>>);
 static_assert(std::is_same_v<compose_t<EpochedAccept<Stop_g<CrashClass::Abort>, Send<int, End>, 7, 2>, Recv<Ack, End>>,
@@ -1457,37 +1051,19 @@ static_assert(std::is_same_v<compose_t<EpochedAccept<Stop_g<CrashClass::Abort>, 
 static_assert(std::is_same_v<compose_t<Send<int, End>, EpochedAccept<Stop_g<CrashClass::ErrorReturn>, End, 5, 3>>,
                              Send<int, Stop_g<CrashClass::ErrorReturn>>>);
 
-// Duality coherence: dual(compose<Delegate<Stop_g<C>, K>, Q>) ≡
-// compose<dual<Delegate<Stop_g<C>, K>>, dual<Q>>.
-// Pre-fix, the Accept-side compose did NOT collapse to bottom, so
-// dual(compose<Delegate<Stop_g<C>, K>, Q>) == dual(Stop_g<C>) but
-// compose<dual<Delegate<...>>, dual<Q>> == Accept<Stop_g<C>, compose<...>>
-// — duality and composition stopped commuting.  Post-fix the identity
-// holds (Stop_g<C> is self-dual; both sides reduce to Stop_g<C>).
+// Duality and composition commute across a crashed handoff only because both
+// sides collapse to the same self-dual terminal.
 static_assert(
     std::is_same_v<dual_of_t<compose_t<Delegate<Stop_g<CrashClass::Throw>, End>, Send<int, End>>>,
                    compose_t<dual_of_t<Delegate<Stop_g<CrashClass::Throw>, End>>, dual_of_t<Send<int, End>>>>);
 
-// Subtype rule: delegate-of-Stop is no more demanding than K.
 static_assert(is_subtype_sync_v<Delegate<Stop, Send<int, End>>, Send<int, End>>);
 
-// ── is_dual_involutive distribution (fixy-A2-003) ─────────────────
-//
-// Delegate / Accept / EpochedDelegate / EpochedAccept must
-// distribute is_dual_involutive over their component protocols.
-// Pure cases over involutive sub-protocols (Send/Recv/End/Select/
-// Offer-without-Sender) report TRUE; Sender-Offer-wrapping cases
-// (fixy-CR-11 non-involution) report FALSE.
-
-// Pure involutive cases — every combinator reports TRUE when both T
-// and K are themselves involutive.
 static_assert(is_dual_involutive_v<Delegate<Send<int, End>, End>>);
 static_assert(is_dual_involutive_v<Accept<Send<int, End>, End>>);
 static_assert(is_dual_involutive_v<EpochedDelegate<Send<int, End>, End, 5, 3>>);
 static_assert(is_dual_involutive_v<EpochedAccept<Send<int, End>, End, 5, 3>>);
 
-// Sender-Offer non-involution propagates through T (the delegated
-// channel itself).  Each combinator's conjunction reports FALSE.
 namespace fixy_a2_003_sender_offer_inner_T {
 struct RoleA {};
 using NonInvolutiveT = Offer<Sender<RoleA>, Recv<int, End>>;
@@ -1498,8 +1074,6 @@ static_assert(!is_dual_involutive_v<EpochedDelegate<NonInvolutiveT, End, 5, 3>>)
 static_assert(!is_dual_involutive_v<EpochedAccept<NonInvolutiveT, End, 5, 3>>);
 }  // namespace fixy_a2_003_sender_offer_inner_T
 
-// Non-involution also propagates through K (the continuation), since
-// the Conservative T ∧ K conjunction sees BOTH components.
 namespace fixy_a2_003_sender_offer_inner_K {
 struct RoleA {};
 using NonInvolutiveK = Offer<Sender<RoleA>, Recv<int, End>>;
@@ -1507,9 +1081,6 @@ static_assert(!is_dual_involutive_v<Delegate<Send<int, End>, NonInvolutiveK>>);
 static_assert(!is_dual_involutive_v<Accept<Send<int, End>, NonInvolutiveK>>);
 }  // namespace fixy_a2_003_sender_offer_inner_K
 
-// ── Well-formedness ────────────────────────────────────────────────
-
-// Both Delegate and Accept are WF when T and K are WF.
 static_assert(is_well_formed_v<Delegate<DelegatedProto, End>>);
 static_assert(is_well_formed_v<Accept<DelegatedProto, End>>);
 static_assert(is_well_formed_v<EpochedDelegate<DelegatedProto, End, 5, 3>>);
@@ -1520,21 +1091,13 @@ static_assert(is_well_formed<EpochedAccept<DelegatedProto, End, 5, 3>, EpochCtx<
 static_assert(!is_well_formed<EpochedAccept<DelegatedProto, End, 5, 3>, EpochCtx<4, 3>>::value);
 static_assert(!is_well_formed_v<EpochedAccept<DelegatedProto, End, 5, 3>>);
 
-// Nested delegation: Delegate<Delegate<A, End>, End> is well-formed.
 static_assert(is_well_formed_v<Delegate<Delegate<Send<Req, End>, End>, End>>);
 
-// T WF but K has a free Continue (no enclosing Loop) → ill-formed.
 static_assert(!is_well_formed_v<Delegate<DelegatedProto, Continue>>);
 
-// K WF but T has a free Continue (checked in T's own LoopCtx=void).
-// Since T's well-formedness is checked with void LoopCtx, a free
-// Continue in T makes the whole Delegate ill-formed.
 static_assert(!is_well_formed_v<Delegate<Continue, End>>);
 
-// Delegate inside a Loop is fine (the Loop gives Continue a binding).
 static_assert(is_well_formed_v<Loop<Delegate<DelegatedProto, Continue>>>);
-
-// ── Shape predicates ───────────────────────────────────────────────
 
 static_assert(is_delegate_v<Delegate<DelegatedProto, End>>);
 static_assert(!is_delegate_v<Accept<DelegatedProto, End>>);
@@ -1549,13 +1112,7 @@ static_assert(is_delegation_head_v<EpochedDelegator>);
 static_assert(is_delegation_head_v<EpochedAcceptor>);
 static_assert(!is_delegation_head_v<Send<int, End>>);
 
-// ── Canonical CNTP cross-layer example (shape only) ───────────────
-//
-// Session_types.md §II.12.7 describes CNTP Layer 1 carrying higher-
-// layer sessions via delegation.  Verify the type-level shape:
-
 namespace cntp_cross_layer_example {
-// Upper-layer protocols (opaque to Layer 1)
 struct SwimProbe {};
 struct SwimAck {};
 using SwimProto = Loop<Send<SwimProbe, Recv<SwimAck, Continue>>>;
@@ -1570,9 +1127,8 @@ using CollectiveProto = Loop<Send<CollectiveChunk, Recv<CollectiveAck, Continue>
 using NvCollectiveProto = VendorPinned<VendorBackend::NV, CollectiveProto>;
 using PortableCollectiveProto = VendorPinned<VendorBackend::Portable, CollectiveProto>;
 
-// Layer 1's protocol: a loop that either delegates a SWIM endpoint
-// OR delegates a Raft endpoint OR delegates a vendor-pinned
-// collective endpoint OR terminates.
+// A transport protocol whose whole job is to hand out endpoints for the
+// protocols layered on top of it.  Those protocols stay opaque to it.
 using CntpLayer1 =
     VendorPinned<VendorBackend::Portable, Loop<Select<Delegate<SwimProto, Continue>, Delegate<RaftProto, Continue>,
                                                       Delegate<NvCollectiveProto, Continue>, End>>>;
@@ -1580,8 +1136,6 @@ using CntpLayer1 =
 static_assert(is_well_formed_v<CntpLayer1>);
 static_assert(is_well_formed_v<PortableCollectiveProto>);
 
-// Dual is Offer<Accept<…>, Accept<…>, End> — the peer OFFERS to
-// accept whatever session the sender delegates.
 using CntpLayer1Peer = dual_of_t<CntpLayer1>;
 static_assert(
     std::is_same_v<CntpLayer1Peer, VendorPinned<VendorBackend::Portable,
@@ -1589,32 +1143,21 @@ static_assert(
                                                            Accept<NvCollectiveProto, Continue>, End>>>>);
 static_assert(is_well_formed_v<CntpLayer1Peer>);
 
-// Involution holds through the nested delegation structure.
 static_assert(std::is_same_v<dual_of_t<CntpLayer1Peer>, CntpLayer1>);
 }  // namespace cntp_cross_layer_example
-
-// ── Loop<Delegate<…>> duality ──────────────────────────────────────
-//
-// Dualisation must commute with Loop:
-//     dual(Loop<Delegate<T, Continue>>) = Loop<dual(Delegate<T, Continue>)>
-//                                        = Loop<Accept<T, Continue>>
-//
-// The T stays un-dualised even under Loop; regression test.
 
 using LoopedDelegator = Loop<Delegate<DelegatedProto, Continue>>;
 using LoopedAcceptor = Loop<Accept<DelegatedProto, Continue>>;
 
 static_assert(std::is_same_v<dual_of_t<LoopedDelegator>, LoopedAcceptor>);
 static_assert(std::is_same_v<dual_of_t<LoopedAcceptor>, LoopedDelegator>);
-static_assert(std::is_same_v<dual_of_t<dual_of_t<LoopedDelegator>>,
-                             LoopedDelegator>);  // involution under Loop
+static_assert(std::is_same_v<dual_of_t<dual_of_t<LoopedDelegator>>, LoopedDelegator>);
 static_assert(is_well_formed_v<LoopedDelegator>);
 static_assert(is_well_formed_v<LoopedAcceptor>);
 
-// ── Concept / assert-helper compile test ───────────────────────────
 static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
-static_assert(!DelegatesTo<Delegate<DelegatedProto, End>, Send<int, End>>);  // wrong T
-static_assert(!DelegatesTo<Accept<DelegatedProto, End>, DelegatedProto>);  // wrong head
+static_assert(!DelegatesTo<Delegate<DelegatedProto, End>, Send<int, End>>);
+static_assert(!DelegatesTo<Accept<DelegatedProto, End>, DelegatedProto>);
 static_assert(AcceptsFrom<Accept<DelegatedProto, End>, DelegatedProto>);
 static_assert(DelegatesTo<EpochedDelegator, DelegatedProto>);
 static_assert(AcceptsFrom<EpochedAcceptor, DelegatedProto>);
@@ -1626,9 +1169,6 @@ consteval bool check_assert_delegates() {
 }
 static_assert(check_assert_delegates());
 
-// Delegated-crash propagation helper succeeds only when the carrier
-// continuation has an immediate Crash<Recipient> recovery branch for
-// delegated protocols that can emit before finishing.
 struct DelegatedRecipient {};
 using CarrierCrashRecovery = Offer<Recv<Ack, End>, Recv<Crash<DelegatedRecipient>, End>>;
 
@@ -1641,84 +1181,59 @@ consteval bool check_assert_delegated_crash_propagates() {
 }
 static_assert(check_assert_delegated_crash_propagates());
 
-// ── Delegate_seq / Accept_seq ──────────────────────────────────────
-
-// Single-argument form is the identity — the bare continuation.
 static_assert(std::is_same_v<Delegate_seq<End>, End>);
 static_assert(std::is_same_v<Accept_seq<End>, End>);
 
-// Two-argument form expands to exactly one Delegate / Accept wrap.
 static_assert(std::is_same_v<Delegate_seq<DelegatedProto, End>, Delegate<DelegatedProto, End>>);
 static_assert(std::is_same_v<Accept_seq<DelegatedProto, End>, Accept<DelegatedProto, End>>);
 
-// Three-argument form — two hand-offs then the continuation.
 static_assert(std::is_same_v<Delegate_seq<Send<Req, End>, Recv<Ack, End>, End>,
                              Delegate<Send<Req, End>, Delegate<Recv<Ack, End>, End>>>);
 
-// Four-argument form — three hand-offs then the continuation.
 static_assert(std::is_same_v<Delegate_seq<DelegatedProto, DelegatedProto, DelegatedProto, End>,
                              Delegate<DelegatedProto, Delegate<DelegatedProto, Delegate<DelegatedProto, End>>>>);
 
-// Duality:  dual(Delegate_seq<Ts..., K>) = Accept_seq<Ts..., dual(K)>.
-// Ts (delegated protocols) NOT dualised; final continuation K IS.
 static_assert(std::is_same_v<dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>,
                              Accept_seq<DelegatedProto, DelegatedProto, End>>);
 static_assert(std::is_same_v<dual_of_t<Delegate_seq<DelegatedProto, Send<int, End>>>,
                              Accept_seq<DelegatedProto, Recv<int, End>>>);
 
-// Involution under dual:  dual(dual(Delegate_seq<...>)) == original.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>>,
                              Delegate_seq<DelegatedProto, DelegatedProto, End>>);
 
-// Well-formedness propagates from each component.
 static_assert(is_well_formed_v<Delegate_seq<DelegatedProto, DelegatedProto, End>>);
 static_assert(is_well_formed_v<Accept_seq<DelegatedProto, DelegatedProto, End>>);
 
-// ── Redelegate ─────────────────────────────────────────────────────
-
-// Structural expansion:  accept then delegate on the same carrier.
 static_assert(std::is_same_v<Redelegate<DelegatedProto, End>, Accept<DelegatedProto, Delegate<DelegatedProto, End>>>);
 
-// Dual flips each combinator in place; T stays un-dualised.
 static_assert(
     std::is_same_v<dual_of_t<Redelegate<DelegatedProto, End>>, Delegate<DelegatedProto, Accept<DelegatedProto, End>>>);
 
-// Involution.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<Redelegate<DelegatedProto, Send<int, End>>>>,
                              Redelegate<DelegatedProto, Send<int, End>>>);
 
-// Well-formed when T and K are.
 static_assert(is_well_formed_v<Redelegate<DelegatedProto, End>>);
-
-// ── DelegateWithAck / AcceptWithAck ────────────────────────────────
 
 struct AckFixture {};
 
-// Structural expansion.
 static_assert(
     std::is_same_v<DelegateWithAck<DelegatedProto, AckFixture, End>, Delegate<DelegatedProto, Recv<AckFixture, End>>>);
 
 static_assert(
     std::is_same_v<AcceptWithAck<DelegatedProto, AckFixture, End>, Accept<DelegatedProto, Send<AckFixture, End>>>);
 
-// Duality:  DelegateWithAck ↔ AcceptWithAck.  T preserved; Recv/Send
-// flipped; tail End unchanged.
 static_assert(std::is_same_v<dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>,
                              AcceptWithAck<DelegatedProto, AckFixture, End>>);
 
-// Involution.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>>,
                              DelegateWithAck<DelegatedProto, AckFixture, End>>);
 
-// Well-formed.
 static_assert(is_well_formed_v<DelegateWithAck<DelegatedProto, AckFixture, End>>);
 static_assert(is_well_formed_v<AcceptWithAck<DelegatedProto, AckFixture, End>>);
 
-// ── TransportForDelegate / TransportForAccept concepts ─────────────
-//
-// Exercise the concepts using function-pointer types (not lambdas) —
-// stable at namespace scope and side-steps the -Werror=noexcept
-// warning that lambdas trigger when their body might throw.
+// Function-pointer types are used instead of lambdas.  They are stable at
+// namespace scope and do not raise the noexcept warning a lambda draws when
+// its body might throw.
 
 namespace transport_concept_test {
 struct CarrierRes {};
@@ -1729,18 +1244,14 @@ using ValidAcceptTransport = DelegatedRes (*)(CarrierRes&);
 using WrongArityTransport = void (*)(int, int, int);
 using WrongReturnTransport = int (*)(CarrierRes&);
 
-// TransportForDelegate: requires 2-arg signature (CarrierRes&, DelegatedRes&&)
 static_assert(TransportForDelegate<ValidDelegateTransport, CarrierRes, DelegatedRes>);
 static_assert(!TransportForDelegate<ValidAcceptTransport, CarrierRes, DelegatedRes>);
 static_assert(!TransportForDelegate<WrongArityTransport, CarrierRes, DelegatedRes>);
 
-// TransportForAccept: requires 1-arg signature + exact return type
 static_assert(TransportForAccept<ValidAcceptTransport, CarrierRes, DelegatedRes>);
 static_assert(!TransportForAccept<ValidDelegateTransport, CarrierRes, DelegatedRes>);
 static_assert(!TransportForAccept<WrongReturnTransport, CarrierRes, DelegatedRes>);
 }  // namespace transport_concept_test
-
-// ── delegated_crash_propagation ───────────────────────────────────
 
 struct RecipientTag {};
 struct Result {};

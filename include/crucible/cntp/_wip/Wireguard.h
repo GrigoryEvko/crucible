@@ -1,12 +1,9 @@
 #pragma once
 
-// GAPS-160 WIP. CNT-P WireGuard site-to-site transport sketch.
-//
-// This header owns typed admission for WireGuard keys, peers, allowed-IP
-// routes, and tunnel plans. It deliberately does not invoke wg(8), netlink,
-// rtnetlink, CAP_NET_ADMIN paths, or the Linux WireGuard kernel module.
-// Backend operations validate the typed facts and report explicit
-// unavailability instead of fabricating a live tunnel.
+// The backend operations declared at the bottom of this header invoke no
+// wg(8), no netlink, no rtnetlink, no CAP_NET_ADMIN path and not the kernel
+// WireGuard module.  They validate the typed facts and report unavailability
+// rather than fabricate a live tunnel.
 
 #include <crucible/cntp/Pacing.h>
 #include <crucible/effects/EffectRow.h>

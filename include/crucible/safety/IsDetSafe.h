@@ -1,18 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_det_safe_v ────────────────────────
-//
-// FOUND-D24 — wrapper-detection predicate for `DetSafe<Tier, T>`.
-// Mechanical extension of D21/D22/D23 — partial-spec captures the
-// DetSafeTier_v NTTP enum value alongside the wrapped type.
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   is_det_safe_v<T>      Variable template; cv-ref-stripped.
-//   IsDetSafe<T>           Concept form.
-//   det_safe_value_t<T>    Wrapped element type; constrained.
-//   det_safe_tier_v<T>     Pinned DetSafeTier_v tier; constrained.
-
 #include <crucible/safety/DetSafe.h>
 
 #include <type_traits>
@@ -51,8 +38,6 @@ using det_safe_value_t = typename detail::is_det_safe_impl<std::remove_cvref_t<T
 template <typename T>
     requires is_det_safe_v<T>
 inline constexpr DetSafeTier_v det_safe_tier_v = detail::is_det_safe_impl<std::remove_cvref_t<T>>::tier;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_det_safe_self_test {
 

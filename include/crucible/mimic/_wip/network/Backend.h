@@ -1,14 +1,5 @@
 #pragma once
 
-// GAPS-169 WIP. Vendor-neutral sketch for Mimic network backends.
-//
-// This is parked under mimic/_wip because the real per-vendor network backend
-// shape must be designed around the actual IR002 comm boundary and existing
-// CNTP/MRC substrate, not this placeholder envelope. It does not emit RDMA
-// work requests, AF_XDP descriptors, eBPF bytecode, switch programs, vendor SDK
-// calls, or KernelCache entries. Until forge/Ir002/CommKernel.h exists, the
-// request is anchored to an admitted IR001 comm node plus recipe constraints.
-
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
@@ -122,14 +113,6 @@ enum class NetworkBackendError : std::uint8_t {
 
 template <NetworkBackendVendor Vendor>
 struct NetworkBackendTraits;
-
-// fixy-A5-043: every vendor declares `has_emit_path` — false while the
-// per-vendor specialization is a WIP scaffold, true once a real RDMA /
-// AF_XDP / DPU / switch emitter ships. `plan_network_kernel` gates on
-// this trait so a stub never admits an artifact whose downstream
-// `emit_network_kernel` will return `BackendUnavailable` — pre-fix the
-// planner succeeded silently and the cache filled with looks-complete
-// artifacts that emit zero bytes.
 
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Cpu> {
@@ -287,23 +270,17 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
         .participants = participants,
     }};
 
-    // fixy-A5-043 post-construct invariant: planner output may never
-    // carry a zero content_hash.  The pre-check on `raw_node.content_hash`
-    // currently makes this unreachable, but the post-check documents
-    // the contract for downstream pushbuffer/replay code that assumes
-    // `plan exists ⟹ artifact.content_hash != 0`.  A future refactor
-    // that drops the pre-check will trip the post-check instead of
-    // silently propagating a sentinel-zero artifact through the cache.
+    // The content_hash check above makes this branch unreachable. It stays
+    // because callers rely on a planned artifact carrying a non-zero
+    // content_hash. Removing the earlier check then fails here instead of
+    // propagating a zero hash.
     if (artifact.value().content_hash.raw() == 0) {
         return std::unexpected(NetworkBackendError::BackendUnavailable);
     }
 
-    // fixy-A5-043: backend without a real emitter cannot satisfy
-    // `plan exists ⟹ emit produces real bytes`.  Refuse at planner
-    // boundary so the cache is never poisoned with looks-complete
-    // artifacts that subsequently fail to emit.  Once a per-vendor
-    // RDMA / AF_XDP / DPU / switch emitter ships, flip
-    // `has_emit_path` to `true` for that specialization.
+    // Planning succeeds only where emitting can. A planned artifact is
+    // cached, so admitting one from a vendor with no emitter would fill the
+    // cache with entries that produce no bytes.
     if constexpr (!network_backend_has_emit_path_v<Vendor>) {
         return std::unexpected(NetworkBackendError::BackendUnavailable);
     }

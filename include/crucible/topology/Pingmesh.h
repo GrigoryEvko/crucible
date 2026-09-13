@@ -1,13 +1,5 @@
 #pragma once
 
-// GAPS-134.  Topology pingmesh substrate.
-//
-// This header owns the bounded per-pair latency accounting surface used
-// by later networking policy.  It does not open sockets, timestamp
-// packets, gossip snapshots, or export telemetry.  Transport workers and
-// future PTP/Scuttlebutt/OTel layers feed this substrate with admitted
-// measurements carrying source::Pingmesh provenance.
-
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -144,15 +136,12 @@ concept CtxFitsPingmeshRecord = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ct
 
 namespace detail {
 
-// fixy-A5-011: alignas(64) is load-bearing.  The struct is embedded in a
-// MaxPeers×MaxPeers `std::array<AtomicPingmeshPairCounters, max_pairs>` grid
-// (Pingmesh::counters_) where adjacent pair slots are recorded concurrently
-// by per-peer probe threads under BgDrainCtx.  Without the alignment the
-// 40-byte struct lets two pairs share one 64-byte line — the classic
-// false-sharing trap (CLAUDE.md §VIII).  The five intra-struct atomics are
-// co-mutated by the SAME producer (whoever recorded this pair's outcome),
-// so packing them on one line is intentional and beneficial; the alignment
-// only isolates ACROSS pairs.
+// One of these structs sits in every cell of an all-pairs grid, and separate
+// threads record into neighbouring cells at the same time.  Without the
+// alignment two cells share one cache line and those threads then contend for
+// it.  The five atomics inside one cell are written by the single thread that
+// recorded that pair, so keeping them together is wanted.  The alignment
+// separates cells from each other and nothing else.
 struct alignas(64) AtomicPingmeshPairCounters {
     std::atomic<std::uint64_t> sent{0};
     std::atomic<std::uint64_t> delivered{0};
@@ -169,14 +158,13 @@ static_assert(sizeof(AtomicPingmeshPairCounters) >= 64,
               "AtomicPingmeshPairCounters occupies a full cache line; trailing "
               "padding is intentional — see false-sharing rationale above");
 
-// fixy-A5-029: cross-thread atomics on the canopy hot path must be lock-free
-// on every supported target.  libstdc++ silently substitutes mutex-backed
-// atomic ops on ISAs lacking the required intrinsic — a hidden mutex on the
-// per-pair RMW path would tank latency by 100-1000× (~10-40 ns MESI floor →
-// 1-5 μs futex).  Refuse to build instead of regressing silently.
+// On an ISA that lacks the required instruction the standard library
+// substitutes a mutex-backed atomic without saying so.  A hidden mutex on the
+// per-pair update path costs orders of magnitude more than the cache-coherence
+// transfer it replaces, so the build refuses such a target instead of
+// regressing quietly.
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-              "std::atomic<uint64_t> must be lock-free on this target — see "
-              "fixy-A5-029");
+              "std::atomic<uint64_t> must be lock-free on this target");
 
 [[nodiscard]] constexpr std::uint32_t zscore_milli(std::uint64_t value, std::uint64_t mean,
                                                    std::uint64_t stddev) noexcept {
@@ -390,9 +378,8 @@ public:
         };
     }
 
-    // Cumulative substrate-level detector.  The `window` argument is a
-    // reserved API hook for the future rolling-snapshot side channel; this
-    // carrier intentionally stores no wall-clock buckets yet.
+    // The detector is cumulative.  The window argument is accepted and
+    // ignored, because this carrier keeps no time-bucketed history.
     [[nodiscard]] PingmeshAnomalyReport<max_pairs>
     detect_anomalies(std::chrono::nanoseconds /* window */ = {}) const noexcept {
         PingmeshAnomalyReport<max_pairs> report{};

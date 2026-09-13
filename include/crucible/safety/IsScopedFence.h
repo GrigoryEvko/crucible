@@ -1,17 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_scoped_fence_v ────────────────────
-//
-// FIXY-V-267 — wrapper-detection predicate for `ScopedFence<S, T>` (the
-// V-266 MemoryScope-axis carrier).  Mechanical sibling of
-// IsSimdWidthPinned — the partial spec captures the MemoryScope NTTP
-// alongside the wrapped type, so downstream dispatchers can read the
-// pinned publish scope off the type without instantiating the wrapper.
-//
-// The detector keys on the wrapper class identity, not the lattice
-// value: a `ScopedFence<Cta, T>` and a look-alike struct carrying a
-// MemoryScope field are NOT confused.
-
 #include <crucible/safety/ScopedFence.h>
 
 #include <type_traits>
@@ -50,8 +38,6 @@ using scoped_fence_value_t = typename detail::is_scoped_fence_impl<std::remove_c
 template <typename T>
     requires is_scoped_fence_v<T>
 inline constexpr MemoryScope_v scoped_fence_scope_v = detail::is_scoped_fence_impl<std::remove_cvref_t<T>>::scope;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_scoped_fence_self_test {
 

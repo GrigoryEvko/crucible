@@ -1,7 +1,5 @@
-// Sentinel and runtime smoke for include/crucible/cog/NumaNic.h.
-//
-// GAPS-194: verifies supplied NIC/NUMA affinity facts only. Sysfs write
-// paths for IRQ/RPS/XPS steering are deferred to NicConfig.
+// Only the supplied affinity facts are checked here. The sysfs write paths
+// for interrupt and queue steering are not exercised.
 
 #include <crucible/cog/NumaNic.h>
 
@@ -23,12 +21,9 @@ static cog::CogIdentity nic_identity() {
 
 static cog::NicPortTargetCaps nic_caps() {
     cog::NicPortTargetCaps caps{};
-    caps.link_layer = safety::Tagged<cog::LinkLayer, safety::source::Vendor>{
-        cog::LinkLayer::Roce};
-    caps.max_tx_queues =
-        safety::Tagged<std::uint16_t, safety::source::Vendor>{16};
-    caps.max_rx_queues =
-        safety::Tagged<std::uint16_t, safety::source::Vendor>{16};
+    caps.link_layer = safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Roce};
+    caps.max_tx_queues = safety::Tagged<std::uint16_t, safety::source::Vendor>{16};
+    caps.max_rx_queues = safety::Tagged<std::uint16_t, safety::source::Vendor>{16};
     caps.features.set(cog::NicFeature::Rss);
     caps.features.set(cog::NicFeature::GpuDirectRdma);
     return caps;
@@ -54,14 +49,12 @@ static cog::NumaNicFacts local_facts() {
 }
 
 static void test_name_accessors() {
-    assert(cog::numa_nic_issue_name(cog::NumaNicIssue::IrqRemoteFromTarget)
-           == std::string_view{"IrqRemoteFromTarget"});
+    assert(cog::numa_nic_issue_name(cog::NumaNicIssue::IrqRemoteFromTarget) == std::string_view{"IrqRemoteFromTarget"});
     std::printf("  test_name_accessors:              PASSED\n");
 }
 
 static void test_local_configuration_passes() {
-    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(
-        nic_identity(), nic_caps(), local_facts());
+    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(nic_identity(), nic_caps(), local_facts());
     assert(report.passes());
     assert(report.effective_target_node == cog::NumaNodeId{1});
     std::printf("  test_local_configuration_passes:  PASSED\n");
@@ -71,8 +64,7 @@ static void test_remote_nic_is_error() {
     auto facts = local_facts();
     facts.nic_node = cog::NumaNodeId{0};
 
-    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(
-        nic_identity(), nic_caps(), facts);
+    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts);
     assert(report.severity == cog::NumaNicSeverity::Error);
     assert(report.has(cog::NumaNicIssue::NicRemoteFromTarget));
     std::printf("  test_remote_nic_is_error:         PASSED\n");
@@ -85,8 +77,7 @@ static void test_remote_irq_rps_xps_are_warnings() {
     facts.tx_queues_on_target_node = cog::PositiveAffinityCount{4};
     facts.gpu_direct_peers_on_target_node = cog::PositiveAffinityCount{1};
 
-    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(
-        nic_identity(), nic_caps(), facts);
+    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts);
     assert(report.severity == cog::NumaNicSeverity::Warn);
     assert(report.has(cog::NumaNicIssue::IrqRemoteFromTarget));
     assert(report.has(cog::NumaNicIssue::RpsRemoteFromTarget));
@@ -100,8 +91,7 @@ static void test_unknown_topology_policy() {
     cog::NumaNicPolicy policy{};
     policy.strict_unknown_topology = false;
 
-    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(
-        nic_identity(), nic_caps(), facts, policy);
+    auto const report = cog::verify_numa_pinning<cog::CogKind::NicPort>(nic_identity(), nic_caps(), facts, policy);
     assert(report.severity == cog::NumaNicSeverity::Warn);
     assert(report.has(cog::NumaNicIssue::NicNumaUnknown));
     assert(report.has(cog::NumaNicIssue::TargetNumaUnknown));

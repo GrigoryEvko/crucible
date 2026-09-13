@@ -1,5 +1,3 @@
-// Focused session-pattern self-test TU for compose/identity invariants.
-
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 #define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE 1
 

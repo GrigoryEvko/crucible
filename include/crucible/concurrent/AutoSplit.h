@@ -1,12 +1,5 @@
 #pragma once
 
-// crucible::concurrent::AutoSplit
-//
-// Runtime autosplitting for contiguous, permission-friendly jobs.  AutoRouter
-// chooses whether a byte footprint is shardable; AutoSplit turns that decision
-// into concrete [begin, end) item ranges and can dispatch those ranges through
-// the existing AdaptiveScheduler pool.
-
 #include <crucible/concurrent/AdaptiveScheduler.h>
 #include <crucible/concurrent/AutoRouter.h>
 #include <crucible/concurrent/Topology.h>
@@ -76,17 +69,10 @@ namespace autosplit_detail {
     return a > max - b ? max : a + b;
 }
 
-// Break-even model — whether the body's total compute justifies fanout
-// of `shard_count` worker tasks against `dispatch_cost_ns` per shard.
-//
-// model:
-//   sequential_ns = items * per_item_compute_ns
-//   parallel_ns(F) = items / F * per_item_compute_ns + F * dispatch_cost_ns
-// reject parallelism when parallel_ns >= sequential_ns * (1 - hysteresis).
-//
-// The hysteresis (10%) prevents flipping decisions across the cliff
-// for marginal wins.  Returns true when the planner should override
-// to shard_count = 1.
+// Weighs the whole body's compute against the same work divided among the
+// shards plus one dispatch per shard.  Parallelism has to win by a margin
+// rather than merely win: without one, a workload sitting on the boundary
+// flips between the two plans from one call to the next.
 [[nodiscard]] constexpr bool break_even_prefers_sequential(std::size_t items, std::uint64_t per_item_compute_ns,
                                                            std::uint64_t dispatch_cost_ns,
                                                            std::size_t shard_count) noexcept {
@@ -99,21 +85,14 @@ namespace autosplit_detail {
     const std::uint64_t par_compute = total_compute / shard_count;
     const std::uint64_t par_total = saturating_add_u64(par_compute, par_overhead);
 
-    // 10% hysteresis — require parallel to save at least a tenth of seq.
     const std::uint64_t threshold = total_compute - total_compute / 10;
     return par_total >= threshold;
 }
 
-// Parallel efficiency model:
-//
-//   seq_wall      = items × per_item_ns
-//   par_wall(F)   = items / F × per_item_ns + F × dispatch_cost_ns
-//   par_cpu(F)    = par_wall(F) × F                  [F cores busy that long]
-//   efficiency(F) = seq_wall / par_cpu(F)
-//                 ∈ [0, 1]                            [1 = perfect linear scaling]
-//
-// Returned as integer percent ∈ [0, 100] to keep this constexpr-without-FP.
-// Callers compare against a `min_efficiency_pct` threshold (default 70).
+// The work the body actually has to do, over the CPU time the shards occupy
+// between them.  It reaches one only when splitting the work costs nothing.
+// Whole percent rather than a fraction, so the whole computation stays in
+// integers and away from floating point.
 [[nodiscard]] constexpr std::uint32_t efficiency_pct(std::size_t items, std::uint64_t per_item_compute_ns,
                                                      std::uint64_t dispatch_cost_ns, std::size_t shard_count) noexcept {
     if (shard_count <= 1) return 100;
@@ -126,7 +105,6 @@ namespace autosplit_detail {
     const std::uint64_t par_cpu = saturating_mul_u64(par_wall, shard_count);
 
     if (par_cpu == 0) return 100;
-    // efficiency = seq_wall / par_cpu, scaled to percent.
     const std::uint64_t scaled = saturating_mul_u64(seq_wall, 100);
     const std::uint64_t pct = scaled / par_cpu;
     return pct > 100 ? 100 : static_cast<std::uint32_t>(pct);
@@ -134,32 +112,26 @@ namespace autosplit_detail {
 
 }  // namespace autosplit_detail
 
-// Caller's parallelism appetite — declared at the type level via
-// `AutoSplitWorkloadHint::intent`.  This is the **dial that controls the loss
-// function**.  Wall-time-only optimization is the wrong default:
-// system throughput suffers when 16 cores burn 5× CPU to win 10%
-// wall time on one task.
+// What the caller wants optimized.  Wall time alone is the wrong default: a
+// task that spends every core to shave a little off its own finish time takes
+// that capacity from everything else running.
 enum class SchedulingIntent : std::uint8_t {
-    // w_wall=1.0  w_cpu=0  w_p99=0.5
-    // "I'm on a deadline; burn cores to hit it."
+    // Spend cores to meet a deadline.
     LatencyCritical,
 
-    // w_wall=0.3  w_cpu=1.0  w_amort=0.5
-    // "Maximize items/sec; only fanout if efficiency >= min_efficiency_pct."
+    // Maximise items per second, and split only where the shards stay busy.
     Throughput,
 
-    // w_wall=0  w_cpu=1.0  w_pool=10.0
-    // "Steal idle cores only; never if pool is busy."
+    // Take idle cores and nothing else.
     Background,
 
-    // w_wall=0.5  w_cpu=0.5  w_overlap=1.0
-    // "I have follow-up work; overlap helps."
+    // The caller has work to overlap with, so splitting helps it too.
     Overlapped,
 
-    // F = 1 always; no router involvement.
+    // Never split.
     Sequential,
 
-    // Default: weights determined by current pool load.
+    // Decide from how loaded the pool is at the time.
     Adaptive,
 };
 
@@ -305,32 +277,19 @@ struct AutoSplitOnlineCalibrator {
     [[nodiscard]] std::uint64_t sample_count() const noexcept { return samples.load(std::memory_order_relaxed); }
 
 private:
-    // fixy-V-206 (Agent 7 Bug #2): replace the relaxed read-modify-write
-    // race with an acq_rel compare_exchange_weak loop.  The prior shape
-    // `load(relaxed) → compute → store(relaxed)` loses a sample whenever
-    // two threads call `record_dispatch` concurrently — statistically OK
-    // for an EWMA but NOT deterministic, and the cost model on
-    // AdaptiveScheduler reads this value to choose parallel-vs-sequential.
-    // A lost sample skews the rule's view of recent dispatch cost.
-    //
-    // The CAS loop preserves the same EWMA formula
-    //     next = (old==0) ? observed : (old*15 + observed) / 16
-    // but retries on contention, so every sample lands.  acq_rel covers
-    // both the producer's write-visibility (release on success) and the
-    // reader's view of prior history (acquire on the eventual settled
-    // value).  acquire on retry ensures we re-read the freshly-committed
-    // `old` from the other writer before recomputing `next`.
+    // A plain load, compute and store would drop a sample whenever two
+    // threads record at once.  That is tolerable for a moving average but not
+    // reproducible, and the split-or-not decision reads this value.  The
+    // compare-exchange retries instead, so every sample lands.  Release on
+    // success publishes the new average, acquire on failure re-reads the
+    // value the other writer just committed before recomputing from it.
     static void mix_(std::atomic<std::uint64_t>& target, std::uint64_t observed) noexcept {
         std::uint64_t old = target.load(std::memory_order_acquire);
         std::uint64_t next;
         do {
-            // EWMA: (old * 15 + observed) / 16.  Saturating multiply +
-            // saturating add preserve the V-pre-206 overflow-clamps-to-
-            // MAX semantics — a sustained run of large `observed` values
-            // pins the EWMA at UINT64_MAX rather than wrapping to a
-            // tiny number that would flip parallel-vs-sequential mid-
-            // run.  Right-shift by 4 is the unsigned `/16` the prior
-            // shape used; for `uint64_t` this is exactly equivalent.
+            // The arithmetic saturates: a long run of very large samples
+            // pins the average at the maximum instead of wrapping to a small
+            // number, which would flip the split-or-not decision mid-run.
             const std::uint64_t weighted = autosplit_detail::saturating_mul_u64(old, 15);
             next = (old == 0) ? observed : autosplit_detail::saturating_add_u64(weighted, observed) >> 4;
         } while (!target.compare_exchange_weak(old, next, std::memory_order_acq_rel, std::memory_order_acquire));
@@ -342,22 +301,19 @@ struct AutoSplitRouterState {
     AutoSplitOnlineCalibrator calibrator{};
 };
 
-// Runtime profile.  `dispatch_cost_ns` is the empirical per-shard cost
-// of submitting a Pool task and joining on `wait_idle()` — observed
-// from bench_auto_split.cpp at ~5-15 µs/shard on 4-core Pool<Fifo>.
-// The default is conservative (10 µs/shard) — tasks must save at least
-// 10% of sequential wall time after paying this cost to be picked.
+// The dispatch cost is what it takes to hand one shard to the pool and later
+// join it, measured rather than assumed.  Its default is deliberately on the
+// high side, so a workload has to clear a real margin before it splits.
 //
-// `min_efficiency_pct` gates parallel decisions for Throughput intent:
-// a fanout F is acceptable only if `efficiency(F) >= min_efficiency_pct`.
-// Default 70% — i.e. workers must on average do at least 70% useful work
-// (not waiting on dispatch overhead).  Below that, fanout is a system-
-// throughput regression even when wall time wins.
+// The efficiency floor is the share of a worker's time that must go into the
+// body rather than into being dispatched.  Below it, splitting costs the
+// system more throughput than it returns to this caller, even where it does
+// shorten this caller's wall time.
 struct AutoSplitRuntimeProfile {
     AutoRouteRuntimeProfile route{};
     std::size_t available_workers = 1;
-    std::uint64_t dispatch_cost_ns = 10'000;  // 10 µs / shard fanout
-    std::uint32_t min_efficiency_pct = 70;  // 70% efficiency floor
+    std::uint64_t dispatch_cost_ns = 10'000;
+    std::uint32_t min_efficiency_pct = 70;
 };
 
 namespace autosplit_detail {
@@ -379,22 +335,20 @@ apply_pool_pressure(SchedulingIntent intent, AutoSplitRuntimeProfile profile, st
 
 }  // namespace autosplit_detail
 
-// Request.  `per_item_compute_ns` is OPTIONAL; when zero, the planner
-// uses the byte-tier rule alone (current behavior).  When nonzero, the
-// planner runs break-even against `dispatch_cost_ns` and may downgrade
-// shard_count to 1 if fanout doesn't pay.  This is how callers escape
-// the byte-tier trap for memory-shaped workloads where per-item compute
-// is far smaller than the bytes-touched would suggest.
+// A per-item compute estimate is optional.  Left at zero, the plan follows
+// from the footprint alone.  Supplied, it also has to clear the break-even
+// against dispatch cost.  That is the escape for work whose bytes touched
+// suggest far more compute than it actually performs.
 struct AutoSplitRequest {
     std::size_t item_count = 0;
     std::size_t bytes_per_item = 0;
     std::size_t max_shards = 16;
     std::size_t producers = 1;
     std::size_t consumers = 1;
-    std::uint64_t per_item_compute_ns = 0;  // 0 = byte-tier rule only
+    std::uint64_t per_item_compute_ns = 0;
     SchedulingIntent intent = SchedulingIntent::Throughput;
-    bool touches_memory = false;  // bandwidth-shaped work
-    bool is_io_bound = false;  // wait/IO dominated work
+    bool touches_memory = false;
+    bool is_io_bound = false;
 };
 
 [[nodiscard]] constexpr std::uint64_t auto_split_shape_key(AutoSplitRequest request, AutoSplitRuntimeProfile profile,
@@ -424,58 +378,34 @@ struct AutoSplitRequest {
     return key;
 }
 
-// ── Type-level routing — the cheap signal layer ──────────────────────
-//
-// The byte-tier rule + break-even gate are both *runtime* analyses that
-// need numbers (bytes, ns/item, dispatch cost).  This layer sits BELOW
-// them: it asks the type system what it already knows.
-//
-// A body type can:
-//   • Specialize `workload_traits<Body>` to advertise its shape.
-//   • Inherit from `AutoSplitWorkloadTagged<Hint{...}>` to declare directly.
-//   • Get auto-inferred properties (is_empty_v → stateless → suggest
-//     sequential; sizeof > 256 → heavy capture → cap shards) for free.
-//
-// When `dispatch_auto_split_typed(...)` is called, the planner consults
-// the merged hint at compile time and adjusts the request before
-// running the byte-tier rule.  Zero runtime cost — the entire trait
-// pipeline is consteval.
+// The footprint rule and the break-even both need numbers only the call site
+// has.  What follows sits underneath them and asks the type system what it
+// already knows, before any of those numbers are needed.
 
 enum class HintDirective : std::uint8_t {
-    None,  // No opinion — defer to byte-tier + break-even
-    PreferSequential,  // Body wants inline; planner forces shard=1
-    PreferParallel,  // Body wants fanout; planner skips break-even
-    ByteTierWithCompute,  // Run byte-tier, apply break-even at per_item_ns
+    None,  // decide from the numbers alone
+    PreferSequential,  // never split
+    PreferParallel,  // split without consulting break-even
+    ByteTierWithCompute,  // decide from the footprint, then check break-even
 };
 
 struct AutoSplitWorkloadHint {
     HintDirective directive = HintDirective::None;
-    // Per-item cost estimate the body advertises.  Used by break-even
-    // when directive==ByteTierWithCompute (or as a fallback when the
-    // request didn't supply a hint).
+    // What the body says one item costs, used when the call site says nothing.
     std::uint64_t per_item_ns = 0;
-    // The maximum number of shards this body can usefully consume.
-    // 0 = no opinion.  Used to clamp request.max_shards from above —
-    // e.g. a body with heavy captures (sizeof > 256) might prefer
-    // ≤ 4 shards to avoid 16× lambda copies on the queue.
+    // A ceiling the body puts on its own fanout, zero meaning no opinion.  A
+    // body with large captures wants a low one, since each shard copies it.
     std::size_t max_natural_shards = 0;
-    // Caller's appetite for parallelism.  When the body's hint differs
-    // from the request's intent, the request wins (caller knows context
-    // the body author can't); the body's hint applies only when caller
-    // didn't override.  Default Throughput keeps the system-throughput-
-    // friendly efficiency gate active.
+    // Applies only where the call site left its own intent at the default.
+    // The caller knows the context the body's author cannot.
     SchedulingIntent intent = SchedulingIntent::Throughput;
-    // Body declares it's free of side effects — fanout always safe.
     bool is_pure = false;
-    // Body touches memory significantly (mem-bound).  Hints that
-    // parallel mem fanout helps hide DRAM latency.
     bool touches_memory = false;
-    // Body has IO/Block effects.  Hints that the workload is latency-
-    // bound, not compute-bound; can fan out PAST core_count.
+    // Waiting rather than computing, so it can spread wider than the core
+    // count.
     bool is_io_bound = false;
 };
 
-// Default trait — no opinion.  The router falls through to byte-tier.
 template <typename Body>
 struct workload_traits {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept { return AutoSplitWorkloadHint{}; }
@@ -713,17 +643,13 @@ struct workload_traits<::crucible::effects::Computation<Row, T>> {
 template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
 struct workload_traits<::crucible::effects::ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>> {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept {
-        // Progress is not consumed by hint_from_exec_ctx_axes — the
-        // scheduler hint surface (Latency/Throughput/Locality) is
-        // orthogonal to termination class.  Progress affects the
-        // Hot×Progress coherence rule in ExecCtx itself, not the
-        // workload-fanout decision.  fixy-A3-027.
+        // The progress axis is deliberately not read here.  Whether a body
+        // terminates says nothing about whether splitting it pays, and that
+        // axis is answered against the context itself.
         return autosplit_detail::hint_from_exec_ctx_axes<Heat, Resid, Row, Workload>();
     }
 };
 
-// CRTP-style base for bodies that want to declare a hint inline:
-//   struct MyBody : AutoSplitWorkloadTagged<{.directive = HintDirective::PreferParallel}> { ... };
 template <AutoSplitWorkloadHint H>
 struct AutoSplitWorkloadTagged {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint workload_hint() noexcept { return H; }
@@ -731,7 +657,6 @@ struct AutoSplitWorkloadTagged {
 
 namespace autosplit_detail {
 
-// Concept that fires when a Body inherits AutoSplitWorkloadTagged.
 template <typename Body>
 concept HasInlineWorkloadHint = requires {
     { std::decay_t<Body>::workload_hint() } -> std::same_as<AutoSplitWorkloadHint>;
@@ -739,35 +664,21 @@ concept HasInlineWorkloadHint = requires {
 
 }  // namespace autosplit_detail
 
-// Merge: explicit specialization > CRTP-inherited > auto-inferred.
-//
-// Auto-inference rules (cheap, no opt-in needed):
-//   • std::is_empty_v<Body> → stateless lambda / functor — no captures
-//     means there's no per-instance state to fan out, suggest sequential.
-//   • sizeof(Body) > 256    → heavy captures; cap shards at 4 to avoid
-//     ballooning task-queue bytes when the lambda is copied N times.
-//   • is_trivially_copyable_v<Body> → cheap to fan out (just memcpy).
+// An explicit trait beats an inherited hint, which beats what the body's own
+// type gives away.
 template <typename Body>
 [[nodiscard]] consteval AutoSplitWorkloadHint infer_workload_hint() noexcept {
     using B = std::decay_t<Body>;
 
-    // 1. Check for explicit specialization of workload_traits.
     AutoSplitWorkloadHint hint = workload_traits<B>::hint();
 
-    // 2. CRTP-inherited inline hint takes precedence over auto-inference.
     if constexpr (autosplit_detail::HasInlineWorkloadHint<B>) {
         const AutoSplitWorkloadHint inline_hint = B::workload_hint();
         hint = autosplit_detail::merge_hints(hint, inline_hint);
     }
 
-    // 2b. Router-friendly body metadata.  Bodies can surface a
-    // call-site context or payload wrapper without specializing the
-    // whole body type:
-    //
-    //   using exec_ctx_type = effects::BgCompileCtx;
-    //   using value_type    = safety::ResidencyHeat<Cold, Payload>;
-    //
-    // Both are pure type-level declarations and fold before runtime.
+    // A body can name its context or its payload wrapper instead of
+    // specializing the trait for its whole type.
     if constexpr (autosplit_detail::DeclaresExecCtxType<B>) {
         static_assert(::crucible::effects::IsExecCtx<typename B::exec_ctx_type>,
                       "AutoSplit body exec_ctx_type must satisfy "
@@ -779,18 +690,15 @@ template <typename Body>
         hint = autosplit_detail::merge_hints(hint, workload_traits<typename B::value_type>::hint());
     }
 
-    // 3. Auto-inference from type properties — zero opt-in cost.
     if constexpr (std::is_empty_v<B>) {
-        // Stateless body — no captures means no per-shard state to
-        // distribute.  Probably a marker / no-op.  Default to seq.
+        // Nothing captured means nothing to divide between shards.
         if (hint.directive == HintDirective::None) {
             hint.directive = HintDirective::PreferSequential;
         }
     }
     if constexpr (sizeof(B) > 256) {
-        // Heavy captures; copying the body 16 times into the task queue
-        // is wasteful.  Cap natural shards at 4 unless the body said
-        // otherwise.
+        // Large captures: each shard copies the body onto the queue, so keep
+        // the count of copies down.
         if (hint.max_natural_shards == 0) {
             hint.max_natural_shards = 4;
         }
@@ -873,7 +781,7 @@ concept AutoSplitShardBody =
                     .huge_shards = 16,
                 },
             .available_workers = std::max<std::size_t>(1, topology.process_cpu_count()),
-            .dispatch_cost_ns = 10'000,  // 10 µs/shard — empirical Pool fanout cost
+            .dispatch_cost_ns = 10'000,
         };
     }();
     return profile;
@@ -941,44 +849,35 @@ auto_split_runtime_profile_from_topology_snapshot(Topology::Snapshot snapshot) n
     const std::size_t item_cap = request.item_count == 0 ? 0 : std::max<std::size_t>(1, request.item_count);
     std::size_t shard_count = item_cap == 0 ? 0 : std::min({route_factor, hard_cap, item_cap});
 
-    // Intent gate.  Sequential intent always collapses; that's the
-    // contract callers rely on for hot-path-typed bodies.
+    // A sequential intent always collapses.  Bodies typed onto the hot path
+    // rely on that.
     if (request.intent == SchedulingIntent::Sequential) {
         shard_count = std::min<std::size_t>(shard_count, 1);
     }
 
-    // Break-even gate.  When the caller supplies per_item_compute_ns,
-    // override the byte-tier choice with a wall-time model: prefer
-    // sequential when fanout overhead dominates the parallel speedup.
-    // LatencyCritical intent SKIPS this gate — it accepts CPU cost in
-    // exchange for wall-time wins.
+    // Where the caller gave a compute estimate, wall time overrides the
+    // choice the footprint made.  A caller on a deadline skips this: it has
+    // already said it will pay CPU for finish time.
     if (request.intent != SchedulingIntent::LatencyCritical && !request.is_io_bound
         && autosplit_detail::break_even_prefers_sequential(request.item_count, request.per_item_compute_ns,
                                                            profile.dispatch_cost_ns, shard_count)) {
         shard_count = 1;
     }
 
-    // Efficiency gate.  When the caller's intent values system
-    // throughput (Throughput / Background / Adaptive), the planner
-    // refuses fanout where parallel CPU efficiency drops below the
-    // profile's floor — i.e. where workers spend more time on
-    // dispatch/sync than on real work.
+    // A caller that values system throughput refuses a split whose workers
+    // would spend more time being dispatched than working.  The loop walks
+    // down to the widest split that clears the floor.
     //
-    // Skipped for LatencyCritical (caller accepts low-efficiency
-    // fanout to hit deadlines) and Sequential (already collapsed).
-    //
-    // Implementation walks down from `shard_count` to find the largest
-    // F that meets the efficiency floor.  When per_item_compute_ns is
-    // 0 (no compute hint), efficiency_pct returns 0 for every F > 1
-    // and the gate would always force sequential — so we only apply
-    // it when the caller actually provided a hint.
+    // Without a compute estimate the efficiency is zero for every split, so
+    // the gate would collapse everything: it runs only where the caller
+    // supplied one.
     if (request.per_item_compute_ns > 0 && !memory_bandwidth_candidate && !request.is_io_bound
         && request.intent != SchedulingIntent::LatencyCritical && request.intent != SchedulingIntent::Sequential) {
         while (shard_count > 1
                && autosplit_detail::efficiency_pct(request.item_count, request.per_item_compute_ns,
                                                    profile.dispatch_cost_ns, shard_count)
                       < profile.min_efficiency_pct) {
-            shard_count >>= 1;  // halve and retry; converges in log2(F) steps
+            shard_count >>= 1;
             if (shard_count == 0) shard_count = 1;
         }
     }
@@ -1020,13 +919,9 @@ auto_split_runtime_profile_from_topology_snapshot(Topology::Snapshot snapshot) n
     return auto_split_plan(request, auto_split_runtime_profile_once());
 }
 
-// Build a plan with an EXPLICIT shard count, bypassing the byte-tier
-// rule and the break-even model entirely.  Use this when the caller has
-// out-of-band knowledge that overrides the planner — for example, A/B
-// experiments comparing fixed factors against the router's choice.
-//
-// `factor` is clamped to `[1, item_count]`.  factor=0 collapses to an
-// empty plan (consistent with `auto_split_plan` when item_count == 0).
+// Takes the shard count as given and skips every gate above.  It exists for
+// callers holding knowledge the planner does not, and for measuring a fixed
+// count against the one the planner would have chosen.
 [[nodiscard]] constexpr AutoSplitPlan auto_split_plan_at_factor(AutoSplitRequest request, std::size_t factor,
                                                                 AutoSplitRuntimeProfile profile = {}) noexcept {
     if (request.item_count == 0 || factor == 0) {
@@ -1158,10 +1053,8 @@ template <typename Policy, typename Job>
     return dispatch_auto_split(pool, request, auto_split_runtime_profile_once(), std::forward<Job>(job));
 }
 
-// Dispatch a request through an explicit fixed `factor`, bypassing the
-// router.  Used by A/B harnesses that compare router-chosen factors
-// against handpicked factors.  factor=1 runs the body inline on the
-// caller; factor>1 fans out to the pool with strided shard coverage.
+// The dispatching counterpart of the fixed-count plan above.  A count of one
+// runs the body on the calling thread.
 template <typename Policy, typename Job>
     requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
 [[nodiscard]] AutoSplitDispatchResult dispatch_at_factor(Pool<Policy>& pool, AutoSplitRequest request,
@@ -1196,8 +1089,8 @@ template <typename Policy, typename Job>
         };
     }
 
-    // Force exactly `plan.shard_count` workers via WorkloadProfile —
-    // ParallelismRule::recommend may pick less, but we cap explicitly.
+    // Ask for exactly the planned count.  The pool's own rule may still
+    // recommend fewer.
     WorkloadProfile profile = WorkloadProfile::from_budget(
         WorkBudget{
             .read_bytes = plan.total_bytes,
@@ -1206,11 +1099,9 @@ template <typename Policy, typename Job>
         },
         plan.shard_count, plan.decision.numa);
 
-    // The split_job is self-balancing: when only ONE worker runs it
-    // (because ParallelismRule::recommend collapses to Sequential
-    // despite our cap), the strided loop still walks every shard
-    // index.  So the body always sees every shard exactly once,
-    // regardless of how many workers are active.
+    // The stride makes the job self-balancing.  However many workers actually
+    // run it, between them they walk every shard index exactly once, so a
+    // single worker still covers the whole range.
     auto split_job = [plan, fn = std::decay_t<Job>{std::forward<Job>(job)}](WorkShard worker) mutable {
         const std::size_t worker_count = std::max<std::size_t>(1, worker.count);
         for (std::size_t i = worker.index; i < plan.shard_count; i += worker_count) {
@@ -1224,46 +1115,23 @@ template <typename Policy, typename Job>
     };
 }
 
-// ── Type-level dispatch — the "router-friendly by construction" entry ──
-//
-// `dispatch_auto_split_typed<Body>(pool, request, body)` consults the
-// body type's `AutoSplitWorkloadHint` AT COMPILE TIME and folds it into the
-// request before running the planner.  The router becomes a stack of
-// `if constexpr` checks the optimizer collapses; for bodies with a
-// declared hint, the runtime cost approaches zero.
-//
-// Caller's request fields ALWAYS WIN over body hints — the body author
-// can't know the calling context.  Body hint provides defaults when the
-// caller didn't override.
-//
-// Tier 0 short-circuits land here:
-//   • `is_empty_v<Body>`    → infer_workload_hint sets PreferSequential
-//   • inline `AutoSplitWorkloadTagged<{...}>` → caller intent / per_item_ns
-//   • `workload_traits<B>::hint()` → explicit specialization
-//
-// All three combine in `infer_workload_hint`; this function just
-// applies the merged result to the request before calling the cost
-// model.  Zero runtime cost beyond the existing `auto_split_plan`.
+// What the call site asked for wins over what the body's type suggests.  The
+// body's author cannot know the context it is called from.
 
 [[nodiscard]] constexpr AutoSplitRequest merge_request_with_hint(AutoSplitRequest req,
                                                                  AutoSplitWorkloadHint hint) noexcept {
-    // Hint's directive forces the strongest signal it can:
     if (hint.directive == HintDirective::PreferSequential) {
         req.intent = SchedulingIntent::Sequential;
     }
-    // Explicit Sequential intent always sticks; PreferParallel only
-    // upgrades when the caller didn't already declare LatencyCritical
-    // or Sequential (those carry user-meaningful semantics we don't
-    // override).
+    // A caller that named a deadline, or named sequential, meant it.  The
+    // body's preference for splitting does not overrule either.
     if (hint.directive == HintDirective::PreferParallel && req.intent != SchedulingIntent::Sequential
         && req.intent != SchedulingIntent::LatencyCritical) {
         req.intent = SchedulingIntent::LatencyCritical;
     }
-    // Body's per-item ns fills in only when caller didn't supply one.
     if (req.per_item_compute_ns == 0 && hint.per_item_ns > 0) {
         req.per_item_compute_ns = hint.per_item_ns;
     }
-    // Body's natural shard ceiling clamps the request from above.
     if (hint.max_natural_shards > 0) {
         req.max_shards = std::min(req.max_shards, hint.max_natural_shards);
     }
@@ -1292,10 +1160,6 @@ template <typename Policy, typename Job>
     return dispatch_auto_split_typed(pool, request, auto_split_runtime_profile_once(), std::forward<Job>(job));
 }
 
-// ── Plan-only typed query (no dispatch) ────────────────────────────
-//
-// Useful for benches and tests that need to inspect the plan without
-// running it.  Same compile-time fold as dispatch_auto_split_typed.
 template <typename Body>
 [[nodiscard]] constexpr AutoSplitPlan auto_split_plan_typed(AutoSplitRequest request,
                                                             AutoSplitRuntimeProfile profile = {}) noexcept {

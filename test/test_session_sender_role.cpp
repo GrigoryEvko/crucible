@@ -1,27 +1,8 @@
-// Compile-time witnesses for Sender<Role> annotation on Offer<> (#367).
-//
-// In MPST (Honda-Yoshida-Carbone 2008), a role's projected local
-// protocol can contain multiple Offer<> nodes whose senders are
-// different remote roles.  Crash analysis must ask "does THIS Offer
-// need a Recv<Crash<PeerTag>, _> branch?" — the answer is YES only
-// when PeerTag is the Offer's declared sender.
-//
-// This file pins down:
-//   * Offer<Sender<Role>, ...> carries sender = Role (offer_sender_t).
-//   * Offer<Branches...> without the tag carries sender = AnonymousPeer.
-//   * branch_count / branches_tuple exclude the Sender<> tag for the
-//     annotated form (the real branches only).
-//   * has_crash_branch_for_peer_v is vacuously true when sender ≠
-//     queried PeerTag ("not your peer, not your problem").
-//   * every_offer_has_crash_branch_for_peer_v walks the tree and
-//     skips Offers from peers other than PeerTag — an MPST
-//     protocol with Offers from Alice AND Bob, where the Alice
-//     Offers all handle Alice's crash, passes the Alice check even
-//     if the Bob Offers don't handle Alice's crash.
-//   * compose / compose_at_branch preserve the Sender<Role> tag
-//     through type-level rewrites.
-//
-// Runtime main() just prints PASSED — all claims are static_asserts.
+// A role's projected local protocol can hold several Offer nodes whose
+// senders are different remote roles.  Crash analysis asks of each one
+// whether it needs a branch for a given peer's crash, and the answer is
+// yes only when that peer is the Offer's declared sender.  Everything
+// below turns on that single asymmetry.
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
@@ -34,157 +15,96 @@ namespace {
 
 using namespace crucible::safety::proto;
 
-// Role tags — phantom types (no storage, no members).
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 struct Carol {};
 
-// Message payloads.
 struct Msg {};
 struct Ack {};
 
-// ── Baseline: sender extraction ──────────────────────────────────
+static_assert(std::is_same_v<offer_sender_t<Offer<Recv<Msg, End>, Recv<Ack, End>>>, AnonymousPeer>,
+              "Unannotated Offer<> should resolve to AnonymousPeer sender");
 
-static_assert(std::is_same_v<
-    offer_sender_t<Offer<Recv<Msg, End>, Recv<Ack, End>>>,
-    AnonymousPeer>,
-    "Unannotated Offer<> should resolve to AnonymousPeer sender");
-
-static_assert(std::is_same_v<
-    offer_sender_t<Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>,
-    Alice>,
-    "Annotated Offer<Sender<Alice>, ...> should resolve to Alice");
-
-// ── branch_count / branches_tuple transparency ───────────────────
+static_assert(std::is_same_v<offer_sender_t<Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>, Alice>,
+              "Annotated Offer<Sender<Alice>, ...> should resolve to Alice");
 
 using UnannotatedOffer = Offer<Recv<Msg, End>, Recv<Ack, End>>;
-using AnnotatedOffer   = Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>;
+using AnnotatedOffer = Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>;
 
 static_assert(UnannotatedOffer::branch_count == 2);
-static_assert(AnnotatedOffer::branch_count   == 2,
-    "Sender<Role> tag must not be counted as a branch");
+static_assert(AnnotatedOffer::branch_count == 2, "Sender<Role> tag must not be counted as a branch");
 
-static_assert(std::is_same_v<
-    AnnotatedOffer::branches_tuple,
-    std::tuple<Recv<Msg, End>, Recv<Ack, End>>>,
-    "branches_tuple excludes the Sender<Role> tag");
+static_assert(std::is_same_v<AnnotatedOffer::branches_tuple, std::tuple<Recv<Msg, End>, Recv<Ack, End>>>,
+              "branches_tuple excludes the Sender<Role> tag");
 
-// ── has_crash_branch_for_peer: annotated Offer, sender matches ──
-
-// Annotated Offer FROM Alice WITH Crash<Alice> branch — OK.
-using AliceOfferWithCrash = Offer<Sender<Alice>,
-    Recv<Msg, End>,
-    Recv<Crash<Alice>, End>>;
+using AliceOfferWithCrash = Offer<Sender<Alice>, Recv<Msg, End>, Recv<Crash<Alice>, End>>;
 static_assert(has_crash_branch_for_peer_v<AliceOfferWithCrash, Alice>);
 
-// Annotated Offer FROM Alice WITHOUT Crash<Alice> branch — FAIL.
-using AliceOfferNoCrash = Offer<Sender<Alice>,
-    Recv<Msg, End>,
-    Recv<Ack, End>>;
+using AliceOfferNoCrash = Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>;
 static_assert(!has_crash_branch_for_peer_v<AliceOfferNoCrash, Alice>);
 
-// ── has_crash_branch_for_peer: annotated Offer, sender mismatch ──
-
-// Annotated Offer FROM Alice — no obligation toward Bob's crash
-// branch.  Vacuously true.
 static_assert(has_crash_branch_for_peer_v<AliceOfferNoCrash, Bob>,
-    "Offer<Sender<Alice>, ...> is not Bob's Offer — vacuously crash-safe for Bob");
+              "an Offer from Alice is not Bob's Offer, so it is vacuously "
+              "crash-safe for Bob");
 
-// Same: Offer from Bob is not Alice's Offer — vacuous.
-using BobOfferNoCrash = Offer<Sender<Bob>,
-    Recv<Msg, End>,
-    Recv<Ack, End>>;
+// An Offer from Bob carries no obligation toward Alice or Carol either.
+using BobOfferNoCrash = Offer<Sender<Bob>, Recv<Msg, End>, Recv<Ack, End>>;
 static_assert(has_crash_branch_for_peer_v<BobOfferNoCrash, Alice>);
 static_assert(has_crash_branch_for_peer_v<BobOfferNoCrash, Carol>);
 
-// ── every_offer_has_crash_branch_for_peer: whole-tree ────────────
-
-// MPST-style composed protocol: first Offer from Alice with her
-// crash branch, then an Offer from Bob with his crash branch,
-// then End.  Alice-check and Bob-check both pass; Carol-check
-// vacuously passes (neither Offer is from Carol).
-using MpstCrashSafe = Offer<Sender<Alice>,
-    Recv<Msg, Offer<Sender<Bob>,
-        Recv<Ack, End>,
-        Recv<Crash<Bob>, End>>>,
-    Recv<Crash<Alice>, End>>;
+using MpstCrashSafe =
+    Offer<Sender<Alice>, Recv<Msg, Offer<Sender<Bob>, Recv<Ack, End>, Recv<Crash<Bob>, End>>>, Recv<Crash<Alice>, End>>;
 
 static_assert(every_offer_has_crash_branch_for_peer_v<MpstCrashSafe, Alice>);
 static_assert(every_offer_has_crash_branch_for_peer_v<MpstCrashSafe, Bob>);
 static_assert(every_offer_has_crash_branch_for_peer_v<MpstCrashSafe, Carol>,
-    "Neither Offer is from Carol — every-Offer predicate is vacuous");
+              "neither Offer is from Carol, so the whole-tree predicate is vacuous");
 
-// Alice-check fails if the Alice Offer drops its Crash<Alice> branch.
-using MpstAliceMissing = Offer<Sender<Alice>,
-    Recv<Msg, Offer<Sender<Bob>,
-        Recv<Ack, End>,
-        Recv<Crash<Bob>, End>>>,
-    Recv<Ack, End>>;
+// The Alice check fails once Alice's own Offer drops her crash branch.
+using MpstAliceMissing =
+    Offer<Sender<Alice>, Recv<Msg, Offer<Sender<Bob>, Recv<Ack, End>, Recv<Crash<Bob>, End>>>, Recv<Ack, End>>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<MpstAliceMissing, Alice>);
-// Bob-check still passes on MpstAliceMissing — Bob's Offer is intact.
+// The Bob check still passes on the same tree, because Bob's Offer is
+// intact.
 static_assert(every_offer_has_crash_branch_for_peer_v<MpstAliceMissing, Bob>);
 
-// ── compose preserves Sender<Role> ───────────────────────────────
-
-// compose<Offer<Sender<Alice>, Send<Msg, End>, Send<Ack, End>>, Recv<Ack, End>>
-//   == Offer<Sender<Alice>, Send<Msg, Recv<Ack, End>>, Send<Ack, Recv<Ack, End>>>
-using ComposedAnn = compose_t<
-    Offer<Sender<Alice>, Send<Msg, End>, Send<Ack, End>>,
-    Recv<Ack, End>>;
-using ExpectedComposedAnn = Offer<Sender<Alice>,
-    Send<Msg, Recv<Ack, End>>,
-    Send<Ack, Recv<Ack, End>>>;
+using ComposedAnn = compose_t<Offer<Sender<Alice>, Send<Msg, End>, Send<Ack, End>>, Recv<Ack, End>>;
+using ExpectedComposedAnn = Offer<Sender<Alice>, Send<Msg, Recv<Ack, End>>, Send<Ack, Recv<Ack, End>>>;
 static_assert(std::is_same_v<ComposedAnn, ExpectedComposedAnn>,
-    "compose into annotated Offer must preserve Sender<Role>");
+              "compose into annotated Offer must preserve Sender<Role>");
 
-// ── compose_at_branch preserves Sender<Role> ─────────────────────
-
-// Replace branch 1 (index 1) of an annotated Offer.
-// Branches are counted WITHOUT the tag — so index 1 is "Send<Ack, End>".
-using RewrittenAnn = compose_at_branch_t<
-    Offer<Sender<Bob>, Send<Msg, End>, Send<Ack, End>>,
-    /*I=*/ 1,
-    Recv<Msg, End>>;
-using ExpectedRewrittenAnn = Offer<Sender<Bob>,
-    Send<Msg, End>,
-    Send<Ack, Recv<Msg, End>>>;
+// The index counts real branches and skips the sender tag, so 1 selects
+// the second Send.
+using RewrittenAnn = compose_at_branch_t<Offer<Sender<Bob>, Send<Msg, End>, Send<Ack, End>>,
+                                         /*I=*/1, Recv<Msg, End>>;
+using ExpectedRewrittenAnn = Offer<Sender<Bob>, Send<Msg, End>, Send<Ack, Recv<Msg, End>>>;
 static_assert(std::is_same_v<RewrittenAnn, ExpectedRewrittenAnn>,
-    "compose_at_branch on annotated Offer indexes over real branches and preserves Sender<Role>");
+              "compose_at_branch on annotated Offer indexes over real branches and preserves Sender<Role>");
 
-// ── dual_of drops the sender tag (2-party dual semantics) ────────
-// fixy-CR-11: the drop breaks involution dual(dual(P)) == P.
-// is_dual_involutive_v reports false on this shape so generic
-// rewriting code can refuse the protocol; full symmetry waits on
-// a `Recipient<Role>` annotation for Select (deferred follow-up).
-
+// Taking the dual drops the sender tag, which breaks involution: the dual
+// of the dual is no longer the original protocol.  A trait reports that,
+// so generic rewriting code can refuse such a shape rather than silently
+// losing the annotation.
 using AnnDual = dual_of_t<Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>;
 using ExpectedAnnDual = Select<Send<Msg, End>, Send<Ack, End>>;
 static_assert(std::is_same_v<AnnDual, ExpectedAnnDual>,
-    "dual_of<Offer<Sender<Role>, ...>> drops the sender tag — MPST dual "
-    "is role-dependent and handled by projection machinery, not 2-party dual");
-static_assert(!is_dual_involutive_v<
-    Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>,
-    "fixy-CR-11: Sender-annotated Offer is not dual-involutive; "
-    "the trait surfaces the asymmetry to generic code.");
-static_assert(is_dual_involutive_v<Offer<Recv<Msg, End>, Recv<Ack, End>>>,
-    "fixy-CR-11: un-annotated Offer remains dual-involutive.");
-static_assert(is_dual_involutive_v<Send<Msg, End>>,
-    "fixy-CR-11: closed-core protocols are dual-involutive.");
+              "taking the dual of a sender-annotated Offer drops the tag; the "
+              "role-dependent dual belongs to the projection machinery");
+static_assert(!is_dual_involutive_v<Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>,
+              "a sender-annotated Offer is not dual-involutive, and the trait must "
+              "surface that asymmetry to generic code");
+static_assert(is_dual_involutive_v<Offer<Recv<Msg, End>, Recv<Ack, End>>>, "an unannotated Offer is dual-involutive");
+static_assert(is_dual_involutive_v<Send<Msg, End>>, "a closed-core protocol is dual-involutive");
 static_assert(is_dual_involutive_v<Loop<Select<Send<Msg, Continue>, End>>>,
-    "fixy-CR-11: Loop/Select recurses correctly through is_dual_involutive.");
+              "the trait recurses through Loop and Select");
 
-// ── is_empty_choice: annotated-but-empty Offer is still empty ────
-
-static_assert(is_empty_choice_v<Offer<>>,
-    "Unannotated empty Offer is empty (existing behavior)");
+static_assert(is_empty_choice_v<Offer<>>, "an unannotated Offer with no branches is empty");
 static_assert(is_empty_choice_v<Offer<Sender<Alice>>>,
-    "Annotated Offer with no branches is ALSO empty — no runnable "
-    "handle should be constructible on it");
-
-// ── is_well_formed: ignores the Sender<Role> tag ─────────────────
+              "an annotated Offer with no branches is empty too, and no runnable "
+              "handle may be constructible on it");
 
 static_assert(is_well_formed_v<Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>,
-    "Well-formed annotated Offer stays well-formed");
+              "the sender tag does not disturb well-formedness");
 
 }  // namespace
 

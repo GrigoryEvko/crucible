@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P sk_msg credit gate stub.
- *
- * Future role: enforce app-level send credit at a sockmap/sk_msg boundary.
- * Current behavior: pass every message.
- */
-
 #include "common.h"
 
 #ifndef SK_PASS

@@ -1,73 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// crucible::decide::oracle::* — slow reference implementations of
-// every fuzzable `crucible::decide::*` procedure.
+// Slow reference implementations of the fuzzable predicate procedures.  A fuzz
+// harness compares each production answer against the matching oracle here.
 //
-// PURPOSE
-// -------
-// Decide's production procedures are clever: they use compiler
-// builtins (`__builtin_mul_overflow`), single-pass loops with
-// short-circuit early-exit, sort-and-sweep algorithms, Euclidean
-// GCD.  Cleverness is a bug surface.  The CONTRACT-090 fuzz
-// harness verifies that for every fuzzed input pair (or n-tuple),
-// the production procedure's answer matches a deliberately SLOW
-// but TRANSPARENTLY CORRECT reference implementation.
+// Rules for adding an oracle:
 //
-// ORACLE DESIGN PRINCIPLES
-// ------------------------
+//   1. Reach the answer by a different computational path than the production
+//      procedure.  An oracle that mirrors the production body proves nothing.
+//   2. Prefer the transparent form over the fast one.  An oracle is the spec.
+//      A reviewer must agree with it by inspection.
+//   3. Be total.  Every input returns a defined bool, with no undefined
+//      behaviour and no precondition to violate.
+//   4. Do not guard an oracle with a predicate from the production library.
+//      The oracle is the definition of that predicate, so the guard would be
+//      circular.
 //
-//   1. Different algorithm.  An oracle that re-uses the production
-//      impl's body is tautological.  Oracles ALWAYS use a different
-//      computational path:
-//        * For `no_overflow_mul<T>`: widen to `int128_t` (or
-//          `__int128`) and check the result range.
-//        * For `coprime`: trial-divide instead of Euclidean.
-//        * For `intervals_pairwise_disjoint`: O(n²) all-pairs
-//          overlap check instead of sort+sweep.
-//        * For span-based folds: hand-rolled loop (the production
-//          impl IS the loop, but the oracle re-derives the answer
-//          via a transparently inefficient path: count truths, OR
-//          all values, etc.).
-//
-//   2. Obviously correct.  An oracle is the spec, not optimized
-//      code.  Each oracle is short enough that a reviewer reads it
-//      once and agrees by inspection that it computes the predicate
-//      definition.
-//
-//   3. Total.  Same total-function-of-inputs contract as the
-//      production procedures: every input returns a defined bool,
-//      no UB, no contract preconditions to violate.
-//
-//   4. Header-only.  Oracles inline cleanly into the fuzz harness;
-//      no separate compilation unit, no link order.
-//
-//   5. No CRUCIBLE_PRE.  Oracles do not call the predicate library
-//      at consteval — they ARE the spec, so guarding them with PRE
-//      would be circular.  They use plain `if (cond) std::abort();`
-//      where contracts on inputs would normally appear (none of
-//      these have such contracts; predicates are total functions).
-//
-// COMPILE-TIME GUARANTEE
-// ----------------------
-// Every oracle is `constexpr`.  The fuzz harness invokes both fast
-// and oracle paths inside a runtime loop driven by Philox-derived
-// random inputs; the constexpr-ness of the oracle is incidental
-// (it could be plain runtime).  We mark constexpr because it costs
-// nothing and makes future compile-time fuzzing (CONTRACT-130
-// compile-time bench) trivial.
-//
-// DEPENDENCY DISCIPLINE
-// ---------------------
-// This header includes ONLY:
-//   <cstdint>, <span>, <type_traits>, <bit>, <limits>, <cstddef>
-//
-// It does NOT include `crucible/safety/Decide.h` to make it
-// unambiguous that the oracles are independent definitions.
-// However, we share the `Interval<T>` aggregate by including only
-// the parts of Decide.h that define the type — to avoid
-// duplication, the fuzz harness includes both headers and the
-// oracles take `Interval<T>` by template parameter, leaving the
-// definition site to Decide.h.
+// This header deliberately does not include the production predicate library,
+// so an oracle cannot silently reuse a production definition.
 
 #pragma once
 
@@ -80,16 +29,9 @@
 
 namespace crucible::decide::oracle {
 
-// ─── widen<T> — pick a "wider" integer type for overflow oracles ──
-//
-// For 32-bit integral T, `int64_t` / `uint64_t` is wide enough for
-// any sum or product of two T values.  For 64-bit integral T,
-// `__int128` / `unsigned __int128` is wide enough.  For 8-/16-bit
-// T, the 64-bit versions also work (always wider).
-//
-// We do NOT support `int128`-input fuzz: the production library
-// fuzzes T ∈ {uint8_t, uint16_t, uint32_t, uint64_t, int8_t, ...,
-// int64_t}, and 128-bit widen suffices for products of all of them.
+// The mapped type holds the sum or the product of any two values of T without
+// wrapping: 64 bits covers every T of 32 bits or fewer, 128 bits covers a
+// 64-bit T.
 
 template <typename T>
 struct widen;
@@ -107,11 +49,9 @@ struct widen<std::uint32_t> {
     using type = std::uint64_t;
 };
 
-// `__int128` is a GCC / Clang extension; ISO C++ does not yet ship a
-// 128-bit integer type.  This header is build-internal (test/oracle
-// only — never compiled into the production library), so the
-// extension is acceptable.  Suppress the pedantic diagnostic at the
-// declaration site.
+// ISO C++ ships no 128-bit integer type, so the 64-bit rows below rest on the
+// compiler extension.  This header is test-only and never enters the production
+// library, which is what makes the extension acceptable here.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 template <>
@@ -140,12 +80,6 @@ struct widen<std::int64_t> {
 template <typename T>
 using widen_t = typename widen<T>::type;
 
-// ─── no_overflow_mul oracle — widen-and-bound ─────────────────────
-//
-// Compute the product in the wider type, check it lies within the
-// representable range of T.  Independent of `__builtin_mul_overflow`
-// — the wider type's multiplication is defined, the bound check is
-// trivial.
 template <std::integral T>
 [[nodiscard]] constexpr bool no_overflow_mul_oracle(T a, T b) noexcept {
     using W = widen_t<T>;
@@ -157,7 +91,6 @@ template <std::integral T>
     return product >= lo && product <= hi;
 }
 
-// ─── no_overflow_sum oracle — widen-and-bound ─────────────────────
 template <std::integral T>
 [[nodiscard]] constexpr bool no_overflow_sum_oracle(T a, T b) noexcept {
     using W = widen_t<T>;
@@ -169,9 +102,6 @@ template <std::integral T>
     return sum >= lo && sum <= hi;
 }
 
-// ─── all_in_range oracle — manual loop ────────────────────────────
-//
-// Trivially obvious: iterate, return false on first out-of-range.
 template <std::integral T>
 [[nodiscard]] constexpr bool all_in_range_oracle(std::span<const T> xs, T lo, T hi) noexcept {
     if (lo > hi) return xs.empty();
@@ -181,11 +111,8 @@ template <std::integral T>
     return true;
 }
 
-// ─── strictly_increasing oracle — O(n²) all-pairs ─────────────────
-//
-// For every (i, j) with i < j, require xs[i] < xs[j].  Quadratic
-// to make the predicate definition unambiguous (no off-by-one in
-// adjacent comparisons).
+// All pairs rather than adjacent pairs.  The quadratic form states the ordering
+// property directly and leaves no room for an off-by-one in the walk.
 template <std::integral T>
 [[nodiscard]] constexpr bool strictly_increasing_oracle(std::span<const T> xs) noexcept {
     std::size_t const n = xs.size();
@@ -197,10 +124,6 @@ template <std::integral T>
     return true;
 }
 
-// ─── weakly_increasing oracle — O(n²) all-pairs ───────────────────
-//
-// For every (i, j) with i < j, require xs[i] ≤ xs[j].  (Weakly =
-// non-strict, allows equal values.)
 template <std::integral T>
 [[nodiscard]] constexpr bool weakly_increasing_oracle(std::span<const T> xs) noexcept {
     std::size_t const n = xs.size();
@@ -212,12 +135,6 @@ template <std::integral T>
     return true;
 }
 
-// ─── is_power_of_two_le oracle — popcount + bound ─────────────────
-//
-// `x is a power of two` ≡ `popcount(x) == 1` (for unsigned T).
-// For signed T, the predicate concerns positive powers only:
-// `x > 0 && popcount(x) == 1`.  The combined predicate is
-// `(power of two) AND (x ≤ bound)`.
 template <std::integral T>
 [[nodiscard]] constexpr bool is_power_of_two_le_oracle(T x, T bound) noexcept {
     if constexpr (std::is_signed_v<T>) {
@@ -231,17 +148,6 @@ template <std::integral T>
     return x <= bound;
 }
 
-// ─── factorization_eq oracle — widen-product + equality ───────────
-//
-// Compute the product of all factors in the WIDER type, check it
-// fits in T AND equals `total`.  An empty factor list is handled
-// per the production semantic: factors.empty() → product == 1
-// (multiplicative identity), and `factorization_eq({}, total) ==
-// (total == 1)`.
-//
-// Note: production semantic for `factorization_eq` may differ on
-// the empty case; the fuzz harness avoids empty inputs to elide
-// that ambiguity.
 template <std::integral T>
 [[nodiscard]] constexpr bool factorization_eq_oracle(std::span<const T> factors, T total) noexcept {
     using W = widen_t<T>;
@@ -255,16 +161,8 @@ template <std::integral T>
     return product == static_cast<W>(total);
 }
 
-// ─── coprime oracle — Euclidean GCD ───────────────────────────────
-//
-// gcd(a, b) == 1.  Implemented with the textbook Euclidean
-// algorithm — terminates by induction on min(a, b).  The
-// production `coprime` may use a different reduction (binary GCD,
-// Stein's algorithm, etc.) — Euclidean is the unambiguous spec.
-//
-// For signed T, take absolute values first; gcd is defined on
-// non-negative integers.  gcd(0, 0) == 0 by convention; thus
-// coprime(0, 0) == false.
+// The gcd of a pair of zeros is zero by convention, so a pair of zeros is not
+// coprime.
 template <std::integral T>
 [[nodiscard]] constexpr bool coprime_oracle(T a, T b) noexcept {
     using U = std::make_unsigned_t<T>;
@@ -275,17 +173,12 @@ template <std::integral T>
         ua = ub;
         ub = r;
     }
-    // Now ua == gcd(|a|, |b|).  Coprime iff gcd == 1.
     return ua == U{1};
 }
 
-// ─── conjunction / disjunction oracles — manual loops ─────────────
-//
-// The production impls are themselves manual loops, so the oracle
-// "different algorithm" requirement is weak here.  Use a different
-// SHAPE: a count-based form that checks for any-false (resp. any-
-// true).  An ALWAYS-TRUE buggy fast impl would still differ from
-// these oracles on negative inputs.
+// The production forms are loops too, so these two count every element instead
+// of exiting early.  That is the only shape difference available, and it still
+// separates a production form that answers a constant from a correct one.
 [[nodiscard]] constexpr bool conjunction_oracle(std::span<const bool> xs) noexcept {
     std::size_t false_count = 0;
     for (bool const& b : xs) {
@@ -302,13 +195,9 @@ template <std::integral T>
     return true_count != 0;
 }
 
-// ─── aligned_in_range oracle — straightforward four-clause check ──
-//
-// The production predicate IS this expression, so the oracle is
-// not strongly distinct — the value is in fuzzing many random
-// inputs to ensure the production formula's clause ORDER doesn't
-// trigger short-circuit bugs (e.g. modulo-by-zero if guard is
-// reordered).
+// This oracle repeats the production expression, so it proves nothing about
+// the formula.  What it does test is clause order: the zero-alignment guard
+// runs first here, and a production form that reorders it divides by zero.
 [[nodiscard]] constexpr bool aligned_in_range_oracle(std::uint64_t value, std::uint64_t low, std::uint64_t high,
                                                      std::uint64_t alignment) noexcept {
     if (alignment == 0u) return false;

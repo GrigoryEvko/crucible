@@ -1,5 +1,3 @@
-// Focused session self-test TU for payload-subsort invariants.
-
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
 #include <crucible/sessions/SessionPayloadSubsort.h>

@@ -1,15 +1,8 @@
 #pragma once
 
-// CalendarGridSession.h - typed-session facade for CalendarGrid rows.
-//
-// PermissionedCalendarGrid is a priority-bucket calendar queue:
-//   Producer<P>: writes into one statically-indexed producer row.
-//   Consumer:    drains the whole M x NumBuckets queue in priority order.
-//
-// The live substrate reports "no currently observable event" as
-// std::optional<T>::nullopt from ConsumerHandle::try_pop().  It is not a
-// per-slot presence table, so this facade preserves that exact surface
-// instead of inventing a separate SlotMissed protocol above the queue.
+// The substrate reports "no observable event" as an empty optional from
+// try_pop, not as a per-slot presence table. This facade keeps that surface
+// rather than adding a missed-slot protocol above the queue.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedCalendarGrid.h>

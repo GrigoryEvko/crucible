@@ -1,102 +1,22 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — RecordingSessionHandle<Proto, Resource>
+// The wrapper holds its inner handle by value rather than deriving from it.
+// The inner consumer methods are rvalue-ref-only, and each step has to mark
+// both the wrapper and the inner handle consumed, which inheritance cannot
+// express.  Only the abandonment-checking base is inherited.
 //
-// Task #404 SAFEINT-B15 from misc/24_04_2026_safety_integration.md
-// §15 — the audit-trail wrapper around SessionHandle that records
-// every Send / Recv / Select / Offer / Stop / close into a SessionEventLog.
+// The log is held by reference, not owned, so both sides of one session can
+// write into the same log and produce one ordered record of the exchange.
 //
-// Design contract:
+// A plain handle records the event before invoking the user transport: the
+// operation is already determined, and recording intent first keeps the trail
+// honest if the transport fails.  A crash-watched handle cannot do that,
+// because the watched peer may already be dead.  It records the normal
+// operation only after the step succeeds, and records a Stop instead when the
+// step fails, so replay observes the transition that actually happened.
 //
-//   * The wrapper is OPT-IN per-handle — production code that needs
-//     replay-safety constructs RecordingSessionHandles, production
-//     code that wants raw performance keeps using bare SessionHandle.
-//     This is the same opt-in pattern as the rest of the framework
-//     (Linear/Refined/Tagged are all opt-in wrappers).
-//
-//   * The recorded event_log lives outside the wrapper (passed by
-//     reference at construction).  This lets a single log capture a
-//     multi-handle session: Sender's wrapper and Receiver's wrapper
-//     both write into the same SessionEventLog, producing a unified
-//     audit trail with monotonic step_ids across both sides.
-//
-//   * The wrapper inherits from SessionHandleBase<Proto> for the
-//     abandonment-check destructor.  It does NOT inherit from
-//     SessionHandle<Proto, Resource>, because SessionHandle's
-//     consumer methods are intentionally rvalue-ref-only and the
-//     wrapper needs to mark BOTH itself and the inner handle
-//     consumed at each step.  Composition (hold an inner handle by
-//     value) handles this cleanly.
-//
-//   * Each consumer method (close / send / recv / select / pick /
-//     branch) records a SessionEvent around the inner handle's
-//     protocol step.  Plain SessionHandle-backed Send / Select record
-//     before invoking user transport, because the chosen operation is
-//     already known.  CrashWatchedHandle-backed operations record the
-//     normal operation only after the expected-valued step succeeds;
-//     if the watched peer is already dead, they record Stop instead
-//     so replay observes the actual protocol transition.
-//
-//   * Re-wrapping the next-state handle is automatic: after the
-//     inner method returns, the wrapper constructs a new
-//     RecordingSessionHandle around the new SessionHandle, carrying
-//     forward the log pointer and role IDs.  Loop / Continue
-//     resolution propagates through the inner detail::step_to_next
-//     unchanged.
-//
-// ─── Per-Proto specialisation surface ──────────────────────────────
-//
-//   RecordingSessionHandle<End,           R, L>  → close()
-//   RecordingSessionHandle<Send<T, K>,    R, L>  → send(value, transport)
-//   RecordingSessionHandle<Recv<T, K>,    R, L>  → recv(transport)
-//   RecordingSessionHandle<Select<Bs...>, R, L>  → select<I>([transport])
-//   RecordingSessionHandle<Offer<Bs...>,  R, L>  → pick<I>(),
-//                                                  branch(transport, handler)
-//   RecordingSessionHandle<Stop_g<C>,     R, L>  → close([reason], [recovery])
-//   RecordingSessionHandle<CheckpointedSession<B, R>, Res, L>
-//                                               → base([id], [hash]),
-//                                                 rollback([id], [hash])
-//   RecordingSessionHandle<Delegate<T, K>, R, L>
-//                                               → delegate(handle, transport,
-//                                                          [perm_hash])
-//   RecordingSessionHandle<Accept<T, K>,   R, L>
-//                                               → accept(transport,
-//                                                        [perm_hash])
-//   RecordingSessionHandle<EpochedDelegate<T, K, E, G>, R, L>
-//                                               → delegate(handle, transport,
-//                                                          [perm_hash])
-//   RecordingSessionHandle<EpochedAccept<T, K, E, G>,   R, L>
-//                                               → accept(transport,
-//                                                        [perm_hash])
-//   RecordingCrashWatchedHandle<Send/Recv/Select/Offer/End, R, Peer, L, PS>
-//                                               → same surface as
-//                                                 CrashWatchedHandle,
-//                                                 normal ops on success,
-//                                                 Stop on peer death
-//
-// Loop<B> / Continue are unrolled by the framework's existing
-// step_to_next / mint_session_handle machinery before the wrapper
-// sees them — same as for plain SessionHandle.
-//
-// ─── Worked-example pattern ────────────────────────────────────────
-//
-//   SessionEventLog log{SessionTagId{42}};
-//   auto bare = mint_session_handle<MyProto>(my_resource);
-//   auto rec  = mint_recording_session<MyProto, R>(
-//       std::move(bare), log,
-//       /*self*/ RoleTagId{1}, /*peer*/ RoleTagId{2});
-//
-//   auto next = std::move(rec).send(payload, my_transport);
-//   // log now contains a SessionEvent{op=Send, from=1, to=2,
-//   //                                 schema=hash<Payload>, ...}
-//
-// ─── References ────────────────────────────────────────────────────
-//
-//   misc/24_04_2026_safety_integration.md §15 — design rationale
-//   safety/Session.h          — the underlying SessionHandle types
-//   safety/SessionEventLog.h  — the log primitive
-// ═══════════════════════════════════════════════════════════════════
+// There is no specialisation for a loop or a continuation.  Both are resolved
+// to a concrete protocol step before a handle of either kind exists.
 
 #include <crucible/Platform.h>
 #include <crucible/bridges/CrashTransport.h>
@@ -115,7 +35,6 @@
 
 namespace crucible::safety::proto {
 
-// Forward declaration; specialisations follow.
 template <typename Proto, typename Resource, typename LoopCtx = void>
 class RecordingSessionHandle;
 
@@ -125,11 +44,6 @@ class RecordingCrashWatchedHandle;
 
 namespace detail {
 
-// Build a RecordingSessionHandle from a freshly-stepped inner handle.
-// Routes Continue / Loop resolution through the framework's existing
-// step_to_next so the wrapper sees the same protocol surface the bare
-// handle would have produced.  The inner SessionHandle is constructed
-// by step_to_next; we then wrap it with the same log + role context.
 template <typename NextHandle>
 [[nodiscard]] constexpr auto wrap_next_(NextHandle next, SessionEventLog& log, RoleTagId self_role,
                                         RoleTagId peer_role) noexcept {
@@ -150,12 +64,9 @@ template <typename PeerTag, CrashClass C, typename NextHandle>
                                                                                                  self_role, peer_role};
 }
 
-// fixy-A2-008: thread the CrashClass tier through the peer-crash detour
-// so replay can distinguish Abort / Throw / ErrorReturn / NoThrow even
-// when the crash is observed via the OneShotFlag, not via a Stop_g<C>
-// terminal.  Every caller is inside a RecordingCrashWatchedHandle
-// specialization where the protocol's tolerated CrashClass `C` is in
-// scope as a template parameter — pass it explicitly.
+// A crash seen through the flag reaches no crash terminal, so the tier is not
+// carried by the protocol at that point.  Callers pass the tolerated tier
+// explicitly, otherwise replay cannot tell the recovery families apart.
 constexpr void record_crash_stop_(
     SessionEventLog& log, RoleTagId self_role, RoleTagId peer_role,
     ::crucible::algebra::lattices::CrashClass crash_class = ::crucible::algebra::lattices::CrashClass::Abort) {
@@ -164,10 +75,6 @@ constexpr void record_crash_stop_(
 }
 
 }  // namespace detail
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingCrashWatchedHandle<End, …> ────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
@@ -215,10 +122,6 @@ public:
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingCrashWatchedHandle<Stop_g<C>, …> ──────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <CrashClass StopC, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
 RecordingCrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>
@@ -254,11 +157,9 @@ public:
     [[nodiscard]] constexpr Resource
     close(StopReasonKind reason = StopReasonKind::PeerCrashed,
           RecoveryPathHash recovery_path = {}) && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        // fixy-A2-008: encode the protocol's CrashClass tier (StopC)
-        // into the Stop event so replay can distinguish the four BSYZ22
-        // tiers.  Falling back to the default Abort would lose the
-        // distinction between NoThrow (rejects CrashWatchedHandle entirely)
-        // and Abort/Throw/ErrorReturn (different recovery families).
+        // The recorded tier is the terminal's own StopC, not the tolerated C
+        // of the watch.  They differ, and only the terminal's tier names the
+        // recovery family the peer actually entered.
         log_->append_event(SessionEvent::stop(self_role_, peer_role_, peer_role_, reason, recovery_path, StopC));
         this->mark_consumed_();
         return std::move(inner_).close();
@@ -269,10 +170,6 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return inner_.crash_flag(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingCrashWatchedHandle<Send<T, K>, …> ─────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename K, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
@@ -343,10 +240,6 @@ public:
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingCrashWatchedHandle<Recv<T, K>, …> ─────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <typename T, typename K, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
 RecordingCrashWatchedHandle<Recv<T, K>, Resource, PeerTag, C, LoopCtx, PS>
@@ -416,10 +309,6 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return inner_.crash_flag(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingCrashWatchedHandle<Select<Bs...>, …> ──────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
@@ -514,7 +403,7 @@ public:
 
     template <std::size_t I>
     void select() && = delete("[Wire_Variant_Required] RecordingCrashWatchedHandle<Select<...>>::"
-                              "select<I>() without arguments is no longer allowed.  Use "
+                              "select<I>() without arguments is not available.  Use "
                               "`select<I>(transport)` for the wire path or `select_local<I>()` "
                               "for the in-memory variant.");
 
@@ -523,10 +412,6 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return inner_.crash_flag(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingCrashWatchedHandle<Offer<Bs...>, …> ───────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
@@ -592,7 +477,7 @@ public:
 
     template <std::size_t I>
     void pick() && = delete("[Wire_Variant_Required] RecordingCrashWatchedHandle<Offer<...>>::"
-                            "pick<I>() without arguments is no longer allowed.  Use "
+                            "pick<I>() without arguments is not available.  Use "
                             "`pick_local<I>()` to advance without receiving a peer label.");
 
     [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
@@ -600,10 +485,6 @@ public:
     [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return inner_.crash_flag(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<End, …> — terminal wrapper ──────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<End, Resource, LoopCtx>
@@ -631,11 +512,6 @@ public:
     constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
     ~RecordingSessionHandle() = default;
 
-    // Record a Close event then close the inner handle, yielding the
-    // Resource.  Recording happens BEFORE the close so the audit trail
-    // reflects intent even if the close itself throws (it can't —
-    // close() is noexcept-friendly — but the discipline is consistent
-    // with the other consumer methods that DO call user transports).
     [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         log_->record_now(SessionEvent{
             .from_role = self_role_,
@@ -646,16 +522,11 @@ public:
         return std::move(inner_).close();
     }
 
-    // Non-consuming inspection passes through.
     [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
 
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Stop_g<C>, …> — crash terminal wrapper ──
-// ═════════════════════════════════════════════════════════════════════
 
 template <CrashClass C, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Stop_g<C>, Resource, LoopCtx>
@@ -687,10 +558,6 @@ public:
     [[nodiscard]] constexpr Resource
     close(StopReasonKind reason = StopReasonKind::PeerCrashed,
           RecoveryPathHash recovery_path = {}) && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        // fixy-A2-008: preserve the bare-handle Stop_g<C> protocol tier
-        // through the Stop event so replay can distinguish Abort / Throw
-        // / ErrorReturn / NoThrow even when no CrashWatchedHandle is
-        // wrapping the session.
         log_->append_event(SessionEvent::stop(self_role_, peer_role_, peer_role_, reason, recovery_path, C));
         this->mark_consumed_();
         return std::move(inner_).close();
@@ -700,10 +567,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<CheckpointedSession<B, R>, …> ───────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename ProtoBase, typename ProtoRollback, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, Resource, LoopCtx>
@@ -757,10 +620,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Delegate<T, K>, …> ──────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename K, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Delegate<T, K>, Resource, LoopCtx>
@@ -822,10 +681,6 @@ public:
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Accept<T, K>, …> ────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <typename T, typename K, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Accept<T, K>, Resource, LoopCtx>
     : public SessionHandleBase<Accept<T, K>, RecordingSessionHandle<Accept<T, K>, Resource, LoopCtx>> {
@@ -882,10 +737,6 @@ public:
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<EpochedDelegate<T, K, E, G>, …> ─────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
           typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<EpochedDelegate<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
@@ -928,9 +779,9 @@ public:
              InnerPermSetHash inner_perm_set =
                  {}) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
                                  && std::is_nothrow_move_constructible_v<Resource>) {
-        // fixy-A2-005: EpochedDelegate emits a dedicated EpochedDelegate
-        // event so MinEpoch/MinGeneration NTTPs survive into the audit
-        // log; plain `delegate_handoff` would drop both silently.
+        // The epoch and generation thresholds live only in the type.  The
+        // plain handoff event has no field for them, so a dedicated event
+        // kind is the only way they reach the log.
         log_->append_event(SessionEvent::epoched_delegate_handoff(self_role_, peer_role_, default_proto_hash<T>,
                                                                   MinEpoch, MinGeneration, inner_perm_set));
         this->mark_consumed_();
@@ -944,9 +795,6 @@ public:
         SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
         InnerPermSetHash inner_perm_set = {}) && noexcept(std::is_nothrow_move_constructible_v<Resource>
                                                           && std::is_nothrow_destructible_v<DelegatedResource>) {
-        // fixy-A2-005: EpochedDelegate emits a dedicated EpochedDelegate
-        // event so MinEpoch/MinGeneration NTTPs survive into the audit
-        // log; plain `delegate_handoff` would drop both silently.
         log_->append_event(SessionEvent::epoched_delegate_handoff(self_role_, peer_role_, default_proto_hash<T>,
                                                                   MinEpoch, MinGeneration, inner_perm_set));
         this->mark_consumed_();
@@ -958,10 +806,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<EpochedAccept<T, K, E, G>, …> ───────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
           typename LoopCtx>
@@ -1004,9 +848,9 @@ public:
         std::is_nothrow_invocable_v<Transport, Resource&> && std::is_nothrow_move_constructible_v<Resource>
         && std::is_nothrow_move_constructible_v<DelegatedResource>) {
         auto [delegated_handle, next] = std::move(inner_).accept(std::move(transport));
-        // fixy-A2-005: EpochedAccept must carry MinEpoch/MinGeneration
-        // through the event log; plain `accept_handoff` would drop the
-        // reshard-guard NTTPs silently.
+        // The epoch and generation thresholds live only in the type.  The
+        // plain handoff event has no field for them, so a dedicated event
+        // kind is the only way they reach the log.
         log_->append_event(SessionEvent::epoched_accept_handoff(self_role_, peer_role_, default_proto_hash<T>, MinEpoch,
                                                                 MinGeneration, inner_perm_set));
         this->mark_consumed_();
@@ -1019,8 +863,6 @@ public:
     accept_with(DelegatedResource delegated_res, InnerPermSetHash inner_perm_set = {}) && noexcept(
         std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<DelegatedResource>) {
         auto [delegated_handle, next] = std::move(inner_).accept_with(std::move(delegated_res));
-        // fixy-A2-005: see accept() above — EpochedAccept preserves
-        // reshard thresholds losslessly through the audit log.
         log_->append_event(SessionEvent::epoched_accept_handoff(self_role_, peer_role_, default_proto_hash<T>, MinEpoch,
                                                                 MinGeneration, inner_perm_set));
         this->mark_consumed_();
@@ -1032,10 +874,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Send<T, R>, …> ──────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Send<T, R>, Resource, LoopCtx>
@@ -1085,10 +923,6 @@ public:
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Recv<T, R>, …> ──────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Recv<T, R>, Resource, LoopCtx>
     : public SessionHandleBase<Recv<T, R>, RecordingSessionHandle<Recv<T, R>, Resource, LoopCtx>> {
@@ -1117,10 +951,8 @@ public:
     constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
     ~RecordingSessionHandle() = default;
 
-    // Recv records AFTER the transport call so the payload_hash
-    // reflects the actually-received value (vs the Send case where
-    // we record BEFORE because we already have the value by argument).
-    // The consumed_-mark + return ordering matches the Send path.
+    // A receive records after the transport call, unlike a send, because the
+    // payload hash has to cover the value that actually arrived.
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
@@ -1141,10 +973,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Select<Bs...>, …> ───────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Select<Branches...>, Resource, LoopCtx>
@@ -1173,7 +1001,6 @@ public:
     constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
     ~RecordingSessionHandle() = default;
 
-    // Transport-driven select: signal choice to peer + record.
     template <std::size_t I, typename Transport>
         requires(I < sizeof...(Branches)) && std::is_invocable_v<Transport, Resource&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
@@ -1188,11 +1015,9 @@ public:
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
 
-    // Renamed to `select_local<I>()` (#377).  Same recording + same
-    // mark_consumed_ pattern; the wrapper does not distinguish the
-    // wire-vs-in-memory variant in the event log because both equally
-    // determine the protocol shape.  The rename surfaces the wire
-    // ABSENCE — useful for human-auditable event-log inspections.
+    // The log does not distinguish the wire choice from the local one.  Both
+    // fix the same protocol shape, and that shape is what replay needs.  The
+    // absence of a wire step is recoverable from the method name alone.
     template <std::size_t I>
         requires(I < sizeof...(Branches))
     [[nodiscard]] constexpr auto select_local() && {
@@ -1207,11 +1032,9 @@ public:
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
 
-    // Deleted `select<I>()` overload (#377) — same discipline as the
-    // bare SessionHandle and CrashWatchedHandle.
     template <std::size_t I>
     void select() && = delete("[Wire_Variant_Required] RecordingSessionHandle<Select<...>>::"
-                              "select<I>() without arguments is no longer allowed (#377).  "
+                              "select<I>() without arguments is not available.  "
                               "Use `select<I>(transport)` for the wire path or "
                               "`select_local<I>()` for the in-memory variant.");
 
@@ -1219,10 +1042,6 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── RecordingSessionHandle<Offer<Bs...>, …> ────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Offer<Branches...>, Resource, LoopCtx>
@@ -1251,10 +1070,9 @@ public:
     constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
     ~RecordingSessionHandle() = default;
 
-    // Renamed to `pick_local<I>()` (#377) — caller already learned the
-    // branch out-of-band, no peer label is being received here.  The
-    // event log still records the Offer transition; only the wire
-    // semantic differs.
+    // The caller already knows the branch, so no label arrives from the peer.
+    // The log records the transition anyway: replay needs the branch taken,
+    // not the means by which it was learned.
     template <std::size_t I>
         requires(I < sizeof...(Branches))
     [[nodiscard]] constexpr auto pick_local() && {
@@ -1269,32 +1087,20 @@ public:
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
 
-    // Deleted `pick<I>()` overload (#377) — same discipline as bare
-    // SessionHandle and CrashWatchedHandle.
     template <std::size_t I>
     void pick() && = delete("[Wire_Variant_Required] RecordingSessionHandle<Offer<...>>::"
-                            "pick<I>() without arguments is no longer allowed (#377).  "
+                            "pick<I>() without arguments is not available.  "
                             "Use `pick_local<I>()` to advance without receiving a peer "
                             "label, or call the peer-receiving variant when one is "
                             "available.");
 
-    // Transport-driven branch — receives the index from peer, then
-    // dispatches to the user's handler with the branch's RecordingSession-
-    // Handle.  We capture the index AFTER the transport call (because
-    // that's when we know it) and record before invoking the handler;
-    // the per-branch handler then sees a wrapped handle whose log
-    // already contains the Offer event for this dispatch.
-    //
-    // The handler's inputs are RecordingSessionHandle wrappers (not
-    // bare SessionHandles) so the recording propagates through every
-    // branch.  Handler must accept the wrapped types and return a
-    // common Result (or all void).
+    // The branch index is known only once the transport returns, so the event
+    // is recorded from inside an interposed transport rather than before the
+    // call.  The handler receives wrapped branch handles, which is what keeps
+    // recording alive past the dispatch.
     template <typename Transport, typename Handler>
         requires std::is_invocable_r_v<std::size_t, Transport, Resource&>
     constexpr auto branch(Transport transport, Handler handler) && {
-        // Wrap the inner branch dispatch by interposing on the transport
-        // to capture the index, then record-and-rewrap each branch
-        // handle before invoking the handler.
         auto* log_ptr = log_;
         auto self_role = self_role_;
         auto peer_role = peer_role_;
@@ -1309,14 +1115,12 @@ public:
             return std::invoke(std::move(handler), std::move(wrapped_branch));
         };
 
-        // Interpose on the transport: capture the index for the log
-        // record before forwarding it through to the inner branch().
         auto recording_transport = [log_ptr, self_role, peer_role,
                                     tx = std::move(transport)](Resource& r) mutable -> std::size_t {
             const std::size_t idx = std::invoke(tx, r);
             log_ptr->record_now(SessionEvent{
-                .from_role = peer_role,  // peer picked
-                .to_role = self_role,  // self learns
+                .from_role = peer_role,
+                .to_role = self_role,
                 .op = SessionOp::Offer,
                 .branch_index = static_cast<uint8_t>(idx),
             });
@@ -1332,28 +1136,10 @@ public:
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── mint_recording_session — convenience factory ────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Wrap an existing SessionHandle in a RecordingSessionHandle.  Just a
-// constructor call written as a free function so the protocol /
-// resource template parameters are deducible at the call site.
-
-// fixy-A2-026: §XXI Universal Mint Pattern — every mint factory MUST
-// carry a single explicit `requires` clause naming the token-validity
-// concept, even when the parameter-type pattern-match already proves
-// it.  The clause is GREP-DISCOVERABLE — `grep "requires.*IsSessionHandle"`
-// surfaces every cross-tier authorization point in one pass.  Without
-// the clause, the gate is invisible to discipline audits.
-//
-// IsSessionHandle<H> is tautologically satisfied here because the
-// parameter type IS a SessionHandle / CrashWatchedHandle specialisation
-// (both inherit from SessionHandleBase).  The clause documents the
-// gate; it does not gate-fence beyond the existing parameter SFINAE.
-// HS14 fixtures (test/bridges_neg/neg_mint_recording_session_*) still
-// trigger via the "no matching function" diagnostic — the requires-
-// clause is additive belt-and-braces, not a replacement.
+// The requires clause on each factory is satisfied by construction: the
+// parameter type already is a handle.  It stays because it is the grep target
+// that makes every cross-tier authorisation point findable in one pass, and
+// the parameter match alone leaves the gate invisible to an audit.
 
 template <typename Proto, typename Resource, typename LoopCtx>
     requires ::crucible::safety::extract::IsSessionHandle<SessionHandle<Proto, Resource, LoopCtx>>

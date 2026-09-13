@@ -1,30 +1,15 @@
 #pragma once
 
-// Registry of "hot" memory regions — mmap'd or heap-backed buffers the
-// Crucible runtime wants kept resident on a production node. Each
-// component (TraceRing, MetaLog, PoolAllocator, Cipher hot-tier log,
-// KernelCache metadata) self-registers its backing memory at
-// construction and unregisters at destruction. `crucible::warden::apply()`
-// walks the registry and calls mlock2 + MADV_HUGEPAGE on each entry.
+// The memory regions a production node should keep resident. A
+// component names its own backing memory when it is constructed and
+// withdraws it when it is destroyed, through the two free functions
+// below, so no component needs to know anything else about this layer.
 //
-// Components stay ignorant of Warden internals — they just call the two free
-// functions below. No Warden headers bleed into their interface. The
-// registry is thread-safe via fixed atomic slots; registration is
-// expected at init / teardown time, not in hot paths.
+// The registry decides nothing. It records addresses, and applying a
+// policy is what locks or advises them, if the policy says so.
 //
-// Usage (component side):
-//
-//     TraceRing::TraceRing() noexcept {
-//         crucible::warden::register_hot_region(
-//             entries, sizeof(entries), /*huge=*/false, "TraceRing");
-//     }
-//     TraceRing::~TraceRing() {
-//         crucible::warden::unregister_hot_region(entries);
-//     }
-//
-// The registry itself has no opinion about whether mlock actually
-// runs — that's the Policy's job via `apply()`. Self-registration is
-// cheap (one slot CAS) and safe in every build configuration.
+// Registration is safe from any thread, and belongs to construction
+// and teardown rather than to a hot path.
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -41,8 +26,9 @@
 
 namespace crucible::warden {
 
-// 2 MB huge page on x86-64 + aarch64. Required alignment for
-// MADV_HUGEPAGE since kernel 5.8 (earlier kernels rounded silently).
+// The huge page size on both supported architectures. From Linux 5.8
+// the huge-page advice call demands this alignment, where an earlier
+// kernel rounded to it without saying so.
 inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
 
 [[nodiscard]] constexpr size_t round_up_huge(size_t n) noexcept {
@@ -52,12 +38,12 @@ inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
 struct HotRegion {
     void* addr = nullptr;
     size_t len = 0;
-    // True for large mostly-static mappings that benefit from 2 MB
-    // hugepages (MemoryPlan pools, KernelCache). False for frequently-
-    // resized buffers where THP collapse would stall.
+    // True for a large mapping that rarely changes shape. False for a
+    // buffer that is resized often, where collapsing it into huge
+    // pages would stall the resize.
     bool huge_hint = false;
-    // Optional short label for deploy-health diagnostics. Caller owns
-    // the storage; typically a string literal.
+    // Borrowed, and usually a string literal. The caller keeps it
+    // alive for as long as the region stays registered.
     const char* label = "";
 };
 
@@ -70,9 +56,9 @@ public:
         return r;
     }
 
-    // Adding the same (addr) twice is idempotent — the second call
-    // silently overwrites the len/huge_hint/label of the first. The
-    // Keeper's apply() sees exactly one entry per unique address.
+    // Registering one address twice replaces the first description
+    // rather than adding a second entry, so a reader of the table sees
+    // exactly one entry per address.
     void register_region(void* addr, size_t len, bool huge_hint, const char* label) noexcept {
         if (addr == nullptr || len == 0) return;
         for (;;) {
@@ -105,8 +91,8 @@ public:
         }
     }
 
-    // Remove by address. Missing address is silently ignored (destructor
-    // ordering relative to apply()/revert() is not guaranteed).
+    // An address that is not registered is ignored, because nothing
+    // orders a component's destruction against a policy being undone.
     void unregister_region(void* addr) noexcept {
         if (addr == nullptr) return;
         for (auto& slot : slots_) {
@@ -118,15 +104,13 @@ public:
         }
     }
 
-    // Snapshot for apply(). Returns by value so the caller can iterate
-    // without coupling registry reads to mlock2 syscalls (each ~1 us).
-    // New registrations during iteration are handled on the next
-    // apply() call.
+    // Returned by value so that a caller can work through the entries
+    // without holding the table while it issues system calls. A region
+    // registered during that work is picked up the next time a policy
+    // is applied.
     //
-    // CLAUDE.md §IV: known max → std::inplace_vector<T, N>.  Zero heap,
-    // true O(1) push_back, contract-checked overflow.  Capacity bound
-    // is max_regions; push_back here is structurally bounded by the
-    // outer for-loop (one push per non-empty slot, slots_.size() == N).
+    // The result needs no heap: one entry is pushed per occupied slot,
+    // and the slot count is the capacity.
     [[nodiscard]] std::inplace_vector<HotRegion, max_regions> snapshot() const noexcept {
         std::inplace_vector<HotRegion, max_regions> out;
         for (const auto& slot : slots_) {
@@ -167,52 +151,37 @@ private:
         std::atomic<const char*> label{""};
     };
 
-    // fixy-A5-029: HotRegionRegistry::Slot is published by registration
-    // threads and read by every observer / Hardening consumer.  Each atomic
-    // member MUST be lock-free — libstdc++ silently substitutes mutex-backed
-    // atomic ops on ISAs lacking the required intrinsic, which would turn
-    // every read of the hot-region table into a mutex hop.  Refuse to build
-    // instead of regressing silently.
-    static_assert(std::atomic<void*>::is_always_lock_free, "std::atomic<void*> must be lock-free on this target — "
-                                                           "fixy-A5-029");
-    static_assert(std::atomic<size_t>::is_always_lock_free, "std::atomic<size_t> must be lock-free on this target — "
-                                                            "fixy-A5-029");
-    static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> must be lock-free on this target — "
-                                                          "fixy-A5-029");
+    // A slot is written by whoever registers a region and read by
+    // everyone else. On an architecture lacking the instruction, the
+    // library substitutes a mutex-backed atomic without a word, which
+    // would put a lock behind every read of this table. Refuse to
+    // build instead.
+    static_assert(std::atomic<void*>::is_always_lock_free, "std::atomic<void*> is not lock-free on this target.");
+    static_assert(std::atomic<size_t>::is_always_lock_free, "std::atomic<size_t> is not lock-free on this target.");
+    static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> is not lock-free on this target.");
     static_assert(std::atomic<const char*>::is_always_lock_free,
-                  "std::atomic<const char*> must be lock-free on this target "
-                  "— fixy-A5-029");
+                  "std::atomic<const char*> is not lock-free on this target.");
 
     [[nodiscard]] static void* claimed_addr() noexcept { return std::bit_cast<void*>(uintptr_t{1}); }
 
     std::array<Slot, max_regions> slots_{};
 };
 
-// Convenience free functions. Prefer these at call sites — the class
-// name is verbose and rarely wanted directly.
 inline void register_hot_region(void* addr, size_t len, bool huge_hint = false, const char* label = "") noexcept {
     HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
 }
 
 inline void unregister_hot_region(void* addr) noexcept { HotRegionRegistry::instance().unregister_region(addr); }
 
-// ── §XXI Universal Mint Pattern — mint_hot_region_registry_handle ─────
+// The registry is a pinned singleton, so nothing can hand out a fresh
+// one. The handle below is the authorization instead: holding one is
+// proof that a start-up context granted access, and reaching the
+// singleton directly bypasses that proof.
 //
-// HotRegionRegistry is a Pinned singleton; the mint can't synthesize a
-// fresh instance.  Instead it returns a HotRegionRegistryHandle — a thin
-// 1-byte Pinned RAII handle that admits registry access only with proof
-// of an Init-row Ctx.  Converts what was previously an implicit global
-// access (`HotRegionRegistry::instance()` at any call site) into a
-// type-gated authorization with a single grep target (`mint_hot_region_
-// registry_handle`).
-//
-// Why Init: every public mutating member (register_region /
-// unregister_region) writes to the process-wide registry table backing
-// `Hardening::apply()`.  Hot-path code must not register/unregister hot
-// regions; that work belongs to Init-row Keeper/component init paths.
-// snapshot() / size() are also routed through the handle for grep
-// uniformity, even though they're const — the handle's existence is the
-// proof, not its usage.
+// Registering and withdrawing a region both write a table the whole
+// process shares, which is start-up work. The read-only members are
+// routed through the handle as well, so that every path to the
+// registry looks the same.
 
 class HotRegionRegistryHandle final : public ::crucible::safety::Pinned<HotRegionRegistryHandle> {
 public:

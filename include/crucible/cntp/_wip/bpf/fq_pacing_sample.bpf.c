@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P WIP fq pacing sample stub.
- *
- * Future role: publish per-skb pacing evidence for BBR-family policy and fq
- * qdisc validation. Current behavior: TC_ACT_OK for every skb.
- */
-
 #include "../../dataplane/bpf/net_common.h"
 
 #ifndef TC_ACT_OK

@@ -1,13 +1,5 @@
 #pragma once
 
-// GAPS-148. CNT-P hardware TCAM flow-rule substrate.
-//
-// This header owns the typed admission layer for NIC / switch match-action
-// rules. It does not call rdma-core DV, DPDK rte_flow, tc-flower, switchd,
-// netlink, or vendor SDKs. Live backends consume DeclaredTcamFlowRule values
-// and currently report explicit unavailability after target capability and
-// table budget are proven.
-
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
@@ -30,21 +22,12 @@ namespace crucible::cntp::tcam {
 
 inline constexpr std::uint32_t kMaxStaticTcamRules = 65'536;
 
-// fixy-A5-002 honesty marker.  Live tier = admission (admit_*, validate_*,
-// declare_tcam_rule, mint_tcam_table) + in-process TcamRules<MaxRules> rule
-// table (add_rule / remove_rule / query_counter / note_match — pure value
-// bookkeeping, no privileged effect) + `require_backend_ready` which honestly
-// surfaces VendorBackendUnavailable whenever the per-table admin claim
-// `backend_ready=false`; stub tier = `force_tcam_backend_boundary` and any
-// vendor install path which currently has no rdma-core DV / DPDK rte_flow /
-// tc-flower / switchd / netlink backend attached.  The per-table
-// `backend_ready` flag is an admin assertion, NOT proof of an installed
-// backend — the substrate-level claim is `vendor_backend_attached == false`
-// until a real backend ships.  Flipping the trait to true requires (a) a
-// vendor install path that talks to rdma-core / DPDK / tc / netlink, (b) a
-// lockstep update to test_cntp_tcam::test_apply_paths_are_stubbed, and
-// (c) cycle-counter audit that `force_tcam_backend_boundary` actually
-// programs the device.  Tracked by FIXY-U-087.
+// False: nothing here reaches the device.  No rdma-core, no DPDK rte_flow, no
+// tc-flower, no switchd, no netlink, no vendor SDK, and the rule table below
+// is process-local bookkeeping.  The per-table backend_ready flag is an
+// administrator's assertion rather than proof of an installed backend, so
+// require_backend_ready() returning success means only that somebody claimed
+// the table is usable.
 inline constexpr bool vendor_backend_attached = false;
 
 enum class TcamError : std::uint8_t {
@@ -370,21 +353,12 @@ public:
     }
 };
 
-// FIXY-U-087: stub-vs-live deprecation discipline.
-// `force_tcam_backend_boundary` is a STUB (see
-// `vendor_backend_attached = false`).  When `backend_ready=false` on the
-// per-table admin claim, it returns `VendorBackendUnavailable`.  When
-// `backend_ready=true` the function returns success — but until a real
-// vendor backend ships (rdma-core DV / DPDK rte_flow / tc-flower / switchd
-// / netlink), that "success" is substrate-bookkeeping, not device-level
-// rule installation.  Authorized callers
-// (`test/test_cntp_tcam.cpp::test_apply_paths_are_stubbed`) suppress the
-// warning with `#pragma GCC diagnostic push/ignored
-// "-Wdeprecated-declarations"/pop`.
-[[nodiscard, deprecated("CRUCIBLE_STUB: TCAM flow-rule install (rdma-core DV "
-                        "/ DPDK rte_flow / tc-flower / switchd / netlink) not yet attached; "
-                        "success path is substrate bookkeeping, not device programming; see "
-                        "fixy-A5-002 / fixy-A5-025 / FIXY-U-087")]]
+// Carries [[deprecated]] not because it is going away but because the
+// attribute makes every call site warn, so a stub cannot be reached without
+// notice at compile time.  A table whose backend_ready flag is set makes this
+// return success while programming nothing.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no vendor path installs the rule on the "
+                        "device. The success path is substrate bookkeeping, not device programming")]]
 std::expected<void, TcamError> force_tcam_backend_boundary(DeclaredTcamTable table, DeclaredTcamFlowRule rule) noexcept;
 
 static_assert(sizeof(TcamRuleId) == sizeof(std::uint64_t));

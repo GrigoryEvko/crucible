@@ -8,21 +8,20 @@
 #include <cstring>
 #include <unordered_set>
 
-// Simple test struct with diverse field types.
 struct Point {
-  int32_t x;
-  int32_t y;
-  float z;
+    int32_t x;
+    int32_t y;
+    float z;
 };
 
-// Struct with array member (like TensorMeta's sizes[8]).
+// Covers the array-member case, which the fold has to walk element by
+// element rather than hash whole.
 struct Dims {
-  int64_t values[4];
-  uint8_t count;
+    int64_t values[4];
+    uint8_t count;
 };
 
 int main() {
-    // ── reflect_hash: basic struct ──────────────────────────────────
     Point p1{10, 20, 3.14f};
     Point p2{10, 20, 3.14f};
     Point p3{10, 21, 3.14f};
@@ -31,14 +30,12 @@ int main() {
     uint64_t h2 = crucible::reflect_hash(p2);
     uint64_t h3 = crucible::reflect_hash(p3);
 
-    // Same values → same hash
     assert(h1 == h2);
-    // Different values → different hash (probabilistic, but fmix64 is good)
+    // Distinct inputs colliding is possible in principle.  The mixing
+    // function makes it unlikely enough to assert against.
     assert(h1 != h3);
-    // Non-zero
     assert(h1 != 0);
 
-    // ── reflect_hash: struct with array ─────────────────────────────
     Dims d1{{1, 2, 3, 4}, 4};
     Dims d2{{1, 2, 3, 4}, 4};
     Dims d3{{1, 2, 3, 5}, 4};
@@ -46,7 +43,8 @@ int main() {
     assert(crucible::reflect_hash(d1) == crucible::reflect_hash(d2));
     assert(crucible::reflect_hash(d1) != crucible::reflect_hash(d3));
 
-    // ── reflect_hash: Guard (real Crucible struct) ──────────────────
+    // The remaining cases use production types rather than fixtures,
+    // so the walk is exercised over real field layouts.
     crucible::Guard g1{};
     g1.kind = crucible::Guard::Kind::SHAPE_DIM;
     g1.op_index = crucible::OpIndex{42};
@@ -60,7 +58,6 @@ int main() {
     assert(crucible::reflect_hash(g1) == crucible::reflect_hash(g2));
     assert(crucible::reflect_hash(g1) != crucible::reflect_hash(g3));
 
-    // ── reflect_hash: TensorMeta (arrays + pointer + scalar fields) ──
     crucible::TensorMeta m1{};
     m1.ndim = 2;
     m1.sizes[0] = ::crucible::tensor_dim(32);
@@ -78,7 +75,6 @@ int main() {
     assert(crucible::reflect_hash(m1) == crucible::reflect_hash(m2));
     assert(crucible::reflect_hash(m1) != crucible::reflect_hash(m3));
 
-    // ── reflect_print: smoke test ───────────────────────────────────
     std::fprintf(stderr, "reflect_print(Point): ");
     crucible::reflect_print(p1, stderr);
     std::fprintf(stderr, "\n");
@@ -87,26 +83,22 @@ int main() {
     crucible::reflect_print(g1, stderr);
     std::fprintf(stderr, "\n");
 
-    // ── has_reflected_hash<T> trait ─────────────────────────────────
-    //
-    // Class types whose every member is reflect_hash-supported should
-    // satisfy the trait; non-class types should not.
+    // The trait holds for a class whose every member can itself be
+    // hashed.
     static_assert(crucible::has_reflected_hash<Point>);
     static_assert(crucible::has_reflected_hash<Dims>);
     static_assert(crucible::has_reflected_hash<crucible::TensorMeta>);
     static_assert(crucible::has_reflected_hash<crucible::Guard>);
 
-    // Non-class types: trait is false (reflect_hash requires
-    // is_class_v<T> per the requires-clause).
+    // A non-class type has no members to walk, so the trait rejects
+    // it outright rather than hashing the object representation.
     static_assert(!crucible::has_reflected_hash<int>);
     static_assert(!crucible::has_reflected_hash<float>);
     static_assert(!crucible::has_reflected_hash<int*>);
 
-    // ── reflect_fmix_fold<Seed, T> ──────────────────────────────────
-    //
-    // Same input → same hash (determinism).  Different input → high
-    // probability of different hash (avalanche from per-field fmix64).
-    // Different seed → different hash (domain separation).
+    // The seed separates domains: the same input under two seeds must
+    // not land on the same hash, or two unrelated uses of the fold
+    // would share a key space.
     {
         constexpr uint64_t kSeedA = 0xDEADBEEFCAFEBABEULL;
         constexpr uint64_t kSeedB = 0x0123456789ABCDEFULL;
@@ -119,31 +111,24 @@ int main() {
         const auto h_b = crucible::reflect_fmix_fold<kSeedA>(p_b);
         const auto h_c = crucible::reflect_fmix_fold<kSeedA>(p_c);
 
-        assert(h_a == h_b);  // same input → same hash
-        assert(h_a != h_c);  // different input → different hash
+        assert(h_a == h_b);
+        assert(h_a != h_c);
 
-        // Same input, different seed → different hash.
         const auto h_a2 = crucible::reflect_fmix_fold<kSeedB>(p_a);
         assert(h_a != h_a2);
 
-        // Hash is non-zero with overwhelming probability.
         assert(h_a != 0);
     }
 
-    // ── Avalanche: bit-flip in input → ~50% bits change in output ──
+    // Under the strict avalanche criterion, flipping any one input bit
+    // flips about half the output bits.  The mixing function has that
+    // property on its own, and hashing field by field has to preserve
+    // it.
     //
-    // Strict avalanche criterion (Webster & Tavares 1985): flipping
-    // any single input bit should flip ~50% of output bits.  fmix64
-    // is well-tested for this property; reflect_hash composing
-    // fmix64-per-field should preserve it.
-    //
-    // We sample 64 single-bit perturbations on a Wide-ish Spec
-    // struct; for each, count how many of the 64 hash bits flip.
-    // The mean across perturbations should be near 32 (uniform);
-    // standard deviation should be small (no field is "stuck").
-    //
-    // This isn't a strict statistical test (sample size 64 is small)
-    // but catches gross failures like "field N never affects bits 32-47".
+    // Each of the 256 input bits is flipped in turn and the number of
+    // output bits that change is counted.  With a sample this small
+    // the result is not a statistical test.  It does catch a gross
+    // failure, such as one field never reaching part of the output.
     {
         struct AvalancheSpec {
             uint64_t a, b, c, d;
@@ -161,39 +146,33 @@ int main() {
         int max_flips = 0;
         for (int bit = 0; bit < 64 * 4; ++bit) {
             AvalancheSpec perturbed = base;
-            // Flip the bit-th bit of the chosen u64 field.
-            uint64_t* fields[4] = {&perturbed.a, &perturbed.b,
-                                    &perturbed.c, &perturbed.d};
+            uint64_t* fields[4] = {&perturbed.a, &perturbed.b, &perturbed.c, &perturbed.d};
             const auto bit_idx = static_cast<unsigned>(bit % 64);
             *fields[bit / 64] ^= (uint64_t{1} << bit_idx);
             const uint64_t perturbed_h = crucible::reflect_hash(perturbed);
             const uint64_t diff = base_h ^ perturbed_h;
-            // popcount: convert uint64_t → unsigned long long via
-            // static_cast (same width on x86-64; the cast suppresses
-            // the -Wsign-conversion noise from implicit promotion).
-            const int popcount = __builtin_popcountll(
-                static_cast<unsigned long long>(diff));
+            // The cast is explicit only to keep the implicit
+            // promotion from tripping the sign-conversion warning.
+            // The two types have the same width here.
+            const int popcount = __builtin_popcountll(static_cast<unsigned long long>(diff));
             total_flips += popcount;
             if (popcount < min_flips) min_flips = popcount;
             if (popcount > max_flips) max_flips = popcount;
         }
-        const double mean_flips =
-            static_cast<double>(total_flips) / (64 * 4);
-        // Mean should be near 32 (half of 64 output bits).
-        // Tolerance: ±6 bits absorbs sample-size noise (n=256).
+        const double mean_flips = static_cast<double>(total_flips) / (64 * 4);
+        // Half of 64 output bits is 32.  The window of six bits either
+        // side absorbs the noise of a 256-sample mean.
         assert(mean_flips > 26.0 && mean_flips < 38.0);
-        // No field should be stuck — min flips should be > 16
-        // (significantly more than zero or "barely any").
+        // A field that barely reached the output would show up as a
+        // perturbation that changes almost nothing.
         assert(min_flips >= 16);
         assert(max_flips <= 50);
     }
 
-    // ── Collision resistance over a 1024-input grid ─────────────────
-    //
-    // 1024 distinct AvalancheSpec instances → 1024 distinct hashes.
-    // fmix64's avalanche makes collisions exceptionally unlikely at
-    // this scale (~2^-54 per pair); any collision in this grid
-    // indicates a structural bug in the reflection fold.
+    // A thousand distinct inputs must give a thousand distinct
+    // hashes.  A chance collision at this scale is vanishingly
+    // unlikely, so one here means the fold is structurally wrong
+    // rather than unlucky.
     {
         struct AvalancheSpec {
             uint64_t a, b, c, d;
@@ -214,50 +193,40 @@ int main() {
         assert(seen.size() == N);
     }
 
-    // ── reflect_fmix_fold cross-process stability goldens ──────────
+    // The emitted code is fixed at compile time, so a pinned input
+    // under a pinned seed gives the same bytes on every build and
+    // every run.  The value below is that constant.  Changing the
+    // mixing scheme changes it, which is the point.
     //
-    // Reflection emits compile-time-fixed code; the output for a
-    // pinned input + pinned seed is byte-stable across compiler
-    // invocations and runs.  Pin one canonical golden so a future
-    // change to fmix_fold's mixing scheme would surface immediately
-    // in CI.
-    //
-    // Update procedure (only after AUDITED intentional change):
-    //   1. Run this test, capture printed actual hash
-    //   2. Replace the EXPECTED_* constant
-    //   3. Bump CDAG_VERSION if any persisted consumer depends on
-    //      reflect_fmix_fold output (none today)
+    // Replace it only after deciding the change is intended, and only
+    // after checking that nothing persisted holds the old value.
     {
         constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
         struct GoldenSpec {
-            uint8_t  a;
+            uint8_t a;
             uint16_t b;
             uint32_t c;
             uint64_t d;
         };
-        constexpr GoldenSpec spec{
-            0xAB, 0xCDEF, 0x12345678U, 0x9ABCDEF012345678ULL
-        };
+        constexpr GoldenSpec spec{0xAB, 0xCDEF, 0x12345678U, 0x9ABCDEF012345678ULL};
         const uint64_t actual = crucible::reflect_fmix_fold<kSeed>(spec);
 
         constexpr uint64_t EXPECTED = 0xf03145ef4f0efa55ULL;
         if (actual != EXPECTED) {
             std::fprintf(stderr,
-                "reflect_fmix_fold golden DRIFT: "
-                "expected 0x%016" PRIx64 ", got 0x%016" PRIx64 "\n"
-                "  → update EXPECTED constant in test_reflect.cpp\n"
-                "  → audit any persisted consumer of reflect_fmix_fold\n",
-                EXPECTED, actual);
+                         "reflect_fmix_fold golden DRIFT: "
+                         "expected 0x%016" PRIx64 ", got 0x%016" PRIx64 "\n"
+                         "  → update EXPECTED constant in test_reflect.cpp\n"
+                         "  → audit any persisted consumer of reflect_fmix_fold\n",
+                         EXPECTED, actual);
             assert(false && "reflect_fmix_fold golden mismatch");
         }
     }
 
-    // ── Cross-call determinism (1000 invocations) ───────────────────
-    //
-    // reflect_hash + reflect_fmix_fold are gnu::pure constexpr; the
-    // output for a fixed input must be byte-identical across every
-    // invocation.  1000 calls is excessive but verifies no hidden
-    // state leaks via static locals or process-global RNG.
+    // Both folds are pure, so a fixed input gives identical bytes on
+    // every call.  A thousand calls is far more than the property
+    // needs, but it would expose hidden state in a static local or a
+    // shared generator.
     {
         const Point p{42, -7, 3.14159f};
         const uint64_t h0 = crucible::reflect_hash(p);
@@ -270,47 +239,34 @@ int main() {
         }
     }
 
-    // ── Empty span / zero-edge behaviour for refactored sites ──────
-    //
-    // feedback_signature documents: empty → 0; non-empty → nonzero.
-    // The refactor preserved this contract.  Pin the boundary cases
-    // here (the only behavioural goldens that survive bit-pattern
-    // refactors).
+    // An empty edge set signs as zero and a non-empty one never does.
+    // These boundary cases are the part of the contract that survives
+    // any change to the bit pattern.
     {
-        // Empty span → 0.
         assert(crucible::feedback_signature({}) == 0);
-        // Single-edge → non-zero.
         const crucible::FeedbackEdge one[1] = {{0, 1}};
-        assert(crucible::feedback_signature(
-                   std::span<const crucible::FeedbackEdge>{one, 1}) != 0);
-        // Edge count is folded in: {A} ≠ {A, A}.
+        assert(crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{one, 1}) != 0);
+        // The edge count is folded in, so repeating one edge signs
+        // differently from having it once.
         const crucible::FeedbackEdge two_same[2] = {{0, 1}, {0, 1}};
-        assert(crucible::feedback_signature(
-                   std::span<const crucible::FeedbackEdge>{one, 1}) !=
-               crucible::feedback_signature(
-                   std::span<const crucible::FeedbackEdge>{two_same, 2}));
-        // Different edge order → different signature (order matters
-        // because hash is not commutative).
+        assert(crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{one, 1})
+               != crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{two_same, 2}));
+        // The fold is not commutative, so reordering the edges
+        // changes the signature.
         const crucible::FeedbackEdge ab[2] = {{1, 2}, {3, 4}};
         const crucible::FeedbackEdge ba[2] = {{3, 4}, {1, 2}};
-        assert(crucible::feedback_signature(
-                   std::span<const crucible::FeedbackEdge>{ab, 2}) !=
-               crucible::feedback_signature(
-                   std::span<const crucible::FeedbackEdge>{ba, 2}));
+        assert(crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{ab, 2})
+               != crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{ba, 2}));
     }
 
-    // ── loopterm_hash field-sensitivity ─────────────────────────────
-    //
-    // Each of the three semantic fields (term_kind, repeat_count,
-    // epsilon) must individually affect the hash.  The reflect_fmix_fold
-    // pattern preserves this property by construction (fmix64 per
-    // field).  Verify explicitly so a future regression to a
-    // commutative or one-field-only fold is caught.
+    // Each of the three termination fields must move the hash on its
+    // own.  A fold that dropped a field, or that became commutative,
+    // would still pass a test that varied them together.
     {
         crucible::LoopNode base{};
-        base.term_kind    = crucible::LoopTermKind::REPEAT;
+        base.term_kind = crucible::LoopTermKind::REPEAT;
         base.repeat_count = 100;
-        base.epsilon      = 0.001f;
+        base.epsilon = 0.001f;
         const uint64_t h_base = crucible::loopterm_hash(base);
 
         crucible::LoopNode alt_kind = base;

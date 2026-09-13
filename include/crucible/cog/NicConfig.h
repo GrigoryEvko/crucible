@@ -1,10 +1,9 @@
 #pragma once
 
-// GAPS-192. Typed NIC layer-1 configuration substrate.
-//
-// This header owns admission for ethtool/sysctl/tc-qdisc intent. It does not
-// execute shell commands, mutate sysctls, or perform privileged CAP_NET_ADMIN
-// work by itself. Operator-gated backends consume Declared* values minted here.
+// Admission for NIC configuration intent. Nothing here runs a command,
+// writes a kernel tunable or does any work that needs the network
+// administration capability. A privileged backend consumes the
+// declared values this header mints.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/NicOffloadAudit.h>
@@ -27,14 +26,12 @@
 
 namespace crucible::cog::nic {
 
-// fixy-A5-002 honesty marker.  Live tier = admission + validators
-// (mint_*, admit_*, validate_*); stub tier = every privileged apply
-// function (apply_*, query_*).  While `privileged_apply_implemented`
-// is false, callers MUST observe PrivilegedApplyDeferred from apply
-// and PrivilegedBackendUnavailable / QueryDeferred from query.  Flipping
-// the trait to true requires a CAP_NET_ADMIN backend that talks to
-// ethtool / sysctl / tc-qdisc and a lockstep update to
-// test_nic_config::test_apply_paths_are_stubbed.  Tracked by FIXY-U-087.
+// Admission and validation are live. Every privileged apply and query
+// function is a stub. While this is false, an apply returns
+// PrivilegedApplyDeferred and a query returns
+// PrivilegedBackendUnavailable or QueryDeferred. Setting it true means
+// a backend exists that drives the real interfaces, and the tests that
+// assert the stubbed behaviour change with it.
 inline constexpr bool privileged_apply_implemented = false;
 
 enum class NicConfigError : std::uint8_t {
@@ -389,30 +386,25 @@ audit_features_from_offloads(safety::Bits<NicOffload> offloads) noexcept {
     return out;
 }
 
-// FIXY-U-087: stub-vs-live deprecation discipline.  The five privileged
-// surfaces below are STUBS (see `privileged_apply_implemented = false`).
-// Authorized callers (`test/test_nic_config.cpp`,
-// `test/cog_neg/neg_nic_config_raw_apply.cpp`) suppress the warning with
-// `#pragma GCC diagnostic push/ignored "-Wdeprecated-declarations"/pop`.
-[[nodiscard, deprecated("CRUCIBLE_STUB: privileged NIC config apply not yet "
-                        "wired to CAP_NET_ADMIN ethtool/sysctl/tc-qdisc backend; returns "
-                        "PrivilegedApplyDeferred or PrivilegedBackendUnavailable; see fixy-A5-002 "
-                        "/ FIXY-U-087")]]
+// The five privileged surfaces below are stubs, and the deprecation
+// attribute is what makes a caller see that at compile time rather
+// than only through the returned sentinel. A caller that means to
+// touch a stub suppresses the warning around the call.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend drives the NIC "
+                        "configuration interfaces; returns PrivilegedApplyDeferred or "
+                        "PrivilegedBackendUnavailable")]]
 std::expected<void, NicConfigError> apply_config(DeclaredNicConfig config) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: privileged ethtool ring/queue/RSS "
-                        "apply not yet wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / "
-                        "FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend applies ring, "
+                        "queue or hash settings; returns PrivilegedApplyDeferred")]]
 std::expected<void, NicConfigError> apply_ethtool(DeclaredEthtoolConfig config) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: privileged tc-qdisc apply not yet "
-                        "wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend installs queueing "
+                        "disciplines; returns PrivilegedApplyDeferred")]]
 std::expected<void, NicConfigError> apply_qdisc(DeclaredQdiscConfig config) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysctl tcp_* / rmem_max / "
-                        "wmem_max apply not yet wired; returns PrivilegedApplyDeferred; see "
-                        "fixy-A5-002 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend writes the kernel "
+                        "network tunables; returns PrivilegedApplyDeferred")]]
 std::expected<void, NicConfigError> apply_sysctl(DeclaredSysctlConfig config) noexcept;
-[[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysfs/ethtool query "
-                        "backend not yet attached; returns NicConfigError::QueryDeferred; see "
-                        "fixy-A5-002 / FIXY-U-087")]]
+[[nodiscard, deprecated("CRUCIBLE_STUB: no backend reads the live NIC "
+                        "configuration; returns NicConfigError::QueryDeferred")]]
 std::expected<DeclaredNicConfig, NicConfigError> query_current(CogIdentity identity,
                                                                cntp::NicInterfaceName interface) noexcept;
 

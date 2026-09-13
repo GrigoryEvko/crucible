@@ -1,14 +1,9 @@
 #pragma once
 
-// GAPS-139 substrate slice. CNT-P application-layer overlay multicast plans.
-//
-// This is not the live Splitstream/Plumtree transport. HyParView and Plumtree
-// are still separate pending owners. This header pins the type-level substrate
-// they will consume: source-tagged overlay peers, bounded stripe/recovery/fanout
-// config, deterministic per-stripe parent/child route construction, and
-// bounded message stripe planning.
+// Nothing here sends a packet.  These are per-stripe parent and child routes
+// plus message slice plans for a transport to consume.
 
-#include <crucible/Platform.h>  // CRUCIBLE_FATAL_INVARIANT
+#include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -161,7 +156,6 @@ public:
                                   std::span<const DeclaredOverlayPeer> initial_peers = {},
                                   OverlayMulticastConfig config = {}) noexcept
         : config_{config} {
-        // FIXY-U-080 / fixy-A5-014 + A5-035: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(config_.stripe_count.value() <= MaxStripes && config_.fanout.value() <= MaxFanout
                                  && config_.recovery_threshold.value() <= config_.stripe_count.value());
         local_ = local_peer.value();

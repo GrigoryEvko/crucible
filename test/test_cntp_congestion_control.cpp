@@ -47,9 +47,7 @@ private:
 };
 
 struct UserCc {
-    static consteval std::string_view congestion_control_name() noexcept {
-        return "user_cc";
-    }
+    static consteval std::string_view congestion_control_name() noexcept { return "user_cc"; }
 };
 
 void test_name_admission() {
@@ -73,10 +71,10 @@ void test_name_admission() {
 }
 
 void test_availability_parse_and_recommendation() {
-    // fixy-A5-018: upstream Linux exposes BBRv1 as "bbr"; "bbr3" is the
-    // out-of-tree variant.  Parsing must keep them distinct.
-    auto parsed = cntp::parse_available_congestion_control(
-        "reno cubic bbr dctcp vegas\n");
+    // The kernel calls the first BBR version "bbr" outright, and
+    // "bbr3" is a separate out-of-tree name.  Parsing keeps the two
+    // apart rather than treating one as a prefix of the other.
+    auto parsed = cntp::parse_available_congestion_control("reno cubic bbr dctcp vegas\n");
     assert(parsed.has_value());
     assert(parsed->contains(cntp::CcAlgorithm::Reno));
     assert(parsed->contains(cntp::CcAlgorithm::Cubic));
@@ -90,34 +88,28 @@ void test_availability_parse_and_recommendation() {
     assert(cross->value().algorithm == cntp::CcAlgorithm::Bbr1);
     assert(cross->value().kernel_name.view() == "bbr");
 
-    auto fabric =
-        cntp::recommend_cc<cntp::LinkClass::LosslessDatacenterFabric>(*parsed);
+    auto fabric = cntp::recommend_cc<cntp::LinkClass::LosslessDatacenterFabric>(*parsed);
     assert(fabric.has_value());
     assert(fabric->value().algorithm == cntp::CcAlgorithm::Dctcp);
 
-    auto bbr3_only = cntp::parse_available_congestion_control(
-        "reno cubic bbr3\n");
+    auto bbr3_only = cntp::parse_available_congestion_control("reno cubic bbr3\n");
     assert(bbr3_only.has_value());
     assert(bbr3_only->contains(cntp::CcAlgorithm::Bbr3));
     assert(!bbr3_only->contains(cntp::CcAlgorithm::Bbr1));
-    auto bbr3_cross =
-        cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr3_only);
+    auto bbr3_cross = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr3_only);
     assert(bbr3_cross.has_value());
     assert(bbr3_cross->value().algorithm == cntp::CcAlgorithm::Bbr3);
     assert(bbr3_cross->value().kernel_name.view() == "bbr3");
 
-    auto bbr2_only = cntp::parse_available_congestion_control(
-        "reno cubic bbr2\n");
+    auto bbr2_only = cntp::parse_available_congestion_control("reno cubic bbr2\n");
     assert(bbr2_only.has_value());
-    auto bbr2_cross =
-        cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr2_only);
+    auto bbr2_cross = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr2_only);
     assert(bbr2_cross.has_value());
     assert(bbr2_cross->value().algorithm == cntp::CcAlgorithm::Bbr2);
 
     auto legacy = cntp::parse_available_congestion_control("reno cubic\n");
     assert(legacy.has_value());
-    auto fallback =
-        cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*legacy);
+    auto fallback = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*legacy);
     assert(fallback.has_value());
     assert(fallback->value().algorithm == cntp::CcAlgorithm::Cubic);
 
@@ -125,15 +117,12 @@ void test_availability_parse_and_recommendation() {
 }
 
 void test_mint_surfaces() {
-    auto cubic =
-        cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic,
-                             cntp::LinkClass::CrossDatacenter>();
+    auto cubic = cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic, cntp::LinkClass::CrossDatacenter>();
     static_assert(std::same_as<decltype(cubic), cntp::DeclaredCcChoice>);
     assert(cubic.value().algorithm == cntp::CcAlgorithm::Cubic);
     assert(cubic.value().kernel_name.view() == "cubic");
 
-    auto custom =
-        cntp::mint_custom_cc_choice<UserCc, cntp::LinkClass::PublicInternet>();
+    auto custom = cntp::mint_custom_cc_choice<UserCc, cntp::LinkClass::PublicInternet>();
     assert(custom.value().algorithm == cntp::CcAlgorithm::Custom);
     assert(custom.value().kernel_name.view() == "user_cc");
 
@@ -153,8 +142,7 @@ void test_live_socket_roundtrip_if_available() {
         return;
     }
 
-    auto choice =
-        cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*availability);
+    auto choice = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*availability);
     if (!choice.has_value()) {
         std::printf("  test_live_socket_roundtrip_if_available: SKIPPED\n");
         return;
@@ -165,9 +153,9 @@ void test_live_socket_roundtrip_if_available() {
 
     auto queried = cntp::query_cc_for_socket(*fd);
     assert(queried.has_value());
-    // fixy-A5-018: kernel echoes the name we set; the reverse map is
-    // now bijective per BBR variant ("bbr" → Bbr1, "bbr3" → Bbr3), so
-    // the OR-clause that masked the misread is gone.
+    // The kernel echoes back the name it was given, and the reverse
+    // mapping is one-to-one per BBR version, so the query returns the
+    // algorithm that was set and not a neighbouring one.
     assert(*queried == choice->value().algorithm);
 
     auto selection = cntp::query_cc_selection_for_socket(*fd);
@@ -177,19 +165,14 @@ void test_live_socket_roundtrip_if_available() {
     std::printf("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
 
-// fixy-A5-016 HS14 fixture #1: positive runtime witness that EVERY
-// Ctx-gated overload in this header dispatches correctly when the
-// caller's ExecCtx carries Effect::IO in its row.  We can't make a
-// real {set,get}sockopt() succeed without an actual TCP socket, but
-// we can prove each overload IS selectable + IS callable + agrees
-// with its unparameterized form on error returns (both return
-// {Set,Get}SockOptFailed on an unsupported fd, same path).
+// Each context-gated overload must be selectable, callable, and
+// answer exactly as its ungated form does.  Making the socket calls
+// succeed would need a real connected socket, so the claim under test
+// is the agreement between the two forms, not the success of either.
 void test_io_gated_overload_dispatches() {
-    // Closed fd; admit_socket_fd checks for >= 0 so any non-negative
-    // value passes admission; each syscall then fails downstream.
-    // What we're proving here is that every Ctx-gated overload
-    // reaches the syscall site and stays bit-equivalent to its bare
-    // form, not that the syscalls succeed.
+    // Admission only requires a non-negative descriptor, so this value
+    // passes it and the socket calls then fail further down.  That is
+    // enough to compare the two forms along the same path.
     auto fd = cntp::admit_socket_fd(/*invalid*/ 0xFFFE);
     assert(fd.has_value());
 
@@ -198,59 +181,50 @@ void test_io_gated_overload_dispatches() {
         .kernel_name = cntp::KernelCcName::from("cubic").value(),
     }};
 
-    // ColdInitCtx has Row<Init, Alloc, IO> and is accepted by every
-    // gate below.  BgDrainCtx (Row<Bg, Alloc> — no IO) and HotFgCtx
-    // (Row<>) are rejected at substitution and witnessed via the
-    // top-level static_asserts; see the file-scope block below.
+    // This context carries the input and output effect, so every gate
+    // below admits it.  The contexts that do not are rejected during
+    // substitution, and the assertions at file scope witness that.
     eff::ColdInitCtx init{};
 
-    // (1) set_cc_for_socket — setsockopt(TCP_CONGESTION)
     {
         auto gated = cntp::set_cc_for_socket(init, *fd, choice);
-        auto bare  = cntp::set_cc_for_socket(*fd, choice);
+        auto bare = cntp::set_cc_for_socket(*fd, choice);
         assert(gated.has_value() == bare.has_value());
         if (!gated.has_value()) {
             assert(gated.error() == bare.error());
         }
     }
 
-    // (2) query_cc_for_socket — getsockopt(TCP_CONGESTION)
     {
         auto gated = cntp::query_cc_for_socket(init, *fd);
-        auto bare  = cntp::query_cc_for_socket(*fd);
+        auto bare = cntp::query_cc_for_socket(*fd);
         assert(gated.has_value() == bare.has_value());
         if (!gated.has_value()) {
             assert(gated.error() == bare.error());
         }
     }
 
-    // (3) query_cc_selection_for_socket — getsockopt(TCP_CONGESTION)
     {
         auto gated = cntp::query_cc_selection_for_socket(init, *fd);
-        auto bare  = cntp::query_cc_selection_for_socket(*fd);
+        auto bare = cntp::query_cc_selection_for_socket(*fd);
         assert(gated.has_value() == bare.has_value());
         if (!gated.has_value()) {
             assert(gated.error() == bare.error());
         }
     }
 
-    // (4) read_available_congestion_control — open()+read() on /proc.
-    // Side-effect-free: result depends only on the host kernel; the
-    // gated overload MUST agree byte-for-byte with the bare form.
+    // Reading the available algorithms changes nothing and depends
+    // only on the running kernel, so the two forms must agree exactly.
     {
         auto gated = cntp::read_available_congestion_control(init);
-        auto bare  = cntp::read_available_congestion_control();
+        auto bare = cntp::read_available_congestion_control();
         assert(gated.has_value() == bare.has_value());
         if (gated.has_value()) {
-            // CcAvailability holds a CcAlgorithmMask (Bits<CcAlgorithm>)
-            // — value-comparable via the underlying integral.
-            for (auto algo : {cntp::CcAlgorithm::Cubic,
-                              cntp::CcAlgorithm::Reno,
-                              cntp::CcAlgorithm::Bbr1,
-                              cntp::CcAlgorithm::Bbr2,
-                              cntp::CcAlgorithm::Bbr3,
-                              cntp::CcAlgorithm::Dctcp,
-                              cntp::CcAlgorithm::Vegas}) {
+            // The result is a bit mask, so agreement is checked one
+            // algorithm at a time.
+            for (auto algo :
+                 {cntp::CcAlgorithm::Cubic, cntp::CcAlgorithm::Reno, cntp::CcAlgorithm::Bbr1, cntp::CcAlgorithm::Bbr2,
+                  cntp::CcAlgorithm::Bbr3, cntp::CcAlgorithm::Dctcp, cntp::CcAlgorithm::Vegas}) {
                 assert(gated->contains(algo) == bare->contains(algo));
             }
         } else {
@@ -263,50 +237,35 @@ void test_io_gated_overload_dispatches() {
 
 }  // namespace
 
-// fixy-A5-016 HS14 fixture #2: compile-time negative-witness that the
-// Ctx-gated overload REJECTS a Ctx whose row lacks Effect::IO.
-//
-// HotFgCtx::row_type == Row<>   — NO IO atom — must reject
-// BgDrainCtx::row_type == Row<Bg, Alloc> — NO IO atom — must reject
-// ColdInitCtx::row_type == Row<Init, Alloc, IO> — IO present — accepts
-// BgCompileCtx::row_type == Row<Bg, Alloc, IO> — IO present — accepts
-//
-// We verify via the concept directly (the GCC 16 limitation noted in
-// test_effects.cpp test_variadic_row_membership_lifts applies here
-// too — `requires(c) { fn(c); }` inside a static_assert produces a
-// hard error rather than SFINAE).
-static_assert( eff::CtxOwnsCapability<eff::ColdInitCtx,  eff::Effect::IO>,
-    "fixy-A5-016: ColdInitCtx::row = Row<Init, Alloc, IO> — IO must be present");
-static_assert( eff::CtxOwnsCapability<eff::BgCompileCtx, eff::Effect::IO>,
-    "fixy-A5-016: BgCompileCtx::row = Row<Bg, Alloc, IO> — IO must be present");
-static_assert(!eff::CtxOwnsCapability<eff::HotFgCtx,     eff::Effect::IO>,
-    "fixy-A5-016: HotFgCtx::row = Row<> — IO MUST be absent (this is "
-    "the whole point of the gate: hot-path code cannot reach the "
-    "setsockopt syscall)");
-static_assert(!eff::CtxOwnsCapability<eff::BgDrainCtx,   eff::Effect::IO>,
-    "fixy-A5-016: BgDrainCtx::row = Row<Bg, Alloc> — IO MUST be absent "
-    "(bg-drain context does not authorize IO without explicit promotion)");
+// The gate is checked through the concept rather than by attempting
+// the call.  A requires-expression naming the call inside a static
+// assertion is a hard error under this compiler instead of a
+// substitution failure, so it cannot serve as a negative witness.
+static_assert(eff::CtxOwnsCapability<eff::ColdInitCtx, eff::Effect::IO>,
+              "A cold-init context must carry the input and output effect.");
+static_assert(eff::CtxOwnsCapability<eff::BgCompileCtx, eff::Effect::IO>,
+              "A background-compile context must carry the input and output "
+              "effect.");
+static_assert(!eff::CtxOwnsCapability<eff::HotFgCtx, eff::Effect::IO>,
+              "A hot foreground context must not carry the input and output "
+              "effect.  Keeping hot-path code away from the socket call is what "
+              "the gate is for.");
+static_assert(!eff::CtxOwnsCapability<eff::BgDrainCtx, eff::Effect::IO>,
+              "A background-drain context must not carry the input and output "
+              "effect without being promoted first.");
 
 int main() {
     static_assert(sizeof(cntp::SocketFd) == sizeof(int));
     static_assert(sizeof(cntp::DeclaredCcChoice) == sizeof(cntp::CcSelection));
-    static_assert(cntp::CcCompatible<
-                  cntp::CcAlgorithm::Dctcp,
-                  cntp::LinkClass::LosslessDatacenterFabric>);
-    static_assert(!cntp::CcCompatible<
-                  cntp::CcAlgorithm::Dctcp,
-                  cntp::LinkClass::CrossDatacenter>);
+    static_assert(cntp::CcCompatible<cntp::CcAlgorithm::Dctcp, cntp::LinkClass::LosslessDatacenterFabric>);
+    static_assert(!cntp::CcCompatible<cntp::CcAlgorithm::Dctcp, cntp::LinkClass::CrossDatacenter>);
     static_assert(cntp::CustomCcModule<UserCc>);
     static_assert(std::is_trivially_copyable_v<cntp::KernelCcName>);
     static_assert(std::is_trivially_copyable_v<cntp::CcSelection>);
-    static_assert(std::same_as<
-                  cntp::DeclaredCcChoice::tag_type,
-                  saf::source::CcAlgorithm>);
+    static_assert(std::same_as<cntp::DeclaredCcChoice::tag_type, saf::source::CcAlgorithm>);
 
-    assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) ==
-           std::string_view{"bbr3"});
-    assert(cntp::link_class_name(cntp::LinkClass::PublicInternet) ==
-           std::string_view{"public-internet"});
+    assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) == std::string_view{"bbr3"});
+    assert(cntp::link_class_name(cntp::LinkClass::PublicInternet) == std::string_view{"public-internet"});
 
     std::printf("test_cntp_congestion_control:\n");
     test_name_admission();

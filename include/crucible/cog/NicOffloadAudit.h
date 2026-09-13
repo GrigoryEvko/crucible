@@ -1,9 +1,8 @@
 #pragma once
 
-// GAPS-140.  Read-only NIC startup audit over already-harvested facts.
-// Discovery/configuration syscalls live in later NicConfig/NumaNic tasks;
-// this header is the deterministic policy evaluator that those harvesters
-// feed.
+// A read-only audit of a NIC against a policy. The facts are gathered
+// elsewhere and handed in, so nothing here queries or changes the
+// device. The same facts and policy always yield the same report.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>

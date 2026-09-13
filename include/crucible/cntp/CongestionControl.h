@@ -1,14 +1,5 @@
 #pragma once
 
-// Per-socket CNT-P congestion-control selection.
-//
-// This header deliberately owns only the socket-level TCP_CONGESTION
-// substrate. qdisc/fq verification is GAPS-121, congestion telemetry is
-// GAPS-123, and kernel-module/sysctl mutation is a privileged NIC-config
-// task. The invariant here: a flow chooses a typed CC algorithm from a
-// link-compatible policy, validates kernel support, then applies the
-// admitted kernel name to an already-owned socket fd.
-
 #include <crucible/Platform.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/safety/Bits.h>
@@ -120,10 +111,8 @@ concept CustomCcModule = requires {
 }
 
 [[nodiscard]] constexpr std::expected<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
-    // fixy-A5-018: Bbr3 is registered under "bbr3" by the out-of-tree
-    // Google patchset (drivers/net/tcp_bbr3.c).  Mapping Bbr3 → "bbr"
-    // was a misread of upstream Linux: the in-tree "bbr" module is
-    // BBRv1, not v3.  Bbr1 owns the literal "bbr" name.
+    // The in-tree "bbr" module is BBRv1, so Bbr1 owns that literal name.
+    // BBRv3 registers as "bbr3" and comes from an out-of-tree patchset.
     switch (algorithm) {
         case CcAlgorithm::Bbr3:
             return KernelCcName::from("bbr3");
@@ -183,10 +172,9 @@ template <LinkClass Link>
         }
     }
 
-    // fixy-A5-018: cascade across the BBR family before degrading to
-    // loss-based.  Without Bbr2/Bbr1 fallthrough, a fleet running only
-    // out-of-tree BBRv2 or stock upstream BBRv1 would silently land on
-    // Cubic and lose the BBR-class throughput properties.
+    // Walk the whole BBR family before falling back to a loss-based
+    // algorithm.  A host carrying only BBRv2, or only stock BBRv1, would
+    // otherwise land on Cubic and lose the BBR behaviour.
     if (availability.contains(CcAlgorithm::Bbr3)) {
         return mint_cc_choice<CcAlgorithm::Bbr3, Link>();
     }
@@ -211,44 +199,10 @@ template <LinkClass Link>
 
 [[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(SocketFd fd) noexcept;
 
-// fixy-A5-016 worked example: cap-row-gated entry points for EVERY
-// syscall-touching surface in this header.  Four operations cross
-// the kernel boundary:
-//
-//   1. `set_cc_for_socket`              — setsockopt(TCP_CONGESTION)
-//   2. `query_cc_for_socket`            — getsockopt(TCP_CONGESTION)
-//   3. `query_cc_selection_for_socket`  — getsockopt(TCP_CONGESTION)
-//   4. `read_available_congestion_control` — open()+read() on /proc
-//
-// Every one of them is an Effect::IO action: kernel-state read or
-// mutation through a file descriptor, or filesystem read.  All four
-// get an additive Ctx-gated overload requiring
-// `CtxOwnsCapability<Ctx, Effect::IO>`.  The unparameterized forms
-// above retain backward compatibility (no Ctx-aware caller exists
-// yet across cntp/canopy/topology); FIXY-U-100 tracks the migration
-// + eventual `[[deprecated]]` of the compat shims.
-//
-// What the gate enforces:
-//   • `Ctx::row_type` MUST contain `Effect::IO`.
-//   • Without the cap, the concept rejects at template-substitution
-//     time — the call site becomes a compile error pointing at
-//     `CtxOwnsCapability<Ctx, Effect::IO>`.
-//   • A `HotFgCtx` (Row<>) cannot reach any of these overloads; it
-//     can still reach the unparameterized forms (the discipline gap
-//     the FIXY-U-100 linter sweep closes).
-//
-// Production migration path (FIXY-U-100):
-//   1. Author callers thread `ColdInitCtx` / `BgDrainCtx` /
-//      `BgCompileCtx` into their setup flows.
-//   2. The Ctx-gated overload is selected by overload resolution
-//      when a Ctx is in scope.
-//   3. Eventually the unparameterized form is `[[deprecated]]` then
-//      removed; until then it serves as the compat shim.
-//
-// Body: each gated overload forwards to its unparameterized form so
-// the two overloads agree on the underlying syscall.  Zero runtime
-// cost from the gate — concepts evaluate at compile time, the Ctx
-// parameter is an empty struct (sizeof == 1, EBO-collapsible).
+// The four operations below cross the kernel boundary, through setsockopt,
+// getsockopt or a read under /proc, so each needs a context carrying
+// Effect::IO.  The unparameterized forms above stay for callers that thread no
+// context, which means the gate can still be bypassed by calling those.
 template <effects::IsExecCtx Ctx>
     requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
 [[nodiscard]] std::expected<void, CcError> set_cc_for_socket(Ctx const&, SocketFd fd,

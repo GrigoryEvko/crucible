@@ -1,11 +1,9 @@
 #pragma once
 
-// GAPS-194.  Read-only NIC <-> NUMA affinity substrate.
-//
-// This header verifies already-harvested affinity facts and provides a
-// small rt-backed NUMA-node query helper.  It does not write
-// /proc/irq, RPS, XPS, or irqbalance state; those mutation paths belong
-// to the later NicConfig operator-policy task.
+// A read-only check that a NIC, its interrupts and its queues sit on
+// the same NUMA node as the work they serve. The facts are gathered
+// elsewhere and handed in. Nothing here steers an interrupt or writes
+// a packet-steering map.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>

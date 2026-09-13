@@ -1,8 +1,6 @@
-// Focused session self-test TU (#372 SEPLOG-PERF-2).
-//
-// The session framework headers gate expensive compile-time witnesses
-// behind CRUCIBLE_SESSION_SELF_TESTS.  Keep this group small so Ninja can
-// parallelize the invariant harness instead of building one huge TU.
+// The session framework headers gate expensive compile-time witnesses behind
+// CRUCIBLE_SESSION_SELF_TESTS.  Each group stays small so the build compiles
+// the invariant harness in parallel instead of as one large TU.
 
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 

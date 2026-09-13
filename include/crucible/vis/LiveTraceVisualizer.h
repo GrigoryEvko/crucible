@@ -1,11 +1,5 @@
 #pragma once
 
-// LiveTraceVisualizer: thin live wrapper around the Merkle DAG SVG renderer.
-//
-// GAPS-092 originally named `MerkleDag&` and `RuntimeMetrics::Snapshot&`, but
-// the current runtime exposes TraceNode / RegionNode roots and
-// observe::RuntimeMetricsSample. This header binds to those real surfaces.
-
 #include <crucible/observe/Metrics.h>
 #include <crucible/vis/TraceVisualizer.h>
 

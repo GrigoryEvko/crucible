@@ -20,25 +20,21 @@ namespace {
     return id;
 }
 
-[[nodiscard]] cntp::LinearConnection<cntp::TransportClass::MtlsTcp>
-connection(int fd, cog::CogIdentity const& id, std::uint64_t connection_id) {
+[[nodiscard]] cntp::LinearConnection<cntp::TransportClass::MtlsTcp> connection(int fd, cog::CogIdentity const& id,
+                                                                               std::uint64_t connection_id) {
     auto socket = cntp::admit_socket_fd(fd);
     auto cid = cntp::admit_connection_id(connection_id);
     assert(socket.has_value());
     assert(cid.has_value());
-    auto conn = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(
-        *socket, id, *cid);
+    auto conn = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(*socket, id, *cid);
     assert(conn.has_value());
     return std::move(*conn);
 }
 
 void test_admission_and_names() {
-    assert(cntp::transport_class_name(cntp::TransportClass::RdmaRcQp) ==
-           std::string_view{"RdmaRcQp"});
-    assert(cntp::pool_error_name(cntp::PoolError::PoolFull) ==
-           std::string_view{"PoolFull"});
-    assert(cntp::pool_event_kind_name(cntp::PoolEventKind::Returned) ==
-           std::string_view{"returned"});
+    assert(cntp::transport_class_name(cntp::TransportClass::RdmaRcQp) == std::string_view{"RdmaRcQp"});
+    assert(cntp::pool_error_name(cntp::PoolError::PoolFull) == std::string_view{"PoolFull"});
+    assert(cntp::pool_event_kind_name(cntp::PoolEventKind::Returned) == std::string_view{"returned"});
 
     auto size = cntp::admit_pool_size(4);
     auto zero_size = cntp::admit_pool_size(0);
@@ -59,8 +55,7 @@ void test_admission_and_names() {
 
     cog::CogIdentity empty{};
     auto socket = cntp::admit_socket_fd(100).value();
-    auto bad = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(
-        socket, empty, *id);
+    auto bad = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, empty, *id);
     assert(!bad.has_value());
     assert(bad.error() == cntp::PoolError::InvalidRemoteCog);
 
@@ -71,8 +66,7 @@ void test_lease_return_and_capacity() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(1);
-    auto pool = cntp::mint_connection_pool<
-        cntp::TransportClass::MtlsTcp, 2, 2>(init);
+    auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
     assert(pool.add_connection(bg, connection(10, id, 1), 100).has_value());
     assert(pool.add_connection(bg, connection(11, id, 2), 100).has_value());
@@ -108,12 +102,12 @@ void test_unhealthy_idle_and_quarantine_eviction() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(2);
-    auto pool = cntp::mint_connection_pool<
-        cntp::TransportClass::MtlsTcp, 2, 2>(init, cntp::PoolConfig{
-            .max_per_remote = cntp::PositivePoolSize{
-                std::uint16_t{2}, typename cntp::PositivePoolSize::Trusted{}},
-            .max_idle_ns = cntp::PositiveIdleTimeoutNs{
-                std::uint64_t{50}, typename cntp::PositiveIdleTimeoutNs::Trusted{}},
+    auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(
+        init,
+        cntp::PoolConfig{
+            .max_per_remote = cntp::PositivePoolSize{std::uint16_t{2}, typename cntp::PositivePoolSize::Trusted{}},
+            .max_idle_ns =
+                cntp::PositiveIdleTimeoutNs{std::uint64_t{50}, typename cntp::PositiveIdleTimeoutNs::Trusted{}},
             .probe_health = true,
         });
 
@@ -145,13 +139,12 @@ void test_configured_per_remote_limit() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(3);
-    auto pool = cntp::mint_connection_pool<
-        cntp::TransportClass::MtlsTcp, 2, 2>(init, cntp::PoolConfig{
-            .max_per_remote = cntp::PositivePoolSize{
-                std::uint16_t{1}, typename cntp::PositivePoolSize::Trusted{}},
-            .max_idle_ns = cntp::PositiveIdleTimeoutNs{
-                std::uint64_t{1000},
-                typename cntp::PositiveIdleTimeoutNs::Trusted{}},
+    auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(
+        init,
+        cntp::PoolConfig{
+            .max_per_remote = cntp::PositivePoolSize{std::uint16_t{1}, typename cntp::PositivePoolSize::Trusted{}},
+            .max_idle_ns =
+                cntp::PositiveIdleTimeoutNs{std::uint64_t{1000}, typename cntp::PositiveIdleTimeoutNs::Trusted{}},
             .probe_health = false,
         });
 
@@ -164,29 +157,28 @@ void test_configured_per_remote_limit() {
 }
 
 void test_event_ring_wrap_chronological_order() {
-    // fixy-A5-010 regression: event_at(index) must return the
-    // chronologically-indexed event, not the physical-slot one.  Before
-    // wrap, slot 0 holds the oldest event and the buggy `events_[index]`
-    // accidentally works.  After wrap, the oldest survivor lives at slot
-    // `next_event_` (the slot about to be overwritten), and `events_[0]`
-    // holds a much newer event from the post-wrap writes.
+    // Indexing is chronological, not by physical slot.  Only a ring
+    // that has wrapped can tell the two apart: until then the oldest
+    // event happens to sit at slot zero.  Once it wraps, the oldest
+    // survivor sits at the slot about to be overwritten and slot zero
+    // holds a much newer event.
     //
-    // Setup: MaxRemotes=2, MaxPerRemote=2 → MaxEvents = 2*2*2 = 8.
-    // Recipe: 2 Adds + 4 lease/return cycles = 10 sequenced events, of
-    // which the first 2 are evicted by the wrap.  Surviving events have
-    // sequences {3, 4, 5, 6, 7, 8, 9, 10}.
+    // Two remotes with two connections each give room for eight
+    // events.  Two additions plus four lease-and-return cycles produce
+    // ten, so the first two fall off and the survivors are numbered
+    // three through ten.
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(10);
-    auto pool = cntp::mint_connection_pool<
-        cntp::TransportClass::MtlsTcp, 2, 2>(init);
+    auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
     assert(pool.add_connection(bg, connection(40, id, 1), 100).has_value());
     assert(pool.add_connection(bg, connection(41, id, 2), 100).has_value());
     for (int i = 0; i < 4; ++i) {
         auto lease = pool.lease(bg, id, std::uint64_t{200} + std::uint64_t(i));
         assert(lease.has_value());
-        // Scope-exit drives LeaseGuard::~LeaseGuard → Returned event.
+        // The lease returns itself at the end of this scope, and that
+        // is what records the return event.
     }
 
     assert(pool.event_count() == 8u);
@@ -195,8 +187,6 @@ void test_event_ring_wrap_chronological_order() {
     auto newest = pool.event_at(7);
     assert(oldest.has_value());
     assert(newest.has_value());
-    // Pre-fix the buggy form returned events_[0] (an Add from the original
-    // pre-wrap write that has since been overwritten by a post-wrap event).
     assert(oldest->value().sequence == 3u);
     assert(newest->value().sequence == 10u);
 
@@ -217,32 +207,29 @@ void test_event_ring_wrap_chronological_order() {
 }
 
 void test_distinct_remote_counter_parity() {
-    // fixy-A5-009 regression: distinct_remote_count() was O(N²) under
-    // gate_; it is now an O(1) read of a cached counter maintained by
-    // add_connection + 4 drain paths.  The test exercises every path
-    // that touches the counter and asserts post-state parity.
+    // The distinct-remote count is a cached counter rather than a
+    // scan, so every path that can change it has to maintain it.  This
+    // walks all of those paths and checks the count after each one.
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto a = remote(20);
     auto b = remote(21);
     auto c = remote(22);
-    auto pool = cntp::mint_connection_pool<
-        cntp::TransportClass::MtlsTcp, 3, 2>(init, cntp::PoolConfig{
-            .max_per_remote = cntp::PositivePoolSize{
-                std::uint16_t{2}, typename cntp::PositivePoolSize::Trusted{}},
-            .max_idle_ns = cntp::PositiveIdleTimeoutNs{
-                std::uint64_t{50},
-                typename cntp::PositiveIdleTimeoutNs::Trusted{}},
+    auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 3, 2>(
+        init,
+        cntp::PoolConfig{
+            .max_per_remote = cntp::PositivePoolSize{std::uint16_t{2}, typename cntp::PositivePoolSize::Trusted{}},
+            .max_idle_ns =
+                cntp::PositiveIdleTimeoutNs{std::uint64_t{50}, typename cntp::PositiveIdleTimeoutNs::Trusted{}},
             .probe_health = true,
         });
 
     assert(pool.distinct_remote_count() == 0u);
 
-    // First slot for each remote increments distinct_remotes_.
+    // Only the first connection to a remote raises the count.
     assert(pool.add_connection(bg, connection(50, a, 1), 0).has_value());
     assert(pool.distinct_remote_count() == 1u);
 
-    // Second slot for SAME remote does NOT increment.
     assert(pool.add_connection(bg, connection(51, a, 2), 0).has_value());
     assert(pool.distinct_remote_count() == 1u);
 
@@ -252,39 +239,34 @@ void test_distinct_remote_counter_parity() {
     assert(pool.add_connection(bg, connection(70, c, 4), 0).has_value());
     assert(pool.distinct_remote_count() == 3u);
 
-    // MaxRemotes gate uses the cached counter.  Pool is now at 3
-    // distinct remotes (the configured max), and a new fourth one
-    // must be rejected via PoolFull.
+    // The admission gate reads that same counter, so a fourth remote
+    // is refused once three are held.
     auto fourth = remote(23);
     auto overflow = pool.add_connection(bg, connection(80, fourth, 5), 0);
     assert(!overflow.has_value());
     assert(overflow.error() == cntp::PoolError::PoolFull);
     assert(pool.distinct_remote_count() == 3u);
 
-    // evict_unhealthy on a remote with a SURVIVING healthy slot must
-    // NOT decrement.  Mark one of a's slots unhealthy, evict, observe
-    // distinct_remotes_ unchanged (a still has its other slot).
+    // Evicting one unhealthy connection leaves the remote with its
+    // other one, so the count does not move.
     auto fd50 = cntp::admit_socket_fd(50).value();
     pool.mark_unhealthy(bg, a, fd50);
     pool.evict_unhealthy(bg, a);
     assert(pool.distinct_remote_count() == 3u);
 
-    // evict_idle when remote becomes fully drained DOES decrement.
+    // Evicting the last connection to a remote does move it.
     pool.evict_idle(bg, a, /*now_ns=*/100);
     assert(pool.distinct_remote_count() == 2u);
 
-    // drain_quarantined drops the remote entirely (no leases held).
+    // Draining a remote that holds no lease drops it outright.
     pool.drain_quarantined(bg, b);
     assert(pool.distinct_remote_count() == 1u);
 
-    // After dropping two remotes, a fresh one is admissible again.
     assert(pool.add_connection(bg, connection(80, fourth, 5), 0).has_value());
     assert(pool.distinct_remote_count() == 2u);
 
-    // return_index drain path: lease c's slot, mark it unhealthy via
-    // the connection-level write, then return.  return_index sees the
-    // unhealthy flag, drains the slot, and decrements because c had
-    // exactly one slot.
+    // A connection marked unhealthy while leased is drained when the
+    // lease comes back, and it was the remote's only one.
     auto lease = pool.lease(bg, c, 0);
     assert(lease.has_value());
     auto fd70 = cntp::admit_socket_fd(70).value();
@@ -296,15 +278,13 @@ void test_distinct_remote_counter_parity() {
 }
 
 void test_gate_cache_line_isolation() {
-    // fixy-A5-009 regression: gate_ atomic_flag and the counter group
-    // (next_event_/event_count_/sequence_/distinct_remotes_) must live
-    // on SEPARATE cache lines so spinners on test_and_set don't false-
-    // share with producer writes to the counters.  Verified via the
-    // alignof contract on the type AND by stamping offsetof in the
-    // smallest representative instantiation.
+    // The gate flag and the counters beside it must occupy separate
+    // cache lines, so that a thread spinning on the gate does not
+    // share a line with writes to the counters.  Alignment on the type
+    // is what buys that separation.
     using PoolT = cntp::ConnectionPool<cntp::TransportClass::MtlsTcp, 2, 2>;
-    static_assert(alignof(PoolT) >= 64u,
-                  "ConnectionPool must enforce ≥64B alignment for gate_");
+    static_assert(alignof(PoolT) >= 64u, "The pool must be aligned to a cache line so that the "
+                                         "gate does not share one with the counters.");
     std::printf("  test_gate_cache_line_isolation: PASSED\n");
 }
 
@@ -312,16 +292,12 @@ void test_gate_cache_line_isolation() {
 
 int main() {
     static_assert(cntp::PoolTransportClass<cntp::TransportClass::MtlsTcp>);
-    static_assert(!cntp::PoolTransportClass<
-                  static_cast<cntp::TransportClass>(255)>);
+    static_assert(!cntp::PoolTransportClass<static_cast<cntp::TransportClass>(255)>);
     static_assert(sizeof(cntp::PositivePoolSize) == sizeof(std::uint16_t));
     static_assert(sizeof(cntp::PositiveIdleTimeoutNs) == sizeof(std::uint64_t));
     static_assert(sizeof(cntp::DeclaredPoolEvent) == sizeof(cntp::PoolEvent));
-    static_assert(std::same_as<
-                  cntp::DeclaredPoolEvent::tag_type,
-                  saf::source::ConnectionPool>);
-    static_assert(!std::copy_constructible<
-                  cntp::LinearConnection<cntp::TransportClass::MtlsTcp>>);
+    static_assert(std::same_as<cntp::DeclaredPoolEvent::tag_type, saf::source::ConnectionPool>);
+    static_assert(!std::copy_constructible<cntp::LinearConnection<cntp::TransportClass::MtlsTcp>>);
     static_assert(cntp::CtxFitsConnectionPoolMint<effects::ColdInitCtx>);
     static_assert(!cntp::CtxFitsConnectionPoolMint<effects::BgDrainCtx>);
     static_assert(cntp::CtxFitsConnectionPoolRuntime<effects::BgDrainCtx>);

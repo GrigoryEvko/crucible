@@ -1,21 +1,5 @@
 #pragma once
 
-// PermissionedMetaLog<UserTag> — role-typed surface over MetaLog.
-//
-// MetaLog is already an SPSC buffer: foreground appends TensorMeta
-// records at head, background drains them at tail.  This surface adds
-// the same CSL role split used by PermissionedSpscChannel without
-// replacing MetaLog's storage or hot-path implementation:
-//
-//   * ProducerHandle owns Permission<MetaLogProducer<UserTag>>
-//     and exposes append-only operations.
-//   * ConsumerHandle owns Permission<MetaLogConsumer<UserTag>>
-//     and exposes drain/read/tail-advance operations.
-//
-// PermissionedMetaLog itself stores only a MetaLog reference.  Handles store a
-// MetaLog reference plus an empty Permission token, so release-mode
-// handle size remains one pointer.
-
 #include <crucible/MetaLog.h>
 #include <crucible/permissions/Permission.h>
 
@@ -92,6 +76,11 @@ public:
         [[nodiscard]] std::uint32_t size_approx() const { return log_.size().peek(); }
     };
 
+    // The tail index is read relaxed. The consumer permission is linear, so
+    // the thread holding it is the only writer of that index and no ordering
+    // is needed to observe the latest value. The head index is read with get,
+    // which acquires against the producer's release and is what makes the
+    // appended records visible.
     class ConsumerHandle {
         ::crucible::MetaLog& log_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
@@ -179,7 +168,6 @@ template <typename UserTag>
 struct splits_into<concurrent::metalog_tag::Whole<UserTag>, concurrent::metalog_tag::Producer<UserTag>,
                    concurrent::metalog_tag::Consumer<UserTag>> : std::true_type {};
 
-// fixy-M-29 authoring witnesses.
 template <typename UserTag>
 struct splits_into_authoring_witness<concurrent::metalog_tag::Whole<UserTag>,
                                      concurrent::metalog_tag::Producer<UserTag>,

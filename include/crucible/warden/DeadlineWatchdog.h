@@ -1,154 +1,60 @@
 #pragma once
 
-// crucible::warden::DeadlineWatchdog — pure observer/decision layer that
-// wires SchedSwitch context-switch telemetry into Policy's deadline-
-// miss-budget enforcement.
+// The watchdog observes a counter, diffs it across a rolling window
+// and emits a verdict. It never acts on that verdict. One caller wants
+// to demote the scheduling class, another wants to watch without
+// touching anything, and a third wants the verdict as an input to
+// something else, so the decision to act stays with the caller.
 //
-// Closes the FEEDBACK LOOP gap GAPS-004g (#1283): Policy.h declares
-// `deadline_miss_budget` (rolling-window cap) and `watchdog_window_sec`
-// (window length) but no consumer existed.  Hardening.h applies a
-// SchedClass at process start and never reconsults — there was no
-// component watching whether the chosen class was still serving its
-// deadline contract.
+// It owns no thread either. A consumer that never calls it pays
+// nothing, and a consumer that does calls it from a cold path.
 //
-// ─── DESIGN INTENT ────────────────────────────────────────────────────
+// The observation degrades rather than fails: an absent or partially
+// loaded telemetry source yields InsufficientData.
 //
-// The watchdog is PURE LOGIC — observe a counter, diff across a rolling
-// window, emit a verdict.  Actuation belongs to the caller's `apply()`
-// pipeline (Hardening.h is the canonical actuator).  The split
-// matters because:
+// Why a context-switch count stands in for a deadline miss. Under the
+// deadline class a thread is preempted when its runtime budget is
+// exhausted, when a higher-priority task arrives, or when it yields.
+// The hot dispatcher issues no syscalls and does no I/O, so it never
+// yields, and no other real-time task shares its control group. Every
+// preempt of it is therefore a miss, which makes the context-switch
+// count a tight upper bound on the real miss count, and it needs
+// neither signal plumbing nor parsing of per-task kernel state. The
+// same argument holds for the first-in-first-out class. Under the
+// time-shared class preemption is ordinary rather than anomalous, and
+// the watchdog belongs disabled.
 //
-//   • The Keeper runs its own scheduler-management loop; the bench
-//     harness wants to OBSERVE without demoting; a future runtime drift
-//     attribution wants to READ verdicts as a feedback signal.  All
-//     three callers want different actuation, but the same observation.
+// One thread only. observe() and reset() mutate the window without
+// atomics, so a caller with more than one thread serializes outside.
+// Do not add atomics inside.
 //
-//   • The watchdog must be cheap enough to call from any cold-path
-//     hook — one Senses lookup + one CLOCK_BOOTTIME read + one budget
-//     comparison.  If it owned a thread, every consumer would pay for
-//     a thread; pure logic is free for non-consumers.
-//
-//   • The watchdog must work when Senses is partially loaded (e.g.
-//     SchedSwitch attached but SyscallLatency failed) — reading the
-//     facade is per-program, missing programs degrade verdict to
-//     InsufficientData rather than crashing.
-//
-// ─── HOW IT WORKS ─────────────────────────────────────────────────────
-//
-// `observe()` reads `Senses::sched_switch()->context_switches()` (a
-// monotonic counter scoped to the bench/Keeper target_tgid).  On the
-// first call it captures (count, time) as the window baseline.  On
-// subsequent calls within the same window, it returns Healthy if the
-// per-window budget is not exceeded.  When the window elapses, it
-// rebases.  When the budget is exceeded, it returns Downgrade — the
-// caller should re-apply Policy with `hot_sched` stepped one rank
-// down (Deadline → Fifo → Other).
-//
-// Why context_switches() as the proxy for "deadline miss":
-//
-//   Under SCHED_DEADLINE, the dispatcher thread runs in CBS-budgeted
-//   bursts; it gets preempted exactly when (a) its runtime is
-//   exhausted (kernel debits and parks), (b) a higher-priority task
-//   arrives, or (c) it voluntarily yields.  For Crucible's hot
-//   dispatcher there is no voluntary yield (no syscalls, no I/O on
-//   hot path) and no other RT task in the same CGroup, so every
-//   preempt of the dispatcher tid is structurally a miss-class
-//   event.  Counting context_switches() of the dispatcher tid is
-//   therefore a tight upper bound on actual misses, with the
-//   advantage that it works without SIGXCPU plumbing or
-//   /proc/<pid>/sched parsing.
-//
-//   For SCHED_FIFO, the same logic applies (FIFO threads only get
-//   preempted by higher-prio FIFO/RT tasks or hardirq processing —
-//   both are "miss" semantics if the dispatcher is supposed to be
-//   the highest-priority RT user).  For SCHED_OTHER, the watchdog
-//   should be disabled (deadline_miss_budget = 0) — preemption is
-//   normal, not anomalous.
-//
-// ─── COST DISCIPLINE ──────────────────────────────────────────────────
-//
-// Per observe() call (steady state):
-//   • 1 clock_gettime(CLOCK_BOOTTIME) (~30 ns; vDSO fastpath)
-//   • 1 Senses::sched_switch() pointer read (~1 ns)
-//   • 1 SchedSwitch::context_switches() syscall (~1 µs — bpf_map_lookup)
-//   • 1 budget comparison + window-elapsed branch (~5 ns)
-//
-// Total per observe(): ~1 µs.  Recommended invocation cadence:
-// 100ms-1s (Keeper main loop tick).  At 10 Hz, watchdog cost is
-// 10 µs/sec = 0.001 % CPU.  At 1 Hz, 0.0001 %.  Truly cold path.
-//
-// ─── AXIOM POSTURE (per Crucible Code Guide §II) ──────────────────────
-//
-// • InitSafe   ✓ All fields NSDMI-defaulted; padding-free POD layout.
-// • TypeSafe   ✓ effects::Init cap-tag at construction; SchedClass and
-//                WatchdogVerdict are strong enums; counts are uint64_t
-//                throughout (matches SchedSwitch::context_switches()).
-// • NullSafe   ✓ Every senses_ deref guarded; nullptr-Senses + null
-//                sched_switch() both degrade to InsufficientData.
-// • MemSafe    ✓ No heap allocation; senses_ is a NON-OWNING borrow
-//                (heap-owned by Keeper / bench harness elsewhere).
-//                Copy-deleted with reason; move-only.
-// • BorrowSafe ✓ Private state never aliased; senses_ raw pointer is
-//                read-only and pointer-comparable.
-// • ThreadSafe ⚠ SINGLE-THREAD ONLY.  observe() / reset() mutate the
-//                rolling-window state without atomics; concurrent
-//                callers race.  Callers must serialize (Keeper main
-//                loop is single-threaded by construction).  If a future
-//                multi-threaded consumer appears, wrap with a mutex
-//                outside the watchdog — do NOT add atomics inside.
-// • LeakSafe   ✓ No resources owned; trivial dtor.
-// • DetSafe    ✗ NON-DETERMINISTIC by design — observe() reads
-//                clock_gettime(CLOCK_BOOTTIME) and a kernel BPF-map counter that
-//                varies with system load.  The watchdog is an OBSERVER
-//                of wall-clock reality; it is not part of the bit-exact
-//                replay path.  Calling it from a deterministic context
-//                (e.g. replay verifier) is a structural bug.
-//
-// ─── HS14 NEG-COMPILE FIXTURES ────────────────────────────────────────
-//
-// • neg_warden_deadline_watchdog_no_cap.cpp     — construct without Init
-// • neg_warden_deadline_watchdog_wrong_cap.cpp  — construct with Bg{}
-//
-// Same Init-by-value gate as every Senses-touching surface in the
-// GAPS-004 series.
+// The verdict depends on wall-clock time and on system load, so it is
+// not reproducible. Calling the watchdog from a context that must
+// replay bit-exactly is a structural error.
 
-#include <crucible/Platform.h>  // CRUCIBLE_PURE for getters
-#include <crucible/effects/Capabilities.h>  // effects::Init capability tag
-#include <crucible/effects/EffectRow.h>  // row_contains_v
-#include <crucible/effects/ExecCtx.h>  // IsExecCtx, row_type_of_t
-#include <crucible/perf/Senses.h>  // Senses + SchedSwitch facade
-#include <crucible/warden/Policy.h>  // Policy + SchedClass + budget
-#include <crucible/safety/Checked.h>  // crucible::sat::sub_sat
-#include <crucible/safety/ClockSource.h>  // FIXY-V-194: BootClockBytes
+#include <crucible/Platform.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/perf/Senses.h>
+#include <crucible/warden/Policy.h>
+#include <crucible/safety/Checked.h>
+#include <crucible/safety/ClockSource.h>
 
 #include <chrono>
 #include <cstdint>
-#include <ctime>  // FIXY-V-194: clock_gettime, CLOCK_BOOTTIME
+#include <ctime>
 
 namespace crucible::warden {
 
-// ─── WatchdogVerdict ──────────────────────────────────────────────────
-//
-// Three states.  InsufficientData fires when the watchdog can't
-// observe (Senses missing, SchedSwitch unattached, window not yet
-// elapsed) — the caller should not act on this verdict.
-//
-// Healthy fires when the rolling window has elapsed and the count
-// of preempts in this window is at or below `deadline_miss_budget`.
-//
-// Downgrade fires when the count has exceeded the budget.  The caller
-// is expected to re-apply Policy with `hot_sched` stepped one rank
-// down.  The watchdog itself does NOT actuate the downgrade — it
-// reports the verdict; the Keeper / bench harness chooses whether
-// and when to act.
-
+// InsufficientData carries no information. A caller must not read it
+// as "healthy" and must not act on it.
 enum class WatchdogVerdict : uint8_t {
-    InsufficientData = 0,  // can't observe (no Senses, no SchedSwitch, window not elapsed)
-    Healthy = 1,  // miss count within budget for this window
-    Downgrade = 2,  // budget exceeded; recommend SchedClass demotion
+    InsufficientData = 0,  // nothing to observe, or the window has not closed
+    Healthy = 1,  // the miss count for the closed window is within budget
+    Downgrade = 2,  // the budget is exceeded; a weaker class is advised
 };
 
-// Stable string for diagnostic / runtime observation logging.  No allocation.
 [[nodiscard, gnu::const]] inline const char* watchdog_verdict_name(WatchdogVerdict v) noexcept {
     switch (v) {
         case WatchdogVerdict::InsufficientData:
@@ -162,31 +68,14 @@ enum class WatchdogVerdict : uint8_t {
     }
 }
 
-// ─── DeadlineWatchdog ─────────────────────────────────────────────────
-//
-// Construction takes `effects::Init` — building the watchdog is a
-// startup-only act (it captures the baseline for the first window).
-// Subsequent `observe()` calls are cold-path-callable from any
-// context (single-thread; see A6 above).
-//
-// ── Borrow contract for `senses_` ─────────────────────────────────
-// The Senses pointer is a NON-OWNING borrow.  The lifetime contract
-// is: the Senses instance outlives the DeadlineWatchdog.  This is not
-// expressible via `safety::BorrowedRef<const Senses>` because the
-// nullptr case is part of the watchdog's degraded-mode contract
-// (callers without libbpf, unit tests, bench harness on a kernel
-// missing CAP_BPF) — BorrowedRef is non-null by design, and wrapping
-// in `Optional<BorrowedRef<...>>` adds a layer without eliminating a
-// bug class the existing nullptr guards don't already prevent.
-// Documented contract instead of typed contract — this matches the
-// warden/Hardening.h convention for borrowed Linux-syscall state.
+// The telemetry pointer is borrowed, and what it points at must
+// outlive the watchdog. It is a raw pointer rather than a non-null
+// borrow type because a null source is part of the contract: a host
+// without the telemetry capability, or a test exercising the degraded
+// path, passes one deliberately.
 
-// FIXY-V-194 (Agent 6 Scenario 6 P0):
-//   CtxFitsDeadlineWatchdog<Ctx> — observe() admits Bg / Init / Test
-//   row contexts (the warden enforcement loop, the keeper init phase,
-//   and test drivers).  HotFgCtx is rejected: a watchdog poll from
-//   the hot replay-bound foreground would be a category error.  Same
-//   row-shape as V-193's CtxFitsMonotonicClock for consistency.
+// A poll belongs to a background or start-up context. The hot
+// foreground is rejected.
 template <typename Ctx>
 concept CtxFitsDeadlineWatchdog =
     ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Init,
@@ -199,69 +88,42 @@ public:
         : senses_{senses},
           miss_budget_{policy.deadline_miss_budget},
           window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1'000'000'000ull} {
-        // Baseline captured lazily on first observe() — at construction
-        // time we may not yet have a SchedSwitch counter to read (load
-        // can race with Watchdog construction in some Keeper init
-        // sequences).  All-zero state is the "first observation
-        // pending" sentinel.
+        // The body is empty on purpose. The telemetry source may still
+        // be loading when the watchdog is built, so the first observe()
+        // captures the baseline. All-zero state is that pending
+        // sentinel.
     }
 
-    // Observe the current preempt count, advance the rolling window
-    // if window_ns has elapsed since the last reset, and emit a
-    // verdict.  Cheap; safe to call from any cold path.
-    //
-    // FIXY-V-194 — ctx-gated on CtxFitsDeadlineWatchdog (Bg / Init /
-    // Test row).  HotFgCtx is rejected (a watchdog poll from the hot
-    // replay-bound foreground would be the wrong thread anyway).
-    //
-    // The clock read is CLOCK_BOOTTIME, NOT CLOCK_MONOTONIC: a host
-    // suspend (laptop close, VM pause, GPU dev quiesce) freezes
-    // CLOCK_MONOTONIC; the watchdog window would never close on
-    // wake and the system would stay in InsufficientData forever.
-    // CLOCK_BOOTTIME keeps ticking through suspend so the window
-    // closes and the verdict fires once the host wakes — the correct
-    // semantics for a "have N seconds elapsed since enqueue" watchdog.
-    // Return is wrapped in BootClockBytes<uint64_t> to document the
-    // source-of-truth provenance at the call site; downstream Cipher /
-    // SessionPersistence migrations (V-198, V-199) will refuse the
-    // value at compile time unless the consumer accepts Boot bytes.
+    // The clock read is CLOCK_BOOTTIME rather than CLOCK_MONOTONIC
+    // because a host suspend freezes the monotonic clock. The window
+    // would then never close and the verdict would stay at
+    // InsufficientData for as long as the host stayed asleep.
     template <::crucible::effects::IsExecCtx Ctx>
         requires CtxFitsDeadlineWatchdog<Ctx>
     [[nodiscard]] WatchdogVerdict observe(Ctx const&) noexcept {
-        // Disabled by configuration: budget = 0 OR window = 0 both
-        // mean "don't watch".  Budget 0 is the documented opt-out;
-        // window 0 was a latent BUG before the audit-2 sweep — every
-        // observe() saw `elapsed_ns >= window_ns_` (== 0) trivially
-        // true on every call after the first, rebasing the window and
-        // emitting a verdict against a sub-microsecond observation.
-        // A custom Policy with `watchdog_window_sec = 0` would have
-        // produced random Downgrade verdicts.  Both knobs guarded as
-        // disabled-when-zero now.
+        // A budget of zero is the opt-out. A window of zero is also
+        // treated as off: every elapsed-time test would pass trivially
+        // and the verdict would come from an observation covering
+        // almost no time at all.
         if (miss_budget_ == 0 || window_ns_ == 0) {
             return WatchdogVerdict::InsufficientData;
         }
 
-        // No Senses → can't observe.  Also handles tests that pass
-        // nullptr deliberately to exercise the InsufficientData path.
         if (senses_ == nullptr) {
             return WatchdogVerdict::InsufficientData;
         }
 
         const ::crucible::perf::SchedSwitch* sched = senses_->sched_switch();
         if (sched == nullptr) {
-            // SchedSwitch failed to load (kernel too old, missing CAP,
-            // libbpf load error).  The watchdog can't observe — caller
-            // should treat as "no signal", NOT as "Healthy".
+            // The counter is not attached, which happens on an older
+            // kernel or without the capability to load it. That is an
+            // absence of signal, not evidence of health.
             return WatchdogVerdict::InsufficientData;
         }
 
-        // FIXY-V-194: CLOCK_BOOTTIME (NOT CLOCK_MONOTONIC) — the
-        // watchdog's "have N seconds elapsed since enqueue" semantics
-        // must survive host suspend.  clock_gettime returns 0 / -1;
-        // -1 on a properly-built Linux box is essentially impossible
-        // (would mean the kernel refused CLOCK_BOOTTIME, which has
-        // been baseline since 2.6.39).  We treat any failure as
-        // "InsufficientData" — the next observe() call retries.
+        // The clock has been available since Linux 2.6.39, so a
+        // failure here means something is deeply wrong. Report no
+        // signal and let the next call retry.
         ::timespec ts{};
         if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
@@ -271,8 +133,6 @@ public:
         const uint64_t now_ns = std::move(now_bytes).consume();
         const uint64_t count = sched->context_switches();
 
-        // First observation — capture baseline, return InsufficientData
-        // until at least one window has elapsed.
         if (window_started_ns_ == 0) {
             window_started_ns_ = now_ns;
             baseline_count_ = count;
@@ -282,18 +142,13 @@ public:
 
         latest_count_ = count;
 
-        // Window elapsed → rebase, return verdict for THIS window
-        // before resetting.  The verdict is computed on the just-
-        // closed window; the next observe() starts a fresh window.
+        // The verdict describes the window that just closed, and the
+        // rebase below opens the next one.
         //
-        // sub_sat (audit-2 fix): a non-monotonic counter snapshot
-        // (e.g. SchedSwitch was unloaded and reloaded mid-watchdog,
-        // a documented borrow-contract violation but tolerable as
-        // "no signal" rather than "phantom Downgrade") would have
-        // underflowed `count - baseline_count_` to a giant positive
-        // and triggered a false Downgrade.  Saturate to 0 instead;
-        // a degenerate baseline produces InsufficientData on the
-        // next observe() once it rebases.
+        // The subtraction saturates because the counter is not
+        // guaranteed monotonic across a reload of the telemetry
+        // source. A plain subtraction would underflow to a huge
+        // positive number and manufacture a Downgrade out of nothing.
         const uint64_t elapsed_ns = now_ns - window_started_ns_;
         if (elapsed_ns >= window_ns_) {
             const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(count, baseline_count_);
@@ -304,61 +159,40 @@ public:
             return v;
         }
 
-        // Window not yet elapsed — early-warning check: if budget
-        // already exceeded mid-window, signal Downgrade immediately
-        // rather than waiting for the window to close.  Avoids a
-        // window-length lag in pathological miss storms.  Same
-        // sub_sat rationale as above.
+        // A budget already blown mid-window is reported at once rather
+        // than a whole window later, which matters during a storm of
+        // misses.
         const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(count, baseline_count_);
         if (misses > miss_budget_) {
-            // Don't reset the window — the next observe() will see
-            // the exceeded state again until the window naturally
-            // closes.  Caller is expected to demote and re-construct
-            // the watchdog with the new Policy (or call reset()).
+            // The window is deliberately left running, so every
+            // further call keeps reporting Downgrade until it closes.
+            // A caller that acts on the verdict calls reset() or
+            // rebuilds the watchdog against the new policy.
             return WatchdogVerdict::Downgrade;
         }
 
         return WatchdogVerdict::InsufficientData;
     }
 
-    // Reset the rolling window to start now.  Call after demoting the
-    // SchedClass so the next observe() starts a fresh window against
-    // the demoted class's expected miss profile.
+    // Call this after changing the scheduling class, so the next
+    // window is measured against the new class rather than the old.
     void reset() noexcept {
         window_started_ns_ = 0;
         baseline_count_ = 0;
         latest_count_ = 0;
     }
 
-    // ── Diagnostics / runtime observer feedback ─────────────────────
-    //
-    // All zero on a freshly-constructed or just-reset watchdog.
-    // Runtime observation code reads these to attribute drift events to
-    // the SchedSwitch signal.
-
-    // CRUCIBLE_PURE = [[gnu::pure, nodiscard]] — these getters depend
-    // only on member state; the optimizer can CSE redundant calls
-    // (e.g. a runtime observer loop that reads baseline_count + latest_count
-    // back-to-back compiles to two MOV reads, no aliasing assumed).
     CRUCIBLE_PURE uint64_t baseline_count() const noexcept { return baseline_count_; }
     CRUCIBLE_PURE uint64_t latest_count() const noexcept { return latest_count_; }
     CRUCIBLE_PURE uint64_t window_started_ns() const noexcept { return window_started_ns_; }
     CRUCIBLE_PURE uint32_t miss_budget() const noexcept { return miss_budget_; }
     CRUCIBLE_PURE uint64_t window_ns() const noexcept { return window_ns_; }
 
-    // Misses observed since window start.  `crucible::sat::sub_sat`
-    // saturates to zero on the rare counter-reset edge case (e.g.
-    // SchedSwitch reload between observations) — the open-coded
-    // ternary previously here was equivalent but didn't grep-locate
-    // alongside Crucible's other saturation sites.
+    // Saturating, for the same reason the subtraction in observe() is.
     CRUCIBLE_PURE uint64_t misses_in_window() const noexcept {
         return ::crucible::sat::sub_sat<uint64_t>(latest_count_, baseline_count_);
     }
 
-    // Move-only — no shared mutable state, but we want move semantics
-    // for emplacing into Keeper state structs without copy elision
-    // ambiguity.  Copy is deleted to surface accidental aliasing of
-    // the rolling-window state at compile time.
     DeadlineWatchdog(const DeadlineWatchdog&) =
         delete("DeadlineWatchdog owns rolling-window state — copying would shadow window with stale data");
     DeadlineWatchdog& operator=(const DeadlineWatchdog&) =
@@ -371,39 +205,16 @@ private:
     const ::crucible::perf::Senses* senses_ = nullptr;
     uint32_t miss_budget_ = 0;
     uint64_t window_ns_ = 0;
-    uint64_t window_started_ns_ = 0;  // 0 = first observation pending
+    uint64_t window_started_ns_ = 0;  // zero until the first observation
     uint64_t baseline_count_ = 0;
     uint64_t latest_count_ = 0;
 };
 
-// Tiny: 1 ptr + 1 u32 + 4 u64 = 40 bytes.  Stack-allocatable in any
-// Keeper / bench frame.  No virtual, no heap.
 static_assert(sizeof(DeadlineWatchdog) <= 64, "DeadlineWatchdog must fit in one cache line");
 
-// Recommended demotion table.  When `observe() == Downgrade`, the
-// caller picks the next class via this helper rather than open-coding
-// the order.  Stops at SchedClass::Other — once we're already on the
-// time-shared class, further demotion is meaningless (Idle is a
-// different semantic, not a "weaker" RT class).
-// ── §XXI Universal Mint Pattern — mint_deadline_watchdog (FIXY-U-084) ─
-//
-// Wraps the explicit `DeadlineWatchdog(Senses*, Policy, Init)` ctor
-// with a Ctx-bound §XXI factory.  The bare ctor remains callable
-// during the migration period (a sweep of in-tree callers belongs to
-// later production-side fixy tasks), but new sites should mint via
-// this factory so the Init-row admission is enforced at the type
-// system, not just by passing an `effects::Init{}` cap-tag.
-//
-// Concept: CtxFitsDeadlineWatchdogMint = IsExecCtx<Ctx> ∧
-//          row_contains_v<row_type_of_t<Ctx>, Effect::Init>.
-//
-// Why Init: construction reads Senses + Policy fields
-// to baseline the rolling window.  Hot foreground / Bg-drain contexts
-// must not stand up a fresh watchdog (they should observe one minted
-// at Init time by the Keeper / bench harness).
-//
-// Body is constexpr-noexcept and constructs in place; no allocation.
-
+// Building a watchdog belongs to start-up, because it takes the
+// baseline the first window is measured against. A hot foreground or
+// background context observes one that already exists.
 template <class Ctx>
 concept CtxFitsDeadlineWatchdogMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
@@ -418,6 +229,10 @@ static_assert(CtxFitsDeadlineWatchdogMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsDeadlineWatchdogMint<effects::BgDrainCtx>);
 static_assert(!CtxFitsDeadlineWatchdogMint<effects::HotFgCtx>);
 
+// The order a caller steps through after a Downgrade verdict. The
+// time-shared class is the floor: below it there is nothing weaker.
+// The idle class is not a weaker real-time class but a different
+// thing, so it is left alone.
 [[nodiscard, gnu::const]] inline SchedClass demote_one_step(SchedClass c) noexcept {
     switch (c) {
         case SchedClass::Deadline:
@@ -427,11 +242,11 @@ static_assert(!CtxFitsDeadlineWatchdogMint<effects::HotFgCtx>);
         case SchedClass::RoundRobin:
             return SchedClass::Other;
         case SchedClass::Other:
-            return SchedClass::Other;  // already at floor
+            return SchedClass::Other;
         case SchedClass::Batch:
-            return SchedClass::Other;  // batch → other (same-tier downshift)
+            return SchedClass::Other;
         case SchedClass::Idle:
-            return SchedClass::Idle;  // Idle is unrelated to RT — preserve
+            return SchedClass::Idle;
         default:
             return SchedClass::Other;
     }

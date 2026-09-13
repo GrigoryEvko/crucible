@@ -1,26 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_atomic_snapshot — unit tests + multi-threaded stress for the
-// AtomicSnapshot<T> seqlock primitive (QUEUE-1).
-//
-// What we prove:
-//
-//   1. Round-trip correctness (single-threaded): publish(v) → load()
-//      returns v.
-//   2. Version counter monotonicity.
-//   3. try_load() behavior on steady state.
-//   4. Default-constructed snapshot returns T{}.
-//   5. **Stress test**: 1 writer, 4 readers, 200 ms of contention.
-//      Every load() MUST return a consistent snapshot (one that
-//      was, at some moment, atomically published).  Any torn read
-//      — observable as a struct-level invariant violation —
-//      indicates a memory-ordering bug in the seqlock.
-//   6. Compile-time: AtomicSnapshot is not copyable, not movable.
-//
-// The stress test is the load-bearing one.  A seqlock with wrong
-// memory ordering may pass single-threaded tests forever, then
-// corrupt data on the first interleaving that triggers the race.
-// ═══════════════════════════════════════════════════════════════════
-
 #include <crucible/concurrent/AtomicSnapshot.h>
 
 #include <atomic>
@@ -34,15 +11,11 @@
 
 using namespace crucible::concurrent;
 
-// ── Test payload with self-consistency invariant ──────────────────
+// The three fields are redundant on purpose.  A reader that sees them
+// disagree has caught the writer mid-update, which is a torn read.
 //
-// Three redundant fields: if a reader ever sees `value != value_again`
-// or `value ^ MAGIC != value_xor_magic`, it has observed a torn
-// read — the writer had only partially updated the struct.
-//
-// With 3 × uint64 = 24 bytes, the writer's memcpy spans multiple
-// stores, giving the race plenty of surface area to manifest if
-// the seqlock is broken.
+// At three words the copy spans several stores, so a broken seqlock has
+// a wide window in which to show itself.
 
 struct TestPayload {
     uint64_t value;
@@ -52,20 +25,15 @@ struct TestPayload {
     static constexpr uint64_t MAGIC = 0xCAFEBABEDEADBEEFULL;
 
     [[nodiscard]] bool is_consistent() const noexcept {
-        return value == value_again &&
-               (value ^ MAGIC) == value_xor_magic;
+        return value == value_again && (value ^ MAGIC) == value_xor_magic;
     }
 
-    [[nodiscard]] static TestPayload from(uint64_t v) noexcept {
-        return TestPayload{v, v ^ MAGIC, v};
-    }
+    [[nodiscard]] static TestPayload from(uint64_t v) noexcept { return TestPayload{v, v ^ MAGIC, v}; }
 };
 
 static_assert(std::is_trivially_copyable_v<TestPayload>);
 static_assert(std::is_trivially_destructible_v<TestPayload>);
 static_assert(sizeof(TestPayload) == 24);
-
-// ── Compile-time checks ────────────────────────────────────────────
 
 static_assert(!std::is_copy_constructible_v<AtomicSnapshot<TestPayload>>,
               "AtomicSnapshot must not be copyable (Pinned contract)");
@@ -73,8 +41,6 @@ static_assert(!std::is_copy_assignable_v<AtomicSnapshot<TestPayload>>);
 static_assert(!std::is_move_constructible_v<AtomicSnapshot<TestPayload>>,
               "AtomicSnapshot must not be movable (interior atomics)");
 static_assert(!std::is_move_assignable_v<AtomicSnapshot<TestPayload>>);
-
-// ── Unit: default construction ─────────────────────────────────────
 
 static void test_default_construction() {
     AtomicSnapshot<TestPayload> snap;
@@ -92,8 +58,6 @@ static void test_default_construction() {
     std::printf("  test_default_construction: PASSED\n");
 }
 
-// ── Unit: initial-value ctor ───────────────────────────────────────
-
 static void test_initial_value_ctor() {
     const auto initial = TestPayload::from(42);
     AtomicSnapshot<TestPayload> snap{initial};
@@ -105,8 +69,6 @@ static void test_initial_value_ctor() {
 
     std::printf("  test_initial_value_ctor: PASSED\n");
 }
-
-// ── Unit: single-thread round-trip ─────────────────────────────────
 
 static void test_roundtrip_single_thread() {
     AtomicSnapshot<TestPayload> snap;
@@ -127,8 +89,6 @@ static void test_roundtrip_single_thread() {
     std::printf("  test_roundtrip_single_thread: PASSED\n");
 }
 
-// ── Unit: version counter monotonicity ─────────────────────────────
-
 static void test_version_monotonicity() {
     AtomicSnapshot<TestPayload> snap;
 
@@ -143,41 +103,31 @@ static void test_version_monotonicity() {
     std::printf("  test_version_monotonicity: PASSED\n");
 }
 
-// ── Stress: 1 writer, N readers, 200 ms ────────────────────────────
+// A seqlock with the wrong memory ordering passes every single-threaded
+// case forever, then corrupts data on the first interleaving that hits
+// the race.  Only this case can catch that.  A bug shows up here as
+// an inconsistent payload: a reader saw the copy mid-write and the retry
+// protocol failed to discard it.
 //
-// The load-bearing test.  Any memory-ordering bug manifests as an
-// `is_consistent() == false` observation — some reader saw a struct
-// where `value != value_again`, meaning the memcpy was observed
-// mid-write, yet the seqlock's retry protocol failed to discard it.
-//
-// Interleaving probability: writer publish is ~30 ns, one publish
-// per ~50 ns of wall time under continuous pressure.  Readers
-// load() at a rate of ~1 per ~100 ns.  Over 200 ms we get ~4M
-// publishes × 4 × ~2M reads = on the order of 10^13 write-read
-// interleavings sampled.  If any is racy, the probability of
-// catching it in 200 ms is overwhelming.
+// The window is sized so that continuous pressure from one writer and
+// four readers samples a very large number of interleavings.
 
 static void test_stress_multithread() {
     std::printf("  test_stress_multithread: running 200ms @ 4 readers...\n");
 
-    // Initialize snap with a CONSISTENT value before readers start.
-    // The default-constructed snapshot has all-zero bytes, which by
-    // our MAGIC-based self-consistency check is NOT consistent
-    // (0 ^ MAGIC != 0).  Readers racing the writer's first publish
-    // would otherwise misclassify the legitimate default state as a
-    // torn read.  Writer starts at i=1, so seed with i=0.
+    // The readers must start against a consistent value.  An all-zero
+    // payload fails the check, because zero exclusive-or the magic is
+    // not zero, so a reader that arrives before the first publish would
+    // report the legitimate default state as a torn read.  The writer
+    // starts at one, so the seed is zero.
     AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> total_loads{0};
     std::atomic<uint64_t> torn_reads{0};
-    std::atomic<uint64_t> stale_reads{0};   // value not monotonic
+    std::atomic<uint64_t> stale_reads{0};  // value not monotonic
     std::atomic<uint64_t> total_try_loads{0};
     std::atomic<uint64_t> nullopt_try_loads{0};
 
-    // Writer thread: publish monotonically increasing values until
-    // `stop` is set.  Each publish uses TestPayload::from(i) so
-    // the struct's self-consistency invariant holds for every
-    // published state.
     std::jthread writer([&](std::stop_token /*st*/) {
         uint64_t i = 1;
         while (!stop.load(std::memory_order_acquire)) {
@@ -186,18 +136,17 @@ static void test_stress_multithread() {
         }
     });
 
-    // Reader threads: continuously load and verify consistency +
-    // monotonicity.  Monotonicity: the observed value MUST be
-    // >= the highest value previously seen by THIS reader (the
-    // writer only publishes increasing values).
+    // The writer only publishes increasing values, so each reader must
+    // never see a value below the highest it has seen itself.  The bound
+    // is per reader, not global.
     constexpr int kReaders = 4;
     std::vector<std::jthread> readers;
     for (int r = 0; r < kReaders; ++r) {
         readers.emplace_back([&](std::stop_token /*st*/) {
             uint64_t last_value = 0;
             while (!stop.load(std::memory_order_acquire)) {
-                // Alternate between blocking load() and try_load()
-                // to exercise both paths.
+                // The parity of the counter alternates the two read
+                // paths, so both are exercised.
                 if (((total_loads.fetch_add(1, std::memory_order_relaxed)) & 1u) != 0u) {
                     const auto v = snap.load();
                     if (!v.is_consistent()) {
@@ -229,14 +178,14 @@ static void test_stress_multithread() {
     }
 
     constexpr uint64_t kMinStressLoads = 200'000;
-    const auto stress_deadline = std::chrono::steady_clock::now()
-                               + std::chrono::milliseconds(200);
+    const auto stress_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
     while (total_loads.load(std::memory_order_acquire) < kMinStressLoads
-        && std::chrono::steady_clock::now() < stress_deadline) {
+           && std::chrono::steady_clock::now() < stress_deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
     stop.store(true, std::memory_order_release);
-    // jthreads join in destructors; clear explicitly to flush.
+    // A jthread joins in its destructor, and these are destroyed here
+    // so the counters below are final.
     readers.clear();
     writer = std::jthread{};
 
@@ -252,14 +201,11 @@ static void test_stress_multithread() {
                 "    try_load()=nullopt: %llu / %llu (%.2f%% on conflicts)\n"
                 "    torn reads observed: %llu  ← MUST be 0\n"
                 "    non-monotonic reads: %llu  ← MUST be 0\n",
-        static_cast<unsigned long long>(final_version),
-        static_cast<unsigned long long>(final_version),
-        static_cast<unsigned long long>(loads),
-        static_cast<unsigned long long>(nullopt_cnt),
-        static_cast<unsigned long long>(try_loads),
-        try_loads > 0 ? 100.0 * static_cast<double>(nullopt_cnt) / static_cast<double>(try_loads) : 0.0,
-        static_cast<unsigned long long>(torn),
-        static_cast<unsigned long long>(stale));
+                static_cast<unsigned long long>(final_version), static_cast<unsigned long long>(final_version),
+                static_cast<unsigned long long>(loads), static_cast<unsigned long long>(nullopt_cnt),
+                static_cast<unsigned long long>(try_loads),
+                try_loads > 0 ? 100.0 * static_cast<double>(nullopt_cnt) / static_cast<double>(try_loads) : 0.0,
+                static_cast<unsigned long long>(torn), static_cast<unsigned long long>(stale));
 
     assert(torn == 0 && "torn read observed — seqlock memory ordering is broken");
     assert(stale == 0 && "non-monotonic read observed — writer uniqueness violated?");
@@ -269,22 +215,19 @@ static void test_stress_multithread() {
     std::printf("  test_stress_multithread: PASSED\n");
 }
 
-// ── Stress: try_load rejects in-progress writes ────────────────────
-//
-// Pound on a lightly-contended snapshot with try_load() from a
-// tight loop while the writer publishes at maximum rate.  We
-// don't require any specific nullopt rate — just that SOME
-// try_load() calls return nullopt (proving the in-progress
-// detection actually fires) and none return inconsistent values.
+// One reader polls the non-blocking read in a tight loop while the
+// writer publishes as fast as it can.  The claim is that no read comes
+// back inconsistent.  The rate at which reads are refused is reported
+// but not asserted.
 
 static void test_try_load_rejects_in_progress() {
     std::printf("  test_try_load_rejects_in_progress: running 100ms...\n");
 
-    // Payload deliberately 256 B (max allowed) — stretches the
-    // writer's memcpy window to maximize the nullopt return rate.
-    // Local-class constexpr static members are ill-formed (C++
-    // local-class rule), so the head/trailer self-consistency
-    // protocol relies on the per-instance bytes alone.
+    // The payload sits at the 256-byte maximum, which stretches the
+    // writer's copy window and so raises the refusal rate.  A local
+    // class may not hold a constexpr static member, so the consistency
+    // check reads the header and trailer bytes instead of a magic
+    // constant.
     struct LargePayload {
         uint64_t header;
         uint64_t body[30];  // total 31 × 8 = 248 B
@@ -311,9 +254,9 @@ static void test_try_load_rejects_in_progress() {
     static_assert(sizeof(LargePayload) == 256);
     static_assert(std::is_trivially_copyable_v<LargePayload>);
 
-    // Same fix as test_stress_multithread: initialize with a
-    // consistent value (header == trailer = 0, body[i] = i) so
-    // pre-first-publish reads aren't misclassified as torn.
+    // Seeded with a consistent value for the same reason as the case
+    // above: a read that arrives before the first publish must not look
+    // torn.
     AtomicSnapshot<LargePayload> snap{LargePayload::from(0)};
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> total{0};
@@ -341,10 +284,9 @@ static void test_try_load_rejects_in_progress() {
     });
 
     constexpr uint64_t kMinLargeLoads = 100'000;
-    const auto large_deadline = std::chrono::steady_clock::now()
-                              + std::chrono::milliseconds(100);
+    const auto large_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     while (total.load(std::memory_order_acquire) < kMinLargeLoads
-        && std::chrono::steady_clock::now() < large_deadline) {
+           && std::chrono::steady_clock::now() < large_deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
     stop.store(true, std::memory_order_release);
@@ -355,18 +297,16 @@ static void test_try_load_rejects_in_progress() {
     const uint64_t r = rejected.load(std::memory_order_relaxed);
     const uint64_t trn = torn.load(std::memory_order_relaxed);
 
-    std::printf("    try_load() calls: %llu, rejected: %llu (%.3f%%), torn: %llu\n",
-        static_cast<unsigned long long>(t),
-        static_cast<unsigned long long>(r),
-        t > 0 ? 100.0 * static_cast<double>(r) / static_cast<double>(t) : 0.0,
-        static_cast<unsigned long long>(trn));
+    std::printf("    try_load() calls: %llu, rejected: %llu (%.3f%%), torn: %llu\n", static_cast<unsigned long long>(t),
+                static_cast<unsigned long long>(r),
+                t > 0 ? 100.0 * static_cast<double>(r) / static_cast<double>(t) : 0.0,
+                static_cast<unsigned long long>(trn));
 
     assert(trn == 0 && "torn read from try_load — protocol broken");
     assert(t > 100 && "not enough reader activity");
-    // We don't assert r > 0 because on extremely fast machines the
-    // writer's mid-publish window may never overlap a reader's seq
-    // sample.  The absence of torn reads is the load-bearing
-    // invariant; rejection rate is informational.
+    // The refusal count is not asserted.  On a fast enough machine the
+    // writer's mid-publish window may never overlap a reader's sample.
+    // The absence of a torn read is the claim here.
 
     std::printf("  test_try_load_rejects_in_progress: PASSED\n");
 }

@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * Canopy gossip fanout sample stub.
- *
- * Future role: publish mesh-gossip fanout evidence for HyParView/Plumtree
- * tuning. Current behavior: no-op tracepoint handler.
- */
-
 #include "../../cntp/dataplane/bpf/net_common.h"
 
 struct {

@@ -1,92 +1,15 @@
 #pragma once
 
-// ── crucible::algebra::lattices::StackUseLattice ────────────────────
+// Four-tier chain over how a function's stack footprint is bounded, and
+// by what.  Declaring a tier asserts that the actual stack use is
+// contained in the set that tier allows.
 //
-// SCAFFOLDING header for FIXY-V-241 (1/3).  Ships the `StackUse`
-// sub-axis enum + its `ChainLatticeOps`-based lattice + `At<T>`
-// singleton + reflection-driven self-test for the
-// `DimensionAxis::StackUse` axis (dim 26, Tier-S Semiring, 2026-05-23).
-// V-242 wraps it as a `safety/StackUse.h` Graded carrier; V-243 adds
-// the CollisionCatalog rules; V-246 (fixy/grant/Stack.h) routes the
-// stack-bound grants onto this axis.
-//
-// ── Why a dedicated StackUse axis (DimensionAxis::StackUse, dim 26) ──
-//
-// Stack-overflow is a structural failure Crucible must rule out on the
-// foreground path, yet "how much stack does this function use, and how
-// is the bound established" was invisible at the type level.  This axis
-// is the DUAL of CallShape (V-240): a `CallShape::BoundedRecurses`
-// shape is precisely what lets StackUse derive a `BoundedByParam` bound
-// (recursion depth × frame size); a `CallShape::Unbounded` shape forces
-// `StackUse::Unbounded`.  Gates it drives:
-//
-//   1. Forge phase E.RecipeSelect admits a kernel to the foreground hot
-//      path ONLY if `stack_use ⊑ ConstantFrame` (stack overflow then
-//      structurally impossible — the frame is a compile-time constant).
-//   2. Warden deadline-watchdog: a deadline-bounded path with an
-//      `Unbounded` stack use is rejected (execution cannot be bounded
-//      without bounding stack growth).
-//   3. The CallShape × StackUse pairing lets a `BoundedByParam` stack
-//      bound be derived from a declared recursion depth N.
-//
-// ── Tier classification (Tier-S Semiring with par=join) ─────────────
-//
-// StackUse is `TierKind::Semiring` per `tier_of_axis(StackUse)`.  The
-// composition reading is "stack-bound union": two sites composing in
-// sequence or parallel admit the JOIN (the weaker / less-bounded
-// commitment) of their declared bounds.
-//
-// ── Chain order — subset-inclusion of stack-bound guarantees ────────
-//
-//   ConstantFrame ⊏ BoundedByParam ⊏ BoundedDynamic ⊏ Unbounded
-//
-// Ordinal 0 = ConstantFrame (strongest bound — compile-time constant
-// frame); ordinal 3 = Unbounded (no bound at all).  A function
-// declaring `StackUse = X` ASSERTS its actual stack use ⊆ X's allowed
-// set; hot-path admission `stack_use ⊑ ConstantFrame` requires the
-// bottom tier exactly.  Per-tier rationale (each strictly weaker than
-// the one below):
-//
-//   ConstantFrame  = 0 — stack frame is a compile-time constant: no
-//                         recursion, no VLA, no alloca, no data-
-//                         dependent stack arrays.  Stack overflow is
-//                         structurally impossible.  Hot-path target.
-//   BoundedByParam = 1 — stack ≤ a statically-known function of the
-//                         parameters (bounded recursion to depth N, or
-//                         a VLA / alloca whose size is a bounded
-//                         parameter).  Analyzable GIVEN the bound, but
-//                         not constant.  Pairs with CallShape::
-//                         BoundedRecurses.
-//   BoundedDynamic = 2 — stack bounded only by a RUNTIME guard (an
-//                         explicit depth counter / ceiling check).  A
-//                         bound exists but is unknown at compile time.
-//   Unbounded      = 3 — no static OR dynamic bound: unbounded
-//                         recursion, unbounded alloca, data-dependent
-//                         recursion with no guard.  Stack overflow
-//                         possible.  Top of the chain; pairs with
-//                         CallShape::Unbounded.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   TypeSafe — strong scoped enum (`enum class : uint8_t`); cross-axis
-//                mixing requires `std::to_underlying`.
-//   InitSafe — explicit ordinals; reflection-driven coverage fires if a
-//                switch arm is forgotten.
-//   DetSafe  — lattice ops are `constexpr` (a runtime Graded carrier can
-//                enforce `pre (L::leq(...))`).
-//   LeakSafe — zero-state enum; no resources.
-//
-// ── Runtime cost ────────────────────────────────────────────────────
-//
-// Zero.  The enum is one uint8_t; the `At<T>` element_type is empty and
-// EBO-collapses at every future use site (V-242 wrapper, V-246 grants).
-//
-// ── Forward references ─────────────────────────────────────────────
-//
-//   FIXY-V-242 — safety/StackUse.h: Graded<Absolute, At<T>, P> carrier.
-//   FIXY-V-243 — safety/CollisionCatalog.h: stack cross-axis rules.
-//   FIXY-V-246 — fixy/grant/Stack.h: constant_frame / bounded_by_param
-//                / bounded_dynamic / unbounded grant tags.
+// The bound weakens upward, which inverts the usual reading of the
+// operators.  A join returns the weaker of two bounds, which is right
+// for propagation: a caller inherits the loosest bound among its
+// callees.  It is wrong for admission.  A gate that wants the tightest
+// bound every participant claims must call meet, because join hands back
+// the loosest party's budget.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -99,11 +22,6 @@
 
 namespace crucible::algebra::lattices {
 
-// ── StackUse — stack-footprint boundedness taxonomy ─────────────────
-//
-// Chain ordering: each tier is a strictly weaker stack-bound guarantee
-// than the one below it.  Ordinal 0 = strongest (ConstantFrame); 3 =
-// weakest (Unbounded).
 enum class StackUse : std::uint8_t {
     ConstantFrame = 0,  // bottom — compile-time-constant frame; overflow impossible
     BoundedByParam = 1,  // stack ≤ static f(params) (bounded recursion depth / bounded VLA)
@@ -161,16 +79,14 @@ struct StackUseLattice : ChainLatticeOps<StackUse> {
     };
 };
 
-// ── Self-test (V-241 scaffolding sanity) ────────────────────────────
 namespace detail::stack_use_lattice_self_test {
 
 inline constexpr std::size_t stack_use_count = std::meta::enumerators_of(^^StackUse).size();
 
-static_assert(stack_use_count == 4, "StackUse diverged from {ConstantFrame, BoundedByParam, "
-                                    "BoundedDynamic, Unbounded} per V-241 §taxonomy.  Adding a new tier "
-                                    "requires (a) appending at the next free ordinal (append-only per "
-                                    "FOUND-I04), (b) the matching stack_use_name() arm, (c) the matching "
-                                    "At<T> name() arm.");
+static_assert(stack_use_count == 4, "StackUse must hold exactly the four tiers ConstantFrame, "
+                                    "BoundedByParam, BoundedDynamic and Unbounded.  A new tier appends at "
+                                    "the next free ordinal and needs an arm in stack_use_name and in "
+                                    "At<T>'s name().");
 
 static_assert(std::to_underlying(StackUse::ConstantFrame) == 0);
 static_assert(std::to_underlying(StackUse::Unbounded) == 3);
@@ -188,17 +104,19 @@ static_assert(std::is_same_v<std::underlying_type_t<StackUse>, std::uint8_t>);
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_stack_use_has_name(), "stack_use_name() switch missing an arm for at least one StackUse "
-                                          "enumerator.");
+static_assert(every_stack_use_has_name(), "stack_use_name() has no arm for at least one tier, so that tier "
+                                          "reports the '<unknown StackUse>' sentinel.");
 
 static_assert(::crucible::algebra::Lattice<StackUseLattice>);
 static_assert(::crucible::algebra::BoundedLattice<StackUseLattice>);
 static_assert(!::crucible::algebra::Semiring<StackUseLattice>);
 
 static_assert(verify_chain_lattice_exhaustive<StackUseLattice>(),
-              "StackUseLattice chain-order lattice axioms failed — leq/join/meet defect.");
+              "StackUseLattice's chain-order lattice axioms must hold at every "
+              "(StackUse)³ triple.");
 static_assert(verify_chain_lattice_distributive_exhaustive<StackUseLattice>(),
-              "StackUseLattice chain failed distributivity — leq/join/meet defect.");
+              "StackUseLattice's chain order must satisfy distributivity at every "
+              "(StackUse)³ triple.");
 
 static_assert(StackUseLattice::bottom() == StackUse::ConstantFrame);
 static_assert(StackUseLattice::top() == StackUse::Unbounded);
@@ -214,51 +132,22 @@ static_assert(StackUseLattice::leq(StackUse::BoundedDynamic, StackUse::Unbounded
 static_assert(!StackUseLattice::leq(StackUse::BoundedByParam, StackUse::ConstantFrame));
 static_assert(!StackUseLattice::leq(StackUse::Unbounded, StackUse::BoundedDynamic));
 
-// par=join (weaker bound dominates); ConstantFrame is the join identity.
 static_assert(StackUseLattice::join(StackUse::BoundedByParam, StackUse::BoundedDynamic) == StackUse::BoundedDynamic);
 static_assert(StackUseLattice::join(StackUse::ConstantFrame, StackUse::BoundedByParam) == StackUse::BoundedByParam);
-// and=meet (stronger bound floor).
 static_assert(StackUseLattice::meet(StackUse::Unbounded, StackUse::BoundedByParam) == StackUse::BoundedByParam);
 
-// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
-//
-// AUDIT RESULT for StackUseLattice (2026-05-25): INVERTED.
-//   * chain direction: ConstantFrame (bottom, strictest) →
-//     BoundedByParam → BoundedDynamic → Unbounded (top, loosest)
-//   * join(weaker, stricter) returns weaker (Unbounded absorbs in join)
-//   * meet(weaker, stricter) returns stricter (ConstantFrame absorbs)
-//   * cross-tree reading: "par=join, strictest-wins" ✗ — join returns
-//     LOOSER (chain-maximum), NOT stricter
-//
-// SAME family of defect as FOUND-009 (MemOrderLattice) and FOUND-010
-// (HwInstructionLattice).  A consumer treating compose() as "strictest-
-// wins admission gate" by calling JOIN would silently inherit the
-// LOOSEST bound — equivalent to the FOUND-010 PrivilegedMsr escalation
-// pattern for stack-use admission.
-//
-// Consumers wanting the strictest-stack-bound reading MUST call MEET
-// (chain-min), not JOIN.  The local "weaker bound dominates" doc comment
-// at L211 ACCURATELY describes the lattice behavior; the cross-tree
-// "par=join, strictest-wins" contract in DimensionTraits.h L275-L335
-// requires the CALLER to choose the operator that matches the semantic
-// reading they want.  See FOUND-009/010 for sibling lattice writeups.
-//
-// Polarity-witness pin: a refactor inverting the chain direction (making
-// Unbounded=bottom, ConstantFrame=top) would red these asserts in
-// lockstep with the FOUND-009/010 convention, forcing a coordinated
-// cross-tree audit.
+// The two assertions below pin the polarity.  Inverting the chain reds
+// them in lockstep and stops a gate from being written against the wrong
+// operator.
 static_assert(StackUseLattice::join(StackUse::ConstantFrame, StackUse::Unbounded) == StackUse::Unbounded,
-              "FIXY-FOUND-076: StackUseLattice's JOIN gives WEAKEST-stack-bound "
-              "(top=Unbounded).  A consumer treating compose as 'strictest-wins "
-              "stack-bound minimization' would silently inherit Unbounded.  "
-              "Consumers wanting the tightest bound MUST call MEET — SAME defect "
-              "family as FOUND-009/010 (MemOrder/HwInstruction).");
+              "StackUseLattice's join returns the weaker stack bound of the two "
+              "operands.  A consumer that treats composition as strictest-wins "
+              "would silently inherit Unbounded.  Use meet for the tightest "
+              "bound.");
 static_assert(StackUseLattice::meet(StackUse::ConstantFrame, StackUse::Unbounded) == StackUse::ConstantFrame,
-              "FIXY-FOUND-076: StackUseLattice's MEET gives strictest-bound "
-              "(bottom=ConstantFrame).  CSL/admission gates wanting capability-"
-              "minimization (admit only the tightest bound every participant "
-              "claims) MUST call MEET — calling JOIN silently inherits the "
-              "loosest party's stack budget.");
+              "StackUseLattice's meet returns the tightest stack bound of the two "
+              "operands.  An admission gate that wants only the bound every "
+              "participant claims must call meet, not join.");
 
 static_assert(std::is_empty_v<StackUseLattice::At<StackUse::ConstantFrame>::element_type>);
 static_assert(std::is_empty_v<StackUseLattice::At<StackUse::BoundedByParam>::element_type>);
@@ -266,8 +155,6 @@ static_assert(std::is_empty_v<StackUseLattice::At<StackUse::BoundedDynamic>::ele
 static_assert(std::is_empty_v<StackUseLattice::At<StackUse::Unbounded>::element_type>);
 static_assert(StackUseLattice::At<StackUse::BoundedByParam>::tier == StackUse::BoundedByParam);
 
-// Runtime smoke — non-constant operands (per
-// feedback_algebra_runtime_smoke_test_discipline).
 inline void stack_use_lattice_runtime_smoke_test() {
     StackUse a = StackUse::ConstantFrame;
     StackUse b = StackUse::Unbounded;

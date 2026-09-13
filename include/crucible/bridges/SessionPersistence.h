@@ -1,36 +1,25 @@
 #pragma once
 
-// ── crucible::bridges::SessionPersistence ──────────────────────────
-//
-// Cipher-backed persistence for RecordingSessionHandle.  The bridge
-// owns one SessionEventLog per persisted session and flushes only the
-// not-yet-persisted suffix into Cipher's session-event federation
-// format.  Session operation semantics stay delegated to
-// RecordingSessionHandle; this header adds durability and replay
-// loading without duplicating the session algebra.
+// One event log per persisted session, drained into the store as a growing
+// prefix.  Each flush writes only the suffix that has not been written yet, so
+// a session interrupted between flushes persists as a truncated but internally
+// consistent prefix rather than a gap.  The session algebra itself is not
+// re-implemented here.  Every protocol step is forwarded to the recording
+// layer, and this layer only decides when to write.
 
-// fixy-A2-014: SessionPersistence.h pulled the full <crucible/Cipher.h>
-// transitive set (~30 sub-includes — Arena, MerkleDag, MetaLog,
-// FederationProtocol, FileHandle, the Decide/Tagged/Mutation safety
-// stack).  The bridge's actual touch on Cipher is FIVE items —
-// CipherOpenView, CipherSessionEventPersistenceRow, the forward decl
-// of class Cipher, and three template-dependent method calls on a
-// Cipher& reference.  SessionPersistenceSurface.h carries the forward
-// decl + the two namespace-scope aliases so this header parses without
-// pulling the heavy Cipher transitive.  Consumers that actually
-// instantiate PersistedSessionHandle methods (every TU that calls
-// .close/.send/.recv/.flush on the handle, or constructs a Cipher) must
-// `#include <crucible/Cipher.h>` themselves — the template method
-// bodies need a complete Cipher at instantiation time.
+// The store is forward-declared rather than included, since only a handful of
+// its names are needed to parse this header.  The template bodies below still
+// need the complete type, so a translation unit that instantiates any of them
+// has to include the store's own header itself.
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Time.h>  // FIXY-V-199: mint_clock_reader, ClockReader
+#include <crucible/fixy/Time.h>
 #include <crucible/safety/IsSessionHandle.h>
 
 #include <chrono>
-#include <cstdint>  // FIXY-V-199: last_flush_ns_ storage
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <functional>
@@ -50,35 +39,22 @@ struct SessionPersistencePolicy {
 template <typename CallerRow>
 class SessionPersistenceState {
 public:
-    // FIXY-V-199: persistence-layer clock source is pinned to MONOTONIC.
-    // steady_clock-on-Linux IS CLOCK_MONOTONIC; an explicit ClockReader
-    // ctor parameter documents the choice at the construction boundary
-    // and lets future call sites inject a calibrated reader (e.g. one
-    // tied to a CpuPinned proof) without touching the persistence body.
+    // The clock source is pinned to the monotonic one and taken as a
+    // constructor parameter, so the choice is made at the boundary and a
+    // calibrated reader can be substituted without touching this body.
     using ClockReaderType = ::crucible::fixy::time::ClockReader<::crucible::fixy::time::ClockSource_v::Monotonic>;
 
 private:
     Cipher& cipher_;
-    // fixy-A2-007: store the caller's OpenView so flush_all uses the
-    // mint-time witness, not a fresh view minted at flush time.  Before
-    // the fix the ctor accepted OpenView const& and discarded it; flush_all
-    // then called cipher_.mint_open_view() afresh.  That hid a stale-view
-    // hazard: if the Cipher closed between mint and first flush, the
-    // mint_open_view() pre(is_open()) gate would abort instead of failing
-    // at the call site that owes the persistence guarantee.  Storing the
-    // view ties the persistence lifecycle to the caller's mint-time proof.
-    // ScopedView is a phantom-typed Carrier const* — copyable, layout-flat,
-    // 8 bytes, no heap.  Cipher outlives this state by ctor-param contract.
+    // The view is the caller's mint-time witness, stored rather than re-minted
+    // at each flush.  Re-minting would abort inside the mint if the store had
+    // closed in between, instead of failing at the call site that owes the
+    // persistence guarantee.  The store outlives this state by the contract of
+    // the constructor parameter.
     CipherOpenView view_;
     SessionEventLog log_;
     std::size_t flushed_count_ = 0;
     SessionPersistencePolicy policy_{};
-    // FIXY-V-199: store the consumed u64 nanos instead of a chrono
-    // time_point — the ClockReader's read() returns MonotonicClockBytes,
-    // we consume it once per read to a raw nanosecond count, and compare
-    // against a duration_cast<nanoseconds>(policy.time_threshold).count()
-    // threshold (also a u64 in nanoseconds).  Same arithmetic, explicit
-    // unit, no implicit clock-type coupling.
     std::uint64_t last_flush_ns_ = 0;
     [[no_unique_address]] ClockReaderType clock_reader_{};
 
@@ -90,15 +66,10 @@ public:
                   "SessionPersistenceState<CallerRow>: CallerRow must contain "
                   "IO + Block because persistence writes Cipher files.");
 
-    // FIXY-V-199 sentinel: ClockReader is stateless, regime-1 zero-cost.
-    // sizeof(ClockReaderType) is implementation-defined at 1 byte for an
-    // empty struct, but [[no_unique_address]] collapses it into the
-    // class layout's padding — the surrounding state size stays unchanged
-    // versus the pre-V-199 layout.
-    static_assert(::std::is_empty_v<ClockReaderType>, "FIXY-V-199: ClockReader must be empty (stateless witness); "
+    static_assert(::std::is_empty_v<ClockReaderType>, "ClockReader must be empty (stateless witness); "
                                                       "[[no_unique_address]] would otherwise consume a real byte.");
     static_assert(ClockReaderType::source == ::crucible::fixy::time::ClockSource_v::Monotonic,
-                  "FIXY-V-199: SessionPersistenceState clock provenance is MONOTONIC.");
+                  "SessionPersistenceState clock provenance is MONOTONIC.");
 
     SessionPersistenceState(Cipher& cipher, CipherOpenView const& view, SessionTagId session,
                             SessionPersistencePolicy policy, ClockReaderType clock_reader = {}) noexcept
@@ -111,22 +82,12 @@ public:
     SessionPersistenceState(SessionPersistenceState&&) = delete;
     SessionPersistenceState& operator=(SessionPersistenceState&&) = delete;
 
-    // fixy-A2-013: flush any not-yet-persisted SessionEvents on destruction.
-    // PersistedSessionHandle drives flush_all() through finish_call_() for
-    // every consumed protocol step, but a state owner dropped without ever
-    // reaching End/Stop (e.g., a PersistedSessionHandle that falls out of
-    // scope via early return, or a state constructed directly for replay
-    // staging) would otherwise lose the trailing log silently — Cipher
-    // cold tier would never see the events, replay would be incomplete,
-    // and the audit-trail promise (RecordingSessionHandle.h:14-24) would
-    // be VIOLATED for the abandoned path.  Combined with A2-007 (stored
-    // view) and A2-025 (PSH detach = delete), abandonment can no longer
-    // both drop the view AND lose the events.
-    //
-    // noexcept: matches `flush_all_or_abort_` (line 335-340) — same
-    // policy at every flush gate.  flush_all() is non-throwing under
-    // -fno-exceptions; an abort on failure surfaces a Cipher write
-    // refusal at the same diagnostic site as every other flush gate.
+    // Every consumed protocol step flushes, so a session that runs to a
+    // terminal step needs nothing here.  A state dropped without reaching one,
+    // through an early return or a state built only for replay staging, would
+    // otherwise lose its trailing events, leaving a prefix shorter than the
+    // session actually ran.  A failure aborts, as at every other flush gate:
+    // there is no later moment at which these events could still be written.
     ~SessionPersistenceState() noexcept {
         if (pending_count() > 0) {
             if (!flush_all()) [[unlikely]] {
@@ -150,9 +111,6 @@ public:
         const auto time_threshold_ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(policy_.time_threshold).count();
         if (time_threshold_ns > 0) {
-            // FIXY-V-199: typed clock read via the ctor-injected
-            // ClockReader<Monotonic>.  Consume the bytes once for the
-            // arithmetic; subtract from the stored last_flush_ns_.
             const std::uint64_t now_ns = clock_reader_.read().consume();
             const std::uint64_t elapsed_ns = now_ns - last_flush_ns_;
             if (static_cast<long long>(elapsed_ns) < time_threshold_ns) return true;
@@ -167,13 +125,9 @@ public:
 
         const SessionEvent* first = &log_[flushed_count_];
         const auto events = std::span<const SessionEvent>{first, pending};
-        // fixy-A2-007: use the stored mint-time view, not a fresh one.
-        // The caller already proved the Cipher was Open at mint; this
-        // honors that proof for every flush of this state's lifetime.
         const ContentHash hash = cipher_.template persist_session_events<CallerRow>(view_, events);
         if (hash) {
             flushed_count_ = log_.size();
-            // FIXY-V-199: typed clock read; store the consumed u64 nanos.
             last_flush_ns_ = clock_reader_.read().consume();
             return true;
         }
@@ -184,19 +138,14 @@ public:
 template <typename Inner, typename CallerRow>
 class PersistedSessionHandle;
 
-// fixy-A2-025: map a builtin detach_reason::* tag to its
-// SessionEventLog DetachReasonKind enum value.  PSH's templated
-// detach<Reason>() overload (below) calls into this to populate the
-// reason_kind lane of the recorded SessionEvent::Detach.  User-defined
-// Reason types (extensions inheriting from detach_reason::tag_base
-// outside the framework) resolve to Unknown=0; the per-call
-// default_schema_hash<Reason> still identifies the exact type for
-// offline replay.  Lives in SessionPersistence.h (rather than at the
-// detach_reason::* declaration site in Session.h) because this is the
-// sole consumer — SessionEventLog.h declares the kind enum without
-// depending on detach_reason::*, and Session.h declares the tags
-// without depending on the event log.  PSH is the only point at which
-// both worlds need to compose.
+// The detach reason tags and the log's reason-kind enum are declared
+// independently, and neither side depends on the other.  The mapping between
+// them lives here because a persisted handle is the only place both are needed
+// at once.
+//
+// The mapping is lossy for a reason type defined outside the framework, which
+// resolves to Unknown.  The schema hash recorded alongside the kind still names
+// the exact type, so offline replay loses nothing.
 template <typename Reason>
 inline constexpr DetachReasonKind detach_reason_kind_v = DetachReasonKind::Unknown;
 
@@ -527,34 +476,14 @@ public:
             [&]() -> decltype(auto) { return std::move(inner_).accept_with(std::forward<Args>(args)...); });
     }
 
-    // fixy-A2-025: PSH detach.  Records a SessionEvent::detach with
-    // the typed reason tag's payload_schema, forwards
-    // `inner.detach(reason_tag)` to mark the inner handle consumed
-    // (the inner's destructor would otherwise abort on abandonment),
-    // then flushes ALL pending audit events to the Cipher cold tier
-    // before the state owner dies.
+    // A detach ends the session without a terminal step, so it flushes
+    // everything pending before the state dies.  Both this wrapper and the
+    // inner handle are marked consumed, which is what keeps either destructor
+    // from reporting an abandoned protocol.
     //
-    // Combined with A2-007 (state owns the OpenView reference) and
-    // A2-013 (state destructor flush), a detached PSH cannot lose
-    // its audit trail — every replay sees the exact reason class
-    // that ended the session.  This unblocks the wrap_crash_return
-    // path (bridges/CrashTransport.h:455) which mandates
-    // `inner.detach(reason)`; PSH-wrapping a CrashWatchedHandle now
-    // works without the §XII "deleted-overload" diagnostic.
-    //
-    // The mark_consumed_() call (inherited from SessionHandleBase
-    // via the CRTP self-type) suppresses PSH's own destructor-abort
-    // check; the inner.detach call does the same for the wrapped
-    // RecordingSessionHandle / CrashWatchedHandle / plain
-    // SessionHandle.  Both linearity proofs fire together — neither
-    // wrapper is reusable after this call.
-    //
-    // self / peer are RoleTagId{} (zero sentinels) — PSH does not
-    // currently track role identity through the bridge chain.  The
-    // reason_schema lane (default_schema_hash<Reason>) is the
-    // load-bearing audit datum that distinguishes reason types
-    // (including user-defined DetachReason extensions that resolve
-    // to DetachReasonKind::Unknown).
+    // The recorded roles are zero.  Role identity is not tracked through this
+    // chain, and the reason's schema hash is what tells two reason types apart
+    // in the record.
     template <typename Reason>
         requires ::crucible::safety::proto::DetachReason<Reason>
     void detach(Reason reason_tag) && {
@@ -602,19 +531,14 @@ public:
 
 template <typename Proto, ::crucible::effects::IsExecCtx Ctx, typename Resource>
     requires ::crucible::effects::CtxAdmits<Ctx, CipherSessionEventPersistenceRow>
-// §XXI carve-out: cx=alloc — mint_persisted_session heap-allocates
-// the SessionPersistenceState via std::make_unique to own the
-// MetaLog drain machinery.  CLAUDE.md §XXI: compile-time evaluation
-// would lie about the runtime cost.
+// This factory is deliberately not constexpr, unlike the others of its kind.
+// It allocates the persistence state, and declaring it constexpr would state a
+// cost it does not have.
+// §XXI carve-out: cx=alloc — the mint heap-allocates the persistence state.
 [[nodiscard]] auto mint_persisted_session(Ctx const& ctx, Cipher& cipher, CipherOpenView const& view,
                                           Resource&& resource, SessionTagId session, RoleTagId self, RoleTagId peer,
                                           SessionPersistencePolicy policy = {}) noexcept {
     using CallerRow = typename Ctx::row_type;
-    // FIXY-V-199: mint the persistence-layer ClockReader from ctx; this
-    // ties the clock-source choice (MONOTONIC) to a §XXI mint at the
-    // factory boundary, making the provenance grep-discoverable.  The
-    // ClockReader is stateless; it carries the type-level source tag
-    // through to the state's read sites.
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
         cipher, view, session, policy,
         ::crucible::fixy::time::mint_clock_reader<::crucible::fixy::time::ClockSource_v::Monotonic>(ctx));
@@ -643,11 +567,6 @@ template <::crucible::effects::IsExecCtx Ctx, typename Proto, typename Resource,
                                           CipherOpenView const& view, SessionTagId session, RoleTagId self,
                                           RoleTagId peer, SessionPersistencePolicy policy = {}) noexcept {
     using CallerRow = typename Ctx::row_type;
-    // FIXY-V-199: mint the persistence-layer ClockReader from ctx; this
-    // ties the clock-source choice (MONOTONIC) to a §XXI mint at the
-    // factory boundary, making the provenance grep-discoverable.  The
-    // ClockReader is stateless; it carries the type-level source tag
-    // through to the state's read sites.
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
         cipher, view, session, policy,
         ::crucible::fixy::time::mint_clock_reader<::crucible::fixy::time::ClockSource_v::Monotonic>(ctx));
@@ -663,20 +582,6 @@ void mint_persisted_session(Ctx const&, SessionHandle<Proto, Resource, LoopCtx>,
            "CipherOpenView at the mint boundary; pass "
            "cipher.mint_open_view() explicitly.");
 
-// ──────────────────────────────────────────────────────────────────
-// PSH overload — wrap an existing PermissionedSessionHandle in a
-// RecordingPermissionedSessionHandle, then in a PersistedSessionHandle
-// that drains the SessionEventLog to Cipher's cold tier.  Closes
-// fixy-A2-006 — without this overload, permissioned channels
-// (TraceRing, PermissionedSpscChannel, MetaLog, ChainEdge, kernel-cache
-// SWMR, observe broadcast) cannot be audited even though they hold
-// CSL permissions in session-protocol position.
-//
-// §XXI Universal Mint Pattern: Ctx-bound, requires-clause gates Ctx
-// admission for Cipher's persistence-row effect, OpenView required at
-// the mint boundary (the `= delete` companion enforces this), wraps
-// the inner PSH via mint_recording_session's new PSH overload.
-
 template <::crucible::effects::IsExecCtx Ctx, typename Proto, typename PS, typename Resource, typename LoopCtx>
     requires ::crucible::effects::CtxAdmits<Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(Ctx const& ctx, PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> inner,
@@ -684,11 +589,6 @@ template <::crucible::effects::IsExecCtx Ctx, typename Proto, typename PS, typen
                                           RoleTagId self, RoleTagId peer,
                                           SessionPersistencePolicy policy = {}) noexcept {
     using CallerRow = typename Ctx::row_type;
-    // FIXY-V-199: mint the persistence-layer ClockReader from ctx; this
-    // ties the clock-source choice (MONOTONIC) to a §XXI mint at the
-    // factory boundary, making the provenance grep-discoverable.  The
-    // ClockReader is stateless; it carries the type-level source tag
-    // through to the state's read sites.
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
         cipher, view, session, policy,
         ::crucible::fixy::time::mint_clock_reader<::crucible::fixy::time::ClockSource_v::Monotonic>(ctx));

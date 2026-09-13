@@ -1,12 +1,5 @@
 #pragma once
 
-// Bounded Lifeguard extension substrate for Canopy SWIM.
-//
-// This layer owns local-health multiplier state, per-peer RTT windows,
-// adaptive timeout planning, adaptive indirect witness selection, and
-// refute-plan construction. Transports own sockets, timers, and diagnostic
-// channels; callers carry the plans produced here over SWIM/CNT-P/Canopy.
-
 #include <crucible/Platform.h>
 #include <crucible/canopy/Swim.h>
 #include <crucible/effects/Capabilities.h>
@@ -113,7 +106,6 @@ public:
     LifeguardSwim(SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
                   LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept
         : swim_{swim_config}, local_{local_peer.value()}, lifeguard_config_{lifeguard_config} {
-        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(config_valid_());
         for (SwimPeer const& peer : initial_peers) {
             CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());

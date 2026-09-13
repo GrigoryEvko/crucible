@@ -1,76 +1,38 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_fixy_mint_inventory — FIXY-U-002
+// One probe row per mint the fixy umbrella re-exports.  The using-decl
+// is itself the test: namespace-scope name lookup fails to resolve if a
+// substrate mint is deleted, renamed, or moved to another namespace, and
+// the translation unit stops compiling.
 //
-// Exhaustive mint-factory inventory matrix for the fixy:: umbrella.
+// A using-decl is preferable to a static_assert per row because it needs
+// no instantiation and no knowledge of the mint's template parameters,
+// which means a row costs one line and never has to be revisited when
+// the mint's signature changes.  It cannot, however, detect a name that
+// resolves to the wrong substrate symbol, so the identity probes at the
+// bottom cover that case for the mints whose parameter shape is known.
 //
-// One `using fixy::<ns>::mint_<X>;` probe row per substrate re-export
-// shipped under include/crucible/fixy/*.h.  The using-decl IS the
-// reach test: if a substrate mint is deleted, renamed, or moved to
-// a different namespace, the using-decl fails to resolve and this TU
-// red-bars under -Werror.  An ADDITIVE drift (new substrate mint that
-// fixy/* forgot to re-export) shows up as a mismatch between the
-// cardinality witness at the bottom and the discoverable using-decl
-// count — the static_assert fence forces a review acknowledgment.
-//
-// Trust boundary (do not duplicate work between TUs):
-//
-//   test_fixy_umbrella.cpp        owns smoke + dual-export pinning
-//                                 (fixy-A4-011: safety vs wrap path
-//                                 same-symbol identity for Linear /
-//                                 Secret / SharedPermission / mint_*).
-//   test_fixy_umbrella_reach.cpp  owns Profile.h + Contract.h reach
-//                                 via the umbrella (closes fixy-A4-
-//                                 001 + A4-002).
-//   test_fixy_substr_completeness.cpp
-//                                 owns per-substrate fixy::substr::*
-//                                 type-side coverage.
-//   THIS TU                       owns the per-mint reach matrix —
-//                                 every `using fixy::ns::mint_X;`
-//                                 row across every fixy header.
-//
-// As of 2026-05-19 the inventory holds 82 reach rows across 20 fixy::
-// namespaces.  When you ADD a fixy/* using-decl: ADD a row below AND
-// bump the cardinality witness.  When you REMOVE a fixy/* using-decl:
-// remove the row AND drop the count.  Both branches force the
-// reviewer to acknowledge the surface change.
-//
-// Why anonymous-namespace using-decls (vs static_assert per row):
-//   `using fixy::ns::mint_X;` at namespace scope performs name lookup
-//   for `mint_X` in `fixy::ns`.  If the name is absent → ill-formed
-//   under -Werror.  Templates work fine — no instantiation required,
-//   no template-argument knowledge required.  For mints whose
-//   template parameter shape we know, the substrate-identity probes
-//   in `static_assert` form below catch silent same-named-but-
-//   different-substrate-target drift (a different substrate symbol
-//   accidentally aliased into the same fixy:: name).
-// ═══════════════════════════════════════════════════════════════════
+// Additive drift — a new substrate mint the umbrella forgot to
+// re-export — is invisible to name lookup, so the cardinality witness
+// below is what forces a reviewer to acknowledge a surface change.
 
 #include <crucible/Fixy.h>
 
 #include <type_traits>
 
 #ifndef CRUCIBLE_FIXY
-#  error "crucible/Fixy.h umbrella did not define CRUCIBLE_FIXY"
+#error "crucible/Fixy.h umbrella did not define CRUCIBLE_FIXY"
 #endif
 
 namespace fixy = ::crucible::fixy;
 
-// Anonymous test tag for mints that require a tag parameter; the
-// anonymous-namespace lifetime makes the tag TU-private so the
-// inventory probe cannot accidentally collide with a production tag
+// A tag for the mints that take one.  Keeping it private to this
+// translation unit stops the probe from colliding with a production tag
 // tree.
 namespace {
 struct MintInventoryTag {};
 }  // namespace
 
-// ═════════════════════════════════════════════════════════════════════
-// Reachability probes — one per fixy:: re-export.  Anonymous-namespace
-// `using` decls; if any name fails to resolve, the TU red-bars.
-// ═════════════════════════════════════════════════════════════════════
-
 namespace {
 
-// ── fixy::bridge (6) ──────────────────────────────────────────────
 using fixy::bridge::mint_crash_watched_endpoint;
 using fixy::bridge::mint_crash_watched_session;
 using fixy::bridge::mint_persisted_session;
@@ -78,26 +40,21 @@ using fixy::bridge::mint_recording_endpoint;
 using fixy::bridge::mint_recording_session;
 using fixy::bridge::mint_vigil_mode_bridge;
 
-// ── fixy::cap (2) ─────────────────────────────────────────────────
 using fixy::cap::mint_cap;
 using fixy::cap::mint_from_ctx;
 
-// ── fixy::contract::cipher (4) ────────────────────────────────────
 using fixy::contract::cipher::mint_demote;
-// mint_persisted_session is dual-exported in fixy::contract::cipher
-// AND fixy::bridge — both surface the same substrate symbol; the
-// dual-export is intentional per the federation/cipher migration
-// surface.  We probe both paths below as separate inventory rows.
+// Deliberately dual-exported.  Two using-decls for one name cannot sit
+// in the same scope, so each reachable path gets its own enclosing
+// namespace and stays a separate inventory row.
 namespace probe_contract_cipher_persisted {
 using fixy::contract::cipher::mint_persisted_session;
 }  // namespace probe_contract_cipher_persisted
 using fixy::contract::cipher::mint_promote;
 using fixy::contract::cipher::mint_restore;
 
-// ── fixy::mach (1) ────────────────────────────────────────────────
 using fixy::mach::mint_machine;
 
-// ── fixy::perm (9) ────────────────────────────────────────────────
 using fixy::perm::mint_permission_combine;
 using fixy::perm::mint_permission_combine_n;
 using fixy::perm::mint_permission_fork;
@@ -108,7 +65,6 @@ using fixy::perm::mint_permission_share;
 using fixy::perm::mint_permission_split;
 using fixy::perm::mint_permission_split_n;
 
-// ── fixy::pipe (7) ────────────────────────────────────────────────
 using fixy::pipe::mint_endpoint;
 using fixy::pipe::mint_mpmc_stage_from_endpoints;
 using fixy::pipe::mint_pipeline;
@@ -116,32 +72,15 @@ using fixy::pipe::mint_pipeline_dag;
 using fixy::pipe::mint_stage;
 using fixy::pipe::mint_stage_from_endpoints;
 using fixy::pipe::mint_swmr_stage;
-// fixy-M-19: mint_substrate_session was previously re-exported here in
-// a grace window.  It is a substrate→session bridge (Tier-2→3 per §XXI)
-// — Pipe.h is the pipeline/stage layer, not the substrate-bridge
-// layer.  Canonical surfaces are now fixy::sess::mint_substrate_session
-// (probed in the sess section below) AND
-// fixy::substr::mint_substrate_session (probed in the substr-root
-// section below).
 
-// ── fixy::safety (4) ──────────────────────────────────────────────
 using fixy::safety::mint_linear_view;
 using fixy::safety::mint_view;
-// safety::mint_linear / safety::mint_secret are dual-exported in
-// fixy::wrap as well — both paths surface the same substrate symbol.
-// test_fixy_umbrella.cpp already pins the dual-export identity via
-// decltype(&safety::*) == decltype(&wrap::*); we probe BOTH paths
-// here as separate inventory rows (cardinality witness includes
-// both).
 namespace probe_safety_dual_exports {
 using fixy::safety::mint_linear;
 using fixy::safety::mint_secret;
 }  // namespace probe_safety_dual_exports
 
-// ── fixy::sess (8) ────────────────────────────────────────────────
 using fixy::sess::mint_channel;
-// mint_crash_watched_session / mint_recording_session are dual-
-// exported in fixy::sess AND fixy::bridge — same substrate symbol.
 namespace probe_sess_dual_exports {
 using fixy::sess::mint_crash_watched_session;
 using fixy::sess::mint_recording_session;
@@ -150,63 +89,46 @@ using fixy::sess::mint_permissioned_session;
 using fixy::sess::mint_session;
 using fixy::sess::mint_session_handle;
 using fixy::sess::mint_session_view;
-// fixy-M-19: mint_substrate_session is dual-exported in fixy::sess AND
-// fixy::substr root — same substrate symbol.  The sess:: home is the
-// result-side discovery path (it returns a Session handle).
 namespace probe_sess_substrate_session {
 using fixy::sess::mint_substrate_session;
 }  // namespace probe_sess_substrate_session
 
-// ── fixy::source::federation (1) ─────────────────────────────────
 using fixy::source::federation::mint_federation_admittance;
 
-// ── fixy::substr root (1) ─────────────────────────────────────────
-// fixy::substr::mint_substrate_session lives at the root of the
-// substr:: tree as the canonical substrate-side placement (next to
-// every per-substrate `mint_*_session` family).  Dual-exported in
-// fixy::sess too (probe above) — same substrate symbol.  fixy-M-19
-// closed the prior fixy::pipe:: misplacement.
 namespace probe_substr_root_substrate_session {
 using fixy::substr::mint_substrate_session;
 }  // namespace probe_substr_root_substrate_session
 
-// ── fixy::substr::calendar_grid (4) ───────────────────────────────
 using fixy::substr::calendar_grid::mint_calendar_grid_consumer;
 using fixy::substr::calendar_grid::mint_calendar_grid_producer;
-// per-substrate consumer_session / producer_session re-exports
-// shadow the same-named symbols in sibling sub-namespaces; we probe
-// each in its own enclosing namespace to keep the inventory rows
-// orthogonal under one TU.
+// Every substrate re-exports a consumer_session and a producer_session
+// under the same two names, so each substrate's pair needs its own
+// enclosing namespace to stay a distinct inventory row.
 namespace probe_substr_calendar_grid_sessions {
 using fixy::substr::calendar_grid::mint_consumer_session;
 using fixy::substr::calendar_grid::mint_producer_session;
 }  // namespace probe_substr_calendar_grid_sessions
 
-// ── fixy::substr::chainedge (4) ───────────────────────────────────
 using fixy::substr::chainedge::mint_chainedge_signaler;
 using fixy::substr::chainedge::mint_chainedge_signaler_session;
 using fixy::substr::chainedge::mint_chainedge_waiter;
 using fixy::substr::chainedge::mint_chainedge_waiter_session;
 
-// ── fixy::substr::chaselev (4) ────────────────────────────────────
 using fixy::substr::chaselev::mint_chaselev_owner;
 using fixy::substr::chaselev::mint_chaselev_thief;
 using fixy::substr::chaselev::mint_owner_session;
 using fixy::substr::chaselev::mint_thief_session;
 
-// ── fixy::substr::metalog (4) ─────────────────────────────────────
 using fixy::substr::metalog::mint_metalog_consumer;
 using fixy::substr::metalog::mint_metalog_consumer_session;
 using fixy::substr::metalog::mint_metalog_producer;
 using fixy::substr::metalog::mint_metalog_producer_session;
 
-// ── fixy::substr::mpmc (4) ────────────────────────────────────────
 using fixy::substr::mpmc::mint_mpmc_consumer_endpoint;
 using fixy::substr::mpmc::mint_mpmc_consumer_session;
 using fixy::substr::mpmc::mint_mpmc_producer_endpoint;
 using fixy::substr::mpmc::mint_mpmc_producer_session;
 
-// ── fixy::substr::sharded_calendar_grid (4) ───────────────────────
 namespace probe_substr_sharded_calendar_grid_sessions {
 using fixy::substr::sharded_calendar_grid::mint_consumer_session;
 using fixy::substr::sharded_calendar_grid::mint_producer_session;
@@ -214,7 +136,6 @@ using fixy::substr::sharded_calendar_grid::mint_producer_session;
 using fixy::substr::sharded_calendar_grid::mint_sharded_calendar_grid_consumer;
 using fixy::substr::sharded_calendar_grid::mint_sharded_calendar_grid_producer;
 
-// ── fixy::substr::sharded_grid (4) ────────────────────────────────
 namespace probe_substr_sharded_grid_sessions {
 using fixy::substr::sharded_grid::mint_consumer_session;
 using fixy::substr::sharded_grid::mint_producer_session;
@@ -222,13 +143,11 @@ using fixy::substr::sharded_grid::mint_producer_session;
 using fixy::substr::sharded_grid::mint_sharded_grid_consumer;
 using fixy::substr::sharded_grid::mint_sharded_grid_producer;
 
-// ── fixy::substr::spsc (2) ────────────────────────────────────────
 namespace probe_substr_spsc_sessions {
 using fixy::substr::spsc::mint_consumer_session;
 using fixy::substr::spsc::mint_producer_session;
 }  // namespace probe_substr_spsc_sessions
 
-// ── fixy::substr::swmr (6) ────────────────────────────────────────
 using fixy::substr::swmr::mint_reader_runtime_session;
 using fixy::substr::swmr::mint_reader_session;
 using fixy::substr::swmr::mint_swmr_reader;
@@ -236,11 +155,6 @@ using fixy::substr::swmr::mint_swmr_writer;
 using fixy::substr::swmr::mint_writer_runtime_session;
 using fixy::substr::swmr::mint_writer_session;
 
-// ── fixy::wrap (3) ────────────────────────────────────────────────
-// safety::mint_linear / safety::mint_secret dual-export already
-// probed under fixy::safety above; the wrap:: side carries the same
-// substrate symbol — see fixy-A4-011 dual-export pinning in
-// test_fixy_umbrella.cpp.
 namespace probe_wrap_dual_exports {
 using fixy::wrap::mint_linear;
 using fixy::wrap::mint_permission_share;
@@ -249,108 +163,64 @@ using fixy::wrap::mint_secret;
 
 }  // namespace
 
-// ═════════════════════════════════════════════════════════════════════
-// Inventory cardinality witness
-//
-// Sums of the per-namespace counts in the comment headers above MUST
-// equal kExpectedReachableMints.  A mismatch under code review forces
-// the reviewer to acknowledge that the fixy:: surface changed.  This
-// is the cheapest "did anyone update the inventory matrix?" signal we
-// can ship without a parser-driven gold file.
-//
-// Per-namespace breakdown (2026-05-19):
-//   bridge                          : 6
-//   cap                             : 2
-//   contract::cipher                : 4
-//   mach                            : 1
-//   perm                            : 9
-//   pipe                            : 8
-//   safety                          : 4
-//   sess                            : 7
-//   source::federation              : 1
-//   substr (root)                   : 1
-//   substr::calendar_grid           : 4
-//   substr::chainedge               : 4
-//   substr::chaselev                : 4
-//   substr::metalog                 : 4
-//   substr::mpmc                    : 4
-//   substr::sharded_calendar_grid   : 4
-//   substr::sharded_grid            : 4
-//   substr::spsc                    : 2
-//   substr::swmr                    : 6
-//   wrap                            : 3
-//   ─────────────────────────────────
-//   Total                           : 82
-// ═════════════════════════════════════════════════════════════════════
+// The witness below is the cheapest signal that anyone updated the
+// inventory, short of a parser-driven gold file.  A reviewer who changes
+// the surface has to touch a per-namespace constant and the total in the
+// same commit, and the sum check refuses anything else.
 
 namespace fixy_mint_inventory_witness {
 
 inline constexpr int kExpectedReachableMints = 82;
-inline constexpr int kFixyNamespaceCount     = 20;
-inline constexpr int kInventoryDateYYYYMMDD  = 20260519;
+inline constexpr int kFixyNamespaceCount = 20;
+inline constexpr int kInventoryDateYYYYMMDD = 20260519;
 
-// Sentinel: ANY drift of kExpectedReachableMints below 80 means
-// substrate mints vanished without inventory update (a single
-// deletion lands as a using-decl removal above + a count decrement;
-// the lower-bound check guards against a sweep that nukes >2 mints
-// without touching this witness).  ANY drift above 84 means new
-// mints landed without surface acknowledgement.  Tight enough to
-// catch real drift; loose enough to avoid review thrash on
-// individual additions.
-static_assert(kExpectedReachableMints >= 80,
-    "Suspicious drop in fixy:: mint inventory — did substrate mints "
-    "get deleted without updating fixy/* re-exports?  Audit the using-"
-    "decl rows above against substrate-side mint deletions.");
-static_assert(kExpectedReachableMints <= 84,
-    "fixy:: mint inventory grew without bumping the witness; add the "
-    "new using-decl rows above and update kExpectedReachableMints + "
-    "the per-namespace comment block.");
+// The window is two either side of the current total.  A single
+// addition or removal moves the count by one and passes, which keeps
+// routine changes out of review thrash, while a sweep that adds or
+// deletes three at once trips the fence.
+static_assert(kExpectedReachableMints >= 80, "suspicious drop in the fixy mint inventory.  Audit the using-decl "
+                                             "rows against substrate-side mint deletions before lowering this "
+                                             "bound.");
+static_assert(kExpectedReachableMints <= 84, "the fixy mint inventory grew without the witness being bumped.  "
+                                             "Add the new using-decl rows and update kExpectedReachableMints "
+                                             "together with the per-namespace constants.");
 
-// Per-namespace floor sentinels — if ANY namespace's mint count
-// drops to zero, the umbrella has shed that re-export surface
-// entirely.  These per-ns floors catch the "namespace became empty"
-// drift that the global count cannot.
-inline constexpr int kBridgeMints                    = 6;
-inline constexpr int kCapMints                       = 2;
-inline constexpr int kContractCipherMints            = 4;
-inline constexpr int kMachMints                      = 1;
-inline constexpr int kPermMints                      = 9;
-inline constexpr int kPipeMints                      = 8;
-inline constexpr int kSafetyMints                    = 4;
-inline constexpr int kSessMints                      = 7;
-inline constexpr int kSourceFederationMints          = 1;
-inline constexpr int kSubstrRootMints                = 1;
-inline constexpr int kSubstrCalendarGridMints        = 4;
-inline constexpr int kSubstrChainEdgeMints           = 4;
-inline constexpr int kSubstrChaselevMints            = 4;
-inline constexpr int kSubstrMetalogMints             = 4;
-inline constexpr int kSubstrMpmcMints                = 4;
+inline constexpr int kBridgeMints = 6;
+inline constexpr int kCapMints = 2;
+inline constexpr int kContractCipherMints = 4;
+inline constexpr int kMachMints = 1;
+inline constexpr int kPermMints = 9;
+inline constexpr int kPipeMints = 8;
+inline constexpr int kSafetyMints = 4;
+inline constexpr int kSessMints = 7;
+inline constexpr int kSourceFederationMints = 1;
+inline constexpr int kSubstrRootMints = 1;
+inline constexpr int kSubstrCalendarGridMints = 4;
+inline constexpr int kSubstrChainEdgeMints = 4;
+inline constexpr int kSubstrChaselevMints = 4;
+inline constexpr int kSubstrMetalogMints = 4;
+inline constexpr int kSubstrMpmcMints = 4;
 inline constexpr int kSubstrShardedCalendarGridMints = 4;
-inline constexpr int kSubstrShardedGridMints         = 4;
-inline constexpr int kSubstrSpscMints                = 2;
-inline constexpr int kSubstrSwmrMints                = 6;
-inline constexpr int kWrapMints                      = 3;
+inline constexpr int kSubstrShardedGridMints = 4;
+inline constexpr int kSubstrSpscMints = 2;
+inline constexpr int kSubstrSwmrMints = 6;
+inline constexpr int kWrapMints = 3;
 
-// Sum-of-parts equality witness: the per-namespace breakdown above
-// MUST sum to the total count.  Drifting one without the other is
-// the most common review error.
-static_assert(
-    kBridgeMints + kCapMints + kContractCipherMints + kMachMints +
-    kPermMints + kPipeMints + kSafetyMints + kSessMints +
-    kSourceFederationMints + kSubstrRootMints +
-    kSubstrCalendarGridMints + kSubstrChainEdgeMints +
-    kSubstrChaselevMints + kSubstrMetalogMints + kSubstrMpmcMints +
-    kSubstrShardedCalendarGridMints + kSubstrShardedGridMints +
-    kSubstrSpscMints + kSubstrSwmrMints + kWrapMints
-        == kExpectedReachableMints,
-    "fixy mint inventory: per-namespace counts must sum to "
-    "kExpectedReachableMints.  Update both the per-namespace constant "
-    "AND kExpectedReachableMints when adding/removing rows.");
+// Changing one constant without the other is the commonest review
+// error, so the two are pinned against each other.
+static_assert(kBridgeMints + kCapMints + kContractCipherMints + kMachMints + kPermMints + kPipeMints + kSafetyMints
+                      + kSessMints + kSourceFederationMints + kSubstrRootMints + kSubstrCalendarGridMints
+                      + kSubstrChainEdgeMints + kSubstrChaselevMints + kSubstrMetalogMints + kSubstrMpmcMints
+                      + kSubstrShardedCalendarGridMints + kSubstrShardedGridMints + kSubstrSpscMints + kSubstrSwmrMints
+                      + kWrapMints
+                  == kExpectedReachableMints,
+              "the per-namespace counts must sum to kExpectedReachableMints.  "
+              "Update the per-namespace constant and the total together when "
+              "adding or removing rows.");
 
-// Per-namespace minimums — every fixy:: namespace must surface AT
-// LEAST one mint; an empty namespace means the umbrella shed the
-// re-export surface entirely (a different failure mode than mint
-// deletion).
+// A namespace that falls to zero mints has shed its re-export surface
+// entirely, which the total alone cannot see: another namespace growing
+// by the same amount keeps the sum intact.
 static_assert(kBridgeMints >= 1, "fixy::bridge must surface ≥1 mint.");
 static_assert(kCapMints >= 1, "fixy::cap must surface ≥1 mint.");
 static_assert(kContractCipherMints >= 1, "fixy::contract::cipher must surface ≥1 mint.");
@@ -374,77 +244,46 @@ static_assert(kWrapMints >= 1, "fixy::wrap must surface ≥1 mint.");
 
 }  // namespace fixy_mint_inventory_witness
 
-// ═════════════════════════════════════════════════════════════════════
-// Substrate-symbol identity probes
+// A using-decl resolves a name but says nothing about which symbol the
+// name reached, so a re-export that quietly re-targets a different
+// substrate symbol passes every probe above.  These checks close that
+// gap for the mints whose template parameters can be supplied without
+// deduction.
 //
-// For mints whose template-parameter shape we can instantiate without
-// argument deduction, prove the fixy:: path resolves to the SAME
-// substrate symbol.  Catches "silent shadow drift" — a fixy/* using
-// directive that resolved to a different substrate symbol than the
-// caller expects (e.g., a wrap/safety dual-export accidentally
-// re-targeted).
-//
-// We do NOT exhaustively cover all 82 rows here — that would require
-// 82 sets of per-mint template arguments and the marginal value over
-// the reach probes above is low.  We cover the structurally-load-
-// bearing mints whose substrate-identity drift would have the widest
-// blast radius: Cap, Perm tokens, Linear/Secret dual-export
-// (test_fixy_umbrella.cpp already pins these; we repeat in a
-// different TU so a regression that breaks one TU doesn't accidentally
-// pass via the other).
-// ═════════════════════════════════════════════════════════════════════
+// Covering all of them would mean writing a parameter pack for every
+// row, and the mints below are the ones whose drift would reach
+// furthest: the capability mint every context-bound mint builds on, the
+// permission root every ownership chain starts from, and the two
+// wrappers that are reachable by two paths at once.
 
-// Cap (foundation of every effect-tagged ctx-bound mint)
-static_assert(std::is_same_v<
-    decltype(&fixy::cap::mint_cap<
-        ::crucible::effects::Effect::Alloc,
-        ::crucible::effects::ctx_cap::Bg>),
-    decltype(&::crucible::effects::mint_cap<
-        ::crucible::effects::Effect::Alloc,
-        ::crucible::effects::ctx_cap::Bg>)>,
+static_assert(
+    std::is_same_v<
+        decltype(&fixy::cap::mint_cap<::crucible::effects::Effect::Alloc, ::crucible::effects::ctx_cap::Bg>),
+        decltype(&::crucible::effects::mint_cap<::crucible::effects::Effect::Alloc, ::crucible::effects::ctx_cap::Bg>)>,
     "fixy::cap::mint_cap must alias ::crucible::effects::mint_cap.");
 
-// Permission root mint (foundation of every Permission-typed mint
-// chain — CSL frame-rule entry point)
-static_assert(std::is_same_v<
-    decltype(&fixy::perm::mint_permission_root<MintInventoryTag>),
-    decltype(&::crucible::safety::mint_permission_root<MintInventoryTag>)>,
-    "fixy::perm::mint_permission_root must alias the substrate symbol.");
+static_assert(std::is_same_v<decltype(&fixy::perm::mint_permission_root<MintInventoryTag>),
+                             decltype(&::crucible::safety::mint_permission_root<MintInventoryTag>)>,
+              "fixy::perm::mint_permission_root must alias the substrate symbol.");
 
-// Linear / Secret dual-export — wrap-path vs safety-path identity.
-// This repeats test_fixy_umbrella.cpp's fixy-A4-011 assertions in a
-// different TU so a regression that breaks one TU doesn't accidentally
-// pass via the other.
-static_assert(std::is_same_v<
-    decltype(&fixy::safety::mint_linear<int, int>),
-    decltype(&fixy::wrap::mint_linear<int, int>)>,
-    "fixy-A4-011: fixy::safety::mint_linear == fixy::wrap::mint_linear.");
+static_assert(
+    std::is_same_v<decltype(&fixy::safety::mint_linear<int, int>), decltype(&fixy::wrap::mint_linear<int, int>)>,
+    "fixy::safety::mint_linear and fixy::wrap::mint_linear must be the "
+    "same symbol.");
 
-static_assert(std::is_same_v<
-    decltype(&fixy::safety::mint_secret<int, int>),
-    decltype(&fixy::wrap::mint_secret<int, int>)>,
-    "fixy-A4-011: fixy::safety::mint_secret == fixy::wrap::mint_secret.");
+static_assert(
+    std::is_same_v<decltype(&fixy::safety::mint_secret<int, int>), decltype(&fixy::wrap::mint_secret<int, int>)>,
+    "fixy::safety::mint_secret and fixy::wrap::mint_secret must be the "
+    "same symbol.");
 
-// vigil_mode_bridge mint (top-level crucible:: symbol re-exported
-// into fixy::bridge; tightens fixy-M-22).  FIXY-V-020: mint is now
-// a function template gated on CanMintVigilModeBridge<Cell>; identity
-// taken on the concrete instantiation.
-static_assert(std::is_same_v<
-    decltype(&fixy::bridge::mint_vigil_mode_bridge<
-                 ::crucible::vigil_mode::ModeCell>),
-    decltype(&::crucible::mint_vigil_mode_bridge<
-                 ::crucible::vigil_mode::ModeCell>)>,
-    "fixy::bridge::mint_vigil_mode_bridge must alias ::crucible::"
-    "mint_vigil_mode_bridge (the top-level symbol from Bridge.h:165).");
+// The mint is a template gated on a concept, so identity has to be
+// taken on a concrete instantiation rather than on the template name.
+static_assert(std::is_same_v<decltype(&fixy::bridge::mint_vigil_mode_bridge<::crucible::vigil_mode::ModeCell>),
+                             decltype(&::crucible::mint_vigil_mode_bridge<::crucible::vigil_mode::ModeCell>)>,
+              "fixy::bridge::mint_vigil_mode_bridge must alias the top-level "
+              "::crucible::mint_vigil_mode_bridge.");
 
-// ═════════════════════════════════════════════════════════════════════
-// Reach-summary runtime peer
-//
-// Single-statement main() — the static_asserts above + the using-decls
-// in the anonymous namespace are the load-bearing assertions.  Runtime
-// peer exists so ctest sees a green exit when the TU compiles.
-// ═════════════════════════════════════════════════════════════════════
-
-int main() {
-    return 0;
-}
+// The using-decls and the static_asserts are the whole test, and both
+// run at compile time.  main exists only so that a successful build
+// reports a passing run.
+int main() { return 0; }

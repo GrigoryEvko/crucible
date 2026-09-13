@@ -1,141 +1,101 @@
 #pragma once
 
-// Unified Warden bounds-enforcement policy for Crucible.
-//
-// One `Policy` struct, consumed by two clients:
-//   • the Keeper daemon (src/keeper/…) at startup — applies `production()`
-//   • the bench harness (bench/bench_harness.h) — applies the same policy
-//     via `bench::Run::hardening(policy)` so measurements reflect what
-//     prod actually does, not dev defaults
-//
-// The design intent is in misc/CRUCIBLE.md §16. Each knob is wired in
-// Hardening.h's `apply()` function, which returns an RAII guard that
-// restores prior state on destruction (so benches can opt in for the
-// duration of a single Run without mutating process-wide state past
-// measure()).
-//
-// Profile factory functions (production / dev_quiet / none) encode the
-// sensible defaults for the three primary use cases. Callers that need
-// something unusual build a Policy by copying a profile and overriding
-// specific fields.
-
 #include "CpuTopology.h"
 
 #include <cstdint>
 
 namespace crucible::warden {
 
-// Linux scheduler class — selected via sched_setattr. Fifo/Deadline
-// require CAP_SYS_NICE (or RLIMIT_RTPRIO).
+// The two real-time classes need a privilege the process may not have:
+// either the capability to raise scheduling priority, or a resource
+// limit that permits it.
 enum class SchedClass : uint8_t {
-    Other,  // SCHED_OTHER — default, time-shared
-    Batch,  // SCHED_BATCH — throughput-oriented, less preemption
-    Idle,  // SCHED_IDLE — lowest, only runs when CPU otherwise idle
-    Fifo,  // SCHED_FIFO — real-time, starves below same-prio
-    RoundRobin,  // SCHED_RR   — real-time with time-slice among same-prio
-    Deadline,  // SCHED_DEADLINE — CBS-admitted (runtime, deadline, period)
+    Other,  // the default, time-shared
+    Batch,  // time-shared, preempted less often
+    Idle,  // runs only when the CPU is otherwise idle
+    Fifo,  // real-time, runs until it yields or a stronger task arrives
+    RoundRobin,  // real-time, with a time slice shared among equals
+    Deadline,  // admitted against a runtime, deadline and period
 };
 
 enum class ThreadClass : uint8_t {
-    Hot,  // dispatch / compiled replay — one per compute chip
-    Warm,  // background compile, graph build, memory planner, trace drain
-    Cold,  // gossip, Cipher writer, runtime observation, health, self-update
+    Hot,  // dispatch and compiled replay, one per compute device
+    Warm,  // compilation, graph building and planning
+    Cold,  // everything periodic
 };
 
-// What happens when a privileged knob can't be set (missing capability,
-// sysfs read-only, kernel too old). A production Keeper typically wants
-// `DegradeAndWarn` so it still starts on a half-configured node; a CI
-// bench wants `Strict` to fail loud.
+// The choice taken when a privileged knob cannot be set, because the
+// capability is missing, the kernel file is read-only, or the kernel is
+// older than the knob.
 enum class OnMissingCap : uint8_t {
     DegradeAndWarn,  // log a warning, continue with whatever worked
     Strict,  // refuse to apply; return an error
 };
 
 struct Policy {
-    // ── HOT dispatcher thread ──────────────────────────────────────
-    // Master switch: if false, apply() is a no-op for the HOT thread
-    // (no pinning, no scheduler change, no mlock on hot regions).
+    // The master switch. When it is false, applying the policy changes
+    // nothing at all.
     bool hot_enabled = true;
-    // Which kernel scheduling class to request via sched_setattr for
-    // the HOT thread. See the SchedClass enum for per-value semantics.
     SchedClass hot_sched = SchedClass::Other;
-    // SCHED_DEADLINE parameters (ns). Kernel CBS admits if (runtime /
-    // period) across all deadline threads ≤ 1.
+    // Nanoseconds. The kernel admits a deadline thread only while the
+    // runtime-to-period ratios of all such threads sum to at most one.
     uint64_t hot_runtime_ns = 500'000;
     uint64_t hot_deadline_ns = 1'000'000;
     uint64_t hot_period_ns = 1'000'000;
-    // Priority for Fifo / RR (1..99; higher = more urgent).
+    // 1 through 99, where higher is more urgent.
     int hot_rt_priority = 50;
-    // Core-selection strategy; see Topology.h.
     CoreSelector hot_core = {};
 
-    // ── WARM / COLD threads ────────────────────────────────────────
-    // setpriority() nice value for WARM threads (background compile,
-    // graph build, memory planner, trace drain). 0 = default.
+    // Niceness, where a higher value yields a smaller share of the CPU.
     int warm_nice = 0;
-    // setpriority() nice value for COLD threads (gossip, Cipher
-    // writer, runtime observation, health, self-update). Higher = less CPU share.
     int cold_nice = 10;
 
-    // ── Memory ─────────────────────────────────────────────────────
-    // mlock2(MLOCK_ONFAULT) regions that Crucible explicitly registers
-    // (PoolAllocator, MemoryPlan pool backing, TraceRing, KernelCache).
-    // Individual mlock calls happen in the respective components; this
-    // flag toggles whether apply() calls mlock2 at all.
+    // Whether to lock the registered hot regions into memory at all.
+    // Which regions those are is decided where they are registered.
     bool mlock_hot_regions = true;
 
-    // madvise(MADV_HUGEPAGE) on MemoryPlan pool backing — encourages
-    // 2 MB hugepages on big mostly-static mappings.
+    // Advise the kernel to back the large, mostly static mappings with
+    // huge pages.
     bool thp_hint_pools = true;
 
-    // prctl(PR_SET_THP_DISABLE) — globally opt the process out of
-    // khugepaged. Subsequent MADV_HUGEPAGE on specific regions still
-    // works; only the background collapse daemon is disabled.
+    // Opt the process out of the background huge-page collapse daemon.
+    // Advising a specific region still works afterwards. Only the
+    // daemon is silenced.
     bool disable_thp_global = false;
 
-    // madvise(MADV_COLLAPSE) — synchronously build hugepages now.
-    // Kernel ≥ 6.1. No-op on older kernels.
+    // Build huge pages at once rather than waiting for the daemon.
+    // Linux 6.1 and later. Older kernels ignore it.
     bool thp_collapse_now = false;
 
-    // During Meridian, walk every registered hot region touching one
-    // byte per 4KB page to populate page tables before measurement.
-    // Individual component inits perform the walk; this flag lets the
-    // Keeper signal whether the prefault phase ran.
+    // Whether the page tables of the hot regions were populated before
+    // measurement began. The walk itself happens where each region is
+    // initialized, so this records that the phase ran.
     bool prefault_hot_regions = true;
 
-    // ── CPU frequency / C-states ───────────────────────────────────
-    // Write scaling_min_freq == scaling_max_freq on the HOT core.
-    // Requires write access to /sys/devices/system/cpu/.../cpufreq/.
+    // Pin the hot core to one frequency by writing its minimum and
+    // maximum to the same value, which needs write access to the
+    // frequency-scaling files.
     bool lock_frequency = false;
-    // Write 1 to cpuidle/stateN/disable for N > 0 (stays in C0/C1).
+    // Keep the core out of the deeper idle states.
     bool disable_c_states = false;
 
-    // ── I/O ────────────────────────────────────────────────────────
-    // Cipher hot-tier writer uses io_uring with SQPOLL when available.
-    // The Cipher subsystem reads this flag at init.
+    // Let the persistence writer poll its submission queue in the
+    // kernel rather than issuing a syscall per submission.
     bool io_uring_sqpoll = true;
-    // CNTP uses RDMA verbs via UCX when available; falls back to TCP
-    // when the nic isn't RDMA-capable.
+    // Use remote direct memory access for inter-node traffic where the
+    // hardware offers it, falling back to sockets where it does not.
     bool rdma_for_comm = true;
 
-    // ── Watchdog ───────────────────────────────────────────────────
-    // When SCHED_DEADLINE and the kernel signals SIGXCPU (deadline
-    // miss), count misses in a rolling window; on breach, downgrade
-    // HOT → FIFO → OTHER.
+    // The rolling window the deadline watchdog measures over, and the
+    // number of misses it tolerates inside one window.
     uint32_t deadline_miss_budget = 10;
     uint32_t watchdog_window_sec = 60;
 
-    // ── Fallback semantics ─────────────────────────────────────────
-    // How apply() behaves when a privileged knob fails (missing
-    // capability, sysfs read-only, unsupported kernel). See enum doc.
     OnMissingCap on_missing_capability = OnMissingCap::DegradeAndWarn;
 
-    // ── Profiles ───────────────────────────────────────────────────
-
-    // Production Keeper on a well-provisioned cluster node. Everything
-    // on; SCHED_DEADLINE for the dispatch thread. Degrade-and-warn if
-    // a capability is missing (so the Keeper still boots on a fallback
-    // node and reports DEGRADED upstream).
+    // A well-provisioned cluster node, where every knob is available.
+    // Still degrades rather than refusing, so a node that grants less
+    // than expected starts anyway and reports itself diminished.
     [[nodiscard]] static constexpr Policy production() noexcept {
         Policy p;
         p.hot_enabled = true;
@@ -152,67 +112,56 @@ struct Policy {
         return p;
     }
 
-    // Dev laptop: pinned but scheduler-friendly, no frequency fiddling,
-    // no SCHED_DEADLINE (would wedge the laptop if the bench spins).
-    // Used by the bench harness on dev machines; also the default if
-    // an operator passes no profile name.
+    // A developer machine, pinned but otherwise unobtrusive. The
+    // deadline class is deliberately absent: a spinning thread under it
+    // can wedge a workstation.
     [[nodiscard]] static constexpr Policy dev_quiet() noexcept {
         Policy p;
         p.hot_enabled = true;
-        p.hot_sched = SchedClass::Other;  // safe on laptops
-        p.mlock_hot_regions = true;  // usually available to users
-        p.thp_hint_pools = false;  // let the kernel decide
+        p.hot_sched = SchedClass::Other;
+        p.mlock_hot_regions = true;  // usually permitted without privilege
+        p.thp_hint_pools = false;  // leave the decision to the kernel
         p.disable_thp_global = false;
         p.thp_collapse_now = false;
-        p.lock_frequency = false;  // respect the user's governor
-        p.disable_c_states = false;  // don't burn battery
-        p.io_uring_sqpoll = false;  // not worth on a laptop
+        p.lock_frequency = false;  // respect the chosen governor
+        p.disable_c_states = false;  // and the battery
+        p.io_uring_sqpoll = false;
         p.rdma_for_comm = false;
         p.on_missing_capability = OnMissingCap::DegradeAndWarn;
         return p;
     }
 
-    // Hyperscaler VM guest (AWS EC2, GCP Compute, Azure VM). We don't
-    // own the host, so anything that would need root-on-bare-metal —
-    // frequency lock, C-state disable, IRQ steering, isolcpus — is
-    // skipped. What DOES work inside a guest:
+    // A guest on a host somebody else owns. Anything needing privilege
+    // over the physical machine is skipped, because it is unavailable:
+    // frequency, idle states, interrupt steering, CPU isolation.
     //
-    //   • Per-vCPU pinning (keeps us on one vCPU within the guest;
-    //     the host can still migrate us, but intra-guest stays stable)
-    //   • mlock2(MLOCK_ONFAULT) to defeat the guest pager; balloon
-    //     driver + KSM on the host remain the only residual threat
-    //   • SCHED_FIFO, not SCHED_DEADLINE — the kernel admits a deadline
-    //     but the host can preempt the whole vCPU regardless, making
-    //     the admission a lie. FIFO preempts in-guest work without
-    //     promising what we can't guarantee.
-    //   • MADV_HUGEPAGE on big pools (host usually honors 2 MB)
-    //   • io_uring with SQPOLL — guest syscall elision is real savings
+    // What still works inside a guest is pinning within the guest, page
+    // locking against the guest pager, huge-page advice, and kernel-side
+    // submission polling.
     //
-    // Use this on managed K8s, ECS, GKE Standard, AKS, self-managed
-    // EC2, etc. Tail latency on cloud vCPUs is noisy regardless of
-    // tuning (vCPU steal); absolute timings are unreliable, but
-    // relative comparisons via Mann-Whitney U still hold. For actual
-    // realtime ML, request a bare-metal instance type and use
-    // Policy::production() instead.
+    // The first-in-first-out class rather than the deadline class: the
+    // kernel would admit the deadline, but the host can preempt the
+    // whole virtual CPU whenever it likes, which makes that admission a
+    // promise nothing can keep.
     [[nodiscard]] static constexpr Policy cloud_vm() noexcept {
         Policy p;
         p.hot_enabled = true;
-        p.hot_sched = SchedClass::Fifo;  // not Deadline — host can still preempt
+        p.hot_sched = SchedClass::Fifo;
         p.hot_rt_priority = 50;
         p.mlock_hot_regions = true;
-        p.thp_hint_pools = true;  // MADV_HUGEPAGE — guest-local, works
-        p.disable_thp_global = false;  // don't fight the VM's THP policy
-        p.thp_collapse_now = false;  // MADV_COLLAPSE unreliable in guests
-        p.lock_frequency = false;  // no permission
-        p.disable_c_states = false;  // no permission
-        p.io_uring_sqpoll = true;  // syscall elision still wins
-        p.rdma_for_comm = true;  // EFA / IB on HPC instance types
+        p.thp_hint_pools = true;
+        p.disable_thp_global = false;  // do not fight the guest policy
+        p.thp_collapse_now = false;  // unreliable inside a guest
+        p.lock_frequency = false;  // not permitted
+        p.disable_c_states = false;  // not permitted
+        p.io_uring_sqpoll = true;
+        p.rdma_for_comm = true;  // offered by some instance types
         p.on_missing_capability = OnMissingCap::DegradeAndWarn;
         return p;
     }
 
-    // Opt out entirely. For debugging ("does my bug reproduce without
-    // any hardening?") or for shells where Warden enforcement isn't wanted.
+    // Change nothing, which is what reproducing a bug against an
+    // untouched system needs.
     [[nodiscard]] static constexpr Policy none() noexcept {
         Policy p;
         p.hot_enabled = false;
@@ -229,11 +178,8 @@ struct Policy {
     }
 };
 
-// One cache line of hot fields (scheduler / pinning) + cold tail
-// (mlock, THP hints, watchdog). The whole struct is passed by value
-// to apply() once per component init, so keep it small and trivially
-// copyable. If this fires, something was added that probably doesn't
-// belong in Policy — consider a separate config struct.
+// The whole structure travels by value. A field that pushes it past
+// this bound probably belongs in a configuration of its own.
 static_assert(sizeof(Policy) < 256);
 
 }  // namespace crucible::warden

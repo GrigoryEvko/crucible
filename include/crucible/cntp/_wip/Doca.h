@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-144 WIP. CNT-P DOCA / DPU offload sketch.
-//
-// This header owns typed admission for DPU / SmartNIC offload intent.
-// It deliberately does not link NVIDIA DOCA, Pensando SDKs, Nitro
-// tooling, or any vendor userspace daemon. Live backends must consume
-// DeclaredDocaDeployPlan / DocaChannelConfig values and currently report
-// explicit deferral or unavailability after the request shape is proven.
+// Nothing here links NVIDIA DOCA, a Pensando SDK, Nitro tooling or any vendor
+// userspace daemon.  The deploy and channel paths prove the request shape and
+// then report deferral or unavailability.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>

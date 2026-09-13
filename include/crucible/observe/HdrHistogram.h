@@ -1,11 +1,5 @@
 #pragma once
 
-// crucible::observe::HdrHistogram
-//
-// Fixed-shape high dynamic range histogram for latency distributions.
-// The recording path is one bucket-index calculation plus one relaxed
-// atomic increment; all storage is static and contiguous.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/safety/Refined.h>
@@ -93,18 +87,11 @@ template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3'600'000'000'0
 class HdrHistogram {
 public:
     using layout_type = detail::HdrLayout<Significant, MaxValue>;
-    // fixy-A5-008: the lower bound is 0, not 1.  Production transports
-    // emit zero-valued samples on cold paths (RTT before the first
-    // round-trip, bandwidth before the first byte, queue depth on
-    // an idle fd) and the old `in_range<1, MaxValue>` precondition
-    // fired `std::terminate` inside Refined<>'s contract — aborting
-    // the Keeper daemon on first-sample-after-socket-open.  The
-    // bucket math handles zero correctly: counts_index(0) returns 0,
-    // value_from_index(0) returns 0, and percentile() already gates
-    // total == 0.  Widening the refinement is the structural fix;
-    // narrowing it later would require either a separate "zero"
-    // sentinel bucket OR per-call gating in every caller — both
-    // strictly worse than letting zero be a first-class sample value.
+    // Zero is a first-class sample, so the lower bound is 0 and not 1.
+    // Transports emit zero on cold paths: round-trip time before the first
+    // round trip, bandwidth before the first byte, queue depth on an idle
+    // descriptor. Excluding zero would need a sentinel bucket or a guard at
+    // every call site.
     using value_type = safety::Refined<safety::in_range<std::uint64_t{0}, MaxValue>, std::uint64_t>;
 
     struct EncodedBucket {
@@ -129,8 +116,8 @@ public:
     static constexpr std::uint64_t max_trackable_value = MaxValue;
     static constexpr std::size_t bucket_slots = layout_type::counts_len;
     static_assert(layout_type::counts_index(std::uint64_t{0}) < bucket_slots,
-                  "fixy-A5-008: bucket 0 must be a valid slot — zero samples "
-                  "are first-class inputs (cold-path RTT/BW/queue-depth)");
+                  "bucket 0 must be a valid slot. Zero samples are first-class "
+                  "inputs.");
     static_assert(layout_type::counts_index(std::uint64_t{1}) < bucket_slots);
     static_assert(layout_type::counts_index(MaxValue) < bucket_slots);
 
@@ -143,20 +130,16 @@ public:
     CRUCIBLE_HOT void record(value_type value) noexcept {
         const std::size_t index = layout_type::counts_index(value.value());
         counts_[index].fetch_add(1, std::memory_order_relaxed);
-        // fixy-A5-007: acq_rel (was release-only) is load-bearing for
-        // N-producer races on weakly-ordered targets (ARM, Apple
-        // Silicon, Graviton).  A release-only RMW does NOT synchronize
-        // with a SECOND producer's release-only RMW: producer-Y reads
-        // producer-X's incremented value but the read part of Y's RMW
-        // has no acquire semantics, so X's prior counts_ stores are
-        // not happens-before Y's release.  A reader whose acquire-
-        // load reads Y's release sees Y's counts_ updates but NOT X's
-        // → sum(counts_) < total_count, observable as a torn percentile
-        // (loop falls off the end and returns MaxValue).  acq_rel
-        // builds the transitive chain: X's counts_ → X's release → Y's
-        // acquire-RMW → Y's release → Reader's acquire.  On x86 the
-        // generated code is unchanged (LOCK XADD is already full-
-        // barrier); ARM gains the missing DMB-ISH fence.
+        // acq_rel, not release. A release-only read-modify-write does not
+        // synchronize with a second producer's release-only one. Producer Y
+        // reads producer X's incremented value, but the read half of Y's
+        // operation has no acquire semantics, so X's earlier bucket stores
+        // do not happen before Y's release. A reader that acquires Y's
+        // release then sees Y's bucket updates but not X's, and the bucket
+        // sum falls short of total_count_. The percentile loop runs off the
+        // end and returns MaxValue. acq_rel builds the transitive chain from
+        // X's stores through X's release, Y's acquiring read-modify-write
+        // and Y's release to the reader's acquire.
         total_count_.fetch_add(1, std::memory_order_acq_rel);
     }
 
@@ -171,11 +154,11 @@ public:
             pct = 100.0;
         }
 
-        // FIXY-V-096b: compute the rank in `double`, not `long double`.
-        // `long double` is 80-bit on x86 but 64-bit on aarch64, so the same
-        // (pct, total) could pick a DIFFERENT bucket near a boundary across
-        // the fleet (DetSafe violation).  IEEE-754 double mul/div + ceil are
-        // correctly rounded and bit-identical on every target.
+        // The rank is computed in double, never long double. long double is
+        // 80-bit on x86 and 64-bit on aarch64, so one pct and total pair
+        // could pick a different bucket near a boundary on different hosts.
+        // IEEE-754 double multiply, divide and ceil are correctly rounded
+        // and bit-identical on every target.
         const double rank_f = (pct / 100.0) * static_cast<double>(total);
         std::uint64_t rank = static_cast<std::uint64_t>(std::ceil(rank_f));
         if (rank == 0) {
@@ -198,13 +181,11 @@ public:
             return 0;
         }
 
-        // FIXY-V-096b: exact integer accumulation in unsigned __int128 — no
-        // float at all.  Replaces a `long double` weighted sum that was (a)
-        // 80-bit on x86 / 64-bit on aarch64 (cross-platform bit-different
-        // mean = DetSafe violation) and (b) inexact once the running sum
-        // exceeded the mantissa.  value_from_index × count is exact in
-        // __int128; for realistic latency/bandwidth histograms (MaxValue ·
-        // total well under 2^128) the accumulation never overflows.
+        // The accumulation is exact integer arithmetic with no float at all.
+        // A float sum loses bits once it passes the mantissa, and long
+        // double differs in width between x86 and aarch64. value_from_index
+        // times count is exact in 128 bits, and MaxValue times a realistic
+        // sample count stays far below 2^128.
         wide_unsigned sum = 0;
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
@@ -212,8 +193,6 @@ public:
                 sum += static_cast<wide_unsigned>(layout_type::value_from_index(i)) * static_cast<wide_unsigned>(count);
             }
         }
-        // Round-half-up integer division (mean is reported in integer units);
-        // matches the prior `+ 0.5` truncation, now exact and float-free.
         const wide_unsigned total128 = static_cast<wide_unsigned>(total);
         return static_cast<std::uint64_t>((sum + total128 / 2) / total128);
     }
@@ -224,12 +203,11 @@ public:
             return 0;
         }
 
-        // FIXY-V-096b: exact Σ count·(value − mean)² in unsigned __int128,
-        // then a single IEEE-754 division + sqrt (both correctly rounded, so
-        // bit-identical on every target).  The deviation form Σ(x−mean)² is
-        // already cancellation-free (V-096 lesson); this additionally drops
-        // `long double` (80-bit x86 / 64-bit aarch64) from the accumulation,
-        // so the variance is computed identically across the fleet.
+        // The deviation form sums (value - mean) squared. It is free of the
+        // catastrophic cancellation the sum-of-squares form suffers. The
+        // accumulation is exact in 128 bits. The final divide and sqrt are
+        // both correctly rounded, so the result is bit-identical on every
+        // target.
         const std::uint64_t avg = mean();
         wide_unsigned sum_sq = 0;
         for (std::size_t i = 0; i < counts_.size(); ++i) {
@@ -252,25 +230,17 @@ public:
                 counts_[i].fetch_add(count, std::memory_order_relaxed);
             }
         }
-        // fixy-A5-007: acq_rel (was release) for the same N-producer
-        // race reasoning as `record` — concurrent merge_from calls into
-        // the same `this` histogram form an RMW chain on total_count_
-        // that needs acquire-side to publish prior bucket writes.
+        // acq_rel for the same reason as record. Concurrent merges into one
+        // histogram form a read-modify-write chain on total_count_, and the
+        // acquire half is what publishes the bucket writes along it.
         total_count_.fetch_add(other.total_count(), std::memory_order_acq_rel);
     }
 
     void add_from(const HdrHistogram& other) noexcept { merge_from(other); }
 
-    // fixy-A5-007 supersedes fixy-A5-019: publish discipline matches
-    // merge_from and record — acq_rel on total_count_ updates.  The
-    // prior A5-019 rationale that "no value read after the CAS depends
-    // on other threads' writes" missed the N-producer publishing case:
-    // two concurrent subtract_from calls (or one subtract + one merge)
-    // form an RMW chain on total_count_ that needs acquire-side
-    // semantics to publish prior bucket writes across the chain.
-    // saturating_sub's CAS-retry loop already uses an implicit acquire
-    // on its read side, but the SUCCESS ordering decides the publish
-    // semantics — acq_rel is the load-bearing case.
+    // acq_rel for the same reason as record. Two concurrent subtracts, or a
+    // subtract racing a merge, form a read-modify-write chain on
+    // total_count_ whose success ordering decides what the chain publishes.
     void subtract_from(const HdrHistogram& other) noexcept {
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = other.counts_[i].load(std::memory_order_relaxed);
@@ -325,11 +295,9 @@ public:
     }
 
 private:
-    // FIXY-V-096b: 128-bit integer aliases for the exact mean()/std_dev()
-    // accumulators.  `__extension__` suppresses -Wpedantic on the GCC
-    // `__int128` keyword here (per safety/Vendor / canopy/Hlc precedent);
-    // every downstream use refers to these names and never re-spells the
-    // keyword, so the rest of the header stays ISO-pedantic-clean.
+    // __extension__ suppresses -Wpedantic on the __int128 keyword. Every use
+    // below names these aliases and never respells the keyword, so the rest
+    // of the header stays pedantic-clean.
     __extension__ using wide_unsigned = unsigned __int128;
     __extension__ using wide_signed = __int128;
 
@@ -348,35 +316,15 @@ private:
     alignas(64) std::atomic<std::uint64_t> total_count_{0};
 };
 
-// fixy-A5-029: cross-thread atomics on the HDR record / percentile path must
-// be lock-free on every supported target.  libstdc++ silently substitutes
-// mutex-backed atomic ops on ISAs lacking the required intrinsic — a hidden
-// mutex inside every record() / total_count() would invert the observe
-// histogram's microsecond budget.  Refuse to build instead of regressing.
+// A standard library may substitute mutex-backed operations where the target
+// lacks the intrinsic, silently putting a lock inside every record. Refuse to
+// build instead.
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-              "std::atomic<uint64_t> must be lock-free on this target — "
-              "fixy-A5-029");
+              "std::atomic<uint64_t> must be lock-free on this target.");
 
-// fixy-V-208 (Agent 7 Bug #4): the `next_thread_shard_` counter and the
-// thread_local cache inside `thread_shard()` were both static, so every
-// `ConcurrentHdrHistogram<...>` instance with identical template params
-// shared the same counter AND the same per-thread cache.  Two histograms
-// in the same TU (e.g. one for record-latency, one for drain-latency)
-// would interleave their shard-pick streams, defeating the per-thread
-// sticky-shard discipline AND causing one histogram to assign a thread
-// to shard 0 while another assigned the same thread to shard 0 too —
-// breaking the sharding's contention-avoidance.
-//
-// Fix: mandatory `UniqueTag` template parameter.  Each call site
-// declares a tag struct; the (Tag, std::size_t) pair routes through
-// `safety::ThreadLocalRef<Tag, std::size_t>` (V-080), which gives each
-// histogram instance its own per-thread cell.  The counter is now an
-// instance member, not static — two instances with the same tag remain
-// distinct because the field lives on `*this`.
-//
-// First record() from each thread CASes the cell from sentinel to the
-// fetch_add result.  Sticky after that.  Per-instance + per-thread =
-// the original intent, now structurally enforced by the type system.
+// UniqueTag is mandatory. The per-thread shard cell is keyed on the tag, so
+// two instances sharing a tag also share one cell per thread and draw shards
+// from one interleaved stream. Each call site declares its own tag type.
 
 template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3'600'000'000'000ull, std::size_t ShardCount = 4,
           typename UniqueTag = struct DefaultConcurrentHdrTag>
@@ -419,12 +367,9 @@ public:
     }
 
 private:
-    // The thread_local cell stores `shard_index + 1`; sentinel 0 = "this
-    // thread hasn't picked a shard for *this histogram yet."  +1 encoding
-    // works because the modulo result is [0, ShardCount-1], stored as
-    // [1, ShardCount], leaving 0 unambiguously available as the
-    // default-init "uninitialized" marker.  Hot path: one load + one
-    // branch (predicted not-taken after first call) + one subtract.
+    // The cell stores the shard index plus one. Zero-initialized storage
+    // then reads as "this thread has picked no shard yet", because a real
+    // index plus one is never zero.
     [[nodiscard]] CRUCIBLE_HOT std::size_t thread_shard_() noexcept {
         const ::crucible::safety::ThreadLocalRef<UniqueTag, std::size_t> cell{};
         std::size_t& cached_plus_one = cell.peek_mut();
@@ -435,9 +380,6 @@ private:
     }
 
     alignas(64) std::array<histogram_type, ShardCount> shards_{};
-    // Per-instance shard counter — was inline-static, now instance.  Two
-    // ConcurrentHdrHistogram<...> instances are now genuinely isolated;
-    // they no longer pull from the same atomic.
     alignas(64) std::atomic<std::uint64_t> next_thread_shard_{0};
 };
 

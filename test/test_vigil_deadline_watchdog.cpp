@@ -1,46 +1,3 @@
-// Sentinel TU for Vigil's GAPS-004h follow-up: the DeadlineWatchdog
-// wiring that runs on the bg thread inside on_region_ready and
-// publishes its verdict via atomic counters readable from any thread.
-//
-// What this test asserts:
-//   1. Vigil constructed with `enable_deadline_watchdog = false`:
-//      - watchdog_enabled() == false
-//      - All four watchdog accessors report sentinel/zero values
-//      - After a region transition, no counter increments (watchdog
-//        was never built, so on_region_ready's `if (wd_)` branch
-//        is never taken)
-//      - last_watchdog_verdict() stays InsufficientData (the default
-//        atomic-init value)
-//
-//   2. Vigil constructed with `enable_deadline_watchdog = true`:
-//      - watchdog_enabled() == true (Senses + DeadlineWatchdog were
-//        built; libbpf may or may not have attached the SchedSwitch
-//        subprogram, but the Vigil-side wiring is unconditional)
-//      - After a region transition, exactly one counter incremented
-//        (sum of healthy + downgrade + insufficient == 1)
-//      - last_watchdog_verdict() reflects that observation
-//      - In CI / restricted environments without CAP_BPF, the
-//        SchedSwitch facade is unattached and observe() returns
-//        InsufficientData every call — so wd_insufficient_count_ ≥ 1
-//        is the always-safe assertion
-//
-//   3. Destruction order does NOT deadlock or UAF:
-//      - Vigil goes out of scope at end of block; bg_ destructs
-//        first (joins thread), then wd_, then senses_.  The borrow
-//        in DeadlineWatchdog (a `const Senses*`) survives until wd_
-//        destructs, by which time bg's thread has joined and no
-//        more observe() calls are possible.
-//
-// What this test does NOT assert:
-//   - Specific verdict values beyond "in the legal enum range" — the
-//     ~60-second default Policy window means a fast test will almost
-//     always see InsufficientData (baseline captured on first call,
-//     window not yet elapsed on subsequent calls).  Asserting a
-//     specific verdict would couple the test to wall-clock timing.
-//   - Underlying DeadlineWatchdog state (baseline_count, etc.) — not
-//     exposed by Vigil for race-safety reasons; only the published
-//     atomic counters + verdict are part of the public surface.
-
 #include <crucible/Vigil.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include "test_harness.h"
@@ -51,52 +8,46 @@
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
-// ── Suppress -Werror=unused-const-variable on TIMELINE_MASK +
-// PMU_SAMPLE_MASK transitively pulled in via Vigil.h → Senses.h →
-// SchedSwitch.h / PmuSample.h.  Sibling perf smoke tests use this
-// same pattern.
-static_assert(crucible::perf::TIMELINE_MASK ==
-              crucible::perf::TIMELINE_CAPACITY - 1,
-    "TIMELINE_MASK is the cyclic-mask companion to TIMELINE_CAPACITY");
-static_assert(crucible::perf::PMU_SAMPLE_MASK ==
-              crucible::perf::PMU_SAMPLE_CAPACITY - 1,
-    "PMU_SAMPLE_MASK is the cyclic-mask companion to PMU_SAMPLE_CAPACITY");
+// These two assertions consume constants the includes above pull in
+// transitively, which would otherwise trip -Werror=unused-const-variable.
+static_assert(crucible::perf::TIMELINE_MASK == crucible::perf::TIMELINE_CAPACITY - 1,
+              "TIMELINE_MASK is the cyclic-mask companion to TIMELINE_CAPACITY");
+static_assert(crucible::perf::PMU_SAMPLE_MASK == crucible::perf::PMU_SAMPLE_CAPACITY - 1,
+              "PMU_SAMPLE_MASK is the cyclic-mask companion to PMU_SAMPLE_CAPACITY");
 
 namespace {
 
 crucible::TraceRing::Entry make_entry(SchemaHash schema_hash) {
     crucible::TraceRing::Entry e{};
-    e.schema_hash      = schema_hash;
-    e.shape_hash       = ShapeHash{0x1234};
-    e.num_inputs       = 1;
-    e.num_outputs      = 1;
-    e.num_scalar_args  = 0;
-    e.op_flags         = 0;
+    e.schema_hash = schema_hash;
+    e.shape_hash = ShapeHash{0x1234};
+    e.num_inputs = 1;
+    e.num_outputs = 1;
+    e.num_scalar_args = 0;
+    e.op_flags = 0;
     return e;
 }
 
 crucible::TensorMeta make_meta() {
     crucible::TensorMeta m{};
-    m.ndim        = 1;
-    m.sizes[0]    = ::crucible::tensor_dim(8);
-    m.strides[0]  = ::crucible::tensor_dim(1);
-    m.dtype       = crucible::ScalarType::Float;
+    m.ndim = 1;
+    m.sizes[0] = ::crucible::tensor_dim(8);
+    m.strides[0] = ::crucible::tensor_dim(1);
+    m.dtype = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;
-    m.device_idx  = -1;
-    m.layout      = crucible::Layout::Strided;
-    m.data_ptr    = crucible::external_data_ptr(nullptr);
+    m.device_idx = -1;
+    m.layout = crucible::Layout::Strided;
+    m.data_ptr = crucible::external_data_ptr(nullptr);
     return m;
 }
 
-// Drive a single region transition: K=5 schemas × 3 iterations = 15
-// ops, then flush.  IterationDetector confirms the boundary on the
-// second match (ops 6-10), creates a region on the third (11-15).
-// flush() waits until on_region_ready has executed.
+// Five schemas over three iterations is the smallest input that yields
+// one region: the detector confirms the boundary on the second match
+// and creates the region on the third.  The flush then waits until
+// on_region_ready has run.
 void drive_one_region(crucible::Vigil& vigil) {
-    const SchemaHash schemas[5] = {
-        SchemaHash{0xAA01}, SchemaHash{0xBB02}, SchemaHash{0xCC03},
-        SchemaHash{0xDD04}, SchemaHash{0xEE05}
-    };
+    const SchemaHash schemas[5] = {SchemaHash{0xAA01}, SchemaHash{0xBB02}, SchemaHash{0xCC03}, SchemaHash{0xDD04},
+                                   SchemaHash{0xEE05}};
     const crucible::TensorMeta meta = make_meta();
     const crucible::TensorMeta io_metas[2] = {meta, meta};
 
@@ -110,108 +61,79 @@ void drive_one_region(crucible::Vigil& vigil) {
     crucible::test::flush_and_wait_compiled(vigil);
 }
 
-// ── (1) Disabled watchdog ─────────────────────────────────────────
-//
-// Vigil with default Config: watchdog_enabled() == false; on_region_ready
-// never invokes observe(); counters stay at zero through any number
-// of region transitions.
-
 void test_disabled_watchdog() {
     crucible::Vigil::Config cfg;
-    // explicit for documentation; this is the default
+    // Spelled out although false is already the default.
     cfg.enable_deadline_watchdog = false;
     crucible::Vigil vigil(std::move(cfg));
 
-    assert(!vigil.watchdog_enabled() &&
-           "default Config disables the watchdog");
-    assert(vigil.last_watchdog_verdict() ==
-               ::crucible::warden::WatchdogVerdict::InsufficientData &&
-           "default verdict on disabled watchdog is InsufficientData");
+    assert(!vigil.watchdog_enabled() && "default Config disables the watchdog");
+    assert(vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData
+           && "default verdict on disabled watchdog is InsufficientData");
     assert(vigil.watchdog_healthy_count() == 0);
     assert(vigil.watchdog_downgrade_count() == 0);
     assert(vigil.watchdog_insufficient_count() == 0);
 
     drive_one_region(vigil);
 
-    // After a region transition, on_region_ready ran on bg thread but
-    // skipped the watchdog block (`if (wd_)` is false).  Counters MUST
-    // remain zero — the disabled-watchdog invariant.
+    // The region callback ran on the background thread and skipped the
+    // watchdog, so every counter must still read zero.
     assert(!vigil.watchdog_enabled());
-    assert(vigil.watchdog_healthy_count() == 0 &&
-           "disabled watchdog must not increment any counter");
+    assert(vigil.watchdog_healthy_count() == 0 && "disabled watchdog must not increment any counter");
     assert(vigil.watchdog_downgrade_count() == 0);
     assert(vigil.watchdog_insufficient_count() == 0);
-    assert(vigil.last_watchdog_verdict() ==
-               ::crucible::warden::WatchdogVerdict::InsufficientData);
+    assert(vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData);
 
-    // Vigil destructs at scope end — bg thread joins cleanly.  No
-    // crash here means destruction-order discipline (bg_ first, then
-    // wd_/senses_/atomics) is correctly preserved.
+    // Reaching scope end without a crash is itself a claim: the
+    // background thread joins before the members it borrows die.
 }
-
-// ── (2) Enabled watchdog ──────────────────────────────────────────
-//
-// Vigil with enable_deadline_watchdog = true: senses_ + wd_ are built.
-// After a region transition, on_region_ready calls wd_->observe() and
-// updates exactly one counter + the verdict.
 
 void test_enabled_watchdog() {
     crucible::Vigil::Config cfg;
     cfg.enable_deadline_watchdog = true;
-    // policy is default (production() — 10 misses / 60-second window)
+    // The default policy allows ten misses over a sixty-second window.
     crucible::Vigil vigil(std::move(cfg));
 
-    assert(vigil.watchdog_enabled() &&
-           "enable_deadline_watchdog=true must construct senses_ + wd_");
+    assert(vigil.watchdog_enabled() && "enable_deadline_watchdog=true must construct senses_ + wd_");
 
-    // Pre-transition: no observe() has run yet.  All zero / default.
     assert(vigil.watchdog_healthy_count() == 0);
     assert(vigil.watchdog_downgrade_count() == 0);
     assert(vigil.watchdog_insufficient_count() == 0);
-    assert(vigil.last_watchdog_verdict() ==
-               ::crucible::warden::WatchdogVerdict::InsufficientData);
+    assert(vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData);
 
     drive_one_region(vigil);
 
-    // After flush_and_wait_compiled returns, on_region_ready has fully
-    // executed at least once.  Exactly one counter incremented per
-    // observe() call.
-    const uint32_t healthy      = vigil.watchdog_healthy_count();
-    const uint32_t downgrade    = vigil.watchdog_downgrade_count();
+    // Each observation increments exactly one of the three counters,
+    // so their sum is the number of observations.
+    const uint32_t healthy = vigil.watchdog_healthy_count();
+    const uint32_t downgrade = vigil.watchdog_downgrade_count();
     const uint32_t insufficient = vigil.watchdog_insufficient_count();
     const uint32_t total = healthy + downgrade + insufficient;
 
-    assert(total >= 1 &&
-           "at least one observe() must have run during flush");
+    assert(total >= 1 && "at least one observe() must have run during flush");
 
-    // The verdict must be a legal enum value (0/1/2 for InsufficientData/
-    // Healthy/Downgrade).  We don't assert which specific value because:
-    //  - The default Policy window is 60 seconds; a fast test almost
-    //    always sees InsufficientData (window not yet elapsed)
-    //  - In CI without CAP_BPF, SchedSwitch is unattached → always
-    //    InsufficientData
-    //  - In a system with attached SchedSwitch + low contention, could
-    //    see Healthy if a 60s test ran (but our test is sub-second)
+    // Which verdict comes back is deliberately not asserted.  The
+    // policy window is sixty seconds and this test runs in well under
+    // a second, and without CAP_BPF the scheduler probe never attaches
+    // at all.  Pinning a verdict would couple the test to wall-clock
+    // timing and to the privileges of the machine running it.
     const auto v = vigil.last_watchdog_verdict();
-    const bool legal_verdict =
-        (v == ::crucible::warden::WatchdogVerdict::InsufficientData) ||
-        (v == ::crucible::warden::WatchdogVerdict::Healthy) ||
-        (v == ::crucible::warden::WatchdogVerdict::Downgrade);
+    const bool legal_verdict = (v == ::crucible::warden::WatchdogVerdict::InsufficientData)
+                            || (v == ::crucible::warden::WatchdogVerdict::Healthy)
+                            || (v == ::crucible::warden::WatchdogVerdict::Downgrade);
     assert(legal_verdict && "verdict must be a legal enum value");
 
-    // The MOST LIKELY outcome on a fast test: 1 InsufficientData
-    // (baseline capture on first observation; SchedSwitch may or may
-    // not be attached but window certainly hasn't elapsed).  This is
-    // the safe assertion.  We require insufficient ≥ 1 for that
-    // reason, but allow healthy/downgrade to also fire if a longer
-    // run happens.
-    assert(insufficient >= 1 &&
-           "first observation always returns InsufficientData "
-           "(baseline-capture or window-not-elapsed)");
+    // The first observation only captures a baseline, so it always
+    // reports InsufficientData.  That makes a floor of one the safe
+    // assertion, while leaving room for the other two counters to move
+    // on a slower run.
+    assert(insufficient >= 1
+           && "first observation always returns InsufficientData "
+              "(baseline-capture or window-not-elapsed)");
 
-    // Vigil destructs at scope end.  Order: bg_ joins first → wd_
-    // destructs (no more observe() possible) → senses_ destructs (no
-    // more borrow holders).  The borrow contract is preserved.
+    // The watchdog borrows a pointer into a sibling member.  Reaching
+    // scope end cleanly claims that the background thread joins, and
+    // so the last observation finishes, before either member dies.
 }
 
 }  // anonymous namespace

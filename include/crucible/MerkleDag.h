@@ -1,22 +1,5 @@
 #pragma once
 
-// Merkle DAG: Execute-and-record trace graph with content-addressable
-// kernel caching, branch/merge detection, and DAG replay.
-//
-// Implements Crucible.md Part 2 (sections 2.1-2.9).
-//
-// Core types:
-//   TraceEntry    — one recorded ATen op (shapes, dtypes, scalar args)
-//   RegionNode    — compilable sequence of ops, linked to cached kernel
-//   BranchNode    — guard point routing to different execution arms
-//   KernelCache   — global lock-free content_hash -> CompiledKernel* map
-//
-// TraceRing and IterationDetector live in their own headers
-// (TraceRing.h, IterationDetector.h) because they're also used by
-// CrucibleContext and BackgroundThread without pulling in the full DAG.
-//
-// All nodes are arena-allocated.
-
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
 #include <crucible/DimHash.h>
@@ -26,11 +9,6 @@
 #include <crucible/Reflect.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
-// FIXY-U-093 production migration: substrate calls route through fixy::*
-// re-exports instead of safety::*/permissions::*/handles::* directly.
-// Wrap.h pulls Borrowed/Refined/Mutation/Saturated/DetSafe/ResidencyHeat;
-// Perm.h pulls Permission + mint_permission_root; Handle.h pulls
-// PublishOnce.  Pre/Post macros stay direct (they are macros, not types).
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Perm.h>
 #include <crucible/fixy/Wrap.h>
@@ -54,15 +32,8 @@
 
 namespace crucible {
 
-// Opaque compiled kernel handle (implemented by codegen backend)
 struct CompiledKernel;
 
-// TensorMeta lives in its own header so DimHash.h (which we use for
-// the SIMD dim-hash inside compute_content_hash) can depend on it
-// without creating a circular include with MerkleDag.h.
-// (Definition + sizeof/relocatability asserts are in TensorMeta.h.)
-
-// TensorMeta::flags bit constants.
 namespace meta_flags {
 inline constexpr uint8_t IS_LEAF = 1 << 0;
 inline constexpr uint8_t IS_CONTIGUOUS = 1 << 1;
@@ -72,116 +43,54 @@ inline constexpr uint8_t IS_NEG = 1 << 4;
 inline constexpr uint8_t IS_CONJ = 1 << 5;
 }  // namespace meta_flags
 
-// ═══════════════════════════════════════════════════════════════════
-// TensorSlot: One unique storage in a recorded iteration
-//
-// Identifies a distinct tensor storage, tracks its live range
-// (birth_op..death_op), and holds the assigned offset within
-// the pre-allocated memory pool.
-// ═══════════════════════════════════════════════════════════════════
-
 struct TensorSlot {
-    uint64_t offset_bytes = 0;  // 8B — assigned position in the memory pool (supports >4GB)
-    // ── 24B bulk-copyable region (matches SlotInfo layout) ──────────
-    uint64_t nbytes = 0;  // 8B — storage size in bytes
-    OpIndex birth_op;  // 4B — default = none (UINT32_MAX)
-    OpIndex death_op;  // 4B — default = none (UINT32_MAX)
-    ScalarType dtype = ScalarType::Undefined;  // 1B
-    DeviceType device_type = DeviceType::CPU;  // 1B
-    int8_t device_idx = -1;  // 1B
-    Layout layout = Layout::Strided;  // 1B
-    bool is_external = false;  // 1B
-    uint8_t pad[3]{};  // 3B
-    // ── end bulk-copyable region ────────────────────────────────────
-    SlotId slot_id;  // 4B — after bulk region for memcpy alignment
-    uint8_t pad2[4]{};  // 4B — pad to 40B (implicit alignment pad, explicit for InitSafe)
+    uint64_t offset_bytes = 0;
+    // nbytes through pad form a 24-byte block that is copied as one unit.
+    // Reordering these members, or moving slot_id in among them, breaks
+    // that copy.
+    uint64_t nbytes = 0;
+    OpIndex birth_op;
+    OpIndex death_op;
+    ScalarType dtype = ScalarType::Undefined;
+    DeviceType device_type = DeviceType::CPU;
+    int8_t device_idx = -1;
+    Layout layout = Layout::Strided;
+    bool is_external = false;
+    uint8_t pad[3]{};
+    SlotId slot_id;
+    uint8_t pad2[4]{};
 };
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 
-// ═══════════════════════════════════════════════════════════════════
-// MemoryPlan: Result of liveness analysis + offset assignment
-//
-// Maps each tensor slot to a byte offset within a single pool.
-// External slots (params, data loader outputs) are excluded from
-// the pool — they keep their existing allocations.
-//
-// Carries device and distributed context so each plan is
-// self-describing — critical for heterogeneous multi-device
-// execution where different devices get different compiled kernels
-// and different memory layouts.
-// ═══════════════════════════════════════════════════════════════════
-
+// External slots keep the allocations they already have: they are counted in
+// num_external and are not placed in the pool.
 struct MemoryPlan {
-    TensorSlot* slots = nullptr;  // 8B — arena-allocated array
-    uint64_t pool_bytes = 0;  // 8B — total pool size needed
-    uint32_t num_slots = 0;  // 4B — total unique storages
-    uint32_t num_external = 0;  // 4B — how many are external (not in pool)
+    TensorSlot* slots = nullptr;
+    uint64_t pool_bytes = 0;
+    uint32_t num_slots = 0;
+    uint32_t num_external = 0;
 
-    // Device context: which device this plan targets.
-    DeviceType device_type = DeviceType::CPU;  // 1B
-    int8_t device_idx = -1;  // 1B — device index
-    uint8_t pad0[2]{};  // 2B — alignment
-    uint64_t device_capability = 0;  // 8B — SM version or equivalent (from CrucibleContext)
+    DeviceType device_type = DeviceType::CPU;
+    int8_t device_idx = -1;
+    uint8_t pad0[2]{};
+    uint64_t device_capability = 0;
 
-    // Distributed topology: for multi-device memory coordination.
-    int32_t rank = -1;  // 4B — global rank (-1 = not distributed)
-    int32_t world_size = 0;  // 4B — total processes (0 = not distributed)
+    int32_t rank = -1;  // -1 when not distributed
+    int32_t world_size = 0;  // 0 when not distributed
 };
 
-// MemoryPlan layout: slots(8) + pool_bytes(8) + num_slots(4) + num_external(4) +
-// device_type(1) + device_idx(1) + pad(2) + device_capability(8) + rank(4) +
-// world_size(4) = 44B → aligned to 48 via trailing pad the compiler inserts.
-static_assert(sizeof(MemoryPlan) == 48, "MemoryPlan size changed — update serializer and on-disk format");
+static_assert(sizeof(MemoryPlan) == 48, "MemoryPlan must be 48 bytes — the on-disk format matches this layout");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 
-// ═══════════════════════════════════════════════════════════════════
-// CONTRACT-112: live-set byte-interval pairwise disjointness check.
-//
-// At every op boundary `t`, the set of TensorSlots with
-// `birth_op <= t <= death_op` (the "simultaneously live" set) must
-// have non-overlapping byte ranges `[offset_bytes, offset_bytes +
-// nbytes)`.  Two slots that were dead-and-reused (one died before
-// the other was born) MAY share offsets — that is the whole point
-// of the planner.  Two slots whose live ranges intersect MUST NOT.
-//
-// External slots (`is_external == true`) are excluded — they keep
-// their existing allocations, do not participate in the pool, and
-// their `offset_bytes` is meaningless for the disjointness story.
-//
-// Algorithm
-// ---------
-// O(n) sweep over `slots` to filter to the live set at op `t`,
-// then `decide::intervals_pairwise_disjoint` (O(k²) for k live)
-// over the filtered byte intervals.  k <= MaxLive — the template
-// parameter caps stack scratch.  When k > MaxLive at runtime the
-// function returns false (the caller's bound is too tight, which
-// is itself a useful failure signal).
-//
-// Overflow safety
-// ---------------
-// The half-open interval upper bound is `offset_bytes + nbytes`,
-// each `uint64_t`.  Production values (≤ ~1 TB pools) cannot
-// overflow, but the function guards via `decide::no_overflow_sum`
-// per the docstring contract on `decide::intervals_pairwise_disjoint`
-// (Decide.h:883-888).  An overflowing interval returns false — a
-// disjoint-claim that depends on UB-corrupted endpoints is no
-// claim at all.
-//
-// Cite shape (CONTRACT-112 production)
-// ------------------------------------
-//   for (uint32_t t = 0; t <= max_op; ++t) {
-//       CRUCIBLE_PRE(crucible::live_intervals_disjoint_at<MaxLive>(
-//           {plan->slots, plan->num_slots}, OpIndex{t}));
-//   }
-//
-// Distinct from `decide::intervals_pairwise_disjoint` — that
-// predicate is the n-ary pairwise quantifier over a pre-filtered
-// span; this helper is the LIVE-SET FILTER + PREDICATE COMPOSITION
-// at a specific op boundary.  Filter bug is the bug class this
-// helper catches — predicate alone misses it because the predicate
-// trusts the input span.
+// True when the byte ranges of the slots live at op `op` are pairwise
+// disjoint.  Only the simultaneously-live set is checked: two slots whose
+// live ranges do not intersect may share an offset, which is the reuse the
+// planner exists to produce.  External slots keep their own allocations, so
+// their offset_bytes carries no pool meaning and they are skipped.
+// A live set larger than MaxLive, or an interval whose endpoint sum
+// overflows, returns false — neither case can support a disjointness claim.
 template <std::size_t MaxLive>
 [[nodiscard]] constexpr bool live_intervals_disjoint_at(std::span<const TensorSlot> slots, OpIndex op) noexcept {
     std::array<decide::Interval<std::uint64_t>, MaxLive> live{};
@@ -201,45 +110,14 @@ template <std::size_t MaxLive>
     return decide::intervals_pairwise_disjoint(std::span<const decide::Interval<std::uint64_t>>(live.data(), n));
 }
 
-// Compute storage size in bytes from TensorMeta.
+// The storage span is the sum of the per-dimension extents, not the largest
+// of them: sizes [3,4] with strides [4,1] span (2*4)+(3*1)+1 = 12 elements.
+// A negative stride puts an extent below the base pointer, so the minimum
+// and maximum offsets accumulate separately.
 //
-// The total storage span is the sum of per-dimension extents (not the
-// max). For contiguous [3,4] strides [4,1]: (2*4)+(3*1)+1 = 12 elements.
-// Handles negative strides (e.g. torch.flip, as_strided) by tracking
-// both max and min offset contributions separately.
-//
-// Overflow handling: a corrupt or adversarial TensorMeta could carry
-// huge sizes/strides whose product overflows int64_t silently — the
-// pre-fix code computed (sizes-1)*strides without checking, leaving a
-// path for downstream code to consume a wrapped-around byte count and
-// either underallocate (use-after-free) or trip a contract.  Each
-// arithmetic step is now overflow-checked via __builtin_*_overflow;
-// any overflow yields a Saturated<uint64_t>{UINT64_MAX, true} — the
-// `clamped` flag is the type-system surface for "this value was
-// produced by saturation, not by arithmetic".  Pre-#1018 callers that
-// took the bare uint64_t had no way to distinguish a real 2^64-1
-// byte tensor from an overflow sentinel; Saturated<T> forces the
-// observation to be either propagated (`.value()`) or acted upon
-// (`.was_clamped()`) at every call site.
-//
-// CONTRACT-105: the overflow chain corresponds 1-to-1 with the named
-// predicates in the decide:: catalog — `decide::no_overflow_mul`
-// (CONTRACT-030) for the dim-extent and final element-bytes products,
-// `decide::no_overflow_sum` (CONTRACT-031) for the max_offset /
-// min_offset / span accumulations.  The body uses `__builtin_*_overflow`
-// (which both detects AND records the overflow flag) rather than a
-// `pre()` cite because overflow is recovered into the Saturated<T>
-// path, not assumed away — but the named predicates remain the
-// authoritative formal description of "this arithmetic does not
-// overflow", and a future audit that wants to count "operations
-// guarded against integer overflow" finds compute_storage_nbytes via
-// the cross-reference here.
-//
-// The `pre` bound on ndim discharges through `decide::in_range`
-// (CONTRACT-102): closed interval `[0, 8]` for the `<uint8_t>`
-// instantiation — TensorMeta carries `int64_t sizes[8]`, so ndim==8
-// is the inclusive maximum and ndim==0 is the well-formed scalar
-// case (handled by the `if (meta.ndim == 0)` early return below).
+// Any overflow in the chain saturates to UINT64_MAX with the clamped flag
+// set, so a caller cannot mistake a saturated result for a real byte count
+// of 2^64-1.
 [[nodiscard]] constexpr fixy::wrap::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta)
     pre(::crucible::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8})) {
     using Sat = fixy::wrap::Saturated<uint64_t>;
@@ -250,10 +128,9 @@ template <std::size_t MaxLive>
     for (uint8_t d = 0; d < raw.ndim; d++) {
         const int64_t size = raw_tensor_dim(raw.sizes[d]);
         const int64_t stride = raw_tensor_dim(raw.strides[d]);
-        if (size == 0) return Sat{uint64_t{0}};  // zero-size tensor
+        if (size == 0) return Sat{uint64_t{0}};
         int64_t dim_extent_bytes;
-        // (sizes[d] - 1) * strides[d] can overflow for huge dims.
-        // sizes[d] is positive, so the subtraction never overflows.
+        // size is positive here, so `size - 1` cannot overflow.
         if (__builtin_mul_overflow(size - 1, stride, &dim_extent_bytes)) [[unlikely]]
             return Sat{UINT64_MAX, true};
         if (dim_extent_bytes > 0) {
@@ -264,14 +141,13 @@ template <std::size_t MaxLive>
                 return Sat{UINT64_MAX, true};
         }
     }
-    // span = max_offset - min_offset + 1; both subtractions can overflow
-    // when max and min straddle int64 limits.
     int64_t span_signed;
     if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]]
         return Sat{UINT64_MAX, true};
     if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]]
         return Sat{UINT64_MAX, true};
-    // span is non-negative here (max >= 0 >= min, so max - min >= 0).
+    // max_offset >= 0 >= min_offset, so the span is non-negative and the
+    // cast to uint64_t below preserves it.
     uint64_t total_bytes;
     if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
                                &total_bytes)) [[unlikely]]
@@ -285,63 +161,35 @@ compute_storage_nbytes_det(ExternalTensorMeta meta) {
         compute_storage_nbytes(meta)};
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// TraceEntry: One recorded ATen op
-//
-// Captures everything needed to reconstruct the op for compilation:
-// op identity, input/output tensor metadata, scalar arguments,
-// context flags, and tensor identity tracking for dataflow edges.
-// All variable-length arrays are arena-allocated.
-// ═══════════════════════════════════════════════════════════════════
-
+// Every variable-length array here is arena-allocated and outlives the entry.
 struct TraceEntry {
-    SchemaHash schema_hash;  // 8B — op identity (OperatorHandle schema hash)
-    ShapeHash shape_hash;  // 8B — quick hash of all input shapes
-    ScopeHash scope_hash;  // 8B — module hierarchy path hash (AST layer)
-    CallsiteHash callsite_hash;  // 8B — Python source location identity
+    SchemaHash schema_hash;
+    ShapeHash shape_hash;
+    ScopeHash scope_hash;
+    CallsiteHash callsite_hash;
 
-    TensorMeta* input_metas = nullptr;  // 8B — arena-allocated array
-    TensorMeta* output_metas = nullptr;  // 8B — arena-allocated array
-    uint16_t num_inputs = 0;  // 2B
-    uint16_t num_outputs = 0;  // 2B
+    TensorMeta* input_metas = nullptr;
+    TensorMeta* output_metas = nullptr;
+    uint16_t num_inputs = 0;
+    uint16_t num_outputs = 0;
 
-    int64_t* scalar_args = nullptr;  // 8B — arena-allocated (null when num_scalar_args==0)
-    uint16_t num_scalar_args = 0;  // 2B
+    int64_t* scalar_args = nullptr;  // null when num_scalar_args == 0
+    uint16_t num_scalar_args = 0;
 
-    bool grad_enabled = false;  // 1B — GradMode::is_enabled()
-    bool inference_mode = false;  // 1B — InferenceMode active?
+    bool grad_enabled = false;
+    bool inference_mode = false;
 
-    // Op classification: populated by BackgroundThread during build_trace()
-    // by calling classify_kernel(schema_hash). OPAQUE until the Vessel has
-    // registered schema_hash → CKernelId mappings. Used by Tier 2+ replay
-    // to dispatch directly without going through the Vessel dispatcher.
-    CKernelId kernel_id = CKernelId::OPAQUE;  // 1B
-    bool is_mutable = false;  // 1B — schema.is_mutable (in-place or out= op)
+    // Stays OPAQUE until a schema-to-kernel mapping is registered for
+    // schema_hash.
+    CKernelId kernel_id = CKernelId::OPAQUE;
+    bool is_mutable = false;  // in-place or out= op
 
-    // Training phase: set by Python via TLS, unpacked from op_flags bits 2-3.
-    // Distinguishes forward/backward/optimizer/other for L9-L11 intelligence.
-    TrainingPhase training_phase = TrainingPhase::FORWARD;  // 1B
-    // __torch_function__ was active for this op (tensor subclass, dispatch mode).
-    bool torch_function = false;  // 1B
+    TrainingPhase training_phase = TrainingPhase::FORWARD;
+    bool torch_function = false;
 
-    // Tensor identity tracking (for dataflow edges between ops)
-    OpIndex* input_trace_indices = nullptr;  // 8B — which previous op produced each input
-    SlotId* input_slot_ids = nullptr;  // 8B — which pool slot each input reads from
-    SlotId* output_slot_ids = nullptr;  // 8B — slot ID assigned to each output tensor
-
-    // ── Borrowed accessors (NullSafe: bounds-checked access to variable-length
-    //    arrays + Source-tagged provenance per WRAP-Borrowed-Integration-2 #1088).
-    //
-    // Returns Borrowed<T, TraceEntry> instead of bare std::span<T>: the Source
-    // phantom encodes "this view came from a TraceEntry" at the type level.
-    // A function that takes Borrowed<T, TraceEntry> cannot accidentally accept
-    // a Borrowed<T, OtherSource>, even though both wrap std::span<T>.  Sized
-    // identically to std::span (sizeof preserved), trivially_copyable, range-
-    // for compatible (begin/end exposed identically).
-    //
-    // Callers that need a bare std::span (e.g. crossing into external APIs)
-    // call .as_span() to escape — the source tag drops at that boundary,
-    // marked explicitly at the escape site.
+    OpIndex* input_trace_indices = nullptr;  // producer op of each input
+    SlotId* input_slot_ids = nullptr;
+    SlotId* output_slot_ids = nullptr;
 
     [[nodiscard]] fixy::wrap::Borrowed<const TensorMeta, TraceEntry> input_span() const CRUCIBLE_LIFETIMEBOUND {
         return input_metas ? fixy::wrap::Borrowed<const TensorMeta, TraceEntry>{input_metas, num_inputs}
@@ -379,131 +227,66 @@ struct TraceEntry {
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceEntry);
 
-// ═══════════════════════════════════════════════════════════════════
-// Guard: Condition that determines branch selection at a BranchNode
-// ═══════════════════════════════════════════════════════════════════
-
+// The condition a BranchNode checks to select an arm.
 struct Guard {
     enum class Kind : uint8_t {
-        SHAPE_DIM,  // A specific dimension of a specific input
-        SCALAR_VALUE,  // A scalar produced by a specific op
-        DTYPE,  // Input tensor dtype
-        DEVICE,  // Input tensor device
-        OP_SEQUENCE,  // The op at position N matches expected schema
+        SHAPE_DIM,
+        SCALAR_VALUE,
+        DTYPE,
+        DEVICE,
+        OP_SEQUENCE,  // the op at op_index matches the expected schema
     };
 
-    Kind kind = Kind::SHAPE_DIM;  // 1B
-    uint8_t pad[3]{};  // 3B — alignment
-    OpIndex op_index;  // 4B — default = none (UINT32_MAX)
-    uint16_t arg_index = 0;  // 2B — which argument (for SHAPE_DIM, DTYPE, DEVICE)
-    uint16_t dim_index = 0;  // 2B — which dimension (for SHAPE_DIM)
+    Kind kind = Kind::SHAPE_DIM;
+    uint8_t pad[3]{};
+    OpIndex op_index;
+    uint16_t arg_index = 0;  // SHAPE_DIM, DTYPE, DEVICE
+    uint16_t dim_index = 0;  // SHAPE_DIM
 
-    // Reflection-driven: folds every non-static data member (kind, pad[3],
-    // op_index.v, arg_index, dim_index) via fmix64.  Replaces the prior
-    // manual bit-shift packing which dropped fields silently if Guard grew
-    // a new field — a new discriminant on SHAPE_DIM / SCALAR_VALUE would
-    // hash to the same value as the old one, making guards collide.
-    // reflect_hash walks the struct at compile time: adding a field is a
-    // hash-format break caught by CDAG_VERSION.
-    //
-    // gnu::pure: depends on *this fields only (memory through `this`).
+    // Folds every non-static data member, so a Guard that grows a field
+    // changes every guard hash.  That is a hash-format break: stored hashes
+    // computed by an earlier layout no longer compare equal.
     CRUCIBLE_PURE uint64_t hash() const noexcept { return crucible::reflect_hash(*this); }
 };
 
 static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);
 
-// ═══════════════════════════════════════════════════════════════════
-// DAG Node Types
-// ═══════════════════════════════════════════════════════════════════
-
 enum class TraceNodeKind : uint8_t {
-    REGION,  // A sequence of fusible ops -> compiled kernel
-    BRANCH,  // A guard check -> routes to different arms
-    LOOP,  // Cyclic computation: body × N or until convergence
-    TERMINAL,  // End of trace
+    REGION,
+    BRANCH,
+    LOOP,
+    TERMINAL,
 };
 
-// ── Validated TraceNodeKind raw byte (#1015 WRAP-Serialize-6) ──────────────
-//
-// Cipher deserialize and TraceLoader paths recover a TraceNodeKind's
-// underlying byte from disk and must widen it back into the enum.  An
-// unguarded `static_cast<TraceNodeKind>(byte)` is unsound: a corrupted
-// .crtrace file or version skew could deliver a byte in [4, 255], and
-// the resulting "invalid TraceNodeKind enumerator" cascades into the
-// exhaustive `switch` at recompute_merkle (§I-axiom InitSafe ceiling
-// vanishes), into walk_and_recompute_merkle's kind comparisons (silent
-// wrong-control-flow when none of the cases match), and into iterate
-// loops that branch on REGION/BRANCH/LOOP/TERMINAL (the unmatched byte
-// is treated as if it were *some* valid kind by every comparison that
-// happens to fail equality and fall through).
-//
-// `ValidTraceNodeKindRaw` is the type-system gate at that boundary.
-// Refined<bounded_above<TERMINAL>, uint8_t> admits 0 (REGION) through
-// static_cast<uint8_t>(TERMINAL) (currently 3) and rejects every byte
-// past TERMINAL.  The ctor's `pre(bounded_above<TERMINAL>(v))` clause
-// fires on out-of-range bytes; in constexpr context it's rejected as a
-// non-constant expression per P1494R5 (the neg-compile fixtures drive
-// both directions of drift — boundary edge at TERMINAL+1, and wide
-// miss at UINT8_MAX).
-//
-// Zero-cost: regime-1 EBO collapse — sizeof(ValidTraceNodeKindRaw) ==
-// sizeof(uint8_t) == 1B.  The wrapper exists for the construction-time
-// invariant; downstream readers immediately widen back to the enum.
-//
-// Use:
-//   h.kind = make_trace_node_kind(ValidTraceNodeKindRaw{byte_from_disk});
-// at every uint8_t → TraceNodeKind widening site.  `make_trace_node_kind`
-// is the only well-typed widening API; it consumes the proof-of-bound
-// in the ValidTraceNodeKindRaw value.
+// A kind byte recovered from persisted state is untrusted.  A byte past
+// TERMINAL widens to an enumerator that no switch arm matches and that every
+// equality test against a real kind falls through, so control flow goes
+// silently wrong instead of failing.  Constructing this refinement is the
+// validation point, and make_trace_node_kind consumes the proof.
 using ValidTraceNodeKindRaw = ::crucible::fixy::wrap::Refined<
     ::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>, uint8_t>;
 
-// Construct a TraceNodeKind from a validated byte.  The Refined<>
-// argument *is* the proof that the value is in [0, TERMINAL].
-// `gnu::const`: depends only on the argument, no global state.
-// `noexcept`: the predicate is already established at the Refined ctor;
-// this widening cannot fail.
 [[nodiscard, gnu::const]] inline constexpr TraceNodeKind make_trace_node_kind(ValidTraceNodeKindRaw raw) noexcept {
     return static_cast<TraceNodeKind>(raw.value());
 }
 
-// Base node in the Merkle DAG. Arena-allocated, never freed individually.
+// Nodes are arena-allocated and are never freed individually.
 struct TraceNode {
-    TraceNodeKind kind{};  // 1B
-    uint8_t pad[7]{};  // 7B — alignment for merkle_hash
-    MerkleHash merkle_hash;  // 8B — subtree identity (includes all descendants)
-    // Field stays as MerkleHash (default-zero
-    // at construction, populated by
-    // recompute_merkle).  Type wrapping the
-    // field would break layout; consumers use
-    // the computed_merkle_hash() accessor
-    // below to get a non-zero-refined view.
-    TraceNode* next = nullptr;  // 8B — continuation (null for TERMINAL)
+    TraceNodeKind kind{};
+    uint8_t pad[7]{};
+    // Identity of this node and every descendant.  The field stays a bare
+    // MerkleHash because wrapping it would change the layout.
+    MerkleHash merkle_hash;
+    TraceNode* next = nullptr;  // continuation, null for TERMINAL
 
-    // Accessor for callers that require merkle_hash to be populated.
-    // Returns ValidMerkleRoot (= Refined<non_zero, MerkleHash>) — caller
-    // must have called recompute_merkle on this node (or its ancestor)
-    // before invoking, or the Refined ctor's contract fires.
-    //
-    // Rationale: freshly-constructed nodes have merkle_hash == 0.
-    // Comparing a fresh node's hash to a stored one gives a spurious
-    // mismatch.  Routing through this accessor makes "the hash has been
-    // computed" a load-bearing precondition at the type level.
-    //
-    // The typed alias is declared after TraceNode (forward-decl ordering
-    // forced by Refined's reliance on the MerkleHash strong-id type
-    // already being complete); see ValidMerkleRoot below.
+    // A node that has not been through recompute_merkle carries hash 0, and
+    // comparing that against a stored hash reports a spurious mismatch.  This
+    // accessor makes "the hash is computed" a precondition instead.  It spells
+    // the return type out because the alias for it needs MerkleHash complete
+    // and so is declared below.
     [[nodiscard]] crucible::fixy::wrap::Refined<crucible::fixy::wrap::non_zero, MerkleHash>
-    computed_merkle_hash() const noexcept
-        // CONTRACT-106: non-zero hash sentinel via decide::is_non_zero
-        // (CONTRACT-072 catalog).  MerkleHash{} default-constructs to
-        // value 0, so is_non_zero(h) ⟺ h.raw() != 0.  The cite mirrors
-        // the KernelCacheSlot discharge — fresh nodes carry merkle_hash
-        // == 0 until recompute_merkle is called; admitting a fresh node
-        // through this accessor would silently produce a Refined<>
-        // contract violation downstream.
-        pre(::crucible::decide::is_non_zero(merkle_hash)) {
+    computed_merkle_hash() const noexcept pre(::crucible::decide::is_non_zero(merkle_hash)) {
         return crucible::fixy::wrap::Refined<crucible::fixy::wrap::non_zero, MerkleHash>{merkle_hash};
     }
 };
@@ -511,188 +294,58 @@ struct TraceNode {
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
 
-// ── Validated MerkleHash root witness (#937 WRAP-MerkleDag-1) ─────────────
-//
-// The MerkleHash a caller commits to a transaction or persists into the
-// Cipher MUST be non-zero — zero is the structural sentinel for "this
-// subtree was never built" (TERMINAL nodes legitimately carry
-// MerkleHash{}, but they are sentinel leaves, not roots).  Propagating
-// zero into a Tx::commit / persist path silently corrupts:
-//   (1) tx_log binary search by step_id (a step-with-merkle-zero is
-//       indistinguishable from a fresh transaction's default value);
-//   (2) DAG diff (`dag_diff` short-circuits on equal merkle_hash;
-//       comparing two never-built subtrees would falsely report
-//       IDENTICAL when neither has been computed yet);
-//   (3) federation round-trip key (an ancestor-marshalled "all zero"
-//       root is a no-op replay key — the receiving Relay would accept
-//       it as proof-of-equivalence with any other unbuilt subtree).
-//
-// `ValidMerkleRoot` is the type-level witness that the caller has
-// validated the hash at its source (typically through
-// `recompute_merkle` on the parent node, which seeds non-zero starting
-// from any non-empty content).  Construction is gated by Refined<>'s
-// `pre(non_zero(v))` clause; under semantic=enforce the runtime path
-// is contract violation -> handle_contract_violation (logged + abort),
-// under semantic=ignore the optimizer treats `merkle_root.raw() != 0`
-// as `[[assume]]` and downstream binary searches / log appends
-// speculate without re-checking.
-//
-// `make_merkle_root` is a [[gnu::const]] factory that lifts the
-// witness back to a bare MerkleHash for legacy callers that took a
-// raw MerkleHash parameter — preserving the existing `Tx::commit` and
-// `region->merkle_hash` reads while routing every external write
-// through the ValidMerkleRoot ctor when callers opt in.
-//
-// Defense-in-depth: `Tx::commit`'s `pre(merkle_root.raw() != 0)`
-// (Transaction.h) is retained as the runtime gate.  ValidMerkleRoot
-// catches the value at the call site; the pre clause catches it at
-// the function boundary.  Both layers must reject for the type-level
-// invariant and the runtime path to disagree.
-//
-// Cost: regime-1 EBO collapse — sizeof(ValidMerkleRoot) ==
-// sizeof(MerkleHash) == 8 B.
+// Zero is the "never built" hash.  A TERMINAL node legitimately carries
+// MerkleHash{}, but it is a sentinel leaf, never a root: two unbuilt subtrees
+// both hashing to zero compare equal, so a zero root is accepted as proof of
+// equivalence with anything.  A caller that persists or transmits a root
+// takes this witness instead.
 using ValidMerkleRoot = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::non_zero, MerkleHash>;
 
 [[nodiscard, gnu::const]] inline constexpr MerkleHash make_merkle_root(ValidMerkleRoot raw) noexcept {
     return raw.value();
 }
 
-// ── Validated ContentHash witness (PROD-WRAP-6 / #535) ───────────────
-//
-// The ContentHash a caller passes to KernelCache::publish_l* / Cipher
-// ContentAddressed* lookups / federation round-trip keys MUST be
-// non-zero — zero is the structural sentinel for "this region was
-// never folded by compute_content_hash" (an empty op list produces
-// zero by design, but empty regions are never cache-publishable
-// because their kernel hash is meaningless).  Propagating zero into
-// content-addressed paths silently corrupts:
-//   (1) KernelCache::publish_l1/l2/l3 — the `(content_hash,
-//       device_capability)` lookup key folds with zero on one side,
-//       so two different region sub-DAGs with different op lists but
-//       both lacking a computed hash would alias to the same cache
-//       slot — wrong-kernel dispatch on a hash collision;
-//   (2) Cipher ContentAddressed* federation key — the receiving Relay
-//       would accept a zero-hash region as proof-of-equivalence with
-//       any other unbuilt region (same defect mode as ValidMerkleRoot
-//       at the federation boundary);
-//   (3) LoopNode::body_content_hash mixing into compute_merkle_hash
-//       at line 880 — XOR-fold with zero is a no-op, so the parent
-//       merkle hash is structurally indistinguishable from "loop has
-//       empty body" (a construction bug, not a legal state, because
-//       make_loop only accepts non-empty body chains).
-//
-// `ValidContentHash` is the type-level witness that the caller has
-// validated the hash at its source.  Mirror of ValidMerkleRoot —
-// same `Refined<non_zero, T>` shape, same regime-1 EBO collapse to
-// sizeof(ContentHash) == 8 B.  Sites that legitimately tolerate zero
-// (the degenerate empty-region case produced by
-// make_region(arena, ops, /*num_ops=*/0)) continue to read the raw
-// `content_hash` field; sites that ALREADY assume non-zero (cache
-// publish, federation round-trip, merkle hash fold) route through
-// the accessor and get the type-level proof.
-//
-// Defense-in-depth: each accessor's `pre(decide::is_non_zero(...))`
-// is retained as the runtime gate.  ValidContentHash catches the
-// value at the construction call; the pre clause catches it at the
-// accessor body's entry.  Both layers must reject for the type-level
-// invariant and the runtime path to disagree.
-//
-// Cost: regime-1 EBO collapse — sizeof(ValidContentHash) ==
-// sizeof(ContentHash) == sizeof(uint64_t) == 8 B.
+// Zero is the "never folded" content hash.  An empty op list produces it by
+// design, so the empty region is the one place it is legal.  Everywhere the
+// hash is a key it must be non-zero: two unrelated regions that both lack a
+// computed hash would otherwise share a cache slot, and a zero mixed into a
+// parent merkle hash is a no-op that hides the missing body.
 using ValidContentHash = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::non_zero, ContentHash>;
 
 [[nodiscard, gnu::const]] inline constexpr ContentHash make_content_hash(ValidContentHash raw) noexcept {
     return raw.value();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// RegionNode: A compilable sequence of ops
-//
-// Contains the recorded ops and a pointer to the compiled kernel
-// (if available). The compiled field is atomic because the background
-// thread writes it and the foreground thread reads it.
-// ═══════════════════════════════════════════════════════════════════
-
+// A compilable sequence of ops.
 struct RegionNode : TraceNode {
-    ContentHash content_hash;  // 8B — kernel identity (this region)
-    // Publish-once channel: bg thread writes the compiled kernel once,
-    // fg thread observes via acquire load.  Wrapping in PublishOnce
-    // encodes the "exactly one publisher, at most one non-null transition"
-    // discipline in the type — a second publish fires a contract rather
-    // than silently racing the first.
-    //
-    // sizeof(PublishOnce<T*>) == sizeof(std::atomic<T*>) so the layout
-    // lock (RegionNode == 80 bytes) holds.
-    crucible::fixy::handle::PublishOnce<CompiledKernel> compiled;  // 8B
+    ContentHash content_hash;
+    // One writer publishes the compiled kernel once and every reader
+    // acquire-loads it.  sizeof(PublishOnce<T*>) equals sizeof(atomic<T*>),
+    // so the 80-byte layout below holds.
+    crucible::fixy::handle::PublishOnce<CompiledKernel> compiled;
 
-    TraceEntry* ops = nullptr;  // 8B — arena-allocated array
-    uint32_t num_ops = 0;  // 4B
+    TraceEntry* ops = nullptr;
+    uint32_t num_ops = 0;
 
-    SchemaHash first_op_schema;  // 8B — quick mismatch detection
+    SchemaHash first_op_schema;
 
-    // measured_ms is a wall-clock duration (kernel execution time from
-    // the profiler).  Semantic invariant: non-negative and finite.
-    // NaN / Inf / negative values would flow into runtime observer's convergence
-    // prediction / scheduler cost model, producing wild extrapolations
-    // or infinite loops.  The field type stays float (layout: RegionNode
-    // == 80B locked; Serialize reads/writes raw float bits), but
-    // mutating accessors validate.
-    float measured_ms = 0.0f;  // 4B — last measured execution time (ms)
+    // Wall-clock execution time in milliseconds.  The field stays a bare
+    // float because the layout is locked and the persisted form reads these
+    // raw bits.  set_measured_ms carries the non-negative, finite invariant.
+    float measured_ms = 0.0f;
 
-    // variant_id selects which CompiledKernel variant was observed at
-    // this region's content_hash.  Zero is the sentinel meaning "no
-    // variant selected yet" (fresh region, never executed).
-    //
-    // ── #942 WRAP-MerkleDag-6: variant_id is monotonic-forward ────────
-    //
-    // The variant lifecycle is single-direction: 0 (unselected) → some
-    // non-zero N on first set_variant; subsequent set_variant calls may
-    // upgrade to a higher-numbered variant (KernelCache slots are
-    // populated in registration order, so a "newer" variant always has
-    // a strictly larger id), but never DOWNGRADE to a smaller non-zero
-    // value and never RESET to 0.  The original `set_variant`
-    // implementation enforced only the non-zero gate (CONTRACT-106 cite
-    // — `decide::is_non_zero(new_id)`); the monotonic-forward direction
-    // was a design intent in the field's doc comment ("If a future
-    // policy allows reverting to 'no variant', add an explicit
-    // clear_variant() method") but had no type-level witness.
-    //
-    // Migrating to safety::Monotonic<uint32_t> pins the
-    // weakly-increasing invariant at the type level.  Monotonic::advance
-    // carries `pre(lattice_type::leq(peek(), new_value))` — i.e.
-    // new_value >= current; any caller attempting a downgrade fires the
-    // contract at the wrapper boundary, propagating up to set_variant's
-    // call site.  Same pattern as WRAP-CKernel-2, WRAP-SchemaTab-1,
-    // WRAP-Transaction-5, WRAP-IterDet-3 — Crucible's canonical "field
-    // is structurally append-only" wrap.
-    //
-    // Why not BoundedMonotonic<uint32_t, MAX>: variant_id has no fixed
-    // upper bound — it is bounded only by the runtime population of the
-    // KernelCache, not a compile-time table cap.  Plain Monotonic
-    // captures the monotonic invariant without imposing a synthetic
-    // ceiling.  bump() also enforces the UINT32_MAX overflow guard.
-    //
-    // Layout preserved: Monotonic<uint32_t> regime-2 collapses to
-    // sizeof(uint32_t)=4B per Mutation.h's static_assert; RegionNode
-    // layout invariant (== 80 B) untouched.  Default-init `{0u}`
-    // matches the original NSDMI semantics.
-    //
-    // CONTRACT-106 cite continues to apply at set_variant's outer
-    // pre-clause (non-zero gate); the type-level wrapper now carries
-    // the monotonic-ordering gate as well.
+    // Which compiled variant is active.  Zero means none is selected yet.
+    // Variants are registered in increasing order, so a newer variant always
+    // carries a larger id and the counter only ever moves forward.  The
+    // counter is unbounded rather than capped, because the ceiling is the
+    // runtime cache population and not a compile-time table size.
     using VariantCounter = ::crucible::fixy::wrap::Monotonic<uint32_t>;
-    VariantCounter variant_id{0u};  // 4B — which compiled variant is active
+    VariantCounter variant_id{0u};
 
-    MemoryPlan* plan = nullptr;  // 8B — liveness analysis result (null until computed)
+    MemoryPlan* plan = nullptr;  // null until liveness analysis runs
 
-    // ── Validating accessors ──
-    //
-    // Prefer these over direct field writes at mutation sites: contract
-    // contracts catch NaN/Inf/negative propagation and zero-variant
-    // overwrite-after-selection bugs.
-    void set_measured_ms(float ms) noexcept pre(ms >= 0.0f)  // rejects negative (and NaN via !>=)
-        pre(!std::isinf(ms))  // rejects ±Inf
-    {
+    void set_measured_ms(float ms) noexcept pre(ms >= 0.0f)  // >= also rejects NaN
+        pre(!std::isinf(ms)) {
         measured_ms = ms;
     }
 
@@ -700,114 +353,44 @@ struct RegionNode : TraceNode {
 
     [[nodiscard, gnu::pure]] bool has_variant() const noexcept { return variant_id.get() != 0u; }
 
-    // PROD-WRAP-6 (#535) accessor: lift the raw `content_hash` field to
-    // `Refined<non_zero, ContentHash>` for callers that require the
-    // non-zero invariant at the type level.  Mirror of
-    // TraceNode::computed_merkle_hash(): the field stays as a bare
-    // ContentHash (RegionNode layout is locked at 80 bytes —
-    // static_assert(sizeof(RegionNode) == 80) — so wrapping the field
-    // would break the on-disk format that Cipher / Serialize re-read
-    // by raw byte layout).  The accessor is the type-system gate.
-    //
-    // Use at sites that ALREADY assume content_hash is non-zero
-    // (KernelCache::publish_l*, Cipher::store, Vigil::publish): pull the
-    // proof up to the call boundary so downstream code can speculate on
-    // the invariant under NDEBUG via `[[assume]]`.  Sites that legitimately
-    // tolerate a zero content_hash (the degenerate empty-region case
-    // produced by `make_region(arena, ops, /*num_ops=*/0)`, which carries
-    // a zero hash by design — see CONTRACT-MakeRegion-POST line 1845)
-    // should continue reading `content_hash` directly.
-    //
-    // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
-    // (CONTRACT-072 catalog).  ContentHash{} default-constructs to the
-    // zero sentinel; the make_region post-condition guarantees the field
-    // is non-zero whenever num_ops > 0, so calling computed_content_hash()
-    // on a region whose num_ops > 0 cannot fire the precondition.
-    // The accessor's pre-clause refuses the degenerate empty-region case
-    // — those callers should branch on num_ops first or use the raw field.
-    // PROD-WRAP-6 #535: routes through the shared `ValidContentHash`
-    // alias (declared above with ValidMerkleRoot).  Equivalent to the
-    // spelled-out `Refined<non_zero, ContentHash>` at the type level
-    // — pure rename — but pins the canonical alias name as the §XVI
-    // grep target so future refactors don't reintroduce inline
-    // duplicates of the same Refined family.
+    // The field itself stays bare because the layout is locked.  A region
+    // built from zero ops hashes to zero by design, and this accessor
+    // refuses that case: those callers read content_hash directly.
     [[nodiscard]] ValidContentHash computed_content_hash() const noexcept
         pre(::crucible::decide::is_non_zero(content_hash)) {
         return ValidContentHash{content_hash};
     }
 
-    // Set the active variant.  CONTRACT-106 routes the non-zero sentinel
-    // through `decide::is_non_zero` (CONTRACT-072 catalog) — value 0 is
-    // the "no variant" sentinel, and overwriting a real variant with it
-    // is a bug.  If a future policy allows reverting to "no variant",
-    // add an explicit clear_variant() method.
-    //
-    // ── #942 WRAP-MerkleDag-6 ─────────────────────────────────────────
-    // The body delegates to `variant_id.advance(new_id)`, whose own
-    // pre-clause `lattice_type::leq(peek(), new_value)` (i.e. new_id >=
-    // current) carries the monotonic-forward invariant at the type
-    // level.  The outer non-zero gate stays at this boundary so the
-    // user-facing contract violation reports `set_variant` (not
-    // `Monotonic::advance`) when callers pass 0.
+    // There is no way back to zero.  The non-zero gate sits on this boundary
+    // rather than only inside the counter so that a caller passing zero is
+    // reported against set_variant.
     void set_variant(uint32_t new_id) noexcept pre(::crucible::decide::is_non_zero(new_id)) {
         variant_id.advance(new_id);
-        // CONTRACT-106-POST: state-mutation contract — after set_variant
-        // returns, variant_id reflects the freshly-supplied new_id.  Routes
-        // through CRUCIBLE_POST (forwards to CRUCIBLE_PRE) because P2900
-        // `post (r: ...)` referencing a class member field through `this->`
-        // is silently bypassed at consteval in GCC 16.1.1 (same gotcha
-        // family as CONTRACT-100 / -101 / -102 / -103 / -106..108
-        // pre-migrations).  CRUCIBLE_POST fires symmetrically at consteval,
-        // runtime, and as `[[assume(variant_id.get() == new_id)]]` for the
-        // optimizer — downstream has_variant() / variant_id reads can
-        // speculate on the new value without re-checking.  Void function:
-        // first arg of CRUCIBLE_POST is the conventional sentinel `0`.
         CRUCIBLE_POST(0, variant_id.get() == new_id);
     }
 };
 
-// RegionNode layout: TraceNode(24) + content_hash(8) + compiled(8) + ops(8)
-// + num_ops(4) + pad(4) + first_op_schema(8) + measured_ms(4) + variant_id(4)
-// + plan(8) = 80B.
-static_assert(sizeof(RegionNode) == 80, "RegionNode size changed — update serializer, replay, content hash");
+static_assert(sizeof(RegionNode) == 80, "RegionNode must be 80 bytes — the persisted layout matches this");
 
-// ═══════════════════════════════════════════════════════════════════
-// BranchNode: A guard point where execution can diverge
-//
-// Arms are value -> target pairs, SORTED by value for O(log n)
-// binary search in replay(). The next field (from TraceNode)
-// points to the merge point where all arms reconverge.
-// ═══════════════════════════════════════════════════════════════════
-
+// A guard point where execution can diverge.  Arms are kept sorted by value.
 struct BranchNode : TraceNode {
-    Guard guard;  // 12B — what to check
+    Guard guard;
 
     struct Arm {
-        int64_t value = 0;  // 8B — the observed guard outcome
-        TraceNode* target = nullptr;  // 8B — the path for this outcome
+        int64_t value = 0;  // the observed guard outcome
+        TraceNode* target = nullptr;
     };
 
-    Arm* arms = nullptr;  // 8B — arena-allocated array
-    uint32_t num_arms = 0;  // 4B
-    uint32_t pad1 = 0;  // 4B — alignment
+    Arm* arms = nullptr;
+    uint32_t num_arms = 0;
+    uint32_t pad1 = 0;
+    // The inherited next points at the merge node where all arms reconverge.
 
-    // Sortedness is a load-bearing invariant: the binary search in
-    // replay() uses `arms[mid].value < val` to narrow to one arm.  If
-    // arms are NOT sorted by value, the search returns wrong arms →
-    // wrong routing → replay divergence against a region that otherwise
-    // hashes identically.  The invariant is silent-failure until
-    // divergence surfaces, often in production.
-    //
-    // This predicate confirms sortedness in O(num_arms) and is designed
-    // for debug-only verification (gnu::cold): used by post-conditions
-    // on arm-installation paths and by test assertions.  Adjacent-pair
-    // comparison tolerates duplicate values (strict < would reject a
-    // legitimate "two guards hash equal" case, which doesn't happen in
-    // current code but isn't structurally forbidden).
-    //
-    // Telling-word predicate: reads as "are arms sorted by value?" — the
-    // assertion site `contract_assert(branch->are_arms_sorted_by_value())`
-    // forms a complete English sentence per code_guide §XVII.
+    // Sortedness is load-bearing: replay narrows with `arms[mid].value < val`,
+    // so unsorted arms route to the wrong target, and that only surfaces much
+    // later as a replay divergence against a region that hashes identically.
+    // Adjacent-pair comparison admits duplicate values, because two guards
+    // that compare equal are not structurally forbidden.
     [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
         for (uint32_t i = 1; i < num_arms; ++i)
             if (arms[i].value < arms[i - 1].value) return false;
@@ -815,84 +398,44 @@ struct BranchNode : TraceNode {
     }
 };
 
-// BranchNode layout locked: TraceNode(24) + Guard(~12B) padded + arms(8)
-// + num_arms(4) + pad1(4).  Any layout change invalidates on-disk
-// region hashes — the serializer reads this struct's bytes, so a size
-// drift is a silent content-hash drift across Cipher round-trips.
-static_assert(sizeof(BranchNode) == 56, "BranchNode size changed — update serializer + content hash");
+static_assert(sizeof(BranchNode) == 56, "BranchNode must be 56 bytes — the persisted layout matches this");
 
-// ═══════════════════════════════════════════════════════════════════
-// FeedbackEdge: Body output → body input across loop iterations
-//
-// In a LoopNode, feedback edges carry data from the body's outputs
-// back to its inputs for the next iteration. E.g., residual
-// connections in transformer layers, hidden state in RNNs.
-// ═══════════════════════════════════════════════════════════════════
-
+// Carries one of the loop body's outputs back to one of its inputs for the
+// next iteration.
 struct FeedbackEdge {
-    uint16_t output_idx = 0;  // 2B — which body output
-    uint16_t input_idx = 0;  // 2B — which body input for next iteration
+    uint16_t output_idx = 0;
+    uint16_t input_idx = 0;
 };
 
 static_assert(sizeof(FeedbackEdge) == 4, "FeedbackEdge must be 4 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(FeedbackEdge);
 
-// ═══════════════════════════════════════════════════════════════════
-// LoopNode: Cyclic computation within the acyclic Merkle DAG
-//
-// Wraps an acyclic body sub-DAG with feedback edges and termination.
-// The body is a self-contained linked list of TraceNodes ending in
-// TERMINAL. Feedback edges connect body outputs to body inputs for
-// the next iteration. The LoopNode's `next` continues execution
-// after all iterations complete.
-//
-// From the manifesto (L5/L6):
-//   merkle_hash = hash(body.content_hash ⊕ "loop" ⊕ feedback_sig ⊕ termination)
-//   Transforms DAG from computation snapshot to computation PROGRAM.
-//
-// 64 bytes = one cache line (matches GraphNode).
-// ═══════════════════════════════════════════════════════════════════
-
+// Cyclic computation held inside the acyclic DAG: an acyclic body sub-DAG
+// plus feedback edges and a termination condition.  The inherited next
+// continues after every iteration has run.
 enum class LoopTermKind : uint8_t {
-    REPEAT,  // Fixed N iterations (RNN, fixed unrolling)
-    UNTIL,  // Converge within epsilon (DEQ, diffusion denoising)
+    REPEAT,
+    UNTIL,
 };
 
 struct LoopNode : TraceNode {
-    ContentHash body_content_hash;  // 8B — body sub-DAG content identity
-    TraceNode* body = nullptr;  // 8B — body sub-DAG (ends with TERMINAL)
-    FeedbackEdge* feedback_edges = nullptr;  // 8B — arena-allocated
-    uint16_t num_feedback = 0;  // 2B — feedback edge count
-    LoopTermKind term_kind = LoopTermKind::REPEAT;  // 1B
-    uint8_t pad_l0 = 0;  // 1B — InitSafe
-    uint32_t repeat_count = 0;  // 4B — REPEAT: fixed N. UNTIL: observed iters.
-    float epsilon = 0.0f;  // 4B — convergence threshold (UNTIL only)
-    float measured_body_ms = 0.0f;  // 4B — last measured body execution time
+    ContentHash body_content_hash;
+    TraceNode* body = nullptr;  // self-contained chain ending in TERMINAL
+    FeedbackEdge* feedback_edges = nullptr;
+    uint16_t num_feedback = 0;
+    LoopTermKind term_kind = LoopTermKind::REPEAT;
+    uint8_t pad_l0 = 0;
+    uint32_t repeat_count = 0;  // REPEAT: the fixed count.  UNTIL: iterations observed
+    float epsilon = 0.0f;  // convergence threshold, UNTIL only
+    float measured_body_ms = 0.0f;
 
     [[nodiscard]] std::span<const FeedbackEdge> feedback_span() const CRUCIBLE_LIFETIMEBOUND {
         return feedback_edges ? std::span{feedback_edges, num_feedback} : std::span<const FeedbackEdge>{};
     }
 
-    // PROD-WRAP-6 (#535) accessor: parallel of RegionNode::computed_content_hash()
-    // for the loop body's content identity.  The body sub-DAG's content
-    // hash is folded by compute_body_content_hash at make_loop time and
-    // is the cache key the LoopNode contributes to the parent merkle hash
-    // (see compute_merkle_hash line 880, where body_content_hash.raw() is
-    // XOR-mixed with kLoopSalt).
-    //
-    // The accessor lifts the raw field to Refined<non_zero, ContentHash>
-    // for downstream consumers that require the non-zero invariant.  A
-    // zero body_content_hash signals "loop body never populated" — a
-    // construction bug, not a degenerate-but-legal state, because
-    // make_loop is the only public LoopNode factory and it always folds
-    // a non-empty body chain.  Layout stays locked at 64 bytes per the
-    // adjacent static_assert(sizeof(LoopNode) == 64).
-    //
-    // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
-    // (CONTRACT-072 catalog).  Mirror of RegionNode::computed_content_hash
-    // and TraceNode::computed_merkle_hash.
-    // PROD-WRAP-6 #535: routes through the shared `ValidContentHash`
-    // alias (see RegionNode::computed_content_hash for rationale).
+    // Unlike an empty region, a zero body hash is never legal here: the only
+    // factory for a LoopNode folds a non-empty body chain, so zero means the
+    // body was never populated.
     [[nodiscard]] ValidContentHash computed_body_content_hash() const noexcept
         pre(::crucible::decide::is_non_zero(body_content_hash)) {
         return ValidContentHash{body_content_hash};
@@ -902,24 +445,10 @@ struct LoopNode : TraceNode {
 static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line)");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 
-// ═══════════════════════════════════════════════════════════════════
-// LoopNode hash helpers
-// ═══════════════════════════════════════════════════════════════════
-
-// Fold feedback edges into a single signature via reflection +
-// fmix64.  Different feedback wiring → different signature.  Uses
-// fmix64 with nonzero seed (not wymix) because wymix(0, 0) = 0 which
-// collapses the chain when the first edge is {0,0}.  Edge count is
-// folded in so {A} ≠ {A, A}.
-//
-// Reflection refactor (REFL-2): each FeedbackEdge is hashed via
-// crucible::reflect_hash, which iterates the struct's non-static
-// data members at compile time.  If FeedbackEdge gains a new field
-// (e.g., a "weight" or "delay" attribute), reflect_hash picks it up
-// automatically — no manual fold-loop edit required.  Bit pattern
-// differs from the prior manual `(output_idx << 16) | input_idx`
-// packing; tests assert the documented contracts (empty → 0,
-// non-empty → nonzero) which both implementations preserve.
+// An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The fold
+// uses fmix64 with a non-zero seed rather than wymix, because wymix(0, 0) is
+// 0 and would collapse the chain on a leading {0, 0} edge.  The edge count
+// folds in as well, so {A} and {A, A} differ.
 CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) noexcept {
     if (edges.empty()) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;  // "feedbaks"
@@ -931,21 +460,9 @@ CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> e
     return signature_state;
 }
 
-// Hash termination condition.  Captures kind + repeat_count + epsilon
-// bits via reflection over a local Spec struct that names exactly the
-// LoopNode fields contributing to termination identity.
-//
-// Why a local Spec rather than reflect_hash on the whole LoopNode?
-// LoopNode contains body, feedback_edges, num_feedback, and other
-// fields that are hashed elsewhere (compute_body_content_hash,
-// feedback_signature) — including them here would double-count and
-// muddy the termination semantics.  The Spec is the explicit
-// projection.
-//
-// Reflection refactor (REFL-3): reflect_fmix_fold applies fmix64
-// per field with the seed acting as a domain separator.  Bit pattern
-// differs from the manual packed form (which combined term_kind +
-// repeat_count into a single u64 word); contract is unchanged.
+// The local Spec is the explicit projection onto the fields that carry
+// termination identity.  Hashing the whole LoopNode instead would double
+// count the body and the feedback edges, which are hashed on their own.
 CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     struct Spec {
         LoopTermKind term_kind;
@@ -956,11 +473,8 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return reflect_fmix_fold<kSeed>(Spec{ln.term_kind, ln.repeat_count, ln.epsilon});
 }
 
-// Content hash of a body sub-DAG: wymix-fold content hashes of all body regions.
-//
-// gnu::pure: result depends on the body chain reachable through `body`
-// and the immutable content_hash field of each REGION node (set once
-// at make_region time).  No side effects, no atomic loads.
+// Pure is sound despite the pointer chase: the chain reachable through body
+// and the content_hash of each region on it are both fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash compute_body_content_hash(TraceNode* body) noexcept {
     uint64_t body_hash_state = 0x9E3779B97F4A7C15ULL;
     TraceNode* walk = body;
@@ -972,96 +486,27 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return ContentHash{detail::fmix64(body_hash_state)};
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Content and Merkle hash functions
+// The per-entry contribution to a region's content hash.  Every path that
+// folds a trace entry calls this one helper: a second copy of the fold would
+// drift, and two disagreeing hashes for the same region destroy the suffix
+// and kernel sharing that compares them.
 //
-// Content hash: identity of THIS node's ops only (cache key for kernels).
-// Merkle hash: identity of the entire subtree from this node downward.
-// Both use detail::fmix64 from Expr.h.
-// ═══════════════════════════════════════════════════════════════════
-
-// compute_content_hash — IR001 RegionNode content identity.
+// The fold order is part of the hash format.  Changing the order, or what
+// each step mixes in, invalidates every stored content hash.
 //
-// Folds schema + input-tensor metadata + scalar args into a 64-bit hash
-// used as a KernelCache key and as a component of the containing
-// BranchNode / LoopNode Merkle hash.
+// The scalar count folds with an XOR-multiply rather than wymix, because
+// wymix(X, 0) is 0 and a scalar-free op legitimately has a count of 0: that
+// would zero the accumulator and produce a content hash of 0, which is the
+// empty-slot sentinel.  The count folds unconditionally, before the values,
+// so that N arguments differ from M even when the first min(N, M) agree, and
+// so an op with neither tensors nor scalars still perturbs the accumulator.
 //
-// ── Recipe participation (FORGE.md §18.6) ──────────────────────────
+// Per tensor, the dimensions XOR-fold into one value and a single wymix
+// merges it.  The alternative, one wymix per dimension, makes each multiply
+// depend on the previous result and cannot pipeline.
 //
-// When `recipe` is non-null, the recipe's Family-A hash is mixed into
-// the accumulator BEFORE the ops loop.  This disambiguates two regions
-// with byte-identical ops but different numerical recipes — a user who
-// switches from f16_f32accum_tc to f32_strict gets a distinct
-// content_hash and therefore a distinct KernelCache slot.  Without
-// this participation, a cached kernel compiled under one recipe would
-// silently serve lookups under a different recipe, breaking the
-// replay-determinism invariant of CRUCIBLE.md §10.
-//
-// Backward compatibility: the default argument is nullptr, which fully
-// preserves the previous hash stream.  Every existing caller that does
-// not explicitly pin a recipe produces exactly the same ContentHash
-// values as before — all content-hash goldens in test_merkle_dag,
-// test_serialize, and the bench harness remain stable.
-//
-// Safety guards:
-//   pre(recipe == nullptr || recipe->hash.raw() != 0)
-//     Default-constructed RecipeHash has raw() == 0.  A caller passing
-//     a recipe with hash==0 indicates the recipe was not interned via
-//     RecipePool (which is the only path that populates the hash).
-//     Accepting it would fold zero into the accumulator and the
-//     resulting ContentHash would collide with the nullptr path —
-//     silently defeating the safety the recipe parameter is supposed
-//     to provide.
-//   pre(recipe == nullptr || !recipe->hash.is_sentinel())
-//     UINT64_MAX is reserved as an end-of-region marker in RegionNode
-//     traversal (see Types.h RecipeHash::sentinel()).  A real recipe
-//     must never produce it; rejecting it here is belt-and-suspenders.
-//
-// Future: Phase E (FORGE.md §10) lowers IR001 regions into IR002
-// KernelNodes where the recipe is a proper stored field and
-// KernelContentHash includes recipe->hash as a first-class
-// composition.  This IR001-level integration is the bridge until
-// KernelNode exists.
-
-// ── Shared per-op content-hash fold (fix-01) ─────────────────────────
-//
-// SINGLE SOURCE OF TRUTH for the per-TraceEntry content-hash contribution.
-// Both compute_content_hash (the canonical O(n) pass) and the fused
-// streaming hash in BackgroundThread::build_trace call this helper, so the
-// two paths are bit-identical BY CONSTRUCTION — there is no second copy to
-// drift.  Prior to fix-01 the two folds were hand-maintained twins (the
-// "REFL-4" inline copy); FIXY-FOUND-057 silently broke their bit-identity
-// by adding the num_scalar_args count-fold + dropping the 5-arg clamp to
-// compute_content_hash ONLY, leaving build_trace's twin behind.  That
-// divergence made every region's BG-published content_hash disagree with
-// compute_content_hash, breaking find_merge_point's suffix/kernel sharing
-// (the comparison at the call site below).  Collapsing both paths onto one
-// inlined helper closes the class of bug structurally.
-//
-// Family-A bit-stable.  Folds, in order: schema_hash (wymix), each input
-// TensorMeta (SIMD dim-hash XOR-folded then wymix'd with dtype/device/idx),
-// the scalar-arg COUNT, then each scalar value.
-//
-// The count-fold uses FNV-1a-style XOR+multiply (NOT wymix): wymix(X, 0) = 0
-// because the underlying 128-bit multiply collapses with a zero operand,
-// and num_scalar_args legitimately takes the value 0 for scalar-free ops —
-// a wymix-fold there would zero the accumulator and propagate through
-// fmix64 to ContentHash{0}, which collides with the EMPTY-slot sentinel.
-// The count is folded UNCONDITIONALLY (before the value loop) so an op with
-// N args is distinct from one with M even when the first min(N,M) scalars
-// agree, and so a no-tensor / no-scalar op still perturbs the accumulator.
-//
-// XOR-fold-per-tensor rationale (40% faster than wymix-per-dimension):
-// independent multiplies (sizes[d] * kDimMix[d]) break the serial
-// wymix-chain dependency; the CPU pipelines the multiplies and one wymix
-// per tensor merges.  Locked bit-identical to the SIMD dim-hash by
-// test_dim_hash_equivalence_handcoded in test_simd.cpp.
-//
-// Storage invariant: op_record.scalar_args allocation always matches
-// op_record.num_scalar_args (BG clamps to <=5 and sizes the arena array to
-// the clamped count; Serialize.h sizes alloc_array exactly to the stored
-// count), so iterating to num_scalar_args is in-bounds in every production
-// path.  scalar_args == nullptr ⟺ num_scalar_args contributes count-only.
+// Every producer sizes the scalar_args allocation to num_scalar_args, so the
+// loop over it is in bounds.  A null scalar_args contributes the count only.
 [[gnu::always_inline]] inline void fold_trace_entry_content(uint64_t& content_hash_state,
                                                             const TraceEntry& op_record) noexcept {
     content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
@@ -1085,44 +530,30 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     }
 }
 
+// A non-null recipe makes the hash recipe-specific, so two regions with
+// byte-identical ops but different numerical recipes land in different
+// kernel-cache slots.  Without that, a kernel compiled under one recipe
+// would serve lookups made under another.
+//
+// A recipe hash of zero means the recipe was never interned, and folding
+// zero would produce the same hash as the no-recipe path — exactly the
+// confusion the parameter exists to prevent.  UINT64_MAX is reserved as the
+// end-of-region marker and can never be a real recipe hash.
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops,
                                                                  const NumericalRecipe* recipe = nullptr) noexcept
-    // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
-    // (CONTRACT-072 catalog).  RecipeHash{} default-constructs to zero,
-    // so is_non_zero(recipe->hash) ⟺ raw() != 0.  The disjunction
-    // permits a null recipe (no recipe pinning) while rejecting a
-    // recipe whose hash hasn't been computed yet.
     pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
         pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
-    // XOR-fold content hash: for each tensor, fold all dimensions into a
-    // single accumulator via independent multiplies (sizes[d] * kDimMix[d]),
-    // then one wymix per tensor. Breaks the serial wymix-per-dimension
-    // dependency chain: ndim XOR-folds (1 cy each, multiplies pipelined)
-    // + 1 wymix (~5 cy) instead of ndim × wymix (~5 cy each, serial).
-    // For ndim=4: ~13 cy vs ~22 cy per tensor (~40% faster).
     uint64_t content_hash_state = 0x9E3779B97F4A7C15ULL;
 
-    // Fold the recipe's Family-A hash into the accumulator BEFORE the
-    // ops loop.  Placement matters: folding before the ops iteration
-    // means the recipe contribution propagates through every subsequent
-    // wymix, maximizing avalanche — two recipes differing in a single
-    // bit produce hashes differing in ~32 bits across all subsequent
-    // fields.  A post-hoc fold (after the loop) would give less
-    // avalanche on short op sequences.
+    // The recipe folds in before the ops loop so its contribution propagates
+    // through every later mix.  Folding it after the loop would barely
+    // perturb the result for short op sequences.
     if (recipe != nullptr) {
-        // [[assume]] lets the optimizer treat recipe->hash.raw() as a
-        // non-zero, non-sentinel uint64_t inside the branch — the pre
-        // clauses above have already rejected the bad values, so the
-        // downstream wymix can skip any redundant tests.
         [[assume(recipe->hash.raw() != 0)]];
         [[assume(recipe->hash.raw() != UINT64_MAX)]];
         content_hash_state = detail::wymix(content_hash_state, recipe->hash.raw());
     }
 
-    // fix-01: per-op fold delegated to the shared fold_trace_entry_content
-    // helper (defined above), the SINGLE SOURCE OF TRUTH also called by
-    // BackgroundThread::build_trace's streaming hash — so the two paths can
-    // never again drift (the FIXY-FOUND-057 regression that motivated fix-01).
     for (const auto& op_record : ops) {
         fold_trace_entry_content(content_hash_state, op_record);
     }
@@ -1133,11 +564,6 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 [[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode* node) noexcept {
     if (!node) return MerkleHash{};
 
-    // Exhaustive switch: every TraceNodeKind arm must return (or fall
-    // through to the tail).  A new kind added without an arm trips
-    // std::unreachable rather than silently falling off the end with
-    // uninitialized accumulator.  Switches compile to jump tables;
-    // if/else-if chains are opaque to that pattern.
     uint64_t merkle_hash_state;
     switch (node->kind) {
         case TraceNodeKind::REGION:
@@ -1154,11 +580,10 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
         }
         case TraceNodeKind::LOOP: {
             auto* loop = static_cast<LoopNode*>(node);
-            // Salt distinguishes LoopNode hashes from RegionNode hashes with
-            // the same content. "LOOPNODE" in ASCII = 0x4C4F4F504E4F4445.
-            // Use fmix64 + XOR (not wymix) to avoid zero-input degenerate case.
-            // wymix(x, 0) = 0, which would collapse the entire hash chain when
-            // feedback or termination components happen to be zero.
+            // The salts keep a loop from hashing the same as a region with
+            // the same content.  Mixing is fmix64 and XOR rather than wymix,
+            // because wymix(x, 0) is 0 and would collapse the whole chain
+            // whenever a feedback or termination component is zero.
             constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL;  // "LOOPNODE"
             constexpr uint64_t kFbSalt = 0x6665656462616B00ULL;  // "feedbak\0"
             merkle_hash_state = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
@@ -1169,21 +594,16 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
         case TraceNodeKind::TERMINAL:
             return MerkleHash{};
         default:
-            // All valid TraceNodeKind values handled above.  Any other value
-            // is corrupt node memory and indicates a serious bug upstream.
             std::unreachable();
     }
 
-    // Include continuation's merkle hash (this is what makes it Merkle)
     if (node->next) merkle_hash_state = detail::fmix64(merkle_hash_state ^ node->next->merkle_hash.raw());
 
     return MerkleHash{merkle_hash_state};
 }
 
-// Content hash for a branched kernel (all arms fused into one kernel).
-//
-// gnu::pure: depends only on the BranchNode subtree's immutable fields
-// (guard + arm content hashes).  No side effects.
+// Content hash for one kernel that fuses every arm of a branch.  Pure is
+// sound: the guard and the arms' content hashes are fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode* branch) noexcept {
     uint64_t branched_hash_state = detail::fmix64(branch->guard.hash());
     for (uint32_t i = 0; i < branch->num_arms; i++) {
@@ -1195,122 +615,35 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return ContentHash{detail::fmix64(branched_hash_state)};
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// KernelCache: Global thread-safe (content_hash, row_hash) -> CompiledKernel* map
+// Open-addressing map from (ContentHash, RowHash) to a compiled kernel.
+// Capacity is a power of two so that `(slot + probe) & mask` wraps.
 //
-// Open-addressing hash map.  Lock-free reads via atomic pointers.
-// Thread-safe inserts via CAS on the content_hash slot.  Capacity
-// must be a power of two.
+// The effect row is half the key, not a payload.  Two regions with identical
+// ops but different rows must occupy different slots, because only some rows
+// are shareable between machines.  A row mismatch is therefore a probe
+// continuation and never a hit.  RowHash{0} is the bare-type baseline and is
+// itself a valid key, not an absence.
 //
-// ── L1 federation cache key (FOUND-I05) ────────────────────────────
+// A slot is EMPTY (content 0), CLAIMED (content claimed by CAS, kernel still
+// null) or PUBLISHED (both set).  Slots are insert-only.  row_hash is written
+// once per slot.  A later publish under the same pair replaces only the
+// kernel, so a concurrent reader sees one kernel or the other, both valid.
 //
-// The lookup key is the pair (ContentHash, RowHash):
+// The publish order is row_hash then kernel, both release.  kernel.store is
+// therefore the last store of the sequence, and a reader that acquire-loads a
+// non-null kernel is guaranteed to see the row that was published with it.
 //
-//   ContentHash — IR001 region content identity (compute_content_hash;
-//                 schema + tensor metadata + scalar args + recipe).
-//   RowHash     — Met(X) effect-row identity over the wrapper-nesting
-//                 stack (RowHashFold.h, FOUND-I02).  RowHash{0} is the
-//                 bare-type / no-row baseline; non-zero rows
-//                 discriminate Pure / IO / Block / etc.
+// Both lookup and insert spin on the kernel, never on row_hash, when they
+// meet a CLAIMED slot.  row_hash defaults to 0 and 0 is also a legal row, so
+// a spin on the row cannot tell "not published yet" from "published with row
+// 0": an insert making that mistake would write into a slot whose row belongs
+// to another inserter, and that inserter's own publish would then overwrite
+// it, losing an insert that reported success.
 //
-// Two regions with byte-identical ops but different row signatures
-// (e.g. one IO-tagged, one Pure) MUST cache to distinct slots — a
-// Pure-row kernel is federation-shareable; an IO-row kernel is not.
-// Sharing a slot between them silently breaks the federation
-// contract documented in CRUCIBLE.md §10 / FORGE.md §23.2.  The
-// probe loop treats "same content_hash, different row_hash" exactly
-// like "different content_hash" — keep probing.
-//
-// ── Per-slot state machine ─────────────────────────────────────────
-//
-// The slot is the triple
-//   (content_hash: atomic<u64>,
-//    row_hash:     atomic<u64>,
-//    kernel:       atomic<CompiledKernel*>).
-//
-// Only these transitions are legal; the protocol guarantees that
-// no other (hash, row, kernel) combination is reachable from a
-// legal start:
-//
-//   ┌────────────────┐   content CAS(0 → H) acq_rel   ┌────────────────┐
-//   │     EMPTY      │───────────────────────────────▶│    CLAIMED     │
-//   │ h=0 r=* k=null │                                │ h=H r=* k=null │
-//   └────────────────┘                                └────────┬───────┘
-//          ▲                                                   │
-//          │                                                   │ row.store(R) release
-//          │                                                   │ kernel.store(K) release
-//          │                                                   ▼
-//          │                                          ┌────────────────┐
-//          │                                          │   PUBLISHED    │◀──┐
-//          │                                          │ h=H r=R k=K    │   │ kernel.store(K') rel
-//          │                                          └────────┬───────┘───┘  (variant update;
-//          │                                                   │              row pinned)
-//          └──── (never) ─── slots are insert-only ────────────┘
-//
-// EMPTY     — probing terminates here: "definitely not in the cache".
-// CLAIMED   — transient; an inserter has reserved the slot but has
-//             not yet published row_hash + kernel.  The window is a
-//             few release-store instructions wide.  A concurrent
-//             reader that sees CLAIMED on its target content_hash
-//             must wait (await_claimed_), not miss, because the
-//             inserter will publish imminently.
-// PUBLISHED — stable; variant updates (kernel re-store under the same
-//             content_hash + row_hash pair) stay in PUBLISHED.
-//             row_hash is WRITE-ONCE per slot: once published, never
-//             rewritten — only kernel can be updated under variant
-//             admission.
-//
-// ── Memory-ordering chain ──────────────────────────────────────────
-//
-// Inserter (after content CAS claims slot):
-//   1. row_hash.store(R, release)
-//   2. kernel.store(K, release)
-//
-// Reader (after content match):
-//   1. kernel.load(acquire)        — synchronizes-with kernel.store
-//   2. if kernel != nullptr:
-//        row_hash.load(acquire)    — guaranteed to read R
-//      else (CLAIMED):
-//        await_claimed_(entry)     — spins on kernel; same chain
-//
-// The release-acquire on kernel includes EVERY prior inserter
-// write — including row_hash.  So reader's row_hash.load(acquire)
-// after seeing kernel != nullptr is guaranteed to read the
-// inserter's published row_hash, never the default 0.
-//
-// Before the FOUND-I05 refactor, the cache was content-addressed
-// only.  A row mismatch between cached and requested computations
-// produced a silent hit on the WRONG kernel — a federation-key
-// integrity violation.  After this refactor, the cache fences row
-// hashes too: a row mismatch is a probe continuation, never a hit.
-//
-// ── FOUND-I05-AUDIT-2: the kernel-spin invariant ───────────────────
-//
-// Both insert (variant-update path) and lookup MUST spin on KERNEL
-// — not row_hash — when the slot is in CLAIMED state.  The reason:
-// row_hash NSDMI = 0 is also a VALID row_hash value (the bare-type
-// baseline, RowHashFold.h §3).  A spin on row_hash cannot
-// distinguish "still CLAIMED, row not yet stored" from "PUBLISHED
-// with row==0".  An insert that spins on row would write into a
-// slot whose ultimate row identity belongs to a different
-// inserter — silent lost-insert.  A lookup that spins on row could
-// false-positive on a CLAIMED slot when lookup_row==0.
-//
-// The kernel-spin invariant solves both: kernel.store IS the LAST
-// release-store of the publish sequence.  A non-null kernel
-// acquire-load synchronizes-with all prior writes including row.
-// Until kernel is non-null, the slot's identity is undecidable —
-// neither insert nor lookup commits to a decision based on it.
-//
-// On spin-budget exhaustion (inserter stalled or crashed):
-//   - Insert: treat as foreign, continue probing.  Worst case is
-//     a duplicate slot under preemption (same (C, R) at both
-//     p_A and p_B); slots are insert-only, so the duplicate is
-//     harmless wasted space.
-//   - Lookup: treat as foreign, continue probing.  A stalled claim
-//     at p_A must NOT mask a valid (C, R) hit at p_B > p_A.
-// ═══════════════════════════════════════════════════════════════════
-
+// When the spin budget runs out the slot is treated as foreign and probing
+// continues.  A stalled claim at one probe position must not mask a valid
+// match further along the chain.  The worst case is a second slot for one
+// pair, which wastes space and loses nothing.
 class CRUCIBLE_OWNER KernelCache {
 public:
     struct KernelCompileTag {};
@@ -1322,40 +655,20 @@ public:
         CompiledKernel* kernel = nullptr;
     };
 
-    static_assert(sizeof(KernelCacheSlotSnapshot) == 24,
-                  "KernelCacheSlotSnapshot must preserve the FOUND-I05 federation "
-                  "wire triple: 8B content + 8B row + 8B kernel pointer.");
+    static_assert(sizeof(KernelCacheSlotSnapshot) == 24, "KernelCacheSlotSnapshot must stay the 24-byte wire triple: "
+                                                         "8B content + 8B row + 8B kernel pointer.");
     static_assert(alignof(KernelCacheSlotSnapshot) == 8, "KernelCacheSlotSnapshot must stay naturally 8-byte aligned.");
 
-    // Layout-neutral SWMR slot facade.
+    // A writer and reader surface over three plain atomics.  A single-writer
+    // snapshot session cannot be embedded here: it isolates its sequence
+    // counter and storage on separate cache lines and carries a reader pool,
+    // both of which break the 24-byte slot.  Keeping the three atomics also
+    // lets the hot lookup read the fields one at a time in probe order.
     //
-    // Directly embedding SwmrSession<KernelCacheSlotSnapshot, ...> cannot
-    // satisfy the FOUND-I05 24-byte slot pin: AtomicSnapshot isolates its
-    // seq counter and storage on cache lines, and SwmrSession adds a reader
-    // pool.  KernelCache therefore keeps the original three-atomic wire
-    // layout and exposes SWMR-shaped endpoints over it.  The hot lookup
-    // path can still read the individual fields in probe order, while
-    // tests and dispatcher-side concepts see a typed writer/reader surface.
-    // CONTRACT-106: every KernelCacheSlot endpoint that takes a
-    // ContentHash threads its non-zero-sentinel pre() clause through
-    // the named predicate `crucible::decide::is_non_zero` (Decide.h
-    // §is_non_zero / CONTRACT-072 catalog).  Zero is the slot-EMPTY
-    // sentinel for the open-addressing probe path; admitting a zero
-    // hash to claim_or_match / publish / lookup would silently
-    // collide with the EMPTY marker and either:
-    //   - corrupt the probe table (wrong CAS target on claim)
-    //   - mis-publish a kernel under the EMPTY slot (silent
-    //     overwrite of any subsequent valid claim)
-    //   - return a stale kernel pointer to a fresh lookup (silent
-    //     wrong result)
-    //
-    // ContentHash is a CRUCIBLE_STRONG_HASH whose default-constructed
-    // value is 0, so `is_non_zero(h)` is structurally equivalent to
-    // `h.raw() != 0` — the cite is purely the grep-discoverable
-    // single-predicate target for future hardening (e.g., adding
-    // diagnostic enrichment for which slot was misused, or wrapping
-    // ContentHash in `Refined<non_zero, ContentHash>` per #535 to
-    // turn the cite into a proper compile-time witness).
+    // A content hash of zero is the EMPTY marker, so every endpoint rejects
+    // it.  Admitting zero would claim the wrong slot, publish a kernel that
+    // any later claim silently overwrites, or hand a stale kernel back to a
+    // fresh lookup.
     class KernelCacheSlot {
         friend class KernelCache;
 
@@ -1388,10 +701,9 @@ public:
 
             void publish(snapshot_type const& snapshot) noexcept
                 pre(::crucible::decide::is_non_zero(snapshot.content_hash)) pre(snapshot.kernel != nullptr) {
-                // content_hash is claimed by CAS before this writer endpoint is
-                // minted.  The publish sequence must remain row-before-kernel:
-                // kernel.store(release) is the synchronization point that makes
-                // the row identity visible to readers.
+                // The content hash is already claimed by CAS before this
+                // endpoint exists.  The two stores must stay in this order:
+                // the kernel store is what makes the row visible to readers.
                 contract_assert(slot_->content_hash_.load(std::memory_order_acquire) == snapshot.content_hash);
                 slot_->row_hash_.store(snapshot.row_hash, std::memory_order_release);
                 slot_->kernel_.store(snapshot.kernel, std::memory_order_release);
@@ -1463,86 +775,42 @@ public:
         }
 
     private:
-        // NOT relaxed: lock-free hash table protocol.
+        // Every access is acquire or release, never relaxed: a relaxed load
+        // would let a reader match the content and then read an incoherent
+        // row and kernel, which serves a kernel under the wrong row.
         //
-        //   content_hash CAS(acq_rel)        — claims the slot
-        //   row_hash.store(release)          — publishes the row identity
-        //   kernel.store(release)            — publishes the compiled kernel
-        //
-        // Readers load all three with acquire to see consistent
-        // (content, row, kernel) triples.  Relaxed loads would let a
-        // reader observe a content match but an incoherent row/kernel
-        // pair, which the cache MUST NOT permit (would silently serve
-        // a kernel under the wrong row identity).
-        //
-        // row_hash NSDMI = 0: the bare-type / no-row baseline
-        // (RowHashFold.h, FOUND-I02 design contract §3).  EMPTY-slot
-        // entries leave row_hash at 0 — harmless because EMPTY is
-        // detected via content_hash == 0 BEFORE row is consulted.
-        //
-        // FOUND-I05 layout extension: prior to this revision Entry was
-        // 16 bytes (two atomic<u64> equivalents on x86-64); the row
-        // extension brings it to 24 bytes — still cache-line-friendly
-        // (≤ one Entry per quarter line), and the table_'s contiguous
-        // arrangement lets the prefetcher walk ~2.7 entries per line.
+        // An EMPTY slot also leaves row_hash at 0, which is harmless because
+        // EMPTY is decided from content_hash == 0 before the row is read.
         std::atomic<uint64_t> content_hash_{0};
         std::atomic<uint64_t> row_hash_{0};
         std::atomic<CompiledKernel*> kernel_{nullptr};
     };
 
-    static_assert(sizeof(KernelCacheSlot) == 24, "KernelCacheSlot layout drift — wire-format break risk.  "
-                                                 "Slot must remain exactly 8B content + 8B row + 8B kernel*.");
-    static_assert(alignof(KernelCacheSlot) == 8, "KernelCacheSlot alignment drift — atomic<uint64_t> + "
-                                                 "atomic<ptr> require 8B alignment; over-alignment wastes cache.");
+    static_assert(sizeof(KernelCacheSlot) == 24, "KernelCacheSlot must stay exactly 8B content + 8B row + "
+                                                 "8B kernel pointer — the wire format matches this.");
+    static_assert(alignof(KernelCacheSlot) == 8, "KernelCacheSlot must stay 8-byte aligned: atomic<uint64_t> and "
+                                                 "atomic<ptr> need it, and over-alignment wastes cache.");
     static_assert(sizeof(KernelCacheSlot::WriterHandle) == sizeof(KernelCacheSlot*),
                   "KernelCacheSlot::WriterHandle must EBO-collapse its Permission.");
 
-    // Slot's observable state (computed from the atomic pair). Private
-    // to the class; exposed publicly only as a diagnostic type.
     enum class SlotState : uint8_t {
-        Empty = 0,  // h == 0, k == nullptr
-        Claimed = 1,  // h != 0, k == nullptr  (insert in flight)
-        Published = 2,  // h != 0, k != nullptr
+        Empty = 0,
+        Claimed = 1,
+        Published = 2,
     };
 
     explicit KernelCache(uint32_t capacity = 4096)
-        // CONTRACT-116: capacity must be pow2 (so `(slot + probe) & mask`
-        // works as the open-addressing wrap-around) and ≤ 2^31 (so the
-        // probe loop's `slot_index + probe` doesn't overflow uint32_t
-        // for the worst-case capacity).  Both conditions discharge
-        // through the named predicate `decide::is_power_of_two_le`
-        // (CONTRACT-050 catalog).  Pure-parameter — no class member
-        // access — so P2900 pre() is sufficient.  The runtime assert()
-        // below is retained as documentation for assert-enabled debug
-        // builds; the pre clause fires at consteval AND under
-        // semantic=enforce.
+        // A power of two makes `(slot + probe) & mask` the wrap-around, and
+        // the 2^31 ceiling keeps `slot_index + probe` inside uint32_t.
         pre(::crucible::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}))
         : capacity_(capacity) {
         assert(capacity != 0 && (capacity & (capacity - 1)) == 0 && "capacity must be a non-zero power of 2");
         table_ = allocate_table_(capacity_);
         if (!table_) [[unlikely]]
             std::abort();  // OOM is unrecoverable
+        // No other thread holds a reference yet, so the relaxed load below
+        // reads this thread's own store.
         size_.store(0, std::memory_order_relaxed);
-        // CONTRACT-116-POST: construction-state invariant — after ctor:
-        //   (1) capacity_ matches the caller's requested capacity.  Caught
-        //       via member-init list above; post catches a future refactor
-        //       that rounds up internally (RecipePool ctor would need this
-        //       same guard if its caller relied on strict equality).
-        //   (2) table_ is non-null.  allocate_table_() on the OOM path
-        //       std::abort()s, so reaching the post implies success — the
-        //       cite makes the structural invariant grep-discoverable for
-        //       a future audit that wants to count "lock-free tables that
-        //       successfully allocated their slots".
-        //   (3) size_ relaxed-loaded as 0.  We just stored zero with
-        //       relaxed semantics; the ctor is single-threaded by
-        //       construction (no other thread holds a reference yet), so
-        //       the relaxed load reads-our-own-write.  Catches a future
-        //       refactor that pre-populates entries during construction.
-        // Routes through CRUCIBLE_POST because the predicates reference
-        // class members through `this->`; P2900 `post (r:...)` is
-        // consteval-bypass-vulnerable per the GCC 16.1.1 family (same
-        // gotcha that drove CONTRACT-100..108-POST).  Void return: first
-        // arg `0` is the conventional sentinel.
         CRUCIBLE_POST(0, capacity_ == capacity);
         CRUCIBLE_POST(0, table_ != nullptr);
         CRUCIBLE_POST(0, size_.load(std::memory_order_relaxed) == 0);
@@ -1555,40 +823,17 @@ public:
     KernelCache(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
     KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
 
-    // Maximum PAUSE-spin iterations a reader will tolerate on a CLAIMED
-    // slot before giving up and returning nullptr. Value chosen so the
-    // total wait is ~1-4 µs on x86-64 (well below a compile-fallback),
-    // yet covers the ~tens-of-ns CAS→store window by several orders of
-    // magnitude. If the inserter is slower than this bound (e.g. due to
-    // preemption), the reader misses and the caller re-dispatches.
+    // Spin iterations a reader tolerates on a CLAIMED slot before treating it
+    // as foreign.
     static constexpr uint32_t kClaimedSpinBudget = 64;
 
-    // Lock-free lookup via atomic load.  Any thread, safe by CAS protocol.
-    // gnu::hot: called per dispatch_op in COMPILED mode (millions/sec).
-    //
-    // pre(content_hash.raw() != 0): the zero hash is the slot-empty
-    // sentinel.  A lookup of the zero hash would linearly probe the
-    // entire table (never match, never hit an empty slot) — an O(n)
-    // path on the hot lookup function, which sees millions of calls
-    // per second.  Legitimate callers never synthesize the zero hash;
-    // a caller that did is always a bug.
-    //
-    // row_hash has NO precondition: RowHash{0} is the canonical
-    // bare-type / no-row baseline (RowHashFold.h, FOUND-I02 design
-    // contract §3) — it is a valid lookup target, distinct from the
-    // empty-row hash (cardinality_seed(0)) and from any singleton
-    // effect-row hash.  All three values can coexist in the cache.
-    //
-    // [[assume]] propagates the content-hash fact to the optimizer:
-    // the probe's `key == 0 -> miss` branch remains honest, but the
-    // input is known-non-zero so downstream reasoning holds.
+    // A lookup of the zero hash would walk the entire table: it matches no
+    // slot and terminates on no empty one.  The row needs no such guard,
+    // because RowHash{0} is a real key that can coexist with any other.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash,
                                                                                 RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
         [[assume(content_hash.raw() != 0)]];
-        // Hoist .raw() once: the optimizer would CSE under -O3 anyway, but
-        // having the same name at both the probe seed and the slot-key
-        // comparison makes the dataflow obvious to a reader.
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
         const uint32_t mask = capacity_ - 1;
@@ -1596,106 +841,39 @@ public:
         for (uint32_t probe = 0; probe < capacity_; probe++) {
             auto& entry = table_[(slot_index + probe) & mask];
             uint64_t key = entry.content_hash_.load(std::memory_order_acquire);
-            if (key == 0) return nullptr;  // EMPTY slot -> miss (ends probe chain)
-            if (key != lookup_hash) continue;  // foreign-content sibling — keep probing
-            // Content matches; verify row_hash.  We must load `kernel`
-            // FIRST (acquire) so the subsequent `row_hash` load sees a
-            // value released by the inserter (release-acquire chain on
-            // kernel synchronizes-with all prior writes including row).
+            if (key == 0) return nullptr;
+            if (key != lookup_hash) continue;
+            // The kernel must be loaded before the row: the release-acquire
+            // pair on the kernel is what makes the published row visible.
             CompiledKernel* kernel_ptr = entry.kernel_.load(std::memory_order_acquire);
             if (kernel_ptr == nullptr) [[unlikely]] {
-                // CLAIMED: an inserter is mid-flight (between content_hash
-                // CAS and the row+kernel release stores).  The window is a
-                // few nanoseconds on x86, so spin briefly.
                 kernel_ptr = await_claimed_(entry);
                 if (kernel_ptr == nullptr) [[unlikely]] {
-                    // ── FOUND-I05-AUDIT-2 fix ────────────────────────────
-                    // Spin budget exhausted — inserter is stalled or
-                    // crashed.  Pre-FOUND-I05 (single-key cache), `return
-                    // nullptr` was correct: there could only be one slot
-                    // per content_hash, so a stalled claim meant the cache
-                    // had nothing to offer.  Post-FOUND-I05, the SAME
-                    // content_hash can occupy multiple slots (one per row),
-                    // and a stalled claim at p_A could mask a valid row-
-                    // matched hit at p_B > p_A.  Continue probing — give
-                    // the rest of the chain a chance to satisfy our
-                    // (content, row) lookup.
+                    // One content hash can occupy several slots, one per row,
+                    // so a stalled claim here must not hide a matching slot
+                    // further along the chain.
                     continue;
                 }
             }
-            // PUBLISHED: kernel non-null implies row_hash visible.
             uint64_t entry_row = entry.row_hash_.load(std::memory_order_acquire);
             if (entry_row == lookup_row) [[likely]]
-                return kernel_ptr;  // HIT — content + row both match
-            // Foreign-row sibling under same content_hash — continue probing.
+                return kernel_ptr;
         }
         return nullptr;
     }
 
-    // Error channel for insert: callers that can tolerate a full table
-    // can branch on it; callers that cannot must map it to crucible_abort.
     enum class InsertError : uint8_t {
-        TableFull,  // Every slot probed was occupied by a different hash.
-        // At load factor > 0.9 this is plausible on power-of-
-        // two capacities; caller either (a) grows the cache
-        // offline or (b) aborts.  Silent-discard was the
-        // pre-expected behavior and hid capacity pressure.
-
-        NotYetImplemented,  // FIXY-FOUND-060: publish_l2 / publish_l3 return this
-        // until Phase 5 wires the per-vendor-family L2 store
-        // and the per-chip L3 archive.  Callers that depend
-        // on actual persistence (Canopy federation, Cipher
-        // warm/cold tier writes) see the error explicitly
-        // instead of silently no-op'ing under a success
-        // marker.  When Phase 5 lands the real backing
-        // stores, the publish_l2/l3 bodies replace the
-        // unexpected-return with real persistence; this
-        // variant remains in the enum for forward-compat
-        // (Phase-5-still-unavailable diagnostics or temporary
-        // store outage) but the canonical happy path is
-        // success.
+        TableFull,
+        NotYetImplemented,
     };
 
-    // Thread-safe insert via CAS.  Overwrites if key already exists
-    // (variant update under the SAME (content_hash, row_hash) pair —
-    // row_hash is write-once-per-slot; mismatched-row siblings get
-    // distinct slots via probe continuation).
-    //
-    // Background thread primary writer, safe by atomic CAS protocol.
-    //
-    // Transition contract (enforced by memory ordering, not contract_assert):
-    //   EMPTY ──content CAS(acq_rel)──▶ CLAIMED
-    //         ──row.store(release)──▶ row published
-    //         ──kernel.store(release)──▶ PUBLISHED
-    //   PUBLISHED(old) ──kernel.store(release)──▶ PUBLISHED(new)    [variant update]
-    //
-    // row_hash is published BEFORE kernel: a reader that sees
-    // kernel != nullptr (acquire) is guaranteed to see the matching
-    // row (release-acquire chain on kernel includes row's prior store).
-    //
-    // Returns {} on success (including the update-existing-slot path).
-    // Returns std::unexpected(TableFull) iff the entire probe chain
-    // was occupied AND no (content, row) match was found — the row-
-    // typed cache treats foreign-row siblings exactly like foreign-
-    // content slots for probing purposes.
-    // [[nodiscard]] forces callers to handle the error explicitly:
-    // the previous silent-fail behavior made cache pressure invisible.
-    //
-    // FIXY-FOUND-056: two-axis sentinel discipline mirrors publish_l1/l2/l3.
-    // `is_non_zero` rejects ContentHash{} (EMPTY-slot marker — would
-    // collide with the open-addressing probe terminator).
-    // `not_sentinel_hash` rejects ContentHash::sentinel() (UINT64_MAX —
-    // reserved by Types.h §253-261 as the RegionNode end-of-region marker).
-    // No precondition on row_hash: RowHash{0} (bare-type baseline)
-    // is valid and distinct from any row-bearing hash.
+    // Zero collides with the EMPTY marker, and UINT64_MAX is reserved as the
+    // end-of-region marker, so neither can be a key.  The row again needs no
+    // guard: RowHash{0} is a real key.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] std::expected<void, InsertError>
     insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
         CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash))
             pre(::crucible::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
-        // Hoist .raw() once for both the probe seed and the CAS
-        // desired-value — the optimizer CSEs under -O3 but the explicit
-        // local makes the "this exact 64-bit value is what we publish"
-        // invariant readable.
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
         const uint32_t mask = capacity_ - 1;
@@ -1703,162 +881,65 @@ public:
         for (uint32_t probe = 0; probe < capacity_; probe++) {
             auto& entry = table_[(slot_index + probe) & mask];
             uint64_t expected = 0;
-            // EMPTY → CLAIMED transition (we own the slot if CAS succeeds).
+            // A successful CAS claims the slot for this thread.
             if (entry.try_claim_content_hash(expected, lookup_hash)) {
-                // CLAIMED → PUBLISHED.  Order: row_hash BEFORE kernel.  Any
-                // reader that sees kernel (acquire) will also see row_hash.
                 auto writer = entry.writer(fixy::perm::mint_permission_root<KernelCompileTag>());
                 writer.publish(KernelCacheSlotSnapshot{
                     .content_hash = lookup_hash,
                     .row_hash = lookup_row,
                     .kernel = kernel,
                 });
-                // Relaxed: size_ is informational only (no control flow depends
-                // on its exact value). The real synchronization is content_hash CAS.
+                // Relaxed: nothing branches on the exact count.  The content
+                // hash CAS carries the real synchronization.
                 size_.fetch_add(1, std::memory_order_relaxed);
                 return {};
             }
             if (expected == lookup_hash) {
-                // Same content_hash slot already exists — must verify row.
-                // ── FOUND-I05-AUDIT-2 fix ────────────────────────────────
-                //
-                // CRITICAL: spin on KERNEL, not row.  The lookup-side
-                // ordering applies here too: kernel.store is the LAST
-                // release store of the publish sequence, so a non-null
-                // kernel acquire-load synchronizes-with the prior row.store
-                // — once kernel is non-null, row_hash is guaranteed visible.
-                //
-                // The ORIGINAL FOUND-I05 logic spun on row_hash, which is
-                // unsafe: a CLAIMED slot has row_hash == 0 (NSDMI default)
-                // until the inserter publishes.  If lookup_row == 0 (the
-                // bare-type baseline, a perfectly valid lookup target) and
-                // the inserter is preempted, the row.load returns 0 →
-                // existing_row == lookup_row (0 == 0) is TRUE → variant-
-                // update path writes kernel into a slot whose ultimate row
-                // belongs to a DIFFERENT inserter.  When that inserter
-                // resumes, its row.store + kernel.store overwrite the
-                // mistaken write — the second-arriver's insert returned {}
-                // (success) but the (C, 0) slot does NOT exist in the
-                // cache.  Silent lost-insert.
-                //
-                // Spinning on kernel sidesteps the issue entirely: until
-                // kernel is non-null, the slot is in CLAIMED state and we
-                // simply do not write to it.  If the spin budget exhausts
-                // (inserter is stalled or crashed), we treat the slot as
-                // foreign and continue probing — the worst case becomes
-                // "duplicate slot for the same (C, R) under preemption,"
-                // which is wasted space but never lost data.
+                // The content matches, so the row decides.  Spin on the
+                // kernel, never on the row: a CLAIMED slot reads row 0, which
+                // is indistinguishable from a published row of 0.
                 CompiledKernel* existing_kernel = entry.kernel();
                 for (uint32_t spin = 0; spin < kClaimedSpinBudget && existing_kernel == nullptr; ++spin) {
                     CRUCIBLE_SPIN_PAUSE;
                     existing_kernel = entry.kernel();
                 }
                 if (existing_kernel != nullptr) {
-                    // Kernel published — row_hash also visible via the
-                    // release-acquire chain on kernel.
+                    // A published kernel makes the row visible too.
                     uint64_t existing_row = entry.row_hash();
                     if (existing_row == lookup_row) {
-                        // PUBLISHED(old) → PUBLISHED(new): variant update.
-                        // row pinned; only kernel changes.  A concurrent
-                        // reader may briefly observe either kernel value —
-                        // both valid by the insert contract.
+                        // Variant update: the row stays pinned and only the
+                        // kernel changes, so a concurrent reader observes one
+                        // kernel or the other and both are valid.
                         auto writer = entry.writer(fixy::perm::mint_permission_root<KernelCompileTag>());
                         writer.publish_kernel_variant(kernel);
                         return {};
                     }
-                    // Foreign-row sibling under same content_hash —
-                    // continue probing for OUR (content, row) slot.
                 }
-                // else: spin budget exhausted, kernel still null.
-                // Inserter is stalled or crashed.  We treat the slot as
-                // foreign and continue probing.  Worst case: duplicate
-                // slot for the same (C, R) when the stalled inserter
-                // eventually publishes the same row we wanted.  Wasted
-                // space, never lost data.
             }
         }
         return std::unexpected(InsertError::TableFull);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // FOUND-G52: ResidencyHeat-pinned three-level cache surface
-    // ═══════════════════════════════════════════════════════════════
+    // The cache is three tiers: L1 is the vendor-neutral working set held in
+    // memory, L2 the per-vendor-family store, L3 the per-chip archive of
+    // compiled bytes.  Only L1 has a backing store.  The other two exist at
+    // the type level so call sites already speak in tiers.  Their lookups
+    // find nothing and their publishes report NotYetImplemented, which is
+    // what a caller must branch on — a vacuous success would let a path that
+    // depends on persistence miss every later lookup in silence.
     //
-    // CRUCIBLE.md §L2 defines the KernelCache as a three-level
-    // hierarchy mirroring the Forge IR pipeline:
-    //
-    //   L1 — IR002 (vendor-neutral hot working-set, federation-
-    //                shareable cross-vendor).  RAM-resident.
-    //   L2 — IR003* (per-vendor-family, federation-shareable cross-
-    //                chip within family).  Slower lookup, broader
-    //                applicability.
-    //   L3 — compiled-bytes per-chip (cold archive, S3-backed
-    //                federation).  Per-chip ISA, slowest path.
-    //
-    // Today only L1 exists physically (the single (content,row) →
-    // CompiledKernel* table).  L2 and L3 are Phase 5 deferred surfaces
-    // — wired now at the TYPE level so production call sites already
-    // speak the cache-tier vocabulary.  When Phase 5 ships separate
-    // L2/L3 backing stores, the bodies grow without API churn.
-    //
-    // Mapping (per ResidencyHeat.h docblock):
-    //
-    //   lookup_l1 / publish_l1  → ResidencyHeat<Hot,  T>  — REAL today
-    //   lookup_l2 / publish_l2  → ResidencyHeat<Warm, T>  — Phase 5 stub
-    //   lookup_l3 / publish_l3  → ResidencyHeat<Cold, T>  — Phase 5 stub
-    //
-    // The bug class caught: a refactor that loads from L3 (cold,
-    // disk-backed) and feeds the result into a hot dispatch path
-    // expecting `ResidencyHeat<Hot>` — silently paying ~hundreds of
-    // ns of cold-cache penalty on a per-op recording site budgeted
-    // at ~5 ns.  With the type-pinned overlay, the call boundary
-    // rejects the value at compile time.
-    //
-    // Lattice direction (ResidencyHeatLattice.h):
-    //     Cold(weakest) ⊑ Warm ⊑ Hot(strongest)
-    //
-    // satisfies<Required> = leq(Required, Self).  Hot subsumes Warm
-    // and Cold (stronger heat serves weaker requirement); Cold
-    // satisfies only Cold.
-    //
-    // SEMANTIC NOTE on the L2/L3 stubs: lookup_l2/l3 always return
-    // a nullptr-pinned wrapper (no kernel found) until Phase 5 wires
-    // separate backing stores.  FIXY-FOUND-060: publish_l2/l3 return
-    // the typed wrapper around
-    //   std::unexpected(InsertError::NotYetImplemented)
-    // so callers branch explicitly on the persistence outcome — silent
-    // no-op-under-success was a latent Phase-5 ship-blocker (a code
-    // path that depended on actual L2/L3 persistence would silently
-    // miss every lookup with no compile-time or runtime warning).
-    // When Phase 5 lands the separate backing stores, the publish_l2/
-    // l3 bodies replace the unexpected-return with real persistence
-    // calls; the NotYetImplemented variant remains for forward-compat
-    // diagnostics (e.g., transient store outage in the real backend).
-    // Today's behavior is therefore "L2/L3 paths are not yet active"
-    // — a downstream consumer that depends on L2/L3 hit rates measures
-    // zero today, reflecting physical reality.
-
-    // ── L1 lookup — REAL (wraps existing lookup) ─────────────────────
+    // Pinning the tier in the return type is what stops a value read from the
+    // cold archive being handed to a path that requires a resident one.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] fixy::wrap::residency_heat::Hot<CompiledKernel*>
     lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
         return fixy::wrap::residency_heat::Hot<CompiledKernel*>{lookup(content_hash, row_hash)};
     }
 
-    // ── L2 lookup — Phase 5 STUB ─────────────────────────────────────
-    //
-    // Today: returns nullptr-pinned-Warm.  Phase 5: queries the per-
-    // vendor-family L2 store (cross-chip federation within family),
-    // returning whatever IR003* kernel was published there.
-    //
-    // FOUND-I06/I07-AUDIT (Finding B) — precondition mirrors L1's
-    // discipline.  ContentHash{0} is reserved as the empty-slot
-    // sentinel in the L1 hash table; any future Phase-5 L2 store
-    // that uses content-addressed slot lookup needs the same
-    // sentinel discipline, so callers must not pass zero.  Adding
-    // the pre-clause now means Phase-5 implementations inherit the
-    // contract; weakening it later requires re-establishing the
-    // sentinel discipline at the call sites.
+    // The preconditions on the two tiers below match L1's even though the
+    // bodies ignore their arguments: a backing store added later inherits the
+    // contract, whereas relaxing it later would have to be renegotiated at
+    // every call site.
     [[nodiscard]] fixy::wrap::residency_heat::Warm<CompiledKernel*> lookup_l2(ContentHash content_hash,
                                                                               RowHash /*row_hash*/) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
@@ -1866,13 +947,6 @@ public:
         return fixy::wrap::residency_heat::Warm<CompiledKernel*>{nullptr};
     }
 
-    // ── L3 lookup — Phase 5 STUB ─────────────────────────────────────
-    //
-    // Today: returns nullptr-pinned-Cold.  Phase 5: queries the per-
-    // chip compiled-bytes archive (S3-backed federation cold tier).
-    //
-    // FOUND-I06/I07-AUDIT (Finding B) — precondition mirrors L1's
-    // discipline; same rationale as lookup_l2.
     [[nodiscard]] fixy::wrap::residency_heat::Cold<CompiledKernel*> lookup_l3(ContentHash content_hash,
                                                                               RowHash /*row_hash*/) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
@@ -1880,65 +954,24 @@ public:
         return fixy::wrap::residency_heat::Cold<CompiledKernel*>{nullptr};
     }
 
-    // ── L1 publish — REAL (wraps existing insert) ────────────────────
+    // A caller derives row_hash by projecting a typed effect row, so that the
+    // cache key stays expressible in the row vocabulary.  A literal RowHash
+    // is accepted for the row-blind baseline of RowHash{0}.
     //
-    // FOUND-I18 (row-validated integration contract): callers should
-    // derive `row_hash` from a typed effect row via either
-    //
-    //   safety::diag::row_hash_contribution_v<Row>     // raw u64
-    //   crucible::cipher::federation::federation_row_hash<Row>()
-    //                                                  // RowHash{...}
-    //
-    // both of which evaluate to the same bytes (F12 wraps I02 with no
-    // transformation; FOUND-I18 witness pins this end-to-end).
-    // Constructing a `RowHash` from a literal hex value is supported
-    // for the row-blind baseline (RowHash{0} = bare-type slot, see
-    // §RowHashFold §3) and for legacy callers, but new production
-    // call sites should project from a typed Row to keep the cache
-    // key derivable from the row vocabulary.
+    // Both hash guards are needed here and on the two tiers below: UINT64_MAX
+    // is non-zero, and zero is not the reserved sentinel.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
     fixy::wrap::residency_heat::Hot<std::expected<void, InsertError>>
-    publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY
-    // FIXY-FOUND-056: two-axis sentinel discipline.  `is_non_zero`
-    // rejects ContentHash{} which collides with the EMPTY-slot
-    // marker; `not_sentinel_hash` rejects ContentHash::sentinel()
-    // which is reserved as the RegionNode end-of-region marker
-    // (Types.h §253-261).  Both cites are required — UINT64_MAX is
-    // non-zero, and a zero is non-sentinel.
-    pre(::crucible::decide::is_non_zero(content_hash)) pre(::crucible::decide::not_sentinel_hash(content_hash))
-        pre(kernel != nullptr) {
+    publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
+        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash))
+            pre(::crucible::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
         return fixy::wrap::residency_heat::Hot<std::expected<void, InsertError>>{
             insert(content_hash, row_hash, kernel)};
     }
 
-    // ── L2 publish — Phase 5 STUB ────────────────────────────────────
-    //
-    // Today: returns the typed wrapper around
-    //   std::unexpected(InsertError::NotYetImplemented)
-    // because no L2 backing store is wired yet.  Phase 5: writes to
-    // the per-vendor-family L2 store.
-    //
-    // FIXY-FOUND-060 — pre-fix this returned a vacuous success marker,
-    // a silent ship-blocker: a Phase-5 caller invoking publish_l2
-    // would get `.has_value() == true` from a no-op, then a subsequent
-    // lookup_l2 would miss.  The error channel exposes the gap so
-    // every caller branches explicitly on the persistence outcome;
-    // when Phase 5 lands the real backing store the body replaces
-    // the unexpected-return with the real persistence call.
-    //
-    // FOUND-I06/I07-AUDIT (Finding B) — preconditions mirror
-    // publish_l1's discipline.  ContentHash{0} is the empty-slot
-    // sentinel in the L1 hash table and any future Phase-5 L2 store
-    // following the same content-addressed contract needs the same
-    // discipline.  nullptr kernel makes no sense as a publication
-    // target — the cache stores compiled-body pointers, not absences.
-    // Adding both pre-clauses now means Phase-5 implementations
-    // inherit the contract; weakening either later is a contract
-    // break that requires explicit caller-side migration.
     [[nodiscard]]
     fixy::wrap::residency_heat::Warm<std::expected<void, InsertError>>
     publish_l2(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        // FIXY-FOUND-056: same two-axis sentinel discipline as publish_l1.
         pre(::crucible::decide::is_non_zero(content_hash)) pre(::crucible::decide::not_sentinel_hash(content_hash))
             pre(kernel != nullptr) {
         (void)content_hash;
@@ -1947,23 +980,9 @@ public:
             std::unexpected(InsertError::NotYetImplemented)};
     }
 
-    // ── L3 publish — Phase 5 STUB ────────────────────────────────────
-    //
-    // Today: returns the typed wrapper around
-    //   std::unexpected(InsertError::NotYetImplemented)
-    // because no L3 backing store is wired yet.  Phase 5: writes to
-    // the per-chip compiled-bytes archive (S3-backed cold federation).
-    //
-    // FIXY-FOUND-060 — same closure as publish_l2.  The error channel
-    // exposes the Phase-5 gap to every caller so silent no-ops cannot
-    // hide a missing persistence wire-up.
-    //
-    // FOUND-I06/I07-AUDIT (Finding B) — preconditions mirror
-    // publish_l1's discipline; same rationale as publish_l2.
     [[nodiscard]]
     fixy::wrap::residency_heat::Cold<std::expected<void, InsertError>>
     publish_l3(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        // FIXY-FOUND-056: same two-axis sentinel discipline as publish_l1.
         pre(::crucible::decide::is_non_zero(content_hash)) pre(::crucible::decide::not_sentinel_hash(content_hash))
             pre(kernel != nullptr) {
         (void)content_hash;
@@ -1972,24 +991,12 @@ public:
             std::unexpected(InsertError::NotYetImplemented)};
     }
 
-    // Relaxed: informational counter, no ordering dependency.
+    // Relaxed: an informational counter that nothing orders against.
     [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY { return size_.load(std::memory_order_relaxed); }
     [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
-    // Diagnostic: classify a slot at the given probing-order index.
-    // Returns `Empty` for an unused slot, `Claimed` for a transient
-    // (hash set but kernel null) slot, `Published` for a fully-committed
-    // entry. Not a hot-path primitive — tests and perf counters only.
-    //
-    // CONTRACT-129: anonymous bare-`<` precondition migrates to named
-    // cite via `decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u)`.
-    // The predicate references `this->capacity_` member, so it's in the
-    // GCC 16.1.1 consteval-bypass family — vanilla P2900 `pre()` would
-    // silently bypass at consteval for foldable-body call sites; the
-    // CRUCIBLE_PRE shim's `__builtin_trap()` poisons the consteval call
-    // instead.  Companion guard `capacity_ > 0u` defends against the
-    // `capacity_ - 1u` underflow that would otherwise wrap to UINT32_MAX
-    // when capacity_ == 0 (an unconstructed cache).
+    // The capacity guard is what keeps `capacity_ - 1u` below from wrapping
+    // to UINT32_MAX on an unconstructed cache.
     [[nodiscard]] SlotState diag_slot_state(uint32_t slot_index) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(capacity_ > 0u);
         CRUCIBLE_PRE(::crucible::decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u));
@@ -1999,8 +1006,6 @@ public:
     }
 
 private:
-    // Static classifier — evaluates the state machine from the observed
-    // (hash, kernel) pair. No atomic reads; caller provides the snapshot.
     [[nodiscard, gnu::const]] static constexpr SlotState classify_(uint64_t hash_bits,
                                                                    const CompiledKernel* k) noexcept {
         if (hash_bits == 0) return SlotState::Empty;
@@ -2030,8 +1035,7 @@ private:
         ::operator delete(static_cast<void*>(table), std::align_val_t{kTableAlignment});
     }
 
-    // Cold path: reader saw CLAIMED and waits for PUBLISHED.  Outlined
-    // so the hot lookup stays compact (one cache line).
+    // Outlined so that the hot lookup body stays compact.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[gnu::cold, gnu::noinline]]
     static CompiledKernel* await_claimed_(const KernelCacheSlot& entry) noexcept {
         for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
@@ -2039,9 +1043,6 @@ private:
             CompiledKernel* kernel_ptr = entry.kernel_.load(std::memory_order_acquire);
             if (kernel_ptr != nullptr) return kernel_ptr;
         }
-        // Inserter exceeded the spin budget (preempted?). Treat as miss.
-        // Caller will re-dispatch; next lookup almost certainly finds
-        // PUBLISHED since the insert completes in microseconds at worst.
         return nullptr;
     }
 
@@ -2050,17 +1051,8 @@ private:
     std::atomic<uint32_t> size_;
 };
 
-// TraceRing and IterationDetector are defined in their own headers
-// (included above). They're also used standalone by CrucibleContext.h
-// and BackgroundThread.h without needing the full DAG infrastructure.
-
-// ═══════════════════════════════════════════════════════════════════
-// Merkle DAG construction and traversal
-// ═══════════════════════════════════════════════════════════════════
-
-// Create a RegionNode from a span of TraceEntries.
-// Placement-new with RegionNode{} zero-initializes via NSDMI.
-// Only set the fields that differ from defaults.
+// The ops array is stored, not copied: the caller keeps it alive for as long
+// as the node.
 [[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops)) {
@@ -2068,39 +1060,11 @@ private:
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
     node->num_ops = num_ops;
-    // Sentinel-based WriteOnce: node was just default-constructed so
-    // content_hash is zero.  A second make_region call on the same
-    // pointer (or any write between here and destruction) violates the
-    // "computed exactly once at construction" invariant.
+    // The node was just default-constructed, so a non-zero hash here means a
+    // second construction over a live node.
     contract_assert(node->content_hash.raw() == 0);
     node->content_hash = compute_content_hash(std::span{ops, num_ops});
     node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-    // CONTRACT-MakeRegion-POST: factory result-shape contract — the
-    // returned RegionNode has the canonical layout that downstream
-    // collect_regions / replay / compute_content_hash all assume:
-    //   (1) node != nullptr — arena.alloc_obj never returns null (OOM
-    //       aborts via std::abort).  Mirrors the AddBranch-POST and
-    //       KernelCache CTOR-POST discipline.
-    //   (2) node->kind == REGION — set above; catches a future refactor
-    //       that forgets the kind tag, which would silently mis-dispatch
-    //       through the BRANCH/LOOP/TERMINAL arms of replay()'s switch.
-    //   (3) node->ops == ops — caller's pointer is stored verbatim;
-    //       catches a refactor that copies into an internal buffer
-    //       (which would break the lifetime contract that ops outlives
-    //       the RegionNode).
-    //   (4) node->num_ops == num_ops — caller's count stored verbatim.
-    //   (5) decide::implies(num_ops > 0, content_hash != 0) — for any
-    //       non-degenerate region the computed hash is non-zero (the
-    //       zero-hash sentinel is the EMPTY slot marker per
-    //       CONTRACT-106).  num_ops == 0 may legitimately produce a
-    //       zero hash (degenerate).  Discharges through `decide::implies`
-    //       (CONTRACT-081 catalog).
-    // Routes through CRUCIBLE_POST because the predicates dereference
-    // the freshly allocated `node` pointer — same GCC 16.1.1 consteval
-    // -bypass family as CONTRACT-100..108-POST + 116..127-POST +
-    // Arena-CTOR-POST + AddBranch-POST.  Under NDEBUG these collapse
-    // to `[[assume]]`, so downstream replay() can speculate that
-    // RegionNode dispatch is valid.
     CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops == ops);
@@ -2109,18 +1073,11 @@ private:
     return node;
 }
 
-// Overload: accept a pre-computed content hash (from build_trace's fused
-// streaming hash). Eliminates the redundant second pass over all ops.
+// For a caller that has already folded the hash while streaming the ops.
 [[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops, ContentHash precomputed_hash) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops))
-    // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
-    // (CONTRACT-072 catalog).  Precomputed hash must be the actual
-    // hash, not the zero sentinel.  compute_content_hash may
-    // legitimately return 0 for a degenerate (num_ops == 0) input,
-    // but the precomputed-hash path is for callers that already ran
-    // the hash computation; supplying 0 with num_ops > 0 is a caller bug.
-    pre(::crucible::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
+        pre(::crucible::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -2128,13 +1085,6 @@ private:
     contract_assert(node->content_hash.raw() == 0);
     node->content_hash = precomputed_hash;
     node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-    // CONTRACT-MakeRegion-POST: precomputed-hash overload — same shape
-    // contract as the no-recipe overload above, plus the strict
-    // node->content_hash == precomputed_hash invariant (callers rely
-    // on the pool re-using the cached hash without recomputing).
-    // See the no-recipe overload's post block for the full discharge
-    // framing; this overload mirrors it 1:1 with one extra cite for
-    // the hash-equality invariant.
     CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops == ops);
@@ -2143,39 +1093,14 @@ private:
     return node;
 }
 
-// Recipe-aware overload.  Computes a recipe-disambiguated content_hash
-// by passing `recipe` through to compute_content_hash.  Two regions
-// with identical ops but different recipes receive distinct
-// content_hashes and therefore distinct KernelCache slots — the
-// mechanism that prevents silent cross-recipe pollution of a cached
-// compile.
-//
-// The recipe parameter is a non-owning const pointer; callers retain
-// ownership (typically in a RecipePool).  null_recipe is equivalent
-// to the no-recipe overload above (included for call-site symmetry;
-// the pre() below rejects an explicitly-passed null).
-//
-// Safety guards:
-//   pre(recipe != nullptr)          — use the no-recipe overload
-//                                      when no recipe applies; this
-//                                      overload exists specifically to
-//                                      carry a recipe commitment.
-//   pre(recipe->hash.raw() != 0)    — default-constructed RecipeHash
-//                                      indicates the recipe was never
-//                                      interned through RecipePool.
-//   pre(!recipe->hash.is_sentinel())— UINT64_MAX reserved per Types.h.
-//
-// Note: RegionNode does NOT currently store the recipe pointer — the
-// layout lock at 80B predates Phase E KernelNode (§18.2).  The recipe
-// participates in the computed content_hash and is then released;
-// callers who need to recover the recipe later must track it out-of-
-// band (or upgrade to IR002 KernelNode when Phase E lands).
+// The recipe is borrowed, and the node does not keep it: it participates in
+// the content hash and is then dropped, so a caller that needs to recover the
+// recipe later must track it separately.  A null recipe is rejected rather
+// than accepted, because the overload above already covers that case.
 [[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops, const NumericalRecipe* recipe) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops)) pre(recipe != nullptr)
-    // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
-    // (CONTRACT-072 catalog).
-    pre(::crucible::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
+        pre(::crucible::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -2183,15 +1108,6 @@ private:
     contract_assert(node->content_hash.raw() == 0);
     node->content_hash = compute_content_hash(std::span{ops, num_ops}, recipe);
     node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-    // CONTRACT-MakeRegion-POST: recipe-aware overload — same shape
-    // contract as the no-recipe overload, with the recipe-disambiguation
-    // invariant: pre asserted recipe->hash != 0, so the computed
-    // content_hash mixes a non-zero recipe hash and is itself non-zero
-    // for non-degenerate regions.  The decide::implies cite covers
-    // num_ops == 0 (degenerate scalar input case where the hash may
-    // still be zero) — production never calls this overload with
-    // num_ops == 0 (the no-recipe overload is used for that path) but
-    // defense-in-depth pins the same predicate semantics.
     CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops == ops);
@@ -2200,43 +1116,27 @@ private:
     return node;
 }
 
-// Create a terminal node. NSDMI handles zero-init; just set kind.
 [[nodiscard]] inline TraceNode* make_terminal(effects::Alloc a, Arena& arena) noexcept {
     auto* node = new(arena.alloc_obj<TraceNode>(a)) TraceNode{};
     node->kind = TraceNodeKind::TERMINAL;
-    // CONTRACT-MakeTerminal-POST: factory result-shape contract — every
-    // successful make_terminal returns a non-null TraceNode tagged
-    // TERMINAL.  The replay() switch on kind dispatches TERMINAL to the
-    // "stop iterating" path; a refactor that drops the kind tag would
-    // silently fall through to REGION (mis-execute zero ops as a region)
-    // or BRANCH (segfault on null arms).  Routes through CRUCIBLE_POST
-    // for the same consteval-bypass framing as siblings.
     CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
     return node;
 }
 
-// Create a LoopNode. Body must be a complete sub-DAG (ending in TERMINAL).
-// The body_content_hash is precomputed from the body's region chain.
+// The body must be a complete sub-DAG ending in TERMINAL, and
+// body_content_hash must already be folded from that body's region chain.
 [[nodiscard]] inline LoopNode* make_loop(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
                                          ContentHash body_content_hash, FeedbackEdge* feedback, uint16_t num_feedback,
                                          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept
-    // Pointer / pair validity.
     pre(body != nullptr) pre(::crucible::decide::valid_span(num_feedback, feedback))
-    // Semantic validity on the numeric parameters:
-    //   epsilon must be non-negative.  Negative thresholds are
-    //     meaningless (a convergence distance can't be negative), and
-    //     the sign bit of epsilon flowing into loopterm_hash would
-    //     produce two Merkle hashes for operationally-identical loops.
-    //   REPEAT with repeat_count=0 is a legitimate degenerate case —
-    //     used by replay() to test the "skip body entirely, run
-    //     continuation" path.  Not enforced.
-    //   UNTIL with epsilon=0 is permitted at construction (the caller
-    //     may set it lazily).  Callers that actually run the loop are
-    //     responsible for epsilon > 0 by the time the scheduler sees it.
+    // A convergence distance cannot be negative, and the sign bit of epsilon
+    // reaches the termination hash, so two loops that behave identically
+    // would otherwise hash differently.  A repeat count of zero stays legal:
+    // it is the "skip the body, run the continuation" case.  An epsilon of
+    // zero is also accepted here, and the caller sets a real threshold before
+    // the loop runs.
     pre(!(epsilon < 0.0f)) {
-    // pre() above replaces the runtime assert; kept as [[assume]] so the
-    // optimizer can drop redundant null checks in the body.
     [[assume(body != nullptr)]];
     auto* node = new(arena.alloc_obj<LoopNode>(a)) LoopNode{};
     node->kind = TraceNodeKind::LOOP;
@@ -2247,17 +1147,6 @@ private:
     node->term_kind = term_kind;
     node->repeat_count = repeat_count;
     node->epsilon = epsilon;
-    // CONTRACT-MakeLoop-POST: factory result-shape contract — every
-    // successful make_loop returns a non-null LoopNode wired to the
-    // caller's body + feedback edges.  Catches a refactor that
-    // forgets the kind tag (would mis-dispatch through replay()'s
-    // BRANCH/REGION/TERMINAL arms) or drops the body assignment
-    // (would null-deref the loop iteration in replay()).  The 7
-    // member-equality posts pin every loaded value exactly as the
-    // caller passed it — replay()'s loop machinery depends on each
-    // matching the origin exactly (term_kind selects REPEAT-vs-UNTIL,
-    // repeat_count and epsilon are the loop bounds, feedback_edges
-    // is consumed verbatim by the iteration scheduler).
     CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::LOOP);
     CRUCIBLE_POST(node, node->body == body);
@@ -2268,11 +1157,10 @@ private:
     return node;
 }
 
-// Recompute Merkle hashes bottom-up from a node.
-// Assumes all descendants already have correct merkle_hash values.
+// Children are recomputed first, because a node's hash folds in the hashes of
+// its arms, its body and its continuation.
 inline void recompute_merkle(TraceNode* node) {
     if (!node) return;
-    // Must recompute children first (bottom-up)
     if (node->kind == TraceNodeKind::BRANCH) {
         auto* branch = static_cast<BranchNode*>(node);
         for (uint32_t i = 0; i < branch->num_arms; i++)
@@ -2285,8 +1173,6 @@ inline void recompute_merkle(TraceNode* node) {
     node->merkle_hash = compute_merkle_hash(node);
 }
 
-// Collect all RegionNodes into an output array. Returns count.
-// Used to find uncompiled regions after DAG mutation.
 [[nodiscard]] inline uint32_t collect_regions(TraceNode* node, std::span<RegionNode*> out, uint32_t count = 0) {
     while (node && count < out.size()) {
         switch (node->kind) {
@@ -2303,7 +1189,7 @@ inline void recompute_merkle(TraceNode* node) {
                 count = collect_regions(static_cast<LoopNode*>(node)->body, out, count);
                 break;
             case TraceNodeKind::TERMINAL:
-                break;  // walk past; the next-pointer handles continuation
+                break;  // not a stop condition here: the walk follows next
             default:
                 std::unreachable();
         }
@@ -2312,14 +1198,8 @@ inline void recompute_merkle(TraceNode* node) {
     return count;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Merge detection: scan bottom-up for shared suffixes
-//
-// Walks the existing continuation and compares content hashes with
-// new ops from the tail. Returns the first existing node where
-// content matches (the merge point).
-// ═══════════════════════════════════════════════════════════════════
-
+// Returns the first node of the shared suffix, or null when the new ops and
+// the existing continuation share no tail.
 [[nodiscard]] inline TraceNode* find_merge_point(std::span<TraceEntry> new_ops, TraceNode* existing_continuation) {
     constexpr uint32_t MAX_REGIONS = 1024;
     RegionNode* existing_regions[MAX_REGIONS];
@@ -2355,14 +1235,8 @@ inline void recompute_merkle(TraceNode* node) {
     return merge;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Branch creation: DAG mutation when divergence detected
-//
-// Splits a straight-line trace at the divergence point, creating a
-// BranchNode with two arms (existing + new), merging where the
-// continuations become identical.
-// ═══════════════════════════════════════════════════════════════════
-
+// Splits a straight-line trace at a divergence point into a two-arm branch
+// that rejoins where the continuations become identical again.
 [[nodiscard]] inline BranchNode*
 add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode* divergence_point, TraceEntry* new_ops,
            uint32_t new_n, int64_t old_guard_value, int64_t new_guard_value, Guard guard, TraceNode* existing_suffix)
@@ -2371,34 +1245,24 @@ add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode*
 
     TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix);
 
-    // 3. Wire new arm's tail to the merge point
     new_region->next = merge;
 
-    // 4. Look up compiled kernel from global cache (may already exist).
-    // publish() requires non-null; skip when the lookup missed — the
-    // field's default-constructed null is preserved, which is correct
-    // for "no compiled kernel yet".
-    //
-    // FOUND-I05 row-keyed lookup: pass RowHash{0} (the bare-type
-    // baseline) until the dispatch path threads a row through to
-    // add_branch (FOUND-I19 wires Vigil::dispatch_op row-typed).
-    // Until then, every untyped call site queries the row=0 slot,
-    // which is the CONSISTENT and LOSSLESS migration target — every
-    // cached kernel inserted under row=0 looks up under row=0, and
-    // future row-tagged callers (FOUND-G* lattice consumers) cache
-    // to disjoint slots without polluting the legacy slot.
+    // The dispatch path does not yet carry an effect row down to here, so the
+    // lookup uses the bare-type row.  Every untyped caller therefore agrees
+    // on one slot, and row-tagged callers land in disjoint slots rather than
+    // sharing this one.  A miss leaves compiled at its default null, which is
+    // the right state for a region with no kernel yet.
     if (auto* cached_kernel = kernel_cache.lookup(new_region->content_hash, RowHash{0})) {
         new_region->compiled.publish(cached_kernel);
     }
 
-    // 5. Create BranchNode
     auto* branch = arena.alloc_obj<BranchNode>(a);
     ::new(branch) BranchNode{};
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
     branch->num_arms = 2;
     branch->arms = arena.alloc_array<BranchNode::Arm>(a, 2);
-    // Keep arms sorted by value for O(log n) binary search in replay().
+    // Arms go in sorted by value: replay binary-searches them.
     if (old_guard_value <= new_guard_value) {
         branch->arms[0] = {.value = old_guard_value, .target = divergence_point};
         branch->arms[1] = {.value = new_guard_value, .target = new_region};
@@ -2406,31 +1270,10 @@ add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode*
         branch->arms[0] = {.value = new_guard_value, .target = new_region};
         branch->arms[1] = {.value = old_guard_value, .target = divergence_point};
     }
-    branch->next = merge;  // Shared continuation after merge
+    branch->next = merge;
 
-    // 6. Recompute Merkle hashes bottom-up
     recompute_merkle(branch);
 
-    // CONTRACT-AddBranch-POST: result-shape contract — every successful
-    // add_branch returns a non-null BranchNode with the canonical
-    // 2-arm shape required by the replay() guard-evaluation path:
-    //   (1) branch != nullptr — arena.alloc_obj<BranchNode> never
-    //       returns null (OOM aborts via arena std::abort).
-    //   (2) branch->kind == TraceNodeKind::BRANCH — set above; catches
-    //       a future refactor that forgets the kind tag, which would
-    //       silently mis-dispatch through the REGION/LOOP arms of
-    //       replay()'s switch.
-    //   (3) branch->num_arms == 2 — every divergence call site creates
-    //       exactly two arms (existing + new); replay()'s binary search
-    //       in arms[] depends on this structural invariant.
-    //   (4) branch->arms != nullptr — arena allocation guaranteed
-    //       above; OOM aborts.
-    // Routes through CRUCIBLE_POST because the predicates dereference
-    // the freshly allocated `branch` pointer — same consteval-bypass
-    // family as CONTRACT-100..108-POST + 116..127-POST.  Under NDEBUG
-    // these collapse to `[[assume]]`, so downstream replay() can
-    // speculate that the binary-search loop terminates within
-    // log2(2)=1 iteration.
     CRUCIBLE_POST(branch, branch != nullptr);
     CRUCIBLE_POST(branch, branch->kind == TraceNodeKind::BRANCH);
     CRUCIBLE_POST(branch, branch->num_arms == 2u);
@@ -2438,17 +1281,7 @@ add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode*
     return branch;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Replay: Traverse the compiled Merkle DAG during execution.
-//
-// The live tensor pack and guard evaluator are provided as callbacks.
-// This function is called from the foreground thread during replay
-// mode (after the DAG is compiled).
-//
-// GuardEval signature: int64_t(const Guard&)
-// RegionExec signature: void(RegionNode*)
-// ═══════════════════════════════════════════════════════════════════
-
+// GuardEval is int64_t(const Guard&) and RegionExec is void(RegionNode*).
 template <typename GuardEval, typename RegionExec>
 [[nodiscard, gnu::flatten]] inline bool replay(TraceNode* node, GuardEval&& eval_guard, RegionExec&& exec_region) {
     while (node) {
@@ -2464,26 +1297,14 @@ template <typename GuardEval, typename RegionExec>
                 auto* branch = static_cast<BranchNode*>(node);
                 int64_t val = eval_guard(branch->guard);
 
-                // Binary search depends on arms[i].value being ascending.  In
-                // debug, assert the invariant on first entry to catch builders
-                // that populated arms in wrong order — silent failure otherwise
-                // (wrong arm selected, replay diverges against a region that
-                // hashes identical to the correct one).  Zero-cost under NDEBUG
-                // since are_arms_sorted_by_value is gnu::cold and contract_assert
-                // compiles out.
                 contract_assert(branch->are_arms_sorted_by_value());
 
-                // Binary search on sorted arms. Arms are kept sorted by value
-                // at creation time (add_branch). O(log n) for large arm counts,
-                // degenerates to 1-2 comparisons for the common 2-3 arm case.
                 TraceNode* arm = nullptr;
                 {
                     uint32_t lo = 0, hi = branch->num_arms;
                     while (lo < hi) {
                         uint32_t mid = lo + (hi - lo) / 2;
-                        // Binary-search invariant: mid ∈ [lo, hi) and hi ≤ num_arms.
-                        // Propagate to the optimizer so arms[mid] drops the bounds
-                        // check GCC would emit under -D_GLIBCXX_ASSERTIONS.
+                        // mid is in [lo, hi) and hi is at most num_arms.
                         [[assume(mid < branch->num_arms)]];
                         int64_t mid_val = branch->arms[mid].value;
                         if (mid_val < val)
@@ -2497,12 +1318,10 @@ template <typename GuardEval, typename RegionExec>
                     }
                 }
 
-                if (!arm) return false;  // Unseen guard value -- fall back to recording
+                if (!arm) return false;  // unseen guard value: the caller falls back to recording
 
-                // Execute the arm's branch-specific regions
                 if (!replay(arm, eval_guard, exec_region)) return false;
 
-                // Continue from the merge point (shared suffix)
                 node = branch->next;
                 break;
             }
@@ -2527,45 +1346,29 @@ template <typename GuardEval, typename RegionExec>
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// DAG Diff: O(log N) structural comparison via Merkle hashes
-//
-// Compares two Merkle DAGs and finds the first divergent node.
-// Merkle hashes enable massive pruning: identical subtrees (same
-// merkle_hash) are skipped in O(1). Only divergent paths are
-// explored, giving O(log N) for typical "one region changed"
-// scenarios. Worst case O(N) when everything differs.
-//
-// This is the "git diff" for computation graphs. Used for:
-//   - Version comparison (which regions changed between iterations?)
-//   - Regression bisection (binary search through DAG versions)
-//   - Deployment validation (new model == old model where expected?)
-// ═══════════════════════════════════════════════════════════════════
-
 struct DagDiff {
     TraceNode* node_a = nullptr;
     TraceNode* node_b = nullptr;
     uint32_t depth = 0;
 
     enum class Kind : uint8_t {
-        IDENTICAL,  // Merkle hashes match — subtrees are equal
-        KIND_MISMATCH,  // Different node kinds at this position
-        CONTENT_MISMATCH,  // Same kind but different content (different ops)
-        BRANCH_MISMATCH,  // Different guard or arm structure
-        LOOP_MISMATCH,  // Different body, feedback, or termination
-        STRUCTURE_MISMATCH,  // One terminates, other continues (length differs)
+        IDENTICAL,
+        KIND_MISMATCH,
+        CONTENT_MISMATCH,
+        BRANCH_MISMATCH,
+        LOOP_MISMATCH,
+        STRUCTURE_MISMATCH,  // one chain ends while the other continues
     } kind = Kind::IDENTICAL;
 };
 
-// Walk two DAGs in lockstep, pruning identical subtrees via Merkle hash.
-// Iterative on the next-chain (no stack overflow for long traces),
-// recursive only into branch arms and loop bodies (bounded depth).
+// Walks two DAGs in lockstep and reports the first divergence.  The walk is
+// iterative along the next-chain, so a long trace cannot overflow the stack.
+// Only arms and loop bodies recurse, and their depth is bounded.
 [[nodiscard]] inline DagDiff dag_diff(TraceNode* a, TraceNode* b, uint32_t depth = 0) {
     while (a && b) {
-        // Merkle match → entire subtree from here is identical → skip
+        // Equal hashes mean the whole subtree below is equal.
         if (a->merkle_hash == b->merkle_hash) return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
 
-        // Kind mismatch is a hard divergence
         if (a->kind != b->kind) return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
 
         if (a->kind == TraceNodeKind::TERMINAL) return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
@@ -2574,7 +1377,6 @@ struct DagDiff {
             auto* ra = static_cast<RegionNode*>(a);
             auto* rb = static_cast<RegionNode*>(b);
             if (ra->content_hash != rb->content_hash) return {a, b, depth, DagDiff::Kind::CONTENT_MISMATCH};
-            // Content matches — divergence is in the tail
             a = a->next;
             b = b->next;
             ++depth;
@@ -2586,7 +1388,6 @@ struct DagDiff {
             auto* bb = static_cast<BranchNode*>(b);
             if (ba->guard.hash() != bb->guard.hash() || ba->num_arms != bb->num_arms)
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-            // Check arms recursively (bounded by branch fan-out)
             for (uint32_t i = 0; i < ba->num_arms; i++) {
                 if (ba->arms[i].value != bb->arms[i].value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
                 DagDiff arm_diff = dag_diff(ba->arms[i].target, bb->arms[i].target, depth + 1);
@@ -2605,11 +1406,10 @@ struct DagDiff {
                 || la->term_kind != lb->term_kind || la->repeat_count != lb->repeat_count
                 || std::bit_cast<uint32_t>(la->epsilon) != std::bit_cast<uint32_t>(lb->epsilon))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
-            // Feedback edges differ?
             if (la->num_feedback > 0
                 && std::memcmp(la->feedback_edges, lb->feedback_edges, la->num_feedback * sizeof(FeedbackEdge)) != 0)
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
-            // Body identical at content level; check sub-structure
+            // The bodies agree on content, so compare their structure.
             DagDiff body_diff = dag_diff(la->body, lb->body, depth + 1);
             if (body_diff.kind != DagDiff::Kind::IDENTICAL) return body_diff;
             a = a->next;
@@ -2618,18 +1418,14 @@ struct DagDiff {
             continue;
         }
 
-        // Unknown kind — should not happen
         return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
     }
 
-    // One or both ended
-    if (a == b)  // both null
+    if (a == b)  // both null: the two chains ended together
         return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
     return {a, b, depth, DagDiff::Kind::STRUCTURE_MISMATCH};
 }
 
-// Count nodes in a DAG (follows next chain + recurse into branches/loops).
-// Useful for determining N for complexity analysis of dag_diff.
 [[nodiscard]] inline uint32_t dag_node_count(TraceNode* node) {
     uint32_t count = 0;
     while (node) {
@@ -2646,7 +1442,7 @@ struct DagDiff {
                 break;
             case TraceNodeKind::REGION:
             case TraceNodeKind::TERMINAL:
-                break;  // leaf-like: already counted via ++count
+                break;
             default:
                 std::unreachable();
         }

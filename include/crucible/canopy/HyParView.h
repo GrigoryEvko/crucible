@@ -1,12 +1,5 @@
 #pragma once
 
-// Bounded HyParView membership substrate for Canopy.
-//
-// This layer owns active/passive view bookkeeping, deterministic repair from
-// passive to active on SWIM failure events, and bounded shuffle planning.
-// TCP keepalive sockets and downstream event channels remain transport owners;
-// this substrate exposes typed values those layers can consume.
-
 #include <crucible/Philox.h>
 #include <crucible/Platform.h>
 #include <crucible/canopy/Swim.h>
@@ -107,7 +100,6 @@ public:
     using forward_join_plan_type = HyParViewForwardJoinPlan<MaxActive>;
 
     explicit HyParViewMembership(HyParViewConfig config = {}) noexcept : config_{config} {
-        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
     }
 
@@ -186,14 +178,10 @@ public:
             return std::unexpected(HyParViewError::EmptyActiveView);
         }
 
-        // FIXY-U-107 / fixy-A5-013: replace round-robin cursor with
-        // Philox-derived target selection.  Deterministic round-robin
-        // pinned partition-healing — under any persistent network
-        // partition the same peer subset got shuffled-into forever
-        // (the rotation order never breaks the partition).  Philox
-        // gives statistically uniform selection, breaking the pin.
-        // Seed mixes UUIDs of every joined peer (per-node unique,
-        // replay-safe via deterministic per-call counter).
+        // A round-robin cursor pins partition healing.  Under a persistent
+        // partition the rotation order keeps reaching the same subset of
+        // peers, so nothing ever crosses the partition.  A pseudo-random
+        // target is uniform over the active view and breaks that pin.
         const Philox::Ctr rand = next_random_();
         const std::uint16_t target_idx = static_cast<std::uint16_t>(rand[0] % active_count_);
 
@@ -302,7 +290,6 @@ private:
         if (passive_count_ == 0) {
             return;
         }
-        // FIXY-U-107: Philox-derived eviction slot (was passive_cursor_).
         const Philox::Ctr rand = next_random_();
         const std::uint16_t idx = static_cast<std::uint16_t>(rand[0] % passive_count_);
         passive_[idx] = peer;
@@ -340,8 +327,8 @@ private:
         if (passive_count_ == 0 || active_count_ == config_.active_size.value()) {
             return;
         }
-        // FIXY-U-107: Philox-derived promotion pick (was passive_cursor_).
-        // Same partition-resistance rationale as shuffle_plan_.
+        // The random pick carries the same partition-healing argument as the
+        // shuffle plan.
         const Philox::Ctr rand = next_random_();
         const std::uint16_t idx = static_cast<std::uint16_t>(rand[0] % passive_count_);
         cog::CogIdentity promoted = passive_[idx];
@@ -350,17 +337,12 @@ private:
         ++active_count_;
     }
 
-    // FIXY-U-107 / fixy-A5-013: per-instance Philox RNG state replaces
-    // the old passive_cursor_ / shuffle_cursor_ round-robin pair.
-    // Seed mixes the UUIDs of every peer that joins active or passive
-    // (via add_active_ + add_passive_unique_), so two HyParView
-    // instances seeded with different membership history pick
-    // different shuffle sequences.  Counter increments monotonically
-    // per RNG call; replay is bit-stable for a given event sequence.
-    //
-    // mix_uuid_seed_ uses FNV-1a-style avalanche; cryptographic
-    // quality is not required (the goal is partition-healing, not
-    // adversarial unpredictability — see fixy-A5-013 commentary).
+    // The seed mixes the uuid of every peer that joins either view, so two
+    // instances with different membership history draw different sequences.
+    // The counter advances once per draw, so replaying one event sequence
+    // reproduces the same draws.  The goal is partition healing rather than
+    // unpredictability against an adversary, so this mix needs no
+    // cryptographic strength.
     [[nodiscard]] static constexpr std::uint64_t mix_uuid_seed_(std::uint64_t seed, cog::Uuid u) noexcept {
         seed ^= u.lo;
         seed = seed * 0x100000001b3ULL;
@@ -402,25 +384,11 @@ mint_hyparview(Ctx, std::span<const HyParViewPeer> active_peers = {}, std::span<
     return HyParViewMembership<MaxActive, MaxPassive>{config, active_peers, passive_peers};
 }
 
-// fixy-A5-030: recoverable admission path for HyParView construction.
-// `mint_hyparview` (above) and the peer-list constructor trap via
-// CRUCIBLE_FATAL_INVARIANT on input that violates capacity or peer-shape
-// preconditions — a daemon-killing surface for any caller that hasn't
-// pre-checked.  These two helpers expose the same checks as a
-// std::expected return so the caller can recover from over-capacity
-// inputs or malformed peer spans without aborting the process.
-//
-// Usage pattern (replaces the trapping ctor for untrusted inputs):
-//   auto admitted = admit_hyparview_config<MaxA, MaxP>(config);
-//   if (!admitted) { return diagnose(admitted.error()); }
-//   HyParViewMembership<MaxA, MaxP> m{*admitted};
-//   auto pop = populate_hyparview_membership(m, active_peers, passive_peers);
-//   if (!pop) { return diagnose(pop.error()); }
-//
-// `mint_hyparview` stays as the trusted-input convenience for sites that
-// have already validated (e.g. internal calls from a Cipher-restored
-// snapshot whose invariants are guaranteed by Crucible's persistence
-// discipline).
+// The mint above and the peer-list constructor abort on input that breaks a
+// capacity or peer-shape precondition.  The two helpers below run the same
+// checks and return the outcome, so a caller holding unchecked input recovers
+// instead of dying.  The mint stays the convenience for input that is already
+// known to be valid.
 template <std::size_t MaxActive, std::size_t MaxPassive>
     requires HyParViewShape<MaxActive, MaxPassive>
 [[nodiscard]] constexpr std::expected<HyParViewConfig, HyParViewError>
@@ -443,8 +411,8 @@ template <std::size_t MaxActive, std::size_t MaxPassive>
 populate_hyparview_membership(HyParViewMembership<MaxActive, MaxPassive>& membership,
                               std::span<const HyParViewPeer> active_peers,
                               std::span<const HyParViewPeer> passive_peers = {}) noexcept {
-    // Pre-check capacities against the admitted config so a partial-fill
-    // failure can't leave the membership in a half-populated state.
+    // Check both capacities before any insertion, so that a failure part way
+    // through cannot leave the membership half populated.
     if (active_peers.size() > membership.config().active_size.value()) {
         return std::unexpected(HyParViewError::ActiveViewFull);
     }

@@ -1,8 +1,6 @@
-// Tests for SwissTable.h — SIMD control-byte operations.
-//
-// Validates h2_tag range, BitMask iteration, CtrlGroup match / match_empty
-// for every position across kGroupWidth.  Exercises all three SIMD paths
-// (AVX-512, AVX2, SSE2, NEON, portable) through whichever the build uses.
+// The control-byte operations have one hand-written path per instruction
+// set. Whichever the build selects is the one these cases run, so the file
+// is only as wide as the machine it was built for.
 
 #include <crucible/SwissTable.h>
 
@@ -23,13 +21,11 @@ static constexpr size_t kGroupWidth = crucible::detail::group_width();
 static void test_h2_tag_range() {
     // Top 7 bits = 0..127, always non-negative as int8_t.
     // Bit 7 cleared to leave 0x80 distinct as the empty marker.
-    for (uint64_t h : {0ULL, 1ULL, 0xFFULL, 0xFE00'0000'0000'0000ULL,
-                      ~0ULL, 0x7F80'0000'0000'0000ULL}) {
+    for (uint64_t h : {0ULL, 1ULL, 0xFFULL, 0xFE00'0000'0000'0000ULL, ~0ULL, 0x7F80'0000'0000'0000ULL}) {
         int8_t tag = h2_tag(h);
         assert(tag >= 0);
         assert(tag != kEmpty);
     }
-    // Specific value checks.
     assert(h2_tag(0) == 0);
     assert(h2_tag(~0ULL) == 0x7F);  // high 7 bits all set
     assert(h2_tag(1ULL << 57) == 0x01);
@@ -54,7 +50,6 @@ static void test_bitmask_iteration() {
     m2.clear_lowest();
     assert(!static_cast<bool>(m2));
 
-    // Iteration pattern from the Swiss table hot path.
     BitMask m3{0xF0F0u};  // 8 bits set at positions 4,5,6,7,12,13,14,15
     uint32_t count = 0;
     uint32_t last = 0;
@@ -69,18 +64,22 @@ static void test_bitmask_iteration() {
 }
 
 static void test_group_match_empty() {
-    // All-empty group — match_empty returns a full mask.
     alignas(64) int8_t ctrl[kGroupWidth];
-    for (size_t i = 0; i < kGroupWidth; ++i) ctrl[i] = kEmpty;
+    for (size_t i = 0; i < kGroupWidth; ++i)
+        ctrl[i] = kEmpty;
     auto g = CtrlGroup::load(ctrl);
     auto empty = g.match_empty();
     assert(static_cast<bool>(empty));
     uint32_t n = 0;
-    while (empty) { empty.clear_lowest(); n++; }
+    while (empty) {
+        empty.clear_lowest();
+        n++;
+    }
     assert(n == kGroupWidth);
 
-    // No empty slots — all set to non-empty H2 tags.
-    for (size_t i = 0; i < kGroupWidth; ++i) ctrl[i] = static_cast<int8_t>(i & 0x7F);
+    // No empty slot: every byte is set to a non-empty tag.
+    for (size_t i = 0; i < kGroupWidth; ++i)
+        ctrl[i] = static_cast<int8_t>(i & 0x7F);
     g = CtrlGroup::load(ctrl);
     assert(!static_cast<bool>(g.match_empty()));
     std::printf("  test_match_empty:               PASSED\n");
@@ -111,8 +110,8 @@ static void test_group_match_tag() {
 }
 
 static void test_match_single_position() {
-    // Exercise every individual position across the group width to
-    // confirm the movemask / vpaddl reduction is positionally correct.
+    // Every position across the group width, one at a time, so that the
+    // reduction from vector lanes to a bitmask is checked at each index.
     for (size_t pos = 0; pos < kGroupWidth; ++pos) {
         alignas(64) int8_t ctrl[kGroupWidth];
         for (size_t i = 0; i < kGroupWidth; ++i)

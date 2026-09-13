@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * Topology XDP RX timestamp probe stub.
- *
- * Future role: capture NIC RX timestamp availability and path jitter evidence
- * for PTP/pingmesh policy. Current behavior: XDP_PASS.
- */
-
 #include "../../cntp/dataplane/bpf/net_common.h"
 
 #ifndef XDP_PASS

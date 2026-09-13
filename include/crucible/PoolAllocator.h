@@ -1,30 +1,17 @@
 #pragma once
 
-// PoolAllocator: materialize a MemoryPlan into one aligned heap allocation
-// plus a SlotId→void* table. Hot path (slot_ptr) is a single load; init /
-// destroy / detach are cold.
+// Turns a memory plan into one aligned allocation plus a table mapping each
+// slot to a pointer. Slots owned elsewhere are registered by the owner and
+// point outside the pool. The rest point into it.
 //
-// External slots (params, loader outputs, optimizer state) are owned by the
-// Vessel and registered via register_external(); internal slots point into
-// the pool. The pool and table are raw heap (not Linear<T>) because detach()
-// transfers ownership of the pool buffer out — Linear<T>'s move-consume
-// would couple buffer lifetime to this struct, defeating that use case.
+// The buffer and the table are raw heap rather than owning wrappers, because
+// detaching hands the buffer's ownership out to a separate sink. A wrapper
+// that consumed itself on move would tie the buffer's lifetime to this object
+// and make that impossible.
 //
-// Ownership: constructed and written by the background thread; read-only
-// from the foreground replay after init returns. Not movable — ptr_table_
-// entries are interior pointers into pool_.
+// One thread builds it and the replay path only reads it once initialisation
+// has returned.
 
-// FIXY-U-096f production migration: AllocClass / ScopedView / mint_view /
-// NonNull / no_scoped_view_field_check / Refined reached through the
-// fixy::wrap umbrella; saturating_add reached through fixy::struct_
-// (the safety/Checked.h free-function family re-exports under the
-// trailing-underscore namespace because `struct` is a C++ keyword).
-// PoolAllocator.h is a runtime-tier header (fan-in: ReplayEngine.h,
-// CrucibleContext.h) with no substrate-to-PoolAllocator edge — the full
-// fixy/Wrap.h + fixy/Struct.h umbrella is cycle-safe.  safety/Decide.h
-// stays: `crucible::decide::*` lives at top-level (not under safety::).
-// safety/Pre.h + safety/Post.h stay: CRUCIBLE_PRE / CRUCIBLE_POST are
-// macro substrate deps.
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/warden/Registry.h>
@@ -43,14 +30,10 @@
 
 namespace crucible {
 
-// ── PoolAllocator state tag ─────────────────────────────────────────
-// Used with safety::ScopedView to prove at compile time that the
-// allocator is in the Initialized state before slot_ptr / register_
-// external / detach are called.  Empty is implicitly the negation —
-// the only Empty-only public method is init(), which is a member
-// function and doesn't need an external view.
+// There is no tag for the empty state. The only method that requires it is
+// initialisation, which is reached through the object itself.
 namespace pool_state {
-struct Initialized {};  // init() succeeded, destroy() not yet called
+struct Initialized {};
 }  // namespace pool_state
 
 struct CRUCIBLE_OWNER PoolAllocator {
@@ -62,23 +45,19 @@ struct CRUCIBLE_OWNER PoolAllocator {
     PoolAllocator(PoolAllocator&&) = delete("ptr_table_ entries are interior pointers into pool_");
     PoolAllocator& operator=(PoolAllocator&&) = delete("ptr_table_ entries are interior pointers into pool_");
 
-    // 256B: matches compute_memory_plan() offsets; required for CUDA
-    // coalescing and AVX-512 vector loads.
+    // The planner lays out slot offsets on this boundary, and it is what
+    // coalesced device access and wide vector loads require.
     static constexpr uint32_t ALIGNMENT = 256;
 
-    // DetachedPool — raw aligned buffer owned by the detach site; frees on
-    // destruction. Non-copyable, non-movable: consumed via guaranteed copy
-    // elision (C++17 P0135).
+    // Owns a detached buffer and frees it. It is neither copyable nor movable
+    // and is still returned by value: guaranteed elision covers that, and the
+    // class-level nodiscard forces the caller to bind it to a named local
+    // rather than let a temporary free the buffer at the end of the statement.
     struct [[nodiscard]] CRUCIBLE_OWNER DetachedPool {
         void* base = nullptr;
         uint64_t bytes = 0;
 
         DetachedPool() = default;
-        // Owner ctor — carries a freshly-allocated buffer.  [[nodiscard]] at
-        // class level already prevents discarding the whole DetachedPool;
-        // the ctor doesn't need its own attribute but the class-level
-        // nodiscard makes accidental temporaries at the detach site a
-        // compile error — the caller must bind to a named local.
         DetachedPool(void* b, uint64_t n) noexcept : base{b}, bytes{n} {}
         ~DetachedPool() { std::free(base); }
 
@@ -88,46 +67,19 @@ struct CRUCIBLE_OWNER PoolAllocator {
         DetachedPool& operator=(DetachedPool&&) = delete("consumed at detach site via guaranteed elision");
     };
 
-    // Materialize a plan. Aborts on OOM — a pre-allocated runtime that can't
-    // allocate the plan has no recovery path. External slots start null and
-    // must be registered before replay. noexcept: failure mode is abort, not throw.
-    // Upper bounds on plan dimensions.  num_slots fits in a uint32_t
-    // by field type, but a 4 G × 8 B pointer table (32 GB) is absurd;
-    // cap at 1 M slots which covers real models with room.  pool_bytes
-    // caps at 256 GB (matches the Cipher load ceiling × 1024).
-    // Adversarial or corrupt MemoryPlan beyond these is rejected at the
-    // init boundary rather than allocating obscene amounts and failing
-    // the post-alloc checks.
-    static constexpr uint32_t kMaxNumSlots = 1u << 20;  // 1 M
-    static constexpr uint64_t kMaxPoolBytes = uint64_t{256} << 30;  // 256 GB
+    // Ceilings on what a plan may ask for. The slot count fits a 32-bit field,
+    // but a pointer table for the whole range would be tens of gigabytes, and
+    // a million slots covers a real model with room to spare. A plan past
+    // either ceiling is refused here rather than after an absurd allocation.
+    static constexpr uint32_t kMaxNumSlots = 1u << 20;
+    static constexpr uint64_t kMaxPoolBytes = uint64_t{256} << 30;
 
-    // CONTRACT-132: integer-bound pre clauses migrate from anonymous
-    // bare-`<=` to named `decide::in_range` cite.  Predicates reference
-    // a parameter pointer's members (plan->) rather than `this->`-
-    // members, so vanilla P2900 `pre()` is consteval-safe — the
-    // consteval-bypass family applies only to predicates touching the
-    // implicit object parameter.  Cite is purely about predicate-name
-    // grep-discoverability through the `decide::` catalog: any future
-    // adjustment to the bounds (e.g. raising kMaxPoolBytes) propagates
-    // through `decide::in_range` once instead of touching every site.
-    //
-    // The third clause (`plan->num_external <= plan->num_slots`)
-    // expresses a relational invariant between two same-instance
-    // members — no integer-bound cite fits, since the upper bound
-    // is a runtime value rather than a static constant.  Bare form
-    // is preserved.
-    //
-    // Cold init() path; semantic=enforce on the boundary TU is fine
-    // — the runtime cost is irrelevant on a once-per-allocator-init
-    // call site.
+    // Failure to allocate aborts. A runtime that preallocates everything up
+    // front has nowhere to retreat to when the up-front allocation fails.
+    // Externally owned slots start null and are registered before replay.
     [[gnu::cold, gnu::noinline]]
-    void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY pre(plan != nullptr)
-        pre(ptr_table_ == nullptr)  // double-init forbidden
-        pre(pool_ == nullptr)
-        // Refined bounds on plan dimensions — propagates as [[assume]]
-        // under release semantic=ignore so downstream uses of num_slots_
-        // and pool_bytes_ reason about bounded values.
-        pre(::crucible::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots))
+    void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY pre(plan != nullptr) pre(ptr_table_ == nullptr)
+        pre(pool_ == nullptr) pre(::crucible::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots))
             pre(::crucible::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes))
                 pre(plan->num_external <= plan->num_slots) {
         num_slots_ = plan->num_slots;
@@ -135,26 +87,21 @@ struct CRUCIBLE_OWNER PoolAllocator {
         pool_bytes_ = plan->pool_bytes;
 
         if (pool_bytes_ > 0) {
-            // 2 MB alignment when pool ≥ 2 MB (THP-eligible); else 256 B floor.
+            // A pool at least a huge page long is aligned to one so it can be
+            // backed by huge pages. Anything smaller takes the base alignment.
             const size_t page_align =
                 (pool_bytes_ >= crucible::warden::kHugePageBytes) ? crucible::warden::kHugePageBytes : ALIGNMENT;
-            // CONTRACT-127: the page-padding sum discharges through
-            // `decide::no_overflow_sum` over {pool_bytes_, page_align-1}.
-            // Pre-clauses on init() pin pool_bytes_ <= kMaxPoolBytes (256 GB)
-            // and page_align <= kHugePageBytes (2 MB), so the sum is always
-            // representable in uint64_t (well under 2^64).  saturating_add
-            // is defense-in-depth — it never actually saturates in production
-            // — but the cite makes the formal-VC link explicit so a future
-            // audit that re-derives the bound tightening (e.g., kMaxPoolBytes
-            // bumped to 1 TB) can verify the predicate stays true through
-            // the same grep target.
+            // The preconditions bound both operands far below the point where
+            // the sum could wrap, so the saturating form never saturates here.
+            // It is there so that raising either ceiling later cannot turn a
+            // rounding-up into a wrap.
             const uint64_t padded = ::crucible::fixy::struct_::saturating_add<uint64_t>(pool_bytes_, page_align - 1);
             const uint64_t alloc_size = padded & ~(page_align - 1);
             pool_ = std::aligned_alloc(page_align, alloc_size);
             if (!pool_) [[unlikely]]
                 std::abort();
 #ifndef NDEBUG
-            std::memset(pool_, 0xCD, alloc_size);  // 0xCD: uninit reads visible
+            std::memset(pool_, 0xCD, alloc_size);  // a read of unwritten pool memory stands out
 #endif
             const bool huge = (page_align == crucible::warden::kHugePageBytes);
             crucible::warden::register_hot_region(pool_, alloc_size,
@@ -166,34 +113,15 @@ struct CRUCIBLE_OWNER PoolAllocator {
             if (!ptr_table_) [[unlikely]]
                 std::abort();
 
-            // Internal slots: base + offset. External slots stay null (calloc'd).
+            // Externally owned slots stay null. The rest are the base plus
+            // their offset.
             //
-            // Overflow-checked bounds verification: an adversarial MemoryPlan
-            // with offset_bytes = UINT64_MAX - 100 and nbytes = 200 would
-            // produce offset+nbytes ≈ 100 — smaller than pool_bytes_, so the
-            // old `offset + nbytes <= pool_bytes` assertion passed while the
-            // slot actually wrapped past the end of the pool and into the
-            // allocator's metadata.  __builtin_add_overflow catches the wrap
-            // deterministically; the subsequent <= check then compares a real
-            // end offset.
-            //
-            // CONTRACT-127: the per-slot overflow-then-bound chain
-            // discharges formally through `decide::no_overflow_sum`
-            // (CONTRACT-031 catalog) over the 2-element span
-            // {slot.offset_bytes, slot.nbytes}: the predicate is true iff
-            // their running sum stays within uint64_t.  We do NOT replace
-            // the runtime `__builtin_add_overflow` with a `CRUCIBLE_PRE`
-            // because plan->slots[] is constructed by the build_trace bg
-            // thread from untrusted PyTorch shape input — the post-alloc
-            // recovery path (abort with diagnostic) is load-bearing for
-            // OOM-class corruption that the user-trust-boundary cannot
-            // structurally exclude.  The cite is purely the grep-discoverable
-            // VC discharge surface: a future audit that wants to count
-            // "operations guarded against integer-sum overflow" finds this
-            // site through one named predicate.  Future hardening
-            // (PROD-WRAP-7 lifting slot.{offset_bytes,nbytes} to
-            // Refined<bounded_above<kMaxPoolBytes>>) will tighten the
-            // structural invariant without changing the cite.
+            // The sum is checked for wrap before it is compared. An offset
+            // near the top of the range plus a modest size wraps to a small
+            // number, which then compares as comfortably inside the pool while
+            // the slot it describes runs off the end of it. The offsets come
+            // from shapes supplied by a foreign runtime, so this stays a
+            // runtime check with a diagnostic rather than a precondition.
             auto* base = static_cast<char*>(pool_);
             for (uint32_t s = 0; s < num_slots_; ++s) {
                 const auto& slot = plan->slots[s];
@@ -213,27 +141,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
                 }
             }
         }
-        // CONTRACT-127-POST: post-init lifecycle invariant — after init()
-        // succeeds, the four load-bearing fields agree with the supplied
-        // plan AND the heap allocations either succeeded or were skipped:
-        //   (1) num_slots_ matches plan->num_slots (member assignment
-        //       above; post catches a future refactor that adds an internal
-        //       round-up the same way RecipePool ctor's CONTRACT-109-POST
-        //       protects against — strict equality is the contract).
-        //   (2) pool_bytes_ matches plan->pool_bytes.
-        //   (3) pool_bytes_ > 0 ⇒ pool_ != nullptr (aligned_alloc on the
-        //       OOM path std::abort()s, so post-init reaching this point
-        //       implies success — the cite makes the structural invariant
-        //       grep-discoverable, mirroring KernelCache ctor).
-        //   (4) num_slots_ > 0 ⇒ ptr_table_ != nullptr (calloc on the OOM
-        //       path std::abort()s; same rationale as (3)).
-        // Routes through CRUCIBLE_POST because the predicates reference
-        // class members through `this->` and a `plan->` pointee — P2900
-        // `post (r:...)` is consteval-bypass-vulnerable per the GCC 16.1.1
-        // family.  Void return: first arg `0` is the conventional sentinel.
-        // `decide::implies` discharges the conditional-non-null shape
-        // (CONTRACT-081 catalog) — same predicate that armed CONTRACT-115's
-        // Expr ctor args/nargs companionship.
+        // A contract predicate that reads a member through `this` is skipped
+        // when the compiler folds the body at compile time, so every such
+        // check in this file runs from the body rather than a clause.
         CRUCIBLE_POST(0, num_slots_ == plan->num_slots);
         CRUCIBLE_POST(0, pool_bytes_ == plan->pool_bytes);
         CRUCIBLE_POST(0, ::crucible::decide::implies(pool_bytes_ > 0u, pool_ != nullptr));
@@ -250,17 +160,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
         pool_bytes_ = 0;
         num_slots_ = 0;
         num_external_ = 0;
-        // CONTRACT-127-POST: lifecycle reset — after destroy() the pool
-        // returns to its default-constructed shape so a subsequent init()
-        // sees the same pre()-pinned `ptr_table_ == nullptr && pool_ ==
-        // nullptr` invariants that gate first-time construction.  These 5
-        // posts moved from P2900 `post (...)` to in-body CRUCIBLE_POST
-        // because every clause references a class member through `this->`
-        // — the same consteval-bypass surface that drove CONTRACT-100..108
-        // -POST (and CONTRACT-116-POST + the CONTRACT-127-POST init()
-        // shape above).  Under NDEBUG these collapse to `[[assume]]` —
-        // downstream `is_initialized()` readers can speculate on the just
-        // -cleared fields.
+        // Back to the default-constructed shape, which is what a subsequent
+        // initialisation requires.
         CRUCIBLE_POST(0, pool_ == nullptr);
         CRUCIBLE_POST(0, ptr_table_ == nullptr);
         CRUCIBLE_POST(0, pool_bytes_ == 0u);
@@ -268,114 +169,51 @@ struct CRUCIBLE_OWNER PoolAllocator {
         CRUCIBLE_POST(0, num_external_ == 0u);
     }
 
-    // ── ScopedView-typed overloads ──────────────────────────────────────
-    //
-    // The supported API.  Callers obtain an InitializedView once per
-    // init/destroy cycle via `mint_initialized_view()` — the view
-    // construction fires the contract pre() that the pool is live.
-    // Downstream calls thread the view through; the type system
-    // guarantees slot_ptr / register_external / detach are reachable
-    // only when the pool is initialized.
+    // A caller takes one of these once per initialise-and-destroy cycle and
+    // threads it through. Minting it is where the liveness check happens, so
+    // the methods that require it are unreachable on a dead pool.
     using InitializedView = crucible::fixy::wrap::ScopedView<PoolAllocator, pool_state::Initialized>;
 
-    // Factory: mints an InitializedView for `*this`.  Contract fires if
-    // the pool is not actually initialized, matching the runtime guard.
     [[nodiscard]] CRUCIBLE_INLINE InitializedView mint_initialized_view() const noexcept pre(is_initialized()) {
         return crucible::fixy::wrap::mint_view<pool_state::Initialized>(*this);
     }
 
-    // Hot path — requires InitializedView proof.
+    // The alignment promise holds on both kinds of slot: an internal one is
+    // the aligned base plus an offset the initialisation loop asserts is a
+    // multiple of the alignment, and an external one is registered by an owner
+    // that aligns it. A null pointer satisfies any alignment, so the promise
+    // survives an external slot that has not been registered yet.
     //
-    // Contract pre()s carry into the body as [[assume]] hints:
-    //   - `sid.raw() < num_slots_` → indexed load compiles to a single
-    //     MOV with no runtime bounds check
-    //
-    // Static return-pointer promises:
-    //   - gnu::assume_aligned(ALIGNMENT) → the returned pointer is
-    //     known-aligned to 256 B at the type-system level; downstream
-    //     vector loads can use aligned-load intrinsics without a
-    //     runtime alignment check.  The 256 B alignment is enforced
-    //     by the init() loop's `slot.offset_bytes % ALIGNMENT == 0`
-    //     assert and the std::aligned_alloc base — both internal slots
-    //     (base + offset_bytes) and external slots (callers must
-    //     register only ALIGNMENT-aligned pointers — see
-    //     test_pool_allocator's `alignas(256)` discipline) satisfy
-    //     the promise.  Nullptr is alignment-trivially compliant
-    //     (zero is divisible by every power of two) so the attribute
-    //     remains valid for unregistered external slots that legally
-    //     return nullptr.
-    //
-    // NOT promised: gnu::returns_nonnull.  External slots that have
-    // not yet been registered legally return nullptr (callers
-    // discriminate via != nullptr); a non-null promise would brand
-    // the legitimate "external not yet bound" path as UB.  Callers
-    // wanting a non-null guarantee must guard with an explicit check
-    // OR use a future `slot_ptr_internal` overload that requires
-    // pre(!plan->slots[sid].is_external).
+    // There is deliberately no non-null promise. An external slot that has not
+    // been registered returns null and callers test for it, so promising
+    // non-null would make that legitimate path undefined.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline, gnu::assume_aligned(ALIGNMENT)]]
     inline void* slot_ptr(SlotId sid, InitializedView const&) const noexcept CRUCIBLE_LIFETIMEBOUND {
-        // CONTRACT-103: bounds gate discharges through decide::in_range
-        // (closed-interval scalar bounds-check predicate).  The
-        // `num_slots_ > 0u` companion guard is paired because
-        // `num_slots_ - 1u` underflows to UINT32_MAX when num_slots_==0,
-        // which would make `in_range(sid, 0, UINT32_MAX)` accept every
-        // value; production never calls slot_ptr on an uninitialized
-        // pool (InitializedView proves init() ran, which sets num_slots_
-        // > 0 from a non-null plan), but defense-in-depth catches a
-        // future refactor that exposes this path.
-        //
-        // In-body CRUCIBLE_PRE rather than P2900 `pre()` because pre()
-        // referencing class member `num_slots_` through `this->` is
-        // silently bypassed at consteval in GCC 16.1.1 — same gotcha
-        // as CONTRACT-100 / 101 / 102.
-        //
-        // Hot-path codegen unchanged: under NDEBUG, CRUCIBLE_PRE is
-        // exactly `[[assume(cond)]]` (Pre.h §NDEBUG branch), so the
-        // optimizer sees the same single-MOV target it always did.
+        // The count guard is not redundant with the range check: at a count of
+        // zero the upper bound below underflows to the largest value and the
+        // range admits everything. The view already proves the count is
+        // positive, so this catches a later change that opens the path.
         CRUCIBLE_PRE(num_slots_ > 0u);
         CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
         return ptr_table_[sid.raw()];
     }
 
-    // External registration — requires InitializedView proof.
     CRUCIBLE_INLINE void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr,
                                            InitializedView const&) noexcept {
         CRUCIBLE_PRE(num_slots_ > 0u);
         CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
         ptr_table_[sid.raw()] = ptr.value();
-        // CONTRACT-103-POST: state-mutation contract — after register_external
-        // returns, ptr_table_[sid.raw()] reflects the freshly-registered
-        // pointer.  Catches a future refactor that drops the assignment
-        // (or writes to the wrong slot index, e.g. via an off-by-one
-        // refactor on sid.raw()).  Routes through CRUCIBLE_POST because
-        // P2900 `post (r: ...)` referencing a class member through
-        // `this->` (`ptr_table_`) is silently bypassed at consteval in
-        // GCC 16.1.1 — same family as the in-body pre above.  Void
-        // function: first arg is the conventional sentinel `0`.  Under
-        // NDEBUG collapses to `[[assume(...)]]` — downstream slot_ptr()
-        // readers can speculate on the just-written value.
         CRUCIBLE_POST(0, ptr_table_[sid.raw()] == ptr.value());
     }
 
-    // Raw table for inner loops that want to hoist the indirection:
-    //   auto view = pool.mint_initialized_view();
-    //   void* const* tbl = pool.table(view);
-    //   for (...) p = tbl[sid.raw()];   // one load per access
-    //
-    // Returning the raw table escapes the slot_ptr per-call contract
-    // (sid bounds check, alignment proof) — which means the caller
-    // takes responsibility for those invariants on every dereference.
-    // To keep that escape gated by the type system, the typed overload
-    // requires an InitializedView proof.  Combined with
-    // gnu::returns_nonnull (the table pointer is non-null whenever the
-    // pool is initialized — established by init() and posted by
-    // is_initialized() being the view's predicate), callers receive a
-    // statically-non-null table pointer with no runtime check.
+    // The raw table, for an inner loop that wants to hoist the indirection out
+    // of itself. It escapes the per-call bounds and alignment guarantees, so
+    // the caller owns those on every dereference from then on. The view is
+    // required so that the escape is at least gated on the pool being live.
     [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE void* const*
     table(InitializedView const&) const noexcept CRUCIBLE_LIFETIMEBOUND {
-        // The view's view_ok predicate is is_initialized(), which is
-        // ptr_table_ != nullptr; the [[assume]] propagates that fact for
-        // downstream callers and matches the gnu::returns_nonnull promise.
+        // What the view already proves, restated for the optimiser so it
+        // matches the non-null promise on the return type.
         [[assume(ptr_table_ != nullptr)]];
         return ptr_table_;
     }
@@ -386,100 +224,59 @@ struct CRUCIBLE_OWNER PoolAllocator {
     [[nodiscard, gnu::pure]] uint32_t num_external() const noexcept { return num_external_; }
     [[nodiscard, gnu::pure]] bool is_initialized() const noexcept { return ptr_table_ != nullptr; }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // FOUND-G42: AllocClass-pinned production surface
-    // ═══════════════════════════════════════════════════════════════════
+    // The same values, with their allocation tier carried in the return type.
+    // A slot pointer comes out of a preallocated table, which is the pool
+    // tier, and pinning it there rejects a caller that would take it as stack
+    // memory, which is the stronger claim of having no allocator behind it.
     //
-    // The PoolAllocator hot-path surface (slot_ptr) returns AllocClass<
-    // AllocClassTag_v::Pool, void*> — a slot pointer is sourced from a
-    // preallocated freelist (the ptr_table_ + pool_ machinery), which by
-    // the AllocClass lattice is Pool tier (HugePage ⊑ Mmap ⊑ Heap ⊑
-    // Arena ⊑ Pool ⊑ Stack).
-    //
-    // pool_base() returns Pool tier as the SAFE pinning: when init() was
-    // called with pool_bytes ≥ kHugePageBytes, the underlying allocation
-    // is huge-page-aligned (HugePage), which is WEAKER than Pool — so
-    // claiming Pool tier ALWAYS holds.  Callers wanting the stronger
-    // huge-page-aligned guarantee can call pool_base_huge_pinned(), which
-    // requires `pool_bytes_ >= kHugePageBytes` as a precondition.
-    //
-    // Why additive (not replacing): the raw slot_ptr / pool_base surface
-    // is consumed by ReplayEngine, CrucibleContext, and several Vigil
-    // paths; a churn migration without immediate benefit is rejected.
-    // The _pinned variants are for NEW production sites that explicitly
-    // want the type-level fence.
-    //
-    // Cost: each pinned variant is a one-line forward to the raw call
-    // followed by an EBO-collapsed AllocClass wrapping (sizeof wrapper
-    // == sizeof(void*)).  Constructor is a single move; the [[nodiscard,
-    // gnu::pure, gnu::hot]] attributes are preserved on the slot_ptr
-    // variant so the optimizer treats the call identically to the raw.
-
-    // Hot path — returns AllocClass<Pool, void*>, requires InitializedView.
-    // Pinning Pool tier rejects callers that would accept the slot
-    // pointer at AllocClass<Stack, ...> — Stack is STRONGER than Pool
-    // (no allocator at all), and slot pointers DO go through an
-    // allocator at init time.
+    // The pool tier is also the safe claim for the base pointer. When the pool
+    // is large enough to be huge-page aligned its tier is weaker than pool, so
+    // the pool claim holds either way. The huge-page variant below states the
+    // stronger one and fences the small case out with a precondition.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
     inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>
     slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept CRUCIBLE_LIFETIMEBOUND {
-        // The bounds gate is enforced at the inner slot_ptr call below
-        // (CONTRACT-103 cite); slot_ptr_pinned is a thin wrapper that
-        // adds the AllocClass<Pool, void*> EBO-collapsed pin.  No
-        // duplicate cite — the inner CRUCIBLE_PRE pair fires once.
         return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>{
             slot_ptr(sid, view)};
     }
 
-    // Pool-tier-pinned base pointer.  This is the SAFE pinning: when
-    // pool_bytes_ < kHugePageBytes, the buffer is 256B-aligned (Pool
-    // tier).  When pool_bytes_ ≥ kHugePageBytes, the buffer is 2MB-
-    // aligned (HugePage tier, weaker than Pool — Pool claim still
-    // holds).
-    //
-    // Returned pointer can be null when pool_bytes_ == 0; callers must
-    // discriminate via the AllocClass::peek() result.
+    // Null when the pool has no bytes, so the caller inspects the result.
     [[nodiscard, gnu::pure]]
     inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>
     pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
         return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>{pool_};
     }
 
-    // HugePage-tier-pinned base pointer.  Requires pool_bytes_ ≥
-    // kHugePageBytes — when this precondition holds, init() chose
-    // page_align = kHugePageBytes and the returned pointer is 2MB-
-    // aligned.  Callers wanting to declare "I require huge-page-backed
-    // memory" use this overload; the precondition fence rejects the
-    // small-pool case at the boundary.
+    // The precondition is what makes the stronger claim true: it is exactly
+    // the condition under which initialisation chose the huge-page alignment.
     [[nodiscard, gnu::pure]]
     inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::HugePage, void*>
     pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND pre(pool_bytes_ >= crucible::warden::kHugePageBytes) {
         return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::HugePage, void*>{pool_};
     }
 
-    // ── ScopedView predicates (ADL-discovered by safety::mint_view) ──
+    // Found by argument-dependent lookup from the view factory.
     [[nodiscard]] friend constexpr bool view_ok(PoolAllocator const& p,
                                                 std::type_identity<pool_state::Initialized>) noexcept {
         return p.is_initialized();
     }
 
-    // Release pool_ to a DetachedPool, then reset this allocator to empty.
-    // Used by CrucibleContext::switch_region() to keep old pool data alive
-    // while initializing the alternate region.
+    // Hands the buffer out and empties this allocator, which lets a caller
+    // keep the old data alive while it builds the replacement.
     [[nodiscard, gnu::cold]]
     DetachedPool detach() noexcept pre(pool_ != nullptr) {
         void* p = pool_;
         uint64_t n = pool_bytes_;
         crucible::warden::unregister_hot_region(p);
-        pool_ = nullptr;  // destroy() skips free since pool_==nullptr
+        // Cleared before the reset so that the reset does not free a buffer
+        // whose ownership has already moved to the return value.
+        pool_ = nullptr;
         destroy();
         return DetachedPool{p, n};
     }
 
-    // Typed detach — requires an InitializedView to prove the pool is live.
-    // After the call the view is semantically stale (the underlying pool is
-    // empty); callers should not use it further.  The view's deleted op=
-    // already prevents them from refreshing it by assignment.
+    // The view is stale once this returns, since the pool it vouched for is
+    // now empty. It cannot be refreshed by assignment either.
     [[nodiscard, gnu::cold]]
     DetachedPool detach(InitializedView const&) noexcept {
         void* p = pool_;
@@ -491,11 +288,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
     }
 
 private:
-    // Raw pointers (not Linear<T>) because detach() moves pool_ out to a
-    // separate RAII sink; Linear<T>'s consume-on-move would couple the
-    // buffer's lifetime to the allocator instance.
-    void* pool_ = nullptr;  // one aligned allocation, pool_bytes_ long
-    void** ptr_table_ = nullptr;  // SlotId.raw() → data pointer
+    void* pool_ = nullptr;
+    void** ptr_table_ = nullptr;
     uint64_t pool_bytes_ = 0;
     uint32_t num_slots_ = 0;
     uint32_t num_external_ = 0;
@@ -504,11 +298,8 @@ private:
 static_assert(sizeof(PoolAllocator) == 32, "PoolAllocator layout: 2 ptrs + u64 + 2*u32");
 static_assert(alignof(PoolAllocator) == 8);
 
-// Tier 2 opt-in: nothing inside PoolAllocator may be a ScopedView.
-// ScopedViews must not outlive their construction scope, so storing
-// one in a field would be an escape.  GCC 16 reflection walks the
-// struct at compile time and fails this if any member (even nested
-// through optional / vector / variant / etc.) is a ScopedView.
+// A view must not outlive the scope it was minted in, so storing one in a
+// field would let it escape. This walks the struct, nested members included.
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<PoolAllocator>());
 
 }  // namespace crucible

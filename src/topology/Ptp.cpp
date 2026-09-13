@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/handles/FileHandle.h>
-#include <crucible/safety/ClockSource.h>  // FIXY-V-201: PtpHwClockBytes
+#include <crucible/safety/ClockSource.h>
 
 #include <array>
 #include <cerrno>
@@ -25,11 +25,6 @@ namespace crucible::topology {
 
 namespace {
 
-// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
-// FileHandle already exposes the .release() semantics Ptp.cpp uses to
-// hand the fd to PtpClockFd's Trusted-ctor — the migration is 1:1 for
-// is_open()/get()/release() and tightens the ctor contract via
-// CRUCIBLE_PRE(Fd::is_valid_pattern(fd)).
 using LocalFd = ::crucible::safety::FileHandle;
 
 [[nodiscard]] constexpr clockid_t clockid_from_fd(PtpClockFd fd) noexcept {
@@ -222,17 +217,10 @@ std::expected<PtpTimestampNs, PtpError> ptp_now(PtpClockFd fd) noexcept {
         static_cast<void>(errno);
         return std::unexpected(PtpError::ClockReadFailed);
     }
-    // FIXY-V-201: mint a PtpHwClockBytes<u64> at the syscall boundary so
-    // the lattice-projected (MonotonicClockRead, KeepsTicking,
-    // NotRequired) tuple becomes the type-level provenance of this read.
-    // The public return remains PtpTimestampNs (Tagged<u64, source::Ptp>)
-    // — timestamp_from_timespec applies the (sec, nsec) → ns conversion
-    // and PtpError::TimestampOverflow gate.  PtpHwClockBytes is regime-1
-    // EBO-collapsed (sizeof = sizeof(u64)); the consume() reads it back
-    // out for the conversion call.  The provenance witness is what
-    // matters here — future federation-cache keys discriminate ptp_now
-    // results from CLOCK_BOOTTIME results even though both project to
-    // the same (DetSafe, Suspend, Pinning) tuple.
+    // The mint is a provenance witness.  It fixes at the type level that this
+    // reading comes from the PTP hardware clock and not from some other clock
+    // source.  Its value is discarded because the conversion and the overflow
+    // gate both run on the timespec.
     auto bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::PtpHwClock, std::uint64_t>(
         static_cast<std::uint64_t>(ts.tv_sec >= 0 ? ts.tv_sec : 0) * 1'000'000'000ull
         + static_cast<std::uint64_t>(ts.tv_nsec >= 0 ? ts.tv_nsec : 0));
@@ -259,16 +247,14 @@ std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd con
         .tx_type = HWTSTAMP_TX_ON,
         .rx_filter = HWTSTAMP_FILTER_ALL,
     };
-    // fixy-A5-027: NicInterfaceName::max_bytes is the project-wide cap
-    // on stored bytes; ifr_name is char[IFNAMSIZ].  If max_bytes ever
-    // grows past IFNAMSIZ, the trailing-NUL write below would land
-    // one byte off the end of ifr_name.  Catch that at compile time.
+    // The kernel declares ifr_name as char[IFNAMSIZ].  If max_bytes ever grows
+    // past IFNAMSIZ, the trailing-NUL write below lands one byte past the end
+    // of ifr_name.
     static_assert(::crucible::cntp::NicInterfaceName::max_bytes <= IFNAMSIZ,
                   "NicInterfaceName max bytes exceeds kernel ifr_name");
-    // NicInterfaceName::from rejects size >= max_bytes, so view().size()
-    // is strictly less than max_bytes <= IFNAMSIZ — the [size] write
-    // lands at index ≤ IFNAMSIZ-1.  Runtime guard documents the
-    // structural invariant; under -DNDEBUG it folds to [[assume]].
+    // NicInterfaceName::from rejects a size at or above max_bytes, so
+    // view().size() is strictly below max_bytes, which is at most IFNAMSIZ.
+    // The trailing-NUL write therefore lands at index IFNAMSIZ - 1 or lower.
     CRUCIBLE_INVARIANT(iface.view().size() < IFNAMSIZ);
     ifreq request{};
     std::memcpy(request.ifr_name, iface.view().data(), iface.view().size());

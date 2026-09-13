@@ -1,12 +1,5 @@
 #pragma once
 
-// Bounded Scuttlebutt anti-entropy substrate for Canopy.
-//
-// This header owns digest / diff / delta bookkeeping for CRDT state.
-// Transport is deliberately outside this layer: callers carry digests,
-// requests, and typed deltas over SWIM piggyback, CNTP, or a future
-// offloaded gossip path.
-
 #include <crucible/Platform.h>
 #include <crucible/canopy/Crdt.h>
 #include <crucible/canopy/Swim.h>
@@ -256,7 +249,6 @@ public:
     explicit ScuttlebuttSync(peer_type local_peer, std::span<const peer_type> initial_peers = {},
                              ScuttlebuttConfig config = {}) noexcept
         : config_{config} {
-        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
         local_index_ = std::uint16_t{0};
         for (peer_type const& peer : initial_peers) {

@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * Observe ECN sample stub.
- *
- * Future role: passive ECN sample stream for dashboards and offline policy
- * evaluation. Current behavior: no-op tracepoint handler.
- */
-
 #include "../../cntp/dataplane/bpf/net_common.h"
 
 struct {

@@ -1,109 +1,26 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — CheckpointedSession combinator
-//                            (SEPLOG-L2, task #362, Appendix D.2)
+// A session position where the participant holds a checkpoint and can
+// go on along the base protocol or fall back to the rollback protocol.
 //
-// CheckpointedSession<ProtoBase, ProtoRollback> is a FIRST-CLASS
-// STRUCTURAL COMBINATOR marking a session position where the
-// participant has captured a checkpoint and can, by their own
-// decision, either proceed as ProtoBase (the normal, "commit" path)
-// OR fall back to ProtoRollback (the abort/retry path).  The
-// decision is LOCAL to the checkpoint-holder.
+// The distinction from Select is that this decision is local.  A Select
+// announces the chosen branch to the peer on the wire.  A checkpoint
+// decision does not, so the mechanism that captured the state and the
+// mechanism that decides sit outside the protocol entirely.
 //
-// ─── Motivation ────────────────────────────────────────────────────
+// Only the type-level contract lives here.  Both branches are
+// individually well-typed, and nothing in the framework captures or
+// restores the state that gives rollback its meaning.  An application
+// that wants a rollback to undo anything wires that in itself, before
+// it takes the rollback branch.
 //
-// Several Crucible protocols have rollback semantics that aren't
-// expressible as a plain Select (which advertises the choice to the
-// peer on the wire):
-//
-//   * Speculative decoding — draft model produces candidate tokens;
-//     target model verifies; on verify-reject, state rewinds and
-//     redraft proceeds.  (CRUCIBLE.md §IV.29)
-//   * Transaction (#101) — Begin/Op/Commit or Begin/Op/Rollback.
-//     The Transaction pattern in SessionPatterns.h expresses this
-//     via an explicit Select; CheckpointedSession expresses the
-//     LOCAL-decision variant where the state-capture mechanism is
-//     out-of-band.
-//   * FLR recovery — running session preserved across hardware fault;
-//     checkpoint loads at the point of recovery.
-//
-// The combinator does NOT ship runtime checkpoint/rollback state
-// management (that's application-level, typically integrated with
-// Cipher or a transaction-manager).  It ships the TYPE-LEVEL
-// contract: the session either continues as ProtoBase or restarts
-// as ProtoRollback, and both paths are individually well-typed.
-//
-// ─── Combinator algebra ────────────────────────────────────────────
-//
-//     dual(CheckpointedSession<P, R>)
-//         = CheckpointedSession<dual(P), dual(R)>
-//
-//     compose(CheckpointedSession<P, R>, Q)
-//         = CheckpointedSession<compose(P, Q), compose(R, Q)>
-//
-//     is_well_formed(CheckpointedSession<P, R>, LoopCtx)
-//         = is_well_formed(P, LoopCtx) ∧ is_well_formed(R, LoopCtx)
-//
-//     is_subtype_sync(CheckpointedSession<P1, R1>,
-//                      CheckpointedSession<P2, R2>)
-//         = is_subtype_sync(P1, P2) ∧ is_subtype_sync(R1, R2)
-//         (product subtyping — both branches refine independently)
-//
-// ─── Handle semantics ──────────────────────────────────────────────
-//
-// SessionHandle<CheckpointedSession<P, R>, Res, LoopCtx> exposes
-// two terminal transitions:
-//
-//     handle.base()      -> SessionHandle<P, Res, LoopCtx>
-//     handle.rollback()  -> SessionHandle<R, Res, LoopCtx>
-//
-// Both methods are `&&`-qualified (consume *this).  The user picks
-// ONE of them based on their application-level checkpoint-decision
-// logic.  After picking, the checkpoint capability is gone; the
-// returned handle drives the chosen protocol normally.
-//
-// The framework does NOT automatically restore state on rollback.
-// The application wires that in — e.g., Transaction.h captures a
-// state snapshot before .base() and loads it before .rollback() if
-// the transaction aborts.  The TYPE system guarantees that both
-// paths produce well-typed handles; the RUNTIME semantics of
-// "rollback" is application-defined.
-//
-// ─── Event-log integration ─────────────────────────────────────────
-//
-// The bare SessionHandle below remains zero-overhead and does not own
-// a log pointer.  Replay/audit users wrap it with
-// bridges/RecordingSessionHandle.h; that wrapper records
-// SessionOp::Checkpoint_Base / SessionOp::Checkpoint_Rollback into
-// SessionEventLog before advancing into the chosen branch (GAPS-051).
-//
-// ─── Compose rule rationale ────────────────────────────────────────
-//
-// compose<CheckpointedSession<P, R>, Q> could reasonably extend
-// only the base (P;Q but not R;Q), extend both (P;Q AND R;Q), or
-// be undefined.  We pick "extend both" because:
-//
-//   1. It matches the intuition that Q is "what the participant
-//      does AFTER the checkpointed transaction completes".  The
-//      transaction completes via either branch; Q sequences after
-//      both.
-//   2. It's the only option that makes compose commute with dual:
-//      dual(compose(C<P,R>, Q)) == compose(dual(C<P,R>), dual(Q))
-//      holds iff both branches get Q.
-//   3. Asymmetric extension (P;Q, R unchanged) would be useful for
-//      "Q happens only on commit" semantics, but that's expressible
-//      directly as CheckpointedSession<compose<P, Q>, R> without
-//      needing a compose rule — users write it by hand.
-//
-// ─── References ────────────────────────────────────────────────────
-//
-//   Vieira-Parreaux-Wasowicz 2008 — transactional session types;
-//     origin of rollback as a protocol-level concern.  Our version
-//     is simpler (no coordinated distributed rollback); applications
-//     can layer coordination on top.
-//   session_types.md Appendix D.2 — Crucible's specification sketch.
-// ═══════════════════════════════════════════════════════════════════
+// Composition extends both branches rather than the base alone.  The
+// checkpointed stretch is over once either branch is taken, so whatever
+// follows follows both.  It is also the only choice under which
+// composition commutes with duality, since dualising distributes over
+// the branches.  Extending the base alone would express "this happens
+// only on commit", but that already has a spelling: put the composition
+// inside the base branch by hand.
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
@@ -116,20 +33,11 @@
 
 namespace crucible::safety::proto {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Combinator type ────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Pure type marker — zero runtime footprint.  Nested aliases expose
-// each branch for metaprogramming.
-
 template <typename ProtoBase, typename ProtoRollback>
 struct CheckpointedSession {
     using base = ProtoBase;
     using rollback = ProtoRollback;
 };
-
-// ─── Shape traits ─────────────────────────────────────────────────
 
 template <typename P>
 struct is_checkpointed_session : std::false_type {};
@@ -139,8 +47,6 @@ struct is_checkpointed_session<CheckpointedSession<B, R>> : std::true_type {};
 
 template <typename P>
 inline constexpr bool is_checkpointed_session_v = is_checkpointed_session<P>::value;
-
-// ─── Branch extractors ────────────────────────────────────────────
 
 template <typename P>
 struct checkpoint_base;
@@ -162,157 +68,45 @@ using checkpoint_base_t = typename checkpoint_base<P>::type;
 template <typename P>
 using checkpoint_rollback_t = typename checkpoint_rollback<P>::type;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── dual_of<CheckpointedSession<P, R>> ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Both branches dualise independently.  Peer sees a mirror-shaped
-// checkpointed session whose branches are the duals of ours.
+// The peer sees a mirror-shaped checkpoint whose branches are the duals
+// of this side's branches.
 
 template <typename B, typename R>
 struct dual_of<CheckpointedSession<B, R>> {
     using type = CheckpointedSession<typename dual_of<B>::type, typename dual_of<R>::type>;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_dual_involutive<CheckpointedSession<B, R>> (fixy-A2-003) ────
-// ═════════════════════════════════════════════════════════════════════
-//
-// fixy-A2-003 — without this specialization, the primary template at
-// Session.h:687 would silently report TRUE for any CheckpointedSession
-// shape, even when B or R contains a Sender-annotated Offer (which is
-// the canonical non-involutive shape per fixy-CR-11).  Since dual_of
-// distributes through both branches independently (above),
-// `dual(dual(CheckpointedSession<B, R>)) =
-//  CheckpointedSession<dual(dual(B)), dual(dual(R))>` equals the
-// original iff BOTH branches are dual-involutive.
-//
-// Generic code that gates on `is_dual_involutive_v<P>` — e.g.,
-// SessionPatterns.h `refines_self_and_double_dual_v`, dual-commuting
-// rewrites — would otherwise admit a Checkpoint-wrapped non-involutive
-// protocol and produce wrong types under the round-trip.
+// Dualising distributes over the branches, so the round trip returns
+// the original protocol only when both branches survive it.
 
 template <typename B, typename R>
 struct is_dual_involutive<CheckpointedSession<B, R>>
     : std::bool_constant<is_dual_involutive<B>::value && is_dual_involutive<R>::value> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_empty_choice<CheckpointedSession<B, R>> (fixy-A2-004) ───────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Symmetric to SessionDelegate.h:938-957's recursive specializations
-// for Delegate / Accept / EpochedDelegate / EpochedAccept (the
-// fixy-CR-14 reachability sweep).  Pre-fix CheckpointedSession had no
-// specialization, so the primary template at Session.h:534
-// (`is_empty_choice<P>:std::false_type`) silently returned FALSE for
-// any CheckpointedSession<B, R> regardless of inner content — which
-// admitted `CheckpointedSession<Select<>, End>` and
-// `CheckpointedSession<Loop<Select<End, Send<int, Offer<>>>>, End>`
-// past the `is_empty_choice_v` mint gates at Session.h:2396 and
-// PermissionedSession.h:1923 (fixy-CR-14 closed the gap for plain
-// Select<>/Offer<> recursion but not the checkpointed-wrapped form).
-//
-// Post-fix `is_empty_choice<CheckpointedSession<B, R>>` distributes
-// disjunctively over B and R, matching the SessionDelegate.h
-// convention (an empty Choice in EITHER branch is a defect because
-// rollback OR forward progress would be ill-defined).  Rationale:
-// CheckpointedSession represents Try(B) | RollbackTo(R) — both arms
-// are reachable at runtime via rollback/abandon, so empty Choice in
-// EITHER branch fails the reachability invariant the mint gate
-// enforces.
-//
-// Orthogonal to `is_well_formed<CheckpointedSession<B, R>, LoopCtx>`
-// (lines 282-329 below, fixy-A2-024 doc companion): this trait
-// answers "is any reachable Choice in B or R empty?"; well-formedness
-// answers "is every Continue inside B or R enclosed by some Loop in
-// the surrounding context?".  Both must pass at `mint_session_handle`
-// (Session.h:2422) before a SessionHandle is constructible — each
-// gate fires its own classified diagnostic, neither subsumes the
-// other.
+// Both arms are reachable, so a choice with no branches in either one
+// is a defect: whichever arm is taken would have nothing to pick and
+// the peer nothing to signal.
 
 template <typename B, typename R>
 struct is_empty_choice<CheckpointedSession<B, R>>
     : std::bool_constant<is_empty_choice<B>::value || is_empty_choice<R>::value> {};
-
-// ═════════════════════════════════════════════════════════════════════
-// ── compose<CheckpointedSession<P, R>, Q> ──────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Q extends BOTH branches — once the checkpointed transaction ends
-// (via either path), Q sequences after.  Rationale in file header.
 
 template <typename B, typename R, typename Q>
 struct compose<CheckpointedSession<B, R>, Q> {
     using type = CheckpointedSession<typename compose<B, Q>::type, typename compose<R, Q>::type>;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_well_formed<CheckpointedSession<P, R>, LoopCtx> (fixy-A2-024)
-// ═════════════════════════════════════════════════════════════════════
-//
-// Both branches must be well-formed under the same LoopCtx.  The
-// checkpointed session itself doesn't introduce a new Loop scope.
-//
-// ── Relationship with is_empty_choice<CheckpointedSession> ─────────
-//
-// fixy-A2-024 closes the documentation companion gap left by A2-004.
-// `is_well_formed` and `is_empty_choice` are INTENTIONALLY ORTHOGONAL
-// traits — they answer different questions about the same protocol:
-//
-//   • `is_well_formed<P, LoopCtx>` governs STRUCTURAL placement of
-//     Continue / Loop.  Every Continue must have a Loop above it in
-//     the protocol tree.  A CheckpointedSession itself does not open a
-//     new Loop scope (LoopCtx threads through unchanged to both
-//     branches), so a `Continue` inside B or R is only well-formed if
-//     the surrounding context provides the Loop.
-//
-//   • `is_empty_choice<P>` (lines 222-225) governs RUNNABILITY of
-//     reachable choice positions.  An empty `Select<>` / `Offer<>`
-//     buried at any reachable depth in B OR R is rejected because
-//     `.pick<I>()` would have no branch and the peer would have no
-//     label to signal.
-//
-// The two traits are NOT redundant: a `CheckpointedSession<End, End>`
-// is well-formed AND non-empty-choice (passes both); a
-// `CheckpointedSession<Continue, End>` (outside Loop) is ill-formed
-// but vacuously non-empty-choice; a `CheckpointedSession<Select<>, End>`
-// is well-formed but empty-choice.  Each gate catches a defect class
-// the other cannot see, by design.
-//
-// ── Composition at mint_session_handle ─────────────────────────────
-//
-// `mint_session_handle<Proto>(resource)` (Session.h:2422) is the
-// CANONICAL composition site for both gates.  It fires:
-//
-//   1. `static_assert(is_well_formed_v<Proto>, [Protocol_Ill_Formed])`
-//   2. `static_assert(!is_empty_choice_v<Proto>, [Empty_Choice_Combinator])`
-//
-// in that order — structural well-formedness is checked first because
-// it is the more fundamental defect (Continue placement is a property
-// of the protocol's TREE, while empty-choice is a property of the
-// protocol's RUNNABILITY).  For CheckpointedSession, BOTH traits
-// recurse into BOTH branches, so a defect in EITHER B or R surfaces a
-// clean diagnostic at the mint site.
-//
-// A user expecting "well-formed implies runnable" should remember
-// that the two traits answer orthogonal questions; the runnability
-// rejection from `[Empty_Choice_Combinator]` is independent of the
-// structural answer from `[Protocol_Ill_Formed]`.  Both must pass
-// before `mint_session_handle` returns a SessionHandle.
+// A checkpoint opens no loop scope of its own, so the enclosing loop
+// context reaches both branches unchanged.  A loop-closing step inside
+// a branch is well-formed only when the surrounding context supplies
+// the loop.
 
 template <typename B, typename R, typename LoopCtx>
 struct is_well_formed<CheckpointedSession<B, R>, LoopCtx>
     : std::bool_constant<is_well_formed<B, LoopCtx>::value && is_well_formed<R, LoopCtx>::value> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_subtype_sync: product subtyping ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// CheckpointedSession<P1, R1> ⩽ CheckpointedSession<P2, R2>
-//     iff  P1 ⩽ P2  ∧  R1 ⩽ R2
-//
-// Each branch refines independently — matches the intuition that a
-// narrower base + narrower rollback is a refinement of a wider pair.
+// Each branch refines on its own, so a narrower base paired with a
+// narrower rollback refines the wider pair.
 
 template <typename B1, typename R1, typename B2, typename R2>
 struct is_subtype_sync_structural<CheckpointedSession<B1, R1>, CheckpointedSession<B2, R2>>
@@ -326,84 +120,17 @@ struct protocol_grade_satisfies<CheckpointedSession<B1, R1>, CheckpointedSession
 
 }  // namespace detail::subtype
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_terminal_state<CheckpointedSession<B, R>> (fixy-A2-029) ─────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `CheckpointedSession<B, R>` represents a handle whose owner will
-// commit to EITHER B (via `.base()`) or R (via `.rollback()`) before
-// closing.  The handle is structurally at a terminal state ONLY when
-// BOTH branches are independently terminal — picking either one then
-// advances to a position the type system already classifies as
-// destructible-without-abandonment (End, Stop_g<C>, or a
-// VendorPinned-wrapped terminal).
-//
-// Pre-fix the primary `is_terminal_state` template (Session.h:1132)
-// answered `false` for every `CheckpointedSession<...>` regardless of
-// branch contents.  That made the SessionHandleBase destructor's
-// abandonment check (Session.h:1699) FALSE-NEGATIVE for the legitimate
-// `CheckpointedSession<End, End>` case: dropping the handle aborted
-// even though both branches were trivially closed.  Worse, the
-// asymmetry meant code that introspects `is_terminal_state_v<P>`
-// (e.g. `is_well_formed<Loop<B>>` at Session.h:1105-1108, which rejects
-// terminal loop bodies under fixy-A2-020) silently disagreed with the
-// branch-conjunction convention used by every OTHER CheckpointedSession
-// trait (is_well_formed, is_empty_choice, is_dual_involutive,
-// is_subtype_sync, all_offers_have_crash_branch — all conjunctive AND
-// folds over base and rollback).
-//
-// Post-fix the trait answers the conjunctive question: "are BOTH
-// branches terminal?".  This:
-//   * Lets `CheckpointedSession<End, End>`, `CheckpointedSession<Stop_g<C>, End>`,
-//     `CheckpointedSession<End, Stop_g<C>>`, and any twin-terminal
-//     combination drop cleanly without abandonment abort.
-//   * Closes the silent admission of `Loop<CheckpointedSession<End, End>>`
-//     (terminal loop body, equivalent to `Loop<End>` which fixy-A2-020
-//     already rejects).
-//   * Recurses through the same trait so VendorPinned-wrapped terminals
-//     (e.g. `CheckpointedSession<VendorPinned<NV, End>, End>`) inherit
-//     correctly via `is_terminal_state<VendorPinned<V, P>>` at
-//     Session.h:1135.
-//
-// The non-terminal cases — `CheckpointedSession<Send<int, End>, End>`,
-// `CheckpointedSession<End, Recv<int, End>>`, etc. — continue to be
-// rejected: at least one branch carries non-trivial protocol work that
-// the handle owes to its peer.
+// The owner still has to pick a branch, so the position counts as
+// terminal only when both branches are.  If either one carries protocol
+// work the handle still owes its peer, dropping the handle is
+// abandonment.
 
 template <typename B, typename R>
 struct is_terminal_state<CheckpointedSession<B, R>>
     : std::bool_constant<is_terminal_state<B>::value && is_terminal_state<R>::value> {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── all_offers_have_crash_branch<CheckpointedSession<B, R>, Peer> ──
-// ═════════════════════════════════════════════════════════════════════
-//
-// fixy-A2-012 — without this specialization, the SessionCrash.h
-// primary forward-declared template at line 553 had no body, so any
-// CheckpointedSession<B, R> in the protocol tree triggered a hard
-// use-of-incomplete-type at the static_assert in
-// assert_every_offer_has_crash_branch_for().  When queried in a
-// SFINAE context, the substitution failure silently produced
-// false-by-default, making BSYZ22 crash-safety verification VACUOUS
-// for every transactional/checkpointed session — the canonical
-// shape for Cipher tier-promotion + replay-then-retry workflows.
-//
-// Post-fix the trait distributes the check CONJUNCTIVELY over both
-// branches.  Both base AND rollback paths are reachable at runtime
-// (via base() / rollback() &&-qualified transitions on
-// SessionHandle<CheckpointedSession<...>>), so an unhandled
-// crash-branch in EITHER is a verification defect.  This mirrors
-// the AND-fold convention used for is_well_formed,
-// is_subtype_sync_structural, and is_dual_involutive
-// (CheckpointedSession.h lines 192-269) — every checkpointed
-// invariant is the conjunction of base and rollback invariants.
-//
-// Symmetric to SessionDelegate.h's specializations for
-// Delegate / Accept / EpochedDelegate / EpochedAccept (lines
-// 436-466) and SessionCrash.h's specialization for
-// VendorPinned (lines 612-625), closing out the four
-// non-self-contained-in-SessionCrash.h combinators that hide deep
-// Offer<> nodes from the crash-walker.
+// Both branches run at some point, so an unhandled peer crash in either
+// one is a defect.
 
 namespace detail::crash {
 
@@ -414,16 +141,6 @@ struct all_offers_have_crash_branch<CheckpointedSession<B, R>, PeerTag>
 
 }  // namespace detail::crash
 
-// ═════════════════════════════════════════════════════════════════════
-// ── SessionHandle<CheckpointedSession<P, R>, Res, LoopCtx> ─────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Terminal handle exposing two &&-qualified branch transitions.
-// User picks base() or rollback() based on application logic (e.g.,
-// verify-reject triggers rollback; verify-accept triggers base).
-// Neither transition is silently automatic — both require an
-// explicit method call that consumes *this.
-
 template <typename ProtoBase, typename ProtoRollback, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, Resource, LoopCtx>
     : public SessionHandleBase<CheckpointedSession<ProtoBase, ProtoRollback>,
@@ -433,16 +150,11 @@ class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
     template <typename P, typename R, typename L>
     friend class SessionHandle;
 
-    // detail::make_session_handle (Session.h) is the SOLE authorized
-    // constructor (fix-04) — direct `SessionHandle<CheckpointedSession
-    // <...>, Res, Ctx>{res}` is rejected ("is private"), so
-    // mint_session_handle / step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
     friend constexpr auto
         detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
             -> SessionHandle<FProto, FRes, FLoop>;
 
-    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<CheckpointedSession<ProtoBase, ProtoRollback>,
@@ -460,39 +172,26 @@ public:
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle() = default;
 
-    // Pick the BASE (normal, "commit") path.  Consumes *this and
-    // returns a handle advanced to ProtoBase.  Loop/Continue
-    // resolution applied by step_to_next.
     [[nodiscard]] constexpr auto base() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
         return detail::step_to_next<ProtoBase, Resource, LoopCtx>(std::move(resource_));
     }
 
-    // Pick the ROLLBACK (abort/retry) path.  Consumes *this and
-    // returns a handle advanced to ProtoRollback.  The application
-    // is responsible for restoring any checkpointed state before
-    // calling this — the framework does NOT automatically manage
-    // runtime state; only the protocol typing.
+    // Restoring the checkpointed state is the caller's job and must
+    // happen before this call.  Only the protocol typing is handled
+    // here.
     [[nodiscard]] constexpr auto rollback() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
         return detail::step_to_next<ProtoRollback, Resource, LoopCtx>(std::move(resource_));
     }
 
-    // Diagnostic borrows — do NOT consume the handle.
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Ergonomic surface ──────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <typename P>
 concept Checkpointed = is_checkpointed_session_v<P>;
 
-// Consteval helper — one-line compile-time check that a protocol is
-// CheckpointedSession with the specified branches.  Useful at
-// boundary function signatures.
 template <typename P, typename ExpectedBase, typename ExpectedRollback>
 consteval void assert_checkpointed_matches() noexcept {
     static_assert(is_checkpointed_session_v<P>, "crucible::session::diagnostic [ProtocolViolation_State]: "
@@ -507,14 +206,8 @@ consteval void assert_checkpointed_matches() noexcept {
                   "ExpectedRollback.");
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Framework self-test static_asserts ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::checkpoint_self_test {
-
-// ─── Fixture protocols ─────────────────────────────────────────────
 
 struct Request {};
 struct Response {};
@@ -525,8 +218,6 @@ using RollbackPath = Send<Request, Recv<Error, End>>;
 
 using CkptSession = CheckpointedSession<CommitPath, RollbackPath>;
 
-// ─── Shape traits ─────────────────────────────────────────────────
-
 static_assert(is_checkpointed_session_v<CkptSession>);
 static_assert(!is_checkpointed_session_v<End>);
 static_assert(!is_checkpointed_session_v<Send<int, End>>);
@@ -535,119 +226,77 @@ static_assert(!is_checkpointed_session_v<Select<End, End>>);
 static_assert(std::is_same_v<checkpoint_base_t<CkptSession>, CommitPath>);
 static_assert(std::is_same_v<checkpoint_rollback_t<CkptSession>, RollbackPath>);
 
-// is_head_v inherited from Session.h — CheckpointedSession is not Loop,
-// so it's a valid head.  SessionHandle construction works.
 static_assert(is_head_v<CkptSession>);
 
-// ─── Duality ──────────────────────────────────────────────────────
-
-// Both branches dualise.
 static_assert(
     std::is_same_v<dual_of_t<CkptSession>, CheckpointedSession<dual_of_t<CommitPath>, dual_of_t<RollbackPath>>>);
-
-// Involution.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<CkptSession>>, CkptSession>);
-
-// ─── Composition ──────────────────────────────────────────────────
 
 using After = Send<int, End>;
 
-// compose extends BOTH branches.
 static_assert(std::is_same_v<compose_t<CkptSession, After>,
                              CheckpointedSession<compose_t<CommitPath, After>, compose_t<RollbackPath, After>>>);
 
-// Compose-identity: compose<Ckpt, End> == Ckpt.
 static_assert(std::is_same_v<compose_t<CkptSession, End>, CkptSession>);
 
-// Dual / compose commute:
-//   dual(compose(C, Q)) == compose(dual(C), dual(Q))
-// This is the load-bearing reason for the "extend both" compose rule.
+// Composition commutes with duality, which is the reason composition
+// extends both branches.
 static_assert(
     std::is_same_v<dual_of_t<compose_t<CkptSession, After>>, compose_t<dual_of_t<CkptSession>, dual_of_t<After>>>);
 
-// ─── Well-formedness ──────────────────────────────────────────────
-
 static_assert(is_well_formed_v<CkptSession>);
 
-// Both branches must be well-formed.
 using CkptWithFreeContinue = CheckpointedSession<Continue, End>;
 static_assert(!is_well_formed_v<CkptWithFreeContinue>);
 
 using CkptWithBadRollback = CheckpointedSession<End, Continue>;
 static_assert(!is_well_formed_v<CkptWithBadRollback>);
 
-// Inside a Loop, Continue in either branch is well-formed.
+// A loop-closing step inside a branch is well-formed once the
+// surrounding loop supplies the scope.
 using CkptInsideLoop = Loop<CheckpointedSession<Send<int, Continue>, Send<int, End>>>;
 static_assert(is_well_formed_v<CkptInsideLoop>);
 
-// ─── Terminal-state classification (fixy-A2-029) ──────────────────
-//
-// is_terminal_state<CheckpointedSession<B, R>> = AND-fold over branches.
-// Both base AND rollback must be terminal for the handle to be
-// abandonable without consuming.
-
-// Twin-End: BOTH branches at End → terminal.
 static_assert(is_terminal_state_v<CheckpointedSession<End, End>>);
 
-// Twin-terminal via Stop (delegated through SessionCrash.h's
-// is_terminal_state<Stop_g<C>> specialization).
+// A crashed branch is terminal too, at any crash tier and under a
+// vendor pin.
 static_assert(is_terminal_state_v<CheckpointedSession<Stop, End>>);
 static_assert(is_terminal_state_v<CheckpointedSession<End, Stop>>);
 static_assert(is_terminal_state_v<CheckpointedSession<Stop, Stop>>);
-
-// Mixed-tier crash terminals — Stop_g<Abort> ≠ Stop_g<Throw>, but both
-// are terminal under the Stop_g<C> spec at SessionCrash.h:183.
 static_assert(is_terminal_state_v<CheckpointedSession<Stop_g<CrashClass::Abort>, Stop_g<CrashClass::Throw>>>);
-
-// VendorPinned-wrapped terminal recurses via
-// is_terminal_state<VendorPinned<V, P>> at Session.h:1135.
 static_assert(is_terminal_state_v<CheckpointedSession<VendorPinned<VendorBackend::NV, End>, End>>);
 static_assert(is_terminal_state_v<CheckpointedSession<End, VendorPinned<VendorBackend::AMD, Stop>>>);
 
-// Non-terminal base — handle still owes the peer a Send before close.
+// One branch still owing the peer an operation is enough to make the
+// position non-terminal, and an unmade choice counts as owed work.
 static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, End>>);
-// Non-terminal rollback — symmetric.
 static_assert(!is_terminal_state_v<CheckpointedSession<End, Recv<int, End>>>);
-// Both branches carry work.
 static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, Recv<int, End>>>);
-// Choice combinator at either branch is non-terminal — handle still
-// owes a .pick<I>() / .offer().
 static_assert(!is_terminal_state_v<CheckpointedSession<Select<Send<int, End>>, End>>);
 static_assert(!is_terminal_state_v<CheckpointedSession<End, Offer<Recv<int, End>>>>);
 
-// Loop<CheckpointedSession<End, End>> is now ill-formed because the
-// trait correctly classifies the body as terminal — closes the silent
-// admission gap that disagreed with fixy-A2-020's Loop<terminal> ban.
+// A loop whose body is terminal can never come back round, so a
+// twin-terminal checkpoint is rejected as a loop body.
 static_assert(!is_well_formed_v<Loop<CheckpointedSession<End, End>>>);
 
-// ─── Subtyping (product) ──────────────────────────────────────────
-
-// Reflexivity — any ckpt is a subtype of itself.
 static_assert(is_subtype_sync_v<CkptSession, CkptSession>);
 
-// Narrowing in the base branch produces a subtype.
-using NarrowerCommit = Send<Request, Recv<Response, End>>;  // same in this case
-// Construct a genuinely-narrower base via Select narrowing.
+using NarrowerCommit = Send<Request, Recv<Response, End>>;
 struct MsgA {};
 struct MsgB {};
-using WiderSelectCkpt = CheckpointedSession<Select<Send<MsgA, End>, Send<MsgB, End>>,  // 2-branch Select
-                                            End>;
-using NarrowerSelectCkpt = CheckpointedSession<Select<Send<MsgA, End>>,  // 1-branch Select
-                                               End>;
+using WiderSelectCkpt = CheckpointedSession<Select<Send<MsgA, End>, Send<MsgB, End>>, End>;
+using NarrowerSelectCkpt = CheckpointedSession<Select<Send<MsgA, End>>, End>;
 
-// NarrowerSelect IS a subtype of WiderSelect (per Gay-Hole: fewer
-// Select branches is a subtype).  Product subtyping lifts this.
+// A Select that offers fewer branches is a subtype of one that offers
+// more, and the branch-wise rule lifts that to the checkpoint.
 static_assert(is_subtype_sync_v<NarrowerSelectCkpt, WiderSelectCkpt>);
 static_assert(!is_subtype_sync_v<WiderSelectCkpt, NarrowerSelectCkpt>);
 
-// Strict subtype (via is_strict_subtype_sync_v from SessionSubtype.h)
 static_assert(is_strict_subtype_sync_v<NarrowerSelectCkpt, WiderSelectCkpt>);
 
-// Mismatched shape is not a subtype.
 static_assert(!is_subtype_sync_v<CkptSession, End>);
 static_assert(!is_subtype_sync_v<End, CkptSession>);
-
-// ─── Concept + assertion helpers ──────────────────────────────────
 
 template <typename P>
     requires Checkpointed<P>
@@ -662,26 +311,16 @@ consteval bool check_assert_matches() {
 }
 static_assert(check_assert_matches());
 
-// ─── Nested checkpointing ─────────────────────────────────────────
-//
-// CheckpointedSession<CheckpointedSession<A, B>, C> — an outer
-// checkpoint whose base is itself a checkpointed session.  Well-formed,
-// dualises correctly, composes correctly.
-
 using NestedCkpt = CheckpointedSession<CheckpointedSession<Send<int, End>, Send<bool, End>>, End>;
 
 static_assert(is_well_formed_v<NestedCkpt>);
 static_assert(std::is_same_v<dual_of_t<NestedCkpt>,
                              CheckpointedSession<CheckpointedSession<Recv<int, End>, Recv<bool, End>>, End>>);
 
-// Involution through nesting.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<NestedCkpt>>, NestedCkpt>);
 
-// fixy-A2-003 — is_dual_involutive distributes over BOTH branches.
-// CheckpointedSession is involutive iff both B and R are involutive;
-// Sender-Offer in EITHER branch propagates non-involution to the
-// composite (the conservative B ∧ R conjunction matches
-// Session.h:680-684's policy on Sender-annotated Offer).
+// Either branch may be the one that runs, so a branch that does not
+// survive the dual round trip costs the whole checkpoint its involution.
 namespace fixy_a2_003_is_dual_involutive_checkpointed {
 struct RoleA {};
 using InvolutiveBoth = CheckpointedSession<Send<int, End>, Recv<int, End>>;
@@ -697,35 +336,24 @@ using NestedCkptInvolutive = CheckpointedSession<NestedCkpt, End>;
 static_assert(is_dual_involutive_v<NestedCkptInvolutive>);
 }  // namespace fixy_a2_003_is_dual_involutive_checkpointed
 
-// fixy-A2-004 — is_empty_choice distributes disjunctively over BOTH
-// branches.  Empty Select<>/Offer<> in EITHER B or R is a defect
-// because both arms execute at runtime (Try(B) | RollbackTo(R)), so
-// the mint-gate reachability invariant rejects either-branch defects.
+// A defect in either branch is a defect in the checkpoint, at any depth,
+// because either branch may be the one that runs.
 namespace fixy_a2_004_is_empty_choice_checkpointed {
-// Pure, no empty Choice in either branch.
 using HealthyCkpt = CheckpointedSession<Send<int, End>, Recv<int, End>>;
 static_assert(!is_empty_choice_v<HealthyCkpt>);
 
-// Empty Select<> in base branch — defect surfaces.
 using EmptySelectInBase = CheckpointedSession<Select<>, End>;
 static_assert(is_empty_choice_v<EmptySelectInBase>);
 
-// Empty Offer<> in recovery branch — defect surfaces symmetrically.
 using EmptyOfferInRecovery = CheckpointedSession<End, Offer<>>;
 static_assert(is_empty_choice_v<EmptyOfferInRecovery>);
 
-// Buried inside Send/Recv continuation — recursive primary spec
-// already handles Send<_, K> / Recv<_, K> via is_empty_choice<K>,
-// so the CheckpointedSession layer projects through cleanly.
 using BuriedEmpty = CheckpointedSession<Send<int, Select<>>, End>;
 static_assert(is_empty_choice_v<BuriedEmpty>);
 
-// Loop-wrapped empty Choice in recovery branch.
 using LoopEmptyRecovery = CheckpointedSession<End, Loop<Offer<>>>;
 static_assert(is_empty_choice_v<LoopEmptyRecovery>);
 
-// Nested CheckpointedSession with empty Choice in INNERMOST base —
-// disjunction propagates outward through both levels.
 using NestedEmpty = CheckpointedSession<CheckpointedSession<Select<>, End>, End>;
 static_assert(is_empty_choice_v<NestedEmpty>);
 }  // namespace fixy_a2_004_is_empty_choice_checkpointed

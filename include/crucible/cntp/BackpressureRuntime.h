@@ -1,13 +1,5 @@
 #pragma once
 
-// CNT-P runtime ownership for backpressure state.
-//
-// This is the mutable half of GAPS-137. The transport-facing CNT-P header
-// defines typed facts; CNT-P owns live counters. Both controllers are bounded,
-// array-backed, and avoid mutex/futex/heap use. Credit grant/consume stay on
-// atomic CAS hot paths; flow creation is serialized by a short spin gate so a
-// socket cannot be published into two slots concurrently.
-
 #include <crucible/cntp/Backpressure.h>
 #include <crucible/concurrent/SpinLock.h>
 #include <crucible/effects/Capabilities.h>
@@ -40,15 +32,11 @@ class CreditFlowControl : public safety::Pinned<CreditFlowControl<MaxFlows>> {
     static constexpr std::uint32_t kEmptyFd = static_cast<std::uint32_t>(std::numeric_limits<int>::max()) + 1u;
     static constexpr std::uint32_t kReservedFd = kEmptyFd + 1u;
 
-    // fixy-A5-011 follow-up: same false-sharing pattern as the A5-011 named
-    // structs (AtomicPingmeshPairCounters, AtomicProbeStats).  FlowSlot is
-    // embedded in `std::array<FlowSlot, MaxFlows> flows_` where independent
-    // flow producers concurrently fetch_sub on credit_bytes via grant /
-    // consume paths.  Without the alignment two adjacent FlowSlots fit on
-    // one 64-byte line and contend on every RMW (CLAUDE.md §VIII).  The two
-    // intra-struct atomics (fd_bits + credit_bytes = 8 bytes) are intentionally
-    // co-located — both belong to the SAME flow's producer; only inter-flow
-    // contention is the bug.
+    // Cache-line aligned so that two flows never share a line.  Independent
+    // producers update credit_bytes concurrently, and adjacent slots on one
+    // line would contend on every read-modify-write.  The two atomics inside a
+    // slot stay together on purpose: both belong to the same flow's producer,
+    // and only contention between flows is a problem.
     struct alignas(64) FlowSlot {
         std::atomic<std::uint32_t> fd_bits{kEmptyFd};
         std::atomic<std::uint32_t> credit_bytes{0};
@@ -61,29 +49,20 @@ class CreditFlowControl : public safety::Pinned<CreditFlowControl<MaxFlows>> {
                                           "intentional — see false-sharing rationale above");
     static_assert(sizeof(std::array<FlowSlot, 2>) >= 128, "Two adjacent FlowSlots must span at least two cache lines");
 
-    // fixy-A5-029: cross-thread atomics on the backpressure RMW path must be
-    // lock-free on every supported target.  libstdc++ silently substitutes
-    // mutex-backed atomic ops on ISAs lacking the required intrinsic — a
-    // hidden mutex inside grant / consume would invert the credit-flow-control
-    // latency budget by 100-1000×.  Refuse to build instead of regressing.
+    // A standard library substitutes mutex-backed atomics on an ISA that lacks
+    // the intrinsic, and it does so silently.  A hidden mutex inside grant and
+    // consume is worse than a failed build.
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
-                  "std::atomic<uint32_t> must be lock-free on this target — "
-                  "fixy-A5-029");
+                  "std::atomic<uint32_t> must be lock-free on this target");
     static_assert(std::atomic<std::uint16_t>::is_always_lock_free,
-                  "std::atomic<uint16_t> must be lock-free on this target — "
-                  "fixy-A5-029");
+                  "std::atomic<uint16_t> must be lock-free on this target");
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-                  "std::atomic<uint64_t> must be lock-free on this target — "
-                  "fixy-A5-029");
+                  "std::atomic<uint64_t> must be lock-free on this target");
 
     std::array<FlowSlot, MaxFlows> flows_{};
-    // fixy-A5-022 + FIXY-U-085 consolidation: prior to the migration this
-    // field was a raw `std::atomic_flag start_gate_` with NO alignas(64)
-    // discipline, and start_flow used a private nested SpinGuard that lacked
-    // the _mm_pause hint.  Adopting the canonical primitive inherits both
-    // cache-line isolation (alignas(64) on SpinLock) and the pause-hinted
-    // spin loop, closing the false-sharing trap and the missing pause in one
-    // change.  See concurrent/SpinLock.h header rationale.
+    // start_flow searches the table and then reserves a slot, and those two
+    // steps are not atomic together.  The gate serializes them so one socket
+    // cannot be published into two slots at once.
     concurrent::SpinLock start_gate_{};
 
     [[nodiscard]] static constexpr std::uint32_t fd_key(cntp::SocketFd fd) noexcept {

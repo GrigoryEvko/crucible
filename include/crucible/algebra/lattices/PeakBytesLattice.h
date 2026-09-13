@@ -1,67 +1,17 @@
 #pragma once
 
-// ── crucible::algebra::lattices::PeakBytesLattice ───────────────────
+// Bounded chain over the peak byte count resident while a value is
+// produced.
 //
-// Bounded total-order lattice over a uint64_t resource counter
-// representing PEAK BYTES RESIDENT during a value's production.
-// Sister axis to BitsBudget; the second component sub-lattice for
-// the Budgeted product wrapper from 28_04_2026_effects.md §4.4.1
-// (FOUND-G63).
+// The order runs by consumption, so the larger count is the higher
+// element.  That is the opposite of the tier chains, where the strongest
+// claim sits at the top, and it is what makes a gate reading "held at
+// most M bytes" admit exactly the values below its own grade.
 //
-// Citation: Resource-bounded type theory (arXiv:2512.06952);
-// 25_04_2026.md §2.4 Budgeted primitive.
-//
-// THE LOAD-BEARING USE CASE: Forge Phase D / Phase E precision-
-// budget calibrator + L3 Memory's MemoryPlan.  A
-// `Budgeted<{BitsBudget, PeakBytes=M}, T>` value's PeakBytes axis
-// asserts at the type level that producing T held at most M bytes
-// of working memory.  Composing two ops takes the JOIN (max) of
-// their per-axis peak — composed-op peak = max(peak_A, peak_B)
-// when ops do NOT overlap; sum semantics live OUTSIDE the lattice
-// (in Forge's per-region MemoryPlan).
-//
-// ── Algebraic shape ─────────────────────────────────────────────────
-//
-// Carrier:  PeakBytes = strong-typed uint64_t.
-// Order:    natural ≤ on uint64_t.
-// Bottom:   PeakBytes{0}             (zero peak — strongest claim:
-//                                     producer used no working memory.)
-// Top:      PeakBytes{UINT64_MAX}    (saturating cap.)
-// Join:     max                      (composing ops takes the larger
-//                                     peak — the tighter peak that
-//                                     subsumes both.)
-// Meet:     min                      (intersecting peaks.)
-//
-// ── Direction convention ────────────────────────────────────────────
-//
-// Same as BitsBudgetLattice: ordered by RESOURCE CONSUMPTION, NOT
-// claim strength.  See BitsBudgetLattice.h for the rationale and
-// the spec citation.  Both budget axes share this convention so
-// that the binary product `ProductLattice<BitsBudgetLattice,
-// PeakBytesLattice>` has a coherent pointwise ordering.
-//
-// ── Why this is a DIFFERENT type from BitsBudget ────────────────────
-//
-// PeakBytes and BitsBudget are both `uint64_t`-backed lattices over
-// the natural-≤ order.  Without strong typing, a refactor that
-// wired up `Budgeted<{PeakBytes, BitsBudget}, T>` (axes swapped)
-// would silently compile, and downstream gates checking
-// `result.bits().value <= max_bits` would actually compare against
-// the peak-bytes counter.  The bug class this prevents:
-//
-//   FOUND-G64 wrapper accepts axes in DECLARED ORDER (Bits, Peak).
-//   If a maintainer flips the order in a call site, a uint64_t
-//   collision would bind silently — UNLESS BitsBudget and PeakBytes
-//   are distinct types.  They are.
-//
-//   Axiom coverage:
-//     TypeSafe — PeakBytes is structurally identical to BitsBudget
-//                under the hood (both wrap uint64_t) but carries a
-//                distinct phantom identity.  Mixing the two in a
-//                Budgeted axis-swap would be a compile error.
-//     DetSafe — leq / join / meet are all `constexpr`.
-//   Runtime cost:
-//     element_type = PeakBytes = uint64_t + 0 phantom bytes.
+// The join is a maximum, not a sum.  Two peaks combine to the larger one
+// only because the productions do not overlap in time.  Adding the peaks
+// of concurrent producers is a different calculation and belongs to
+// whatever plans the memory, not to this order.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -75,11 +25,10 @@
 
 namespace crucible::algebra::lattices {
 
-// ── PeakBytes — strong-typed uint64_t resource counter ─────────────
-//
-// Phantom-typed wrapper around uint64_t.  Distinct from BitsBudget
-// even though both are uint64_t-backed; mixing them in a Budgeted
-// instantiation is a compile error (caught by neg-fixtures).
+// A distinct type, not a bare integer.  The sibling budget axis is also
+// a 64-bit unsigned count, so without separate types a call site that
+// swapped the two axes would still compile and every downstream
+// comparison would silently read the wrong counter.
 struct PeakBytes {
     std::uint64_t value{0};
 
@@ -89,7 +38,6 @@ struct PeakBytes {
     [[nodiscard]] constexpr operator std::uint64_t() const noexcept { return value; }
 };
 
-// ── PeakBytesLattice — bounded chain over PeakBytes ────────────────
 struct PeakBytesLattice {
     using element_type = PeakBytes;
 
@@ -108,7 +56,6 @@ struct PeakBytesLattice {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "PeakBytesLattice"; }
 };
 
-// ── Self-test ───────────────────────────────────────────────────────
 namespace detail::peak_bytes_lattice_self_test {
 
 static_assert(Lattice<PeakBytesLattice>);
@@ -120,35 +67,28 @@ static_assert(sizeof(PeakBytes) == sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<PeakBytes>);
 static_assert(std::is_standard_layout_v<PeakBytes>);
 
-// Strong typing: PeakBytes is NOT structurally the same type as
-// BitsBudget even though both wrap uint64_t.  This is the
-// load-bearing identity that prevents axis-swap bugs in Budgeted.
 static_assert(!std::is_same_v<PeakBytes, std::uint64_t>);
 
-// Ordering witnesses.
 static_assert(PeakBytesLattice::leq(PeakBytes{0}, PeakBytes{1024}));
-static_assert(PeakBytesLattice::leq(PeakBytes{42}, PeakBytes{42}));  // reflexive
+static_assert(PeakBytesLattice::leq(PeakBytes{42}, PeakBytes{42}));
 static_assert(!PeakBytesLattice::leq(PeakBytes{2048}, PeakBytes{1024}));
 
-// Bounds.
 static_assert(PeakBytesLattice::bottom().value == 0);
 static_assert(PeakBytesLattice::top().value == std::numeric_limits<std::uint64_t>::max());
 
-// Join / meet.
 static_assert(PeakBytesLattice::join(PeakBytes{1024}, PeakBytes{2048}).value == 2048);
 static_assert(PeakBytesLattice::join(PeakBytes{2048}, PeakBytes{1024}).value == 2048);
 static_assert(PeakBytesLattice::meet(PeakBytes{1024}, PeakBytes{2048}).value == 1024);
 static_assert(PeakBytesLattice::meet(PeakBytes{2048}, PeakBytes{1024}).value == 1024);
 
-// Bound identities.
 static_assert(PeakBytesLattice::join(PeakBytes{1024}, PeakBytesLattice::bottom()) == PeakBytes{1024});
 static_assert(PeakBytesLattice::meet(PeakBytes{1024}, PeakBytesLattice::top()) == PeakBytes{1024});
 
-// Idempotence.
 static_assert(PeakBytesLattice::join(PeakBytes{99}, PeakBytes{99}).value == 99);
 static_assert(PeakBytesLattice::meet(PeakBytes{99}, PeakBytes{99}).value == 99);
 
-// Distributivity witness.
+// The interior witnesses matter: bottom and top satisfy distributivity
+// for reasons that have nothing to do with the order between them.
 [[nodiscard]] consteval bool distributive_witness() noexcept {
     PeakBytes a{16};
     PeakBytes b{64};
@@ -159,8 +99,6 @@ static_assert(PeakBytesLattice::meet(PeakBytes{99}, PeakBytes{99}).value == 99);
 }
 static_assert(distributive_witness());
 
-// fixy-H-20: invoke central Lattice.h verifier on representative
-// witnesses.  Chain lattice ⇒ distributive.
 static_assert(verify_bounded_lattice_axioms_at<PeakBytesLattice>(PeakBytesLattice::bottom(), PeakBytes{4096},
                                                                  PeakBytesLattice::top()));
 static_assert(verify_bounded_lattice_axioms_at<PeakBytesLattice>(PeakBytes{0}, PeakBytes{1024}, PeakBytes{2048}));
@@ -170,7 +108,6 @@ static_assert(verify_distributive_lattice<PeakBytesLattice>(PeakBytesLattice::bo
 static_assert(verify_distributive_lattice<PeakBytesLattice>(PeakBytes{16}, PeakBytes{64}, PeakBytes{256}));
 static_assert(verify_distributive_lattice<PeakBytesLattice>(PeakBytes{1024}, PeakBytes{1024}, PeakBytes{2048}));
 
-// Implicit conversion DOWN to uint64_t.
 static_assert([] consteval {
     PeakBytes b{1024};
     std::uint64_t n = b;

@@ -1,124 +1,17 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// PermissionedMpmcChannel<T, Capacity, UserTag> — MPMC worked example
+// An MPMC ring behind fractional shares on both sides.  The handle
+// types carry the role, so pushing from a consumer side or popping from
+// a producer side does not compile.
 //
-// Combines MpmcRing<T, Capacity> (Nikolaev SCQ — DISC 2019) with
-// the CSL fractional-permission family on BOTH sides:
+// The two pools are independent state machines with their own share
+// counts and their own exclusivity bits.  Draining one side does not
+// have to disturb the other, and their state words sit on separate
+// cache lines, so lending a producer share does not touch the line the
+// consumers contend for.
 //
-//   * Producer side — fractional via SharedPermissionPool<Producer>.
-//                     Many concurrent producers; each holds a
-//                     SharedPermissionGuard for its lifetime.
-//   * Consumer side — fractional via SharedPermissionPool<Consumer>.
-//                     Many concurrent consumers; each holds a
-//                     SharedPermissionGuard for its lifetime.
-//
-// This is the genuinely-novel construction — no existing MPMC library
-// (Vyukov, LCRQ, SCQ, wCQ, MoodyCamel, folly-MPMC, concurrentqueue)
-// encodes producer/consumer roles at the type level.  See
-// THREADING.md §5.5.1 for the design rationale.
-//
-//   sizeof(ProducerHandle) == sizeof(Channel*) + sizeof(Guard)
-//   sizeof(ConsumerHandle) == sizeof(Channel*) + sizeof(Guard)
-//
-// Per-operation cost (steady state, uncontended):
-//   try_push() : ~15-25 ns (MpmcRing's FAA on Tail + per-cell CAS)
-//   try_pop()  : ~15-25 ns (MpmcRing's FAA on Head + per-cell OR/CAS)
-//   producer() / consumer() lend : ~15 ns each (Pool atomic-CAS)
-//
-// ─── The four cells of the channel-permission family ──────────────
-//
-//   linear × linear     = PermissionedSpscChannel    (one prod, one cons)
-//   linear × fractional = PermissionedSnapshot       (one writer, N readers)
-//   fractional × linear = PermissionedMpscChannel    (N prods, one cons)
-//   fractional × fractional = PermissionedMpmcChannel (N prods, N cons) ← here
-//
-// All four are the same machinery (Linear Permission +
-// SharedPermissionPool) with different role-axis fractionality.  This
-// channel is the most general — every concurrent-channel pattern in
-// Crucible is expressible by composing these four cells.
-//
-// ─── The TWO independent pools ─────────────────────────────────────
-//
-// Producer and Consumer pools are INDEPENDENT atomic state machines.
-// Each tracks its own outstanding share count, its own
-// EXCLUSIVE_OUT_BIT.  The reasons:
-//
-//   1. Producer mode-transition (e.g., schema upgrade visible only to
-//      producers) doesn't need to drain consumers, and vice versa.
-//   2. The two pools' state words live on independent cache lines —
-//      producer-side lend() doesn't ping the consumer-side line.
-//   3. with_drained_access() that needs BOTH sides drained must
-//      atomically upgrade both — see the dedicated method below.
-//
-// ─── with_drained_access — atomic upgrade of BOTH pools ────────────
-//
-// For operations that touch the channel's SHARED state (capacity
-// resize, replacement, structural reset), BOTH pools must be drained
-// — neither producer nor consumer can be in flight while the body
-// runs.  The implementation:
-//
-//   1. try_upgrade producer pool (single CAS).  Fail → return false.
-//   2. try_upgrade consumer pool (single CAS).  Fail → DEPOSIT
-//      producer back to avoid leaking the upgrade.  Return false.
-//   3. Both upgrades in hand: run body, deposit both back in reverse
-//      order (consumer first, then producer).
-//
-// This is structurally an attempt-then-rollback pattern — no
-// blocking, no spinning, no deadlock window because each pool has
-// its own state machine.  Body runs only when ALL handles have
-// returned to their respective pools.
-//
-// ─── Constraints ────────────────────────────────────────────────────
-//
-//   * T satisfies MpmcValue (trivially-copyable, trivially-
-//     destructible).  Inherited from MpmcRing.
-//   * Capacity ≥ 2 and a power of two.  Inherited from MpmcRing.
-//   * Each PermissionedMpmcChannel uses a distinct UserTag.  Per
-//     Permission.h's grep-discoverable rule, mint each Whole<Tag>
-//     EXACTLY ONCE per program.  The channel mints both pool roots
-//     INTERNALLY (no user-supplied root) — the Pool IS the root-of-
-//     trust for fractional permissions.
-//   * ProducerHandle / ConsumerHandle are move-only via their
-//     embedded Guard.
-//
-// ─── Worked example ─────────────────────────────────────────────────
-//
-//   struct WorkChannel {};
-//   PermissionedMpmcChannel<int, 1024, WorkChannel> ch;
-//
-//   // Both pools' roots are minted internally — no user-side mint.
-//   // Spawn N producers + M consumers:
-//   for (int i = 0; i < 8; ++i) {
-//       std::jthread{[&ch, i](auto) {
-//           auto p_opt = ch.producer();
-//           if (!p_opt) return;
-//           auto p = std::move(*p_opt);
-//           p.try_push(i);
-//       }};
-//   }
-//   for (int j = 0; j < 4; ++j) {
-//       std::jthread{[&ch](auto) {
-//           auto c_opt = ch.consumer();
-//           if (!c_opt) return;
-//           auto c = std::move(*c_opt);
-//           while (auto v = c.try_pop()) { /* use *v */ }
-//       }};
-//   }
-//
-//   // p.try_pop()  is a COMPILE ERROR — no such method on ProducerHandle
-//   // c.try_push() is a COMPILE ERROR — no such method on ConsumerHandle
-//
-// ─── References ─────────────────────────────────────────────────────
-//
-//   THREADING.md §5.5.1 — "the MPMC slot is genuinely beyond-Vyukov"
-//   PermissionedMpscChannel.h — sibling fractional × linear pattern
-//   PermissionedSnapshot.h — sibling linear × fractional pattern
-//   PermissionedSpscChannel.h — sibling linear × linear pattern
-//   safety/Permission.h — Permission/SharedPermissionPool machinery
-//   concurrent/MpmcRing.h — underlying lock-free SCQ ring primitive
-//   27_04_2026.md §5.3 — foundation requirement for the family
-// ═══════════════════════════════════════════════════════════════════
+// Each channel needs a UserTag of its own.  Two channels sharing a tag
+// share Permission types, and their endpoints become interchangeable.
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/MpmcRing.h>
@@ -134,7 +27,8 @@
 
 namespace crucible::concurrent {
 
-// ── Tag tree for PermissionedMpmcChannel ───────────────────────────
+// The triple is specialized for splitting at the foot of this file, so
+// a user tag takes no per-tag boilerplate.
 
 namespace mpmc_tag {
 
@@ -147,16 +41,10 @@ struct Consumer {};
 
 }  // namespace mpmc_tag
 
-// ── Session states for MPMC handles (Honda 1998; THREADING.md §17.13) ─
-//
-// ProducerHandle / ConsumerHandle carry one of these tags as a
-// type-state.  Active = try_push/try_pop + close are allowed; Closed
-// = no operations remain (only the destructor releases the pool
-// share).  close() consumes the Active handle and produces a Closed
-// handle; the type system refuses post-close operations at compile
-// time.  Both states satisfy the FOUND-A24 diagnostic-trio surface
-// (size/empty/capacity) — observation is permitted in either state
-// since it does not advance the protocol.
+// A handle carries one of these as a type-state.  Closing consumes the
+// Active handle and yields a Closed one, whose only remaining operation
+// is destruction.  Observation stays available in both states, because
+// reading a diagnostic does not advance the protocol.
 
 namespace mpmc_session {
 
@@ -164,8 +52,6 @@ struct Active {};
 struct Closed {};
 
 }  // namespace mpmc_session
-
-// ── PermissionedMpmcChannel<T, Capacity, UserTag> ──────────────────
 
 template <MpmcValue T, std::size_t Capacity, typename UserTag = void>
 class PermissionedMpmcChannel : public safety::Pinned<PermissionedMpmcChannel<T, Capacity, UserTag>> {
@@ -178,26 +64,16 @@ public:
 
     static constexpr std::size_t channel_capacity = Capacity;
 
-    // ── Construction ──────────────────────────────────────────────
-    //
-    // Both pool roots are minted internally — the Pool IS the
-    // fractional root-of-trust for its tag.  No user-supplied
-    // Permission accepted on construction.  This matches the
-    // PermissionedSnapshot reader-pool convention.
+    // Both roots are minted here rather than passed in, because a pool
+    // is the root of trust for its own tag.  Accepting an external
+    // permission would let a caller park one in the wrong pool.
 
     PermissionedMpmcChannel() noexcept
         : producer_pool_{safety::mint_permission_root<producer_tag>()},
           consumer_pool_{safety::mint_permission_root<consumer_tag>()} {}
 
-    // ── ProducerHandle<State> ─────────────────────────────────────
-    //
-    // Move-only via embedded SharedPermissionGuard's deleted copy.
-    // Constructed via producer() factory at session::Active; close()
-    // consumes the Active handle and yields a session::Closed handle
-    // whose only public operation is destruction.  All side-effecting
-    // protocol methods (try_push, try_push_batch, close) are gated
-    // by a `requires` clause on State == Active; calling them on a
-    // Closed handle is a compile error referencing the gated method.
+    // Holds a pool share for its whole lifetime and gives it back on
+    // destruction.
 
     template <typename State = mpmc_session::Active>
     class ProducerHandleT {
@@ -207,8 +83,8 @@ public:
         constexpr ProducerHandleT(PermissionedMpmcChannel& c, safety::SharedPermissionGuard<producer_tag>&& g) noexcept
             : ch_{&c}, guard_{std::move(g)} {}
         friend class PermissionedMpmcChannel;
-        // Cross-state friendship lets close() construct a Closed
-        // handle from this handle's moved-out members.
+        // Cross-state friendship is what lets close construct the
+        // Closed handle out of this one's moved-out members.
         template <typename Other>
         friend class ProducerHandleT;
 
@@ -222,9 +98,9 @@ public:
             delete("ProducerHandle owns a producer-pool refcount share — assignment would double-count");
         constexpr ProducerHandleT(ProducerHandleT&&) noexcept = default;
 
-        // Push — many producers may call concurrently.  Returns false
-        // iff the ring is full or transient SCQ contention condition.
-        // ~15-25 ns uncontended (FAA + CAS).
+        // A false result covers both a full ring and a transient
+        // failure to place the item, so a caller that wants the item
+        // delivered retries.
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept
             requires std::is_same_v<State, mpmc_session::Active>
         {
@@ -237,29 +113,21 @@ public:
             return ch_->ring_.try_push_batch(items);
         }
 
-        // Protocol-end transition.  Consumes the Active handle, yields
-        // a Closed handle (which has no public side-effecting ops).
-        // The producer-pool share moves with the Closed handle and is
-        // released when the Closed handle is destroyed — matches the
-        // refcount semantics of letting an Active handle drop.
+        // The pool share travels into the Closed handle and is released
+        // when that handle dies, so closing costs the pool the same as
+        // dropping an open handle.
         [[nodiscard]] ProducerHandleT<mpmc_session::Closed> close() && noexcept
             requires std::is_same_v<State, mpmc_session::Active>
         {
             return ProducerHandleT<mpmc_session::Closed>{*ch_, std::move(guard_)};
         }
 
-        // Diagnostics — observation, not protocol advancement.  Available
-        // in either state per FOUND-A24 unified surface.
+        // Snapshots.  Sound for telemetry and for deciding whether to
+        // keep retrying, never for a correctness invariant.
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
-
-    // ── ConsumerHandle<State> ─────────────────────────────────────
-    //
-    // Symmetric to ProducerHandle.  Same Active/Closed session
-    // discipline; try_pop / try_pop_batch / close are gated by
-    // State == Active.
 
     template <typename State = mpmc_session::Active>
     class ConsumerHandleT {
@@ -282,8 +150,9 @@ public:
             delete("ConsumerHandle owns a consumer-pool refcount share — assignment would double-count");
         constexpr ConsumerHandleT(ConsumerHandleT&&) noexcept = default;
 
-        // Pop — many consumers may call concurrently.  Returns nullopt
-        // iff the ring is empty or transient SCQ contention condition.
+        // A nullopt result covers both an empty ring and a transient
+        // failure to claim an item, so a caller that wants an item
+        // retries.
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept
             requires std::is_same_v<State, mpmc_session::Active>
         {
@@ -307,51 +176,30 @@ public:
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
-    // ── Factories ─────────────────────────────────────────────────
-
-    // Public aliases — pre-session-typing call sites refer to
-    // `ProducerHandle` / `ConsumerHandle` as plain types.  After
-    // FOUND-A07 those names alias the Active specialization so old
-    // code compiles unchanged; the Closed handle is reachable only
-    // through std::move(handle).close().
+    // The unqualified names are the Active specializations, and a
+    // Closed handle is reachable only by closing an Active one.
     using ProducerHandle = ProducerHandleT<mpmc_session::Active>;
     using ConsumerHandle = ConsumerHandleT<mpmc_session::Active>;
     using ProducerHandleClosed = ProducerHandleT<mpmc_session::Closed>;
     using ConsumerHandleClosed = ConsumerHandleT<mpmc_session::Closed>;
 
-    // Producer endpoint — lends a producer-pool share.  Returns
-    // nullopt iff exclusive mode is active on the producer pool.
-    // Handles always start at session::Active; transition to Closed
-    // is via std::move(handle).close().
+    // Lends a share, and refuses while that side is held exclusively.
     [[nodiscard]] std::optional<ProducerHandle> producer() noexcept {
         auto guard = producer_pool_.lend();
         if (!guard) return std::nullopt;
         return ProducerHandle{*this, std::move(*guard)};
     }
 
-    // Consumer endpoint — lends a consumer-pool share.  Returns
-    // nullopt iff exclusive mode is active on the consumer pool.
     [[nodiscard]] std::optional<ConsumerHandle> consumer() noexcept {
         auto guard = consumer_pool_.lend();
         if (!guard) return std::nullopt;
         return ConsumerHandle{*this, std::move(*guard)};
     }
 
-    // ── Mode transition: scoped exclusive access on BOTH pools ────
-    //
-    // Atomic upgrade of BOTH producer and consumer pools — body runs
-    // with zero live handles on either side.  Used for capacity
-    // resize, channel reset, migration.
-    //
-    // Implementation:
-    //   1. try_upgrade producer pool (1 CAS).
-    //   2. try_upgrade consumer pool (1 CAS).
-    //   3. If consumer upgrade fails: DEPOSIT producer back to avoid
-    //      a permission leak; return false.
-    //   4. Run body.
-    //   5. Deposit both in reverse order (consumer, then producer).
-    //
-    // No blocking, no spinning.  Returns true iff body ran.
+    // Runs the body with no live handle on either side, which is what a
+    // reset, a resize or a migration needs.  Both pools are taken
+    // exclusively, and neither call blocks or spins.  Returns false
+    // when either side was still out and the body did not run.
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
@@ -360,30 +208,27 @@ public:
 
         auto cons_upgrade = consumer_pool_.try_upgrade();
         if (!cons_upgrade) {
-            // Roll back the producer upgrade — must not leak the
-            // exclusive Permission.  Deposit returns it to the
-            // parked state; subsequent producer() calls succeed.
+            // The producer upgrade has to go back, or the exclusive
+            // permission leaks and the producer side stays closed for
+            // the life of the channel.
             producer_pool_.deposit_exclusive(std::move(*prod_upgrade));
             return false;
         }
 
         std::forward<Body>(body)();
 
-        // Deposit in reverse order.  Order doesn't matter for
-        // correctness (the pools are independent), but reverse-of-
-        // acquisition mirrors the typical resource discipline.
+        // The pools are independent, so the order of these two carries
+        // no correctness weight.  Reverse of acquisition is the habit.
         consumer_pool_.deposit_exclusive(std::move(*cons_upgrade));
         producer_pool_.deposit_exclusive(std::move(*prod_upgrade));
         return true;
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────
-
     [[nodiscard]] std::uint64_t outstanding_producers() const noexcept { return producer_pool_.outstanding(); }
     [[nodiscard]] std::uint64_t outstanding_consumers() const noexcept { return consumer_pool_.outstanding(); }
-    // True iff EITHER pool is in exclusive mode.  Mpmc's
-    // with_drained_access drives both pools in lockstep, so this
-    // disjunction matches the wrapper's mode-transition semantics.
+    // A disjunction, because the only thing that takes either pool
+    // exclusively takes both, and the rollback path leaves one held
+    // briefly on its own.
     [[nodiscard]] bool is_exclusive_active() const noexcept {
         return producer_pool_.is_exclusive_out() || consumer_pool_.is_exclusive_out();
     }
@@ -399,10 +244,8 @@ private:
 
 }  // namespace crucible::concurrent
 
-// ── splits_into auto-specialization ─────────────────────────────────
-//
-// Both binary (splits_into) and N-ary (splits_into_pack) forms
-// specialized for the (Whole, Producer, Consumer) triple.
+// Both the binary and the variadic split forms are specialized, so a
+// caller can reach for either one.
 
 namespace crucible::safety {
 
@@ -414,7 +257,6 @@ template <typename UserTag>
 struct splits_into_pack<concurrent::mpmc_tag::Whole<UserTag>, concurrent::mpmc_tag::Producer<UserTag>,
                         concurrent::mpmc_tag::Consumer<UserTag>> : std::true_type {};
 
-// fixy-M-29 authoring witnesses.
 template <typename UserTag>
 struct splits_into_authoring_witness<concurrent::mpmc_tag::Whole<UserTag>, concurrent::mpmc_tag::Producer<UserTag>,
                                      concurrent::mpmc_tag::Consumer<UserTag>> : std::true_type {};

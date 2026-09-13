@@ -1,111 +1,50 @@
 #pragma once
 
-// ── crucible::cipher::federation ────────────────────────────────────
+// This file is the wire format, not a transport. It fixes the byte
+// layout, the magic, the version stamp, and the rules every transport
+// applies before it trusts an entry.
 //
-// FOUND-I08.  Federation network protocol spec for row-keyed
-// KernelCache entries.  Defines the byte-stable WIRE FORMAT (header +
-// payload) by which (content_hash, row_hash, compiled-bytes) tuples
-// travel between Crucible runs and across organizations — the L16
-// Ecosystem layer's federation contract encoded in 32 bytes.
+// Little-endian throughout, a 32-byte header, payload immediately
+// after it:
 //
-// This header is the SPEC, not the transport.  No sockets, no S3, no
-// gRPC — just the byte layout, magic, version stamping, and the
-// validation rules every transport must apply.  Phase 5 (Cipher cold
-// tier + Canopy peer announcements) consumes this spec; until then it
-// is the contract that future federation transports MUST honour.
+//  Offset Size  Field
+//   0      4    magic                 'CFED' as a little-endian word
+//   4      2    protocol_version
+//   6      2    universe_cardinality  the sender's effect-atom count
+//   8      8    content_hash
+//  16      8    row_hash
+//  24      4    payload_size          bytes following the header
+//  28      4    reserved              zero
+//  32+   ...    payload               opaque bytes
 //
-// ── Wire format (little-endian, byte-stable) ────────────────────────
+// The integrity of the payload is the receiver's business. This layer
+// never sees the payload in raw form, so a receiver hashes the bytes
+// itself and compares the result against the content hash.
 //
-//  Offset Size  Field                  Notes
-//   0      4    magic                  'CFED' LE = 0x44454643
-//   4      2    protocol_version       1 (FOUND-I08 v1)
-//   6      2    universe_cardinality   OsUniverse::cardinality at write time
-//   8      8    content_hash           Family-A persistent hash (Types.h)
-//  16      8    row_hash               Family-A persistent hash (FOUND-I02 fold)
-//  24      4    payload_size           bytes following the 32-byte header
-//  28      4    reserved               must be 0 (future expansion)
-//  32+   ...    payload                opaque bytes; integrity by content_hash
+// The cardinality stamp carries the append-only rule for effect atoms
+// onto the wire. An atom's value never moves and a new atom takes the
+// next free position. So a stamp at or below the receiver's own count
+// means the receiver knows every atom the sender used. A stamp above
+// it means the sender used atoms this receiver cannot interpret, the
+// row hash then depends on values the receiver does not know, and the
+// entry is refused rather than allowed to collide with a stale row
+// hash.
 //
-// Total header = 32 bytes.  Payload follows; its integrity is
-// established by the caller-side hash check (payload bytes MUST hash
-// to content_hash; that check is the receiver's responsibility, not
-// this header's — the spec never sees the payload bytes in raw form).
+// Two key values never travel. A sentinel key is the empty-slot
+// marker of an open-addressed table, and accepting one lets a peer
+// poison its own lookup termination. A zero key means the sender left
+// it unset, and accepting one aims traffic at the most vulnerable
+// bucket on the far side. Both are refused on write and on read.
 //
-// ── FOUND-I04 append-only Universe extension encoded on the wire ────
+// The reserved word is written as zero and any other value is
+// refused. That is what makes a later revision safe. A reader of this
+// version rejects newer traffic outright instead of reading four
+// bytes as something they are not.
 //
-// `universe_cardinality` is the FOUND-I04 append-only invariant
-// (Effect underlying values frozen, new atoms append at next free
-// position) lifted from compile-time to wire-format:
-//
-//   - Sender writes its OsUniverse::cardinality at write time.
-//   - Receiver compares the stamp against ITS OsUniverse::cardinality.
-//   - Receiver ACCEPTS entries with stamp ≤ its cardinality (older
-//     sender, atoms still known: receiver knows every Effect bit the
-//     sender used, no silent collision).
-//   - Receiver REJECTS entries with stamp > its cardinality (newer
-//     sender used Effect atoms the receiver can't interpret — the
-//     row_hash bits depend on Effect underlying values the receiver
-//     doesn't know about; using such an entry would silently collide
-//     with stale row hashes).  Error: UniverseCardinalityTooHigh.
-//
-// This is the same invariant as the FOUND-I04 cache-invalidation
-// witness (test_computation_cache_invalidation.cpp), one layer down:
-// instead of a 64-subset compile-time cache key matrix, here the
-// 16-bit stamp gates federation acceptance.
-//
-// ── Sentinel + zero rejection ────────────────────────────────────────
-//
-// Two KernelCacheKey states must NOT appear in federation traffic:
-//
-//   - sentinel():  both axes UINT64_MAX — reserved as the open-
-//                  addressing empty-slot marker (Types.h:420-426 +
-//                  MerkleDag.h::Entry).  Federating a sentinel would
-//                  let a peer poison its cache with the sentinel
-//                  value, breaking lookup termination.
-//   - is_zero():   both axes 0 — typically means "unset" (default-
-//                  constructed key); sender forgot to populate.
-//                  Federating zero would silently match the most-
-//                  vulnerable bucket on the receiver side.
-//
-// Both are rejected on serialize (refuse to emit) AND on deserialize
-// (refuse to accept).  Errors: SentinelKey / ZeroKey.
-//
-// ── Reserved field discipline ───────────────────────────────────────
-//
-// The 4-byte `reserved` slot at offset 28 is structural padding +
-// future-proofing.  Senders MUST write 0; receivers MUST reject any
-// non-zero value.  This is the simple way to gate future protocol
-// extensions: when V2 lands and uses these bytes, V1 receivers will
-// already reject V2 traffic with a clean error rather than silently
-// misinterpret it.  Error: ReservedNonZero.
-//
-// ── Endianness (CLAUDE.md §XIV) ─────────────────────────────────────
-//
-// Crucible's platform assumption pins little-endian.  All multi-byte
-// fields in this spec are little-endian; on x86-64 / aarch64 + LE the
-// implementation is `std::memcpy` directly between the struct and the
-// byte buffer.  No byteswap on the supported platforms.  A future big-
-// endian port would need explicit `std::byteswap` in the codec; the
-// spec layout is the same.
-//
-// ── Eight-axiom audit (header proper) ───────────────────────────────
-//
-//   InitSafe — every field has NSDMI; default-constructed header is
-//              fully specified (magic = 0, version = 0, payload_size
-//              = 0, reserved = 0, hashes default).
-//   TypeSafe — strong-typed ContentHash + RowHash; uint32_t / uint16_t
-//              widths chosen to match the wire spec exactly.
-//   NullSafe — no pointer fields in the header struct.  span<> at the
-//              codec API surface (caller-supplied buffers).
-//   MemSafe  — header is std::is_standard_layout + trivially copyable;
-//              std::memcpy round-trips through the byte buffer
-//              losslessly.
-//   BorrowSafe — codec functions are pure (no global state); every
-//                buffer is caller-owned.
-//   ThreadSafe — N/A; the spec is value-semantic.
-//   LeakSafe — no resources.
-//   DetSafe  — same key + same payload_size → same 32 bytes; the
-//              fold is byte-deterministic by construction.
+// Every multi-byte field is little-endian, which matches every
+// supported platform, so the codec copies bytes straight in and out
+// with no swapping. A big-endian port needs explicit swaps. The
+// layout itself does not change.
 
 #include <crucible/Types.h>
 #include <crucible/effects/OsUniverse.h>
@@ -124,44 +63,30 @@
 
 namespace crucible::cipher::federation {
 
-// ── Magic + version constants ───────────────────────────────────────
-//
-// 'CFED' as little-endian uint32_t — bytes 0x43 'C', 0x46 'F', 0x45
-// 'E', 0x44 'D' in increasing memory address order.  Distinct from
-// CDAG_MAGIC (Serialize.h:27) so a federation stream and a Merkle DAG
-// snapshot cannot be confused at the magic-check step.
+// The bytes in memory read 'C', 'F', 'E', 'D' in increasing address
+// order, which is the order a receiver scanning a stream meets them.
 inline constexpr std::uint32_t FEDERATION_MAGIC = 0x44454643u;
 
-// Wire-format protocol version.  V1 ships with FOUND-I08; bumps
-// follow when the layout changes.  Receivers reject mismatched
-// versions cleanly (UnsupportedVersion).  No silent fallback: a V2
-// header with V1 layout would silently misinterpret 4 bytes of the
-// reserved field, hence the strict equality check at decode.
+// A version is compared for equality and never fallen back from. A
+// later header read under this layout would take four bytes of the
+// reserved word for something else.
 inline constexpr std::uint16_t FEDERATION_PROTOCOL_V1 = 1u;
 
-// ── Header struct (32 bytes, byte-stable) ───────────────────────────
-
 struct FederationEntryHeader {
-    std::uint32_t magic = 0;  // FEDERATION_MAGIC
-    std::uint16_t protocol_version = 0;  // FEDERATION_PROTOCOL_V1
-    std::uint16_t universe_cardinality = 0;  // OsUniverse::cardinality at write
-    ContentHash content_hash{};  // strong ID (Types.h)
-    RowHash row_hash{};  // strong ID (Types.h)
-    std::uint32_t payload_size = 0;  // bytes of payload following
-    std::uint32_t reserved = 0;  // must be 0
+    std::uint32_t magic = 0;
+    std::uint16_t protocol_version = 0;
+    std::uint16_t universe_cardinality = 0;
+    ContentHash content_hash{};
+    RowHash row_hash{};
+    std::uint32_t payload_size = 0;
+    std::uint32_t reserved = 0;
 };
 
-// ── Layout invariants ───────────────────────────────────────────────
-//
-// The header is a fixed 32-byte struct; the codec writes it as one
-// std::memcpy on platforms with the right alignment + endianness.
-// Field offsets are pinned so that future codec implementers can
-// reach into the bytes by offset without re-parsing the struct
-// declaration.
-static_assert(sizeof(FederationEntryHeader) == 32,
-              "FederationEntryHeader must be exactly 32 bytes — the wire-format "
-              "header size.  Adding a field requires bumping FEDERATION_PROTOCOL_V1 "
-              "and updating every receiver — see the V2 migration discipline.");
+// The offsets below are pinned because a codec written elsewhere
+// reaches into the bytes by offset rather than through this struct.
+static_assert(sizeof(FederationEntryHeader) == 32, "FederationEntryHeader must be exactly 32 bytes — the wire-format "
+                                                   "header size.  Adding a field requires a new protocol version and "
+                                                   "an update to every receiver.");
 static_assert(alignof(FederationEntryHeader) == 8, "FederationEntryHeader must be 8-byte aligned (the natural "
                                                    "alignment of the embedded ContentHash + RowHash).");
 static_assert(std::is_standard_layout_v<FederationEntryHeader>,
@@ -179,18 +104,7 @@ static_assert(offsetof(FederationEntryHeader, row_hash) == 16);
 static_assert(offsetof(FederationEntryHeader, payload_size) == 24);
 static_assert(offsetof(FederationEntryHeader, reserved) == 28);
 
-// ── Header byte-size constant ───────────────────────────────────────
 inline constexpr std::size_t FEDERATION_HEADER_BYTES = sizeof(FederationEntryHeader);
-
-// ── Cold blob byte-region layout predicate ─────────────────────────
-//
-// CONTRACT-119 production cite.  Federation entries are the cold-tier
-// byte blob Cipher writes today: a fixed header region followed by an
-// opaque payload region.  The codec used to rely on the manual offset
-// chain (`header bytes`, then `payload bytes`) staying non-overlapping
-// by inspection.  Route that invariant through Decide.h so every cold
-// blob layout validation cites the same pairwise-disjoint predicate as
-// MemoryPlan's live-byte layout.
 
 struct ColdBlobRegion {
     std::size_t offset_bytes = 0;
@@ -229,98 +143,53 @@ template <std::size_t MaxRegions>
         && cold_blob_regions_pairwise_disjoint<regions.size()>(std::span<const ColdBlobRegion>{regions});
 }
 
-// ── Magic byte order witness ────────────────────────────────────────
-//
-// Pin the byte order of the magic constant so a refactor that swaps
-// to big-endian or changes the ASCII spelling fails loud at compile
-// time.  The bytes in memory MUST be 'C','F','E','D' in increasing
-// address order — that's the order a receiver scanning a wire stream
-// sees them.
 static_assert((FEDERATION_MAGIC & 0xFFu) == 'C', "FEDERATION_MAGIC byte 0 must be 'C'.");
 static_assert(((FEDERATION_MAGIC >> 8) & 0xFFu) == 'F', "FEDERATION_MAGIC byte 1 must be 'F'.");
 static_assert(((FEDERATION_MAGIC >> 16) & 0xFFu) == 'E', "FEDERATION_MAGIC byte 2 must be 'E'.");
 static_assert(((FEDERATION_MAGIC >> 24) & 0xFFu) == 'D', "FEDERATION_MAGIC byte 3 must be 'D'.");
 
-// ── Universe cardinality field width witness ────────────────────────
-//
-// uint16_t has range [0, 65535].  EffectRowLattice's carrier is
-// std::uint64_t, so cardinality is structurally bounded by 64 (per
-// EffectRowLattice.h:97 static_assert).  64 fits comfortably; the
-// 2-byte field gives ~3 orders of magnitude of headroom for future
-// universes that compose multiple lattices into a wider catalog.
 static_assert(::crucible::effects::OsUniverse::cardinality <= std::uint16_t{0xFFFF},
               "OsUniverse::cardinality must fit in the uint16_t wire field.");
 
-// ── Defensive cross-stream magic collision guard ────────────────────
-//
-// FOUND-I08-AUDIT (Finding G).  Crucible has TWO distinct binary
-// stream formats with magic words: this protocol (FEDERATION_MAGIC,
-// 'CFED') and the Merkle DAG snapshot (CDAG_MAGIC, 'GDAG' =
-// 0x43444147, defined in Serialize.h:27).  A receiver that mis-
-// dispatches a federation byte stream to the CDAG codec — or vice
-// versa — would silently misinterpret 28 bytes of header before
-// hitting a content mismatch.  Pin the magic-distinctness invariant
-// HERE (the literal value of CDAG_MAGIC inlined, not pulled via
-// Serialize.h to keep this header lightweight); the test side
-// includes both headers and asserts the constants disagree.
-//
-// A future protocol that wants to add a new magic must update both
-// (a) this static_assert with the new constant, and (b) the test
-// side's cross-magic table.  If CDAG_MAGIC is ever reassigned to a
-// value matching FEDERATION_MAGIC, the runtime witness in
-// test_federation_protocol.cpp::test_magic_collision_with_cdag fails.
-static_assert(FEDERATION_MAGIC != 0x43444147u, "FEDERATION_MAGIC must not collide with CDAG_MAGIC ('GDAG' LE) — "
-                                               "a federation stream and a Merkle DAG snapshot must dispatch to "
-                                               "different codecs at the magic-check step.  See Serialize.h:27.");
+// The other binary stream format in this runtime is the graph
+// snapshot, whose magic word is spelled out here as a literal rather
+// than included, to keep this header light. A stream dispatched to
+// the wrong codec would misread twenty-eight bytes of header before
+// anything noticed, so the two words must stay distinct. A third
+// format has to extend this assertion.
+static_assert(FEDERATION_MAGIC != 0x43444147u, "FEDERATION_MAGIC must not collide with the graph-snapshot magic — "
+                                               "a federation stream and a graph snapshot must dispatch to "
+                                               "different codecs at the magic-check step.");
 
-// ── Payload-size field cap pin ──────────────────────────────────────
-//
-// FOUND-I08-AUDIT (Finding F).  payload_size is uint32_t; the
-// natural cap is std::numeric_limits<std::uint32_t>::max() = 4 GiB - 1.
-// A federation transport that wants to ship larger artifacts must
-// fragment them into multiple entries (or bump the protocol version
-// to V2 with a 64-bit payload_size).  The serialize-side check
-// (`payload.size() > UINT32_MAX → reject`) is the runtime guard;
-// this static_assert pins the structural cap so the compile-time
-// invariant cannot drift if the field width ever changes.
 static_assert(sizeof(FederationEntryHeader::payload_size) == 4,
               "payload_size MUST be a 32-bit field — caps the per-entry "
-              "payload at 4 GiB.  Larger payloads must fragment into multiple "
-              "entries or bump to a V2 protocol with 64-bit payload_size.");
+              "payload at 4 GiB.  A larger artifact fragments into several "
+              "entries, or waits for a protocol version with a wider field.");
 static_assert(sizeof(FederationEntryHeader::universe_cardinality) == 2,
-              "universe_cardinality MUST be a 16-bit field — caps the Effect "
-              "atom catalog at 65535 entries (well above EffectRowLattice's "
-              "structural cap of 64 from the uint64_t carrier).");
+              "universe_cardinality MUST be a 16-bit field — caps the effect "
+              "atom catalog at 65535 entries.");
 static_assert(sizeof(FederationEntryHeader::magic) == 4, "magic MUST be a 32-bit field — pinned for byte-stable cross-"
                                                          "platform protocol identification.");
 static_assert(sizeof(FederationEntryHeader::protocol_version) == 2,
               "protocol_version MUST be a 16-bit field — supports up to 65536 "
               "wire-format revisions.");
 static_assert(sizeof(FederationEntryHeader::reserved) == 4,
-              "reserved MUST be a 32-bit field — preserves V1 → V2 layout "
-              "compatibility (V2 fields can use this slot).");
-
-// ── Error codes ─────────────────────────────────────────────────────
-//
-// FederationError is the structured error channel returned by
-// serialize / deserialize.  Each error names exactly one rejection
-// rule from the spec above.  Single-byte underlying type keeps the
-// std::expected<size_t, FederationError> return value compact.
+              "reserved MUST be a 32-bit field — a later layout claims this "
+              "slot, and the width has to be there waiting for it.");
 
 enum class FederationError : std::uint8_t {
     None = 0,
-    BadMagic = 1,  // header magic != FEDERATION_MAGIC
-    UnsupportedVersion = 2,  // protocol_version != V1
-    UniverseCardinalityTooHigh = 3,  // sender used atoms receiver lacks
-    SentinelKey = 4,  // KernelCacheKey is sentinel()
-    ZeroKey = 5,  // KernelCacheKey is_zero()
-    ReservedNonZero = 6,  // reserved field != 0
-    TruncatedHeader = 7,  // out_buf < FEDERATION_HEADER_BYTES
-    TruncatedPayload = 8,  // declared payload_size > remaining bytes
-    OutputBufferTooSmall = 9,  // out_buf < header + payload_size
+    BadMagic = 1,
+    UnsupportedVersion = 2,
+    UniverseCardinalityTooHigh = 3,
+    SentinelKey = 4,
+    ZeroKey = 5,
+    ReservedNonZero = 6,
+    TruncatedHeader = 7,
+    TruncatedPayload = 8,
+    OutputBufferTooSmall = 9,
 };
 
-// ── Diagnostic name forwarder (FOUND-E18 row-mismatch surface) ──────
 [[nodiscard]] inline constexpr std::string_view federation_error_name(FederationError e) noexcept {
     switch (e) {
         case FederationError::None:
@@ -348,29 +217,14 @@ enum class FederationError : std::uint8_t {
     }
 }
 
-// ── Serialize ───────────────────────────────────────────────────────
-//
-// Encode a (key, payload) pair into out_buf.  Returns the number of
-// bytes written (header + payload) on success, or a FederationError
-// describing the rejection rule that fired.
-//
-// Pre-conditions enforced by the body (NOT contract-pre, since errors
-// are part of the API surface — the caller routes them through
-// std::expected, NOT std::terminate):
-//
-//   - out_buf must have at least FEDERATION_HEADER_BYTES + payload.size().
-//   - key must not be sentinel() and must not be is_zero().
-//   - payload.size() must fit in uint32_t (we cap it at UINT32_MAX
-//     by the field type; a payload larger than 4 GiB is structurally
-//     rejected by truncation, see the field-width discipline below).
-//
-// The writer pins the universe_cardinality stamp from the local
-// OsUniverse; receivers compare against their own cardinality.
+// The rejection rules are checked in the body and reported, rather
+// than asserted as preconditions. A caller that hands over a buffer
+// too small, or a key it forgot to fill in, deserves an error it can
+// route, not a terminated process.
 
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
 serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey& key,
                            std::span<const std::uint8_t> payload) noexcept {
-    // Sentinel + zero rejection — must not appear in federation traffic.
     if (key.is_sentinel()) {
         return std::unexpected(FederationError::SentinelKey);
     }
@@ -378,20 +232,16 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
         return std::unexpected(FederationError::ZeroKey);
     }
 
-    // Field-width discipline: payload_size is uint32_t.  A payload
-    // larger than 4 GiB cannot fit; we reject before allocating.
     if (payload.size() > std::numeric_limits<std::uint32_t>::max()) {
         return std::unexpected(FederationError::OutputBufferTooSmall);
     }
     CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(payload.size()));
 
-    // Total bytes required = 32 (header) + payload.size().
     const std::size_t total_bytes = FEDERATION_HEADER_BYTES + payload.size();
     if (out_buf.size() < total_bytes) {
         return std::unexpected(FederationError::OutputBufferTooSmall);
     }
 
-    // Build the header.
     FederationEntryHeader hdr{};
     hdr.magic = FEDERATION_MAGIC;
     hdr.protocol_version = FEDERATION_PROTOCOL_V1;
@@ -401,17 +251,13 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
     hdr.payload_size = static_cast<std::uint32_t>(payload.size());
     hdr.reserved = 0;
 
-    // Header → buffer.  std::memcpy is the only legal way under
-    // -fno-strict-aliasing-violations for non-byte structs (CLAUDE.md
-    // §II MemSafe — std::start_lifetime_as is for arena type-punning,
-    // not byte-codec).
+    // A byte codec copies. Starting a lifetime at the address is the
+    // tool for arena type-punning and would be wrong here.
     std::memcpy(out_buf.data(), &hdr, FEDERATION_HEADER_BYTES);
 
-    // Payload → buffer (after header).  An empty payload is fine —
-    // a zero-byte payload is a valid federation entry that announces
-    // (content_hash, row_hash) without bytes (the receiver looks up
-    // the artifact via content_hash from its own store, e.g. for
-    // dedup confirmation).
+    // An entry with no payload bytes is valid and meaningful. It
+    // announces the pair of hashes, and the receiver looks the
+    // artifact up in its own store from the content hash.
     if (!payload.empty()) {
         std::memcpy(out_buf.data() + FEDERATION_HEADER_BYTES, payload.data(), payload.size());
     }
@@ -419,56 +265,41 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
     return total_bytes;
 }
 
-// ── Deserialize header ──────────────────────────────────────────────
+// The receiver's own atom count arrives as an argument instead of
+// being read from a global, so a test can stand in as a newer or an
+// older peer.
 //
-// Decode a 32-byte header from in_buf.  Returns the header on success
-// or a FederationError on rejection.  The caller is responsible for
-// reading the payload (header.payload_size bytes immediately after
-// the header) and validating its hash matches header.content_hash.
-//
-// receiver_cardinality is the local OsUniverse::cardinality — passed
-// explicitly rather than read from a global so the function is
-// trivially testable across hypothetical newer/older receivers.
-//
-// Validation order matters: cheaper checks (truncation, magic,
-// version) fire before expensive (key normalization).  Each check is
-// short-circuited; the first rejection wins.
+// The caller reads the payload itself and checks that it hashes to
+// the content hash in the returned header.
 
 [[nodiscard]] inline std::expected<FederationEntryHeader, FederationError>
 deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
-    // Truncation: the buffer must hold at least the 32-byte header.
     if (in_buf.size() < FEDERATION_HEADER_BYTES) {
         return std::unexpected(FederationError::TruncatedHeader);
     }
 
-    // Pull the header out of the buffer.  std::memcpy is the only
-    // legal way (see serialize comment).
     FederationEntryHeader hdr{};
     std::memcpy(&hdr, in_buf.data(), FEDERATION_HEADER_BYTES);
 
-    // Magic.
     if (hdr.magic != FEDERATION_MAGIC) {
         return std::unexpected(FederationError::BadMagic);
     }
 
-    // Protocol version — strict equality, no silent fallback.
     if (hdr.protocol_version != FEDERATION_PROTOCOL_V1) {
         return std::unexpected(FederationError::UnsupportedVersion);
     }
 
-    // Reserved field — strict zero, no silent acceptance.
     if (hdr.reserved != 0u) {
         return std::unexpected(FederationError::ReservedNonZero);
     }
 
-    // Universe cardinality — receiver must understand every atom the
-    // sender used.  The append-only invariant (FOUND-I04) means
-    // sender_cardinality ≤ receiver_cardinality is the safe direction.
+    // A sender at or below this count used only atoms this receiver
+    // already knows, which is the safe direction of the append-only
+    // rule.
     if (hdr.universe_cardinality > receiver_cardinality) {
         return std::unexpected(FederationError::UniverseCardinalityTooHigh);
     }
 
-    // Sentinel + zero key — must not appear in federation traffic.
     const KernelCacheKey key{hdr.content_hash, hdr.row_hash};
     if (key.is_sentinel()) {
         return std::unexpected(FederationError::SentinelKey);
@@ -477,7 +308,6 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_
         return std::unexpected(FederationError::ZeroKey);
     }
 
-    // Truncated payload: declared size > bytes remaining after header.
     const std::size_t bytes_after_header = in_buf.size() - FEDERATION_HEADER_BYTES;
     CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(hdr.payload_size));
     if (static_cast<std::size_t>(hdr.payload_size) > bytes_after_header) {
@@ -487,12 +317,8 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_
     return hdr;
 }
 
-// ── Deserialize header + payload span ───────────────────────────────
-//
-// Convenience overload: returns both the header AND a span pointing
-// into in_buf for the payload bytes.  The span aliases the input
-// buffer; caller must not let in_buf go out of scope before consuming
-// the payload.
+// The payload span aliases the input buffer. It stays valid only
+// while that buffer does.
 
 struct FederationEntryView {
     FederationEntryHeader header{};
@@ -529,12 +355,6 @@ deserialize_federation_entry(const ::crucible::permissions::FederatedPeerPermiss
     return ::crucible::safety::Tagged<FederationEntryView, ::crucible::safety::source::FederatedPeer<Org>>{*view};
 }
 
-// ── Federation-acceptance predicate (helper) ────────────────────────
-//
-// True iff the sender's universe_cardinality is ≤ the receiver's.
-// Pure consteval-friendly predicate for compile-time validation in
-// scenarios where the cardinality is statically known on both sides
-// (typical for fleet-wide same-binary federation).
 [[nodiscard]] inline constexpr bool federation_accepts_cardinality(std::uint16_t sender_cardinality,
                                                                    std::uint16_t receiver_cardinality) noexcept {
     return sender_cardinality <= receiver_cardinality;

@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P WIP loss-recovery sample stub.
- *
- * Future role: feed fast loss/retransmit evidence into CNT-P WIP recovery and
- * path-swap policy. Current behavior: no-op tracepoint handler.
- */
-
 #include "../../dataplane/bpf/net_common.h"
 
 struct {

@@ -1,63 +1,27 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// concurrent/PermissionedShardedCalendarGrid.h
+// A ladder of independent calendar queues, one per shard.  A producer
+// writes only to its own shard and a consumer drains only that same
+// shard, and each shard carries its own bucket pointer.
 //
-// PER-SHARD priority queue ladder.  N independent calendar grids
-// (one per shard); producer<S> writes only to shard S; consumer<S>
-// drains only shard S.  Each shard has its own current_bucket atomic
-// — NO cross-thread reads on the producer push path.
+// The rejected alternative is a single calendar with one bucket
+// pointer.  Every producer there reads the one pointer that the one
+// consumer keeps writing, so the line migrates on each push and the
+// producer inherits the consumer's scheduling jitter.  Splitting the
+// pointer per shard removes that read: when a shard's producer and
+// consumer sit on the same core or a neighbouring one, the read is
+// local.
 //
-// ─── Why this exists ──────────────────────────────────────────────
+// What that costs is global ordering.  Within a shard the bucket order
+// is exact, so the item with the lowest key pops first.  Across shards
+// the pointers move independently and nothing relates them, so two
+// shards can be draining quite different priorities at the same
+// moment.  A workload that needs one global order wants the
+// single-calendar form instead.
 //
-// PermissionedCalendarGrid (the single-grid variant) requires every
-// producer's try_push to read the SOLE current_bucket, which the
-// SOLE consumer is constantly writing.  That cross-thread atomic
-// read widens the per-push measurement window from ~5ns (pure
-// SpscRing write) to ~50ns (cache-line migration) and exposes
-// producers to OS scheduling jitter — empirically observed as
-// 100-200μs p99.9 tail under 4-producer contention.
-//
-// This wrapper mirrors what Linux CFS/EEVDF does at the kernel
-// level: per-CPU red-black trees with no inter-CPU coordination on
-// enqueue.  Each shard is a self-contained calendar; producer<S>
-// reads only shards_[S].current_bucket which only consumer<S>
-// writes.  In well-pinned production code (producer P pinned to
-// core C, consumer P also on core C or its NUMA-local sibling), the
-// read is same-core or single-hop — eliminating the 100μs tail
-// at the cost of approximate cross-shard priority.
-//
-// ─── Per-shard priority semantics (exact)  ────────────────────────
-//
-// Within shard S: bucket-clamp invariant holds exactly.  The
-// consumer<S> sees items in monotone bucket order from any single
-// producer<S>.  Lowest priority key (clamped to current bucket)
-// always pops first.
-//
-// ─── Cross-shard priority semantics (approximate) ─────────────────
-//
-// Across shards: each shard advances current_bucket independently.
-// Shard A may be at bucket 100 draining items with key=100;
-// Shard B may be at bucket 200 draining items with key=200.
-// They are NOT globally ordered — this is the trade-off.
-//
-// Production usage: pin producer P → shard S(P) (typically
-// S = P % NumShards or NUMA-node-of(P)).  If your workload requires
-// global priority correctness, use the single-grid variant.
-//
-// ─── No work-stealing in the MVP ──────────────────────────────────
-//
-// If shard S's consumer is slower than its producer, shard S backs
-// up while sibling shards are idle.  Mitigations:
-//   * Static balance: assign producers evenly across shards.
-//   * Dynamic balance: future Fix 3.5 adds opt-in stealing where
-//     consumer<S> can drain peer shards when its own is empty.
-//
-// References:
-//   THREADING.md §5.5.2 — scheduler flavours
-//   misc/27_04_2026.md §1.4 — CSL discipline at every channel boundary
-//   PermissionedCalendarGrid.h — the single-shard prior art
-// ═══════════════════════════════════════════════════════════════════
+// There is no stealing between shards.  A shard whose consumer falls
+// behind its producer backs up while its siblings sit idle, so the
+// producers have to be spread over the shards evenly.
 
 #include <crucible/concurrent/SpscRing.h>
 #include <crucible/permissions/Permission.h>
@@ -77,18 +41,16 @@
 
 namespace crucible::concurrent {
 
-// ── KeyExtractor concept (matches PermissionedCalendarGrid's) ─────
+// A smaller key means higher priority.
 
 template <typename K, typename T>
 concept ShardedCalendarKeyExtractorOf = requires(const T& v) {
     { K::key(v) } noexcept -> std::convertible_to<std::uint64_t>;
 };
 
-// ── Tag tree ─────────────────────────────────────────────────────
-//
-// Reuses safety::Producer/Consumer from PermissionGridGenerator.h
-// — the auto-generated splits_into_pack handles the M-producer ×
-// N-consumer split automatically.
+// The slot tags come straight from the permission-grid generator, which
+// already knows how to split a whole tag into producer and consumer
+// slots.
 
 namespace sharded_calendar_tag {
 
@@ -102,10 +64,6 @@ template <typename UserTag, std::size_t S>
 using Consumer = safety::Consumer<Whole<UserTag>, S>;
 
 }  // namespace sharded_calendar_tag
-
-// ── PermissionedShardedCalendarGrid<T, NumShards, NumBuckets,
-//                                    BucketCap, KeyExtractor,
-//                                    QuantumNs, UserTag> ────────────
 
 template <SpscValue T, std::size_t NumShards, std::size_t NumBuckets, std::size_t BucketCap, typename KeyExtractor,
           std::uint64_t QuantumNs, typename UserTag = void>
@@ -135,11 +93,8 @@ public:
     static constexpr std::size_t bucket_cap = BucketCap;
     static constexpr std::uint64_t quantum_ns = QuantumNs;
 
-    // ── Per-shard storage (heap-allocated; each is large) ──────────
-    //
-    // sizeof(Shard) ≈ NumBuckets × BucketCap × sizeof(T) + slack.
-    // For NumBuckets=1024, BucketCap=64, T=24B: ~1.5 MB per shard.
-    // 4 shards = 6 MB total; well within stack-avoidance threshold.
+    // A shard holds every bucket's ring, so it is far too large to sit
+    // inline in an automatic object.
 
 private:
     struct Shard {
@@ -149,9 +104,8 @@ private:
 
     std::array<std::unique_ptr<Shard>, NumShards> shards_;
 
-    // Bucket math — matches PermissionedCalendarGrid::bucket_for_.
-    // Producer-side called from shard S; reads shards_[S].current_bucket
-    // (SAME-CORE in well-pinned production code — no cross-thread cost).
+    // Clamping to the shard's pointer is what makes a late item run at
+    // once instead of waiting a full turn of the wheel.
     [[nodiscard, gnu::hot]] std::size_t bucket_for_(std::size_t shard, const T& item) const noexcept {
         const std::uint64_t key = KeyExtractor::key(item);
         const std::uint64_t key_bucket = key / QuantumNs;
@@ -166,12 +120,6 @@ public:
             shards_[s] = std::make_unique<Shard>();
         }
     }
-
-    // ── ProducerHandle<S> — linear ownership of shard S's producer ─
-    //
-    // try_push reads ONLY shards_[S].current_bucket (same core as
-    // consumer<S> in pinned production code) and writes ONLY to
-    // shards_[S].buckets[B].  No coordination with peer shards.
 
     template <std::size_t S>
     class ProducerHandle {
@@ -197,31 +145,18 @@ public:
 
         static constexpr std::size_t shard_index = S;
 
-        // Push one item into shard S's calendar.  Bucket index from
-        // KeyExtractor::key(item), clamped to shards_[S].current_bucket.
-        // Returns false iff the target SpscRing is full.
-        //
-        // Per-call shape: 1 same-core atomic load (current_bucket) +
-        // 1 SpscRing acquire/release pair on the target cell.  Total
-        // ~5-10 ns when consumer<S> is on same core or NUMA-local
-        // sibling.
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
             const std::size_t b = grid_.bucket_for_(S, item);
             return grid_.shards_[S]->buckets[b].try_push(item);
         }
 
-        // Per-handle diagnostics — own-shard view (snapshot, NOT exact).
+        // Snapshots over this handle's shard.  Sound for telemetry and
+        // for deciding whether to keep retrying, never for a
+        // correctness invariant.
         [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(S); }
         [[nodiscard]] bool empty_approx() const noexcept { return grid_.size_approx(S) == 0; }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
-
-    // ── ConsumerHandle<S> — linear ownership of shard S's consumer ─
-    //
-    // try_pop scans shards_[S]'s buckets forward from current_bucket;
-    // first non-empty cell yields the item.  Advances current_bucket
-    // past skipped empty cells (single writer to current_bucket: only
-    // this consumer).
 
     template <std::size_t S>
     class ConsumerHandle {
@@ -244,9 +179,9 @@ public:
 
         static constexpr std::size_t shard_index = S;
 
-        // Pop highest-priority item from shard S's calendar.
-        // Snapshots current_bucket once at entry to prevent scan
-        // drift while the consumer's own try_advance happens.
+        // Returns the item of highest priority still queued in this
+        // shard.  The origin is sampled once, so the advance below
+        // cannot slide the scan window forward under the loop.
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
             auto& shard = *grid_.shards_[S];
             const std::uint64_t cur_origin = shard.current_bucket.peek_relaxed();
@@ -255,14 +190,11 @@ public:
                 const std::size_t cell = this_b % NumBuckets;
                 if (auto v = shard.buckets[cell].try_pop()) {
                     if (scan > 0) {
-                        // Skipped past empty buckets — advance the
-                        // monotone counter.  Only this consumer
-                        // writes current_bucket, so the advance is
-                        // race-free.  Discard return: try_advance
-                        // is [[nodiscard]] but we don't care
-                        // whether the CAS landed (a slower consumer
-                        // may have advanced past us; either way the
-                        // counter ends up at >= this_b).
+                        // The pointer only ever moves forward, so a
+                        // refused advance means it already stands at or
+                        // past this bucket.  Either outcome leaves it
+                        // where this call needs it, and the result is
+                        // discarded for that reason.
                         (void)shard.current_bucket.try_advance(this_b);
                     }
                     return v;
@@ -271,13 +203,13 @@ public:
             return std::nullopt;
         }
 
-        // Per-handle diagnostics — own-shard view (snapshot, NOT exact).
+        // Snapshots over this handle's shard.  Sound for telemetry and
+        // for deciding whether to keep retrying, never for a
+        // correctness invariant.
         [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(S); }
         [[nodiscard]] bool empty_approx() const noexcept { return grid_.size_approx(S) == 0; }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
-
-    // ── Handle factories (linear; consume the Permission) ──────────
 
     template <std::size_t S>
     [[nodiscard]] constexpr ProducerHandle<S> producer(safety::Permission<shard_producer_tag<S>>&& perm) noexcept {
@@ -290,8 +222,6 @@ public:
         static_assert(S < NumShards, "consumer<S>: S must be < NumShards");
         return ConsumerHandle<S>{*this, std::move(perm)};
     }
-
-    // ── Diagnostics ────────────────────────────────────────────────
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumShards * NumBuckets * BucketCap; }
 
@@ -315,10 +245,15 @@ public:
 
     [[nodiscard]] bool empty_approx() const noexcept { return size_approx() == 0; }
 
-    // ── Mode transition (linear-only — no atomic pool to drain) ────
-
+    // Always false, and present only so this ladder matches the shape
+    // of the pool-backed channels.  There is no exclusivity flag to
+    // read: the linear permissions on every endpoint are what prove
+    // single ownership.
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
+    // Scoped exclusive access to every shard.  Surrendering the
+    // recombined whole permission is itself the proof that no handle is
+    // alive, and it comes back so the caller can split it again.
     template <typename Body>
     [[nodiscard]] safety::Permission<whole_tag>
     with_recombined_access(safety::Permission<whole_tag>&& whole,
@@ -326,8 +261,6 @@ public:
         std::forward<Body>(body)();
         return std::move(whole);
     }
-
-    // ── Diagnostic surface (matches concurrent/traits/Concepts.h) ──
 
     [[nodiscard]] static constexpr std::string_view graded_type_name() noexcept {
         return "PermissionedShardedCalendarGrid";

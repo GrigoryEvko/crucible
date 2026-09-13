@@ -1,23 +1,6 @@
 #pragma once
 
-// ── crucible::safety::Checked ───────────────────────────────────────
-//
-// Overflow-mode arithmetic primitives.  Explicit choice at the call
-// site for every operation that could overflow, divide by zero, or
-// shift out of range.
-//
-//   Axiom coverage: TypeSafe, DetSafe.
-//   Runtime cost:   overflow detection is a single flag check on
-//                   x86-64 via __builtin_*_overflow.  Division and
-//                   shift validation is a single comparison.
-//
-// Four modes per op:
-//   checked_*     — returns std::optional<T>; nullopt on overflow/invalid
-//   wrapping_*    — two's-complement wrap on overflow
-//   trapping_*    — std::abort() on overflow
-//   saturating_*  — clamp to T's min/max on overflow
-//
-// Supported ops: add, sub, mul, div, mod, neg, shl, shr, abs.
+// Arithmetic that names its overflow behaviour at the call site.
 
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
@@ -31,8 +14,6 @@
 #include <type_traits>
 
 namespace crucible::safety {
-
-// ── Checked (nullopt on overflow) ───────────────────────────────────
 
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_add(T a, T b) noexcept {
@@ -58,7 +39,8 @@ template <std::integral T>
     return r;
 }
 
-// Division: two overflow paths — divide by zero, and (for signed) MIN/-1.
+// Dividing the most negative value by minus one has no representable
+// quotient, which is the second failure alongside a zero divisor.
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_div(T a, T b) noexcept {
     if (b == T{0}) [[unlikely]]
@@ -76,12 +58,15 @@ template <std::integral T>
         return std::nullopt;
     if constexpr (std::is_signed_v<T>) {
         if (a == std::numeric_limits<T>::min() && b == T{-1}) [[unlikely]]
-            return T{0};  // mathematically defined, despite INT_MIN/-1 overflow
+            // The remainder is zero here even though the quotient of the
+            // same operands is not representable, so this pair succeeds
+            // where the division above fails.
+            return T{0};
     }
     return static_cast<T>(a % b);
 }
 
-// Negation: INT_MIN negated overflows for signed.
+// The most negative value has no positive counterpart.
 template <std::signed_integral T>
 [[nodiscard]] constexpr std::optional<T> checked_neg(T a) noexcept {
     if (a == std::numeric_limits<T>::min()) [[unlikely]]
@@ -96,13 +81,13 @@ template <std::signed_integral T>
     return static_cast<T>(a < T{0} ? -a : a);
 }
 
-// Shift: invalid if shift count >= bit width or negative.
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_shl(T a, int shift) noexcept {
     if (shift < 0 || shift >= static_cast<int>(sizeof(T) * 8)) [[unlikely]]
         return std::nullopt;
     if constexpr (std::is_signed_v<T>) {
-        // Left-shift of negative values is UB; reject.
+        // Shifting a negative value left is undefined, so it is refused
+        // rather than performed.
         if (a < T{0}) [[unlikely]]
             return std::nullopt;
     }
@@ -115,8 +100,6 @@ template <std::integral T>
         return std::nullopt;
     return static_cast<T>(a >> shift);
 }
-
-// ── Wrapping (two's-complement wrap) ────────────────────────────────
 
 template <std::integral T>
 [[nodiscard]] constexpr T wrapping_add(T a, T b) noexcept {
@@ -138,8 +121,6 @@ template <std::integral T>
     (void)__builtin_mul_overflow(a, b, &r);
     return r;
 }
-
-// ── Trapping (abort on overflow) ────────────────────────────────────
 
 template <std::integral T>
 [[nodiscard]] constexpr T trapping_add(T a, T b) noexcept {
@@ -176,8 +157,6 @@ template <std::integral T>
     return static_cast<T>(a / b);
 }
 
-// ── Saturating (clamp to T's [min, max]) ────────────────────────────
-
 template <std::integral T>
 [[nodiscard]] constexpr T saturating_add(T a, T b) noexcept {
     return ::crucible::sat::add_sat(a, b);
@@ -193,74 +172,20 @@ template <std::integral T>
     return ::crucible::sat::mul_sat(a, b);
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Compile-time capacity arithmetic (#408 SAFEINT-C19, §19) ────────
-// ═════════════════════════════════════════════════════════════════════
+// Capacities are often computed at compile time, and a bare product
+// that overflows the result type propagates a corrupted size into
+// buffer sizing and layout.  The variable templates below turn that
+// into a build failure.
 //
-// Capacities of bounded containers are often computed at compile time:
+// The obvious spelling, a consteval lambda holding
+// `if (!r) static_assert(false, ...)`, does not work.  A static_assert
+// with a false condition in a function body fires on instantiation
+// whatever the surrounding branch says.  Routing through a class
+// template instead puts the optional in a static member, and asserting
+// on that member fires only on a real overflow.
 //
-//     // `BoundedQueue<T, N>` here is a STAND-IN for ANY consumer that
-//     // declares its capacity at the type level — e.g. SPSC rings,
-//     // MPMC rings, arenas, plan buffers, RecipePool slots, region
-//     // caches, ChaseLevDeque, MetaLog, etc.  The primitive below is
-//     // consumer-agnostic; the doc cites a concept-name to make the
-//     // shape obvious without preferring any single concrete client.
-//     using MyContainer = BoundedQueue<Job, NumProducers * BurstPerProducer>;
-//
-// A bare `*` is silently wrong if the product overflows the result
-// type — the corrupted capacity propagates into ring-buffer sizing,
-// arena layout, and downstream invariants.  The variable templates
-// below promote the existing runtime `checked_add` / `checked_sub` /
-// `checked_mul` primitives into compile-time-failing arithmetic so
-// the bug becomes a build error with a framework-controlled
-// diagnostic.
-//
-// ─── Layering position (FIXY-V-221) ────────────────────────────────
-//
-// `safety/Checked.h` is an L0 foundation primitive.  Its doc surface
-// MUST NOT name any concrete higher-layer (concurrent/ / cipher/ /
-// forge/ / mimic/ / canopy/ / cog/ / perf/ / warden/ / observe/ /
-// topology/ / cntp/) type as a motivating example, because that would
-// invert the architectural dependency — the foundation describing
-// itself in terms of its consumers.  Documentation examples here use
-// generic concept-names like `BoundedQueue<T, N>` so the primitive's
-// contract reads as "I serve any bounded container's compile-time-
-// capacity math" rather than implying any single canonical use case.
-// Concrete consumer-side docs (in the consumer's own header) ARE free
-// to cite `safe_capacity<...>` from their own doc surfaces; the
-// dependency direction matches the include direction.
-//
-// ─── Routing: helper struct, not consteval-lambda ──────────────────
-//
-// The natural-looking
-//   inline constexpr auto safe_capacity = []() consteval {
-//       auto r = checked_mul<std::size_t>(A, B);
-//       if (!r) static_assert(false, "...");   // ← always fires!
-//       return *r;
-//   }();
-// has a subtle bug: `static_assert(false, msg)` inside a function
-// body fires unconditionally on instantiation regardless of any
-// surrounding `if`.  The robust idiom routes through a class-template
-// helper whose body has a `static constexpr auto _opt = ...` member:
-// the `static_assert(_opt.has_value(), ...)` then evaluates the
-// constexpr optional and fires ONLY on actual overflow.
-//
-// ─── Use ────────────────────────────────────────────────────────────
-//
-//     // Type-parameterised (BoundedQueue stands in for any
-//     // bounded-capacity consumer; see Layering position above):
-//     using MyContainer = BoundedQueue<Job,
-//         safe_mul<std::size_t, NumProducers, BurstPerProducer>>;
-//
-//     // size_t convenience (canonical bounded-capacity declaration):
-//     using MyContainer = BoundedQueue<Job,
-//         safe_capacity<NumProducers, BurstPerProducer>>;
-//
-// ─── Diagnostics ────────────────────────────────────────────────────
-//
-// Every overflow site fires a static_assert beginning with
-// `[Checked_Capacity_Overflow]` so audit greps can find every
-// compile-time arithmetic-failure site mechanically.
+// Every one of those assertions opens with a bracketed tag so an audit
+// can find each compile-time arithmetic failure site by grep.
 
 namespace detail {
 
@@ -290,9 +215,6 @@ struct safe_mul_impl {
 
 }  // namespace detail
 
-// Type-parameterised compile-time arithmetic — fails to compile on
-// overflow with the [Checked_Capacity_Overflow] diagnostic prefix.
-
 template <std::integral T, T A, T B>
 inline constexpr T safe_add = detail::safe_add_impl<T, A, B>::value;
 
@@ -302,41 +224,18 @@ inline constexpr T safe_sub = detail::safe_sub_impl<T, A, B>::value;
 template <std::integral T, T A, T B>
 inline constexpr T safe_mul = detail::safe_mul_impl<T, A, B>::value;
 
-// ─── std::size_t convenience aliases ────────────────────────────────
-//
-// The vast majority of capacity-arithmetic sites use std::size_t as
-// the destination type (queue capacities, arena byte budgets, ring
-// sizes).  These aliases let call sites omit the type parameter
-// entirely, keeping the channel-declaration boilerplate to a minimum.
-
 template <std::size_t A, std::size_t B>
 inline constexpr std::size_t safe_capacity = safe_mul<std::size_t, A, B>;
 
 template <std::size_t A, std::size_t B>
 inline constexpr std::size_t safe_byte_budget = safe_mul<std::size_t, A, B>;
 
-// ─── Variadic byte-budget helpers (#134) ────────────────────────────
-//
-// Real-world memory/budget arithmetic is RARELY just `A * B`.  Arena
-// sizing, struct-of-arrays layouts, protocol-framing headers, and
-// permission-carrier buffers all need sums of terms — each term itself
-// often a product of (count, per-item-size).  Pre-#134 a user doing:
-//
-//     constexpr std::size_t total = Hdr * 1                     // header
-//                                 + Payload * EltSize * N       // body
-//                                 + Tail * AlignPad;            // footer
-//
-// got no overflow protection — any intermediate product could wrap,
-// silently producing a too-small total that then under-provisions an
-// arena, over-provisions a recv buffer, or misaligns a struct.  The
-// helpers below promote the compile-time discipline to variadic form
-// and to common layout-specific cases.
+// A budget is rarely a single product.  A sum of terms, each of them a
+// product, has an intermediate that can wrap and silently under-size the
+// whole.  The helpers below carry the check through every step.
 
 namespace detail {
 
-// Fold a variadic sum with overflow detection at EVERY step.  Each
-// partial sum is checked; the first overflow halts with the named
-// diagnostic.
 template <std::integral T, T... Xs>
 struct safe_add_all_impl;
 
@@ -363,51 +262,17 @@ struct safe_add_all_impl<T, X, Y, Rest...> {
 
 }  // namespace detail
 
-// safe_add_all<T, X1, X2, ..., Xn> — variadic checked sum.  Fires
-// `[Checked_Capacity_Overflow]` at the first partial-sum overflow.
 template <std::integral T, T... Xs>
 inline constexpr T safe_add_all = detail::safe_add_all_impl<T, Xs...>::value;
 
-// ─── Layout-specific byte-budget helpers (#134) ─────────────────────
-
-// safe_array_bytes<T, N> — total bytes for N elements of type T.
-// Overflow-safe multiplication of sizeof(T) and N; fires the same
-// [Checked_Capacity_Overflow] prefix on overflow.  The canonical "I
-// want to allocate N objects of T" budget calculation.
 template <typename T, std::size_t N>
 inline constexpr std::size_t safe_array_bytes = safe_mul<std::size_t, sizeof(T), N>;
 
-// safe_struct_bytes<T1, T2, ..., Tn> — sum of sizeof(Ti) over a type
-// pack.  Overflow-safe variadic sum of the sizeof's.  Useful for
-// struct-of-arrays layouts and protocol-framing headers where each
-// field's contribution is `sizeof(field_type)` and the total is a
-// running sum.  Note: this is a naive sum, NOT alignment-aware —
-// callers that need padding-accurate layouts must also account for
-// alignment(Ti) and pad bytes separately (or use reflection to compute
-// the true sizeof-with-padding of a packed struct).
+// This is a plain sum of the element sizes and knows nothing about
+// alignment.  A struct holding the same types can be larger, because the
+// compiler inserts padding this total does not account for.
 template <typename... Ts>
 inline constexpr std::size_t safe_struct_bytes = safe_add_all<std::size_t, sizeof(Ts)...>;
-
-// ─── Compile-time budget fit check (#134) ────────────────────────────
-//
-// `bytes_fit_v<Budget, Used>` is a boolean trait: true iff the USED
-// byte count fits within the declared BUDGET.  `ensure_bytes_fit<
-// Budget, Used>()` is the consteval one-line check that fires
-// `[Byte_Budget_Exceeded]` when it doesn't — paralleling the
-// `[Dual_Mismatch]` / `[Branch_Index_Out_Of_Range]` discipline from
-// the session-types side.  Use at declaration sites that must not
-// exceed a compile-time budget (arena page sizes, cache-line
-// budgets, kernel-stack allocations, permission buffer footprints).
-//
-// Example:
-//
-//     struct MyMetadata {
-//         uint64_t field_a;
-//         uint64_t field_b;
-//         uint32_t field_c;
-//     };
-//     // Must fit in a single 64-byte cache line:
-//     ensure_bytes_fit<64, safe_struct_bytes<uint64_t, uint64_t, uint32_t>>();
 
 template <std::size_t Budget, std::size_t Used>
 inline constexpr bool bytes_fit_v = (Used <= Budget);
@@ -431,13 +296,9 @@ inline constexpr std::size_t safe_size_sum = safe_add<std::size_t, A, B>;
 template <std::size_t A, std::size_t B>
 inline constexpr std::size_t safe_size_diff = safe_sub<std::size_t, A, B>;
 
-// ── Self-tests ─────────────────────────────────────────────────────
-//
-// Compile-time witnesses that the helpers fire on the expected
-// inputs.  Negative cases (overflow rejection) live in the test/
-// safety_neg/ harness because `static_assert(false, ...)` is exactly
-// what we want to TRIGGER, and that has to live in a TU that's not
-// part of the regular build.
+// Only the accepting cases can be witnessed here.  A rejection is a
+// failed static_assert, which would break this translation unit, so
+// those cases live in the negative-compile harness instead.
 
 static_assert(safe_add<std::uint32_t, 10u, 20u> == 30u);
 static_assert(safe_sub<std::uint32_t, 30u, 20u> == 10u);
@@ -448,39 +309,27 @@ static_assert(safe_byte_budget<256u, 64u> == 256u * 64u);
 static_assert(safe_size_sum<10u, 20u> == 30u);
 static_assert(safe_size_diff<30u, 10u> == 20u);
 
-// Edge: zero is fine in both directions.
 static_assert(safe_mul<std::size_t, std::size_t{0}, std::size_t{1} << 60> == 0u);
 static_assert(safe_add<std::size_t, std::size_t{0}, std::size_t{0}> == 0u);
 
-// ─── Self-tests for the #134 variadic / layout helpers ─────────────
-
-// safe_add_all: empty fold is 0, single-term is identity, multi-term
-// equals the sum.
 static_assert(safe_add_all<std::size_t> == 0u);
 static_assert(safe_add_all<std::size_t, 42u> == 42u);
 static_assert(safe_add_all<std::size_t, 1u, 2u, 3u, 4u, 5u> == 15u);
 static_assert(safe_add_all<std::uint32_t, 10u, 20u, 30u> == 60u);
 
-// safe_array_bytes: sizeof(T) * N.
 static_assert(safe_array_bytes<std::uint64_t, 8u> == 64u);
 static_assert(safe_array_bytes<std::byte, 4096u> == 4096u);
 static_assert(safe_array_bytes<std::uint32_t, 0u> == 0u);
 
-// safe_struct_bytes: sum of sizeof(Ts...).  Naive sum — NOT alignment-
-// aware; sizeof(struct{uint64;uint32;}) would be 16 not 12, but the
-// helper returns 12 (raw sum).  The distinction is documented.
 static_assert(safe_struct_bytes<> == 0u);
 static_assert(safe_struct_bytes<std::uint64_t> == 8u);
 static_assert(safe_struct_bytes<std::uint64_t, std::uint32_t> == 12u);
 static_assert(safe_struct_bytes<std::uint64_t, std::uint64_t, std::uint32_t> == 20u);
 
-// bytes_fit_v / ensure_bytes_fit.
 static_assert(bytes_fit_v<64u, 20u>);
-static_assert(bytes_fit_v<64u, 64u>);  // exact fit
-static_assert(!bytes_fit_v<64u, 65u>);  // overflow by 1
+static_assert(bytes_fit_v<64u, 64u>);
+static_assert(!bytes_fit_v<64u, 65u>);
 
-// ensure_bytes_fit is consteval; the happy path compiles silently.
-// (Neg-compile test covers the [Byte_Budget_Exceeded] path.)
 [[maybe_unused]] constexpr auto _check_fits = []() {
     ensure_bytes_fit<64, safe_struct_bytes<std::uint64_t, std::uint64_t>>();
     return 0;

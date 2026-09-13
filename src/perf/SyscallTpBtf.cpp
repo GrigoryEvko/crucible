@@ -1,41 +1,22 @@
-// crucible::perf::SyscallTpBtf — libbpf binding implementation.
-//
-// Seventh per-program facade.  Mirrors src/perf/SyscallLatency.cpp's
-// loader nearly exactly — only the bytecode symbol
-// (`syscall_tp_btf_bpf_bytecode` vs `syscall_latency_bpf_bytecode`)
-// and the diagnostic facade name differ.  See SchedSwitch.cpp's
-// docblock for the rationale on why the duplication is INTENTIONAL
-// (Promote-First; GAPS-004x extracts the shared helper).
-//
-// SyscallTpBtf-specific notes (vs SyscallLatency):
-//   • SEC("tp_btf/sys_enter") + SEC("tp_btf/sys_exit") instead of
-//     the legacy raw_syscalls tracepoints.  ~30% lower per-event
-//     cost via BTF + CO-RE; needs CONFIG_DEBUG_INFO_BTF=y + kernel
-//     ≥ 5.5.
-//   • Same all-or-nothing attach policy: BOTH programs must attach
-//     or load() returns nullopt — a half-attach (only sys_enter, no
-//     sys_exit) would record syscall_start entries that never get
-//     consumed on exit, leaking until the LRU_HASH evicts them.
-
 #include <crucible/perf/SyscallTpBtf.h>
 
-#include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
+#include <crucible/perf/detail/BpfLoader.h>
 
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
+#include <crucible/safety/OwnedMmap.h>
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
 
-#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>
 
 #include <inplace_vector>
-#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>
 
 extern "C" {
 extern const unsigned char syscall_tp_btf_bpf_bytecode[];
@@ -46,8 +27,6 @@ namespace crucible::perf {
 
 namespace {
 
-// Shared loader helpers from detail::BpfLoader (GAPS-004x).
-// BTF-typed tp_btf programs attach via BTF, not by tracepoint name.
 namespace source = ::crucible::perf::detail::source;
 using ::crucible::perf::detail::Tgid;
 using ::crucible::perf::detail::Tid;
@@ -62,12 +41,10 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
-// FIXY-V-236: phantom-typed Tag + Prot + Share parameters for the
-// per-hub mmap'd BPF ringbuf.  Distinct Tag per hub forces compile-time
-// rejection of any cross-hub mapping swap.  Prot/Share are empty
-// metadata structs that the safety::OwnedMmap wrapper never interprets;
-// they exist so downstream consumers (FOUND-G47 residency consumers /
-// fixy::mmap gates) can read residency tier at the type level.
+// The distinct phantom tag makes one facade's ring buffer mapping unusable
+// as another facade's mapping at compile time.  The protection and sharing
+// types are metadata that the mapping wrapper never interprets.  They let a
+// consumer read the residency tier at the type level.
 struct SyscallTpBtfRingbufTag {};
 struct ReadOnlyProt {};
 struct SharedShare {};
@@ -76,13 +53,6 @@ struct SyscallTpBtf::State : crucible::safety::NonMovable<SyscallTpBtf::State> {
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    // FIXY-V-236: replaces the {WriteOnceNonNull<volatile uint8_t*>,
-    // WriteOnce<size_t>} pair with a single RAII OwnedMmap.  Dtor
-    // closure is now structural — no explicit ::munmap call needed,
-    // and an early-return added to load() after the .emplace() cannot
-    // silently leak the mapping (move-into-empty-optional-on-failure
-    // is impossible because emplace() only fires after the MAP_FAILED
-    // check).
     using TimelineMmap = ::crucible::safety::OwnedMmap<SyscallTpBtfRingbufTag, ReadOnlyProt, SharedShare>;
     std::optional<TimelineMmap> timeline_mmap{};
 
@@ -94,8 +64,6 @@ struct SyscallTpBtf::State : crucible::safety::NonMovable<SyscallTpBtf::State> {
     ~State() {
         for (struct bpf_link* l : links)
             if (l != nullptr) bpf_link__destroy(l);
-        // FIXY-V-236: timeline_mmap dtor handles ::munmap automatically;
-        // explicit munmap clause deleted.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -119,7 +87,6 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
 
     auto state = std::make_unique<State>();
 
-    // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
     opts.sz = sizeof(opts);
     opts.object_name = "crucible_syscall_tp_btf";
@@ -133,7 +100,6 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
     }
     state->obj = obj;
 
-    // ── 2. Rewrite target_tgid in .rodata to our PID ───────────────
     if (struct bpf_map* rodata = find_rodata(state->obj); rodata != nullptr) {
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
@@ -146,10 +112,9 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
         }
     }
 
-    // ── 3. (No legacy-tracepoint pre-check — tp_btf availability is
-    //       gated by bpf_object__load when BTF type lookup fails.)
-
-    // ── 4. Verify, JIT, allocate maps ──────────────────────────────
+    // A tp_btf program needs no legacy tracepoint pre-check.  Its
+    // availability is gated by bpf_object__load, which fails when the BTF
+    // type lookup fails.
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
                "kernel < 5.5, CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",
@@ -157,9 +122,6 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
         return std::nullopt;
     }
 
-    // ── 5. (No our_tids registration — filters on target_tgid only.)
-
-    // ── 6. Attach every autoload-enabled program ───────────────────
     struct bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
@@ -185,15 +147,15 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
         }
         state->links.push_back(link);
     }
-    // Both tp_btf/sys_enter AND sys_exit required.  Same all-or-
-    // nothing policy as SyscallLatency.cpp.
+    // The attach is all-or-nothing.  With sys_enter attached but sys_exit
+    // missing, every recorded start entry stays unconsumed and accumulates
+    // until the LRU hash map evicts it.
     if (state->links.size() < 2) {
         report("expected 2 tp_btf attachments (sys_enter + sys_exit), got fewer "
                "— kernel missing BTF for sys_enter/sys_exit, or partial CAP_BPF rejection");
         return std::nullopt;
     }
 
-    // ── 7. mmap the syscall_timeline ring buffer ───────────────────
     struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "syscall_timeline");
     if (timeline_map == nullptr) {
         report("syscall_timeline map not found in object (bytecode/header out of sync — rebuild)");
@@ -216,8 +178,6 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
                errno);
         return std::nullopt;
     }
-    // FIXY-V-236: hand the (addr, len) pair to OwnedMmap; structural
-    // RAII closure ensures ~State runs ::munmap on every exit path.
     state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     if (struct bpf_map* ts = bpf_object__find_map_by_name(state->obj, "total_syscalls"); ts != nullptr) {
@@ -255,16 +215,13 @@ safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> SyscallTpBtf::timelin
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{};
     }
-    // FIXY-V-236: bit_cast OwnedMmap's void* data() back to the typed
-    // volatile byte pointer the timeline-view code expects.
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
-    // runtime; forbidden only in constant expressions), then start_lifetime_as_array
-    // (P2590R2) begins implicit-lifetime TimelineSyscallEvent storage in-place.
-    // _Tp is non-const; the const-void* overload of start_lifetime_as_array
-    // returns const _Tp* — adding const to _Tp itself trips libstdc++ 16's
-    // internal asm clobber "=m"(*__s) which writes through a const-qualified
-    // location and fails to compile.
+    // The mapping is untyped byte storage, so start_lifetime_as_array begins
+    // the typed array lifetime inside it.  The bit_cast drops volatile, which
+    // is well defined at runtime and forbidden only in a constant expression.
+    // The element type stays non-const: the const-void* overload already
+    // returns a const pointer, and a const element type makes libstdc++ emit
+    // an asm clobber that writes through a const-qualified location.
     auto* events = std::start_lifetime_as_array<TimelineSyscallEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{events, TIMELINE_CAPACITY};
@@ -273,9 +230,8 @@ safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> SyscallTpBtf::timelin
 uint64_t SyscallTpBtf::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: implicit qualification add (volatile T* → const volatile T*)
-    // is a permitted conversion; start_lifetime_as<TimelineHeader> begins
-    // implicit-lifetime header storage at the mmap base.
+    // The added const selects the overload taking const volatile void*, which
+    // returns a const volatile pointer to the header.
     const volatile uint8_t* qbase = base;
     auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;

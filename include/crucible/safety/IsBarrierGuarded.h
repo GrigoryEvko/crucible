@@ -1,18 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_barrier_guarded_v ─────────────────
-//
-// FIXY-V-255 — wrapper-detection predicate for `BarrierGuarded<Tier, T>`
-// (the V-255 BarrierStrength-axis carrier).  Mechanical sibling of
-// IsHw / IsVendor — the partial spec captures the BarrierStrength NTTP
-// tier alongside the wrapped type, so downstream dispatchers can read
-// the pinned publication-fence tier off the type without instantiating
-// the wrapper.
-//
-// The detector keys on the wrapper class identity, not the lattice
-// value: a `BarrierGuarded<AcqRel, T>` and a look-alike struct carrying
-// a BarrierStrength field are NOT confused.
-
 #include <crucible/safety/BarrierGuarded.h>
 
 #include <type_traits>
@@ -52,8 +39,6 @@ template <typename T>
     requires is_barrier_guarded_v<T>
 inline constexpr BarrierStrength_v barrier_guarded_tier_v =
     detail::is_barrier_guarded_impl<std::remove_cvref_t<T>>::tier;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_barrier_guarded_self_test {
 

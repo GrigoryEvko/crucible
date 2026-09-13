@@ -1,10 +1,7 @@
-// SenseHub V2 userspace/BPF layout sentinel.
-//
-// This TU is intentionally compile-time heavy and runtime-light: it
-// proves that the public userspace target sees the same
-// CRUCIBLE_SENSE_HUB_EXTENDED mode that CMake selected for the BPF
-// bytecode. The runtime body only exercises header-only counter delta
-// semantics; it never loads BPF programs.
+// The userspace target and the BPF bytecode must agree on
+// CRUCIBLE_SENSE_HUB_EXTENDED.  This TU proves the userspace side sees the mode
+// the build selected.  The runtime body exercises counter delta semantics only
+// and never loads a BPF program.
 
 #include <crucible/perf/SenseHubV2.h>
 
@@ -13,46 +10,35 @@
 
 namespace {
 
-constexpr std::uint64_t expected_layout_hash(std::uint64_t counters,
-                                             std::uint64_t gauges,
+constexpr std::uint64_t expected_layout_hash(std::uint64_t counters, std::uint64_t gauges,
                                              std::uint64_t build_tag) noexcept {
-    return (counters << 48) |
-           (gauges << 32) |
-           (std::uint64_t{crucible::perf::SENSE_HUB_VERSION} << 16) |
-           build_tag;
+    return (counters << 48) | (gauges << 32) | (std::uint64_t{crucible::perf::SENSE_HUB_VERSION} << 16) | build_tag;
 }
 
 static_assert(crucible::perf::SENSE_HUB_VERSION == 2);
 static_assert(crucible::perf::SENSE_HUB_MAGIC == 0x4352424CU);
 static_assert(sizeof(crucible::perf::sense_meta) == 64);
 
-#if defined(CRUCIBLE_EXPECT_SENSE_HUB_EXTENDED) && \
-    !defined(CRUCIBLE_SENSE_HUB_EXTENDED)
-#  error "CMake enabled CRUCIBLE_SENSE_HUB_EXTENDED but userspace target did not receive the compile definition"
+#if defined(CRUCIBLE_EXPECT_SENSE_HUB_EXTENDED) && !defined(CRUCIBLE_SENSE_HUB_EXTENDED)
+#error "CMake enabled CRUCIBLE_SENSE_HUB_EXTENDED but userspace target did not receive the compile definition"
 #endif
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
 static_assert(crucible::perf::NUM_COUNTERS == 256);
 static_assert(crucible::perf::NUM_GAUGES == 64);
 static_assert(crucible::perf::BUILD_TAG == 0xDEB6);
-static_assert(crucible::perf::SENSE_HUB_LAYOUT_HASH ==
-              expected_layout_hash(256, 64, 0xDEB6));
-static_assert(static_cast<std::uint32_t>(
-                  crucible::perf::Idx::SKB_DROP_NEIGH_FAILED) == 128);
+static_assert(crucible::perf::SENSE_HUB_LAYOUT_HASH == expected_layout_hash(256, 64, 0xDEB6));
+static_assert(static_cast<std::uint32_t>(crucible::perf::Idx::SKB_DROP_NEIGH_FAILED) == 128);
 #else
 static_assert(crucible::perf::NUM_COUNTERS == 128);
 static_assert(crucible::perf::NUM_GAUGES == 32);
 static_assert(crucible::perf::BUILD_TAG == 0xBA51);
-static_assert(crucible::perf::SENSE_HUB_LAYOUT_HASH ==
-              expected_layout_hash(128, 32, 0xBA51));
+static_assert(crucible::perf::SENSE_HUB_LAYOUT_HASH == expected_layout_hash(128, 32, 0xBA51));
 #endif
 
-static_assert(sizeof(crucible::perf::CounterSnapshot) ==
-              crucible::perf::NUM_COUNTERS * sizeof(std::uint64_t));
-static_assert(sizeof(crucible::perf::GaugeSnapshot) ==
-              crucible::perf::NUM_GAUGES * sizeof(std::uint64_t));
-static_assert(static_cast<std::uint32_t>(
-                  crucible::perf::Idx::MAP_FULL_DROPS) == 127);
+static_assert(sizeof(crucible::perf::CounterSnapshot) == crucible::perf::NUM_COUNTERS * sizeof(std::uint64_t));
+static_assert(sizeof(crucible::perf::GaugeSnapshot) == crucible::perf::NUM_GAUGES * sizeof(std::uint64_t));
+static_assert(static_cast<std::uint32_t>(crucible::perf::Idx::MAP_FULL_DROPS) == 127);
 
 }  // namespace
 

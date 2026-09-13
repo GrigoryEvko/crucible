@@ -1,14 +1,5 @@
 #pragma once
 
-// FIXY-U-096d production migration: Refined<bounded_above> / Monotonic /
-// BoundedMonotonic reached through the fixy:: umbrella instead of
-// safety::* directly.  IterationDetector.h is included by MerkleDag.h
-// and IterationDetectorState.h (both runtime-tier headers), and is NOT
-// reachable from any substrate header — fixy/Wrap.h's transitive pull
-// of safety/OwnedRegion.h → Arena.h does NOT cycle back through
-// IterationDetector.h, so the full Wrap.h umbrella is safe here (no
-// Saturate.h-style inline-namespace dodge needed).  CRUCIBLE_POST is a
-// macro substrate dep; safety/Post.h stays.
 #include <cstdint>
 #include <cstring>
 
@@ -22,167 +13,75 @@
 
 namespace crucible {
 
-// Detects iteration boundaries in a continuous stream of op schema hashes.
+// Finds iteration boundaries in a continuous stream of schema hashes by
+// matching against a signature taken from the first K hashes seen.
 //
-// Algorithm: sequential matching with cached expected value.
+// A boundary is reported on the second match, not the first. The first
+// iteration a program runs often contains lazy initialization and one-time
+// setup that never recurs, so a single match is only a candidate.
 //
-// Maintains a K=5 signature of the first ops seen. In steady state, a single
-// uint64_t comparison per op determines if we're at a boundary — no rolling
-// fingerprint, no ring buffer, no multiply. The expected next hash value is
-// cached directly in the struct, so the hot path is:
-//
-//   inc  [ops_since_boundary]          ; 1 cycle, no dependency
-//   cmp  [expected_hash_], incoming    ; 1 load (L1d hot) + 1 cmp
-//   jne  .done                         ; well-predicted: taken (mismatch)
-//
-// ~1ns on Raptor Lake / Zen 4. The entire hot working set (expected_hash_,
-// signature[0], match_pos_, ops_since_boundary) fits in ONE 64-byte cache
-// line that stays perpetually in L1d. Zero writes on the common mismatch path
-// except the ops_since_boundary increment.
-//
-// Two-match requirement:
-//   First match  -> candidate (locks signature, but not confirmed yet)
-//   Second match -> confirmed iteration boundary (returns true)
-// This handles warmup: the first "iteration" may contain lazy init,
-// module construction, or one-time setup ops that differ from steady state.
+// The field order and the padding put everything the matching step reads into
+// the first line and everything else into the second.
 struct IterationDetector {
     static constexpr uint32_t K = 5;
 
-    // Structural upper bound on match_pos_'s STORED value (#927 WRAP-
-    // IterDet-1).  Storage range is [0, K-1] — at the K-th match the
-    // hot path goes through on_match_() which resets match_pos_ to 0
-    // before any further write, so the value K is never STORED in the
-    // field.  bounded_above<K-1> is the tightest correct invariant.
+    // The stored value never reaches K. On the K-th match the handler rewinds
+    // the position to zero before anything else writes the field, so K-1 is
+    // the tightest bound the storage can carry.
     static constexpr uint8_t MATCH_POS_MAX = static_cast<uint8_t>(K - 1);
 
-    // Refinement type for match_pos_'s storage.  Wraps uint8_t with
-    // bounded_above<MATCH_POS_MAX> at the type level so a value > K-1
-    // is a contract violation at construction (constexpr context: hard
-    // compile error per P1494R5; runtime under semantic=enforce: abort).
-    // BoolLattice<bounded_above<...>> EBO-collapses; sizeof(MatchPos)
-    // == sizeof(uint8_t) == 1B — cache layout (line 0 = 64B) preserved
-    // by structural guarantee, not by hand.  See the static_assert at
-    // the bottom of the struct for the layout invariant.
     using MatchPos = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MATCH_POS_MAX>, uint8_t>;
 
-    // Refinement+monotonicity type for signature_len's storage (#928
-    // WRAP-IterDet-2).  signature_len's behavior:
-    //   - starts at 0
-    //   - bumped exactly K times during signature build (0→1→…→K)
-    //   - never advances past K — the `if (signature_len < K)` guard at
-    //     the top of check() routes the K-th-onward calls to phase 2,
-    //     which never mutates signature_len.
-    //   - reset to 0 only by reset() (non-monotonic re-construct).
-    //
-    // BoundedMonotonic<uint32_t, K> nests Monotonic<uint32_t> inside a
-    // bound-checked façade: every advance() / bump() carries
-    // pre(new_value <= K), AND inner Monotonic carries pre(new_value
-    // >= current).  Combined, the type rejects "skip ahead" and
-    // "rewind" at the call site.  A future regression that increments
-    // beyond K (via bump() at signature_len == K) fires a contract
-    // violation; constexpr witness fixtures pin the bound check.
-    //
-    // Zero-cost: Monotonic<uint32_t, less<>> is regime-2 (T==element
-    // type collapse), so sizeof(BoundedMonotonic<uint32_t, K>) ==
-    // sizeof(uint32_t) == 4B — line-0 layout (offset 56 + 4B pad)
-    // preserved by structural guarantee.
+    // The length rises to K during signature collection and stops there: the
+    // guard at the head of check() sends every later call to the matching
+    // step, which does not touch it. Only reset() rewinds it.
     using SignatureLen = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, K>;
 
-    // Monotonic-with-reset wrapper for ops_since_boundary's storage
-    // (#929 WRAP-IterDet-3).  Within a single iteration epoch the
-    // counter is strictly monotonic — every check() does +1 — so
-    // safety::Monotonic<uint32_t> is the natural type.  Across epoch
-    // boundaries (reset() and on_match_()'s "ops_since_boundary = K"
-    // sites) the counter rewinds; those rewinds use std::construct_at
-    // to re-establish the invariant from a known floor, mirroring the
-    // boundaries_detected pattern below.  Any future code path that
-    // tries to assign a backward value via .advance() fires a contract
-    // violation; .bump() is overflow-checked at UINT32_MAX.
-    //
-    // Zero-cost: Graded's regime-2 (T==element_type) collapse pins
-    // sizeof(Monotonic<uint32_t>) == sizeof(uint32_t) == 4B; layout
-    // (offset 52) preserved by structural guarantee.
+    // Monotonic within one iteration and rewound at each boundary. The rewind
+    // sites construct a fresh counter in place rather than assigning, because
+    // assigning backwards is what the type forbids.
     using OpsSinceBoundary = ::crucible::fixy::wrap::Monotonic<uint32_t>;
 
-    // ── Cache line 0: hot path data (touched every call) ─────────
-    // Expected next hash VALUE (not pointer). One L1d load, zero pointer chase.
-    // In steady state (match_pos_.value()==0), this equals signature[0].
-    SchemaHash expected_hash_{};  // offset 0,  8B
+    // While no match is in progress this holds signature[0].
+    SchemaHash expected_hash_{};
 
-    // The K-element signature: first K schema hashes of the iteration.
-    // Read-only after build. signature[0] is hot (restart check on mid-match
-    // break). Rest only accessed during the rare K-op match sequence.
-    SchemaHash signature[K]{};  // offset 8,  40B
+    // Read-only once collection finishes.
+    SchemaHash signature[K]{};
 
-    // Position in sequential match (0..K-1). 0 = waiting for signature[0].
-    // MatchPos = Refined<bounded_above<K-1>, uint8_t> — the type carries
-    // the invariant.  EBO-collapsed to 1B, saving 3 bytes for packing.
-    MatchPos match_pos_{uint8_t{0}};  // offset 48, 1B
+    // Zero means the matcher is waiting for signature[0].
+    MatchPos match_pos_{uint8_t{0}};
 
-    // True after first full K-match (candidate). Second match returns true.
-    bool confirmed = false;  // offset 49, 1B
+    // Set by the first full match, which is only a candidate.
+    bool confirmed = false;
 
-    uint8_t pad0_[2]{};  // offset 50, 2B
+    uint8_t pad0_[2]{};
 
-    // Monotonic-with-reset counter (#929 WRAP-IterDet-3).  Strictly
-    // increases via .bump() within an epoch; explicit rewinds
-    // (reset() and on_match_()) use std::construct_at to reinstall the
-    // invariant from a known floor.
-    OpsSinceBoundary ops_since_boundary{0u};  // offset 52, 4B
+    OpsSinceBoundary ops_since_boundary{0u};
 
-    // Number of hashes collected during signature build (0..K).
-    // After build completes, stays at K permanently — a structural
-    // invariant pinned by SignatureLen (#928 WRAP-IterDet-2).  bump()
-    // at signature_len.get()==K fires a contract violation; reset()
-    // re-constructs in place to rewind for the next epoch.
-    SignatureLen signature_len{0u};  // offset 56, 4B
+    SignatureLen signature_len{0u};
 
-    uint8_t pad1_[4]{};  // offset 60, 4B
-    // ── End cache line 0 (64 bytes) ──────────────────────────────
+    uint8_t pad1_[4]{};
 
-    // ── Cache line 1: cold data (touched only at boundaries) ─────
-    // boundaries_detected is structurally monotonic: it only increments
-    // on a confirmed iteration boundary.  Wrapped in Monotonic<> so the
-    // invariant is enforced by the type, not by convention.
-    crucible::fixy::wrap::Monotonic<uint32_t> boundaries_detected{0};  // offset 64, 4B
-    uint32_t last_completed_len = 0;  // offset 68, 4B
-    uint8_t pad2_[56]{};  // offset 72, pad to 128B
-    // ── End cache line 1 (64 bytes) ──────────────────────────────
+    // Read only at a boundary, so it sits in the second line.
+    crucible::fixy::wrap::Monotonic<uint32_t> boundaries_detected{0};
+    uint32_t last_completed_len = 0;
+    uint8_t pad2_[56]{};
 
-    // Hot path: called once per drained op on the background thread.
-    //
-    // Steady-state fast path (no match, match_pos_.value()==0): ~1ns.
-    //   - 1 increment (ops_since_boundary, parallel with everything)
-    //   - 1 comparison (schema_hash vs expected_hash_, one L1d load)
-    //   - 1 branch (well-predicted: mismatch)
-    //   - 0 writes beyond the increment (expected_hash_ unchanged)
-    //
-    // Mid-match path (match_pos_.value()>0, advancing through signature): ~1.5ns.
-    //   - 1 comparison (match) + 1 write (match_pos_, expected_hash_)
-    //
-    // Boundary path (match_pos_ reaches K-1+1 = K): ~50ns (memcpy + reset, rare).
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool check(SchemaHash schema_hash) noexcept {
-        ops_since_boundary.bump();  // monotonic +1; pre at UINT32_MAX
+        ops_since_boundary.bump();
 
-        // Phase 1: building signature from first K ops.
-        // Entered exactly K times total, then never again — invariant
-        // pinned by SignatureLen's bump() bound (a K-th bump fires a
-        // contract violation, so re-entering build_signature_ when
-        // signature_len.get()==K would be structurally rejected).
+        // This branch is taken exactly K times over the object's life. A
+        // K-plus-first entry would violate the length counter's own bound.
         if (signature_len.get() < K) [[unlikely]] {
             return build_signature_(schema_hash);
         }
 
-        // Phase 2: sequential matching.
-        // Compare incoming hash against the expected next value.
         if (schema_hash != expected_hash_) [[likely]] {
-            // Mismatch. Only do work if we were mid-match (match_pos_.value() > 0).
-            // When match_pos_.value()==0, expected_hash_ is already signature[0] and
-            // match_pos_ is already MatchPos{0} — zero writes needed.
+            // With no match in progress both fields already hold what a
+            // restart would write, so the common case writes nothing.
             if (match_pos_.value() != 0) [[unlikely]] {
-                // Mid-match broke. Reset to start.
-                // Also check: does this hash start a NEW match?
-                // (handles overlapping patterns at boundary transitions)
+                // A broken match can itself be the start of the next one,
+                // which is what happens where two iterations abut.
                 if (schema_hash == signature[0]) [[unlikely]] {
                     match_pos_ = MatchPos{uint8_t{1}};
                     expected_hash_ = signature[1];
@@ -194,14 +93,12 @@ struct IterationDetector {
             return false;
         }
 
-        // Match — advance to next position in signature.
         const auto next = static_cast<uint8_t>(match_pos_.value() + 1);
         if (next >= K) [[unlikely]] {
             return on_match_();
         }
-        // next < K here, so next ≤ K-1 = MATCH_POS_MAX — the construction
-        // contract holds by control flow.  Hot-path TUs compile this to
-        // [[assume(next <= MATCH_POS_MAX)]], propagating the bound forward.
+        // The branch above leaves next below K, so the bound the storage type
+        // demands holds by control flow.
         match_pos_ = MatchPos{next};
         expected_hash_ = signature[next];
         return false;
@@ -213,41 +110,13 @@ struct IterationDetector {
             h = SchemaHash{};
         match_pos_ = MatchPos{uint8_t{0}};
         confirmed = false;
-        // reset() is not a monotonic operation — it deliberately rewinds
-        // the (Bounded)Monotonic counters on test/teardown.  Re-construct
-        // each so the bound + monotonicity invariants are established
-        // afresh from value 0.
+        // Each counter runs backwards here, which is exactly what its type
+        // refuses on assignment. Constructing a fresh one in place installs
+        // the invariant again from zero.
         std::construct_at(&ops_since_boundary, OpsSinceBoundary{0u});
         std::construct_at(&signature_len, SignatureLen{0u});
         std::construct_at(&boundaries_detected, crucible::fixy::wrap::Monotonic<uint32_t>{0});
         last_completed_len = 0;
-        // CONTRACT-IterDet-Reset-POST: state-machine reset invariant —
-        // after reset(), every observable field is back to its
-        // default-constructed value, restoring the Building-state-from-zero
-        // initial condition.  This is the structural witness that #930
-        // (WRAP-IterDet-4 reset() ScopedView state transition) codifies
-        // at the type level: include/crucible/IterationDetectorState.h
-        // ships the iter_det_state::{Building,Steady} tags + view_ok
-        // overloads, so a caller can mint
-        // `safety::ScopedView<IterationDetector, iter_det_state::Building>`
-        // immediately after reset() and pass that proof downstream.  The
-        // POSTs below back the typestate's value-level invariants; the
-        // typestate is the compile-time witness that callers can carry.
-        //   (1) match_pos_ raw == 0      — sequential matcher rewound to head
-        //   (2) signature_len.get() == 0 — Building-state phase 1 (signature
-        //                                   collection restarts from scratch)
-        //   (3) ops_since_boundary.get() == 0 — counter at origin
-        //   (4) boundaries_detected.get() == 0 — boundary-count history wiped
-        //   (5) confirmed == false       — second-match witness reset
-        //   (6) last_completed_len == 0  — no boundary completion recorded
-        // Routes through CRUCIBLE_POST because every predicate references a
-        // class member through `this->` — same GCC 16.1.1 consteval-bypass
-        // family as CONTRACT-100..108-POST + 116..127-POST + Tx-*-POST +
-        // Arena/AddBranch/MakeRegion factory POSTs.  Under NDEBUG these
-        // collapse to `[[assume]]`, so the next check() call's hot path
-        // can speculate that signature_len.bump() pre is satisfied
-        // (current < K trivially when current == 0).  Void return: first
-        // CRUCIBLE_POST arg is the conventional sentinel `0`.
         CRUCIBLE_POST(0, match_pos_.value() == 0u);
         CRUCIBLE_POST(0, signature_len.get() == 0u);
         CRUCIBLE_POST(0, ops_since_boundary.get() == 0u);
@@ -257,45 +126,35 @@ struct IterationDetector {
     }
 
 private:
-    // Signature build: collect first K hashes. Called exactly K times.
-    // The check() guard `signature_len.get() < K` admits this only
-    // when bump() is in-bounds (current <= K-1), so the contract on
-    // SignatureLen::bump (pre: current < K) holds by control flow.
+    // The caller's guard admits this only while the length is below K, so the
+    // bump below is in bounds by control flow.
     [[nodiscard]] bool build_signature_(SchemaHash schema_hash) {
         signature[signature_len.get()] = schema_hash;
         signature_len.bump();
 
         if (signature_len.get() == K) [[unlikely]] {
-            // Signature complete. Prime the sequential matcher.
             expected_hash_ = signature[0];
             match_pos_ = MatchPos{uint8_t{0}};
         }
         return false;
     }
 
-    // Boundary handler. Separated from hot path to keep check() tiny.
-    // Called when K consecutive hashes matched the signature.
     [[nodiscard]] bool on_match_() {
-        // Reset sequential matcher for next iteration.
         match_pos_ = MatchPos{uint8_t{0}};
         expected_hash_ = signature[0];
 
         if (!confirmed) [[unlikely]] {
-            // First match — candidate, not yet confirmed.  Re-anchor the
-            // counter at K (the K matched ops form this iteration's
-            // signature, so they're K ops into the next epoch).  This is a
-            // deliberate rewind from an arbitrary >= K value, so we use
-            // construct_at to bypass Monotonic's monotonicity contract —
-            // same pattern as reset() above.
             confirmed = true;
+            // The K ops that just matched belong to the next iteration, so
+            // the counter restarts at K rather than at zero. This is a rewind
+            // from an arbitrary larger value, hence the in-place construction.
             std::construct_at(&ops_since_boundary, OpsSinceBoundary{K});
             return false;
         }
 
-        // Second+ match — confirmed iteration boundary.
         last_completed_len = crucible::sat::sub_sat(ops_since_boundary.get(), K);
         std::construct_at(&ops_since_boundary, OpsSinceBoundary{K});
-        boundaries_detected.bump();  // monotonicity-checked +1
+        boundaries_detected.bump();
         return true;
     }
 };

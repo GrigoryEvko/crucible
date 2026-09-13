@@ -1,30 +1,12 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// NumericalRecipe — the portability contract (FORGE.md §19)
-//
-// Per FORGE.md §19 and CRUCIBLE.md §10.5, every compiled kernel pins
-// exactly one NumericalRecipe that dictates the algorithmic choices
-// every downstream backend must honor exactly.  Same IR002 kernel +
-// same recipe → numerically-equivalent results on any supported chip,
-// bounded by the declared `ReductionDeterminism` tier.
-//
-// This header defines the types.  It is a STUB until the Forge
-// compiler lands — the enums, struct, and RecipeHash are ready for
-// the recipe registry (FORGE.md §20) and the cross-vendor numerics
-// CI matrix (§20.4) to consume.
-//
-// The invariants declared here feed directly into:
-//   - NumericalRecipe field on IR002 KernelNode (FORGE.md §18.2)
-//   - Recipe registry JSON loader (FORGE.md §20.1)
-//   - Fleet intersection picker at Phase E (FORGE.md §20.2)
-//   - Per-backend realize_recipe() (MIMIC.md §40)
-//   - Cross-vendor numerics CI harness (FORGE.md §20.4)
-// ═══════════════════════════════════════════════════════════════════
+// A recipe pins every algorithmic choice a backend is allowed to make. One
+// kernel compiled against one recipe therefore agrees with itself across
+// chips, to within the tolerance the recipe's determinism tier declares.
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096w: Bits via the fixy umbrella
+#include <crucible/fixy/Wrap.h>
 
 #include <bit>
 #include <cstdint>
@@ -32,92 +14,53 @@
 
 namespace crucible {
 
-// ─── Reduction algorithms ──────────────────────────────────────────
-//
-// How a kernel's accumulator steps across its K axis (or other
-// reduction dimension).  Pairwise is the default; the other variants
-// are reserved for specific recipes (KAHAN for extended-precision
-// accumulation under BITEXACT_STRICT, BLOCK_STABLE for FP8 recipes
-// with per-block scale application).
+// The shape of the accumulator's walk across the reduction axis.
 enum class ReductionAlgo : uint8_t {
-    PAIRWISE,  // Standard pairwise tree; default for GEMM / attention
-    LINEAR,  // Sequential left-fold; deterministic but slower
-    KAHAN,  // Kahan compensated summation; rare, high-precision
-    BLOCK_STABLE,  // Block-tree for MX/NVFP4 with explicit per-block scales
+    PAIRWISE,  // pairwise tree
+    LINEAR,  // sequential left fold
+    KAHAN,  // compensated summation
+    BLOCK_STABLE,  // block tree, for formats carrying an explicit per-block scale
 };
 
-// ─── Rounding modes ────────────────────────────────────────────────
-//
-// IEEE 754 rounding mode.  RN (round-to-nearest-even) is the only
-// mode currently enabled for production recipes; the others are
-// reserved for specialized (e.g. deterministic-stochastic-rounding)
-// future work.
+// The IEEE 754 rounding modes.
 enum class RoundingMode : uint8_t {
-    RN,  // Round to nearest, ties to even (IEEE 754 default)
-    RZ,  // Round toward zero (truncate)
-    RM,  // Round toward minus infinity (floor)
-    RP,  // Round toward plus infinity (ceiling)
+    RN,  // to nearest, ties to even
+    RZ,  // toward zero
+    RM,  // toward minus infinity
+    RP,  // toward plus infinity
 };
 
-// ─── Scale policy (for block-scaled formats) ───────────────────────
-//
-// FP8 MX, FP4 MX, and NVFP4 use scales applied at different granularity
-// levels.  Scale policy is part of the recipe because its choice
-// affects where the scale is applied in the accumulator pipeline,
-// which has numerical consequences (cross-vendor divergence in the
-// MX/NVFP4 case — see FORGE.md §19.1 note on non-BITEXACT availability
-// for block-scaled formats).
+// The policy belongs in the recipe because it decides where in the
+// accumulator pipeline the scale is applied, and that changes the result.
 enum class ScalePolicy : uint8_t {
-    NONE,  // No scale applied (FP32 / BF16 / FP16 recipes)
-    PER_TENSOR_POST,  // One scalar scale applied to the final output
-    PER_TENSOR_PRE,  // One scalar scale applied to inputs pre-MMA
-    PER_BLOCK_MX,  // Per-block MX scale (32-element blocks)
-    PER_BLOCK_NVFP4,  // Per-block NVFP4 scale (16-element blocks)
-    PER_CHANNEL,  // Per-output-channel scale (int8 quantization)
+    NONE,
+    PER_TENSOR_POST,  // one scalar scale on the final output
+    PER_TENSOR_PRE,  // one scalar scale on the inputs, before the multiply
+    PER_BLOCK_MX,  // one scale per 32-element block
+    PER_BLOCK_NVFP4,  // one scale per 16-element block
+    PER_CHANNEL,  // one scale per output channel
 };
 
-// ─── Softmax recurrence variant ────────────────────────────────────
-//
-// Attention's softmax accumulator can be computed in multiple ways,
-// each producing slightly different bit patterns under FP16/BF16
-// due to intermediate rounding.  The recipe pins which variant every
-// backend must realize.  ONLINE_LSE (Rabe & Staats 2021) is the
-// default — FlashAttention-1 style; FLASH2 and FLASH3 are more
-// aggressive pipelinings that Mimic-NV can realize natively on
-// Hopper+.
+// Each variant rounds its intermediates differently, so the bit patterns
+// differ at reduced precision. The recipe names the one a backend must
+// realize rather than leaving the choice to the backend.
 enum class SoftmaxRecurrence : uint8_t {
-    NAIVE,  // Two-pass: max-subtract, exp, normalize
-    ONLINE_LSE,  // Single-pass log-sum-exp (FlashAttention-1)
-    FLASH2,  // FlashAttention-2 online softmax
-    FLASH3,  // FlashAttention-3 warp-specialized online softmax
+    NAIVE,  // two passes: subtract the max, exponentiate, normalize
+    ONLINE_LSE,  // single-pass log-sum-exp
+    FLASH2,
+    FLASH3,  // warp-specialized
 };
 
-// ─── Determinism tiers (FORGE.md §19.1 / CRUCIBLE.md §10.5) ────────
+// The ladder is ordered. Each tier is at least as deterministic as the one
+// before it and costs more.
 //
-// The four-tier escalation ladder; each tier is strictly more
-// deterministic than the one below, with a perf tax proportional to
-// its strictness.
-//
-//   UNORDERED          — no guarantee; fastest; typically ≤100 ULP
-//                        cross-vendor in practice.  Not for training.
-//   ORDERED            — reduction topology pinned (canonical index
-//                        order); tile shapes free.  ≤4 ULP cross-
-//                        vendor on FP16/BF16 recipes.  Default for
-//                        mixed-vendor training; ~3-5% tax.
-//   BITEXACT_TC        — K≤8 tensor-core fragments + pinned outer
-//                        scalar reduction.  0-1 ULP cross-vendor.
-//                        ~5-8% tax.  Pragmatic sweet spot for cross-
-//                        vendor training with tensor-core perf.
-//   BITEXACT_STRICT    — scalar FMA chain throughout (no tensor
-//                        cores).  0 ULP byte-identical cross-vendor
-//                        INCLUDING cross-architecture (NV / AM / TPU /
-//                        TRN / CPU).  10-50× slower.  Reserved for
-//                        CPU oracle, compliance, regression CI.
-//
-// Recipes using block-scaled formats (FP8 MX, FP4 MX) cannot declare
-// BITEXACT_* — scale-application divergence exceeds software
-// correction.  Highest available tier for those is ORDERED with
-// per-recipe `tolerance_ulp_cross_vendor`.
+//   UNORDERED        no guarantee at all
+//   ORDERED          reduction topology pinned to a canonical index order,
+//                    tile shapes free, and a few units in the last place
+//   BITEXACT_TC      short tensor-core fragments with a pinned outer scalar
+//                    reduction, and at most one unit in the last place
+//   BITEXACT_STRICT  a scalar fused-multiply-add chain throughout, with no
+//                    tensor cores, and byte-identical across architectures
 enum class ReductionDeterminism : uint8_t {
     UNORDERED,
     ORDERED,
@@ -125,36 +68,19 @@ enum class ReductionDeterminism : uint8_t {
     BITEXACT_STRICT,
 };
 
-// ─── RecipeFlags (#950 WRAP-NumRecipe-1) ───────────────────────────
+// The recipe hash folds the whole flags byte, so the four unused bits must
+// stay zero in existing recipes or their hashes move. A new flag takes the
+// next free bit and leaves the assigned ones alone.
 //
-// Per-recipe Boolean knobs that don't deserve a full enum field of
-// their own.  Each constant corresponds to one bit of the 1-byte
-// `NumericalRecipe::flags` slot.  Values are explicit `1 << N` powers
-// of two so the enum doubles as a typed bitmask.
-//
-//   FLUSH_TO_ZERO            — clamp denormals to zero in the
-//                              accumulator.  Required on backends
-//                              whose tensor cores cannot represent
-//                              denormals at FP32 accum.
-//   SPLIT_K_ATOMIC_OK        — split-K reductions across CTAs may
-//                              use atomic adds.  Forbidden under
-//                              BITEXACT_STRICT; permitted under
-//                              ORDERED with per-recipe
-//                              tolerance bound.
-//   ALLOW_DENORMAL           — allow denormalized inputs (vs
-//                              requiring upstream clamp).  Tradeoff:
-//                              correctness for tiny activations vs
-//                              vendor-dependent latency.
-//   ATTN_MASK_ADD_IN_FP32    — promote the attention mask add to
-//                              FP32 even when accum is BF16 / FP16.
-//                              Eliminates the masked-region
-//                              underflow that breaks long-context
-//                              softmax.
-//
-// Bits 4-7 reserved.  Add new flags as additional `1 << N` constants
-// without disturbing the existing bits — the recipe hash folds the
-// raw byte through fmix64, so reserved bits MUST stay zero in
-// existing recipes for hash stability.
+//   FLUSH_TO_ZERO          clamp denormals to zero in the accumulator, which
+//                          some tensor-core units cannot represent
+//   SPLIT_K_ATOMIC_OK      a reduction split across blocks may use atomic
+//                          adds, which no bit-exact tier permits
+//   ALLOW_DENORMAL         accept denormal inputs instead of requiring the
+//                          caller to clamp them
+//   ATTN_MASK_ADD_IN_FP32  add the attention mask at full precision even when
+//                          the accumulator is narrower, which is what keeps
+//                          the masked region from underflowing
 enum class RecipeFlags : uint8_t {
     FLUSH_TO_ZERO = 1 << 0,
     SPLIT_K_ATOMIC_OK = 1 << 1,
@@ -162,98 +88,37 @@ enum class RecipeFlags : uint8_t {
     ATTN_MASK_ADD_IN_FP32 = 1 << 3,
 };
 
-// ─── NumericalRecipe — the 16-byte pinned contract ─────────────────
-//
-// Every IR002 KernelNode references an interned `const NumericalRecipe*`.
-// Two kernels with identical structural attrs and the same recipe
-// pointer produce identical KernelContentHash values and therefore
-// dedupe at every cache level.
-//
-// Layout: 1B×7 fields + 1B flags + 8B hash = 16B, cache-line-aligned.
 struct alignas(16) NumericalRecipe {
-    ScalarType accum_dtype = ScalarType::Float;  // 1B
-    ScalarType out_dtype = ScalarType::Undefined;  // 1B
-    ReductionAlgo reduction_algo = ReductionAlgo::PAIRWISE;  // 1B
-    RoundingMode rounding = RoundingMode::RN;  // 1B
-    ScalePolicy scale_policy = ScalePolicy::NONE;  // 1B
-    SoftmaxRecurrence softmax = SoftmaxRecurrence::ONLINE_LSE;  // 1B
-    ReductionDeterminism determinism = ReductionDeterminism::ORDERED;  // 1B
-    // Boolean per-recipe flags — one bit per RecipeFlags constant.  See
-    // the RecipeFlags enum above for the bit assignment + invariants.
-    // Bits<RecipeFlags> is regime-1 EBO-collapsed to exactly 1 byte so
-    // the 16-byte recipe layout is preserved (verified by the
-    // static_assert below the struct).  Cross-enum mixing (e.g.
-    // assigning a NodeFlags or SymFlags constant into this field) is a
-    // compile error: Bits<NodeFlags> and Bits<RecipeFlags> are distinct
-    // template instantiations and the friend operators only match the
-    // same instantiation.
-    fixy::wrap::Bits<RecipeFlags> flags{};  // 1B
-    // hash is Family-A (persistent) per Types.h taxonomy.  Computed at
-    // intern time in the RecipePool.  Drives Phase E recipe picker,
-    // kernel CSE, and L1 cache keys.
-    RecipeHash hash;  // 8B
+    ScalarType accum_dtype = ScalarType::Float;
+    ScalarType out_dtype = ScalarType::Undefined;
+    ReductionAlgo reduction_algo = ReductionAlgo::PAIRWISE;
+    RoundingMode rounding = RoundingMode::RN;
+    ScalePolicy scale_policy = ScalePolicy::NONE;
+    SoftmaxRecurrence softmax = SoftmaxRecurrence::ONLINE_LSE;
+    ReductionDeterminism determinism = ReductionDeterminism::ORDERED;
+    fixy::wrap::Bits<RecipeFlags> flags{};
+    // Filled in when the recipe is interned, not at construction.
+    RecipeHash hash;
 };
-static_assert(sizeof(NumericalRecipe) == 16, "NumericalRecipe must stay 16B — layout is load-bearing "
-                                             "for the RecipePool Swiss table and KernelNode::recipe "
-                                             "cache-line packing (see FORGE.md §19.1).");
+static_assert(sizeof(NumericalRecipe) == 16, "NumericalRecipe must stay 16 bytes: both the intern table and the "
+                                             "kernel nodes that point at it depend on the layout");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NumericalRecipe);
 
-// ─── Hash computation (Family-A per Types.h taxonomy) ──────────────
+// The hash covers the eight semantic bytes and excludes the hash field
+// itself. Excluding it is what makes the operation idempotent: a recipe read
+// back from disk with its hash already set rehashes to the same value.
 //
-// compute_recipe_hash folds the 8 semantic bytes of a recipe (seven
-// 1-byte enum fields + the flags byte) through a MurmurHash3 finalizer.
-// Deliberately EXCLUDES the `hash` field itself so that:
+// The packed word carries no pointer and no address, so the result is the
+// same in every process and on every machine.
 //
-//   1. Re-hashing an already-populated recipe produces the same value
-//      as hashing a fresh-constructed one with the same semantic
-//      fields (idempotence).  Without this, deserializing a recipe
-//      from disk and re-hashing it would drift.
-//
-//   2. Two recipes differ in their `hash` field values only when they
-//      differ in semantic fields — never in the other direction.
-//      Hash equality ⟺ semantic equality, modulo fmix64 collisions
-//      (≈ 2^-64 per pair).
-//
-// Family-A properties honored:
-//   - Cross-process stable: no pointer entropy, no ASLR dependence,
-//     no endian-dependent bit reinterpretation.
-//   - Wire-safe: hash composes into KernelContentHash (FORGE.md §18.6)
-//     and L1 federation cache keys (§23.2); byte-stable for the
-//     lifetime of the NumericalRecipe layout.
-//   - Platform-independent: std::bit_cast on 1-byte trivially-copyable
-//     enums is well-defined on every supported ABI; shifts and XORs
-//     are integer ops with defined semantics.
-//
-// Cost: ~5 integer ops + one 64-bit multiply chain.  constexpr — can
-// be computed at compile time for static starter recipes.
-//
-// ─── Why NOT reflect_fmix_fold (REFL-4 style)? ────────────────────
-//
-// Same family as ExprPool::expr_hash — INTENTIONAL manual packing.
-// The 8 semantic bytes of NumericalRecipe pack EXACTLY into one
-// uint64_t (7 enums @ 1B + flags @ 1B = 8 bytes), so a single fmix64
-// covers the entire recipe identity.  reflect_fmix_fold would do
-// 8 fmix64 calls (one per reflected member) — ~6× slower per recipe
-// hash, with no avalanche benefit at this scale (the single fmix64's
-// internal multiply chain already provides full avalanche over the
-// 64-bit packed input).
-//
-// Additional constraint: the `hash` field on NumericalRecipe must be
-// EXCLUDED from the fold (idempotence: hashed(hashed(x)) == hashed(x)).
-// Pure reflect_hash<NumericalRecipe> would include it.  A local Spec
-// struct (loopterm_hash pattern) would work but adds boilerplate
-// without buying anything since the manual packing is already
-// minimal and clearly correct.
-//
-// If NumericalRecipe ever grows beyond the 8-byte semantic budget,
-// switch to a Spec + reflect_fmix_fold pattern at that point.
+// A reflective per-member fold is the obvious alternative and loses twice.
+// The eight bytes pack exactly into one word, so a single finalizer already
+// gives full avalanche over the whole identity, and a fold over reflected
+// members would include the hash field and break idempotence.
 
 namespace detail_recipe {
-// MurmurHash3 64-bit finalizer.  Same constants as detail::fmix64
-// in Expr.h; duplicated here so NumericalRecipe.h stays free of
-// Expr.h's transitive include cost (Ops.h, Types.h was already
-// pulled).  Both finalizers produce identical bits given identical
-// inputs — verified by a cross-check test.
+// This finalizer is duplicated rather than shared, which keeps this header a
+// leaf. Both copies must produce identical bits for identical inputs.
 [[nodiscard, gnu::const]] constexpr uint64_t fmix64(uint64_t k) noexcept {
     k ^= k >> 33;
     k *= 0xff51afd7ed558ccdULL;
@@ -263,16 +128,13 @@ namespace detail_recipe {
     return k;
 }
 
-// Extract the raw byte of a 1-byte scoped enum without sign
-// extension.  ScalarType has Undefined = -1 (int8_t); casting
-// directly to uint64_t would sign-extend to 0xFF...FF and clobber
-// neighboring fields in the packed hash.  bit_cast to uint8_t
-// first preserves the bit pattern (Undefined → 0xFF in one byte).
+// ScalarType::Undefined is -1. Casting it straight to uint64_t sign-extends
+// and overwrites every other field in the packed word. Reinterpreting the one
+// byte first keeps the value at 0xFF.
 template <typename E>
 [[nodiscard, gnu::const]] constexpr uint8_t enum_byte(E e) noexcept {
-    static_assert(sizeof(E) == 1, "enum_byte expects a 1-byte scoped enum; widen the "
-                                  "hash fold if NumericalRecipe gains a multi-byte "
-                                  "enum field");
+    static_assert(sizeof(E) == 1, "enum_byte expects a one-byte scoped enum; a wider enum field needs a wider "
+                                  "hash fold");
     return std::bit_cast<uint8_t>(e);
 }
 }  // namespace detail_recipe
@@ -286,34 +148,25 @@ template <typename E>
     return RecipeHash{detail_recipe::fmix64(packed)};
 }
 
-// Return a copy of the recipe with its `hash` field populated from
-// compute_recipe_hash.  Idempotent: hashing an already-hashed recipe
-// produces the same value.  Useful at construction sites that want
-// a fully-populated recipe without threading the hash computation
-// through the caller.
 [[nodiscard, gnu::pure]] constexpr NumericalRecipe hashed(NumericalRecipe r) noexcept {
     r.hash = compute_recipe_hash(r);
     return r;
 }
-
-// ─── Utility predicates (gnu::const — pure function of one arg) ────
 
 [[nodiscard, gnu::const]] constexpr bool is_bitexact(ReductionDeterminism d) noexcept {
     return d == ReductionDeterminism::BITEXACT_TC || d == ReductionDeterminism::BITEXACT_STRICT;
 }
 
 [[nodiscard, gnu::const]] constexpr bool permits_tensor_cores(ReductionDeterminism d) noexcept {
-    // BITEXACT_STRICT forbids tensor cores entirely (scalar FMA only).
-    // All other tiers permit them, though BITEXACT_TC constrains the
-    // K dimension (≤8) and outer reduction order.
+    // Only the strictest tier bans them outright. BITEXACT_TC still permits
+    // them, but constrains the fragment length and the outer reduction order.
     return d != ReductionDeterminism::BITEXACT_STRICT;
 }
 
 [[nodiscard, gnu::const]] constexpr bool allows_block_scaled_formats(ReductionDeterminism d) noexcept {
-    // Block-scaled formats (FP8 MX, FP4 MX) diverge across vendors by
-    // more than 1 ULP due to scale-application differences, so
-    // BITEXACT_* tiers cannot apply.  ORDERED is the strongest
-    // available for recipes using PER_BLOCK_* scale policies.
+    // Vendors apply a block scale at different points, and the divergence
+    // that causes is larger than a bit-exact tier admits. ORDERED is the
+    // strongest tier a per-block scale policy can reach.
     return d == ReductionDeterminism::UNORDERED || d == ReductionDeterminism::ORDERED;
 }
 

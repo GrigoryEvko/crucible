@@ -1,13 +1,5 @@
 #pragma once
 
-// Wrapper-detection predicate for safety::Refined<Pred, T> and
-// safety::SealedRefined<Pred, T>.
-//
-// Refined and SealedRefined share the same predicate/value substrate but
-// expose different mutation/extraction surfaces.  The generic IsRefined
-// predicate intentionally admits both; refined_is_sealed_v<T> preserves the
-// distinction for call sites that need to branch on the public API surface.
-
 #include <crucible/safety/SealedRefined.h>
 
 #include <type_traits>

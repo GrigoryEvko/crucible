@@ -1,93 +1,13 @@
 #pragma once
 
-// ── crucible::safety::extract::CanonicalShape ───────────────────────
+// One concept over every canonical parameter shape, and its
+// complement for a signature that matches none of them.
 //
-// FOUND-D20 of 27_04_2026.md §3.8 + §5.6 + 28_04_2026_effects.md §6.1.
-// The closing umbrella over the FOUND-D shape taxonomy: a single
-// concept that admits a function iff it matches AT LEAST ONE
-// canonical shape (D12-D19), plus its complement NonCanonical
-// (the §3.8 catch-all).
-//
-// ── What this header ships ──────────────────────────────────────────
-//
-//   CanonicalShape<auto FnPtr>
-//                          Concept satisfied iff FnPtr matches at
-//                          least one of:
-//                            - UnaryTransform     (D12)
-//                            - BinaryTransform    (D13)
-//                            - Reduction          (D14)
-//                            - ProducerEndpoint   (D15)
-//                            - ConsumerEndpoint   (D16)
-//                            - SwmrWriter         (D17)
-//                            - SwmrReader         (D18)
-//                            - PipelineStage      (D19)
-//
-//   NonCanonical<auto FnPtr>
-//                          Concept satisfied iff !CanonicalShape.
-//                          The §3.8 catch-all: dispatcher refuses
-//                          to auto-route NonCanonical functions
-//                          and emits a diagnostic via FOUND-E.
-//
-//   is_canonical_shape_v<auto FnPtr>
-//                          Variable-template form for use inside
-//                          metaprogram folds.
-//
-//   CanonicalShapeKind     enum class — one value per canonical
-//                          shape, plus NonCanonical.  Used by the
-//                          dispatcher's `canonical_shape_kind_v`
-//                          query to choose the per-shape lowering
-//                          AND by FOUND-E for diagnostic output.
-//
-//   canonical_shape_kind_v<auto FnPtr>
-//                          Compile-time variable evaluating to the
-//                          CanonicalShapeKind enum value matching
-//                          FnPtr.  Returns NonCanonical when no
-//                          shape matches.
-//
-//   canonical_shape_name(CanonicalShapeKind k)
-//                          Constant-time string_view lookup —
-//                          human-readable shape name for
-//                          diagnostics.  No allocation, no
-//                          formatting.
-//
-// ── Mutual exclusivity guarantee ────────────────────────────────────
-//
-// 27_04 §5.6 stipulates that the canonical shapes are mutually
-// exclusive: a function satisfies AT MOST ONE shape predicate.  The
-// eight per-shape concepts in D12-D19 enforce this structurally via
-// per-param wrapper-detection clauses + per-return-type clauses +
-// slot-order constraints.  This header verifies the property in the
-// sentinel TU: for every shape's worked example, exactly one shape
-// predicate is true (and `canonical_shape_kind_v` matches).
-//
-// ── Resolution order ────────────────────────────────────────────────
-//
-// `canonical_shape_kind_v` evaluates the shape predicates in this
-// fixed order:
-//
-//   1. UnaryTransform   (most specific arity-1 case)
-//   2. BinaryTransform  (most specific arity-2 same-shape case)
-//   3. Reduction        (arity-2 OwnedRegion + reduce_into)
-//   4. ProducerEndpoint (arity-2 with Producer in slot 0)
-//   5. ConsumerEndpoint (arity-2 with Consumer in slot 0)
-//   6. SwmrWriter       (arity-2 with SwmrWriter in slot 0)
-//   7. SwmrReader       (arity-1 with SwmrReader return)
-//   8. PipelineStage    (arity-2 Consumer+Producer)
-//   9. NonCanonical     (fallback)
-//
-// Because the shapes are mutually exclusive, the order matters only
-// for diagnostic-message stability — the matched kind is the same
-// regardless of which clause hit first.  Reordering the clauses
-// must not change the test outcomes.
-//
-// ── Axiom coverage ──────────────────────────────────────────────────
-//
-//   InitSafe / NullSafe / MemSafe / BorrowSafe / ThreadSafe / LeakSafe
-//     — N/A; pure consteval shape recognition.
-//   TypeSafe — disjunction of eight mutually-exclusive predicates;
-//              non-canonical signatures fall through to
-//              CanonicalShapeKind::NonCanonical.
-//   DetSafe — same FnPtr → same recognition result.
+// The shapes are mutually exclusive: a function satisfies at most one
+// of them.  The order the chain below tests them in therefore does not
+// change which one is reported.  It only keeps the reported kind
+// stable, so reordering the branches must leave every test result
+// untouched.
 
 #include <crucible/safety/BinaryTransform.h>
 #include <crucible/safety/ConsumerEndpoint.h>
@@ -103,10 +23,6 @@
 
 namespace crucible::safety::extract {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Umbrella concept + complement ──────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 template <auto FnPtr>
 concept CanonicalShape = UnaryTransform<FnPtr> || BinaryTransform<FnPtr> || Reduction<FnPtr> || ProducerEndpoint<FnPtr>
                       || ConsumerEndpoint<FnPtr> || SwmrWriter<FnPtr> || SwmrReader<FnPtr> || PipelineStage<FnPtr>;
@@ -119,10 +35,6 @@ inline constexpr bool is_canonical_shape_v = CanonicalShape<FnPtr>;
 
 template <auto FnPtr>
 inline constexpr bool is_non_canonical_v = NonCanonical<FnPtr>;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── CanonicalShapeKind enum + lookup ───────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 enum class CanonicalShapeKind : std::uint8_t {
     NonCanonical = 0,
@@ -166,14 +78,6 @@ consteval CanonicalShapeKind canonical_shape_kind_impl() noexcept {
 template <auto FnPtr>
 inline constexpr CanonicalShapeKind canonical_shape_kind_v = detail::canonical_shape_kind_impl<FnPtr>();
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Human-readable name lookup ─────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Constant-time string_view lookup for diagnostic output.  The
-// dispatcher uses this to render error messages naming the matched
-// shape (or naming "NonCanonical" with the §3.8 fallthrough hint).
-
 [[nodiscard]] constexpr std::string_view canonical_shape_name(CanonicalShapeKind k) noexcept {
     switch (k) {
         case CanonicalShapeKind::UnaryTransform:
@@ -194,24 +98,20 @@ inline constexpr CanonicalShapeKind canonical_shape_kind_v = detail::canonical_s
             return "PipelineStage";
         case CanonicalShapeKind::NonCanonical:
             return "NonCanonical";
+        // The cases above are exhaustive.  This arm answers only a
+        // value that was never one of the enumerators.
         default:
-            return "Unknown";  // unreachable under exhaustive enum
+            return "Unknown";
     }
 }
 
 template <auto FnPtr>
 inline constexpr std::string_view canonical_shape_name_of_v = canonical_shape_name(canonical_shape_kind_v<FnPtr>);
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block ────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
+// Only the fallback is covered here.  A witness for each shape would
+// instantiate all of their wrappers in every consumer of this header.
 
 namespace detail::canonical_shape_self_test {
-
-// Functions used as witnesses for the per-kind lookup tests.
-// Concrete shape-matching witnesses live in the sentinel TU
-// (test_canonical_shape.cpp); the header self-test only covers
-// negatives + the NonCanonical fallback semantics.
 
 inline void f_two_ints(int, int) noexcept {}
 static_assert(!CanonicalShape<&f_two_ints>);
@@ -224,10 +124,6 @@ static_assert(!CanonicalShape<&f_three_params>);
 static_assert(NonCanonical<&f_three_params>);
 
 }  // namespace detail::canonical_shape_self_test
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Runtime smoke test ─────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 inline bool canonical_shape_smoke_test() noexcept {
     using namespace detail::canonical_shape_self_test;

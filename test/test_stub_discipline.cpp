@@ -1,28 +1,15 @@
-// FIXY-U-087 stub-vs-live deprecation discipline witness.
+// Two layers keep a stub honest.
 //
-// This TU pins the two-layer discipline framework at compile + runtime:
+// A header that ships a stub surface declares a constant saying so, and
+// this file asserts that every such constant is still false.  When a
+// backend goes live and its constant flips, this file stops compiling,
+// which is what forces the matching live-tier test to be rewritten in the
+// same change rather than later.
 //
-//   Layer 1 — honesty markers (machine-readable at compile time):
-//     Each header that ships a stub surface declares
-//       inline constexpr bool *_implemented = false;
-//       inline constexpr bool *_attached    = false;
-//     This TU static_asserts every marker IS in fact false today.  When
-//     a backend ships live behavior and the marker flips to true, this
-//     TU fails to compile — forcing the substrate author to update the
-//     test_apply_paths_are_stubbed sentinels in lockstep with the flip.
-//
-//   Layer 2 — [[deprecated("CRUCIBLE_STUB:...")]] attributes (visible
-//     at every call site as -Wdeprecated-declarations warning):
-//     Authorized callers suppress with `#pragma GCC diagnostic
-//     push/ignored "-Wdeprecated-declarations"/pop`.  This TU exercises
-//     a stub from each of the five headers under suppression, proving
-//     (a) the function is reachable through normal include + namespace
-//     resolution, (b) the deprecation does not affect runtime sentinel
-//     semantics, and (c) the runtime sentinel return is still the
-//     expected explicit-deferral / explicit-unavailable code.
-//
-// The CI guard `scripts/check-stub-discipline.sh` enforces the pair
-// invariant at script time.  This TU enforces it at C++ build time.
+// The stub entry points themselves carry [[deprecated("CRUCIBLE_STUB:...")]],
+// so every call site warns.  An authorised caller suppresses that warning
+// explicitly.  The calls below run under that suppression and check that
+// each stub is still reachable and still returns its documented sentinel.
 
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/cntp/RoceConfig.h>
@@ -34,67 +21,46 @@
 
 #include <cstdio>
 
-// ── Layer 1: honesty markers are false TODAY ──────────────────────────────
-// When any of these flips to true, the corresponding live-tier test
-// (test_apply_paths_are_stubbed / test_data_plane_is_stub) must be
-// updated in lockstep to exercise the live data-plane path, AND the
-// [[deprecated]] attributes in the header must be removed.  This
-// static_assert is the regression net for that lockstep contract.
 static_assert(crucible::cntp::data_plane_implemented == false,
-              "FIXY-U-087: MtlsTransport.h::data_plane_implemented flipped to "
-              "true — update test_cntp_mtls_transport::test_data_plane_is_stub "
-              "AND remove [[deprecated]] from connect_mtls / mtls_send / "
-              "mtls_recv / enable_ktls_offload in lockstep.");
-
-static_assert(crucible::cog::nic::privileged_apply_implemented == false,
-              "FIXY-U-087: NicConfig.h::privileged_apply_implemented flipped "
-              "to true — update test_nic_config::test_apply_paths_are_stubbed "
-              "AND remove [[deprecated]] from apply_*/query_current in "
+              "data_plane_implemented flipped to true. Rewrite the live-tier "
+              "test for this surface and remove the deprecation from "
+              "connect_mtls, mtls_send, mtls_recv and enable_ktls_offload in "
               "lockstep.");
 
+static_assert(crucible::cog::nic::privileged_apply_implemented == false,
+              "the nic privileged_apply_implemented flipped to true. Rewrite "
+              "the live-tier test for this surface and remove the deprecation "
+              "from the apply entry points and query_current in lockstep.");
+
 static_assert(crucible::cog::sriov::privileged_apply_implemented == false,
-              "FIXY-U-087: SrIov.h::privileged_apply_implemented flipped to "
-              "true — update test_sriov::test_apply_paths_are_stubbed AND "
-              "remove [[deprecated]] from SrIovManager::* / free enable / "
-              "configure_vf / disable / query_current in lockstep.");
+              "the sriov privileged_apply_implemented flipped to true. "
+              "Rewrite the live-tier test for this surface and remove the "
+              "deprecation from the manager methods, enable, configure_vf, "
+              "disable and query_current in lockstep.");
 
 static_assert(crucible::cntp::privileged_apply_implemented == false,
-              "FIXY-U-087: RoceConfig.h::privileged_apply_implemented flipped "
-              "to true — update test_cntp_roce_config::"
-              "test_apply_paths_are_stubbed AND remove [[deprecated]] from "
-              "apply_roce_config / verify_dcqcn_active / query_dcqcn_state.");
+              "the roce privileged_apply_implemented flipped to true. Rewrite "
+              "the live-tier test for this surface and remove the deprecation "
+              "from apply_roce_config, verify_dcqcn_active and "
+              "query_dcqcn_state in lockstep.");
 
 static_assert(crucible::cntp::tcam::vendor_backend_attached == false,
-              "FIXY-U-087: Tcam.h::vendor_backend_attached flipped to true — "
-              "update test_cntp_tcam::test_apply_paths_are_stubbed AND remove "
-              "[[deprecated]] from force_tcam_backend_boundary in lockstep.");
+              "vendor_backend_attached flipped to true. Rewrite the live-tier "
+              "test for this surface and remove the deprecation from "
+              "force_tcam_backend_boundary in lockstep.");
 
 namespace {
-
-// ── Layer 2: pragma-suppressed call sites reach the runtime sentinel ─────
-//
-// Every test function below calls AT LEAST one deprecated stub from its
-// header, under the authorized `#pragma GCC diagnostic ignored` envelope.
-// Build-time invariant: the warning is suppressed, the binary links, the
-// call returns the documented sentinel error code.
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 void test_mtls_stub_returns_backend_unavailable() {
     namespace cntp = crucible::cntp;
-    // mtls_send on a never-connected MtlsConnection.  We can't construct
-    // an MtlsConnection without the private ctor (friend connect_mtls is
-    // the only path, and that's a stub too).  Skip the actual call here;
-    // the runtime sentinel is exercised by test_cntp_mtls_transport.
-    // What we verify HERE is that the call-site WOULD compile under
-    // suppression — i.e. the deprecated attribute does not break the
-    // overload set.
-    using ConnectFn = std::expected<cntp::MtlsConnection, cntp::MtlsError>(*)(
-        cntp::SocketFd,
-        cntp::DeclaredMtlsConfig const&,
-        cntp::MtlsDnsName,
-        cntp::MtlsCertificateFingerprint) noexcept;
+    // A connection cannot be built here: the only path to one is itself a
+    // stub.  Taking the address of the entry point is enough to show that
+    // the deprecation does not break the overload set under suppression.
+    using ConnectFn = std::expected<cntp::MtlsConnection, cntp::MtlsError> (*)(
+        cntp::SocketFd, cntp::DeclaredMtlsConfig const&, cntp::MtlsDnsName, cntp::MtlsCertificateFingerprint) noexcept;
     constexpr ConnectFn p = &cntp::connect_mtls;
     (void)p;
     std::printf("  test_mtls_stub_returns_backend_unavailable: PASSED\n");
@@ -147,15 +113,13 @@ void test_tcam_force_returns_vendor_unavailable() {
     tcam::TcamTablePlan plan{};
     plan.target.uuid = crucible::cog::Uuid{0x148u, 0x9u};
     plan.target.kind = crucible::cog::CogKind::NicPort;
-    plan.capacity = tcam::TcamEntryCount{
-        std::uint32_t{4}, typename tcam::TcamEntryCount::Trusted{}};
+    plan.capacity = tcam::TcamEntryCount{std::uint32_t{4}, typename tcam::TcamEntryCount::Trusted{}};
     plan.backend_ready = false;
 
     auto declared_plan = tcam::DeclaredTcamTable{plan};
 
     tcam::TcamFlowRule rule{};
-    rule.rule_id = tcam::TcamRuleId{
-        std::uint64_t{1}, typename tcam::TcamRuleId::Trusted{}};
+    rule.rule_id = tcam::TcamRuleId{std::uint64_t{1}, typename tcam::TcamRuleId::Trusted{}};
     rule.action.kind = tcam::FlowAction::Drop;
     auto declared_rule = tcam::declare_tcam_rule(rule);
     assert(declared_rule.has_value());

@@ -1,15 +1,5 @@
 #pragma once
 
-// CrucibleContext: Foreground state machine for Tier 1 compiled replay.
-//
-// Layout: engine_ is at offset 0 so the engine's hot cache line IS
-// the context's hot cache line. mode_ lives at offset 56 (same line).
-// All hot-path data in one 64-byte cache line:
-//
-//   [0..55]  engine_ (expected hashes, current_, slot_table_, ops_, counters)
-//   [56]     mode_   (ContextMode: RECORD or COMPILED)
-//   [57..63] pad + compiled_iterations_
-
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
@@ -18,7 +8,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/ScopedView.h>
-#include <crucible/safety/Tagged.h>  // WRAP-CCtx-2 #904: source::Vigil
+#include <crucible/safety/Tagged.h>
 
 #include <cassert>
 #include <cstdint>
@@ -26,17 +16,6 @@
 #include <optional>
 #include <type_traits>
 
-// FIXY-U-032a (S1-CrucibleContext of #1736 sibling, U-032): CrucibleContext
-// spells its safety wrappers through fixy::wrap::, never safety::* — see
-// the usages below.  CrucibleContext is a foundation/public-API hub
-// (reimplement-reserved, FIXY-U-032); it deliberately does NOT pull the
-// fixy/Wrap.h umbrella.  Mirror the Arena.h (FIXY-U-096y) / MetaLog
-// (031a) populate precedent: re-open crucible::fixy::wrap to install the
-// 5 using-decls CrucibleContext references (all already visible via the
-// narrow safety/ includes above — no new include needed).  fixy/Wrap.h
-// re-declares these independently in its own TU — idempotent.  This
-// irreducible ::crucible::safety:: re-export plumbing keeps
-// CrucibleContext.h absent from scripts/fixy-clean-headers.txt.
 namespace crucible::fixy::wrap {
 using ::crucible::safety::Monotonic;
 using ::crucible::safety::NonNull;
@@ -48,71 +27,48 @@ using ::crucible::safety::ScopedView;
 namespace crucible {
 
 enum class ContextMode : uint8_t {
-    RECORD,  // Foreground records + executes eagerly
-    COMPILED,  // Foreground replays with pre-allocated outputs
+    RECORD,  // record the operation and execute it eagerly
+    COMPILED,  // replay the operation into preallocated outputs
 };
 
-// State tag for ScopedView.  COMPILED is the only mode that gates
-// methods (advance / output_ptr / input_ptr / register_external all
-// pre(mode_ == COMPILED)).  RECORD has no mode-specific methods —
-// dispatch_op records via Vigil's own ring, no ctx_ method is RECORD-
-// only.  DIVERGED is a transient status returned by advance(), not a
-// stable state you hold a view against.
+// The compiled mode is the only one worth a tag: every mode-gated method
+// requires it, and recording has no method of its own. A divergence is a
+// status an advance returns, not a state to hold a proof of.
 namespace ctx_mode {
 struct Compiled {};
 }  // namespace ctx_mode
 
-// DispatchResult: Return value from Vigil::dispatch_op()
-//
-// Discriminated variant: the two Actions carry fundamentally different
-// follow-on state, and the existing "one big struct with union-shaped
-// fields" encoded the discrimination via convention (Action::RECORD
-// means op_index is meaningless / none()).  Helper accessors now make
-// the access-with-wrong-action case a contract fire.
-//
-// Layout preserved (sizeof == 8) — the helpers don't add storage,
-// they gate access through pre() contracts.  The `action` field IS
-// the discriminant; `status` and `op_index` are the COMPILED-arm
-// payload (RECORD has no meaningful payload).
+// A discriminated pair. The action is the discriminant and the other two
+// fields are the compiled arm's payload. On the recording arm they carry
+// nothing. The accessors below are what make reading the payload from the
+// wrong arm fail rather than return a meaningless value.
 struct DispatchResult {
     enum class Action : uint8_t {
-        RECORD,  // Execute eagerly (normal allocation)
-        COMPILED,  // Execute into pre-allocated output pointers
+        RECORD,
+        COMPILED,
     };
 
     Action action = Action::RECORD;
     ReplayStatus status = ReplayStatus::MATCH;
     uint8_t pad[2]{};
-    OpIndex op_index;  // position in region (diagnostics); none() for RECORD
+    OpIndex op_index;
 
-    // Discriminated accessors.  Accessing the COMPILED payload when
-    // action == RECORD is a bug: status and op_index carry no meaning.
-    // Routing through these accessors makes the caller prove they
-    // checked the action first.
     [[nodiscard, gnu::pure]] bool is_record() const noexcept { return action == Action::RECORD; }
     [[nodiscard, gnu::pure]] bool is_compiled() const noexcept { return action == Action::COMPILED; }
 
-    // COMPILED-only payload accessors.  pre() fires if the caller
-    // reaches for status/op_index without first confirming COMPILED.
+    // A contract predicate that reads a member through `this` is skipped when
+    // the compiler folds the body at compile time, so every such check in this
+    // file runs from the body rather than a clause.
     [[nodiscard, gnu::pure]] ReplayStatus compiled_status() const noexcept {
-        // CONTRACT-fix-10: `action` is a `this->` member predicate — the GCC
-        // 16.1.1 consteval-bypass family.  Vanilla pre(action == COMPILED)
-        // silently no-ops at consteval on the un-patched distro toolchain;
-        // CRUCIBLE_PRE fires toolchain-independently (consteval poison +
-        // debug-runtime abort), collapses to [[assume]] under NDEBUG.
         CRUCIBLE_PRE(action == Action::COMPILED);
         return status;
     }
     [[nodiscard, gnu::pure]] OpIndex compiled_op_index() const noexcept {
-        // CONTRACT-fix-10: same `this->`-member consteval-bypass migration.
         CRUCIBLE_PRE(action == Action::COMPILED);
         return op_index;
     }
 
-    // Factories make the legitimate constructions explicit.
-    [[nodiscard]] static DispatchResult record() noexcept {
-        return DispatchResult{};  // defaults are RECORD / MATCH / none()
-    }
+    [[nodiscard]] static DispatchResult record() noexcept { return DispatchResult{}; }
     [[nodiscard]] static DispatchResult compiled(ReplayStatus s, OpIndex idx) noexcept {
         return DispatchResult{.action = Action::COMPILED, .status = s, .pad = {}, .op_index = idx};
     }
@@ -128,7 +84,6 @@ struct CrucibleContext {
     CrucibleContext(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
     CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
-    // ── Activate compiled mode ──
     [[nodiscard]] bool activate(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr) {
         if (!region->plan) [[unlikely]]
             return false;
@@ -137,82 +92,41 @@ struct CrucibleContext {
 
         pool_.init(region->plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
-        // WRAP-CCtx-2 #904: active_region_ is Tagged<const RegionNode*,
-        // source::Vigil>; assignment threads through the explicit ctor at
-        // the publish site.  All deref / null-check / return paths route
-        // through .value() — see field doc-block at the bottom of the class.
         active_region_ = ActiveRegionPtr{region};
         mode_ = ContextMode::COMPILED;
 
-        // CONTRACT-CrucibleContext-Activate-POST: the (mode_, active_region_)
-        // state-pair is the precondition every COMPILED-mode hot-path method
-        // depends on (advance / output_ptr / input_ptr / register_external all
-        // pre(mode_ == COMPILED), and downstream engine/pool reads dereference
-        // active_region_->plan).  Catches a refactor that publishes one
-        // without the other, or sets active_region_ to anything other than
-        // the requested region.  Mirrors CONTRACT-Tx-Activate-POST
-        // (Transaction.h:228, commit 9a0fc58: post(active_tx_ == tx)) and
-        // CONTRACT-Vigil-SwitchRegion-POST (Vigil.h, commit f913224) — same
-        // state-mutation class, same "mutation-and-publication step took
-        // effect" framing.
+        // The mode and the active region move together. Every compiled-mode
+        // method requires the first and dereferences the second, so publishing
+        // one without the other leaves a pair that no method can safely act on.
         CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
         CRUCIBLE_POST(0, active_region_.value() == region);
         return true;
     }
 
-    // ── Deactivate: COMPILED -> RECORD ──
     void deactivate() {
         mode_ = ContextMode::RECORD;
         pool_.destroy();
         active_region_ = ActiveRegionPtr{nullptr};
 
-        // CONTRACT-CrucibleContext-Deactivate-POST: lifecycle-reset post
-        // (CRUCIBLE_POST taxonomy class 3, sibling of IterDet::reset 6-post
-        // family / PoolAllocator::destroy 5-post family / KernelCache ctor
-        // 3-post family).  After deactivate(), the context must be in the
-        // RECORD ground state with no live region pointer — this is the
-        // dual of CONTRACT-CrucibleContext-Activate-POST and catches the
-        // partial-deactivation refactor (clearing mode_ but leaving a stale
-        // active_region_ dangling, or vice-versa) that would silently
-        // re-enter COMPILED on the next switch_region() prefix-replay.
+        // The dual of the pair above: clearing the mode while leaving the
+        // region pointer behind would let the next region switch replay a
+        // prefix against a region that is gone.
         CRUCIBLE_POST(0, mode_ == ContextMode::RECORD);
         CRUCIBLE_POST(0, active_region_.value() == nullptr);
     }
 
-    // ── Per-op advance (COMPILED mode hot path) ──
-    //
-    // ReplayEngine now returns COMPLETE directly for the last matched op,
-    // so we don't need a separate is_complete() check after every advance().
-    //
-    // Hot path (MATCH, non-last): two L1d comparisons + increment + pre-cache.
-    // Cold path (COMPLETE): engine auto-resets for the next iteration.
-    //
-    // CRUCIBLE_HOT + gnu::flatten: this function is called per-op in
-    // COMPILED mode — same cadence as Vigil::dispatch_op.  gnu::hot
-    // promotes it to .text.hot; gnu::flatten tells the compiler to
-    // inline every call inside the function body (the engine_.advance
-    // call and the counter .bump() calls), eliminating the frame on
-    // the hot path.
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
-        // CONTRACT-fix-10: `mode_` is a `this->` member predicate (consteval-
-        // bypass family).  In-body CRUCIBLE_PRE fires across both the patched
-        // and un-patched GCC 16.1.1 builds; hot-path TUs compiled
-        // contract_evaluation_semantic=ignore are unaffected (the macro is
-        // [[assume]] under NDEBUG — zero bytes, zero cycles).
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        // Exhaustive switch: a new ReplayStatus variant added to the enum
-        // would previously have silently been routed to the DIVERGED branch
-        // (the old if/else-if fell through anything that wasn't MATCH or
-        // COMPLETE).  Now -Werror=switch fires, forcing an explicit
-        // decision on what the new status means for compiled_iterations_ /
-        // diverged_count_ bookkeeping.
+        // A switch rather than a chain of tests, so that a status added later
+        // has to be given a meaning here instead of silently counting as a
+        // divergence.
         switch (engine_.advance(schema_hash, shape_hash)) {
             case ReplayStatus::MATCH:
                 return ReplayStatus::MATCH;
             case ReplayStatus::COMPLETE: {
                 compiled_iterations_.bump();
-                // Auto-reset for next iteration. current_ survives reset
-                // so output_ptr/input_ptr remain valid until next advance().
+                // The reset keeps the current operation, so the output and
+                // input pointers stay valid until the next advance.
                 engine_.reset();
                 return ReplayStatus::COMPLETE;
             }
@@ -224,48 +138,31 @@ struct CrucibleContext {
         }
     }
 
-    // ── Output/input pointer forwarding ──
-    //
-    // CRUCIBLE_HOT: called once per op-output/op-input after every
-    // successful advance().  Binds ATen output tensors to their
-    // memory-plan slots.  Not gnu::flatten — the delegate already
-    // always_inlines the engine call.
+    // Binds one of the operation's tensors to its slot in the memory plan.
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        // CONTRACT-fix-10: `mode_` member predicate (consteval-bypass family).
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return engine_.output_ptr(j);
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        // CONTRACT-fix-10: `mode_` member predicate (consteval-bypass family).
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return engine_.input_ptr(j);
     }
 
-    // ── Switch to a different compiled region (mid-iteration safe) ──
+    // Safe to call part-way through an iteration.
     [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos)
         CRUCIBLE_NO_THREAD_SAFETY pre(alt != nullptr) {
-        // CONTRACT-fix-10: `mode_` is a `this->` member predicate (consteval-
-        // bypass family) — migrated to in-body CRUCIBLE_PRE.  The `alt !=
-        // nullptr` clause is a const-pointer-param literal comparison (the one
-        // shape that fires even on the un-patched build), so it stays a
-        // vanilla pre() in the signature where it is discoverable.
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         if (!alt->plan) [[unlikely]]
             return false;
 
         if (div_pos == 0) return activate(alt);
 
-        // WRAP-CCtx-2 #904: extract via .value() — active_region_ is
-        // Tagged<const RegionNode*, source::Vigil>.
         const auto* old_region = active_region_.value();
         assert(old_region && old_region->plan && "no active region to switch from");
 
-        // Pool is currently initialized (we're in COMPILED mode and the
-        // active_region_ != nullptr check above confirmed it).  Mint the
-        // InitializedView, use the typed detach overload.  After detach
-        // the pool is empty; pv is now semantically stale, but its
-        // destructor fires at scope exit before any further pool use.
+        // Detaching empties the pool, which makes the view stale, but it goes
+        // out of scope before anything touches the pool again.
         auto pv = pool_.mint_initialized_view();
         auto old_pool = pool_.detach(pv);
         pool_.init(alt->plan);
@@ -274,9 +171,8 @@ struct CrucibleContext {
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
         active_region_ = ActiveRegionPtr{alt};
 
-        // Engine just init'd → mint an ActiveView and use the typed advance
-        // overload so the prefix-replay matches the rest of the codebase
-        // (Vigil dispatch_op and our own typed advance).
+        // Replay the prefix the two regions share, so the new region resumes
+        // where the old one diverged.
         auto av = engine_.mint_active_view();
         for (uint32_t i = 0; i < div_pos; i++) {
             auto s = engine_.advance(alt->ops[i].schema_hash, alt->ops[i].shape_hash, av);
@@ -284,37 +180,17 @@ struct CrucibleContext {
             (void)s;
         }
 
-        // CONTRACT-CrucibleContext-SwitchRegion-POST: success-path state-
-        // mutation post.  div_pos > 0 path detaches the old pool, inits a new
-        // pool against alt->plan, migrates prefix slots, re-inits the engine
-        // against alt, and prefix-replays div_pos ops.  Failure to update
-        // active_region_ to alt would leave the engine pointing at alt while
-        // active_region_ still names the old region — a torn (mode_,
-        // active_region_) pair that's structurally invalid.  Mirrors
-        // CONTRACT-Vigil-SwitchRegion-POST (Vigil.h ctx_.active_region() ==
-        // alt, commit f913224) and CONTRACT-CrucibleContext-Activate-POST
-        // above.  mode_ is unchanged (already COMPILED per pre(); no need
-        // to re-cite); active_region_ is the substantive mutation.
-        //
-        // The div_pos == 0 short-circuit at the top of the function delegates
-        // to activate() and thus already discharges this post via activate's
-        // own (mode_ == COMPILED, active_region_ == region) post-pair.
+        // Leaving the region pointer on the old region while the engine has
+        // moved to the new one is the torn pair the activation contract
+        // guards against. The early exit above reaches it through activate.
         CRUCIBLE_POST(0, active_region_.value() == alt);
         CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
         return true;
     }
 
-    // ── Queries ──
-
     [[nodiscard]] ContextMode mode() const { return mode_; }
     [[nodiscard]] bool is_compiled() const { return mode_ == ContextMode::COMPILED; }
     [[nodiscard]] bool is_recording() const { return mode_ == ContextMode::RECORD; }
-
-    // ── ScopedView predicates + factories ────────────────────────────
-    //
-    // Mode-specific methods accept a CompiledView proof that the ctx is
-    // in COMPILED; the existing pre()-checked overloads are retained for
-    // gradual migration.
 
     using CompiledView = crucible::fixy::wrap::ScopedView<CrucibleContext, ctx_mode::Compiled>;
 
@@ -324,19 +200,14 @@ struct CrucibleContext {
     }
 
     [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() const noexcept {
-        // CONTRACT-fix-10: `mode_` member predicate (consteval-bypass family).
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return crucible::fixy::wrap::mint_view<ctx_mode::Compiled>(*this);
     }
 
-    // ── Typed mode-specific overloads ────────────────────────────────
-
-    // The typed overloads thread proofs all the way down: a CompiledView
-    // on the context implies the engine is initialized AND the pool is
-    // initialized (activate() inits both synchronously).  Mint the inner
-    // ActiveView / InitializedView from the outer CompiledView and pass
-    // them to the engine + pool typed methods, so the entire dispatch
-    // chain is type-state-checked end-to-end.
+    // These overloads thread the proof all the way down. A proof that the
+    // context is compiled implies both the engine and the pool are live,
+    // because activation initialises the two together, so the inner proofs
+    // can be minted from the outer one and the whole chain is checked.
 
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
                                                                   CompiledView const&) {
@@ -357,8 +228,6 @@ struct CrucibleContext {
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const CRUCIBLE_LIFETIMEBOUND {
-        // mint_active_view is const, so the typed active view is available
-        // directly from compiled output accessors.
         auto av = engine_.mint_active_view();
         return engine_.output_ptr(j, av);
     }
@@ -375,40 +244,26 @@ struct CrucibleContext {
 
     [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
     [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
-    // WRAP-CCtx-2 #904: extracts the raw const RegionNode* from the
-    // Tagged<...,source::Vigil> field — callers continue to see the
-    // unwrapped pointer for compatibility with the dispatch path.
     [[nodiscard]] const RegionNode* active_region() const CRUCIBLE_LIFETIMEBOUND { return active_region_.value(); }
 
     [[nodiscard]] const ReplayEngine& engine() const CRUCIBLE_LIFETIMEBOUND { return engine_; }
     [[nodiscard]] const PoolAllocator& pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
 
 private:
-    // Migration bitset capacity.  Public constant because it is a real
-    // structural limit of the migrate_prefix_slots_ algorithm: the
-    // visited[] bitset is sized at this bound, and a num_slots > this
-    // would silently miss tracking visits and re-copy slots.  The
-    // MemoryPlan creation path enforces num_slots <= PoolAllocator's
-    // own kMaxNumSlots (1 M) which is much larger; this 1 K migration
-    // bound is the tighter local constraint and lifted to a contract
-    // pre() on this function.
+    // The bitset below is sized at this bound, so a plan with more slots than
+    // this would lose track of which it had already copied and copy some
+    // twice. It is far tighter than the allocator's own slot ceiling, which is
+    // why the migration checks it separately.
     static constexpr uint32_t MIGRATION_MAX_SLOTS = 1024;
 
     void migrate_prefix_slots_(const RegionNode* old_region, const RegionNode* alt, const void* old_pool_base,
                                uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY pre(old_region != nullptr)
         pre(alt != nullptr) pre(old_region->plan != nullptr) pre(alt->plan != nullptr)
-        // The migration bitset is fixed-size; reject plans the bitset
-        // cannot track before any slot copy begins.  Cite migration:
-        // CONTRACT-CCtx-1 promotes the bare `<=` to a named integer-bound
-        // predicate so future hardening (lifting `num_slots` to
-        // `Refined<bounded_above<MIGRATION_MAX_SLOTS>>`) propagates here
-        // by name.
+        // Checked before any slot is copied, so a plan the bitset cannot track
+        // is refused rather than half-migrated.
         pre(::crucible::decide::in_range<uint32_t>(alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS)) {
         const auto* old_plan = old_region->plan;
         const auto* new_plan = alt->plan;
-        // Propagate the contract bound to the optimizer so the
-        // visited[] indexing math below uses the tight upper bound
-        // rather than the field's full uint32_t range.
         [[assume(new_plan->num_slots <= MIGRATION_MAX_SLOTS)]];
         uint64_t visited[(MIGRATION_MAX_SLOTS + 63) / 64]{};
 
@@ -445,78 +300,39 @@ private:
         }
     }
 
-    // ── Layout: engine at offset 0 so its cache line IS our cache line ──
-    //
-    // Cache line 0 (hot): engine_ (64B = exactly one cache line)
-    //   [0..63]  engine_ (expected hashes, cursor_, end_, current_, slot_table_, ops_, pool_)
-    //
-    // Cache line 1: mode_ + counters + active_region_
-    //   [64]     mode_
-    //   [65..67] pad
-    //   [68..71] compiled_iterations_
-    //   [72..75] diverged_count_
-    //   [76..79] pad2
-    //   [80..87] active_region_
-    //
-    // Cache line 2: pool_ (32B) + pad to 128B
-    //   [88..119] pool_
-    //   [120..127] pad
-    ReplayEngine engine_;  // 64B — at offset 0 (one cache line)
-    ContextMode mode_ = ContextMode::RECORD;  // 1B  — offset 64
-    [[maybe_unused]] uint8_t pad_[3]{};  // 3B  — offset 65
-    // Both counters are structurally monotonic: incremented on iteration
-    // boundaries / divergence events, never reset.  Wrapped so the
-    // invariant is type-enforced (overflow is the only way to violate it
-    // and bump() catches that via contract).
-    crucible::fixy::wrap::Monotonic<uint32_t> compiled_iterations_{0};  // 4B  — offset 68
-    crucible::fixy::wrap::Monotonic<uint32_t> diverged_count_{0};  // 4B  — offset 72
-    [[maybe_unused]] uint8_t pad2_[4]{};  // 4B  — offset 76
-    // WRAP-CCtx-2 #904 (Tagged half): provenance-tagged as
-    // safety::Tagged<const RegionNode*, source::Vigil>.  The Vigil source
-    // tag encodes "this pointer was published by THIS Vigil's bg worker
-    // through its active_region atomic store(release)"; cross-source
-    // assignment (from arena / heap / other Vigil) and raw-pointer
-    // implicit conversion are rejected by Tagged's explicit ctor.
-    // Regime-1 EBO collapses the wrapper to sizeof(const RegionNode*) =
-    // 8 B — the [80..87] cache-line-1 offset above is preserved exactly,
-    // so the static_assert(sizeof(CrucibleContext) == 120) sentinel still
-    // holds.
-    //
-    // FOLLOW-UP (deferred): the second half of WRAP-CCtx-2 #904 wraps
-    // this field's typed-access path in `ScopedView<ctx_state::Active>`,
-    // formalizing the (mode_ == COMPILED ↔ active_region_ != nullptr)
-    // state-machine invariant at the type level.  That layer is additive
-    // — it ships as a new typed accessor alongside `active_region()` —
-    // and is split as a separate follow-up because the ctx_state::Active
-    // typestate, transition table, and ScopedView<> wiring need their
-    // own design pass.  Tagged provenance is the load-bearing half:
-    // without it, any Vigil's bg-published pointer could be mixed with
-    // an arena-allocated RegionNode (different lifetime regime) and the
-    // type system would not catch the swap.
+    // The engine sits at offset zero, so its own hot cache line is this
+    // object's hot cache line. The mode and the counters share the next one,
+    // and the pool follows. The size assertion below pins the whole layout.
+    ReplayEngine engine_;  // 64 bytes, offset 0
+    ContextMode mode_ = ContextMode::RECORD;  // offset 64
+    [[maybe_unused]] uint8_t pad_[3]{};
+    // Both counters only ever go up: one counts completed iterations, the
+    // other divergences, and neither is reset. The type enforces that, and
+    // catches the one way it could be broken, which is overflow.
+    crucible::fixy::wrap::Monotonic<uint32_t> compiled_iterations_{0};  // offset 68
+    crucible::fixy::wrap::Monotonic<uint32_t> diverged_count_{0};  // offset 72
+    [[maybe_unused]] uint8_t pad2_[4]{};
+    // The tag records that this pointer was published by the owning
+    // foreground's background worker. A region allocated somewhere else has a
+    // different lifetime regime, and without the tag the two would be
+    // interchangeable here.
     using ActiveRegionPtr = ::crucible::safety::Tagged<const RegionNode*, ::crucible::safety::source::Vigil>;
-    ActiveRegionPtr active_region_{nullptr};  // 8B  — offset 80
-    PoolAllocator pool_;  // 32B — offset 88
+    ActiveRegionPtr active_region_{nullptr};  // offset 80
+    PoolAllocator pool_;  // 32 bytes, offset 88
 };
 
-// WRAP-CCtx-2 #904 zero-cost field migration sentinel: Tagged<const
-// RegionNode*, source::Vigil> MUST collapse via regime-1 EBO to
-// sizeof(const RegionNode*).  Otherwise the CrucibleContext layout
-// shifts off its 64-byte engine_-cache-line / 8-byte active_region_
-// offset, breaking the [80..87] layout doc-block above AND the
-// sizeof(CrucibleContext) == 120 sentinel below.
+// The tag must not add storage, or every offset above shifts.
 static_assert(sizeof(::crucible::safety::Tagged<const RegionNode*, ::crucible::safety::source::Vigil>)
                   == sizeof(const RegionNode*),
-              "WRAP-CCtx-2 #904: Tagged<const RegionNode*, source::Vigil> must "
-              "preserve pointer size via regime-1 EBO collapse.");
+              "a tagged region pointer must be the size of the pointer it wraps");
 static_assert(alignof(::crucible::safety::Tagged<const RegionNode*, ::crucible::safety::source::Vigil>)
                   == alignof(const RegionNode*),
-              "WRAP-CCtx-2 #904: Tagged<const RegionNode*, source::Vigil> must "
-              "preserve pointer alignment via regime-1 EBO collapse.");
+              "a tagged region pointer must be aligned as the pointer it wraps");
 
 static_assert(sizeof(CrucibleContext) == 120, "CrucibleContext: 64 engine + 24 cold + 32 pool = 120");
 
-// Tier 2 opt-in: CrucibleContext must not hold a ScopedView field —
-// views mustn't outlive the stack frame that minted them.
+// A view must not outlive the frame that minted it, so storing one in a field
+// would let it escape.
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CrucibleContext>());
 
 }  // namespace crucible

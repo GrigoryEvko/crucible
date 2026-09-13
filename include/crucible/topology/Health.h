@@ -1,13 +1,5 @@
 #pragma once
 
-// GAPS-113.  Deterministic per-Cog health substrate.
-//
-// This header intentionally evaluates already-harvested telemetry facts.  It
-// does not read NVML, EDAC, sysfs, TCP_INFO, or Scuttlebutt directly; those
-// harvest and transport surfaces are owned by later GAPS.  The load-bearing
-// invariant here is that every consumer sees one bounded, typed health score
-// instead of inventing its own timeout / thermal / ECC / drop-rate policy.
-
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>

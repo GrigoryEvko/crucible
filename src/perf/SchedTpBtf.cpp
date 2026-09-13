@@ -1,45 +1,22 @@
-// crucible::perf::SchedTpBtf — libbpf binding implementation.
-//
-// Sixth per-program facade.  Mirrors src/perf/SchedSwitch.cpp's
-// 7-step Phase loop nearly exactly — only the bytecode symbol
-// (`sched_tp_btf_bpf_bytecode` vs `sched_switch_bpf_bytecode`) and
-// the diagnostic facade name differ.  See SchedSwitch.cpp's docblock
-// for the rationale on why the duplication is INTENTIONAL
-// (Promote-First architecture, Mike Acton: generalize from ≥2 real
-// cases — GAPS-004x extracts the shared helper after we have ≥6
-// production loaders).
-//
-// SchedTpBtf-specific notes (vs SchedSwitch):
-//   • The BPF program uses SEC("tp_btf/sched_switch") instead of
-//     SEC("tracepoint/sched/sched_switch").  libbpf's
-//     bpf_program__attach() handles tp_btf identically to
-//     tracepoint, so the attach loop here is unchanged.
-//   • disable_unavailable_programs() in this TU only checks for
-//     "tracepoint/" prefix (legacy tracefs presence).  tp_btf
-//     programs go through a different availability gate
-//     (CONFIG_DEBUG_INFO_BTF=y + kernel ≥ 5.5), enforced by
-//     bpf_object__load() rejecting the verifier when BTF type
-//     lookup fails.  No pre-check needed.
-
 #include <crucible/perf/SchedTpBtf.h>
 
-#include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
+#include <crucible/perf/detail/BpfLoader.h>
 
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
+#include <crucible/safety/OwnedMmap.h>
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
 
-#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
-#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>
 #include <cstring>
 
 #include <inplace_vector>
-#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>
 
 extern "C" {
 extern const unsigned char sched_tp_btf_bpf_bytecode[];
@@ -50,10 +27,6 @@ namespace crucible::perf {
 
 namespace {
 
-// Shared loader helpers from detail::BpfLoader (GAPS-004x).
-// BTF-typed tp_btf programs attach via BTF, not by tracepoint name —
-// so disable_unavailable_programs / tracepoint_exists are unused
-// here (and the unused inline helpers vanish at link time).
 namespace source = ::crucible::perf::detail::source;
 using ::crucible::perf::detail::Tgid;
 using ::crucible::perf::detail::Tid;
@@ -69,8 +42,8 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
-// FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
-// ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
+// The distinct phantom tag makes one facade's ring buffer mapping unusable
+// as another facade's mapping at compile time.
 struct SchedTpBtfRingbufTag {};
 struct ReadOnlyProt {};
 struct SharedShare {};
@@ -79,7 +52,6 @@ struct SchedTpBtf::State : crucible::safety::NonMovable<SchedTpBtf::State> {
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    // FIXY-V-236: RAII OwnedMmap replaces {WriteOnceNonNull, WriteOnce}.
     using TimelineMmap = ::crucible::safety::OwnedMmap<SchedTpBtfRingbufTag, ReadOnlyProt, SharedShare>;
     std::optional<TimelineMmap> timeline_mmap{};
 
@@ -91,7 +63,6 @@ struct SchedTpBtf::State : crucible::safety::NonMovable<SchedTpBtf::State> {
     ~State() {
         for (struct bpf_link* l : links)
             if (l != nullptr) bpf_link__destroy(l);
-        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -115,7 +86,6 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
 
     auto state = std::make_unique<State>();
 
-    // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
     opts.sz = sizeof(opts);
     opts.object_name = "crucible_sched_tp_btf";
@@ -129,7 +99,6 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
     }
     state->obj = obj;
 
-    // ── 2. Rewrite target_tgid in .rodata to our PID ───────────────
     if (struct bpf_map* rodata = find_rodata(state->obj); rodata != nullptr) {
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
@@ -142,10 +111,9 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
         }
     }
 
-    // ── 3. (No legacy-tracepoint pre-check — tp_btf availability is
-    //       gated by bpf_object__load when BTF type lookup fails.)
-
-    // ── 4. Verify, JIT, allocate maps ──────────────────────────────
+    // A tp_btf program needs no legacy tracepoint pre-check.  Its
+    // availability is gated by bpf_object__load, which fails when the BTF
+    // type lookup fails.
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
                "kernel < 5.5, CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",
@@ -153,7 +121,6 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
         return std::nullopt;
     }
 
-    // ── 5. Register our main TID in our_tids ───────────────────────
     if (struct bpf_map* m = bpf_object__find_map_by_name(state->obj, "our_tids"); m != nullptr) {
         const Fd fd = map_fd(m);
         const Tid tid = current_tid();
@@ -163,7 +130,6 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
         (void)bpf_map_update_elem(fd_raw, &tid_raw, &one, BPF_ANY);
     }
 
-    // ── 6. Attach every autoload-enabled program ───────────────────
     struct bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
@@ -195,7 +161,6 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
         return std::nullopt;
     }
 
-    // ── 7. mmap the sched_timeline ring buffer ─────────────────────
     struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "sched_timeline");
     if (timeline_map == nullptr) {
         report("sched_timeline map not found in object (bytecode/header out of sync — rebuild)");
@@ -218,7 +183,6 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
                errno);
         return std::nullopt;
     }
-    // FIXY-V-236: structural RAII closure via OwnedMmap.
     state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     if (struct bpf_map* cs = bpf_object__find_map_by_name(state->obj, "cs_count"); cs != nullptr) {
@@ -256,15 +220,13 @@ safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> SchedTpBtf::timeline_view
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{};
     }
-    // §III-clean: bit_cast handles volatile-drop, start_lifetime_as_array
-    // begins typed-array lifetime in the BPF mmap'd byte storage.  See
-    // SchedSwitch.cpp::timeline_view for the full rationale (span<const
-    // volatile T> unimplementable for non-scalar T in libstdc++ today).
-    // FIXY-V-236: OwnedMmap void* data() bit_cast to typed volatile ptr.
+    // The mapping is untyped byte storage, so start_lifetime_as_array begins
+    // the typed array lifetime inside it.  The bit_cast drops volatile,
+    // because libstdc++ has no span<const volatile T> for a non-scalar T.
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // _Tp non-const: const-void* overload returns const _Tp*; passing
-    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
-    // through a const-qualified array location.
+    // The element type stays non-const.  The const-void* overload already
+    // returns a const pointer, and a const element type makes libstdc++ emit
+    // an asm clobber that writes through a const-qualified array location.
     auto* events = std::start_lifetime_as_array<TimelineSchedEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{events, TIMELINE_CAPACITY};
@@ -273,8 +235,8 @@ safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> SchedTpBtf::timeline_view
 uint64_t SchedTpBtf::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // §III-clean: implicit qualification adds const to the volatile pointee;
-    // start_lifetime_as<H>(const volatile void*) returns const volatile H*.
+    // The added const selects the overload taking const volatile void*, which
+    // returns a const volatile pointer to the header.
     const volatile uint8_t* qbase = base;
     auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;

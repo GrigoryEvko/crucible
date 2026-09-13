@@ -1,12 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_residency_heat_v ──────────────────
-//
-// FOUND-D30 (second of batch) — wrapper-detection predicate for
-// `ResidencyHeat<Tier, T>`.  Mechanical extension of D21-D24/D30
-// CipherTier — partial-spec captures the ResidencyHeatTag_v NTTP
-// enum alongside the wrapped type.
-
 #include <crucible/safety/ResidencyHeat.h>
 
 #include <type_traits>
@@ -45,8 +38,6 @@ using residency_heat_value_t = typename detail::is_residency_heat_impl<std::remo
 template <typename T>
     requires is_residency_heat_v<T>
 inline constexpr ResidencyHeatTag_v residency_heat_tag_v = detail::is_residency_heat_impl<std::remove_cvref_t<T>>::tier;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_residency_heat_self_test {
 

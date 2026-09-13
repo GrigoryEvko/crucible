@@ -1,11 +1,11 @@
 #pragma once
 
-// GAPS-196. Typed per-Cog calibration substrate.
-//
-// This header owns the shape of calibration plans, measured samples, and
-// calibrated result bundles. It deliberately does not invent hardware
-// measurements: live vendor microbenchmark runners are backend work and return
-// BackendUnavailable until a real Mimic/Cog runner supplies samples.
+// The shape of a calibration plan, of one measured sample and of a
+// finished result, together with the admission that guards each. No
+// measurement happens here. A function that would need a live
+// microbenchmark runner reports BackendUnavailable until one exists,
+// so the only way to obtain a result today is to build one from
+// samples a caller supplies.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/OpcodeLatencyTable.h>

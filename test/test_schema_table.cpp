@@ -1,7 +1,3 @@
-// Tests for SchemaTable — registered-name dispatch via sorted binary
-// search.  Validates insertion order independence, short_name aten::
-// prefix stripping, idempotent re-register, and capacity bounds.
-
 #include <crucible/SchemaTable.h>
 
 #include "test_assert.h"
@@ -14,25 +10,17 @@ using namespace crucible;
 
 static SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
-// Test inputs are string literals — trusted by source.  Wrap in
-// Sanitized at the call site; the explicit retag is the audit trail.
-static SchemaTable::SanitizedName S(const char* s) {
-    return SchemaTable::SanitizedName{s};
-}
+// The inputs here are string literals, trusted because they are in the
+// source.  Retagging each one explicitly is what leaves an audit trail.
+static SchemaTable::SanitizedName S(const char* s) { return SchemaTable::SanitizedName{s}; }
 
-static const char* C(SchemaTable::LookupName name) {
-    return name.value().data();
-}
+static const char* C(SchemaTable::LookupName name) { return name.value().data(); }
 
-static bool missing(SchemaTable::LookupName name) {
-    return name.value().data() == nullptr;
-}
+static bool missing(SchemaTable::LookupName name) { return name.value().data() == nullptr; }
 
 static bool eq(SchemaTable::LookupName name, const char* expected) {
     const auto& view = name.value();
-    return view.data() != nullptr
-        && view.size() == std::strlen(expected)
-        && std::strcmp(view.data(), expected) == 0;
+    return view.data() != nullptr && view.size() == std::strlen(expected) && std::strcmp(view.data(), expected) == 0;
 }
 
 static void test_empty_lookup_returns_nullptr() {
@@ -62,7 +50,7 @@ static void test_short_name_strips_aten_prefix() {
     auto mv = t.mint_mutable_view();
     t.register_name(mv, H(0x100), S("aten::mm"));
     t.register_name(mv, H(0x200), S("aten::scaled_dot_product_attention"));
-    t.register_name(mv, H(0x300), S("prim::TupleConstruct"));   // non-aten
+    t.register_name(mv, H(0x300), S("prim::TupleConstruct"));  // non-aten
 
     assert(eq(t.short_name(H(0x100)), "mm"));
     assert(eq(t.short_name(H(0x200)), "scaled_dot_product_attention"));
@@ -94,20 +82,18 @@ static void test_binary_search_across_many() {
         t.register_name(mv, SchemaHash{key}, S(names[i]));
     }
     assert(t.count() == N);
-    // Every registered hash resolves.
     for (uint32_t i = 0; i < N; ++i) {
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
         const char* got = C(t.lookup(SchemaHash{key}));
         assert(got != nullptr);
         assert(std::strcmp(got, names[i]) == 0);
     }
-    // Unregistered hash returns null.
     assert(missing(t.lookup(H(0xCAFE'BABE'DEAD'BEEFULL))));
     std::printf("  test_binary_search:             PASSED\n");
 }
 
 static void test_global_table_convenience() {
-    global_schema_table().clear();  // isolation
+    global_schema_table().clear();  // this table outlives the test
     auto gv = global_schema_table().mint_mutable_view();
     register_schema_name(gv, H(0xAA), S("aten::relu"));
     assert(eq(schema_name(H(0xAA)), "aten::relu"));
@@ -165,8 +151,8 @@ static void test_typed_register_with_mutable_view() {
 }
 
 static void test_lookup_works_post_seal() {
-    // Readers are unaffected by the phase — lookup is the bg-thread path
-    // that MUST keep working after seal().
+    // Sealing stops writers, not readers.  Lookup is the background
+    // thread's path and has to keep working afterwards.
     SchemaTable t;
     auto mv = t.mint_mutable_view();
     t.register_name(mv, H(0x111), S("aten::sum"));
@@ -177,7 +163,6 @@ static void test_lookup_works_post_seal() {
     assert(eq(t.lookup(sv, H(0x111)), "aten::sum"));
     assert(eq(t.short_name(H(0x222)), "mean"));
     assert(t.count() == 2);
-    // mint_sealed_view succeeds post-seal.
     (void)sv;
     std::printf("  test_lookup_post_seal:          PASSED\n");
 }

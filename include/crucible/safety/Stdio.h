@@ -1,27 +1,17 @@
 #pragma once
 
-// ── crucible::safety::StdioPinned<Stdio Tier, typename T> ────────────
+// The tier records the console I/O a producer performs: NoStdio performs none,
+// BufferedWrite and UnbufferedWrite write with and without buffering, and
+// InteractiveRead blocks for as long as a reader takes to answer.  It is a
+// ceiling on I/O, not a floor on proof, so the bottom tier is the safe one and a
+// consumer admits a value whose tier is at or below the ceiling it imposes.  A
+// hot path imposes the bottom ceiling, which turns the rule that hot code
+// performs no console I/O into a type-level gate.  Widening up the chain is
+// sound because over-stating the I/O is safe.
 //
-// FIXY-V-242 (5/5): value-level Graded carrier for the V-241 Stdio axis
-// (NoStdio ⊏ BufferedWrite ⊏ UnbufferedWrite ⊏ InteractiveRead).  Pins
-// a function's console-I/O surface into the type.
-//
-//   Substrate: Graded<ModalityKind::Absolute, StdioLattice::At<Tier>, T>
-//   Regime:    1 (zero-cost EBO collapse — sizeof == sizeof(T)).
-//
-// Absolute modality.  CAPABILITY-CEILING semantics: bottom (NoStdio) is
-// the safest (no console I/O — the only tier admissible on the hot path
-// per CLAUDE.md §XII); top (InteractiveRead) blocks unboundedly on
-// interactive input.
-//
-//   satisfies<C> := StdioLattice::leq(Tier, C)
-//   widen<Higher>()                                  — UP the chain only
-//
-// Forge hot-path admission imposes ceiling NoStdio, turning the §XII
-// "no stdio on hot path" prose rule into a type-level gate.
-//
-// §XXI: `mint_stdio<Tier, T>(args...)`.  HS14 neg fixtures:
-// neg_stdio_widen_to_lower.cpp + neg_stdio_mint_wrong_arg.cpp.
+// The modality is Absolute because the tier describes the producer, not the
+// content.  Mutating the wrapped value cannot change what its producer wrote,
+// so mutable access needs no re-check.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>

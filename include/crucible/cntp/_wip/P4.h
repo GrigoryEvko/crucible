@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-145 WIP. CNT-P P4 programmable-switch sketch.
-//
-// This header owns typed admission for switch-dataplane program intent.
-// It does not call P4 Studio, SAI, Broadcom SDK, switchd, or any vendor
-// compiler/deployment daemon. Live backends consume DeclaredP4Program
-// values and currently report explicit deferral or unavailability after
-// the switch Cog and resource budget are proven.
+// Nothing here calls P4 Studio, SAI, a Broadcom SDK, switchd or any vendor
+// compiler or deployment daemon.  deploy_p4_program proves the switch and the
+// resource budget and then reports deferral or unavailability.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>

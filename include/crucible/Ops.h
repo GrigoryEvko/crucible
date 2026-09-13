@@ -4,23 +4,23 @@
 
 namespace crucible {
 
-// Every expression node type in the symbolic math engine.
-// Mirrors the inductor's symbolic operations (SymPy function types,
-// arithmetic, relational, logic). Organized by category.
+// The set mirrors the symbolic operations of the frontend whose traces this
+// records, so both the names and their semantics follow that source rather
+// than being chosen here.
 enum class Op : uint8_t {
-    // ---- Atoms (nargs=0) ----
-    INTEGER,  // payload: int64_t
-    FLOAT,  // payload: double (bitcast to int64_t)
-    SYMBOL,  // payload: symbol_id (index into symbol table)
+    // Atoms, no children.
+    INTEGER,  // payload: the value
+    FLOAT,  // payload: the value's bits
+    SYMBOL,  // payload: an index into the symbol table
     BOOL_TRUE,  // no payload
     BOOL_FALSE,  // no payload
 
-    // ---- Arithmetic (nargs=2 for binary, nargs=N for variadic) ----
-    ADD,  // variadic, flattened, sorted
-    MUL,  // variadic, flattened, sorted
-    POW,  // binary: base, exp
+    // Arithmetic.
+    ADD,  // variadic, flattened, and sorted
+    MUL,  // variadic, flattened, and sorted
+    POW,  // base, exponent
 
-    // ---- Relational (nargs=2) ----
+    // Relational, two children each.
     EQ,
     NE,
     LT,
@@ -28,52 +28,49 @@ enum class Op : uint8_t {
     GT,
     GE,
 
-    // ---- Logic ----
+    // Logic.
     AND,  // variadic
     OR,  // variadic
     NOT,  // unary
 
-    // ---- Division / Modular (nargs=2 unless noted) ----
-    FLOOR_DIV,  // base // divisor
-    CLEAN_DIV,  // floor_div where no rounding occurs
-    CEIL_DIV,  // ceil(base / divisor)
-    INT_TRUE_DIV,  // integer true division → float
-    FLOAT_TRUE_DIV,  // float true division
-    MOD,  // nonneg modulus
-    PYTHON_MOD,  // Python-style modulus (sign follows divisor)
-    MODULAR_INDEXING,  // nargs=3: (base // divisor) % modulus
+    // Division and modulus, two children unless noted.
+    FLOOR_DIV,
+    CLEAN_DIV,  // a floor division known to divide exactly
+    CEIL_DIV,
+    INT_TRUE_DIV,  // integer operands, real result
+    FLOAT_TRUE_DIV,
+    MOD,  // result is never negative
+    PYTHON_MOD,  // result takes the sign of the divisor
+    MODULAR_INDEXING,  // three children: a floor division taken modulo the third
 
-    // ---- Rounding / Type conversion (nargs=1 unless noted) ----
+    // Rounding and conversion, one child unless noted.
     CEIL_TO_INT,
     FLOOR_TO_INT,
     TRUNC_TO_FLOAT,
     TRUNC_TO_INT,
     ROUND_TO_INT,
-    ROUND_DECIMAL,  // nargs=2: (number, ndigits)
+    ROUND_DECIMAL,  // two children: the number and a digit count
     TO_FLOAT,
 
-    // ---- Shift (nargs=2) ----
+    // Shifts, two children each.
     LSHIFT,
     RSHIFT,
 
-    // ---- Power variants (nargs=2) ----
-    POW_BY_NATURAL,  // integer power
-    FLOAT_POW,  // float power
+    // Powers, two children each.
+    POW_BY_NATURAL,  // integer exponent
+    FLOAT_POW,
 
-    // ---- Control flow (nargs=3) ----
-    WHERE,  // (cond, true_val, false_val)
+    WHERE,  // three children: condition, value if true, value if false
 
-    // ---- Identity (nargs=1) ----
-    IDENTITY,  // prevents expansion, semantically transparent
+    IDENTITY,  // one child, transparent, and a barrier against expansion
 
-    // ---- Min / Max (variadic) ----
+    // Variadic.
     MIN,
     MAX,
 
-    // ---- Indicator (variadic) ----
-    IS_NON_OVERLAPPING_AND_DENSE,
+    IS_NON_OVERLAPPING_AND_DENSE,  // variadic
 
-    // ---- Opaque unary math functions (nargs=1) ----
+    // Transcendental, one child each, treated as opaque.
     SQRT,
     COS,
     COSH,
@@ -89,30 +86,23 @@ enum class Op : uint8_t {
     ASINH,
     LOG2,
 
-    // ---- Unary math (nargs=1) ----
-    ABS,
+    ABS,  // one child
 
-    // ---- Bitwise (nargs=2) ----
+    // Bitwise, two children each.
     BITWISE_AND,
     BITWISE_OR,
     BITWISE_XOR,
 
-    // ---- Negation (unary, used internally) ----
-    NEG,
+    NEG,  // one child, produced internally
 
-    NUM_OPS  // sentinel — must be last
+    NUM_OPS  // sentinel, and must stay last
 };
 
-// Structural bound: Op's underlying type is uint8_t (max 256 distinct values
-// including the NUM_OPS sentinel). Lookup tables sized [NUM_OPS] and any code
-// that round-trips Op through a uint8_t (TraceEntry, serialization, hash mix)
-// rely on this invariant. If the enum grows past 256, widen the underlying
-// type AND audit every uint8_t-sized site (Expr.h op_ field, ExprPool entries,
-// CKernel taxonomy crossref).
-static_assert(static_cast<unsigned>(Op::NUM_OPS) <= 256, "Op underlying type is uint8_t — NUM_OPS must fit");
+// Lookup tables sized by the sentinel, and every place that round-trips an
+// operation through a single byte, depend on this. Growing past it means
+// widening the underlying type and auditing each of those places.
+static_assert(static_cast<unsigned>(Op::NUM_OPS) <= 256, "the underlying type is uint8_t, so NUM_OPS must fit in it");
 
-// Flags bitfield for Expr::flags.
-// Encodes type/assumption properties as bits for O(1) queries.
 struct ExprFlags {
     static constexpr uint16_t IS_INTEGER = 1 << 0;
     static constexpr uint16_t IS_REAL = 1 << 1;

@@ -1,33 +1,13 @@
 #pragma once
 
-// ReplayEngine: Walks a compiled RegionNode one op at a time,
-// verifying guards and providing pre-allocated output pointers.
+// Walks a compiled region one operation at a time, checking each guard and
+// handing back the preallocated pointers for that operation's tensors.
 //
-// Cursor-based design: a sliding pointer (cursor_) advances through
-// the ops array. Every advance is a single pointer increment (+96B),
-// replacing the old index*96 multiply (lea+shl+lea = 3 dependent
-// instructions). Pre-cached expected hashes at offsets 0 and 8
-// give the guard comparison zero pointer-chase latency.
-//
-// Hot path assembly (MATCH, non-last op):
-//
-//     cmp  rsi, [rdi + 0]      ; schema_hash vs expected_schema_
-//     jne  .diverged
-//     cmp  rdx, [rdi + 8]      ; shape_hash vs expected_shape_
-//     jne  .diverged
-//     mov  rax, [rdi + 16]     ; load cursor_
-//     mov  [rdi + 32], rax     ; store current_ (for output_ptr)
-//     prefetcht0 [rax + 64]    ; slot IDs for output_ptr()
-//     add  rax, 96             ; ++cursor_
-//     cmp  rax, [rdi + 24]     ; cursor_ == end_?
-//     je   .complete
-//     mov  rcx, [rax]          ; pre-cache next schema
-//     mov  [rdi], rcx
-//     mov  rcx, [rax + 8]      ; pre-cache next shape
-//     mov  [rdi + 8], rcx
-//     mov  [rdi + 16], rax     ; store cursor_
-//     xor  eax, eax            ; return MATCH
-//     ret
+// The position is a sliding pointer rather than an index, so advancing is one
+// increment instead of a multiply and an address computation. The next
+// operation's two guard hashes are copied into this object as each advance
+// finishes, so the comparison that starts the next one reads them from here
+// and never follows a pointer to reach them.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
@@ -44,32 +24,24 @@
 namespace crucible {
 
 enum class ReplayStatus : uint8_t {
-    MATCH,  // Op matches compiled trace, outputs ready in pool
-    DIVERGED,  // Guard failed -- schema or shape mismatch
-    COMPLETE,  // All ops in region consumed (iteration done)
+    MATCH,  // the operation matches the compiled trace and its outputs are ready
+    DIVERGED,  // a guard failed: either the operation or its shapes differ
+    COMPLETE,  // the region is exhausted, which ends the iteration
 };
 
-// State tags for ScopedView.  Active = init() has been called; the
-// engine has a region and pool bound.  Methods that require a matched
-// entry (output_ptr/input_ptr) still use their existing pre() checks
-// since "matched" is a transient per-op state, not a stable scope.
+// The only state worth a tag is the one that lasts: a region and a pool are
+// bound from initialisation until the engine is rebound. Having matched an
+// operation lasts one operation, so the methods that need it check instead.
 namespace engine_state {
 struct Active {};
 }  // namespace engine_state
 
-// Role tags for OpIndex values returned by ReplayEngine.
-//   Matched  — the index of the last op that passed the guard check.
-//              Points at a live entry in ops_[]; safe to dereference
-//              for current_entry() lookup.
-//   Diverged — the index where the guard check failed.  May equal
-//              num_ops (inclusive upper bound) if divergence happened
-//              on the LAST op of the region.  Callers that index
-//              ops_[diverged] must first check diverged < num_ops.
-//
-// The tags distinguish two OpIndex values with identical underlying
-// type but distinct meanings.  A caller that swaps them silently
-// reports divergence at the previous op, or re-submits a matched op
-// for error recovery.
+// Two operation indices with the same underlying type and different meanings.
+// One is the last operation that passed its guard, which always names a live
+// entry. The other is where a guard failed, and it can equal the operation
+// count when the last operation in the region is the one that diverged, so a
+// caller that indexes with it checks that first. Swapping the two reports a
+// divergence one operation early, or resubmits an operation that matched.
 namespace op_role {
 struct Matched {};
 struct Diverged {};
@@ -87,36 +59,20 @@ struct ReplayEngine {
     ReplayEngine(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
     ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
 
-    // ── Init: bind to a compiled region + pool ──
-    //
-    // Preconditions lift the previous asserts into contracts.  Under
-    // semantic=enforce (debug, CI) each fires at the entry; under
-    // semantic=ignore (release hot TUs) they propagate as [[assume]]
-    // facts to the optimizer, removing the runtime asserts entirely
-    // without losing their safety value.
-    //
-    // Postconditions document the invariants callers of advance() then
-    // depend on — in particular, that cursor_ starts at ops_ and that
-    // slot_table_ is non-null (derived from pool->table() which is
-    // non-null when pool is Initialized).
+    // An empty region is legitimate, but a non-empty one must have operations.
     void init(const RegionNode* region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr)
-        pre(pool->is_initialized())
-        // Region bounds: num_ops==0 is legitimate (empty region), but if
-        // num_ops>0 then ops must be non-null.  CONTRACT-055 valid_span
-        // cite — the std::span well-formedness predicate over (count, ptr).
-        pre(::crucible::decide::valid_span(region->num_ops, region->ops)) {
+        pre(pool->is_initialized()) pre(::crucible::decide::valid_span(region->num_ops, region->ops)) {
         ops_ = region->ops;
         end_ = region->ops + region->num_ops;
         cursor_ = ops_;
         current_ = nullptr;
-        // Mint the InitializedView and consume it via the typed table()
-        // overload.  The view's pre() is is_initialized() — already
-        // proved by the function's pre() above — so minting is a no-op
-        // assert.  The typed call returns a gnu::returns_nonnull pointer,
-        // matching ReplayEngine's slot_table_ != nullptr post-condition.
+        // The precondition above already established what minting this view
+        // checks, and the call it gates returns a pointer promised non-null,
+        // which is what the postcondition below rests on.
         const auto pool_view = pool->mint_initialized_view();
         slot_table_ = pool->table(pool_view);
-        // Prime the cache: load first entry's guard values.
+        // Load the first operation's guard values, so the first advance finds
+        // them here like every later one does.
         if (ops_ != end_) [[likely]] {
             expected_schema_ = ops_[0].schema_hash;
             expected_shape_ = ops_[0].shape_hash;
@@ -125,35 +81,18 @@ struct ReplayEngine {
             expected_shape_ = ShapeHash{};
         }
 
-        // CONTRACT-ReplayEngine-Init-POST: lifecycle-init post-pair
-        // (CRUCIBLE_POST taxonomy class 3, sibling of IterDet::reset
-        // 6-post family / PoolAllocator::destroy 5-post family / KernelCache
-        // ctor 3-post family / CrucibleContext::activate 2-post pair).
-        //
-        // Migration from P2900 `post()` form to CRUCIBLE_POST: both
-        // post-equalities (cursor_ == ops_, slot_table_ != nullptr) are
-        // foldable-true on the patched g++-16p build (the body literally
-        // assigns `cursor_ = ops_;` and `slot_table_` is set from a
-        // gnu::returns_nonnull function), which means the §13.6 regression
-        // (CLAUDE.md feedback_patched_gcc16_toolchain.md, removed h2_tag
-        // post for the same reason) silently passes them.  CRUCIBLE_POST
-        // routes through __builtin_trap on consteval and contract_failed at
-        // runtime — fires on both paths, foldable or not.
-        //
-        // The end_ == ops_ + num_ops post catches the bounds-pair refactor
-        // (someone reorders the assignments and end_ ends up off-by-one or
-        // pointing at a stale region).  num_ops==0 is legitimate (empty
-        // region) and the post still holds (end_ == ops_ + 0 == ops_).
+        // A contract predicate that reads a member through `this` is skipped
+        // when the compiler folds the body at compile time, so every such
+        // check in this file runs from the body rather than a clause. These
+        // three fold trivially true, which is exactly why they need that.
         CRUCIBLE_POST(0, cursor_ == ops_);
         CRUCIBLE_POST(0, slot_table_ != nullptr);
         CRUCIBLE_POST(0, end_ == ops_ + region->num_ops);
     }
 
-    // ── Reset: rewind cursor to first op for the next iteration ──
-    //
-    // current_ is NOT cleared: it still points to the last matched
-    // entry so that output_ptr()/input_ptr() remain valid after
-    // CrucibleContext returns COMPLETE and internally resets.
+    // Rewinds to the first operation for the next iteration. The last matched
+    // entry is deliberately kept, so the pointers into it stay valid after the
+    // caller is told the region is complete and resets on its way out.
     void reset() {
         cursor_ = ops_;
         if (ops_ != end_) [[likely]] {
@@ -161,196 +100,96 @@ struct ReplayEngine {
             expected_shape_ = ops_[0].shape_hash;
         }
 
-        // CONTRACT-ReplayEngine-Reset-POST: lifecycle-reset post; mirrors
-        // CONTRACT-ReplayEngine-Init-POST cursor_ == ops_ above.  The whole
-        // point of reset() is to rewind cursor_ to ops_ for the next
-        // iteration; failure to do so leaves the engine in a state where
-        // the next advance() call resumes mid-region instead of replaying
-        // from the start, silently breaking iteration determinism.  Note
-        // that current_ is NOT in the post — the docstring above explicitly
-        // says current_ survives reset to keep output_ptr/input_ptr valid.
-        // Sibling: IterDet::reset 6-post family (the most analogous reset
-        // primitive in the codebase), CrucibleContext::deactivate post-pair.
+        // Failing to rewind leaves the next iteration resuming from the middle
+        // of the region, which is a silent break in determinism. The last
+        // matched entry is deliberately absent from this: it survives.
         CRUCIBLE_POST(0, cursor_ == ops_);
     }
 
-    // ── Hot path: advance one op ──
-    //
-    // Two L1d comparisons at fixed struct offsets (0, 8). No pointer chase.
-    // On match: stores current_, increments cursor_, pre-caches NEXT entry.
-    // Returns COMPLETE for the last matched op directly.
-    //
-    // Caller must reset() after COMPLETE before calling advance() again.
-    //
-    // Attributes: CRUCIBLE_HOT = [[gnu::hot, gnu::always_inline]] inline.
-    // gnu::hot promotes to the .text.hot section (better i-cache packing
-    // with other hot-path code) and biases the inliner's heuristic
-    // toward always-inline even across TU boundaries.  This is the
-    // single most-called function in COMPILED mode — every ATen op
-    // dispatched goes through it exactly once.
-    // CONTRACT-131: cursor_ < end_ pre migrated from anonymous P2900
-    // `pre()` to in-body CRUCIBLE_PRE because the predicate references
-    // `this->cursor_` AND `this->end_` through the implicit object
-    // parameter.  P2900 `pre()` referencing `this->`-member predicates
-    // is in the GCC 16.1.1 consteval-bypass family — silently bypassed
-    // at consteval for foldable bodies; CRUCIBLE_PRE's `__builtin_trap()`
-    // poison closes the hole.  No decide:: cite available — pointer
-    // ordering doesn't have a named predicate in the catalog (the
-    // catalog is integer-bounded only).  Bare `cursor_ < end_` remains
-    // the most precise expression of the invariant.
-    //
-    // Hot-path cost: under hot-path TU `semantic=ignore`, CRUCIBLE_PRE
-    // collapses to `[[assume(cursor_ < end_)]]` — zero runtime cost
-    // and the optimizer uses the bound forward (e.g. eliminates dead-
-    // branch checks downstream).
+    // The completion of the last operation is reported by this call itself.
+    // The caller resets before advancing again.
     [[nodiscard]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
         CRUCIBLE_PRE(cursor_ < end_);
 
-        // Guard 1: op identity. L1d load at offset 0.
         if (schema_hash != expected_schema_) [[unlikely]]
             return ReplayStatus::DIVERGED;
 
-        // Guard 2: tensor geometry. L1d load at offset 8 (same cache line).
         if (shape_hash != expected_shape_) [[unlikely]]
             return ReplayStatus::DIVERGED;
 
-        // ── Match confirmed ──
         current_ = cursor_;
 
-        // Prefetch current entry's second cache line (output_slot_ids at
-        // offset 88). The caller will almost certainly call output_ptr().
-        // §III-clean cast cascade: TraceEntry* → void* → char* for byte offset.
+        // The slot identifiers live on this entry's second cache line, and the
+        // caller asks for them almost immediately. The casts are byte
+        // arithmetic for the builtin's address. No array of characters begins
+        // life here.
         __builtin_prefetch(static_cast<const char*>(static_cast<const void*>(cursor_)) + 64, 0, 3);
 
-        // Advance cursor to next entry. Single add (vs old lea+shl+lea).
         ++cursor_;
 
         if (cursor_ == end_) [[unlikely]]
             return ReplayStatus::COMPLETE;
 
-        // Pre-cache NEXT entry's guard hashes for the next advance() call.
-        // This load may miss L1d for large regions (>300 ops), but it's
-        // after the comparison — pipelined with the caller's output_ptr().
+        // The next operation's guard values, loaded here so the comparison
+        // that opens the next call reads them from this object. The load can
+        // miss, but it sits after the comparisons and overlaps whatever the
+        // caller does with the pointers it is about to ask for.
         expected_schema_ = cursor_->schema_hash;
         expected_shape_ = cursor_->shape_hash;
         return ReplayStatus::MATCH;
     }
 
-    // ── Output pointer for output j of the last matched op ──
-    //
-    // current_ points to the matched entry (set during advance, survives
-    // reset). The prefetch during advance() brought the second cache line
-    // (containing output_slot_ids) into L1d.
-    //
-    // CRUCIBLE_HOT: called by the Vessel adapter after every successful
-    // advance() to bind op outputs to their pool slots.  Same frequency
-    // as advance(); keep in .text.hot alongside it.
+    // The pointer for one of the last matched operation's outputs.
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND pre(current_ != nullptr)
-        pre(current_->output_slot_ids != nullptr)
-    // CONTRACT-108 (port-bounds): the j-bounds pre below moves from
-    // P2900 `pre()` to in-body CRUCIBLE_PRE because P2900 `pre()`
-    // referencing a class member's pointee through `this->current_->...`
-    // is silently bypassed at consteval in GCC 16.1.1 (same gotcha
-    // family as CONTRACT-100 / -101 / -102 / -103 / -106 / -107).
-    // CRUCIBLE_PRE fires symmetrically at consteval, runtime, and as
-    // `[[assume]]` for the optimizer.  Pure-pointer null checks above
-    // stay as P2900 pre() — they don't reference a pointee field, so
-    // no consteval-bypass exposure.
-    {
-        // CONTRACT-108: output port index discharges through
-        // `decide::in_range` (CONTRACT-102 catalog).  Closed interval
-        // `[0, num_outputs - 1]` is reviewable as a single citation
-        // rather than a bare `<` (which conflates exclusive count with
-        // inclusive max — see decide.h anti-patterns).  Companion guard
-        // `num_outputs > 0u` is paired because `num_outputs - 1u`
-        // underflows to UINT16_MAX when num_outputs == 0, which would
-        // make `in_range(j, 0, UINT16_MAX)` accept every value; production
-        // never calls output_ptr() on a zero-output op (no valid `j` can
-        // exist for such an op) but defense-in-depth catches a future
-        // refactor that exposes this path.
+        pre(current_->output_slot_ids != nullptr) {
+        // The count guard is not redundant with the range check: at a count of
+        // zero the upper bound below underflows to the largest value and the
+        // range admits everything. No index into a zero-output operation
+        // exists, so this catches a later change that opens the path.
         CRUCIBLE_PRE(current_->num_outputs > 0u);
         CRUCIBLE_PRE(
             ::crucible::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
         SlotId const sid = current_->output_slot_ids[j];
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
-        // CONTRACT-108-POST: result-shape contract — the returned pointer
-        // is either nullptr (when sid is invalid) or a slot_table_ entry
-        // selected by a valid SlotId.  The post catches a future refactor
-        // that drops the is_valid() guard and indexes slot_table_ with an
-        // invalid SlotId raw value (which would either return a stale slot
-        // pointer or read past the table end, depending on how SlotId's
-        // is_valid sentinel is encoded).  CRUCIBLE_POST routes around the
-        // GCC 16.1.1 consteval bypass on `post (r: ...)` referencing local
-        // variables and class-member-pointee state, mirroring the in-body
-        // pre framing above.  Under NDEBUG this collapses to `[[assume]]`
-        // and lets downstream Vessel adapter code speculate that every
-        // non-null result is a valid-SlotId-derived pool pointer.
+        // Dropping the validity test would index the table with the sentinel
+        // and return either a stale slot or a read past the end of the table.
         CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
         return result;
     }
 
-    // ── Input pointer for input j of the last matched op ──
+    // The same for one of the inputs.
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND pre(current_ != nullptr)
-        pre(current_->input_slot_ids != nullptr)
-    // CONTRACT-108: see output_ptr above for the consteval-bypass
-    // rationale; same shape applies here for the input port index.
-    {
-        // CONTRACT-108: see output_ptr above for the discharge framing;
-        // mirror predicate over num_inputs.
+        pre(current_->input_slot_ids != nullptr) {
         CRUCIBLE_PRE(current_->num_inputs > 0u);
         CRUCIBLE_PRE(
             ::crucible::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
         SlotId const sid = current_->input_slot_ids[j];
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
-        // CONTRACT-108-POST: see output_ptr above for the result-shape
-        // contract framing; mirror over input_slot_ids.
         CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
         return result;
     }
-
-    // ── Queries ──
 
     [[nodiscard]] const TraceEntry& current_entry() const CRUCIBLE_LIFETIMEBOUND {
         assert(current_ && "no matched entry");
         return *current_;
     }
 
-    // matched_op_index() returns the index of the op the engine MATCHED
-    // last (the one now pointed at by current_).  diverged_op_index()
-    // returns the index where the engine FAILED to match — where
-    // divergence was detected.  These are semantically distinct values
-    // that happen to share the same underlying type (OpIndex); a caller
-    // mixing them up would, e.g., report divergence at the *previous*
-    // op or re-submit the matched op as divergent.  The op_role tags
-    // discriminate the two at the type level — an unwrapped OpIndex
-    // cannot substitute for either and a Diverged-tagged value cannot
-    // substitute for Matched.
     [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
         assert(current_ && "no matched entry");
         return crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched>{OpIndex{static_cast<uint32_t>(current_ - ops_)}};
     }
 
-    // Diverged op index — strictly in [0, num_ops()] after advance()
-    // returned DIVERGED.  The upper endpoint num_ops() is inclusive
-    // because the cursor can land exactly at end_ if the LAST op's
-    // guard failed (the increment happened just before the guard
-    // check in the prior match-then-fail cycle).
-    //
-    // Returns Refined<in_range<0, CDAG_MAX_OPS>, OpIndex> — the Refined
-    // ctor's contract enforces the upper ceiling matches the region's
-    // capacity.  Callers that interpret the result for error reporting
-    // pass through .value() once; callers that index ops[diverged] can
-    // use the bound as an [[assume]] hint.
+    // Carries the region's operation ceiling in the return type, so a caller
+    // that indexes with the result has the bound without re-deriving it.
     [[nodiscard]] crucible::fixy::wrap::Refined<
-        crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>,  // CDAG_MAX_OPS
+        crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>,  // mirrors the loader's own ceiling
         uint32_t> diverged_op_index_refined() const {
         return crucible::fixy::wrap::Refined<crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>, uint32_t>{
             static_cast<uint32_t>(cursor_ - ops_)};
     }
 
-    // Tagged diverged accessor.  Use in preference to the untyped one
-    // where the value flows into structures/parameters that could
-    // legitimately also receive matched_op_index().
+    // Preferred wherever the value reaches something that could just as well
+    // have been handed the matched index.
     [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Diverged> diverged_op_index_tagged() const {
         return crucible::fixy::wrap::Tagged<OpIndex, op_role::Diverged>{OpIndex{static_cast<uint32_t>(cursor_ - ops_)}};
     }
@@ -362,15 +201,9 @@ struct ReplayEngine {
     [[nodiscard]] bool is_complete() const { return cursor_ == end_; }
     [[nodiscard]] bool is_initialized() const { return ops_ != nullptr; }
 
-    // ── ScopedView integration ────────────────────────────────────────
-    //
-    // ActiveView proves the engine has been init()'d.  advance() and the
-    // other methods still use their existing pre() contracts for cursor
-    // and match state — those are op-scale transient invariants, not
-    // block-scoped state the view would cover.
-
     using ActiveView = crucible::fixy::wrap::ScopedView<ReplayEngine, engine_state::Active>;
 
+    // Found by argument-dependent lookup from the view factory.
     [[nodiscard]] friend constexpr bool view_ok(ReplayEngine const& e,
                                                 std::type_identity<engine_state::Active>) noexcept {
         return e.is_initialized();
@@ -380,40 +213,22 @@ struct ReplayEngine {
         return crucible::fixy::wrap::mint_view<engine_state::Active>(*this);
     }
 
-    // Typed overloads delegate to the untyped bodies.  The ActiveView
-    // parameter is pure type-state proof (engine is initialized); it
-    // carries no runtime state, so under CRUCIBLE_INLINE the delegation
-    // collapses to the same machine code as the untyped call.
-    //
-    // Deduplication rationale: the pre-view code duplicated every line
-    // of advance / output_ptr / input_ptr for "also accepts an
-    // ActiveView".  Parallel-body drift risk: a fix to one body missed
-    // in the other was real (happened once during the view migration —
-    // an unlikely branch hint was added to one but not the other).
-    // Single source of truth removes that risk.
-    // CONTRACT-131 (sibling overload): same migration as the unguarded
-    // overload above — `cursor_ < end_` references `this->`-members,
-    // moves to in-body CRUCIBLE_PRE.
+    // These overloads take a proof that the engine is initialised and then
+    // delegate, rather than repeating the bodies. The proof carries no runtime
+    // state, so the delegation compiles to the same code as a direct call, and
+    // there is one body to fix rather than two that can drift apart. Their
+    // preconditions live in the body they delegate to, so repeating them here
+    // would only duplicate a check.
     [[nodiscard]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash, ActiveView const&) {
         CRUCIBLE_PRE(cursor_ < end_);
         return advance(schema_hash, shape_hash);
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, ActiveView const&) const CRUCIBLE_LIFETIMEBOUND {
-        // CONTRACT-108: typed delegate forwards to the untyped overload,
-        // whose CRUCIBLE_PRE pair (current_ non-null, output_slot_ids
-        // non-null, num_outputs > 0, decide::in_range over j) is the
-        // single discharge point.  Removing the duplicate pre clauses here
-        // mirrors CONTRACT-107's record_event pattern: forwarders carry
-        // no separate pre because (a) the predicate would be a duplicate
-        // and (b) class-member access via this->current_->X in P2900 pre()
-        // is consteval-bypass-vulnerable on GCC 16.1.1.
         return output_ptr(j);
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, ActiveView const&) const CRUCIBLE_LIFETIMEBOUND {
-        // CONTRACT-108: see output_ptr typed delegate above for forwarder
-        // discharge framing.
         return input_ptr(j);
     }
 
@@ -426,35 +241,23 @@ struct ReplayEngine {
     }
 
 private:
-    // ── Layout: all fields in ONE 64-byte cache line ──
-    //
-    // Offsets 0-7:   expected_schema_  (advance reads first)
-    // Offsets 8-15:  expected_shape_   (advance reads second)
-    // Offsets 16-23: cursor_           (advance: read + increment + write)
-    // Offsets 24-31: end_              (advance: completion check)
-    // Offsets 32-39: current_          (advance: write; output_ptr: read)
-    // Offsets 40-47: slot_table_       (output_ptr: index into)
-    // Offsets 48-55: ops_              (reset + diagnostics)
-    // Offsets 56-63: pad_replay_       (keeps one-cache-line layout)
-    //
-    // Total: 64 bytes = exactly one cache line.
-    //
-    // vs old index-based layout: eliminated op_index_ (imul for *96),
-    // num_ops_ (use end_ pointer), and the lea+shl+lea addressing chain.
-    // Kept current_ for output_ptr survival across reset().
-    SchemaHash expected_schema_{};  // 8B — pre-cached guard value
-    ShapeHash expected_shape_{};  // 8B — pre-cached guard value
-    const TraceEntry* cursor_ = nullptr;  // 8B — current position in ops
-    const TraceEntry* end_ = nullptr;  // 8B — one past last op
-    const TraceEntry* current_ = nullptr;  // 8B — last matched entry
-    void* const* slot_table_ = nullptr;  // 8B — pool slot pointer table
-    const TraceEntry* ops_ = nullptr;  // 8B — base for reset + diagnostics
-    uint64_t pad_replay_ = 0;  // 8B — preserves 64B layout
+    // Ordered so that an advance reads and writes them front to back, and
+    // padded so the whole object is one cache line. The assertion below pins
+    // that. A ninth field would cost a second line on every operation.
+    SchemaHash expected_schema_{};
+    ShapeHash expected_shape_{};
+    const TraceEntry* cursor_ = nullptr;  // where the next operation is read
+    const TraceEntry* end_ = nullptr;  // one past the last operation
+    const TraceEntry* current_ = nullptr;  // the last operation that matched
+    void* const* slot_table_ = nullptr;
+    const TraceEntry* ops_ = nullptr;  // the base, for rewinding
+    uint64_t pad_replay_ = 0;
 };
 
 static_assert(sizeof(ReplayEngine) == 64, "ReplayEngine: 8 × 8B = 64 bytes (one cache line)");
 
-// Tier 2 opt-in.
+// A view must not outlive the frame that minted it, so storing one in a field
+// would let it escape.
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<ReplayEngine>());
 
 }  // namespace crucible

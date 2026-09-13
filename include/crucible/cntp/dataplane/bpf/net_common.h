@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
 /*
- * Shared CNT-P dataplane BPF wire contracts.
- *
- * These structs are intentionally POD and fixed-width. Userspace facades must
- * mirror them exactly before any domain BPF program is promoted from stub to
- * loaded production bytecode.
+ * Userspace mirrors these layouts byte for byte over an mmapped map. Field
+ * order, widths and padding are the shared contract.
  */
 
 #ifndef __CRUCIBLE_CNTP_DATAPLANE_BPF_NET_COMMON_H

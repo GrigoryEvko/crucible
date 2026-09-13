@@ -1,106 +1,20 @@
 #pragma once
 
-// ── crucible::safety::diag — per-Tag insight infrastructure ─────────
+// A structured rejection says what failed. The content here says why the
+// rule exists, how the violation usually reaches a call site, and what
+// the compliant line looks like beside the violating one, so the reader
+// does not have to go and ask.
 //
-// "Super-insightful" diagnostic upgrade per the user mandate.  The
-// V1 RowMismatch builder ships an 8-line structured block that
-// answers WHAT failed.  This satellite extends the surface to also
-// answer:
+// A tag with no specialization inherits empty fields and an Error
+// severity. The builder skips an empty field, so an unspecialized tag
+// degrades to the shorter block rather than emitting empty sections.
+// Adding a specialization is therefore always additive.
 //
-//   * WHY does this matter? (architectural rationale + paper / docs
-//     reference; turns "you violated HotPath" into the load-bearing
-//     story behind why HotPath exists)
-//   * WHAT does this typically look like at the call site? (symptom
-//     pattern; helps the engineer recognize "oh, this is the printf-
-//     for-debugging foot-gun, not a deeper architectural error")
-//   * HOW would the CORRECT version look? (working code example
-//     side-by-side with the violating one; eliminates the "but what
-//     does the right version actually look like?" round-trip)
-//   * Severity (Hint / Warning / Error / Fatal) — IDE consumers
-//     (clangd) can downgrade Hint to a soft suggestion, escalate
-//     Fatal to a build-stop with no override.
-//
-// ── Architecture ────────────────────────────────────────────────────
-//
-// `insight_provider<Tag>` primary template provides EMPTY DEFAULTS
-// for every field — Severity::Error, all string_view fields empty.
-// Per-Tag explicit specializations carry the substantive content.
-//
-// Foundation tags get rich specializations citing CLAUDE.md sections,
-// papers (Atkey QTT, Tang-Lindley Met(X), Brookes RG, etc.), and
-// concrete one-line code examples.  User-defined tags inherit the
-// empty defaults (no breaking change) and can specialize to opt in.
-//
-// `build_deep_diagnostic_message<...>()` (in RowMismatch.h, alongside
-// the existing 8-line builder) consumes the insight_provider for the
-// given Tag and emits a 13-line block with all four insight sections
-// when populated.  Empty fields collapse — graceful degradation.
-//
-// ── Format spec (deep diagnostic, v1) ───────────────────────────────
-//
-//   Line  1: [<Severity>: <Category>]\n
-//   Line  2:   at <function_display_name>\n
-//   Line  3:   caller row contains: <type_name<CallerRow>>\n
-//   Line  4:   callee requires:     Subrow<_, <type_name<CalleeRow>>>\n
-//   Line  5:   offending atoms:     <type_name<OffendingDiff>>\n
-//   Line  6:   remediation: <Tag::remediation>\n
-//   ┌─ if !insight_provider<Tag>::why_this_matters.empty():
-//   │ Line  N:   ── why this matters ──\n
-//   │ Line N+1:     <insight_provider<Tag>::why_this_matters>\n
-//   ├─ if !insight_provider<Tag>::symptom_pattern.empty():
-//   │ Line  N:   ── symptom pattern ──\n
-//   │ Line N+1:     <insight_provider<Tag>::symptom_pattern>\n
-//   ├─ if !insight_provider<Tag>::correct_example.empty():
-//   │ Line  N:   ── correct usage ──\n
-//   │ Line N+1:     <insight_provider<Tag>::correct_example>\n
-//   ├─ if !insight_provider<Tag>::violating_example.empty():
-//   │ Line  N:   ── violating usage ──\n
-//   │ Line N+1:     <insight_provider<Tag>::violating_example>\n
-//   └─
-//   Line  Z:   docs: see safety/Diagnostic.h, 28_04_2026_effects.md §7
-//
-// Format version locked via CRUCIBLE_DIAG_DEEP_FORMAT_VERSION = 1.
-//
-// ── Severity classification rationale ───────────────────────────────
-//
-//   Hint     — informational suggestion; the code is correct but
-//              could be better-shaped (e.g., "consider tightening
-//              this Refined predicate").  Default: never; opt-in.
-//   Warning  — the code compiles BUT will likely fail at runtime in
-//              specific scenarios (e.g., "this Tag has no production
-//              call site; verify it's intentional").  Default: never.
-//   Error    — DEFAULT for all foundation tags.  The compile breaks;
-//              the program does not link.  Either the assertion or
-//              the implementation must change.
-//   Fatal    — same as Error in compile behavior, but tooling treats
-//              the violation as security-critical (e.g., DetSafe
-//              leak that would corrupt replay logs at runtime).
-//              Default: opt-in for the few axioms where silent
-//              breakage is dangerous.
-//
-// ── Authoring discipline for insights ───────────────────────────────
-//
-// * `why_this_matters`: state the ARCHITECTURAL constraint, cite the
-//   CLAUDE.md section / paper / RFC.  Answer "if I just ignored this
-//   would anything actually break, and what?"
-// * `symptom_pattern`: describe how this violation TYPICALLY surfaces
-//   at the call site.  Help the engineer pattern-match their
-//   debugging session against past instances.
-// * `correct_example`: ONE LINE of valid C++ that does what the user
-//   was trying to do, in compliance with the discipline.  No
-//   pseudo-code; the example must compile (modulo the surrounding
-//   context).
-// * `violating_example`: ONE LINE that's the canonical anti-pattern
-//   the diagnostic catches.  Side-by-side with the correct example,
-//   the user can see exactly what to change.
-//
-// ── References ──────────────────────────────────────────────────────
-//
-//   28_04_2026_effects.md §7         — diagnostic infrastructure spec
-//   safety/Diagnostic.h               — Tag catalog
-//   safety/diag/RowMismatch.h         — V1 8-line builder + helpers
-//
-// FOUND-E (insight extension, NEW; complements E18 F*-style aliases).
+// When writing one: the reason states the architectural constraint and
+// answers what actually breaks if it is ignored. The symptom describes
+// how the violation typically arrives, so a reader can match it against
+// the change they just made. Both examples are one line of real C++, and
+// they differ only in the thing the diagnostic is about.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>
@@ -111,15 +25,15 @@
 
 namespace crucible::safety::diag {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Severity classification ────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
+// Error and Fatal behave identically at compile time. They differ in
+// what tooling is meant to do: Fatal marks a violation whose silent
+// passage is dangerous rather than merely wrong, and offers no override.
 
 enum class Severity : std::uint8_t {
-    Hint = 0,  // informational suggestion; never breaks the build
-    Warning = 1,  // compiles but runtime risk; tooling-promoted to error
-    Error = 2,  // DEFAULT — compile breaks; assertion or impl must change
-    Fatal = 3,  // security-critical; build-stop with no override path
+    Hint = 0,  // the code is correct and could be better shaped
+    Warning = 1,  // the code compiles and carries a runtime risk
+    Error = 2,  // the assertion or the implementation has to change
+    Fatal = 3,  // as Error, and no override path
 };
 
 [[nodiscard]] constexpr std::string_view severity_name(Severity s) noexcept {
@@ -137,13 +51,6 @@ enum class Severity : std::uint8_t {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ── insight_provider<Tag> — primary template (empty defaults) ──────
-// ═════════════════════════════════════════════════════════════════════
-//
-// User tags inherit these defaults seamlessly.  Foundation tags
-// specialize below with substantive content.
-
 template <typename Tag>
 struct insight_provider {
     static constexpr Severity severity = Severity::Error;
@@ -153,62 +60,16 @@ struct insight_provider {
     static constexpr std::string_view violating_example = {};
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CRUCIBLE_DEFINE_INSIGHTS — one-liner specialization macro ──────
-// ═════════════════════════════════════════════════════════════════════
+// Name the tag fully qualified. A specialization has to be declared in
+// the namespace of its primary template, so the macro reopens that
+// namespace, and an unqualified name written at the call site would be
+// looked up there rather than where it was written. Reopening leaves the
+// surrounding namespace unchanged, so the macro works at any namespace
+// scope.
 //
-// Future-proofing the populate-later workflow.  Adding insights for a
-// new Tag (foundation OR user-defined) reduces to ONE macro invocation
-// at namespace scope:
-//
-//   CRUCIBLE_DEFINE_INSIGHTS(
-//       my_namespace::MyTag,
-//       ::crucible::safety::diag::Severity::Error,
-//       "Why this matters: <one paragraph citing arch / paper / docs>",
-//       "Symptom pattern: <one paragraph: how this surfaces>",
-//       "Correct: <one-line C++ showing intended use>",
-//       "Violating: <one-line C++ showing the anti-pattern>");
-//
-// Expands to a `template<>` specialization.  The `Tag` argument MUST
-// be a fully-qualified type name (so the macro works from any
-// namespace).  The macro ends with a `;` so use sites can place it
-// at any namespace-scope.
-//
-// Discipline:
-//   * The four prose strings should be substantive (one paragraph
-//     each); sentinel TU's coverage assertions can pin minimum lengths
-//     per tag if a project wants to enforce.
-//   * Severity::Error is the default for foundation tags; only
-//     Hint / Warning / Fatal need explicit choice.
-//   * Use CRUCIBLE_DEFINE_INSIGHTS_DEFAULTS for tags that only need
-//     the empty placeholder (rare; usually you skip the macro entirely
-//     and rely on the primary template).
-//
-// If a project wants to ENFORCE that every Tag has insights, add a
-// site-local concept gate:
-//
-//   template <typename T>
-//   concept InsightedTag =
-//       is_diagnostic_class_v<T> && has_insights_v<T>;
-//
-// and constrain consumers on `InsightedTag` instead of
-// `is_diagnostic_class_v`.  The foundation does NOT impose this gate
-// (some tags legitimately ship without insights and add them later
-// when production callers reveal the load-bearing patterns).
-
-// IMPORTANT: TagType MUST be a fully-qualified name (e.g.,
-// `::my_proj::tags::HotPathViolation`).  C++ requires template
-// specializations to be declared in the namespace where the primary
-// template is defined; this macro opens that namespace and writes the
-// specialization there.  Unqualified names inside the macro's body
-// would resolve against `crucible::safety::diag` (where the primary
-// lives), not against the user's namespace.
-//
-// The macro can be invoked from any namespace scope (including
-// user namespaces, anonymous namespaces, the global namespace).
-// The `namespace ... {}` block re-opens the foundation namespace,
-// installs the specialization, and closes — so the surrounding code's
-// namespace state is unaffected.
+// A second invocation for one tag is a redefinition. Changing a
+// severity means removing the first invocation, which puts the change in
+// front of a reviewer.
 #define CRUCIBLE_DEFINE_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating) \
     namespace crucible::safety::diag {                                           \
     template <>                                                                  \
@@ -222,29 +83,9 @@ struct insight_provider {
     }                                                                            \
     static_assert(true, "force trailing semicolon at call site")
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CRUCIBLE_DEFINE_INSIGHTS_SEVERITY — severity-only escalation ───
-// ═════════════════════════════════════════════════════════════════════
-//
-// Use when you want to escalate (or pin) a Tag's severity but the
-// prose fields aren't ready yet.  The four prose strings stay empty;
-// `has_insights_v<Tag>` becomes true (because severity is now
-// non-default OR the specialization exists at all).
-//
-// Note: the primary template's default severity is Error.  Calling
-// CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(Tag, Severity::Error) with the
-// SAME default IS still useful — it marks the Tag as "explicitly
-// reviewed; no escalation needed" via has_insights_v becoming true.
-//
-// Pattern:
-//
-//   CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(
-//       ::my_proj::tags::PaymentRefundLeak,
-//       ::crucible::safety::diag::Severity::Fatal);
-//
-// Tradeoff: this leaves the user with a "registered but no prose"
-// state.  For consumers that demand substantive insights, see the
-// HasSubstantiveInsights concept below.
+// This pins a severity while the prose is still missing. The result is a
+// registered tag with nothing to say, which the predicates below still
+// report as uninsighted.
 #define CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(TagType, Sev)           \
     namespace crucible::safety::diag {                            \
     template <>                                                   \
@@ -258,33 +99,8 @@ struct insight_provider {
     }                                                             \
     static_assert(true, "force trailing semicolon at call site")
 
-// ═════════════════════════════════════════════════════════════════════
-// ── CRUCIBLE_DEFINE_INSIGHTS_QV — quality-validated registration ───
-// ═════════════════════════════════════════════════════════════════════
-//
-// Same surface as CRUCIBLE_DEFINE_INSIGHTS but with embedded
-// `static_assert`s pinning each prose field to a minimum length.
-// Catches the "shipped 'TODO' as the why field" failure mode at
-// compile time instead of in code review.
-//
-// Default thresholds: why ≥ 30 chars, symptom ≥ 20, correct ≥ 10,
-// violating ≥ 10.  Override via `insights_quality_thresholds`
-// specialization (rare; defaults work for most projects).
-//
-// Pattern (preferred for production / load-bearing tags):
-//
-//   CRUCIBLE_DEFINE_INSIGHTS_QV(
-//       ::my_proj::tags::DetSafeBreach,
-//       ::crucible::safety::diag::Severity::Fatal,
-//       "Why: a detailed paragraph explaining architectural intent...",
-//       "Symptom: how this surfaces in production logs / CI...",
-//       "fn(DetSafe<Pure, T>);",
-//       "fn(WallClockRead<T>);  // VIOLATES");
-//
-// Failure mode (a too-short prose):
-//
-//   error: static assertion failed: Insight 'why_this_matters' is too
-//   short (≥30 chars required) — be substantive
+// The same registration with a floor under each field, so a placeholder
+// left in one of them fails the build instead of reaching a reader.
 #define CRUCIBLE_DEFINE_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)           \
     namespace crucible::safety::diag {                                                        \
     template <>                                                                               \
@@ -311,12 +127,7 @@ struct insight_provider {
     }                                                                                         \
     static_assert(true, "force trailing semicolon at call site")
 
-// ═════════════════════════════════════════════════════════════════════
-// ── insights_quality_thresholds — per-tag minimum-length overrides ─
-// ═════════════════════════════════════════════════════════════════════
-//
-// Default thresholds for CRUCIBLE_DEFINE_INSIGHTS_QV.  Specialize per
-// Tag if a project wants stricter or looser bars.
+// Specialize this per tag for a stricter or looser bar.
 template <typename Tag>
 struct insights_quality_thresholds {
     static constexpr std::size_t min_why_chars = 30;
@@ -325,72 +136,10 @@ struct insights_quality_thresholds {
     static constexpr std::size_t min_violating_chars = 10;
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Concept gates for downstream enforcement ──────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// `has_insights_v<Tag>` (defined later) is the boolean predicate.
-// Two concept aliases ergonomic for `requires` clauses:
-//
-//   * WellInsightedTag<T>  — Tag IS a tag AND has been explicitly
-//                            registered (has_insights_v true).
-//                            Use to GUARANTEE diagnostic output is
-//                            non-default.
-//
-//   * HasSubstantiveInsights<T> — Tag is well-insighted AND every
-//                                  prose field meets the QV
-//                                  thresholds.  Use for production-
-//                                  critical surfaces that must not
-//                                  ship with placeholder insights.
-//
-// Forward declarations; concepts proper appear after has_insights_v
-// + is_diagnostic_class_v are visible.
+// A specialization written elsewhere works the same way. It sits at
+// namespace scope beside the tag it describes and does not enter the
+// closed catalog of tags this header knows about.
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Workflow: populating insights for an existing tag ──────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// 1. Foundation tags (the 22 in safety/Diagnostic.h):
-//    * Add a CRUCIBLE_DEFINE_INSIGHTS(...) line in this header's
-//      "Foundation-tag insight specializations" section below.
-//    * If the tag was previously unspecialized, the corresponding
-//      `static_assert(!has_insights_v<TagX>)` in the self-test block
-//      flips — change it to `static_assert(has_insights_v<TagX>)`.
-//    * No other code change required; the deep builder picks up the
-//      insights automatically via insight_provider<Tag>.
-//
-// 2. User-defined tags (project-local extensions):
-//    * Place the CRUCIBLE_DEFINE_INSIGHTS(...) call in the user's
-//      header right after the tag struct definition.
-//    * The specialization is at namespace scope — it does not "leak"
-//      into the foundation Catalog (which is closed).
-//    * The deep builder consumes the user-tag's insights when the
-//      user invokes CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT with that
-//      tag.
-//
-// 3. Severity escalation (e.g., a Warning-class issue surfaces as
-//    breaking in production):
-//    * Re-invoke CRUCIBLE_DEFINE_INSIGHTS with the new Severity.
-//    * The macro is idempotent over its template-specialization
-//      target — a second invocation is a redefinition error, so the
-//      author MUST remove the original specialization first.  This
-//      forces a code-review touch on every severity change.
-//
-// 4. CI guard for "every load-bearing tag has insights":
-//    * In a project test, enumerate the tags that MUST have insights
-//      and `static_assert(has_insights_v<Tag>)` for each.  See the
-//      sentinel TU in test/test_insights_compile.cpp for the
-//      foundation-tag enumeration pattern.
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Foundation-tag insight specializations ─────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Ten of the 22 foundation tags get heavyweight specializations.  The
-// other twelve inherit the empty defaults and can be filled in as
-// production callers reveal which insights are most load-bearing.
-
-// ── EffectRowMismatch ──────────────────────────────────────────────
 template <>
 struct insight_provider<EffectRowMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -413,7 +162,6 @@ struct insight_provider<EffectRowMismatch> {
     static constexpr std::string_view violating_example = "Computation<Row<>, T> bg_helper(); // hides Bg → fires here";
 };
 
-// ── HotPathViolation ───────────────────────────────────────────────
 template <>
 struct insight_provider<HotPathViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -437,7 +185,6 @@ struct insight_provider<HotPathViolation> {
         "fprintf(stderr, \"debug %d\\n\", x); // Cold; rejected by Hot caller";
 };
 
-// ── DetSafeLeak ────────────────────────────────────────────────────
 template <>
 struct insight_provider<DetSafeLeak> {
     static constexpr Severity severity = Severity::Fatal;
@@ -465,7 +212,6 @@ struct insight_provider<DetSafeLeak> {
         "auto seed = std::chrono::steady_clock::now(); // wall clock; rejected";
 };
 
-// ── NumericalTierMismatch ──────────────────────────────────────────
 template <>
 struct insight_provider<NumericalTierMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -492,7 +238,6 @@ struct insight_provider<NumericalTierMismatch> {
         "auto k = unordered_allreduce(x); // UNORDERED; rejected by BITEXACT";
 };
 
-// ── MemOrderViolation ──────────────────────────────────────────────
 template <>
 struct insight_provider<MemOrderViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -517,7 +262,6 @@ struct insight_provider<MemOrderViolation> {
         "x.store(v, std::memory_order_seq_cst); // banned; emit MFENCE";
 };
 
-// ── AllocClassViolation ────────────────────────────────────────────
 template <>
 struct insight_provider<AllocClassViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -540,7 +284,6 @@ struct insight_provider<AllocClassViolation> {
         "auto buf = std::vector<float>(n); // Heap; rejected on hot path";
 };
 
-// ── GradedWrapperViolation ─────────────────────────────────────────
 template <>
 struct insight_provider<GradedWrapperViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -568,7 +311,6 @@ struct insight_provider<GradedWrapperViolation> {
         "using graded_type = void; // not a Graded<...> — concept rejects";
 };
 
-// ── LinearityViolation ─────────────────────────────────────────────
 template <>
 struct insight_provider<LinearityViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -594,7 +336,6 @@ struct insight_provider<LinearityViolation> {
         "consumer1(linear_val); consumer2(linear_val); // double-use; rejected";
 };
 
-// ── RefinementViolation ────────────────────────────────────────────
 template <>
 struct insight_provider<RefinementViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -617,7 +358,6 @@ struct insight_provider<RefinementViolation> {
         "Refined<positive, int>(maybe_zero); // pre() fails; UB on optimize";
 };
 
-// ── UnknownParameterShape ──────────────────────────────────────────
 template <>
 struct insight_provider<UnknownParameterShape> {
     static constexpr Severity severity = Severity::Warning;
@@ -641,7 +381,6 @@ struct insight_provider<UnknownParameterShape> {
     static constexpr std::string_view violating_example = "void f(float*, size_t); // raw ptr; not a canonical shape";
 };
 
-// ── VendorBackendMismatch ─────────────────────────────────────────
 template <>
 struct insight_provider<VendorBackendMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -666,7 +405,6 @@ struct insight_provider<VendorBackendMismatch> {
         "mimic::nv::compile_kernel(node_with_Vendor_AMD_row, ...);  // WRONG";
 };
 
-// ── CrashClassMismatch ─────────────────────────────────────────────
 template <>
 struct insight_provider<CrashClassMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -692,7 +430,6 @@ struct insight_provider<CrashClassMismatch> {
         "Crash<Crash::Abort, T> dangerous_op();  // kills NoThrow caller";
 };
 
-// ── ConsistencyMismatch ────────────────────────────────────────────
 template <>
 struct insight_provider<ConsistencyMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -717,7 +454,6 @@ struct insight_provider<ConsistencyMismatch> {
         "BatchPolicy<TpAxis, Consistency::Eventual>(...);  // BREAKS TP";
 };
 
-// ── LifetimeViolation ──────────────────────────────────────────────
 template <>
 struct insight_provider<LifetimeViolation> {
     static constexpr Severity severity = Severity::Fatal;
@@ -747,7 +483,6 @@ struct insight_provider<LifetimeViolation> {
         "publish_to_fleet(OpaqueLifetime<PER_REQUEST, RawTrace>{value});";
 };
 
-// ── BudgetExceeded ─────────────────────────────────────────────────
 template <>
 struct insight_provider<BudgetExceeded> {
     static constexpr Severity severity = Severity::Error;
@@ -773,7 +508,6 @@ struct insight_provider<BudgetExceeded> {
         "  // sum=1300 > cap=1024 OR sum=3MB > cap=2MB";
 };
 
-// ── ProgressClassViolation ─────────────────────────────────────────
 template <>
 struct insight_provider<ProgressClassViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -798,7 +532,6 @@ struct insight_provider<ProgressClassViolation> {
         "Progress<MayDiverge, T> unbounded_loop();  // breaks Bounded outer";
 };
 
-// ── CipherTierViolation ───────────────────────────────────────────
 template <>
 struct insight_provider<CipherTierViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -825,7 +558,6 @@ struct insight_provider<CipherTierViolation> {
         "Cipher::publish_warm(CipherTier<CipherTier::Cold, Archive>{value});";
 };
 
-// ── ResidencyHeatViolation ────────────────────────────────────────
 template <>
 struct insight_provider<ResidencyHeatViolation> {
     static constexpr Severity severity = Severity::Warning;
@@ -852,7 +584,6 @@ struct insight_provider<ResidencyHeatViolation> {
         "KernelCache::lookup_l1(ResidencyHeat<Cold, KeyId>{kid});  // miss";
 };
 
-// ── EpochMismatch ─────────────────────────────────────────────────
 template <>
 struct insight_provider<EpochMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -878,7 +609,6 @@ struct insight_provider<EpochMismatch> {
         "do_collective(stale_value);  // epoch=N-1 but fleet at epoch=N";
 };
 
-// ── NumaPlacementMismatch ─────────────────────────────────────────
 template <>
 struct insight_provider<NumaPlacementMismatch> {
     static constexpr Severity severity = Severity::Warning;
@@ -903,7 +633,6 @@ struct insight_provider<NumaPlacementMismatch> {
         "scheduler.dispatch_local(NumaPlacement<Node{3}, Spread>{region});";
 };
 
-// ── RecipeSpecMismatch ────────────────────────────────────────────
 template <>
 struct insight_provider<RecipeSpecMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -930,12 +659,9 @@ struct insight_provider<RecipeSpecMismatch> {
         "compile(RecipeSpec<RELAXED, KAHAN, Kernel>{node});  // wrong axes";
 };
 
-// ── PureFunctionViolation (fixy-A3-007) ────────────────────────────
-//
-// F* PURE class (FxAliases.h IsPure / IsTot / IsGhost): empty row.
-// Any Effect atom in the function's row is structurally rejected.
-// Distinct from EffectRowMismatch — this fence is the F* lattice
-// bottom; EffectRowMismatch is an arbitrary caller-imposed row.
+// This fence is the bottom of the effect lattice, an empty row that
+// rejects every atom. The general row mismatch is a different thing: a
+// row one caller happens to impose.
 template <>
 struct insight_provider<PureFunctionViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -966,11 +692,9 @@ struct insight_provider<PureFunctionViolation> {
         "Pure<uint64_t> compute_hash(...) { fprintf(stderr, ...); ... }  // IO";
 };
 
-// ── DivergenceBudgetViolation (fixy-A3-007) ────────────────────────
-//
-// F* DIV class (FxAliases.h IsDiv): Row<Block>.  Admits non-termination
-// (potentially-divergent loop) but NOT Alloc or IO.  In F* the lattice
-// is Pure ⊑ Div ⊑ ST — to use state effects, lift to IsST.
+// One step up the lattice: a loop that may not terminate is admitted,
+// allocation and input or output are not. Reaching for those means
+// lifting one step further.
 template <>
 struct insight_provider<DivergenceBudgetViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -1001,12 +725,9 @@ struct insight_provider<DivergenceBudgetViolation> {
         "Div<int> fixed_point(int x) { void* p = std::malloc(64); ... }  // Alloc";
 };
 
-// ── StateBudgetViolation (fixy-A3-007) ─────────────────────────────
-//
-// F* ST class (FxAliases.h IsST): Row<Block, Alloc, IO>.  Admits state
-// mutation and divergence but NOT context-bound capabilities (Bg /
-// Init / Test).  Context tags encode dispatch position; only IsAll's
-// AllRow admits them structurally.
+// One step further: state and divergence are admitted, the
+// context-bound capabilities are not. Those name a dispatch position
+// rather than an effect, and only the top of the lattice admits them.
 template <>
 struct insight_provider<StateBudgetViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -1037,12 +758,6 @@ struct insight_provider<StateBudgetViolation> {
         "ST<int> stateful_compute(eff::Bg bg, int x);  // Bg cap → rejected";
 };
 
-// ── InsufficientWitness (fixy-A3-007 / FIXY-G9) ────────────────────
-//
-// Witness lattice: Asserted ⊑ Tested ⊑ CrossValidated ⊑
-// FormallyVerified.  Downstream consumers (Cipher hot-tier promotion,
-// Federation peering, AdaptiveScheduler hot-path admission) demand a
-// minimum witness tier per axis; bindings with weaker witness refused.
 template <>
 struct insight_provider<InsufficientWitness> {
     static constexpr Severity severity = Severity::Error;
@@ -1074,12 +789,6 @@ struct insight_provider<InsufficientWitness> {
         "auto g = grant::reentrant();  // Asserted only — rejected by Tested floor";
 };
 
-// ── ModalityMismatch (fixy-A3-007 / FIXY-G10) ──────────────────────
-//
-// Two grants engaging the same fixy dim with incompatible modality
-// classes — typically Frame ∥ Declares on the same axis (R018), or
-// two Quotient grants naming different equivalence-class
-// representatives (Version<3> vs Version<5>).
 template <>
 struct insight_provider<ModalityMismatch> {
     static constexpr Severity severity = Severity::Error;
@@ -1112,14 +821,6 @@ struct insight_provider<ModalityMismatch> {
         "fixy::fn<int, grant::frame<X>, grant::declares<X>>  // R018 same axis";
 };
 
-// ── LinearAliasViolation (fixy-A3-007 / FIXY-G10 R017) ─────────────
-//
-// Two Linear-modality grants on the same Permission tag in a single
-// binding's pack.  Linear modality encodes one-shot consume-and-
-// produce — two Linear grants on the same tag means two parallel
-// consumers of the same exclusive permission, a CSL frame-rule
-// violation.  R017 fires before R013 because it catches the binding-
-// shape error earlier than the call-site rule.
 template <>
 struct insight_provider<LinearAliasViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -1150,7 +851,6 @@ struct insight_provider<LinearAliasViolation> {
         "fixy::fn<int, lifetime_region<Tag>, lifetime_region<Tag>>  // R017 alias";
 };
 
-// ── WaitStrategyViolation ──────────────────────────────────────────
 template <>
 struct insight_provider<WaitStrategyViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -1176,7 +876,6 @@ struct insight_provider<WaitStrategyViolation> {
         "flag.wait(false);  // Wait<AcquireWait> in a SpinPause caller";
 };
 
-// ── SharedPermissionPoolSaturated (fixy-A1-007) ────────────────────
 template <>
 struct insight_provider<SharedPermissionPoolSaturated> {
     static constexpr Severity severity = Severity::Fatal;
@@ -1204,7 +903,6 @@ struct insight_provider<SharedPermissionPoolSaturated> {
         "auto* leak = new SharedPermissionGuard(pool.lend());  // never freed";
 };
 
-// ── HugePageAllocationFailed (fixy-A1-022) ─────────────────────────
 template <>
 struct insight_provider<HugePageAllocationFailed> {
     static constexpr Severity severity = Severity::Fatal;
@@ -1227,7 +925,6 @@ struct insight_provider<HugePageAllocationFailed> {
         "auto* ring = HugePageBuffer<T>::allocate(n);  // no host pool tune";
 };
 
-// ── PublishOnceDoublePublish (fixy-A1-031) ─────────────────────────
 template <>
 struct insight_provider<PublishOnceDoublePublish> {
     static constexpr Severity severity = Severity::Fatal;
@@ -1256,7 +953,6 @@ struct insight_provider<PublishOnceDoublePublish> {
         "if (need_publish) slot.publish(p);  // no outer serialization";
 };
 
-// ── BitsInvariantViolation (WRAP-Bits-Borrowed-Diagnostic #1092) ───
 template <>
 struct insight_provider<BitsInvariantViolation> {
     static constexpr Severity severity = Severity::Error;
@@ -1283,7 +979,6 @@ struct insight_provider<BitsInvariantViolation> {
     static constexpr std::string_view violating_example = "Bits<E>::from_raw(raw)  // unmasked deserialize";
 };
 
-// ── BorrowedBoundsViolation (WRAP-Bits-Borrowed-Diagnostic #1092) ──
 template <>
 struct insight_provider<BorrowedBoundsViolation> {
     static constexpr Severity severity = Severity::Fatal;
@@ -1308,27 +1003,16 @@ struct insight_provider<BorrowedBoundsViolation> {
         "for (size_t i = 0; i <= b.size(); ++i) use(b[i]);  // off-by-one";
 };
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Trait: does this Tag have non-trivial insights? ────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// True iff at least ONE of the four insight string_views is non-empty.
-// Used by the deep builder to decide whether to emit insight sections
-// at all (a Tag with no specialization gets the bare format).
+// One non-empty field is enough. This is what the builder reads to
+// decide whether to emit insight sections at all.
 
 template <typename Tag>
 inline constexpr bool has_insights_v =
     !insight_provider<Tag>::why_this_matters.empty() || !insight_provider<Tag>::symptom_pattern.empty()
     || !insight_provider<Tag>::correct_example.empty() || !insight_provider<Tag>::violating_example.empty();
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Trait: insights meet QV thresholds ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// True iff EVERY field meets its insights_quality_thresholds<Tag>
-// minimum length.  Different from has_insights_v (which is true if
-// ANY field is non-empty) — this is the strictly stronger predicate
-// for production-critical surfaces.
+// Every field, against its own threshold. The strictly stronger
+// predicate of the two.
 
 template <typename Tag>
 inline constexpr bool has_substantive_insights_v =
@@ -1337,57 +1021,22 @@ inline constexpr bool has_substantive_insights_v =
     && insight_provider<Tag>::correct_example.size() >= insights_quality_thresholds<Tag>::min_correct_chars
     && insight_provider<Tag>::violating_example.size() >= insights_quality_thresholds<Tag>::min_violating_chars;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Concepts: WellInsightedTag, HasSubstantiveInsights ─────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Use in `requires` clauses to enforce that a Tag has insights at all
-// (WellInsightedTag) or that the insights meet QV thresholds
-// (HasSubstantiveInsights).
-//
-// Pattern (consumer side):
-//
-//   template <typename Tag>
-//       requires WellInsightedTag<Tag>
-//   void emit_classified_diagnostic(...);
-//
-// Pattern (production-critical surface):
-//
-//   template <typename Tag>
-//       requires HasSubstantiveInsights<Tag>
-//   void emit_load_bearing_diagnostic(...);
-
 template <typename Tag>
 concept WellInsightedTag = is_diagnostic_class_v<Tag> && has_insights_v<Tag>;
 
 template <typename Tag>
 concept HasSubstantiveInsights = is_diagnostic_class_v<Tag> && has_substantive_insights_v<Tag>;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test block ────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// The 10 specialized foundation tags MUST have non-empty insights.
-// The 12 unspecialized foundation tags inherit empty defaults.
-// User-defined tags use the empty defaults.
-
 namespace detail::insights_self_test {
 
-// Severity name coverage.
 static_assert(severity_name(Severity::Hint) == "Hint");
 static_assert(severity_name(Severity::Warning) == "Warning");
 static_assert(severity_name(Severity::Error) == "Error");
 static_assert(severity_name(Severity::Fatal) == "Fatal");
 
-// Default severity is Error.
 static_assert(insight_provider<EpochMismatch>::severity == Severity::Error,
-              "Unspecialized tag's default severity should be Error.");
+              "an unspecialized tag must default to Error severity");
 
-// All 22 foundation tags now have substantive insights.  Each
-// specialization is documented at its definition site above.  As
-// the wrapper-axes (FOUND-G series) ship, individual tags may gain
-// per-tag insights_quality_thresholds<Tag> overrides for tighter
-// minimums on the load-bearing prose fields.
 static_assert(has_insights_v<EffectRowMismatch>);
 static_assert(has_insights_v<UnknownParameterShape>);
 static_assert(has_insights_v<GradedWrapperViolation>);
@@ -1411,18 +1060,13 @@ static_assert(has_insights_v<BudgetExceeded>);
 static_assert(has_insights_v<NumaPlacementMismatch>);
 static_assert(has_insights_v<RecipeSpecMismatch>);
 
-// DetSafeLeak is Fatal (the 8th axiom is the load-bearing one).
 static_assert(insight_provider<DetSafeLeak>::severity == Severity::Fatal);
 
-// UnknownParameterShape is Warning (manual orchestration is
-// supported; not a hard error).
 static_assert(insight_provider<UnknownParameterShape>::severity == Severity::Warning);
 
-// All other specialized tags are Error.
 static_assert(insight_provider<HotPathViolation>::severity == Severity::Error);
 static_assert(insight_provider<EffectRowMismatch>::severity == Severity::Error);
 
-// User-defined tag gets default insights (empty + Error).
 struct user_tag : tag_base {
     static constexpr std::string_view name = "UserDefinedX";
     static constexpr std::string_view description = "user";
@@ -1431,37 +1075,24 @@ struct user_tag : tag_base {
 static_assert(!has_insights_v<user_tag>);
 static_assert(insight_provider<user_tag>::severity == Severity::Error);
 
-// Concept gates exercised on foundation tags.  All 22 foundation
-// tags are now specialized; the rejection cases use a synthetic
-// user-defined tag that inherits the empty primary-template defaults.
+// The rejection cases use the tag above, which carries the empty
+// defaults, and a type that is not a tag at all.
 static_assert(WellInsightedTag<EffectRowMismatch>);
 static_assert(WellInsightedTag<DetSafeLeak>);
-static_assert(WellInsightedTag<EpochMismatch>);  // specialized 2026-04-28
-static_assert(!WellInsightedTag<user_tag>);  // synthetic; empty defaults
-static_assert(!WellInsightedTag<int>);  // not a tag at all
+static_assert(WellInsightedTag<EpochMismatch>);
+static_assert(!WellInsightedTag<user_tag>);
+static_assert(!WellInsightedTag<int>);
 
-// HasSubstantiveInsights is the strictly stronger predicate — every
-// foundation specialization clears the QV thresholds (since the
-// prose was written deliberately).
 static_assert(HasSubstantiveInsights<EffectRowMismatch>);
 static_assert(HasSubstantiveInsights<HotPathViolation>);
 static_assert(HasSubstantiveInsights<DetSafeLeak>);
 static_assert(HasSubstantiveInsights<EpochMismatch>);
 static_assert(HasSubstantiveInsights<RecipeSpecMismatch>);
-static_assert(!HasSubstantiveInsights<user_tag>);  // empty defaults fail QV
+static_assert(!HasSubstantiveInsights<user_tag>);
 
 }  // namespace detail::insights_self_test
 
 }  // namespace crucible::safety::diag
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Self-test for CRUCIBLE_DEFINE_INSIGHTS macro ───────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Verify the macro produces a working specialization at namespace
-// scope.  Defined in an anonymous namespace at the top level so it
-// doesn't pollute the diag namespace; the macro itself qualifies
-// fully.
 
 namespace crucible::safety::diag::detail::insights_macro_test {
 
@@ -1474,8 +1105,7 @@ struct macro_target_tag : ::crucible::safety::diag::tag_base {
 
 }  // namespace crucible::safety::diag::detail::insights_macro_test
 
-// Macro invocation at namespace scope — the canonical user-extension
-// pattern.  Verifies the workflow documented above.
+// Invoking the macro at namespace scope is the shape a consumer uses.
 CRUCIBLE_DEFINE_INSIGHTS(::crucible::safety::diag::detail::insights_macro_test::macro_target_tag,
                          ::crucible::safety::diag::Severity::Warning, "WHY-MACRO-TEST", "SYMPTOM-MACRO-TEST",
                          "CORRECT-MACRO-TEST", "VIOLATING-MACRO-TEST");
@@ -1493,14 +1123,12 @@ static_assert(P::violating_example == std::string_view{"VIOLATING-MACRO-TEST"});
 static_assert(::crucible::safety::diag::has_insights_v<macro_target_tag>,
               "Macro-populated insights must register as has_insights_v.");
 
-// Severity-only target — exercises CRUCIBLE_DEFINE_INSIGHTS_SEVERITY.
 struct severity_only_tag : ::crucible::safety::diag::tag_base {
     static constexpr std::string_view name = "SeverityOnlyTag";
     static constexpr std::string_view description = "test fixture for CRUCIBLE_DEFINE_INSIGHTS_SEVERITY expansion";
     static constexpr std::string_view remediation = "n/a — fixture";
 };
 
-// QV-validated target — exercises CRUCIBLE_DEFINE_INSIGHTS_QV.
 struct qv_target_tag : ::crucible::safety::diag::tag_base {
     static constexpr std::string_view name = "QvTargetTag";
     static constexpr std::string_view description = "test fixture for CRUCIBLE_DEFINE_INSIGHTS_QV expansion";
@@ -1509,16 +1137,10 @@ struct qv_target_tag : ::crucible::safety::diag::tag_base {
 
 }  // namespace crucible::safety::diag::detail::insights_macro_test
 
-// ── CRUCIBLE_DEFINE_INSIGHTS_SEVERITY exercise ────────────────────
 CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(::crucible::safety::diag::detail::insights_macro_test::severity_only_tag,
                                   ::crucible::safety::diag::Severity::Fatal);
 
-// ── CRUCIBLE_DEFINE_INSIGHTS_QV exercise ──────────────────────────
-//
-// Each prose field clears its default minimum-length threshold:
-//   * why ≥ 30 chars
-//   * symptom ≥ 20 chars
-//   * correct / violating ≥ 10 chars
+// Each field here clears its default threshold.
 CRUCIBLE_DEFINE_INSIGHTS_QV(::crucible::safety::diag::detail::insights_macro_test::qv_target_tag,
                             ::crucible::safety::diag::Severity::Error,
                             "QV why field — substantive prose clearing the 30-char min.",
@@ -1533,9 +1155,8 @@ static_assert(PSev::severity == ::crucible::safety::diag::Severity::Fatal,
               "CRUCIBLE_DEFINE_INSIGHTS_SEVERITY must set severity.");
 static_assert(PSev::why_this_matters.empty(), "Severity-only macro should leave why_this_matters empty.");
 static_assert(PSev::symptom_pattern.empty(), "Severity-only macro should leave symptom_pattern empty.");
-// has_insights_v stays FALSE because all 4 prose fields are empty —
-// severity-only registration is a "tracked TODO" state, NOT a
-// well-insighted state.  This is the documented semantic.
+// Registering a severity alone leaves every prose field empty, and the
+// predicate reports that state as uninsighted rather than registered.
 static_assert(!::crucible::safety::diag::has_insights_v<severity_only_tag>,
               "Severity-only macro leaves has_insights_v false (prose all empty).");
 
@@ -1545,7 +1166,6 @@ static_assert(PQv::why_this_matters.size() >= 30);
 static_assert(PQv::symptom_pattern.size() >= 20);
 static_assert(PQv::correct_example.size() >= 10);
 static_assert(PQv::violating_example.size() >= 10);
-// QV-registered tag is well-insighted AND substantive.
 static_assert(::crucible::safety::diag::has_insights_v<qv_target_tag>);
 static_assert(::crucible::safety::diag::has_substantive_insights_v<qv_target_tag>);
 static_assert(::crucible::safety::diag::WellInsightedTag<qv_target_tag>);

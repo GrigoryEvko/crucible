@@ -1,37 +1,21 @@
-// Runtime + compile-time harness for safety/SessionPayloadSubsort.h
-// (task #395, SAFEINT-S6 from misc/24_04_2026_safety_integration.md §6).
+// Provenance does not stop at the validator. The type system carries it
+// through the protocol steps that follow, so an internal caller cannot
+// consume a value that was never validated.
 //
-// Coverage:
-//   * Compile-time:  every is_subsort axiom (positive AND negative
-//     cases) plus protocol-level Send/Recv subtype propagation.
-//   * Compile-time:  the deliberate non-axioms (External / FromUser /
-//     FromPytorch / trust::* / access::* / version::*) verified to
-//     STAY non-axioms — these are the load-bearing FFI / trust-
-//     boundary discipline.
-//   * Runtime:       a worked FFI-flow scenario where a Vessel-style
-//     adapter receives Tagged<T, vessel_trust::FromPytorch>, runs the
-//     validator, produces Tagged<T, vessel_trust::Validated>, and the
-//     internal pipeline accepts the result via subtype subsumption
-//     into a position expecting bare T.
+// Two kinds of claim are made below. Some wrappers erase into the bare
+// payload and propagate through a protocol position; others deliberately do
+// not, and those non-axioms are what hold the boundary discipline up.
 //
-// Closes the documented FFI gap: provenance no longer ENDS at the
-// validator — the type system carries it through subsequent protocol
-// steps and rejects internal callers that try to consume unvalidated
-// values.
-//
-// See also:
-//   * misc/24_04_2026_safety_integration.md §6, §7, §23 (Vessel FFI
-//     boundary discipline), Part VIII §39 (the deliberate
-//     non-axioms — Secret ⩽ T asymmetry, etc.)
-//   * include/crucible/sessions/SessionPayloadSubsort.h (the axioms)
-//   * include/crucible/sessions/SessionSubtype.h (the relation)
+// The runtime half walks one flow: an adapter takes a value tagged with its
+// foreign origin, runs the validator, and hands the internal pipeline a value
+// tagged as validated.
 
 #include <crucible/sessions/SessionPayloadSubsort.h>
-#include <crucible/safety/RefinedAlgebra.h>  // FIXY-U-163 — bounded_below
+#include <crucible/safety/RefinedAlgebra.h>
 
 #include <cstdio>
 #include <expected>
-#include <span>        // FIXY-U-163 — span<int> in is_subsort witnesses
+#include <span>
 #include <utility>
 
 namespace {
@@ -39,613 +23,407 @@ namespace {
 using namespace crucible::safety;
 using namespace crucible::safety::proto;
 
-// ── Compile-time witnesses (these duplicate the in-header self-tests
-//    intentionally — keeping the test-side asserts ensures regressions
-//    in the TU that USES the header surface clearly, not buried inside
-//    the framework's internal self-test namespace) ────────────────────
+// The header runs its own self-test. These assertions repeat it on purpose,
+// from a translation unit that consumes the header, so a regression surfaces
+// where a consumer would meet it rather than inside the framework.
 
-// Refined ⩽ bare propagates through Send (covariance).
-static_assert( is_subtype_sync_v<Send<Refined<positive, int>, End>,
-                                 Send<int, End>>);
-static_assert(!is_subtype_sync_v<Send<int, End>,
-                                 Send<Refined<positive, int>, End>>);
+// A refinement erases into the bare payload through a send position.
+static_assert(is_subtype_sync_v<Send<Refined<positive, int>, End>, Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<int, End>, Send<Refined<positive, int>, End>>);
 
-// Tagged Sanitized ⩽ bare propagates through Send.
-static_assert( is_subtype_sync_v<Send<Tagged<int, source::Sanitized>, End>,
-                                 Send<int, End>>);
+// A sanitized tag erases the same way.
+static_assert(is_subtype_sync_v<Send<Tagged<int, source::Sanitized>, End>, Send<int, End>>);
 
-// Tagged External does NOT propagate — defeats validator.
-static_assert(!is_subtype_sync_v<Send<Tagged<int, source::External>, End>,
-                                 Send<int, End>>);
+// An external tag does not, or the validator could be walked around.
+static_assert(!is_subtype_sync_v<Send<Tagged<int, source::External>, End>, Send<int, End>>);
 
-// Tagged Validated propagates; FromPytorch does not.
-static_assert( is_subtype_sync_v<Send<Tagged<int, vessel_trust::Validated>, End>,
-                                 Send<int, End>>);
-static_assert(!is_subtype_sync_v<Send<Tagged<int, vessel_trust::FromPytorch>, End>,
-                                 Send<int, End>>);
+// Validated erases; the foreign origin it came from does not.
+static_assert(is_subtype_sync_v<Send<Tagged<int, vessel_trust::Validated>, End>, Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<Tagged<int, vessel_trust::FromPytorch>, End>, Send<int, End>>);
 
-// trust::* / access::* / version::* are deliberately non-axioms
-// (epistemic / mode / version content must not silently erase).
-static_assert(!is_subtype_sync_v<Send<Tagged<int, trust::Verified>,    End>,
-                                 Send<int, End>>);
-static_assert(!is_subtype_sync_v<Send<Tagged<int, access::WriteOnce>,  End>,
-                                 Send<int, End>>);
-static_assert(!is_subtype_sync_v<Send<Tagged<int, version::V<1>>,      End>,
-                                 Send<int, End>>);
+// Trust, access mode and version carry content of their own, and none of it
+// may erase silently, so none of the three is an axiom.
+static_assert(!is_subtype_sync_v<Send<Tagged<int, trust::Verified>, End>, Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<Tagged<int, access::WriteOnce>, End>, Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<Tagged<int, version::V<1>>, End>, Send<int, End>>);
 
-// Recv contravariance: bare ⩽ Tagged Sanitized (the receiver of bare
-// can stand for one expecting Sanitized — they're happy with the
-// looser type).
-static_assert( is_subtype_sync_v<Recv<int, End>,
-                                 Recv<Tagged<int, source::Sanitized>, End>>);
+// A receive position reverses the direction. A receiver of the bare payload
+// stands in for one expecting the sanitized tag, since it is content with the
+// looser type.
+static_assert(is_subtype_sync_v<Recv<int, End>, Recv<Tagged<int, source::Sanitized>, End>>);
 
-// Loop body propagates the wrapper subsorts.
-static_assert( is_subtype_sync_v<
-    Loop<Send<Tagged<int, vessel_trust::Validated>, Continue>>,
-    Loop<Send<int, Continue>>>);
+// The relation reaches a loop body as well.
+static_assert(is_subtype_sync_v<Loop<Send<Tagged<int, vessel_trust::Validated>, Continue>>, Loop<Send<int, Continue>>>);
 
-// ── Cross-predicate strengthening (#227 + §22 wiring) ──────────────
-//
-// Refined<P, T> ⩽ Refined<Q, T> when implies_v<P, Q>.  Both directions
-// of variance covered; reverse rejected.
+// One refinement subsumes another when its predicate implies the other's.
+// Both variances are covered here, and the reverse direction is refused.
 
-static_assert( is_subtype_sync_v<Send<Refined<positive, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<positive, int>, End>, Send<Refined<non_negative, int>, End>>);
 
-static_assert(!is_subtype_sync_v<Send<Refined<non_negative, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<non_negative, int>, End>, Send<Refined<positive, int>, End>>);
 
-static_assert( is_subtype_sync_v<Recv<Refined<non_negative, int>, End>,
-                                 Recv<Refined<positive, int>, End>>);
+static_assert(is_subtype_sync_v<Recv<Refined<non_negative, int>, End>, Recv<Refined<positive, int>, End>>);
 
-// Parameterised: BoundedAbove tighter ⩽ looser via Send.
-static_assert( is_subtype_sync_v<Send<Refined<bounded_above<256u>, unsigned>, End>,
-                                 Send<Refined<bounded_above<1024u>, unsigned>, End>>);
+// A parameterised predicate behaves the same: the tighter ceiling subsumes
+// the looser one.
+static_assert(is_subtype_sync_v<Send<Refined<bounded_above<256u>, unsigned>, End>,
+                                Send<Refined<bounded_above<1024u>, unsigned>, End>>);
 
-// Parameterised: Aligned<64> ⩽ Aligned<32> through a Loop.
-static_assert( is_subtype_sync_v<
-    Loop<Send<Refined<aligned<64>, void*>, Continue>>,
-    Loop<Send<Refined<aligned<32>, void*>, Continue>>>);
+// And it reaches through a loop.
+static_assert(is_subtype_sync_v<Loop<Send<Refined<aligned<64>, void*>, Continue>>,
+                                Loop<Send<Refined<aligned<32>, void*>, Continue>>>);
 
-// InRange tighter ⩽ looser; disjoint ranges rejected.
-static_assert( is_subtype_sync_v<Send<Refined<in_range<10, 20>, int>, End>,
-                                 Send<Refined<in_range<0, 100>, int>, End>>);
-static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 10>, int>, End>,
-                                 Send<Refined<in_range<20, 30>, int>, End>>);
+// A range inside another subsumes it. Disjoint ranges do not.
+static_assert(is_subtype_sync_v<Send<Refined<in_range<10, 20>, int>, End>, Send<Refined<in_range<0, 100>, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 10>, int>, End>, Send<Refined<in_range<20, 30>, int>, End>>);
 
-// ── FIXY-U-163 — end-to-end is_subsort witnesses ───────────────────
-//
-// The U-159b → U-162 thread accumulated 7+ new predicate_implies
-// axioms with only file-scope `implies_v` witnesses.  Those prove the
-// TRAIT fires.  The PRODUCTION consumer is SessionPayloadSubsort's
-// `is_subsort<Refined<P,T>, Refined<Q,T>>` partial spec (requires
-// `implies_v<P, Q> && !std::is_same_v<decltype(P), decltype(Q)>`),
-// reached at runtime via `is_subtype_sync_v` through Send/Recv/Loop's
-// covariant/contravariant payload positions.
-//
-// A future refactor of is_subsort's requires-clause (e.g., adding a
-// guard that incidentally rejects struct-form predicates) would
-// silently break consumer-level propagation while the implies_v
-// witnesses still pass.  The end-to-end asserts below catch that
-// regression class.  Each new axiom from U-159b / U-160 / U-161 /
-// U-162 is exercised through Send (covariant payload) with at least
-// one positive case + one soundness witness where applicable.
+// An assertion on the implication trait alone proves the trait fires. What
+// consumes it is the subsort specialisation, which additionally demands the
+// two predicates be distinct types, and which callers reach only through a
+// payload position. A guard added to that specialisation could reject some
+// shape of predicate and break propagation while every trait-level assertion
+// still passed, so each axiom below is exercised end to end instead, with a
+// soundness case wherever the axiom has a side condition.
 
-// U-159b: non_null ⇔ non_zero bidirectional for pointer T
-static_assert( is_subtype_sync_v<Send<Refined<non_null, int*>, End>,
-                                 Send<Refined<non_zero, int*>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<non_zero, int*>, End>,
-                                 Send<Refined<non_null, int*>, End>>);
+// A null check and a zero check mean the same thing for a pointer, so the
+// implication runs both ways.
+static_assert(is_subtype_sync_v<Send<Refined<non_null, int*>, End>, Send<Refined<non_zero, int*>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<non_zero, int*>, End>, Send<Refined<non_null, int*>, End>>);
 
-// U-159b: LengthGe<N> ⇒ non_empty for N ≥ 1 (parameterised bridge)
-static_assert( is_subtype_sync_v<Send<Refined<length_ge<1>, std::span<int>>, End>,
-                                 Send<Refined<non_empty, std::span<int>>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<length_ge<8>, std::span<int>>, End>,
-                                 Send<Refined<non_empty, std::span<int>>, End>>);
-// FIXY-U-164: missing soundness witness from U-163 — length_ge<0> is
-// vacuous (size_t unsigned, x ≥ 0 always-true), so an empty container
-// passes length_ge<0> but FAILS non_empty.  The implies_v witness for
-// this gate exists at file scope (Refined.h's `!implies_v<length_ge<0>,
-// non_empty>`), but the consumer-level is_subsort witness was missed
-// in U-163.  Closing here completes U-163's 100% premise.
+// A minimum length of one or more implies non-emptiness.
+static_assert(
+    is_subtype_sync_v<Send<Refined<length_ge<1>, std::span<int>>, End>, Send<Refined<non_empty, std::span<int>>, End>>);
+static_assert(
+    is_subtype_sync_v<Send<Refined<length_ge<8>, std::span<int>>, End>, Send<Refined<non_empty, std::span<int>>, End>>);
+// A minimum of zero is vacuous, since the size type is unsigned. An empty
+// container satisfies it and fails non-emptiness, so it must not propagate.
 static_assert(!is_subtype_sync_v<Send<Refined<length_ge<0>, std::span<int>>, End>,
                                  Send<Refined<non_empty, std::span<int>>, End>>);
 
-// U-161: InRange<L, H> ⇒ non_negative when L ≥ 0
-static_assert( is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
-// Soundness gate: L < 0 must NOT propagate to non_negative.
-static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 100>, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
+// A range whose floor is at zero or above implies non-negativity.
+static_assert(is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>, Send<Refined<non_negative, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>, Send<Refined<non_negative, int>, End>>);
+// A floor below zero must not.
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 100>, int>, End>, Send<Refined<non_negative, int>, End>>);
 
-// U-162: BoundedBelow<N> ⇒ BoundedBelow<M> when N ≥ M (transitivity)
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
-                                 Send<Refined<bounded_below<5>, int>, End>>);
-// Soundness gate: looser must NOT propagate to tighter.
-static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<5>, int>, End>,
-                                 Send<Refined<bounded_below<10>, int>, End>>);
+// A higher floor implies a lower one.
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>, Send<Refined<bounded_below<5>, int>, End>>);
+// The reverse does not hold.
+static_assert(
+    !is_subtype_sync_v<Send<Refined<bounded_below<5>, int>, End>, Send<Refined<bounded_below<10>, int>, End>>);
 
-// U-162: InRange<L, H> ⇒ BoundedBelow<L> (dual to InRange⇒BoundedAbove<H>)
-static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
-                                 Send<Refined<bounded_below<5>, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<in_range<0, 200>, int>, End>,
-                                 Send<Refined<bounded_below<0>, int>, End>>);
+// A range's floor is a lower bound, dual to its ceiling being an upper one.
+static_assert(is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>, Send<Refined<bounded_below<5>, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<in_range<0, 200>, int>, End>, Send<Refined<bounded_below<0>, int>, End>>);
 
-// U-162: BoundedBelow<N> ⇒ non_negative when N ≥ 0
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<5>, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
-// Soundness gate: N < 0 must NOT propagate to non_negative.
-static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<-5>, int>, End>,
-                                 Send<Refined<non_negative, int>, End>>);
+// A floor at zero or above implies non-negativity.
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>, Send<Refined<non_negative, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<5>, int>, End>, Send<Refined<non_negative, int>, End>>);
+// A negative floor does not.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<-5>, int>, End>, Send<Refined<non_negative, int>, End>>);
 
-// U-162: BoundedBelow<N> ⇒ positive when N ≥ 1
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<1>, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
-// Soundness gate: N=0 admits x=0 (NOT positive); must NOT propagate.
-static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
+// A floor at one or above implies positivity.
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<1>, int>, End>, Send<Refined<positive, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>, Send<Refined<positive, int>, End>>);
+// A floor at zero admits zero itself, which is not positive.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>, Send<Refined<positive, int>, End>>);
 
-// Recv contravariance: payload position reverses direction.  Use one
-// flagship case to witness Recv routes through the same lattice fold.
-static_assert( is_subtype_sync_v<Recv<Refined<non_negative, int>, End>,
-                                 Recv<Refined<bounded_below<5>, int>, End>>);
+// One case suffices to witness that a receive position reaches the same fold
+// with the direction reversed.
+static_assert(is_subtype_sync_v<Recv<Refined<non_negative, int>, End>, Recv<Refined<bounded_below<5>, int>, End>>);
 
-// Loop composition: lattice fires through repeated payload position.
-static_assert( is_subtype_sync_v<
-    Loop<Send<Refined<bounded_below<10>, int>, Continue>>,
-    Loop<Send<Refined<positive, int>, Continue>>>);
+// And that a loop's repeated payload position reaches it too.
+static_assert(is_subtype_sync_v<Loop<Send<Refined<bounded_below<10>, int>, Continue>>,
+                                Loop<Send<Refined<positive, int>, Continue>>>);
 
-// ── FIXY-U-164 — transitive-closure direct bridges ─────────────────
+// The subsort specialisation demands a direct implication and composes
+// nothing transitively. A chain from a range through a lower bound to
+// positivity is therefore unreachable unless the range-to-positive step
+// exists as an axiom of its own. The same holds for the chain from a lower
+// bound through positivity to non-zero.
 //
-// The is_subsort partial spec in SessionPayloadSubsort.h requires
-// DIRECT implies_v — there is no recursive transitive composition.
-// So the chain `in_range<5, 100> ⇒ bounded_below<5> ⇒ positive` is
-// NOT automatically reachable through is_subsort without an explicit
-// `in_range<L, H> ⇒ positive` direct bridge axiom.  Similarly the
-// chain `bounded_below<N> ⇒ positive ⇒ non_zero` needs a direct
-// `bounded_below<N> ⇒ non_zero` bridge.
-//
-// U-164 ships both bridges (Refined.h + RefinedAlgebra.h).  Witness
-// each through is_subtype_sync_v at the boundary cardinality + the
-// soundness gate that proves the L ≥ 1 / N ≥ 1 requires-clause is
-// load-bearing.
+// Both bridges exist, and each is witnessed here at the boundary value of
+// its side condition, along with the case just past it that must fail.
 
-// InRange<L, H> ⇒ positive direct bridge (L ≥ 1):
-static_assert( is_subtype_sync_v<Send<Refined<in_range<1, 100>, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
-// Soundness: L=0 admits x=0 (NOT positive); must NOT propagate.
-static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
-                                 Send<Refined<positive, int>, End>>);
+// A range whose floor is one or above is positive.
+static_assert(is_subtype_sync_v<Send<Refined<in_range<1, 100>, int>, End>, Send<Refined<positive, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>, Send<Refined<positive, int>, End>>);
+// A floor at zero admits zero.
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>, Send<Refined<positive, int>, End>>);
 
-// BoundedBelow<N> ⇒ non_zero direct bridge (N ≥ 1):
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<1>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
-// Soundness: N=0 admits x=0 (IS zero); must NOT propagate.
-static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
+// A lower bound of one or above is non-zero.
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<1>, int>, End>, Send<Refined<non_zero, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>, Send<Refined<non_zero, int>, End>>);
+// A bound of zero admits zero.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>, Send<Refined<non_zero, int>, End>>);
 
-// ── FIXY-U-165 — InRange ⇒ non_zero disjunctive bridge ─────────────
-//
-// non_zero admits a disjunctive gate `(L ≥ 1) ∨ (H ≤ -1)` because the
-// predicate is the union-of-two-half-lines.  Witness BOTH branches +
-// the load-bearing soundness gate where the range straddles 0.
+// Non-zero is the union of two half-lines, so a range implies it from either
+// side: a floor at one or above, or a ceiling at minus one or below. Both
+// branches are witnessed, along with the ranges that straddle zero.
 
-// L ≥ 1 branch (positive range):
-static_assert( is_subtype_sync_v<Send<Refined<in_range<1, 100>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
+// The positive branch.
+static_assert(is_subtype_sync_v<Send<Refined<in_range<1, 100>, int>, End>, Send<Refined<non_zero, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>, Send<Refined<non_zero, int>, End>>);
 
-// H ≤ -1 branch (negative range — the load-bearing new direction):
-static_assert( is_subtype_sync_v<Send<Refined<in_range<-100, -1>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<in_range<-100, -5>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
+// The negative branch.
+static_assert(is_subtype_sync_v<Send<Refined<in_range<-100, -1>, int>, End>, Send<Refined<non_zero, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<in_range<-100, -5>, int>, End>, Send<Refined<non_zero, int>, End>>);
 
-// Soundness: range straddles 0 (admits x=0) must NOT propagate.
-static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
-static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 5>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
-static_assert(!is_subtype_sync_v<Send<Refined<in_range<-100, 0>, int>, End>,
-                                 Send<Refined<non_zero, int>, End>>);
+// A range that contains zero admits it.
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>, Send<Refined<non_zero, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 5>, int>, End>, Send<Refined<non_zero, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<-100, 0>, int>, End>, Send<Refined<non_zero, int>, End>>);
 
-// ── FIXY-U-166 — ExactSize propagation lattice (end-to-end) ────────
-//
-// Witness ExactSize<N>⇒LengthGe<M> when N ≥ M AND ExactSize<N>⇒
-// non_empty when N ≥ 1 flow through Send-covariance.  Symmetric to
-// the BoundedBelow⇒positive/non_zero lattice but on the size axis:
-// a fixed-shape SIMD-lane producer (Sized<8, span<int>>) feeds a
-// generic container consumer (MinSize<4, span<int>> /
-// NonEmpty<span<int>>) without re-validation.
+// The same shape on the size axis. A producer of a fixed-width vector feeds a
+// consumer that asks only for a minimum length, or for a non-empty container,
+// and neither side re-validates.
 
-// ExactSize ⇒ LengthGe boundary (N=M):
-static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
-                                 Send<Refined<length_ge<8>, std::span<int>>, End>>);
+// The bound is met exactly.
+static_assert(is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
+                                Send<Refined<length_ge<8>, std::span<int>>, End>>);
 
-// ExactSize ⇒ LengthGe interior (N>M):
-static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
-                                 Send<Refined<length_ge<4>, std::span<int>>, End>>);
+// The bound is exceeded.
+static_assert(is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
+                                Send<Refined<length_ge<4>, std::span<int>>, End>>);
 
-// ExactSize ⇒ LengthGe vacuous lower bound (M=0):
-static_assert( is_subtype_sync_v<Send<Refined<exact_size<1>, std::span<int>>, End>,
-                                 Send<Refined<length_ge<0>, std::span<int>>, End>>);
+// The bound is vacuous.
+static_assert(is_subtype_sync_v<Send<Refined<exact_size<1>, std::span<int>>, End>,
+                                Send<Refined<length_ge<0>, std::span<int>>, End>>);
 
-// ExactSize ⇒ LengthGe soundness (N<M must NOT propagate):
+// A fixed size below the bound cannot meet it.
 static_assert(!is_subtype_sync_v<Send<Refined<exact_size<4>, std::span<int>>, End>,
                                  Send<Refined<length_ge<8>, std::span<int>>, End>>);
 
-// ExactSize ⇒ non_empty boundary (N=1):
-static_assert( is_subtype_sync_v<Send<Refined<exact_size<1>, std::span<int>>, End>,
-                                 Send<Refined<non_empty, std::span<int>>, End>>);
+// A size of one is the boundary for non-emptiness.
+static_assert(is_subtype_sync_v<Send<Refined<exact_size<1>, std::span<int>>, End>,
+                                Send<Refined<non_empty, std::span<int>>, End>>);
 
-// ExactSize ⇒ non_empty interior (N>1):
-static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
-                                 Send<Refined<non_empty, std::span<int>>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
+                                Send<Refined<non_empty, std::span<int>>, End>>);
 
-// Soundness: N=0 means c is empty; must NOT propagate to non_empty.
+// A size of zero is an empty container.
 static_assert(!is_subtype_sync_v<Send<Refined<exact_size<0>, std::span<int>>, End>,
                                  Send<Refined<non_empty, std::span<int>>, End>>);
 
-// ── FIXY-U-167 — DivisibleBy subsumption (end-to-end) ──────────────
+// Divisibility follows the alignment shape on integer modulo: a trip count
+// divisible by the widest vector width also satisfies every narrower one, so
+// a producer gated at the widest feeds any consumer below it unchecked.
+
+// Reflexive.
+static_assert(is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>, Send<Refined<divisible_by<4>, int>, End>>);
+
+// Sixteen lanes down to eight and four.
+static_assert(is_subtype_sync_v<Send<Refined<divisible_by<16>, int>, End>, Send<Refined<divisible_by<8>, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<divisible_by<16>, int>, End>, Send<Refined<divisible_by<4>, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<divisible_by<8>, int>, End>, Send<Refined<divisible_by<4>, int>, End>>);
+
+// Six divides neither into nor out of four.
+static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<6>, int>, End>, Send<Refined<divisible_by<4>, int>, End>>);
+
+// And the coarser divisor does not imply the finer one.
+static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>, Send<Refined<divisible_by<8>, int>, End>>);
+
+// Alignment carries the same side condition as divisibility, so it earns the
+// same witness density. The hardware chain runs from a cache line down
+// through the vector widths to a machine word, and a pointer pinned at the
+// strongest alignment satisfies every requirement below it.
+
+// Reflexive.
+static_assert(is_subtype_sync_v<Send<Refined<aligned<64>, void*>, End>, Send<Refined<aligned<64>, void*>, End>>);
+
+static_assert(is_subtype_sync_v<Send<Refined<aligned<64>, void*>, End>, Send<Refined<aligned<16>, void*>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<aligned<32>, void*>, End>, Send<Refined<aligned<8>, void*>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<aligned<16>, void*>, End>, Send<Refined<aligned<4>, void*>, End>>);
+
+// The looser alignment does not imply the tighter one.
+static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>, Send<Refined<aligned<64>, void*>, End>>);
+
+// Nor does the larger value help when it is not a multiple of the smaller.
+static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>, Send<Refined<aligned<3>, void*>, End>>);
+
+// On the receiving side the direction reverses. A receiver asking for less
+// alignment than the peer supplies is sound; one asking for more is not.
+static_assert(is_subtype_sync_v<Recv<Refined<aligned<16>, void*>, End>, Recv<Refined<aligned<64>, void*>, End>>);
+static_assert(!is_subtype_sync_v<Recv<Refined<aligned<64>, void*>, End>, Recv<Refined<aligned<16>, void*>, End>>);
+
+// The receiving side of the modular and size axes, on the same pattern as
+// alignment above. A receiver that accepts the looser predicate stands in for
+// one at the tighter position, because every value the tighter position can
+// deliver is one the looser receiver already handles. The reverse fails: the
+// tighter receiver would turn away values the looser position admits.
 //
-// Witness DivisibleBy<N>⇒DivisibleBy<M> when M divides N flow through
-// Send-covariance.  Mirrors the Aligned<N>⇒Aligned<M> path but on
-// integer-modulo: a SIMD-lane trip count gated by divisible_by<16>
-// (AVX-512) structurally strengthens to a consumer expecting
-// divisible_by<8> (AVX2) or divisible_by<4> (SSE) without
-// re-validation.
+// These cases are what would red if the receive position were ever given the
+// send position's variance. Send and receive behaving alike is a classic
+// unsoundness in a session-type implementation.
 
-// Reflexive (N=M=4):
-static_assert( is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>,
-                                 Send<Refined<divisible_by<4>, int>, End>>);
+static_assert(is_subtype_sync_v<Recv<Refined<divisible_by<8>, int>, End>, Recv<Refined<divisible_by<16>, int>, End>>);
+static_assert(!is_subtype_sync_v<Recv<Refined<divisible_by<16>, int>, End>, Recv<Refined<divisible_by<8>, int>, End>>);
 
-// SIMD chain — AVX-512 trip count satisfies AVX2 and SSE:
-static_assert( is_subtype_sync_v<Send<Refined<divisible_by<16>, int>, End>,
-                                 Send<Refined<divisible_by<8>, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<divisible_by<16>, int>, End>,
-                                 Send<Refined<divisible_by<4>, int>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<divisible_by<8>, int>, End>,
-                                 Send<Refined<divisible_by<4>, int>, End>>);
-
-// Soundness: M does NOT divide N must NOT propagate.
-static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<6>, int>, End>,
-                                 Send<Refined<divisible_by<4>, int>, End>>);
-
-// Soundness: looser divisor does NOT imply tighter divisor (N < M).
-static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>,
-                                 Send<Refined<divisible_by<8>, int>, End>>);
-
-// ── FIXY-U-168 — Aligned lattice end-to-end coverage symmetrisation ─
-//
-// The existing Aligned<N>⇒Aligned<M> axiom (Refined.h:660, predates
-// U-167) had only ONE end-to-end witness (Loop<Send<Aligned<64>>>⩽
-// Loop<Send<Aligned<32>>> at line 105-108) — structurally identical
-// to U-167's DivisibleBy lattice which got 6 witnesses.  Symmetrise
-// the coverage: Aligned and DivisibleBy share the `N >= M ∧ M > 0 ∧
-// N mod M == 0` shape, so test density should match.
-//
-// Hardware-relevant chain: cache-line (64 B) ⇒ AVX-512 (32 B) ⇒
-// AVX2 (16 B) ⇒ SSE (8 B) ⇒ word (4 B).  A pointer pinned to the
-// strongest alignment subsumes every looser hardware requirement.
-
-// Reflexive (N=M=64):
-static_assert( is_subtype_sync_v<Send<Refined<aligned<64>, void*>, End>,
-                                 Send<Refined<aligned<64>, void*>, End>>);
-
-// Cache-line ⇒ AVX-512 ⇒ AVX2 ⇒ SSE ⇒ word:
-static_assert( is_subtype_sync_v<Send<Refined<aligned<64>, void*>, End>,
-                                 Send<Refined<aligned<16>, void*>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<aligned<32>, void*>, End>,
-                                 Send<Refined<aligned<8>, void*>, End>>);
-static_assert( is_subtype_sync_v<Send<Refined<aligned<16>, void*>, End>,
-                                 Send<Refined<aligned<4>, void*>, End>>);
-
-// Soundness: looser alignment does NOT imply tighter alignment.
-static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>,
-                                 Send<Refined<aligned<64>, void*>, End>>);
-
-// Soundness: non-multiple alignments (8 mod 3 = 2, 16 mod 6 = 4) must
-// NOT propagate even though the larger value compares ≥ the smaller.
-static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>,
-                                 Send<Refined<aligned<3>, void*>, End>>);
-
-// Recv contravariance — direction reverses: a Recv expecting tighter
-// alignment is satisfied by a Recv accepting looser alignment (the
-// recipient demands MORE alignment than peer can supply ⇒ unsound),
-// but a Recv expecting looser is satisfied by Recv pinned to tighter
-// (recipient demands LESS than peer supplies ⇒ sound, contravariance).
-static_assert( is_subtype_sync_v<Recv<Refined<aligned<16>, void*>, End>,
-                                 Recv<Refined<aligned<64>, void*>, End>>);
-static_assert(!is_subtype_sync_v<Recv<Refined<aligned<64>, void*>, End>,
-                                 Recv<Refined<aligned<16>, void*>, End>>);
-
-// ── FIXY-U-169 — Recv contravariance for DivisibleBy + ExactSize ──
-//
-// Symmetric to U-168b's Aligned contravariance witnesses but on the
-// modular and size axes.  The structural pattern: Recv<X> ⩽ Recv<Y>
-// requires Y ⩽ X (contravariance) — the position-spec Y must be a
-// subtype of the substitute-spec X.  For predicate strengthening
-// (P⇒Q means Refined<P> ⩽ Refined<Q>), this translates to:
-//
-//   Recv<Refined<looser, T>> ⩽ Recv<Refined<tighter, T>>
-//
-// because the looser-accepting recv handles ALL values arriving at
-// the tighter-position (subset relation).  The negative case fails
-// because a tighter-accepting recv would reject values the looser
-// position guarantees only as "satisfying the looser predicate".
-//
-// Failure mode this catches: if SessionPayloadSubsort.h erroneously
-// specialised Recv with covariant semantics (matching Send), these
-// witnesses would red — Send and Recv would behave identically,
-// which is a known protocol-soundness bug pattern in session-type
-// implementations.
-
-// DivisibleBy Recv contravariance: looser divisor ⩽ tighter divisor:
-static_assert( is_subtype_sync_v<Recv<Refined<divisible_by<8>, int>, End>,
-                                 Recv<Refined<divisible_by<16>, int>, End>>);
-// Soundness: tighter ⩽ looser FAILS (tighter recv would reject some
-// values the looser position accepts).
-static_assert(!is_subtype_sync_v<Recv<Refined<divisible_by<16>, int>, End>,
-                                 Recv<Refined<divisible_by<8>, int>, End>>);
-
-// ExactSize ⇒ LengthGe Recv contravariance — looser lower-bound recv
-// ⩽ tighter exact-size recv (because exact-size is a STRICTER spec,
-// so the Recv with stricter spec is a SUBTYPE of the loose-spec Recv
-// — the loose Recv handles all exact-size values too):
-static_assert( is_subtype_sync_v<Recv<Refined<length_ge<4>, std::span<int>>, End>,
-                                 Recv<Refined<exact_size<8>, std::span<int>>, End>>);
-// Soundness: exact-size Recv does NOT substitute for length_ge<4>
-// Recv (it would reject sizes ≠ 8 that length_ge<4> accepts):
+// A receiver asking only for a minimum length handles every fixed-size value.
+static_assert(is_subtype_sync_v<Recv<Refined<length_ge<4>, std::span<int>>, End>,
+                                Recv<Refined<exact_size<8>, std::span<int>>, End>>);
+// A receiver demanding one exact size would turn away the other sizes the
+// minimum-length position admits.
 static_assert(!is_subtype_sync_v<Recv<Refined<exact_size<8>, std::span<int>>, End>,
                                  Recv<Refined<length_ge<4>, std::span<int>>, End>>);
 
-// ExactSize ⇒ non_empty Recv contravariance — non_empty Recv ⩽
-// exact_size<8> Recv (non_empty Recv handles all exact_size<8> values
-// too):
-static_assert( is_subtype_sync_v<Recv<Refined<non_empty, std::span<int>>, End>,
-                                 Recv<Refined<exact_size<8>, std::span<int>>, End>>);
-// Soundness: exact-size Recv does NOT substitute for non_empty Recv
-// (would reject size-3, size-5, etc. that non_empty accepts):
+static_assert(is_subtype_sync_v<Recv<Refined<non_empty, std::span<int>>, End>,
+                                Recv<Refined<exact_size<8>, std::span<int>>, End>>);
 static_assert(!is_subtype_sync_v<Recv<Refined<exact_size<8>, std::span<int>>, End>,
                                  Recv<Refined<non_empty, std::span<int>>, End>>);
 
-// ── FIXY-U-170 — Recv contravariance for InRange + cross-family ───
-//
-// Closes the contravariance coverage on the value-range axis (the
-// most populous parametric family).  InRange has three subsumption
-// shapes that need contravariance witnesses:
-//   (i)   InRange transitivity (tighter range ⩽ looser range on Send;
-//         contravariance flips: looser-range Recv ⩽ tighter-range
-//         Recv)
-//   (ii)  InRange ⇒ BoundedAbove (range ceiling is an upper bound)
-//   (iii) InRange ⇒ positive (L≥1 bridge; U-164)
+// The value-range axis is the most populous parametric family, and it has
+// three subsumption shapes: one range inside another, a range implying its
+// own ceiling as an upper bound, and a range with a floor of one implying
+// positivity. Each needs its own receive-side witness.
 
-// InRange transitivity Recv contravariance — looser-range recv ⩽
-// tighter-range recv:
-static_assert( is_subtype_sync_v<Recv<Refined<in_range<0, 100>, int>, End>,
-                                 Recv<Refined<in_range<10, 20>, int>, End>>);
-// Soundness: tighter recv does NOT substitute for looser-range recv.
-static_assert(!is_subtype_sync_v<Recv<Refined<in_range<10, 20>, int>, End>,
-                                 Recv<Refined<in_range<0, 100>, int>, End>>);
+static_assert(is_subtype_sync_v<Recv<Refined<in_range<0, 100>, int>, End>, Recv<Refined<in_range<10, 20>, int>, End>>);
+static_assert(!is_subtype_sync_v<Recv<Refined<in_range<10, 20>, int>, End>, Recv<Refined<in_range<0, 100>, int>, End>>);
 
-// InRange ⇒ positive Recv contravariance — positive Recv ⩽ in_range
-// Recv (positive Recv accepts strict-positives which the in_range
-// position guarantees via L≥1):
-static_assert( is_subtype_sync_v<Recv<Refined<positive, int>, End>,
-                                 Recv<Refined<in_range<1, 100>, int>, End>>);
-// Soundness: in_range Recv does NOT substitute for positive Recv —
-// positive admits 200, 300, etc. that in_range<1,100> rejects.
-static_assert(!is_subtype_sync_v<Recv<Refined<in_range<1, 100>, int>, End>,
-                                 Recv<Refined<positive, int>, End>>);
+// A receiver of any positive value handles what a range with a floor of one
+// delivers.
+static_assert(is_subtype_sync_v<Recv<Refined<positive, int>, End>, Recv<Refined<in_range<1, 100>, int>, End>>);
+// The reverse would turn away every positive value past the range's ceiling.
+static_assert(!is_subtype_sync_v<Recv<Refined<in_range<1, 100>, int>, End>, Recv<Refined<positive, int>, End>>);
 
-// BoundedBelow Recv contravariance — looser-bound recv ⩽ tighter-
-// bound recv (parallel to U-162's BoundedBelow⇒BoundedBelow lattice):
-static_assert( is_subtype_sync_v<Recv<Refined<bounded_below<5>, int>, End>,
-                                 Recv<Refined<bounded_below<10>, int>, End>>);
-// Soundness: bounded_below<10> recv does NOT substitute for
-// bounded_below<5> recv (would reject 6, 7, 8, 9 the looser accepts).
-static_assert(!is_subtype_sync_v<Recv<Refined<bounded_below<10>, int>, End>,
-                                 Recv<Refined<bounded_below<5>, int>, End>>);
+static_assert(is_subtype_sync_v<Recv<Refined<bounded_below<5>, int>, End>, Recv<Refined<bounded_below<10>, int>, End>>);
+// The tighter receiver would turn away the values between the two floors.
+static_assert(
+    !is_subtype_sync_v<Recv<Refined<bounded_below<10>, int>, End>, Recv<Refined<bounded_below<5>, int>, End>>);
 
-// ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
-
-// Mock dispatch request — the kind of value that arrives at the FFI
-// boundary as raw bytes from a frontend.
+// The shape of a value that arrives at the boundary as raw bytes from a
+// frontend.
 struct DispatchRequest {
-    int  schema_hash;
+    int schema_hash;
     long shape0;
     long shape1;
 };
 
-// Internal mock-handle returned to the frontend.
 struct MockHandle {
-    int  request_id;
+    int request_id;
     bool succeeded;
 };
 
-// The validator: the only function in the codebase that produces
-// Tagged<DispatchRequest, vessel_trust::Validated>.  In production
-// this performs schema-hash lookup, shape bounds-check, dtype/device
-// enum range check, etc.  Returns std::expected so callers can route
-// validation errors through error branches.
+// The validator is the only place that produces a value tagged as validated,
+// which is what makes the tag mean anything. A production one would look the
+// schema hash up, bounds-check the shape and range-check the enums. The
+// result goes through the error channel so a caller can branch on a failure.
 
 enum class DispatchValidationError : int {
     SchemaUnknown,
     ShapeMalformed,
 };
 
-[[nodiscard]] auto validate(
-    Tagged<DispatchRequest, vessel_trust::FromPytorch>&& raw)
-    -> std::expected<Tagged<DispatchRequest, vessel_trust::Validated>,
-                     DispatchValidationError>
-{
+[[nodiscard]] auto validate(Tagged<DispatchRequest, vessel_trust::FromPytorch>&& raw)
+    -> std::expected<Tagged<DispatchRequest, vessel_trust::Validated>, DispatchValidationError> {
     const DispatchRequest& req = raw.value();
-    if (req.schema_hash == 0)            return std::unexpected{DispatchValidationError::SchemaUnknown};
+    if (req.schema_hash == 0) return std::unexpected{DispatchValidationError::SchemaUnknown};
     if (req.shape0 < 0 || req.shape1 < 0) return std::unexpected{DispatchValidationError::ShapeMalformed};
 
-    // Retag — exactly the signature the §6 discipline requires.
     return std::move(raw).template retag<vessel_trust::Validated>();
 }
 
-// Internal API that ONLY accepts validated input.  Note the parameter
-// type carries the provenance — there is no overload taking bare
-// DispatchRequest; the only path to this function is through
-// validate().  This is the load-bearing FFI gap-closure.
-
-[[nodiscard]] MockHandle internal_dispatch(
-    Tagged<DispatchRequest, vessel_trust::Validated> req)
-{
+// The parameter type carries the provenance, and there is no overload taking
+// the bare request, so the validator above is the only way in.
+[[nodiscard]] MockHandle internal_dispatch(Tagged<DispatchRequest, vessel_trust::Validated> req) {
     return MockHandle{
         .request_id = req.value().schema_hash,
-        .succeeded  = true,
+        .succeeded = true,
     };
 }
 
-// SUBSUMPTION TEST: a HYPOTHETICAL legacy internal API that takes
-// bare DispatchRequest still composes — the Validated wrapper flows
-// downward via subsumption.  In production we'd refactor away the
-// bare-T overloads and require the typed wrapper everywhere; this
-// shows that during the transition, the discipline is non-disruptive.
-
-[[nodiscard]] MockHandle legacy_internal_dispatch(DispatchRequest req)
-{
+// An older interface taking the bare request still composes, which is what
+// makes the discipline adoptable one call site at a time rather than all at
+// once.
+[[nodiscard]] MockHandle legacy_internal_dispatch(DispatchRequest req) {
     return MockHandle{
         .request_id = req.schema_hash + 1000,
-        .succeeded  = true,
+        .succeeded = true,
     };
 }
 
-// ── Runtime: happy path through the validator ──────────────────────
-
 int run_validator_happy_path() {
-    // Simulate FFI input.
-    auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{
-        DispatchRequest{42, 64, 128}};
+    auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{DispatchRequest{42, 64, 128}};
 
     auto validated = validate(std::move(raw));
     if (!validated) return 1;
 
     auto handle = internal_dispatch(std::move(*validated));
     if (handle.request_id != 42) return 2;
-    if (!handle.succeeded)        return 3;
+    if (!handle.succeeded) return 3;
     return 0;
 }
 
-// ── Runtime: validator catches malformed input ─────────────────────
-
 int run_validator_rejects_unknown_schema() {
     auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{
-        DispatchRequest{0, 64, 128}};   // schema_hash=0 is the sentinel
+        DispatchRequest{0, 64, 128}};  // a schema hash of zero is the sentinel
     auto validated = validate(std::move(raw));
-    if (validated)                                          return 1;
+    if (validated) return 1;
     if (validated.error() != DispatchValidationError::SchemaUnknown) return 2;
     return 0;
 }
 
 int run_validator_rejects_malformed_shape() {
-    auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{
-        DispatchRequest{42, -1, 128}};
+    auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{DispatchRequest{42, -1, 128}};
     auto validated = validate(std::move(raw));
-    if (validated)                                            return 1;
+    if (validated) return 1;
     if (validated.error() != DispatchValidationError::ShapeMalformed) return 2;
     return 0;
 }
 
-// ── Runtime: subsumption through the integration's discipline ──────
-//
-// A function expecting bare DispatchRequest accepts a Validated value
-// AT THE SUBTYPE LEVEL via .into() that explicitly drops the tag.
-// The discipline: every such call site is grep-discoverable as a
-// .into() invocation, naming the place where the provenance is
-// intentionally dropped.
-
+// Dropping the tag to reach a bare-request consumer is spelled out with
+// into(), so every place the provenance is deliberately discarded can be
+// found by searching for that call.
 int run_subsumption_via_explicit_into() {
-    auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{
-        DispatchRequest{7, 32, 32}};
+    auto raw = Tagged<DispatchRequest, vessel_trust::FromPytorch>{DispatchRequest{7, 32, 32}};
 
     auto validated = validate(std::move(raw));
     if (!validated) return 1;
 
-    // Explicit into() at the call-site for a legacy-style consumer.
     auto handle = legacy_internal_dispatch(std::move(*validated).into());
     if (handle.request_id != 1007) return 2;
-    if (!handle.succeeded)         return 3;
+    if (!handle.succeeded) return 3;
     return 0;
 }
 
-// ── Runtime worked example: predicate strengthening across a session
-//    (#227 + §22) ──────────────────────────────────────────────────────
+// A framing layer publishes payloads whose length carries a tight ceiling,
+// proven where the frame is built. A consumer downstream declares a higher
+// ceiling of its own, because it takes frames from several producers with
+// different limits. The producer's protocol is a subtype of the consumer's
+// exactly when its ceiling is the lower of the two.
 //
-// CNTP Layer-1 frame size discipline.  The framing layer publishes
-// payloads whose lengths are Refined<bounded_above<MAX_FRAME_TIGHT>,
-// uint32_t> — a TIGHT bound proven at the producer.  Downstream
-// consumers carry their own ceiling (MAX_FRAME_LOOSE), often higher
-// because they accept payloads from multiple producers with different
-// constraints.  The session-type subsumption flows the tighter
-// producer bound into the looser consumer position automatically:
-//
-//   Producer protocol: Send<Refined<bounded_above<TIGHT>, u32>, End>
-//   Consumer protocol: Send<Refined<bounded_above<LOOSE>, u32>, End>
-//                                                         ^^^^^^
-//   Subtype relation:  Producer ⩽ Consumer  iff  TIGHT ≤ LOOSE
-//                                                (predicate_implies)
-//
-// Without the wiring, the producer would have to declassify down to
-// the looser bound (loss of information) or the consumer would have
-// to widen its declared protocol (loss of intent).  With the wiring,
-// the same producer handle CAN BE TYPED as the looser-bound consumer
-// position by the framework — no runtime cost, no cast.
+// Without that relation the producer would have to widen its own bound and
+// lose what it proved, or the consumer would have to widen its declared
+// protocol and lose what it meant. With it, the same producer handle types as
+// the consumer position directly, with no cast and nothing to run.
 
-constexpr uint32_t MAX_FRAME_TIGHT = 1024;   // producer's tight bound
-constexpr uint32_t MAX_FRAME_LOOSE = 4096;   // consumer's looser ceiling
+constexpr uint32_t MAX_FRAME_TIGHT = 1024;  // the producer's ceiling
+constexpr uint32_t MAX_FRAME_LOOSE = 4096;  // the consumer's
 
-using TightProto = Send<Refined<bounded_above<MAX_FRAME_TIGHT>,  uint32_t>, End>;
-using LooseProto = Send<Refined<bounded_above<MAX_FRAME_LOOSE>,  uint32_t>, End>;
+using TightProto = Send<Refined<bounded_above<MAX_FRAME_TIGHT>, uint32_t>, End>;
+using LooseProto = Send<Refined<bounded_above<MAX_FRAME_LOOSE>, uint32_t>, End>;
 
-// The framework's subtype relation flows tighter → looser at compile
-// time.  The runtime body below exercises the actual value flow,
-// confirming the subsumption is information-preserving (the value
-// transmitted equals the value received) and zero-overhead (no
-// re-validation at the consumer).
+// The relation holds at compile time. The body below follows the value
+// through, so the subsumption is seen to preserve it and to cost the consumer
+// no re-validation.
 static_assert(is_subtype_sync_v<TightProto, LooseProto>);
 
 int run_predicate_strengthening_through_session() {
-    // Producer side: build a length-bounded value with the TIGHT bound.
     Refined<bounded_above<MAX_FRAME_TIGHT>, uint32_t> tight_len{777u};
 
-    // Subsumption: a value typed at the tighter bound IS-A value at
-    // the looser bound.  The Refined constructor's contract holds —
-    // any value satisfying the tighter predicate also satisfies the
-    // looser one (by predicate_implies<bounded_above<TIGHT>,
-    // bounded_above<LOOSE>>).  We extract via .value() (no cost)
-    // and re-wrap at the looser type for the downstream interface.
-    //
-    // In a real session, this re-wrap happens implicitly via Send's
-    // payload covariance — the compiler accepts the tighter handle
-    // where the looser is named.  The .value() round-trip here is
-    // for the test's runtime observation only.
+    // A value satisfying the tighter ceiling satisfies the looser one, so the
+    // wrapper's construction contract holds at the looser type without a
+    // check. In a session this re-wrap is what the send position's covariance
+    // does implicitly; unwrapping and rewrapping by hand here is only so the
+    // test can look at the value.
     Refined<bounded_above<MAX_FRAME_LOOSE>, uint32_t> loose_len{tight_len.value()};
 
     if (loose_len.value() != 777u) return 1;
 
-    // Reverse direction is rejected at compile time: a value at the
-    // LOOSER bound (which might be 2000) cannot inhabit the TIGHTER
-    // type without re-checking the predicate at runtime.  Demonstrate
-    // by showing the Refined ctor's contract DOES fire when the value
-    // would violate the tighter predicate (no UB; contract abort path
-    // is exercised by the framework's contract-violation handler in
-    // debug builds — here we just stay within the bound).
+    // Going the other way needs the predicate checked again, since a value
+    // under the looser ceiling may sit above the tighter one. The value below
+    // stays under both, so the construction contract holds rather than firing
+    // and aborting the process.
     Refined<bounded_above<MAX_FRAME_LOOSE>, uint32_t> within_tight_too{500u};
     Refined<bounded_above<MAX_FRAME_TIGHT>, uint32_t> renarrowed{within_tight_too.value()};
     if (renarrowed.value() != 500u) return 2;
@@ -653,22 +431,18 @@ int run_predicate_strengthening_through_session() {
     return 0;
 }
 
-// ── Runtime: predicate strengthening across distinct predicates ────
-
+// The same movement between two distinct predicates rather than two
+// parameters of one predicate.
 int run_positive_strengthens_to_non_negative() {
-    // A value carrying the Positive refinement IS-A NonNegative value
-    // by predicate_implies<positive, non_negative>.  The protocol
-    // payload position changes from Refined<positive, int> to
-    // Refined<non_negative, int> via Send covariance with no runtime
-    // cost; here we observe the value is preserved.
-    Refined<positive,     int> p{42};
+    // A positive value is a non-negative one, so the payload position can
+    // change between the two at no cost. The check is that the value survives.
+    Refined<positive, int> p{42};
     Refined<non_negative, int> n{p.value()};
-    if (n.value() != 42)      return 1;
+    if (n.value() != 42) return 1;
 
-    // power_of_two ⇒ non_zero — same pattern.
     Refined<power_of_two, std::size_t> pot{64u};
-    Refined<non_zero,     std::size_t> nz{pot.value()};
-    if (nz.value() != 64u)    return 2;
+    Refined<non_zero, std::size_t> nz{pot.value()};
+    if (nz.value() != 64u) return 2;
 
     return 0;
 }
@@ -676,12 +450,12 @@ int run_positive_strengthens_to_non_negative() {
 }  // anonymous namespace
 
 int main() {
-    if (int rc = run_validator_happy_path();                       rc != 0) return rc;
-    if (int rc = run_validator_rejects_unknown_schema();           rc != 0) return 100 + rc;
-    if (int rc = run_validator_rejects_malformed_shape();          rc != 0) return 200 + rc;
-    if (int rc = run_subsumption_via_explicit_into();              rc != 0) return 300 + rc;
-    if (int rc = run_predicate_strengthening_through_session();    rc != 0) return 400 + rc;
-    if (int rc = run_positive_strengthens_to_non_negative();       rc != 0) return 500 + rc;
+    if (int rc = run_validator_happy_path(); rc != 0) return rc;
+    if (int rc = run_validator_rejects_unknown_schema(); rc != 0) return 100 + rc;
+    if (int rc = run_validator_rejects_malformed_shape(); rc != 0) return 200 + rc;
+    if (int rc = run_subsumption_via_explicit_into(); rc != 0) return 300 + rc;
+    if (int rc = run_predicate_strengthening_through_session(); rc != 0) return 400 + rc;
+    if (int rc = run_positive_strengthens_to_non_negative(); rc != 0) return 500 + rc;
 
     std::puts("session_payload_subsort: validator + subsumption + "
               "predicate strengthening + non-axiom rejection OK");

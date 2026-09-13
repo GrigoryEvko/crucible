@@ -1,11 +1,5 @@
 #pragma once
 
-// GAPS-167. Forge IR001 comm-through-IR substrate.
-//
-// This is the op taxonomy and typed-node carrier only. Forge phases,
-// IR002 KernelNode lowering, Mimic network backends, and cross-vendor
-// CI consume this surface in later tasks; they are not implemented here.
-
 #include <crucible/NumericalRecipe.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
@@ -39,8 +33,10 @@ enum class Ir001OpCategory : std::uint8_t {
     Discovery,
 };
 
+// The order of these is load-bearing. A kind belongs to the category
+// whose range of values it falls in, so one declared outside its own
+// group silently joins another.
 enum class Ir001OpKind : std::uint16_t {
-    // Compute.
     Gemm = 0,
     Conv,
     Attention,
@@ -49,7 +45,6 @@ enum class Ir001OpKind : std::uint16_t {
     Softmax,
     LayerNorm,
     Scan,
-    // Memory movement.
     CopyHostToDevice,
     CopyDeviceToHost,
     CopyDeviceToDevice,
@@ -58,7 +53,6 @@ enum class Ir001OpKind : std::uint16_t {
     TmaGatherScatter,
     Prefetch,
     Evict,
-    // Point-to-point communication.
     SendSync,
     SendAsync,
     SendWithCompletion,
@@ -72,7 +66,6 @@ enum class Ir001OpKind : std::uint16_t {
     Get,
     AtomicCompareExchange,
     AtomicFetchAdd,
-    // Synchronous collectives.
     AllReduce,
     AllGather,
     AllGatherV,
@@ -87,35 +80,29 @@ enum class Ir001OpKind : std::uint16_t {
     Barrier,
     BarrierWithTimeout,
     SparseAllToAll,
-    // Asynchronous collectives.
     AsyncSendBatch,
     AsyncRecvBatch,
     GossipRound,
     EventualAggregate,
-    // Coordination.
     BarrierWithQuorum,
     LeaseAcquire,
     LeaseRelease,
     AtomicAddRemote,
     SemaphoreWait,
     SemaphorePost,
-    // Storage.
     LoadNvme,
     StoreNvme,
     Checkpoint,
     Restore,
-    // Control.
     Branch,
     Loop,
     Fork,
     Join,
-    // Telemetry.
     CounterRead,
     SamplePmu,
     SampleThermal,
     WirePcapEmit,
     IntTelemetryEmit,
-    // Discovery.
     LldpSend,
     LldpRecv,
     SwimPing,

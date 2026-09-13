@@ -64,21 +64,15 @@ cog::CogIdentity gpu(std::uint64_t lo) {
     return id;
 }
 
-topology::CongestionState state(std::uint64_t bw,
-                                std::uint64_t rtt,
-                                topology::CongestionMode mode) {
+topology::CongestionState state(std::uint64_t bw, std::uint64_t rtt, topology::CongestionMode mode) {
     topology::CongestionState s{};
     s.algorithm = cntp::CcAlgorithm::Bbr3;
-    s.btl_bw_bps = topology::PositiveBandwidthBps{
-        bw, typename topology::PositiveBandwidthBps::Trusted{}};
-    s.rt_prop_us = topology::PositiveMicroseconds{
-        rtt, typename topology::PositiveMicroseconds::Trusted{}};
-    s.cwnd_bytes = topology::PositiveWindowBytes{
-        std::uint32_t{65'536},
-        typename topology::PositiveWindowBytes::Trusted{}};
-    s.ssthresh_bytes = topology::PositiveWindowBytes{
-        std::uint32_t{131'072},
-        typename topology::PositiveWindowBytes::Trusted{}};
+    s.btl_bw_bps = topology::PositiveBandwidthBps{bw, typename topology::PositiveBandwidthBps::Trusted{}};
+    s.rt_prop_us = topology::PositiveMicroseconds{rtt, typename topology::PositiveMicroseconds::Trusted{}};
+    s.cwnd_bytes =
+        topology::PositiveWindowBytes{std::uint32_t{65'536}, typename topology::PositiveWindowBytes::Trusted{}};
+    s.ssthresh_bytes =
+        topology::PositiveWindowBytes{std::uint32_t{131'072}, typename topology::PositiveWindowBytes::Trusted{}};
     s.in_flight_bytes = 32'768;
     s.mode = mode;
     s.has_bbr = true;
@@ -87,19 +81,16 @@ topology::CongestionState state(std::uint64_t bw,
     return s;
 }
 
-topology::TcpInfoSnapshot sample(std::uint64_t bw,
-                                 std::uint64_t rtt,
-                                 topology::CongestionMode mode) {
+topology::TcpInfoSnapshot sample(std::uint64_t bw, std::uint64_t rtt, topology::CongestionMode mode) {
     auto tagged = topology::tag_tcp_info_for_test(state(bw, rtt, mode));
     assert(tagged.has_value());
     return *tagged;
 }
 
 void test_names_and_admission() {
-    assert(topology::congestion_mode_name(topology::CongestionMode::BbrDrain) ==
-           std::string_view{"BbrDrain"});
-    assert(topology::telemetry_error_name(topology::TelemetryError::InvalidNicCog) ==
-           std::string_view{"InvalidNicCog"});
+    assert(topology::congestion_mode_name(topology::CongestionMode::BbrDrain) == std::string_view{"BbrDrain"});
+    assert(topology::telemetry_error_name(topology::TelemetryError::InvalidNicCog)
+           == std::string_view{"InvalidNicCog"});
     auto zero = topology::admit_sample_period_ns(0);
     assert(!zero.has_value());
     assert(zero.error() == topology::TelemetryError::DeadlineOverflow);
@@ -124,15 +115,13 @@ void test_aggregate_and_drift() {
     assert(aggregate.mean_btl_bw_bps == 725'000'000);
     assert(aggregate.worst_mode == topology::CongestionMode::Loss);
 
-    auto baseline = topology::PositiveBandwidthBps{
-        std::uint64_t{1'200'000'000},
-        typename topology::PositiveBandwidthBps::Trusted{}};
-    auto drift = topology::detect_congestion_drift(
-        aggregate, baseline,
-        topology::CongestionDriftPolicy{
-            .bandwidth_drop_ppm = 100'000,
-            .min_samples = 4,
-        });
+    auto baseline = topology::PositiveBandwidthBps{std::uint64_t{1'200'000'000},
+                                                   typename topology::PositiveBandwidthBps::Trusted{}};
+    auto drift = topology::detect_congestion_drift(aggregate, baseline,
+                                                   topology::CongestionDriftPolicy{
+                                                       .bandwidth_drop_ppm = 100'000,
+                                                       .min_samples = 4,
+                                                   });
     assert(drift.degraded);
     assert(drift.bandwidth_drop_ppm >= 100'000);
     std::printf("  test_aggregate_and_drift: PASSED\n");
@@ -141,8 +130,7 @@ void test_aggregate_and_drift() {
 void test_worker_recording() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
-    auto worker =
-        topology::mint_congestion_telemetry_worker<2, 8>(init);
+    auto worker = topology::mint_congestion_telemetry_worker<2, 8>(init);
 
     std::array nics{nic(10), nic(11)};
     auto start = worker.start(init, std::span{nics});
@@ -170,10 +158,9 @@ void test_worker_recording() {
 
     topology::CongestionObservationSet sinks{};
     topology::publish_congestion(sinks, 0, *last, 7);
-    auto p95 = observe::latest_observation(
-        sinks[static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps)]);
-    assert(p95.metric_id == topology::congestion_metric_id(
-        0, topology::CongestionMetricSlot::P95BandwidthBps));
+    auto p95 =
+        observe::latest_observation(sinks[static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps)]);
+    assert(p95.metric_id == topology::congestion_metric_id(0, topology::CongestionMetricSlot::P95BandwidthBps));
     assert(p95.sequence == 7);
     std::printf("  test_worker_recording: PASSED\n");
 }
@@ -204,12 +191,10 @@ void test_live_tcp_info_if_available() {
 }
 
 void test_aggregate_finalize_guard() {
-    // fixy-A5-031 regression: aggregate_congestion and harvest_per_link
-    // share finalize_aggregate.  Empty span ⇒ sample_count=0 ⇒ helper
-    // must early-return, never divide.  Pre-extraction the guard lived
-    // only in aggregate_congestion; harvest_per_link divided
-    // unconditionally.  Same helper now binds both call sites — drift
-    // structurally impossible.
+    // Both aggregation entry points share one finalize helper, so an
+    // empty span must leave every mean at zero rather than divide by a
+    // sample count of zero.  One helper for both call sites is what
+    // makes the two paths impossible to drift apart.
     auto empty = topology::aggregate_congestion(nic(101), {});
     assert(empty.sample_count == 0);
     assert(empty.mean_btl_bw_bps == 0);
@@ -223,8 +208,7 @@ void test_aggregate_finalize_guard() {
         sample(200'000'000ull, 2'500ull, topology::CongestionMode::BbrProbeBw),
         sample(300'000'000ull, 3'500ull, topology::CongestionMode::BbrProbeBw),
     };
-    auto agg = topology::aggregate_congestion(
-        nic(102), std::span<const topology::TcpInfoSnapshot>{samples});
+    auto agg = topology::aggregate_congestion(nic(102), std::span<const topology::TcpInfoSnapshot>{samples});
     assert(agg.sample_count == 3);
     assert(agg.mean_btl_bw_bps == 200'000'000ull);
     assert(agg.nic_uuid == nic(102).uuid);
@@ -235,15 +219,12 @@ void test_aggregate_finalize_guard() {
 }  // namespace
 
 int main() {
-    static_assert(sizeof(topology::TcpInfoSnapshot) ==
-                  sizeof(topology::CongestionState));
+    static_assert(sizeof(topology::TcpInfoSnapshot) == sizeof(topology::CongestionState));
     static_assert(topology::CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
     static_assert(!topology::CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
     static_assert(topology::CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);
     static_assert(!topology::CtxFitsCongestionTelemetryHarvest<effects::HotFgCtx>);
-    static_assert(std::same_as<
-                  topology::TcpInfoSnapshot::tag_type,
-                  safety::source::TcpInfo>);
+    static_assert(std::same_as<topology::TcpInfoSnapshot::tag_type, safety::source::TcpInfo>);
     static_assert(std::is_trivially_copyable_v<topology::CongestionState>);
 
     std::printf("test_congestion_telemetry:\n");

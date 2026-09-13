@@ -1,20 +1,16 @@
 #pragma once
 
-// SymbolTable: per-symbol metadata storage.
-//
-// Maps SymbolId → (kind, hint, range, flags). Compact vector layout
-// indexed by the same SymbolId used in Expr::symbol_id.
-//
-// Designed to hold everything the Simplifier needs for range-based
-// rewriting without calling back into Python.
+// Per-symbol metadata, held in a vector indexed by the same identifier an
+// expression node carries. It holds everything a range-based rewrite needs,
+// so the rewrite never has to ask the frontend.
 
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>  // FIXY-U-096u: tags::source::FromInternal
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096u: Bits / Tagged via the fixy umbrella
-#include <crucible/safety/Decide.h>  // CRUCIBLE_PRE predicate catalog (crucible::decide)
-#include <crucible/safety/Pre.h>  // CRUCIBLE_PRE macro
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 
 #include <bit>
 #include <cstddef>
@@ -25,60 +21,49 @@
 
 namespace crucible {
 
-// Symbol origin type, mirrors torch.utils._sympy.symbol.SymT.
-// Determines naming prefix and default assumptions.
+// Where a symbol came from, which fixes its default assumptions.
 enum class SymKind : uint8_t {
-    SIZE,  // s0, s1, ...; integer, typically positive, ≥ 2
-    FLOAT,  // zf0, zf1, ...; real
-    UNBACKED_INT,  // u0, u1, ...; integer, no concrete hint
-    UNBACKED_FLOAT,  // zuf0, zuf1, ...; real, no concrete hint
+    SIZE,  // an integer, ordinarily at least two
+    FLOAT,
+    UNBACKED_INT,  // an integer with no concrete value behind it
+    UNBACKED_FLOAT,
 };
 
-// Per-symbol flags (separate from ExprFlags on Expr nodes).
-//
-// Worn through fixy::wrap::Bits<SymFlags> on the SymbolEntry field — the
-// type system rejects mixing this 1-byte slot with any other flag enum
-// (NodeFlags, ExprFlags, RecipeFlags) because each lives in its own
-// Bits<E> instantiation and they do not compose.
 enum class SymFlags : std::uint8_t {
-    IS_SIZE_LIKE = 1 << 0,  // can assume ≥ 2 in size-oblivious mode
-    HAS_HINT = 1 << 1,  // hint field is valid
-    IS_BACKED = 1 << 2,  // symbol originates from real tensor metadata
+    IS_SIZE_LIKE = 1 << 0,  // may be assumed at least two where sizes are treated abstractly
+    HAS_HINT = 1 << 1,  // the hint field holds a value
+    IS_BACKED = 1 << 2,  // the symbol came from real tensor metadata
 };
 
 struct SymbolEntry {
-    int64_t hint = INT64_MIN;  // concrete value from tracing run (INT64_MIN = no hint)
-    int64_t range_lower = 0;  // lower bound (kIntNegInf = unknown)
-    int64_t range_upper = 0;  // upper bound (kIntPosInf = unknown)
-    SymKind kind = SymKind::SIZE;  // 1 byte
-    fixy::wrap::Bits<SymFlags> sym_flags{};  // 1 byte — typed bit-field
-    uint16_t expr_flags = 0;  // ExprFlags to stamp on Expr nodes (IS_INTEGER, IS_POSITIVE, etc.)
-    // 4 bytes padding to align to 32 bytes (3 × int64_t + 4 × uint8/16)
+    int64_t hint = INT64_MIN;  // a value observed while tracing; the minimum means none
+    int64_t range_lower = 0;
+    int64_t range_upper = 0;
+    SymKind kind = SymKind::SIZE;
+    fixy::wrap::Bits<SymFlags> sym_flags{};
+    uint16_t expr_flags = 0;  // the assumption bits to stamp on an expression node
     uint32_t _pad = 0;
 };
 
 static_assert(sizeof(SymbolEntry) == 32, "SymbolEntry should be 32 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
 
-// WRAP-SymTab-4 (#1032): IDs freshly minted by SymbolTable::add()
-// carry internal provenance.  Serialized / FFI SymbolIds must cross a
-// separate source::External validation lane before indexing entries_.
+// An identifier this table hands out is known to index this table. One that
+// arrives from a file or across a language boundary is not, and has to be
+// validated before it reaches the accessors below.
 using InternalSymbolId = ::crucible::fixy::wrap::Tagged<SymbolId, ::crucible::fixy::tags::source::FromInternal>;
 static_assert(sizeof(InternalSymbolId) == sizeof(SymbolId));
 
 class CRUCIBLE_OWNER SymbolTable {
 public:
-    // Sentinel values for integer ranges.
-    // INT64_MIN is reserved as "no hint" sentinel, so -int_oo uses MIN+1.
+    // The smallest int64 is taken as the no-hint marker, so the unbounded
+    // lower end of a range is one above it.
     static constexpr int64_t kIntPosInf = INT64_MAX;
     static constexpr int64_t kIntNegInf = INT64_MIN + 1;
     static constexpr int64_t kNoHint = INT64_MIN;
 
     SymbolTable() = default;
 
-    // Register a new symbol. Returns the assigned ID.
-    // Caller provides assumptions as ExprFlags bits (IS_INTEGER, IS_POSITIVE, etc).
-    // gnu::cold: startup-only, invoked once per symbol at DAG build time.
     [[nodiscard, gnu::cold]] InternalSymbolId add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
         auto id = SymbolId{static_cast<uint32_t>(entries_.size())};
         SymbolEntry e{};
@@ -87,10 +72,10 @@ public:
         e.expr_flags = expr_flags;
         if (is_backed) e.sym_flags.set(SymFlags::IS_BACKED);
 
-        // Default ranges based on kind
         switch (kind) {
             case SymKind::SIZE:
-                // Backed sizes default to [2, +inf) (specialize_zero_one=True default)
+                // A size starts at two, not at zero: the values zero and one
+                // are specialized rather than left symbolic.
                 e.range_lower = 2;
                 e.range_upper = kIntPosInf;
                 break;
@@ -100,7 +85,7 @@ public:
                 break;
             case SymKind::FLOAT:
             case SymKind::UNBACKED_FLOAT:
-                // Float ranges: store as bitcast doubles
+                // A real-valued range is stored as the bits of its doubles.
                 e.range_lower = bitcast_double(-std::numeric_limits<double>::infinity());
                 e.range_upper = bitcast_double(std::numeric_limits<double>::infinity());
                 break;
@@ -112,37 +97,25 @@ public:
         return InternalSymbolId{id};
     }
 
-    // Set the concrete hint for a backed symbol.
-    //
-    // Bounds + validity contract is enforced by entry_at_mut (#114);
-    // there is no longer a duplicated `pre` here.
     void set_hint(SymbolId id, int64_t hint) {
         auto& e = entry_at_mut(id);
         e.hint = hint;
         e.sym_flags.set(SymFlags::HAS_HINT);
     }
 
-    // Set float hint (bitcast to int64_t).
     void set_hint_float(SymbolId id, double hint) {
         auto& e = entry_at_mut(id);
         e.hint = bitcast_double(hint);
         e.sym_flags.set(SymFlags::HAS_HINT);
     }
 
-    // Tighten the integer range. Only narrows, never widens.
+    // Neither bound ever moves outward, so one call establishes a constraint
+    // that no later call can loosen.
     //
-    // Narrowing invariant: after the call, the stored range is a subset of
-    // [lower, upper] — specifically, range_lower ≥ lower and
-    // range_upper ≤ upper.  Neither bound ever relaxes outward, so a caller
-    // that wants to observe "the symbol is in [a, b]" only needs to call
-    // this once with [a, b]; subsequent calls can only further constrain.
-    //
-    // const on value params is required by P2900R14 to use them in post().
-    // The post() clause keeps calling `entries_[id.raw()]` directly
-    // because the contract expression cannot re-invoke entry_at() —
-    // doing so would re-check the bounds contract inside the post eval,
-    // not visible on post-violation reports.  The bounds-guard comes
-    // from the body's entry_at_mut() call.
+    // The value parameters are const because a postcondition may only read a
+    // parameter that is. The postconditions index the vector directly rather
+    // than calling the accessor, which would re-evaluate that accessor's own
+    // contract inside the check.
     void tighten_range(const SymbolId id, const int64_t lower, const int64_t upper)
         post(entries_[id.raw()].range_lower >= lower) post(entries_[id.raw()].range_upper <= upper) {
         auto& e = entry_at_mut(id);
@@ -151,8 +124,6 @@ public:
     }
 
     void set_size_like(SymbolId id) { entry_at_mut(id).sym_flags.set(SymFlags::IS_SIZE_LIKE); }
-
-    // ---- Queries ----
 
     [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const CRUCIBLE_LIFETIMEBOUND { return entry_at(id); }
 
@@ -182,16 +153,14 @@ public:
 
     [[nodiscard, gnu::pure]] uint16_t expr_flags(SymbolId id) const noexcept { return entry_at(id).expr_flags; }
 
-    // Range check: is value guaranteed to be in [lo, hi]?
+    // True when the symbol's whole range lies inside the one given.
     [[nodiscard, gnu::pure]] bool range_contains(SymbolId id, int64_t lo, int64_t hi) const noexcept {
         const auto& e = entry_at(id);
         return e.range_lower >= lo && e.range_upper <= hi;
     }
 
-    // Is the symbol guaranteed positive (lower bound > 0)?
     [[nodiscard, gnu::pure]] bool is_positive(SymbolId id) const noexcept { return entry_at(id).range_lower > 0; }
 
-    // Is the symbol guaranteed nonnegative (lower bound >= 0)?
     [[nodiscard, gnu::pure]] bool is_nonnegative(SymbolId id) const noexcept { return entry_at(id).range_lower >= 0; }
 
     [[nodiscard, gnu::pure]] size_t size() const noexcept { return entries_.size(); }
@@ -201,43 +170,16 @@ private:
 
     [[nodiscard]] static double bitcast_to_double(int64_t v) { return std::bit_cast<double>(v); }
 
-    // ── Indexing helpers (#114) ──────────────────────────────────────
+    // Every read and every write of the vector goes through these two, which
+    // is what keeps the guards below to two sites rather than fifteen.
     //
-    // Every read/write of SymbolTable's backing vector goes through
-    // these two helpers.  The contract enforces BOTH:
+    // The validity check rejects the default identifier, which is what an
+    // expression node carries when it is not a symbol at all. Passing that
+    // straight through would index the vector at the largest uint32.
     //
-    //   (a) the SymbolId is valid — i.e. NOT the default-constructed
-    //       sentinel UINT32_MAX that Expr nodes carry when they aren't
-    //       symbols.  Without this guard, reading `expr.symbol_id` on
-    //       a non-symbol Expr and feeding it to any query function
-    //       below would dereference `entries_[UINT32_MAX]` — silent
-    //       catastrophic OOB before #114.  This clause stays as a
-    //       P2900 `pre()` because it references the parameter only
-    //       (no class-member dereference at consteval-bypass risk).
-    //
-    //   (b) the raw index is within the current vector size.  The
-    //       three mutators already asserted this; the queries did not,
-    //       leaving a TypeSafe hole where a stale SymbolId from a
-    //       different SymbolTable (or from a serialized snapshot
-    //       loaded at different time) silently OOB-read.  This clause
-    //       moves to in-body CRUCIBLE_PRE because P2900 `pre()` on
-    //       member functions referencing a class member through `this`
-    //       (`entries_.size()`) is silently bypassed at consteval in
-    //       GCC 16.1.1 — same gotcha that forced CONTRACT-100 /
-    //       CONTRACT-101 to migrate.
-    //
-    // The bounds check discharges through the named predicate
-    // `crucible::decide::in_range` (CONTRACT-102) — closed-interval
-    // bounds.  The `!entries_.empty()` guard is paired because
-    // `entries_.size() - 1` underflows when size==0 to SIZE_MAX,
-    // which would make `in_range(id, 0, SIZE_MAX)` accept everything;
-    // production never calls these accessors on an empty table (no
-    // valid SymbolId can exist for a zero-entry table) but defense-
-    // in-depth catches a future refactor that exposes this path.
-    //
-    // Consolidating into one pair of helpers means future audits that
-    // want to log / instrument / harden access have exactly two
-    // touchpoints instead of ~15 raw-indexing sites.
+    // The empty check is not redundant with the range check: on an empty
+    // table the subtraction wraps to the largest size_t and the range check
+    // then admits every index.
 
     [[nodiscard, gnu::pure]] const SymbolEntry& entry_at(SymbolId id) const noexcept pre(id.is_valid()) {
         CRUCIBLE_PRE(!entries_.empty());

@@ -1,17 +1,5 @@
 #pragma once
 
-// ── crucible::safety::extract::is_simd_width_pinned_v ───────────────
-//
-// FIXY-V-256 — wrapper-detection predicate for `SimdWidthPinned<W, T>`
-// (the V-256 SimdIsa-axis carrier).  Mechanical sibling of IsHw /
-// IsVendor — the partial spec captures the SimdIsa NTTP alongside the
-// wrapped type, so downstream dispatchers can read the pinned ISA
-// capability off the type without instantiating the wrapper.
-//
-// The detector keys on the wrapper class identity, not the lattice
-// value: a `SimdWidthPinned<Avx2, T>` and a look-alike struct carrying a
-// SimdIsa field are NOT confused.
-
 #include <crucible/safety/SimdWidthPinned.h>
 
 #include <type_traits>
@@ -50,8 +38,6 @@ using simd_width_pinned_value_t = typename detail::is_simd_width_pinned_impl<std
 template <typename T>
     requires is_simd_width_pinned_v<T>
 inline constexpr SimdIsa_v simd_width_pinned_isa_v = detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::isa;
-
-// ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_simd_width_pinned_self_test {
 

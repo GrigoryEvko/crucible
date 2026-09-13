@@ -1,86 +1,21 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// MpscRing<T, Capacity> — multi-producer single-consumer ring buffer
+// Multi-producer single-consumer ring.  A cell holds only T.  The ready
+// signal lives out of band, one bit per cell in a packed bitmap.
 //
-// Out-of-band metadata design (post-Vyukov).  Cells are PURE T (no
-// per-cell sequence number).  Ready signal lives in a separate
-// bitmap (1 bit per cell, packed into atomic<uint64_t> words).
+// The rejected alternative is a per-cell sequence number, which forces
+// every cell onto its own cache line and pushes the ring out of L1d at
+// useful capacities.  The bitmap leaves the cells packed.
 //
-// Cache footprint for 1024 cells × uint64 (8 byte T):
-//   Cells:    8 KB (packed, no padding)
-//   Bitmap:   128 B (16 atomic words)
-//   Counters: 128 B (head_ + tail_, each on own cache line)
-//   Total:    ~8.4 KB — same density as SPSC, fits L1d 4× over.
-//
-// Vs Vyukov per-cell sequence (the previous implementation):
-//   Vyukov: 64 KB (alignas(64) cells × 1024) — exceeds L1d (32 KB)
-//   Bitmap:  8.4 KB — 7.77× more dense, fits L1d
-//
-// ─── The cross-round synchronization (the hard part) ──────────────
-//
-// With 1 bit per cell, the bit doesn't encode round.  Consumer's
-// tail counter implicitly tracks round.  The hazard: producer P2 at
-// round R+1 cell K must NOT race with producer P1's round R cell K.
-//
-// Without per-cell sequence, we use the CAPACITY GATE itself:
-//
-//   Producer at pos = K + Capacity checks pos + 1 - tail <= Capacity
-//   ⇒ tail >= K + 1
-//   ⇒ consumer has cleared bit K (via fetch_and, release) AND
-//     advanced tail (via store, release) BEFORE we can claim.
-//
-// By happens-before chain (consumer's release-store on tail synced
-// with our acquire-load), the consumer's bit-clear is visible to us
-// BEFORE our bit-set.  Bit transitions: 0 → 1 (P1) → 0 (consumer)
-// → 1 (P2), each a distinct atomic op.  Race-free.
-//
-// ─── Per-call atomic budget ────────────────────────────────────────
-//
-//   try_push (single):
-//     1 acquire-load on tail (capacity check)
-//     1 weak CAS on head (claim 1 ticket)
-//     1 plain data write
-//     1 fetch_or (1 bit) on bitmap
-//
-//   try_push_batch<N>:
-//     1 acquire-load on tail
-//     1 weak CAS on head (claim N tickets)
-//     N data writes (pure memcpy through L1d store buffer)
-//     ⌈N/64⌉ fetch_or ops on bitmap (release; sets up to 64 bits at once)
-//
-//     Per-item cost: O(1/N) atomic ops + O(1) data store.
-//     For N=1024 on Zen 3: ~0.47 ns/item (vs Vyukov's 1.98 ns/item,
-//     4.2× faster; within 6× of SPSC's 0.076 ns/item floor).
-//
-//   try_pop (single consumer ONLY):
-//     1 acquire-load on bitmap word
-//     1 plain data read
-//     1 fetch_and (clear bit) — release
-//     1 plain store on tail (release on x86, free on TSO)
-//
-//   try_pop_batch<N>:
-//     1 acquire-load on bitmap word(s)
-//     scan for ready prefix R
-//     R plain data reads
-//     ⌈R/64⌉ fetch_and ops on bitmap
-//     1 plain store on tail
-//
-// ─── Constraints ───────────────────────────────────────────────────
-//
-//   * T trivially-copyable + trivially-destructible (per-cell direct
-//     assignment, no constructor races).
-//   * Capacity must be a power of two AND >= 64 (bitmap word
-//     alignment; smaller capacity could be supported but not needed
-//     in production).
-//   * Single consumer ONLY (caller MUST guarantee).  Wrapped by
-//     PermissionedMpscChannel which enforces this via linear
-//     Permission<Consumer<UserTag>>.
-//   * Batched API: caller passes std::span<const T> for push or
-//     std::span<T> for pop.  Batches need not align to bitmap word
-//     boundaries — internal logic handles partial words.
-//
-// ═══════════════════════════════════════════════════════════════════
+// One bit cannot encode a round, so nothing in a cell distinguishes a
+// producer at round R from a producer at round R + 1 on the same cell
+// K.  The capacity gate supplies the missing order.  A producer at
+// position K + Capacity passes the gate only when tail >= K + 1, which
+// means the consumer has already cleared bit K with a release fetch_and
+// and then advanced tail with a release store.  The producer's acquire
+// load of tail synchronizes with that store, so the clear is visible
+// before the producer's set.  Bit K therefore moves 0, 1, 0, 1 in that
+// order, each step a distinct atomic operation.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Mutation.h>
@@ -99,15 +34,8 @@
 
 namespace crucible::concurrent {
 
-// ── RingValue<T> concept ──────────────────────────────────────────
-//
-// Constraints on T for safe storage in a non-atomic cell field
-// guarded by the out-of-band bitmap publish/consume protocol.
-
 template <typename T>
 concept RingValue = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
-
-// ── MpscRing<T, Capacity> ─────────────────────────────────────────
 
 template <RingValue T, std::size_t Capacity>
 class MpscRing : public safety::Pinned<MpscRing<T, Capacity>> {
@@ -120,73 +48,50 @@ public:
 
 private:
     static constexpr std::uint64_t MASK = std::uint64_t{Capacity - 1};
-    // Ceil-divide: small Capacity (<64) still gets one bitmap word.
-    // Unused high bits in the word stay zero; never touched because
-    // cell_idx < Capacity always.
+    // A Capacity below 64 still gets one word.  Its unused high bits
+    // stay zero, because every index derives from a masked position and
+    // so is always below Capacity.
     static constexpr std::size_t WORDS = (Capacity + 63) / 64;
     static constexpr std::uint64_t kAllSet = ~std::uint64_t{0};
 
 public:
     MpscRing() noexcept = default;
 
-    // ── try_push (single item) ────────────────────────────────────
-    //
-    // Claim head via weak CAS, write cell, set bit.  Returns false
-    // iff the queue is full (tail hasn't drained enough).
-    //
-    // Memory ordering:
-    //   - tail_.get(acquire): pairs with consumer's tail.store(release).
-    //     This sync edge ensures the consumer's bit-clear (which
-    //     happened-before tail-advance) is visible to our bit-set.
-    //   - head_.compare_exchange_advance_weak(relaxed, relaxed):
-    //     ticket claim only; no data sync needed (the bit-set later
-    //     handles publish ordering).
-    //   - cell store: non-atomic; we exclusively own the cell from
-    //     CAS-success until bit-set.
-    //   - ready_.fetch_or(release): publishes the data write to the
-    //     consumer's acquire-load on the bitmap.
+    // The head CAS is relaxed because it claims a ticket and carries no
+    // payload.  The release on the bitmap set is what publishes the
+    // cell write, and the caller owns the cell from CAS success until
+    // that set.
 
     [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
         for (;;) {
-            // FIXY-FOUND-115: load_relaxed (not peek_relaxed) — MPSC
-            // producers race-CAS a SHARED head_; the sole-writer
-            // claim peek_relaxed asserts is false here.  Identical
-            // codegen; the name surfaces the race-CAS discipline.
+            // load_relaxed, not peek_relaxed: producers race-CAS a
+            // shared head_, so the sole-writer claim behind
+            // peek_relaxed does not hold here.
             const std::uint64_t pos = head_.load_relaxed();
             const std::uint64_t tail_val = tail_.get();
-            // Capacity check: pos + 1 - tail_val <= Capacity.
-            // Equivalent (avoid overflow): pos - tail_val < Capacity.
+            // The gate is pos + 1 - tail_val <= Capacity, rewritten to
+            // subtract first so it cannot overflow.
             if (pos - tail_val >= Capacity) [[unlikely]] {
                 return false;
             }
             std::uint64_t expected = pos;
             if (!head_.compare_exchange_advance_weak(expected, pos + 1, std::memory_order_relaxed,
                                                      std::memory_order_relaxed)) {
-                // Another producer raced; retry.
                 continue;
             }
 
-            // We own slot at pos.  Write data, then publish via bit-set.
             const std::size_t cell_idx = pos & MASK;
             cells_[cell_idx] = item;
 
-            const std::size_t word_idx = cell_idx >> 6;  // /64
-            const std::size_t bit_idx = cell_idx & 63;  // %64
+            const std::size_t word_idx = cell_idx >> 6;
+            const std::size_t bit_idx = cell_idx & 63;
             const std::uint64_t mask = std::uint64_t{1} << bit_idx;
             ready_[word_idx].fetch_or(mask, std::memory_order_release);
             return true;
         }
     }
 
-    // ── try_push_batch (any producer, batched) ────────────────────
-    //
-    // Claim N tickets in ONE weak CAS, write N data cells, publish
-    // via fetch_or per-bitmap-word.  All-or-nothing: either all N
-    // items push or zero (queue full or wraparound rejection).
-    //
-    // Per-batch atomic budget:
-    //   1 tail acquire-load + 1 head weak CAS + N data writes +
-    //   ⌈N/64⌉ bitmap fetch_or ops.
+    // All or nothing: a batch that does not fit pushes no items.
 
     [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
         const std::size_t N = items.size();
@@ -195,11 +100,8 @@ public:
             return 0;
 
         for (;;) {
-            // FIXY-FOUND-115: load_relaxed for race-CAS expected-
-            // value read (same as try_push above).
             const std::uint64_t pos = head_.load_relaxed();
             const std::uint64_t tail_val = tail_.get();
-            // Capacity check: pos + N - tail_val <= Capacity.
             if (pos + N - tail_val > Capacity) [[unlikely]] {
                 return 0;
             }
@@ -209,8 +111,6 @@ public:
                 continue;
             }
 
-            // We own [pos, pos + N).  Write all data, then publish
-            // bits via fetch_or per word.
             for (std::size_t i = 0; i < N; ++i) {
                 cells_[(pos + i) & MASK] = items[i];
             }
@@ -219,25 +119,9 @@ public:
         }
     }
 
-    // ── try_pop (single consumer ONLY) ────────────────────────────
-    //
-    // Caller MUST guarantee no concurrent try_pop or try_pop_batch.
-    // Returns nullopt iff the queue is empty (bit clear at tail's
-    // cell).
-    //
-    // Memory ordering:
-    //   - ready_.load(acquire): pairs with producer's fetch_or(release)
-    //     so the data write is visible after we observe the set bit.
-    //   - cell read: non-atomic; happens-after the acquire above.
-    //   - ready_.fetch_and(release): clears the bit; the release
-    //     pairs with the next-round producer's fetch_or(release)
-    //     atomic-RMW chain (atomic OR / AND on same word are
-    //     sequentially consistent).
-    //   - tail_.store(release): publishes "consumer has consumed
-    //     position pos" to producer's tail.get(acquire) capacity
-    //     check.  Ordering: bit-clear → tail-advance ensures the
-    //     next-round producer (waiting on capacity) sees the cleared
-    //     bit when it observes the new tail.
+    // The caller guarantees no concurrent try_pop or try_pop_batch.
+    // The acquire load of the bitmap pairs with the producer's release
+    // fetch_or, so the cell read below sees the published payload.
 
     [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
         const std::uint64_t pos = tail_.peek_relaxed();
@@ -252,89 +136,64 @@ public:
         }
 
         const T item = cells_[cell_idx];
-        // Clear bit — release pairs with next-round producer's
-        // fetch_or on the same word.
+        // Clear the bit before advancing tail.  A producer that then
+        // passes the capacity gate observes the new tail and therefore
+        // the cleared bit.
         ready_[word_idx].fetch_and(~mask, std::memory_order_release);
-        // Advance tail — release pairs with next-round producer's
-        // tail.get(acquire) capacity check.
         tail_.store(pos + 1, std::memory_order_release);
         return item;
     }
 
-    // ── try_pop_batch (single consumer ONLY) ──────────────────────
-    //
-    // Drain up to out.size() items.  Scans the bitmap for the
-    // longest contiguous ready prefix starting at tail, drains it
-    // all at once, then advances tail by exactly that prefix length.
-    //
-    // Returns the number of items popped (0 iff queue empty at
-    // tail's cell).  Items written into out[0..return-1] in FIFO
-    // order.
+    // The caller guarantees no concurrent try_pop or try_pop_batch.
 
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
-        // Clamp the request to Capacity.  The ring holds AT MOST Capacity
-        // live items (head - tail <= Capacity, enforced by every
-        // producer's capacity gate).  Without this clamp a caller passing
-        // out.size() > Capacity on a full ring makes the contiguous-prefix
-        // scan below wrap past the buffer end: cell_idx = (pos0 + R) & MASK
-        // re-aliases the start cell, the still-set bitmap words are
-        // re-counted, R grows beyond Capacity, and the drain then returns
-        // DUPLICATE items, clears every bit, and advances tail PAST head —
-        // the next try_push sees (pos - tail) wrap to a huge value, reads
-        // it as "full" forever, and the channel deadlocks.  A DetSafe +
-        // liveness bug.  Clamping (vs rejecting like try_push_batch) keeps
-        // the partial-fill contract: the caller gets up to Capacity items.
+        // The ring holds at most Capacity live items, so a request
+        // larger than Capacity has to be clamped.  Unclamped, the
+        // prefix scan below wraps past the buffer end, re-reads the
+        // still-set bits of the cells it already counted, and grows R
+        // beyond Capacity.  The drain then returns duplicates, clears
+        // every bit, and leaves tail ahead of head, at which point the
+        // producer's unsigned gate underflows and reads as full
+        // forever.  Clamping rather than rejecting keeps the
+        // partial-fill contract.
         const std::size_t cap = std::min<std::size_t>(out.size(), Capacity);
         if (cap == 0) return 0;
 
         const std::uint64_t pos0 = tail_.peek_relaxed();
 
-        // Scan: read each bit in order, count the contiguous ready
-        // prefix.  Optimization: read whole bitmap word and use
-        // bit-trick to count trailing ones.
         std::size_t R = 0;
         while (R < cap) {
             const std::size_t cell_idx = (pos0 + R) & MASK;
             const std::size_t word_idx = cell_idx >> 6;
             const std::size_t bit_idx = cell_idx & 63;
 
-            // Read word once, scan as many bits as we can within it.
             const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
-            // Shift right so our bit_idx becomes bit 0, then count
-            // trailing ones via inversion + countr_zero.
             const std::uint64_t shifted = word >> bit_idx;
-            // Number of consecutive 1s starting at our bit:
-            //   if shifted == ~0 (all 1s remaining): 64 - bit_idx
-            //   else: countr_zero(~shifted)
+            // countr_zero of an all-zero inversion answers 64, but only
+            // the top 64 - bit_idx bits of this word belong to the
+            // scan, so the all-ones case needs its own arm.
             const std::size_t avail_in_word =
                 (~shifted == 0) ? (64 - bit_idx) : static_cast<std::size_t>(std::countr_zero(~shifted));
-            // Cap by remaining buffer in word + remaining requested.
             const std::size_t remaining = cap - R;
             const std::size_t take = std::min(avail_in_word, remaining);
             if (take == 0) break;
             R += take;
-            // If we consumed less than the word's available, we hit
-            // a 0 bit — stop here.
+            // Stopping short of the word's run means a clear bit ended
+            // the prefix.  Consuming the whole run continues into the
+            // next word.
             if (take < avail_in_word) break;
-            // Otherwise, we ran off the end of this word; loop
-            // continues to the next word.
         }
 
         if (R == 0) return 0;
 
-        // Read R cells of data.
         for (std::size_t i = 0; i < R; ++i) {
             out[i] = cells_[(pos0 + i) & MASK];
         }
-        // Clear R bits via per-word fetch_and.
         clear_range_(pos0 & MASK, ((pos0 + R - 1) & MASK) + 1, R);
-        // Advance tail by R — release pairs with producer's
-        // tail.get(acquire).
         tail_.store(pos0 + R, std::memory_order_release);
         return R;
     }
 
-    // ── empty_approx (any thread, NOT exact) ──────────────────────
     [[nodiscard]] bool empty_approx() const noexcept {
         const std::uint64_t pos = tail_.get();
         const std::size_t cell_idx = pos & MASK;
@@ -344,12 +203,8 @@ public:
         return (ready_[word_idx].load(std::memory_order_acquire) & mask) == 0;
     }
 
-    // ── size_approx (any thread, NOT exact) ───────────────────────
-    //
-    // head - tail snapshot.  Both atomics are read with acquire to
-    // synchronize-with the producer's release-CAS on head and the
-    // consumer's release-store on tail.  Snapshot may briefly show
-    // a value > capacity if observed mid-CAS-retry; clamp at Capacity.
+    // The two loads are not one snapshot, so head can outrun the tail
+    // that was read for it.  The clamp absorbs that.
     [[nodiscard]] std::size_t size_approx() const noexcept {
         const std::uint64_t h = head_.get();
         const std::uint64_t t = tail_.get();
@@ -360,22 +215,16 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // ── publish_range_ — set bits [bit_start, bit_end) in bitmap ──
-    //
-    // Handles wraparound: if N items span the buffer end, sets two
-    // disjoint bit ranges.  Per-word fetch_or with release.
-
     void publish_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
         if (N >= Capacity) [[unlikely]] {
-            // Full-buffer publish: set every bit.
             for (auto& w : ready_) {
                 w.fetch_or(kAllSet, std::memory_order_release);
             }
             return;
         }
-        // Wraparound case: bit_end <= bit_start (modulo wrap)
+        // A range that wrapped the buffer end arrives with its end at
+        // or below its start, and splits into two segments.
         if (bit_end <= bit_start) {
-            // Two segments: [bit_start, Capacity) + [0, bit_end)
             set_word_range_(bit_start, Capacity);
             set_word_range_(0, bit_end);
         } else {
@@ -383,8 +232,7 @@ private:
         }
     }
 
-    // Helper: set bits [start, end) in bitmap.  start < end
-    // guaranteed; both within [0, Capacity).
+    // Callers guarantee start < end and both within [0, Capacity).
     void set_word_range_(std::size_t start, std::size_t end) noexcept {
         while (start < end) {
             const std::size_t word_idx = start >> 6;
@@ -397,7 +245,6 @@ private:
         }
     }
 
-    // ── clear_range_ — clear bits [bit_start, bit_end) ────────────
     void clear_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
         if (N >= Capacity) [[unlikely]] {
             for (auto& w : ready_) {
@@ -425,22 +272,11 @@ private:
         }
     }
 
-    // ── Storage layout ────────────────────────────────────────────
-    //
-    // Cells: pure T, alignas(64) on the array (not per-cell).  For
-    // T=uint64 and Capacity=1024, this is 8 KB on a single L1d-
-    // friendly contiguous region.
-    //
-    // Bitmap: WORDS atomic<uint64_t>, each on the same cache line for
-    // small Capacity, separate cache lines for large.  Each word
-    // covers 64 cells.  Producer fetch_or, consumer fetch_and on the
-    // same word are atomic-RMW; safe but contend on the cache line.
-    //
-    // head_ and tail_: each on its own cache line (alignas(64)) to
-    // prevent cross-thread false sharing on counter writes.
-    //
-    // Total sizeof at Cap=1024, T=uint64: ~8.4 KB (vs 64 KB for the
-    // previous Vyukov per-cell-sequence design — 7.77× density).
+    // The array is aligned, not each cell, so the cells stay packed.
+    // A producer fetch_or and the consumer fetch_and on one bitmap word
+    // are read-modify-writes and so are safe, but they do contend for
+    // the line.  head_ and tail_ each take a line of their own, since
+    // they are written by opposing sides.
 
     alignas(64) std::array<T, Capacity> cells_{};
     alignas(64) std::array<std::atomic<std::uint64_t>, WORDS> ready_{};

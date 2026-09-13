@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-133 WIP. CNT-P SHARP in-network reduction sketch.
-//
-// This header owns typed eligibility for Mellanox/NVIDIA SHARP-style
-// in-fabric reductions. It deliberately does not link libsharp.so,
-// program switch dataplanes, or implement software collective fallback.
-// Live backends consume the declared plan/context and currently report
-// explicit deferral / unavailability after the request shape is proven.
+// Nothing here links libsharp, programs a switch dataplane or implements the
+// software collective that the SharpFallback values name.  The dispatch path
+// proves the request shape and then reports deferral or unavailability.
 
 #include <crucible/NumericalRecipe.h>
 #include <crucible/cog/CogIdentity.h>

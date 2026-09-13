@@ -1,7 +1,5 @@
 #pragma once
 
-// FOUND-D26 — wrapper-detection predicate for `Wait<Strategy, T>`.
-
 #include <crucible/safety/Wait.h>
 
 #include <type_traits>

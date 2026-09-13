@@ -22,45 +22,36 @@ static cog::CogIdentity peer(std::uint64_t lo) {
 }
 
 static topology::DeclaredPingmeshMeasurement
-measurement(cog::CogIdentity const& src,
-            cog::CogIdentity const& dst,
-            std::uint64_t latency_ns,
-            std::uint64_t sequence,
-            topology::PingmeshProbeStatus status =
-                topology::PingmeshProbeStatus::Delivered) {
-    return topology::DeclaredPingmeshMeasurement{
-        topology::PingmeshMeasurement{
-            .src = src.uuid,
-            .dst = dst.uuid,
-            .latency_ns = topology::PositivePingmeshLatencyNs{latency_ns},
-            .sequence = sequence,
-            .status = status,
-        }};
+measurement(cog::CogIdentity const& src, cog::CogIdentity const& dst, std::uint64_t latency_ns, std::uint64_t sequence,
+            topology::PingmeshProbeStatus status = topology::PingmeshProbeStatus::Delivered) {
+    return topology::DeclaredPingmeshMeasurement{topology::PingmeshMeasurement{
+        .src = src.uuid,
+        .dst = dst.uuid,
+        .latency_ns = topology::PositivePingmeshLatencyNs{latency_ns},
+        .sequence = sequence,
+        .status = status,
+    }};
 }
 
 static void test_names() {
-    assert(topology::pingmesh_probe_status_name(
-        topology::PingmeshProbeStatus::Delivered) == std::string_view{"Delivered"});
-    assert(topology::pingmesh_error_name(topology::PingmeshError::Full)
-           == std::string_view{"Full"});
+    assert(topology::pingmesh_probe_status_name(topology::PingmeshProbeStatus::Delivered)
+           == std::string_view{"Delivered"});
+    assert(topology::pingmesh_error_name(topology::PingmeshError::Full) == std::string_view{"Full"});
     std::printf("  test_names:                         PASSED\n");
 }
 
 static void test_register_and_record_pairs() {
-    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 4>(
-        effects::ColdInitCtx{});
+    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 4>(effects::ColdInitCtx{});
     std::array peers{peer(1), peer(2), peer(3)};
-    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers})
-           == topology::PingmeshError::None);
-    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers})
-           == topology::PingmeshError::DuplicatePeer);
+    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::None);
+    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::DuplicatePeer);
 
-    assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], peers[1], 1'000, 1)) == topology::PingmeshError::None);
-    assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], peers[1], 2'000, 2)) == topology::PingmeshError::None);
-    assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], peers[1], 3'000, 3)) == topology::PingmeshError::None);
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 1'000, 1))
+           == topology::PingmeshError::None);
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 2'000, 2))
+           == topology::PingmeshError::None);
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 3'000, 3))
+           == topology::PingmeshError::None);
 
     auto const stats = mesh.pair_stats(peers[0].uuid, peers[1].uuid);
     assert(stats.sent == 3);
@@ -75,18 +66,16 @@ static void test_register_and_record_pairs() {
 }
 
 static void test_loss_and_rejection_accounting() {
-    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 2>(
-        effects::ColdInitCtx{});
+    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 2>(effects::ColdInitCtx{});
     std::array peers{peer(4), peer(5)};
-    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers})
-           == topology::PingmeshError::None);
+    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::None);
 
     assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], peers[1], 1, 10, topology::PingmeshProbeStatus::Lost))
-        == topology::PingmeshError::None);
+                                   measurement(peers[0], peers[1], 1, 10, topology::PingmeshProbeStatus::Lost))
+           == topology::PingmeshError::None);
     assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], peers[1], 1, 11, topology::PingmeshProbeStatus::Rejected))
-        == topology::PingmeshError::None);
+                                   measurement(peers[0], peers[1], 1, 11, topology::PingmeshProbeStatus::Rejected))
+           == topology::PingmeshError::None);
 
     auto const stats = mesh.pair_stats(peers[0].uuid, peers[1].uuid);
     assert(stats.sent == 2);
@@ -102,17 +91,14 @@ static void test_loss_and_rejection_accounting() {
 }
 
 static void test_unknown_and_out_of_range_rejected() {
-    auto mesh = topology::mint_pingmesh<
-        effects::ColdInitCtx, 2, 2, 1'000>(effects::ColdInitCtx{});
+    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 2, 2, 1'000>(effects::ColdInitCtx{});
     std::array peers{peer(6), peer(7)};
     auto missing = peer(8);
-    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers})
-           == topology::PingmeshError::None);
-    assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], missing, 1, 1)) == topology::PingmeshError::UnknownPeer);
-    assert(mesh.record_measurement(effects::BgDrainCtx{},
-        measurement(peers[0], peers[1], 2'000, 2))
-        == topology::PingmeshError::LatencyOutOfRange);
+    assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::None);
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], missing, 1, 1))
+           == topology::PingmeshError::UnknownPeer);
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 2'000, 2))
+           == topology::PingmeshError::LatencyOutOfRange);
     auto const stats = mesh.pair_stats(peers[0].uuid, peers[1].uuid);
     assert(stats.sent == 1);
     assert(stats.delivered == 0);
@@ -120,17 +106,14 @@ static void test_unknown_and_out_of_range_rejected() {
     std::printf("  test_unknown_and_out_of_range_rejected: PASSED\n");
 }
 
-// fixy-A5-011 regression: AtomicPingmeshPairCounters has alignas(64), so an
-// `std::array<AtomicPingmeshPairCounters, N>` (the per-pair grid embedded in
-// Pingmesh::counters_) must place every element on a distinct cache line.
-// Without the fix, a 4×4 fleet's 16-pair grid fit inside ~10 cache lines
-// and adjacent producer threads contended on every fetch_add.
+// The pair counters are cache-line aligned, so an array of them must place
+// every element on its own line. When they pack tighter than that, the
+// per-pair grid of a small fleet spans fewer lines than it has pairs, and
+// adjacent producer threads contend on every increment.
 static void test_pair_counter_layout_invariants() {
     using PairCounters = topology::detail::AtomicPingmeshPairCounters;
-    static_assert(alignof(PairCounters) >= 64,
-                  "AtomicPingmeshPairCounters must be cache-line-aligned");
-    static_assert(sizeof(PairCounters) >= 64,
-                  "AtomicPingmeshPairCounters occupies a full cache line");
+    static_assert(alignof(PairCounters) >= 64, "AtomicPingmeshPairCounters must be cache-line-aligned");
+    static_assert(sizeof(PairCounters) >= 64, "AtomicPingmeshPairCounters occupies a full cache line");
 
     std::array<PairCounters, 16> grid{};
     constexpr std::uintptr_t LINE = 64;

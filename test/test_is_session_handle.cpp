@@ -1,10 +1,6 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_is_session_handle — sentinel TU for safety/IsSessionHandle.h
-//
-// Cross-checks `is_session_handle_v<T>` against REAL session-typed
-// handles from the `sessions/` tree.  Forces the header through the
-// project's full warning matrix.
-// ═══════════════════════════════════════════════════════════════════
+// A header that ships its own static_asserts is never compiled under the
+// project warning flags unless some translation unit includes it.  This
+// file is that translation unit for the session-handle trait.
 
 #include <crucible/safety/IsSessionHandle.h>
 
@@ -40,36 +36,28 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-#define EXPECT_TRUE(cond)                                                  \
-    do {                                                                   \
-        if (!(cond)) {                                                     \
-            std::fprintf(stderr,                                           \
-                "    EXPECT_TRUE failed: %s (%s:%d)\n",                    \
-                #cond, __FILE__, __LINE__);                                \
-            throw TestFailure{};                                           \
-        }                                                                  \
+#define EXPECT_TRUE(cond)                                                                            \
+    do {                                                                                             \
+        if (!(cond)) {                                                                               \
+            std::fprintf(stderr, "    EXPECT_TRUE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+            throw TestFailure{};                                                                     \
+        }                                                                                            \
     } while (0)
 
 namespace extract = ::crucible::safety::extract;
-namespace proto   = ::crucible::safety::proto;
-
-// ── Real session-handle witnesses ───────────────────────────────────
+namespace proto = ::crucible::safety::proto;
 
 struct fake_resource {};
 
-using EndH        = ::crucible::safety::proto::SessionHandle<proto::End, fake_resource>;
-using SendIntEndH = ::crucible::safety::proto::SessionHandle<
-    proto::Send<int, proto::End>, fake_resource>;
-using RecvIntEndH = ::crucible::safety::proto::SessionHandle<
-    proto::Recv<int, proto::End>, fake_resource>;
+using EndH = ::crucible::safety::proto::SessionHandle<proto::End, fake_resource>;
+using SendIntEndH = ::crucible::safety::proto::SessionHandle<proto::Send<int, proto::End>, fake_resource>;
+using RecvIntEndH = ::crucible::safety::proto::SessionHandle<proto::Recv<int, proto::End>, fake_resource>;
 
-// ── Foreign types ───────────────────────────────────────────────────
+struct foreign_struct {
+    int x;
+};
 
-struct foreign_struct { int x; };
-
-void test_runtime_smoke() {
-    EXPECT_TRUE(extract::is_session_handle_smoke_test());
-}
+void test_runtime_smoke() { EXPECT_TRUE(extract::is_session_handle_smoke_test()); }
 
 void test_negative_cases() {
     static_assert(!extract::is_session_handle_v<int>);
@@ -97,102 +85,72 @@ void test_real_session_handle_recv_matches() {
 }
 
 void test_proto_extraction() {
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<EndH>, proto::End>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<SendIntEndH>,
-        proto::Send<int, proto::End>>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<RecvIntEndH>,
-        proto::Recv<int, proto::End>>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<EndH>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<SendIntEndH>, proto::Send<int, proto::End>>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<RecvIntEndH>, proto::Recv<int, proto::End>>);
 }
 
 void test_proto_extraction_cvref_stripped() {
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<EndH&>, proto::End>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<EndH const&>, proto::End>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<EndH&&>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<EndH&>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<EndH const&>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<EndH&&>, proto::End>);
 }
 
 void test_pointer_to_handle_rejected() {
-    // Pointer is not the handle itself.
     static_assert(!extract::is_session_handle_v<EndH*>);
     static_assert(!extract::is_session_handle_v<EndH const*>);
 }
 
 void test_distinct_protos_distinguish() {
-    static_assert(!std::is_same_v<
-        extract::session_handle_proto_t<EndH>,
-        extract::session_handle_proto_t<SendIntEndH>>);
-    static_assert(!std::is_same_v<
-        extract::session_handle_proto_t<SendIntEndH>,
-        extract::session_handle_proto_t<RecvIntEndH>>);
+    static_assert(!std::is_same_v<extract::session_handle_proto_t<EndH>, extract::session_handle_proto_t<SendIntEndH>>);
+    static_assert(
+        !std::is_same_v<extract::session_handle_proto_t<SendIntEndH>, extract::session_handle_proto_t<RecvIntEndH>>);
 }
 
-// ── AUDIT-4 (S2.3): coverage for derived session-handle wrappers ───
-//
-// FOUND-D08's docstring claims is_session_handle_v detects every
-// shipping session-handle wrapper (SessionHandle, PermissionedSession
-// Handle, RecordingSessionHandle, CrashWatchedHandle).  The original
-// 9 tests only verified bare SessionHandle.  These additional
-// fixtures pin the derived-wrapper detection.
+// The trait must recognise every wrapper a session handle can be dressed
+// in, not just the bare handle.  A wrapper the trait misses is a handle no
+// caller can route.
 
 void test_permissioned_session_handle_matches() {
-    // PermissionedSessionHandle inherits SessionHandleBase via CRTP
-    // (PermissionedSession.h:289-291).  Should be detected.
-    using PSH = ::crucible::safety::proto::PermissionedSessionHandle<
-        proto::End,
-        ::crucible::safety::proto::EmptyPermSet,
-        fake_resource>;
+    using PSH =
+        ::crucible::safety::proto::PermissionedSessionHandle<proto::End, ::crucible::safety::proto::EmptyPermSet,
+                                                             fake_resource>;
     static_assert(extract::is_session_handle_v<PSH>);
     static_assert(extract::IsSessionHandle<PSH>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<PSH>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<PSH>, proto::End>);
 }
 
 void test_recording_session_handle_matches() {
-    // RecordingSessionHandle wraps a bare SessionHandle and inherits
-    // SessionHandleBase (RecordingSessionHandle.h:24-30).  Should be
-    // detected.
-    using RecH = ::crucible::safety::proto::RecordingSessionHandle<
-        proto::End, fake_resource, /*LoopCtx*/ void>;
+    using RecH = ::crucible::safety::proto::RecordingSessionHandle<proto::End, fake_resource, /*LoopCtx*/ void>;
     static_assert(extract::is_session_handle_v<RecH>);
     static_assert(extract::IsSessionHandle<RecH>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<RecH>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<RecH>, proto::End>);
 }
 
 void test_crash_watched_handle_matches() {
-    // CrashWatchedHandle wraps a SessionHandle and inherits
-    // SessionHandleBase per the bridges/CrashTransport.h pattern.
-    using CrH = ::crucible::safety::proto::CrashWatchedHandle<
-        proto::End, fake_resource, /*LoopCtx*/ void>;
+    using CrH = ::crucible::safety::proto::CrashWatchedHandle<proto::End, fake_resource, /*LoopCtx*/ void>;
     static_assert(extract::is_session_handle_v<CrH>);
     static_assert(extract::IsSessionHandle<CrH>);
-    static_assert(std::is_same_v<
-        extract::session_handle_proto_t<CrH>, proto::End>);
+    static_assert(std::is_same_v<extract::session_handle_proto_t<CrH>, proto::End>);
 }
 
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_is_session_handle:\n");
-    run_test("test_runtime_smoke",                         test_runtime_smoke);
-    run_test("test_negative_cases",                        test_negative_cases);
-    run_test("test_real_session_handle_end_matches",       test_real_session_handle_end_matches);
-    run_test("test_real_session_handle_send_matches",      test_real_session_handle_send_matches);
-    run_test("test_real_session_handle_recv_matches",      test_real_session_handle_recv_matches);
-    run_test("test_proto_extraction",                      test_proto_extraction);
-    run_test("test_proto_extraction_cvref_stripped",       test_proto_extraction_cvref_stripped);
-    run_test("test_pointer_to_handle_rejected",            test_pointer_to_handle_rejected);
-    run_test("test_distinct_protos_distinguish",           test_distinct_protos_distinguish);
-    run_test("test_permissioned_session_handle_matches",   test_permissioned_session_handle_matches);
-    run_test("test_recording_session_handle_matches",      test_recording_session_handle_matches);
-    run_test("test_crash_watched_handle_matches",          test_crash_watched_handle_matches);
-    std::fprintf(stderr, "\n%d passed, %d failed\n",
-                 total_passed, total_failed);
+    run_test("test_runtime_smoke", test_runtime_smoke);
+    run_test("test_negative_cases", test_negative_cases);
+    run_test("test_real_session_handle_end_matches", test_real_session_handle_end_matches);
+    run_test("test_real_session_handle_send_matches", test_real_session_handle_send_matches);
+    run_test("test_real_session_handle_recv_matches", test_real_session_handle_recv_matches);
+    run_test("test_proto_extraction", test_proto_extraction);
+    run_test("test_proto_extraction_cvref_stripped", test_proto_extraction_cvref_stripped);
+    run_test("test_pointer_to_handle_rejected", test_pointer_to_handle_rejected);
+    run_test("test_distinct_protos_distinguish", test_distinct_protos_distinguish);
+    run_test("test_permissioned_session_handle_matches", test_permissioned_session_handle_matches);
+    run_test("test_recording_session_handle_matches", test_recording_session_handle_matches);
+    run_test("test_crash_watched_handle_matches", test_crash_watched_handle_matches);
+    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
     return EXIT_SUCCESS;

@@ -1,27 +1,16 @@
 #pragma once
 
-// ── crucible::safety::StackUsePinned<StackUse Tier, typename T> ──────
+// The tier records how tightly a producer's stack footprint is bounded: a
+// ConstantFrame producer cannot overflow, a BoundedByParam one is bounded by an
+// argument, a BoundedDynamic one has a bound that is only known at run time, and
+// an Unbounded one has none.  It is a ceiling on footprint, not a floor on
+// proof, so the bottom tier is the safe one and a consumer admits a value whose
+// tier is at or below the ceiling it imposes.  Widening up the chain is sound
+// because over-stating the footprint is safe.
 //
-// FIXY-V-242 (3/5): value-level Graded carrier for the V-241 StackUse
-// axis (ConstantFrame ⊏ BoundedByParam ⊏ BoundedDynamic ⊏ Unbounded).
-// Pins a function-result's stack-footprint boundedness into the type.
-//
-//   Substrate: Graded<ModalityKind::Absolute, StackUseLattice::At<Tier>, T>
-//   Regime:    1 (zero-cost EBO collapse — sizeof == sizeof(T)).
-//
-// Absolute modality.  CAPABILITY-CEILING semantics: bottom
-// (ConstantFrame) is the strongest stack bound (overflow structurally
-// impossible); top (Unbounded) has no bound.
-//
-//   satisfies<C> := StackUseLattice::leq(Tier, C)
-//   widen<Higher>()                                  — UP the chain only
-//
-// Forge hot-path admission imposes ceiling ConstantFrame.  Dual of
-// CallShape: a CallShape::BoundedRecurses result naturally pairs with a
-// StackUse::BoundedByParam pin (depth × frame).
-//
-// §XXI: `mint_stack_use<Tier, T>(args...)`.  HS14 neg fixtures:
-// neg_stack_use_widen_to_lower.cpp + neg_stack_use_mint_wrong_arg.cpp.
+// The modality is Absolute because the tier describes the producer, not the
+// content.  Mutating the wrapped value cannot change the frame that produced
+// it, so mutable access needs no re-check.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>

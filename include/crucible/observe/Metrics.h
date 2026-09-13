@@ -1,12 +1,8 @@
 #pragma once
 
-// ── crucible::observe — SWMR metrics publication surface ───────────────
-//
-// Runtime code publishes latest-value metric samples from one writer thread;
-// Keeper / Canopy readers observe snapshots through the SwmrSession role
-// surface. The payload is intentionally fixed-size and trivially copyable so
-// AtomicSnapshot can publish it without heap ownership or span lifetime
-// hazards.
+// The payload is fixed-size and trivially copyable so a snapshot can be
+// published by value. A growable or span-backed payload would need heap
+// ownership or leave the reader holding a borrow.
 
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/effects/Computation.h>

@@ -1,12 +1,8 @@
 #pragma once
 
-// GAPS-128 WIP. CNT-P QUIC + TLS 1.3 transport sketch.
-//
-// This header owns typed admission for QUIC policy, stream budgeting,
-// datagram bounds, 0-RTT token provenance, and migration plans.  It
-// deliberately does not claim an msquic/quiche/ngtcp2 backend, kernel QUIC
-// socket, live packet send, or Cipher audit write.  Backend operations return
-// explicit deferred/backend errors after validating the typed facts.
+// No backend is bound: no msquic, no quiche, no ngtcp2, no kernel QUIC socket,
+// and no packet leaves the process.  The runtime operations validate their
+// typed inputs and then report QuicError::BackendUnavailable.
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/MtlsTransport.h>

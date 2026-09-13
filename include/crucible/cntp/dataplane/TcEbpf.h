@@ -1,13 +1,8 @@
 #pragma once
 
-// GAPS-193 substrate slice. CNT-P dataplane TC direct-action eBPF plans.
-//
-// TC programs are the skb-context complement to cntp/dataplane/Xdp.h. This header keeps
-// live qdisc mutation, verifier loading, fd ownership, and clsact attach out
-// of scope; it pins the zero-runtime userspace contract first: source-tagged
-// program specs, bounded DSCP/classid fields, Init-row minting, NIC capability
-// admission, and deterministic in-process policy maps for tests and future
-// loader wiring.
+// Nothing here mutates a qdisc, loads a verifier program, owns a program file
+// descriptor or attaches to clsact.  TcFlowClassMap is a process-local image
+// standing in for a kernel map.
 
 #include <crucible/cntp/dataplane/Xdp.h>
 #include <crucible/safety/Bits.h>

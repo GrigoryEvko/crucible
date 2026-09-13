@@ -1,12 +1,5 @@
 #pragma once
 
-// Bounded SWIM membership substrate for Canopy.
-//
-// This header owns the protocol state machine and piggyback event
-// surface.  Socket I/O is deliberately outside this layer: transports
-// consume SwimProbe / SwimEvent values and feed acks, timeouts, and
-// gossiped events back through the typed API here.
-
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
@@ -121,7 +114,6 @@ public:
     explicit SwimMembership(SwimConfig config = {}) noexcept : config_{config} {}
 
     SwimMembership(SwimConfig config, std::span<const peer_type> initial_peers) noexcept : config_{config} {
-        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         for (peer_type const& peer : initial_peers) {
             CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
         }

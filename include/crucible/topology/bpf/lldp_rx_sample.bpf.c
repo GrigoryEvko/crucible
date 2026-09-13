@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * Topology LLDP RX sample stub.
- *
- * Future role: reserve the XDP-side packet tap for LLDP adjacency evidence.
- * Current behavior: pass every packet through the kernel stack.
- */
-
 #include "../../cntp/dataplane/bpf/net_common.h"
 
 #ifndef XDP_PASS

@@ -1,11 +1,8 @@
 #pragma once
 
-// GAPS-132 WIP. CNT-P GPUDirect RDMA / Storage sketch.
-//
-// This header owns typed eligibility and registration intent for GPU-peer DMA.
-// It deliberately does not call CUDA, HIP, cuFile, libibverbs, or kernel peer
-// modules. Live backends must consume DeclaredGpuDirect* plans and currently
-// report explicit deferral / unavailability after the request shape is proven.
+// Nothing here calls CUDA, HIP, cuFile, libibverbs or a kernel peer module.
+// The registration and I/O entrypoints declared at the bottom prove the plan
+// shape and then report deferral or unavailability.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
@@ -17,7 +14,7 @@
 #include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>
 
-#include <bit>  // FIXY-U-082: std::bit_cast for pointer↔uintptr_t
+#include <bit>
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -72,8 +69,8 @@ inline constexpr std::uint16_t kUnknownPcieRootId = 0xffffu;
 struct PeerPlacement {
     PcieRootId gpu_pcie_root{std::uint16_t{kUnknownPcieRootId}};
     PcieRootId peer_pcie_root{std::uint16_t{kUnknownPcieRootId}};
-    // True for a discovered peer-to-peer bridge that makes cross-root access
-    // legal. This is supplied by topology discovery, not inferred here.
+    // Set when a peer-to-peer bridge makes cross-root access legal.  Topology
+    // discovery supplies this.  It is never inferred here.
     bool peer_bridge_present = false;
 };
 
@@ -123,8 +120,6 @@ admit_gpu_virtual_address(std::uintptr_t address) noexcept {
 
 [[nodiscard]] inline std::expected<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(void const* address) noexcept {
-    // FIXY-U-082 / fixy-A5-028: std::bit_cast — C++26 idiom for
-    // pointer↔uintptr_t value reinterpretation, no strict-aliasing risk.
     return admit_gpu_virtual_address(std::bit_cast<std::uintptr_t>(address));
 }
 

@@ -1,34 +1,21 @@
 #pragma once
 
-// Vigil: the Crucible organism.
+// The single orchestration point, owning every runtime component: the SPSC
+// ring, the tensor metadata log, the background thread that drains them, the
+// per-iteration transaction log, and optionally the content-addressed store.
 //
-// Vigil is the single orchestration point that owns every runtime component:
-//   TraceRing     ← SPSC ring (hot-path op recording)
-//   MetaLog       ← parallel tensor metadata buffer
-//   BackgroundThread ← drains ring, builds Merkle DAG, signals on_region_ready
-//   TransactionLog ← lifecycle records per iteration
-//   Cipher (opt)  ← content-addressed persistence (Kafka log retention)
+// Three operational modes:
+//   RECORDING  the adapter dispatches ops normally and records each one
+//   COMPILED   an active region is live and replay drives execution
+//   DIVERGED   a transient replay status; the persistent mode falls back to
+//              RECORDING once divergence is handled
 //
-// Vigil exposes three operational modes:
-//   RECORDING  → Vessel dispatches ops normally; every op calls record_op().
-//   COMPILED   → Active region is live; replay() drives execution.
-//   DIVERGED   → transient replay status; persistent mode falls back to
-//                RECORDING after divergence handling.
+// The mode cell is also reachable as a single-party session for cold
+// observers.  The foreground dispatch path reads the status flag directly.
 //
-// The persistent mode cell is also exposed as a single-party session via
-// mint_vigil_mode_bridge(vigil).  That bridge is for cold observers
-// (runtime observation/Keeper/test harnesses); the foreground dispatch path still reads
-// the status flag directly.
-//
-// The Vessel adapter (PyTorch CrucibleFallback) becomes ~200 lines:
-//   if (vigil.is_compiled()) { push_shadow_handles(); return; }
-//   else { vigil.record_op(...); redispatch to eager backend; }
-//
-// Member declaration order is load-bearing for destruction safety:
-//   ring_, meta_log_, tx_log_, cipher_, mode_, step_, load_arena_
-//   are all declared BEFORE bg_. Since C++ destroys members in reverse
-//   declaration order, bg_ is destroyed FIRST, joining the background
-//   thread before the above members are invalidated.
+// Member declaration order is load-bearing for destruction safety.  bg_ is
+// declared last, so it is destroyed first and joins the background thread
+// before every member that thread touches is invalidated.
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
@@ -59,23 +46,14 @@
 #include <type_traits>
 #include <utility>  // std::unreachable
 
-// FIXY-U-030a (S1-Vigil, U-030): Vigil spells its safety WRAPPERS through
-// fixy::wrap:: / fixy::handle::, never safety::* — see the usages below.
-// Vigil is the foundation/model hub (reimplement-reserved, FIXY-U-030); it
-// deliberately does NOT pull the fixy/Wrap.h umbrella.  Mirror the Arena.h
-// (096y) / TraceRing (031b) populate precedent: re-open the fixy namespaces
-// to install the using-decls Vigil references (all already visible via the
-// narrow safety/ includes above — no new include).  fixy/Wrap.h +
-// fixy/Handle.h re-declare these independently — idempotent.
+// This header spells its safety wrappers through the fixy namespaces but
+// deliberately does not pull the fixy umbrella header.  Re-opening the
+// namespaces installs the aliases from the narrow includes already listed
+// above, and adds no include.  The umbrella declares the same aliases
+// independently, so the two are idempotent.
 //
-// EXCEPTION: safety::mint_atomic_session<ModeProtocol> (mode_session(),
-// ~line 419) is a SUBSTRATE session-mint (bridges/MachineSessionBridge.h),
-// NOT a wrapper.  Its fixy surface is the higher-level mint_vigil_mode_bridge
-// (fixy::bridge, #1507) — a behavioral wrapper, not a spelling alias.
-// Routing Vigil through that bridge is a deeper U-030 reimplement step, out
-// of this S1-spelling slice's scope; the substrate call stays safety::-spelled.
-// This irreducible ::crucible::safety:: plumbing + the documented mint keep
-// Vigil.h absent from scripts/fixy-clean-headers.txt.
+// mint_atomic_session below is the exception: it is a substrate session mint
+// rather than a wrapper, so it keeps its own spelling.
 namespace crucible::fixy::wrap {
 using ::crucible::safety::AtomicMonotonic;
 using ::crucible::safety::bounded_above;
@@ -91,30 +69,18 @@ namespace crucible {
 
 class Vigil {
 public:
-    // ── Mode machinery (fixy-H-23) ─────────────────────────────────
+    // The mode types live in a smaller header so the bridge that re-exports
+    // the mint does not drag this header's whole dependency closure with it.
+    // The aliases below keep every caller resolving the same types.
     //
-    // The Mode enum, ModeTransition typestates, ModeCell carrier,
-    // ModeProtocol session type, and ModeSessionHandle alias all
-    // live in `<crucible/bridges/VigilModeHandle.h>` so that
-    // fixy/Bridge.h can re-export `mint_vigil_mode_bridge` without
-    // transitively pulling Vigil's full DAG / Cipher / perf /
-    // watchdog dependency closure.  The nested aliases below keep
-    // every pre-fixy-H-23 caller of `Vigil::Mode`, `Vigil::ModeCell`,
-    // `Vigil::ModeProtocol`, `Vigil::ModeSessionHandle`, and friends
-    // resolving identically (same types, just relocated).
+    // A monotonic wrapper would be wrong for the mode: the lifecycle is
+    // deliberately cyclic, running RECORDING to COMPILED and back to
+    // RECORDING after a divergence.  ModeCell keeps the atomic private and
+    // exposes only the two transitions the runtime actually performs.
     //
-    // GAPS-031 audit note: the task text originally suggested
-    // AtomicMonotonic<ContextMode>. Vigil's lifecycle is intentionally
-    // cyclic: RECORDING -> COMPILED -> RECORDING after divergence. A
-    // monotonic wrapper would lie about that state machine. ModeCell
-    // keeps the raw atomic private and exposes only the two named
-    // transitions the runtime actually performs. GAPS-080 layers an
-    // atomic-aware MachineSessionBridge view over the same cell;
-    // external observers use acquire/release through ModeProtocol
-    // while the foreground hot query keeps its relaxed status-flag
-    // load. The pending region uses PublishSlot rather than
-    // PublishOnce for the same reason: divergence recovery can publish
-    // multiple latest-wins regions across one process lifetime.
+    // The pending region uses a latest-wins publication slot rather than a
+    // publish-once cell for the same reason: divergence recovery publishes
+    // several regions over one process lifetime.
     using Mode = ::crucible::vigil_mode::Mode;
     using ModeCell = ::crucible::vigil_mode::ModeCell;
 
@@ -137,77 +103,42 @@ public:
         uint64_t device_capability = 0;
         std::string cipher_path;  // empty = no persistence
 
-        // GAPS-004h follow-up: scheduler deadline-miss watchdog wiring.
+        // Enabling this loads the scheduler-switch tracing subprogram and
+        // observes the dispatcher's preempt count once per region
+        // transition, publishing the verdict through the watchdog
+        // accessors.  This is observation only: nothing here changes the
+        // scheduler class, and a caller acts on the verdict itself.
         //
-        // When `enable_deadline_watchdog` is true, Vigil loads the
-        // SchedSwitch BPF subprogram and instantiates a DeadlineWatchdog
-        // observing the dispatcher tid's preempt count.  observe() runs
-        // on the background thread inside on_region_ready (per-iteration
-        // cadence, ~10-100ms — well within the watchdog's documented
-        // 100ms-1s tick budget), and the verdict is published via
-        // atomic counters readable through watchdog_*() accessors.
-        //
-        // Vigil is an OBSERVER — it does NOT actuate.  Callers consume
-        // the verdict (e.g. Keeper sees Downgrade → re-applies Policy
-        // with `demote_one_step(hot_sched)`).  Vigil itself never
-        // changes scheduler class; the bg-thread cost of observe() is
-        // bounded to ~1 µs per iteration boundary regardless of verdict.
-        //
-        // Disabled by default — requires CAP_BPF and a kernel with
-        // sched_switch tracepoint BTF support.  CI runs / restricted
-        // environments / unit tests should leave this off; the
-        // Senses::load_subset call is graceful (returns a Senses with
-        // sched_switch() == nullptr), but the watchdog's observe()
-        // returns InsufficientData every call when the facade is
-        // unattached, so the cost is paid for no signal.
+        // Off by default because it needs CAP_BPF and a kernel carrying the
+        // sched_switch tracepoint's type information.  Attaching fails
+        // gracefully, but then every observation returns InsufficientData,
+        // so the cost buys no signal.
         bool enable_deadline_watchdog = false;
 
-        // Policy supplied to the watchdog.  Only `deadline_miss_budget`
-        // and `watchdog_window_sec` are read; the rest of Policy is
-        // ignored at this site (Hardening.h would consume the rest).
-        // Default: production() — 10 misses per 60-second window before
-        // verdict flips to Downgrade.
+        // Only the deadline-miss budget and the window length are read here.
         warden::Policy watchdog_policy = warden::Policy::production();
     };
 
-    // Number of consecutive op matches required to confirm an iteration
-    // boundary before activating CrucibleContext.  Matches IterationDetector::K.
+    // Consecutive op matches required to confirm an iteration boundary
+    // before the replay context activates.  It equals the iteration
+    // detector's signature length.
     static constexpr uint32_t ALIGNMENT_K = 5;
 
-    // ── alignment_pos_ refinement (#1077 WRAP-Vigil-7) ─────────────
+    // Structural upper bound on the value alignment_pos_ can hold.
+    // try_align_ advances it toward min(region->num_ops, ALIGNMENT_K).  The
+    // increment that reaches that threshold also clears pending_activation_,
+    // so no further increment happens, and the next consumed region resets
+    // the position to zero.  No path stores more than ALIGNMENT_K.
     //
-    // Structural upper bound on alignment_pos_'s STORED value.  The
-    // alignment phase advances alignment_pos_ from 0 toward
-    // `threshold = min(region->num_ops, ALIGNMENT_K)` (see try_align_).
-    // After the increment that brings alignment_pos_ to threshold, the
-    // `>= threshold` check fires and pending_activation_ is reset to
-    // nullptr — at which point alignment_pos_ holds the value
-    // `threshold ≤ ALIGNMENT_K`.  The next consume_pending_region_
-    // resets alignment_pos_ back to 0.  No code path ever stores a
-    // value > ALIGNMENT_K in alignment_pos_, so the type-level bound
-    // matches.
-    //
-    // Refined<bounded_above<ALIGNMENT_K>, uint8_t> admits 0..K=5.
-    // Mirrors IterationDetector::MatchPos (#927 WRAP-IterDet-1) — the
-    // wrapper carries the invariant in the type system; the
-    // construction-time pre fires on out-of-range writes (P2900R14 +
-    // Refined ctor).
-    //
-    // Zero-cost: regime-1 EBO collapse — sizeof(AlignmentPos) ==
-    // sizeof(uint8_t) == 1 B.  Vigil's layout is unchanged (the field
-    // sat in 4 B padding before; now 1 B + 3 B trailing padding).
-    //
-    // Public so HS14 negative-compile fixtures can construct
-    // AlignmentPos values in constexpr context to fire the pre.
+    // These two are public so the negative-compile fixtures can construct
+    // out-of-range values in a constant expression and fire the contract.
     static constexpr uint8_t ALIGNMENT_POS_MAX = static_cast<uint8_t>(ALIGNMENT_K);
-    static_assert(ALIGNMENT_K <= UINT8_MAX, "ALIGNMENT_POS_MAX must fit in uint8_t — bump AlignmentPos's "
-                                            "underlying type if ALIGNMENT_K is ever raised past 255");
+    static_assert(ALIGNMENT_K <= UINT8_MAX, "ALIGNMENT_POS_MAX must fit in uint8_t.  Widen AlignmentPos's "
+                                            "underlying type if ALIGNMENT_K is raised past 255.");
     using AlignmentPos =
         ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
 
-    // ─── Construction / Destruction ────────────────────────────────
-
-    // Default constructor: no persistence, no distributed context.
+    // No persistence, no distributed context.
     [[gnu::cold]] Vigil() : Vigil(Config{}) {}
 
     [[gnu::cold]] explicit Vigil(Config cfg) : cfg_(std::move(cfg)) {
@@ -218,33 +149,20 @@ public:
         meta_log_->reset();
 
         if (!cfg_.cipher_path.empty()) {
-            // FIXY-V-031: declare External provenance at the trust
-            // boundary.  cfg_.cipher_path is operator-supplied (config
-            // file / env var) — it is `source::External` until
-            // Cipher::open() runs sanitize_path() internally to
-            // promote provenance to source::Sanitized.
+            // The configured path is operator-supplied, so it crosses the
+            // trust boundary here and is declared external until the store's
+            // own sanitizer promotes it.
             cipher_.emplace(
                 Cipher::open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>{cfg_.cipher_path}));
         }
 
-        // Wire the background thread callback to our on_region_ready.
-        // `noexcept` matches the FIXY-V-086 typedef tightening: this
-        // lambda decays to `void(*)(void*, RegionNode*) noexcept` and
-        // the no-throw promise is honored under -fno-exceptions
-        // (which is globally set for all Crucible TUs).
         bg_.set_region_ready_callback(
             this, [](void* self, RegionNode* region) noexcept { static_cast<Vigil*>(self)->on_region_ready(region); });
 
-        // GAPS-004h follow-up: load Senses + construct DeadlineWatchdog
-        // BEFORE bg_.start() so on_region_ready can call wd_->observe()
-        // on the very first region transition without nullptr-checks at
-        // the call site.  Senses::load_subset is noexcept; if libbpf
-        // can't attach SchedSwitch the watchdog's observe() returns
-        // InsufficientData every call (recorded in
-        // wd_insufficient_count_), which is correct behaviour.  Both
-        // wd_ and senses_ are declared BEFORE bg_, so destruction
-        // order (reverse declaration) joins the bg thread first, then
-        // tears down wd_, then senses_ — no UAF on the borrow.
+        // The watchdog is constructed before the background thread starts,
+        // so on_region_ready can observe on the very first region transition
+        // without a null check.  Attach failure is not an error here: every
+        // observation then returns InsufficientData.
         if (cfg_.enable_deadline_watchdog) {
             senses_.emplace(::crucible::perf::Senses::load_subset(
                 ::crucible::effects::mint_init_context(::crucible::effects::detail::ctx_mint::init_key{}),
@@ -256,21 +174,16 @@ public:
         bg_.start(ring_.get(), meta_log_.get(), cfg_.rank, cfg_.world_size, cfg_.device_capability);
     }
 
-    ~Vigil() = default;  // bg_ is declared last → destroyed first → stops thread
+    ~Vigil() = default;
 
     Vigil(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
     Vigil& operator=(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
     Vigil(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
     Vigil& operator=(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
 
-    // ─── Hot path: record one op (RECORDING mode) ──────────────────
-    //
-    // Called by the Vessel adapter for every ATen op.
-    // Appends tensor metadata to MetaLog, then pushes a fingerprint to TraceRing.
-    // Returns false if the ring or MetaLog is full (op silently dropped;
-    // next iteration re-records everything).
-    //
-    // Hot path: ~5ns + MetaLog write (~10ns for metas) = ~15ns total.
+    // Appends the tensor metadata, then pushes an op fingerprint to the
+    // ring.  Returns false when either is full, in which case the op is
+    // dropped and the next iteration re-records everything.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
                                                            uint32_t n_metas, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
@@ -281,48 +194,25 @@ public:
         return ring_->try_append(*ve.value(), meta_start, scope_hash, callsite_hash);
     }
 
-    // ─── Per-op dispatch (Tier 1 entry point) ─────────────────────
+    // Called once per op by the adapter.  A RECORD action means the caller
+    // executes eagerly and the op has been recorded; a COMPILED action means
+    // the outputs are already allocated and reachable through output_ptr and
+    // input_ptr.
     //
-    // The Vessel adapter calls this once per ATen op. Returns:
-    //   RECORD   → execute eagerly, Vigil recorded the op
-    //   COMPILED → outputs pre-allocated, use output_ptr(j) / input_ptr(j)
-    //
-    // Thin inline wrapper: only the hot paths live here. Cold paths
-    // (divergence recovery, pending-region consume, alignment) are
-    // in NOINLINE helpers so the compiler doesn't need callee-saved
-    // registers for the hot path.
-    //
-    // COMPILED hot path:
-    //   is_compiled() → ctx_.advance() → return result
-    //   No OpIndex computation (would require division by 96).
-    //
-    // RECORDING hot path:
-    //   is_compiled() → pending check → record_op() → return result
-    //   Acquire observe on pending_region_: must see the region data
-    //   stored by the bg thread (release pairing).  Free on x86 (same
-    //   as relaxed for an aligned load); emits DMB ISH on ARM only
-    //   when needed.  A relaxed load could miss the bg's store for
-    //   one op, recording it instead of aligning — alignment then
-    //   needs an extra op to reach K, delaying ctx_ activation.
+    // Only the hot paths live inline here.  Divergence recovery, consuming a
+    // pending region and alignment all sit in noinline helpers, so the hot
+    // path needs no callee-saved registers for them.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
     dispatch_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas, ScopeHash scope_hash = {},
                 CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
 #ifndef NDEBUG
-        // Debug-only SPSC producer-thread check — first dispatch claims
-        // the thread, subsequent dispatches must come from the same one.
-        // Release builds skip this entirely (zero hot-path cost).
         assert_producer_thread_();
 #endif
         const TraceRing::Entry& entry = *ve.value();
 
-        // ── COMPILED path (hot) ──
-        //
-        // The is_compiled() branch proves the context is in COMPILED mode.
-        // Mint a ScopedView once per dispatch so the advance() call
-        // below uses the typed overload — type-system guarantee that
-        // the engine transition is only reachable from this branch.
-        // View construction is a single pointer-copy in release; debug
-        // builds keep the contract check at the call boundary.
+        // The branch itself proves the context is compiled.  Minting the
+        // view once here is what makes the engine transition below reachable
+        // only from inside this branch.
         if (ctx_.is_compiled()) [[likely]] {
             auto compiled_view = ctx_.mint_compiled_view();
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
@@ -331,11 +221,11 @@ public:
             return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
         }
 
-        // ── RECORDING fast path (hot) ──
-        //
-        // Acquire observe matches the release publish in on_region_ready
-        // (bg thread).  We must see every byte of the region (ops,
-        // plan, hashes) the bg thread published before its store.
+        // The acquire observe pairs with the release publish on the
+        // background thread, so every byte of the region it wrote before
+        // that store is visible here.  A relaxed load could miss the store
+        // for one op and record it instead of aligning, which costs an extra
+        // op before alignment completes.
         auto* pending = pending_region_.observe();
         if (pending || pending_activation_) [[unlikely]]
             return dispatch_transition_(entry, metas, n_metas, scope_hash, callsite_hash);
@@ -345,45 +235,16 @@ public:
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // FOUND-I19: row-typed facade — pins dispatch_op as Pure
-    // ═══════════════════════════════════════════════════════════════
+    // Both leaves of dispatch_op are memory-only: a ring append on one
+    // side, a guard check and an engine advance on the other.  Neither
+    // allocates, blocks, performs I/O, or needs an init, test or background
+    // context, so the effect row is empty.
     //
-    // Sibling of TraceRing::try_append_pure (FOUND-I16) and
-    // MetaLog::try_append_pure (FOUND-I17).  Per CRUCIBLE.md §L4,
-    // dispatch_op is the canonical foreground per-op recording site —
-    // shape-budgeted at ~5 ns per call, forbidden from any class of
-    // heavy operation (alloc, syscall, block, futex).  Functionally
-    // pure at the C++ level: a single SPSC-ring append (RECORD path)
-    // OR a guard-check + ScopedView mint + advance (COMPILED path) —
-    // both leaves are memory-only, no I/O, no blocking, no allocation,
-    // no init/test/bg context.  In F* effect terms, it is `Pure`
-    // (the bottom of the OsUniverse effect-row lattice).  This facade
-    // pins that fact at the type level via an `IsPure<CallerRow>`
-    // constraint.
-    //
-    // Caller-row contract: CallerRow MUST satisfy `Subrow<CallerRow,
-    // Row<>>`, i.e., the caller's row must be empty.  A caller in any
-    // of {Alloc, IO, Block, Bg, Init, Test} context is REJECTED at
-    // compile time.  The bug class caught: a fallback eager-execution
-    // path (Block context), an init-time setup helper, a bg pumping
-    // helper, or a test-only fixture that inadvertently invokes
-    // dispatch_op on the foreground hot path; the row mismatch
-    // catches the miscategorization at compile time before the SPSC
-    // ring head advances.
-    //
-    // The facade is ADDITIVE: existing dispatch_op() callers stay
-    // unchanged.  Production hot-path callers can migrate by replacing
-    // `dispatch_op(...)` with `dispatch_op_pure<>(...)` to gain the
-    // compile-time check.
-    //
-    // Implementation: thin forwarder to dispatch_op; zero runtime
-    // cost (one inlined branchless tail-call under -O3).  The IsPure
-    // constraint is checked at substitution time, not at runtime.
-    //
-    // Default template argument is `Row<>` so `dispatch_op_pure(...)`
-    // (no template-arg) is equivalent to `dispatch_op_pure<Row<>>(...)`
-    // — the most common case at production hot-path call sites.
+    // This facade pins that at the type level by demanding an empty caller
+    // row.  What it catches: an eager fallback path, an init-time helper, a
+    // background pumping helper or a test fixture that reaches the
+    // foreground recording site by mistake.  The row mismatch fires at
+    // compile time, before the ring head can advance.
     template <typename CallerRow = ::crucible::effects::Row<>>
         requires ::crucible::effects::IsPure<CallerRow>
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
@@ -393,18 +254,18 @@ public:
     }
 
 #ifndef NDEBUG
-    // First call claims; subsequent calls verify match.  Debug-only.
+    // The first call claims the thread; every later call verifies the match.
     CRUCIBLE_INLINE void assert_producer_thread_() noexcept {
         const auto current_tid = std::this_thread::get_id();
         auto claimed = producer_tid_.load(std::memory_order_relaxed);
         if (claimed == current_tid) return;
         if (claimed == std::thread::id{}) {
-            // First dispatch — try to claim.  Relaxed: this is a
-            // debug-only lifecycle gate, no cross-thread sync needed.
+            // Relaxed is enough: this is a debug-only lifecycle gate and
+            // synchronizes nothing.
             if (producer_tid_.compare_exchange_strong(claimed, current_tid, std::memory_order_relaxed)) {
                 return;
             }
-            // Lost the race — another thread claimed first; fall through.
+            // Another thread claimed first, so fall through and fail.
         }
         contract_assert(claimed == current_tid
                         && "Vigil::dispatch_op called from a thread other than the "
@@ -412,22 +273,17 @@ public:
     }
 #endif
 
-    // ─── Queries (lock-free reads) ─────────────────────────────────
-
-    // Relaxed: mode_ is set and read primarily by fg thread. Tests spin
-    // on it cross-thread but only need eventual visibility (relaxed
-    // guarantees this). The real synchronization is pending_region_ observe().
-    // Note: these cross-thread queries load atomics — not gnu::pure
-    // (the atomic load is not side-effect-free from the optimizer's
-    // POV; another thread may change the value between loads, so CSE
-    // would be incorrect).  noexcept only.
+    // Relaxed suffices: the mode is a status flag written and read mostly
+    // by the foreground, and a cross-thread reader needs only eventual
+    // visibility.  The real synchronization is the pending-region observe.
+    //
+    // Not gnu::pure, despite reading nothing else: another thread can change
+    // the value between two loads, so common-subexpression elimination would
+    // be wrong.
     [[nodiscard]] Mode mode() const noexcept { return mode_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
     [[nodiscard]] constexpr ModeSessionHandle mode_session() const noexcept {
-        // substrate session-mint (not a wrapper); fixy surface is the
-        // higher-level mint_vigil_mode_bridge (fixy::bridge, #1507) — see
-        // the FIXY-U-030a header note.  Deeper U-030 reimplement, not S1.
         return safety::mint_atomic_session<ModeProtocol>(mode_);
     }
 
@@ -435,43 +291,30 @@ public:
         return bg_.active_region.load(std::memory_order_acquire);
     }
 
-    // Mutable overload of active_region().  The underlying storage in
-    // bg_.active_region is non-const RegionNode* (the bg thread published
-    // a writable region); the const accessor above is for introspection
-    // paths.  replay() needs the writable view because the user-supplied
-    // RegionExec lambda mutates the region (executes kernels writing
-    // outputs).  Eliminates the §III-banned const_cast at the callsite.
+    // The background thread published a writable region.  replay needs that
+    // writable view, because the caller's execution lambda mutates the
+    // region as it writes outputs.  The const accessor above serves
+    // introspection.
     [[nodiscard]] RegionNode* active_region_mut() noexcept { return bg_.active_region.load(std::memory_order_acquire); }
 
-    // Monotonic counter advanced exclusively by the bg thread on each
-    // region transition (see on_region_ready).  AtomicMonotonic's get()
-    // is acquire — strictly stronger than the pre-migration relaxed
-    // load, but step_ is informational only (tests + Cipher persist) so
-    // the extra ARM dmb on a non-hot read is free.
+    // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
 
     [[nodiscard]] ContentHash head_hash() const noexcept {
         return cipher_.has_value() ? cipher_->head() : ContentHash{};
     }
 
-    // ─── Control ───────────────────────────────────────────────────
-
-    // Wait until the background thread has FULLY PROCESSED all entries
-    // that were in the ring at the time of this call.
+    // Waits until the background thread has fully processed every entry the
+    // ring held when this was called.  Fully processed means drained, fed to
+    // the iteration detector, and carried through the whole boundary
+    // handler, region publication included.
     //
-    // "Fully processed" = drained from ring + fed to IterationDetector
-    // + on_iteration_boundary() completed (build_trace, make_region,
-    // region_ready_cb all finished).
-    //
-    // Previous implementation waited for ring_->size() == 0, which is
-    // wrong: drain() empties the ring BEFORE processing starts, so
-    // flush() could return while the bg thread was still building the
-    // trace/region. Under CPU contention (parallel ctest), this race
-    // caused test_vigil_dispatch to see mode_ == RECORDING after flush.
-    //
-    // New: snapshot total_produced, wait until total_processed catches up.
-    // Release/acquire on total_processed ensures all bg side effects
-    // (pending_region_, mode_) are visible to fg after flush returns.
+    // Waiting for the ring to empty instead would be wrong: the drain
+    // empties the ring before processing starts, so the wait would return
+    // while the background thread was still building the region.  Comparing
+    // the produced and processed counters is what closes that window, and
+    // the release-acquire pairing on the processed counter is what makes
+    // every background side effect visible on return.
     [[gnu::cold]] void flush() {
         const uint64_t target_produced = ring_->total_produced();
         while (bg_.total_processed.get() < target_produced) {
@@ -479,57 +322,40 @@ public:
         }
     }
 
-    // Query: has the bg thread fully processed all entries ever produced?
-    // Tests use this to verify flush() semantics explicitly.
     [[nodiscard]] bool flush_complete() const { return bg_.total_processed.get() >= ring_->total_produced(); }
 
-    // Restore the previous SUPERSEDED transaction as the active one.
-    // Also deactivates/re-activates CrucibleContext as needed.
-    // Returns true if rollback succeeded.
+    // Makes the previously superseded transaction active again, restoring
+    // the replay state to match.
     [[nodiscard, gnu::cold]] bool rollback() {
         if (!tx_log_.rollback()) return false;
-        // Deactivate current per-op replay state.
         if (ctx_.is_compiled()) ctx_.deactivate();
-        // Restore active region pointer from the rolled-back transaction.
         const Transaction* tx = tx_log_.active();
         if (tx && tx->region.value()) {
             bg_.active_region.store(tx->region.value(), std::memory_order_release);
-            // Re-activate CrucibleContext with the rolled-back region.
             if (ctx_.activate(tx->region.value())) register_externals_from_region_(tx->region.value());
         }
         return true;
     }
 
-    // ─── Replay: traverse the compiled DAG (no Vessel required) ────
-    //
-    // GuardEval:  (const Guard&)      → int64_t  (return current observed value)
-    // RegionExec: (const RegionNode*) → bool     (execute region, return ok)
-    //
-    // Returns true if replay completed without guard mismatches.
+    // Traverses the compiled DAG without the adapter.  eval_guard takes a
+    // guard and returns the currently observed value; exec_region executes
+    // one region and reports success.  Returns true when replay finished
+    // with no guard mismatch.
     template <typename GuardEval, typename RegionExec>
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
-        // active_region_mut() returns the writable RegionNode* directly —
-        // no §III-banned const_cast.  The bg thread published a writable
-        // pointer; the user lambda exec_region(RegionNode*) mutates it.
         RegionNode* region = active_region_mut();
         if (!region) return false;
-        // crucible::replay() is defined in MerkleDag.h.
-        // RegionNode : TraceNode, so the pointer upcast is implicit.
         return crucible::replay(region, std::forward<GuardEval>(eval_guard), std::forward<RegionExec>(exec_region));
     }
 
-    // ─── Persistence ───────────────────────────────────────────────
-
-    // Serialize the active region to Cipher and advance HEAD.
-    // No-op if cipher_path was not set in Config.
-    // Returns true if the region was successfully stored.
+    // Serializes the active region to the store and advances its head.
+    // A no-op when no store path was configured.
     [[nodiscard, gnu::cold]] bool persist() {
         if (!cipher_.has_value()) return false;
         const RegionNode* region = active_region();
         if (!region) return false;
-        // cipher_.has_value() guarantees Open (we only emplace via open()).
-        // Mint the view once and thread it through both typed calls —
-        // one acquire load instead of two redundant mints.
+        // The store is only ever emplaced from open(), so holding a value
+        // already proves it is open.  One mint serves both calls below.
         auto open_view = cipher_->mint_open_view();
         const ContentHash hash = cipher_->store(open_view, Cipher::content_addressed(region), meta_log_.get());
         if (!hash) return false;
@@ -537,9 +363,8 @@ public:
         return true;
     }
 
-    // Load the most recent region from Cipher and activate it.
-    // No-op if no Cipher or the Cipher is empty.
-    // Also activates CrucibleContext if the region has a MemoryPlan.
+    // Loads the most recent stored region and makes it active, activating
+    // replay too when that region carries a memory plan.
     [[nodiscard, gnu::cold]] bool load(effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         auto open_view = cipher_->mint_open_view();
@@ -547,7 +372,6 @@ public:
         if (!region) return false;
         bg_.active_region.store(region, std::memory_order_release);
         mode_.publish_compiled();
-        // Activate per-op replay if the loaded region has a plan.
         if (ctx_.activate(region)) {
             register_externals_from_region_(region);
             region_cache_.insert(region);
@@ -555,89 +379,55 @@ public:
         return true;
     }
 
-    // ─── CrucibleContext forwarding (Tier 1 compiled replay) ───────
-
-    // Pre-allocated output pointer for output j of the current op.
-    // Valid only after dispatch_op() returned COMPILED with MATCH/COMPLETE.
-    // Mints a CompiledView locally so the typed ctx overload is taken;
-    // the view's pre() check confirms the precondition the public API
-    // documents.  Compiles to the same machine code as the untyped path.
+    // Pre-allocated pointer for output j of the current op.  Valid only
+    // after dispatch_op returned COMPILED with a matching or complete
+    // status, which is what the minted view's precondition checks.
     [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        // mint_compiled_view() is `const noexcept` (CrucibleContext.h:256)
-        // — works on const refs.  The previous const_cast<CrucibleContext&>
-        // was a no-op the author appears to have added under the false
-        // impression the mint required non-const; removed per §III.
         auto compiled_view = ctx_.mint_compiled_view();
         return ctx_.output_ptr(j, compiled_view);
     }
 
-    // Pre-allocated input pointer for input j of the current op.
     [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        // See output_ptr above — mint_compiled_view() is const-callable;
-        // const_cast<CrucibleContext&> was a no-op, removed per §III.
         auto compiled_view = ctx_.mint_compiled_view();
         return ctx_.input_ptr(j, compiled_view);
     }
 
-    // Register an external tensor's data pointer with the pool.
     void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr) {
         auto compiled_view = ctx_.mint_compiled_view();
         ctx_.register_external(sid, ptr, compiled_view);
     }
 
-    // Number of complete iterations replayed in COMPILED mode.
     [[nodiscard]] uint32_t compiled_iterations() const { return ctx_.compiled_iterations(); }
-
-    // Number of divergences detected during COMPILED replay.
     [[nodiscard]] uint32_t diverged_count() const { return ctx_.diverged_count(); }
-
-    // Direct access to the CrucibleContext (diagnostics, not hot path).
     [[nodiscard]] const CrucibleContext& context() const CRUCIBLE_LIFETIMEBOUND { return ctx_; }
-
-    // Direct access to the RegionCache (diagnostics).
     [[nodiscard]] const RegionCache& region_cache() const CRUCIBLE_LIFETIMEBOUND { return region_cache_; }
-
-    // ─── Introspection ─────────────────────────────────────────────
 
     [[nodiscard]] const TransactionLog<16>& tx_log() const CRUCIBLE_LIFETIMEBOUND { return tx_log_; }
     [[nodiscard]] TraceRing& ring() CRUCIBLE_LIFETIMEBOUND { return *ring_; }
     [[nodiscard]] MetaLog& meta_log() CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
 
-    // Background thread diagnostics.
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
     [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
     [[nodiscard]] bool bg_detector_confirmed() const { return bg_.detector.confirmed; }
 
-    // ─── Deadline watchdog diagnostics (GAPS-004h follow-up) ───────
+    // True only when the configuration asked for the watchdog and the
+    // tracing subprogram actually attached.
     //
-    // True iff this Vigil was constructed with
-    // `Config::enable_deadline_watchdog = true` AND Senses::load_subset
-    // attached the SchedSwitch subprogram successfully.  False in all
-    // other cases (disabled by Config, libbpf missing, SchedSwitch
-    // failed to attach).  Use this to gate diagnostic output / runtime observation
-    // attribution paths.
-    //
-    // Note: a true return does NOT guarantee that observe() has
-    // produced a non-InsufficientData verdict — the very first
-    // window's observations always yield InsufficientData while the
-    // baseline is captured.  Check `last_watchdog_verdict()` for the
-    // current verdict.
+    // True does not imply a usable verdict yet.  The first window always
+    // reports InsufficientData while the baseline is captured.
     [[nodiscard]] bool watchdog_enabled() const noexcept { return wd_.has_value(); }
 
-    // Most recent verdict published by the bg-thread observe() call.
-    // Acquire load — pairs with the release store in on_region_ready.
-    // Returns InsufficientData on a freshly-constructed Vigil (no
-    // region transitions yet) or on a Vigil with watchdog disabled.
+    // The acquire load pairs with the release store on the background
+    // thread.  Reads InsufficientData when no region transition has happened
+    // yet, and when the watchdog is disabled.
     [[nodiscard]] ::crucible::warden::WatchdogVerdict last_watchdog_verdict() const noexcept {
         return wd_last_verdict_.load(std::memory_order_acquire);
     }
 
-    // Cumulative verdict counters.  Each region transition increments
-    // exactly one of these (when the watchdog is enabled).  Acquire
-    // load — pairs with release fetch_add on the bg thread.  Useful
-    // for runtime observation attribution ("how many Healthy ticks since last
-    // Downgrade?") and for tests that assert observe() ran.
+    // While the watchdog is enabled, each region transition increments
+    // exactly one of these three.  The acquire load pairs with the release
+    // increment on the background thread.
     [[nodiscard]] uint32_t watchdog_healthy_count() const noexcept {
         return wd_healthy_count_.load(std::memory_order_acquire);
     }
@@ -648,66 +438,43 @@ public:
         return wd_insufficient_count_.load(std::memory_order_acquire);
     }
 
-    // Note: DeadlineWatchdog itself is NOT exposed by const-ref.  It
-    // documents "SINGLE-THREAD ONLY" — its `baseline_count_`,
-    // `latest_count_`, and `window_started_ns_` fields are non-atomic
-    // and the bg thread mutates them inside observe().  A main-thread
-    // read via a leaked pointer would be a data race per the C++
-    // memory model (TSan would flag).  The atomic verdict + 3
-    // cumulative counters above are the diagnostic surface; if runtime observation
-    // needs more state (e.g. baseline_count for window-start
-    // attribution), publish it from on_region_ready as another atomic.
+    // The watchdog itself is deliberately not exposed by reference.  Its
+    // window state is non-atomic and the background thread mutates it during
+    // each observation, so a read through a leaked reference would be a data
+    // race.  The verdict and the three counters above are the whole
+    // diagnostic surface; anything more must be published as another atomic
+    // from the region-ready callback.
 
 private:
-    // ─── Background thread callback ────────────────────────────────
-    //
-    // Called on the background thread when a new RegionNode is ready.
-    // Transitions the transaction to ACTIVE and updates the execution mode.
-    // It must not touch Cipher: Cipher owns mutable resident-cache/log state
-    // and is foreground-owned by persist()/load().
+    // Runs on the background thread when a new region is ready.  It must
+    // not touch the persistence store: that owns mutable resident-cache and
+    // log state and belongs to the foreground.
     [[gnu::cold]] void on_region_ready(RegionNode* region) {
-        // step_ is a monotonic counter for tx_log sequencing.  bg thread
-        // is the sole writer; fg/test readers see an approximate value
-        // via current_step().  AtomicMonotonic's bump() returns the
-        // PREVIOUS value (the index this caller reserved) and uses
-        // acq_rel — one extra dmb on ARM per region transition.  Cold
-        // path; cost is negligible amortized over thousands of ops
-        // between region boundaries.
+        // bump returns the previous value, which is the index this call
+        // reserved.  The background thread is the sole writer.
         const uint64_t step = step_.bump();
 
         auto* tx = tx_log_.begin_tx(step);
-        // commit is nodiscard — bg-thread fast path cannot recover
-        // from a state-machine logic error here.  Cast away.
+        // The result is discarded because a state-machine logic error here
+        // is not something the background thread can recover from.
         //
-        // #937 WRAP-MerkleDag-1: route the merkle_root through
-        // `region->computed_merkle_hash()` so the type system witnesses
-        // the non-zero invariant at the production call site (the
-        // accessor's `pre(is_non_zero(merkle_hash))` fires here if
-        // recompute_merkle hasn't run; commit's runtime gate at
-        // Transaction.h is the second line of defense).
+        // The merkle root goes through the checked accessor so the non-zero
+        // invariant is witnessed at this call site: its precondition fires
+        // here if the hash was never recomputed.
         (void)tx_log_.commit(tx, Transaction::ArenaRegion{region}, region->content_hash,
                              ::crucible::make_merkle_root(region->computed_merkle_hash()));
         (void)tx_log_.activate(tx);
 
-        // Signal fg thread: a region with a MemoryPlan is available.
-        // fg thread picks it up in dispatch_op() via dispatch_transition_().
-        // Also set mode_=COMPILED so observers polling is_compiled()
-        // see the direct mode transition even before dispatch_op().
+        // Publishing the region signals the foreground, which picks it up
+        // on its next dispatch.  The mode flip is separate so an observer
+        // polling is_compiled sees the transition without waiting for that
+        // dispatch.
         pending_region_.publish(region);
         mode_.publish_compiled();
 
-        // GAPS-004h follow-up: poll the deadline watchdog at the
-        // iteration boundary (bg-thread cold path).  observe() reads
-        // SchedSwitch::context_switches() and emits a verdict; we
-        // publish it via atomic counters for fg-thread / runtime observation /
-        // Keeper consumers.  ~1 µs per call (single bpf_map_lookup +
-        // one CLOCK_BOOTTIME read), invoked at most once per region
-        // transition (~10-100ms steady-state) — total overhead well
-        // under 0.01 % even on a tight inference loop.
-        //
-        // FIXY-V-194: observe() is now ctx-gated — we present a
-        // BgDrainCtx because this code path runs on the Vigil's bg
-        // thread (the region-publishing thread, not the hot fg).
+        // The observation is presented with a background-drain context
+        // because this runs on the region-publishing thread, not the
+        // foreground.
         if (wd_) {
             const auto v = wd_->observe(::crucible::effects::BgDrainCtx{});
             wd_last_verdict_.store(v, std::memory_order_release);
@@ -722,34 +489,32 @@ private:
                     wd_insufficient_count_.fetch_add(1, std::memory_order_release);
                     break;
                 default:
-                    // WatchdogVerdict's underlying type is uint8_t with
-                    // exactly three named values; observe() never returns
-                    // anything else.  std::unreachable lets the compiler
-                    // delete the default arm in release.
+                    // The verdict enum has exactly the three values handled
+                    // above, so this arm is deleted in release.
                     std::unreachable();
             }
         }
     }
 
-    // ─── Cold dispatch paths (NOINLINE to keep hot path register-light) ─
+    // The cold dispatch paths below are noinline so the hot path needs no
+    // callee-saved registers for them.
 
-    // Divergence handler: region cache lookup, switch attempt, fallback.
-    // Called when ctx_.advance() returns DIVERGED.  ~50-400ns cold path.
+    // Looks the diverging shape up in the region cache, tries to switch to a
+    // matching region, and falls back to recording.
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
         const TraceRing::Entry& entry, [[maybe_unused]] const TensorMeta* metas, [[maybe_unused]] uint32_t n_metas,
         [[maybe_unused]] ScopeHash scope_hash, [[maybe_unused]] CallsiteHash callsite_hash) {
         const uint32_t div_pos = ctx_.engine().ops_matched();
 
-        // Cache the diverging region for future shape switches.
         region_cache_.insert(ctx_.active_region());
 
-        // Try to find a cached region that matches at the divergence
-        // position.  Excludes the current region.
+        // Look for a cached region that matches at the divergence position,
+        // excluding the current one.
         auto* alt = region_cache_.find_alternate(div_pos, entry.schema_hash, entry.shape_hash, ctx_.active_region());
 
         if (alt && try_switch_region_(alt, div_pos)) {
-            // Switched successfully.  Advance past the divergent op.
-            // try_switch_region_ leaves ctx_ in COMPILED mode.
+            // The switch leaves the context compiled, so advance past the
+            // divergent op.
             auto compiled_view = ctx_.mint_compiled_view();
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
@@ -758,46 +523,37 @@ private:
                         .pad = {},
                         .op_index = OpIndex{ctx_.engine().ops_matched()}};
             }
-            // Double divergence — shouldn't happen.  Fall through.
+            // Diverging twice in a row falls through to the reset below.
         }
 
-        // No cached alternate, switch failed, or double divergence.
         if (ctx_.is_compiled()) ctx_.deactivate();
 
         mode_.publish_recording_after_divergence();
-        // Signal bg thread to reset its detector and accumulated trace.
         bg_.reset_requested.signal();
-        // Don't record the divergent op — it poisons the bg thread's
-        // iteration detector.
+        // The divergent op is deliberately not recorded: it would poison the
+        // background thread's iteration detector.
         return {.action = DispatchResult::Action::RECORD,
                 .status = ReplayStatus::DIVERGED,
                 .pad = {},
                 .op_index = OpIndex{}};
     }
 
-    // Transition handler: consume pending region, run alignment, or
-    // record while a transition is in progress.  Called when
-    // pending_region_ or pending_activation_ is non-null.
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(const TraceRing::Entry& entry,
                                                                                    const TensorMeta* metas,
                                                                                    uint32_t n_metas,
                                                                                    ScopeHash scope_hash,
                                                                                    CallsiteHash callsite_hash) {
-        // Always try to consume pending_region_.
-        // If a newer region arrives while alignment is in progress,
-        // consume_pending_region_ replaces pending_activation_ and
-        // resets alignment_pos_ to 0. This is correct: the newer
-        // region may have different ops (e.g. after a divergence
-        // recovery cycle), so we must re-align from scratch.
+        // A newer region arriving mid-alignment replaces the pending one and
+        // restarts the alignment from zero.  That is correct: the newer
+        // region can carry different ops, for instance after a divergence
+        // recovery cycle, so the old partial match means nothing.
         if (pending_region_.observe()) consume_pending_region_();
 
         if (pending_activation_) {
-            // Alignment phase: don't record (prevents false iteration
-            // boundaries in the bg thread's detector).
+            // Nothing is recorded during alignment, because it would create
+            // false iteration boundaries in the background detector.
             try_align_(entry.schema_hash, entry.shape_hash);
         } else {
-            // entry is a live reference to a ValidatedEntryPtr's target
-            // in dispatch_op's caller frame; re-vouch at the typed API.
             (void)record_op(vouch(entry), metas, n_metas, scope_hash, callsite_hash);
         }
 
@@ -805,58 +561,48 @@ private:
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
 
-    // ─── Private helpers ────────────────────────────────────────────
-
-    // Consume the bg→fg pending region into fg-only alignment state.
-    // Does NOT activate CrucibleContext — alignment phase handles that.
+    // Moves the published region into foreground-only alignment state.  It
+    // does not activate replay; the alignment phase does that.
     [[gnu::cold]] void consume_pending_region_() {
         auto* region = pending_region_.consume();
         if (!region) return;
-        if (region->num_ops == 0) return;  // degenerate region
+        if (region->num_ops == 0) return;
 
-        // Start alignment phase: scan for iteration boundary.
         pending_activation_ = region;
         alignment_pos_ = AlignmentPos{uint8_t{0}};
     }
 
-    // Alignment phase: sliding window match against region ops[0..K-1].
+    // A sliding-window match against the region's first K ops.
     //
-    // When the bg thread signals a region, we don't know where in the
-    // iteration the fg thread currently is. We scan incoming ops for K
-    // consecutive matches against the region's first K ops to find the
-    // iteration boundary. Once found, activate CrucibleContext and
-    // advance the engine past the matched ops.
-    //
-    // K=5 matches the IterationDetector's signature length — sufficient
-    // to avoid false positives from a single op coincidence.
+    // When the background thread publishes a region, the foreground's
+    // position within the iteration is unknown.  K consecutive matches
+    // locate the boundary, at which point replay activates and the engine
+    // skips forward over the ops already matched.  One op could match by
+    // coincidence; K in a row will not.
     [[gnu::cold]] void try_align_(SchemaHash schema, ShapeHash shape) {
         assert(pending_activation_ && "try_align_ called without pending region");
         const auto* region = pending_activation_;
 
-        // Check if current op matches the expected alignment position.
         const uint8_t pos = alignment_pos_.value();
         if (schema == region->ops[pos].schema_hash && shape == region->ops[pos].shape_hash) {
-            // Increment via fresh AlignmentPos construction — Refined's
-            // ctor pre fires if (pos + 1) > ALIGNMENT_K; control-flow
-            // reaches here only after the prior iteration's `>= threshold`
-            // check would have RESET pending_activation_ to nullptr (so
-            // try_align_ wouldn't be called again past threshold).
+            // The increment cannot exceed the bound: once the previous call
+            // reached the threshold it cleared pending_activation_, so this
+            // function is not called again past that point.
             alignment_pos_ = AlignmentPos{static_cast<uint8_t>(pos + uint8_t{1})};
         } else {
-            // Mismatch — reset. But check if this op could be a new start (op 0).
+            // A mismatch resets, but this op may itself be a fresh start.
             alignment_pos_ = AlignmentPos{uint8_t{0}};
             if (region->num_ops > 0 && schema == region->ops[0].schema_hash && shape == region->ops[0].shape_hash) {
                 alignment_pos_ = AlignmentPos{uint8_t{1}};
             }
         }
 
-        // Once K consecutive ops match (or entire region if smaller),
-        // we've confirmed the iteration boundary. Activate and advance.
+        // A region shorter than K is matched in full instead.
         const uint32_t threshold = (region->num_ops < ALIGNMENT_K) ? region->num_ops : ALIGNMENT_K;
 
         if (uint32_t{alignment_pos_.value()} >= threshold) {
             if (!ctx_.activate(region)) {
-                // No plan → can't compile. Clear pending state.
+                // No memory plan means the region cannot be compiled.
                 pending_activation_ = nullptr;
                 return;
             }
@@ -864,13 +610,11 @@ private:
             register_externals_from_region_(region);
             region_cache_.insert(region);
 
-            // Advance the engine past the ops we already matched during
-            // alignment. These ops executed eagerly; the engine needs to
-            // be at position alignment_pos_ so the NEXT op checks against
-            // the correct region op.
+            // The matched ops already executed eagerly, so the engine has
+            // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
                 auto status = ctx_.advance(region->ops[i].schema_hash, region->ops[i].shape_hash);
-                // Must match — we verified these during alignment.
+                // These were verified during alignment, so they must match.
                 assert(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
                 (void)status;
             }
@@ -880,9 +624,8 @@ private:
         }
     }
 
-    // Walk region ops to find external slot data_ptrs from recorded
-    // TensorMeta. O(num_ext × num_ops × max_inputs) — cold path,
-    // runs once per activation.
+    // Walks the region's ops to recover each external slot's data pointer
+    // from the recorded tensor metadata.  Runs once per activation.
     [[gnu::cold]] void register_externals_from_region_(const RegionNode* region) {
         if (!region->plan) return;
 
@@ -892,7 +635,6 @@ private:
             SlotId target = region->plan->slots[slot_idx].slot_id;
             void* ptr = nullptr;
 
-            // Search region ops for the first input that reads from this slot.
             for (uint32_t i = 0; i < region->num_ops && !ptr; i++) {
                 const auto& te = region->ops[i];
                 if (!te.input_slot_ids) continue;
@@ -905,27 +647,22 @@ private:
             }
 
             if (ptr != nullptr) {
-                // ctx_ has just been activated by activate(region) at the
-                // call sites of register_externals_from_region_, so we
-                // know it's in COMPILED mode.  Mint the view inline.
+                // Every call site activates the context immediately before
+                // calling here, so it is compiled.
                 auto compiled_view = ctx_.mint_compiled_view();
                 ctx_.register_external(target, crucible::fixy::wrap::NonNull<void*>{ptr}, compiled_view);
             }
         }
     }
 
-    // ─── Region switching (divergence recovery via cache) ────────
-    //
-    // Verifies prefix match, then delegates to
-    // CrucibleContext::switch_region() which handles pool detach,
-    // selective slot migration, and engine advancement.
-    //
-    // Returns true if switch succeeded and engine is at position div_pos.
+    // Verifies the prefix match, then delegates the pool detach, the slot
+    // migration and the engine advance.  Returns true when the switch
+    // succeeded and the engine sits at div_pos.
     [[nodiscard, gnu::cold]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos) pre(alt != nullptr) {
         if (!alt->plan) return false;
 
-        // For div_pos>0, verify prefix match: ops 0..div_pos-1
-        // must have identical schema+shape in both regions.
+        // Every op before the divergence point must carry an identical
+        // schema and shape in both regions.
         if (div_pos > 0) {
             const auto* old_region = ctx_.active_region();
             assert(old_region && "no active region to switch from");
@@ -941,101 +678,66 @@ private:
 
         if (!ctx_.switch_region(alt, div_pos)) return false;
         register_externals_from_region_(alt);
-        // CONTRACT-Vigil-SwitchRegion-POST: success-path invariant.  After
-        // try_switch_region_ returns true, the foreground dispatch state
-        // satisfies the structural contract that downstream readers rely on:
-        //   (1) ctx_.active_region() == alt — the new region is live in
-        //       the dispatch state.  ctx_.switch_region() does the
-        //       publication; the post pins it so a future refactor that
-        //       skips the publish step (or publishes the wrong RegionNode)
-        //       fails the contract instead of silently dispatching against
-        //       the stale region.  Mirrors CONTRACT-Tx-Activate-POST
-        //       active_tx_ == tx pin (Transaction.h:228, 9a0fc58).
-        //   (2) alt != nullptr — pre-condition pinned by the function's
-        //       `pre (alt != nullptr)` clause; restated here so the
-        //       success-path invariant `active_region() == alt` is
-        //       legible without reading the header.
-        // Routes through CRUCIBLE_POST because the consequent dereferences
-        // the freshly-published `alt` indirectly through ctx_.active_region()
-        // — same GCC 16.1.1 consteval-bypass family as every prior POST
-        // commit in this session-pair.  Under NDEBUG these collapse to
-        // `[[assume]]` so the next dispatch_op() call's hot path can
-        // speculate that ctx_.active_region() is non-null and equals alt.
-        // The first failure return on line 950 holds vacuously: the
-        // post is only checked on the success path because we return
-        // before reaching this line otherwise.
+        // These hold only on the success path; every failure returns above.
+        // Pinning them here catches a refactor that skips the publication or
+        // publishes the wrong region, which would otherwise keep dispatching
+        // against the stale one.  Under NDEBUG they become assumptions the
+        // next dispatch can speculate on.
         CRUCIBLE_POST(0, alt != nullptr);
         CRUCIBLE_POST(0, ctx_.active_region() == alt);
         return true;
     }
 
-    // ─── Members (declaration order is destruction-order-critical) ─
-    //
-    // bg_ MUST be last: it is destroyed first, stopping the background
-    // thread before all other members are invalidated.
+    // Declaration order below is destruction order reversed, and that is
+    // load-bearing.  bg_ must stay last so it is destroyed first and joins
+    // the background thread before anything that thread touches goes away.
 
     Config cfg_;
     std::unique_ptr<TraceRing> ring_;
     std::unique_ptr<MetaLog> meta_log_;
     TransactionLog<16> tx_log_;
     std::optional<Cipher> cipher_;
-    // SPSC invariant: every dispatch_op / record_op must come from the
-    // SAME thread (the foreground producer).  A different thread entering
-    // violates the ring's single-producer protocol and can corrupt the
-    // head-tail relationship.  producer_tid_ captures the first
-    // dispatching thread's id and debug-asserts match on every subsequent
-    // dispatch.  In release builds the contract collapses under
-    // semantic=ignore.
+    // Every dispatch and every record must come from one and the same
+    // thread.  Another thread entering breaks the ring's single-producer
+    // protocol and can corrupt the head-to-tail relationship.  This holds
+    // the first dispatching thread's id and the debug build asserts the
+    // match on every later dispatch.
     //
-    // fixy-V-209 (Agent 7 Bug #5): atomic<thread::id> is not guaranteed
-    // lock-free on every supported target.  libstdc++ silently falls back
-    // to a hashed-table / mutex-backed atomic when the underlying
-    // pthread_t lacks a native atomic intrinsic — a hidden mutex on the
-    // foreground producer-thread check would invert the SPSC hot-path's
-    // nanosecond budget.  Refuse to build instead of regressing silently.
+    // An atomic thread id is not lock-free on every target.  Where the
+    // underlying handle has no native atomic instruction, the standard
+    // library falls back to a mutex-backed atomic, and a hidden mutex on
+    // this check would invert the hot path's whole latency budget.  Refuse
+    // to build rather than regress silently.
     static_assert(std::atomic<std::thread::id>::is_always_lock_free,
-                  "std::atomic<std::thread::id> must be lock-free on this "
-                  "target — fixy-V-209");
+                  "std::atomic<std::thread::id> must be lock-free on this target.");
     std::atomic<std::thread::id> producer_tid_{};
-    // mode_ is a status flag — real sync is pending_region_ observe(),
-    // relaxed ordering is sufficient here (fg-thread-primary).  The
-    // wrapper removes raw store/load vocabulary from Vigil and leaves
-    // only named transitions matching the actual cyclic lifecycle.
-    // step_ is a monotonic counter advanced by bg thread on each region
-    // transition; AtomicMonotonic lifts the monotonicity invariant to
-    // the type level (no decrement, no reset, no stale CAS).
     ModeCell mode_;
     fixy::wrap::AtomicMonotonic<uint64_t> step_{0};
-    Arena load_arena_{1 << 20};  // for Cipher::load()
+    Arena load_arena_{1 << 20};
 
-    // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
-
-    // NOT relaxed: bg→fg publish. bg writes region data, then
-    // publish(release). fg's observe/consume(acquire) in dispatch_op
-    // must see it.  This is reusable latest-wins publication, not
-    // PublishOnce: divergence recovery can publish multiple regions.
+    // The publication is release on the background side and acquire on the
+    // foreground side, so the region data written before the publish is
+    // visible after the observe.  It is a reusable latest-wins slot rather
+    // than a publish-once cell because divergence recovery publishes
+    // several regions over one process lifetime.
     fixy::handle::PublishSlot<RegionNode> pending_region_;
-    RegionNode* pending_activation_{nullptr};  // fg-only: waiting for alignment
-    AlignmentPos alignment_pos_{uint8_t{0}};  // consecutive matched ops from region start (#1077)
-    CrucibleContext ctx_;  // fg-only replay
-    RegionCache region_cache_;  // fg-only: cached alternate regions
+    // The four below are foreground-only.
+    RegionNode* pending_activation_{nullptr};
+    AlignmentPos alignment_pos_{uint8_t{0}};
+    CrucibleContext ctx_;
+    RegionCache region_cache_;
 
-    // ─── GAPS-004h follow-up: deadline watchdog state ──────────────
+    // senses_ must precede wd_, which holds a borrow of it, so that reverse
+    // destruction order tears the borrower down first.
     //
-    // senses_ MUST precede wd_: DeadlineWatchdog stores a const Senses*
-    // borrow.  Destruction is reverse declaration order, so wd_ goes
-    // before senses_ — the borrow's lifetime is upheld.
+    // Both must precede bg_.  The background thread's region-ready callback
+    // observes through wd_, which reads senses_.  Destroying bg_ first joins
+    // that thread, after which no observation can start, and only then does
+    // the subprogram unload.
     //
-    // Both MUST precede bg_: the bg thread's on_region_ready callback
-    // calls wd_->observe(), which reads senses_'s SchedSwitch subprog.
-    // bg_'s destruction joins the thread first; then wd_ tears down
-    // (no more observe() calls possible); then senses_ unloads the
-    // BPF subprograms (no more borrow holders).
-    //
-    // wd_*_count_ + wd_last_verdict_ are atomics — no inter-field
-    // lifetime constraint, but kept here for cache-line locality with
-    // wd_ (the bg thread writes wd_'s state and these counters in the
-    // same on_region_ready frame).
+    // The counters have no lifetime constraint of their own, but sit here
+    // for locality: the background thread writes them in the same frame it
+    // drives the watchdog.
     std::optional<::crucible::perf::Senses> senses_;
     std::optional<::crucible::warden::DeadlineWatchdog> wd_;
     std::atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
@@ -1044,32 +746,21 @@ private:
     std::atomic<uint32_t> wd_downgrade_count_{0};
     std::atomic<uint32_t> wd_insufficient_count_{0};
 
-    BackgroundThread bg_;  // MUST be declared last
+    BackgroundThread bg_;  // Must stay last.
 };
 
-// §XXI Universal Mint Pattern (token-mint flavor): convenience
-// overload that synthesizes a fresh authoritative ModeSessionHandle
-// from a Vigil reference, forwarding to mode_session() which mints
-// over the embedded ModeCell.  The ModeCell-taking primary mint
-// lives in <crucible/bridges/VigilModeHandle.h> and is the surface
-// that fixy/Bridge.h re-exports; this overload exists so callers
-// that already hold a Vigil don't have to expose the cell.
+// A convenience overload of the mode-cell mint, so a caller that already
+// holds a Vigil does not have to expose the cell.
 //
-// Constexpr-qualified per §XXI discipline ("Every mint MUST be
-// [[nodiscard]] constexpr noexcept"); Vigil is not a literal type
-// (it holds std::atomic<Mode>), so this mint is not invocable in a
-// constant expression in practice, but the constexpr qualifier
-// remains semantically valid and discipline-uniform.  Closes
-// fixy-M-22 (#1507); fixy-H-23 (#1483) carved out the ModeCell
-// overload as the primary surface.
+// It is constexpr for uniformity with every other mint.  Vigil is not a
+// literal type, so this is never actually evaluated in a constant
+// expression.
 [[nodiscard]] constexpr Vigil::ModeSessionHandle mint_vigil_mode_bridge(const Vigil& vigil) noexcept {
     return vigil.mode_session();
 }
 
-// Tier 2 opt-in: nothing inside Vigil may be a ScopedView.  The
-// reflection walk proves that neither Vigil nor any of its fields
-// (transitively, through known wrappers) stores a fixy::wrap::ScopedView —
-// views must not escape their construction scope.
+// A scoped view must not outlive the scope that minted it, so no field of
+// Vigil, transitively, is allowed to be one.
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<Vigil>());
 
 }  // namespace crucible

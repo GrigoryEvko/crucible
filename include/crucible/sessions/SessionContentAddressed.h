@@ -1,97 +1,19 @@
 #pragma once
 
-// ═══════════════════════════════════════════════════════════════════
-// crucible::safety::proto — ContentAddressed<T> quotient combinator
-//                            (SEPLOG-L1, task #361, Appendix D.5)
+// A payload marked this way may be delivered without crossing the wire
+// at all, when the recipient already holds a copy addressed by the same
+// content.  What the recipient ends up in depends only on the content,
+// so which of the two routes delivered it is invisible to the protocol.
 //
-// ContentAddressed<T> is a PAYLOAD WRAPPER marking a value type as
-// eligible for content-hash-based wire elision.  Semantics per
-// session_types.md Appendix D.5:
+// Deciding whether a copy is already held is a question for whatever
+// moves the bytes.  The type says only that the answer cannot change
+// the protocol's outcome, which is what makes the elision safe.
 //
-//     Send<ContentAddressed<T>, K> semantically means:
-//       if recipient has hash(T) cached, skip wire transmission;
-//       else send the bytes.
-//
-// The recipient's observable protocol state depends ONLY on the
-// payload's content hash — whether bytes arrived on the wire or
-// were found in a local content-addressed cache is opaque at the
-// protocol level.  This is a QUOTIENT SEMANTICS:  the protocol is
-// INVARIANT under content-hash-preserving transformations.
-//
-// ─── Type-level contract ──────────────────────────────────────────
-//
-// ContentAddressed<T> and T are mutually subsortable — they're
-// interchangeable payload types at the subtype level:
-//
-//     is_subsort<ContentAddressed<T>, T>  == true
-//     is_subsort<T, ContentAddressed<T>>  == true
-//
-// Consequently, Send<ContentAddressed<T>, K> and Send<T, K> are
-// mutually subtypes (via Send's payload-covariance through subsort).
-// Same for Recv.  A protocol that refactors to opt INTO wire-level
-// dedup at the transport layer stays provably equivalent to its
-// pre-refactor version at the type level.
-//
-// ─── Wrapping and unwrapping ──────────────────────────────────────
-//
-//     ContentAddressed<T>::wrapped                  == T
-//     content_addressed_underlying_t<ContentAddressed<T>>  == T
-//     content_addressed_underlying_t<T>             == T  (non-wrapped)
-//     unwrap_content_addressed_t<ContentAddressed<ContentAddressed<T>>>
-//                                                   == T
-//                                                   (recursive strip)
-//     content_addressed_depth_v<T>                  number of nested
-//                                                   ContentAddressed<>
-//                                                   wrappers
-//
-// ─── Why this is a TYPE-level layer, not a runtime construct ─────
-//
-// The wire-elision decision — "does the recipient already have
-// hash(T) cached?" — is a RUNTIME question answered by the transport
-// layer (Cipher dedup, cross-session prefix sharing for KV cache,
-// KernelCache broadcast).  The TYPE system's job is to certify that
-// the protocol's correctness does not depend on which path (wire
-// transmit vs cache hit) delivers the payload.  ContentAddressed<T>
-// is that certification.
-//
-// ─── Canonical Crucible uses ──────────────────────────────────────
-//
-//   * Cipher three-tier publication — L1 IR002 snapshots, L2 IR003
-//     per-vendor, L3 compiled-binary; all content-addressed; cross-
-//     session dedup eligible.
-//   * KernelCache broadcast — identical kernels distributed to all
-//     workers, dedup'd at the transport.
-//   * PagedKVCache — cross-session prefix sharing (CRUCIBLE.md §IV.27);
-//     prefix pages content-addressed; multiple inference sessions
-//     share physical storage for identical prefix content.
-//   * Replay trace events — identical ops across iterations hit the
-//     same content hash.
-//
-// Each of these uses Send<ContentAddressed<Payload>, _> in its session
-// type to declare "this wire message is dedup-eligible" without
-// committing to which specific dedup mechanism the runtime uses.
-//
-// ─── What ships here; what doesn't ────────────────────────────────
-//
-// Shipped:
-//   * ContentAddressed<T> wrapper type
-//   * is_content_addressed_v / _depth_v / _underlying_t traits
-//   * unwrap_content_addressed_t recursive unwrap
-//   * is_subsort specialisations for mutual interchangeability
-//   * ContentAddressedType concept
-//
-// NOT shipped (by design):
-//   * Runtime content-hash computation — that's the transport's job;
-//     the type layer doesn't prescribe a hash function.
-//   * Dedup cache machinery — Cipher / KernelCache own this.
-//   * Wire-format negotiation (cache-miss hint) — transport-level.
-//
-// ─── References ───────────────────────────────────────────────────
-//
-//   session_types.md Appendix D.5 — specification of this combinator.
-//   Honda-Yoshida-Carbone 2008 — classical MPST doesn't handle
-//     quotient payloads; this is an extension specific to Crucible.
-// ═══════════════════════════════════════════════════════════════════
+// The marked and unmarked payload types are therefore subsorts of each
+// other.  That is unusual: every other payload relation here runs one
+// way, since it records a guarantee one side has and the other does
+// not.  Here neither side gains or loses anything, so a protocol that
+// takes up the marking stays equivalent to the one that did not.
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
@@ -102,21 +24,10 @@
 
 namespace crucible::safety::proto {
 
-// ═════════════════════════════════════════════════════════════════════
-// ── ContentAddressed<T> ────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Pure type marker.  Zero runtime footprint.  The nested alias
-// `wrapped` exposes the underlying payload type for introspection.
-
 template <typename T>
 struct ContentAddressed {
     using wrapped = T;
 };
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Shape traits ───────────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
 
 template <typename T>
 struct is_content_addressed : std::false_type {};
@@ -127,20 +38,8 @@ struct is_content_addressed<ContentAddressed<T>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_content_addressed_v = is_content_addressed<T>::value;
 
-// Concept form for require-clauses.
 template <typename T>
 concept ContentAddressedType = is_content_addressed_v<T>;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── content_addressed_underlying_t<T> ──────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Strip ONE layer of ContentAddressed<>.  For ContentAddressed<T>
-// returns T; for any other type, returns the type unchanged.  This
-// is the COMMON case — wrappers are typically unnested.
-//
-// For deep unwrap across multiple wrappers, use
-// unwrap_content_addressed_t below.
 
 template <typename T>
 struct content_addressed_underlying {
@@ -155,19 +54,6 @@ struct content_addressed_underlying<ContentAddressed<T>> {
 template <typename T>
 using content_addressed_underlying_t = typename content_addressed_underlying<T>::type;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── unwrap_content_addressed_t<T> (recursive) ──────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Strip ALL layers of ContentAddressed<>.  Recurses until T is no
-// longer content-addressed.  Useful for identity checks after
-// arbitrary wrapping:
-//
-//     using T = ContentAddressed<ContentAddressed<ContentAddressed<int>>>;
-//     static_assert(std::is_same_v<unwrap_content_addressed_t<T>, int>);
-//
-// Unusual to have nesting, but the trait handles it robustly.
-
 template <typename T>
 struct unwrap_content_addressed {
     using type = T;
@@ -178,14 +64,6 @@ struct unwrap_content_addressed<ContentAddressed<T>> : unwrap_content_addressed<
 
 template <typename T>
 using unwrap_content_addressed_t = typename unwrap_content_addressed<T>::type;
-
-// ═════════════════════════════════════════════════════════════════════
-// ── content_addressed_depth_v<T> ───────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Count the number of nested ContentAddressed<> wrappers.  Returns
-// 0 for non-wrapped types, 1 for ContentAddressed<T>, N for N-deep
-// nesting.
 
 namespace detail::ca {
 
@@ -200,76 +78,23 @@ struct depth<ContentAddressed<T>> : std::integral_constant<std::size_t, 1 + dept
 template <typename T>
 inline constexpr std::size_t content_addressed_depth_v = detail::ca::depth<T>::value;
 
-// ═════════════════════════════════════════════════════════════════════
-// ── is_subsort integration: mutual interchangeability ──────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// ContentAddressed<T> and T are mutually subsortable at the value-
-// type level.  Consequences via Send's payload covariance and Recv's
-// payload contravariance:
-//
-//   Send<ContentAddressed<T>, K>  ⩽  Send<T, K>            (wrap-to-raw)
-//   Send<T, K>  ⩽  Send<ContentAddressed<T>, K>            (raw-to-wrap)
-//
-//   Recv<ContentAddressed<T>, K>  ⩽  Recv<T, K>            (wrap-to-raw,
-//                                                           contravariant)
-//   Recv<T, K>  ⩽  Recv<ContentAddressed<T>, K>            (raw-to-wrap)
-//
-// I.e., at the protocol level, the wrapper-and-raw forms are
-// interchangeable.  A protocol that opts into ContentAddressed<> at
-// the transport-hint layer stays provably equivalent to the
-// pre-opt-in version.
-//
-// Specialisation ordering:  these partial specialisations pin the
-// relationship between ContentAddressed<X> and X; they're strictly
-// more specialised than the primary `is_subsort<T, U> = is_same<T, U>`.
-// The compiler picks them when applicable; no collision with
-// user-defined subsort specialisations on unrelated type pairs.
-
 template <typename T>
 struct is_subsort<ContentAddressed<T>, T> : std::true_type {};
 
 template <typename T>
 struct is_subsort<T, ContentAddressed<T>> : std::true_type {};
 
-// Reflexive case ContentAddressed<T> ↔ ContentAddressed<T> — falls
-// through to the primary `is_subsort<T, T> = true` (via is_same).
-// We don't need an explicit specialisation for this; verify in the
-// self-tests below.
-
-// ─── Depth ≥ 2: nested-wrap transitive interchangeability (#370) ──
+// The pair of rules above stops one layer deep, and the relation is
+// not closed under composition, so nesting the marker would otherwise
+// sever the payload from the type it wraps.  Nesting changes nothing
+// about content, so the two rules below reach through any number of
+// layers by stripping them all.
 //
-// Subsort is NOT transitive in the framework (documented in
-// SessionSubtype.h:133-153 — the user owns the transitivity rules
-// they declare).  But ContentAddressed's quotient semantics are
-// stronger than ordinary subsort: the type is INVARIANT under
-// content-equality at every wrapping depth.  A doubly-wrapped
-// `ContentAddressed<ContentAddressed<T>>` carries the same
-// content-hash semantics as `T` itself, so the two MUST be mutually
-// substitutable — at depth 2, depth 3, depth N.
-//
-// The depth-1 specs above don't transitively close because subsort
-// composition is the user's responsibility; without an explicit
-// rule the framework reports false at depth ≥ 2.  These two
-// constrained specialisations close the hole using the existing
-// `unwrap_content_addressed_t` trait (recursive depth-stripper),
-// admitting:
-//
-//   ContentAddressed<...<ContentAddressed<U>>...>   ⩽   U
-//   U                ⩽   ContentAddressed<...<ContentAddressed<U>>...>
-//
-// for any wrapping depth ≥ 1.
-//
-// Specialisation ordering: these constrained partial specs are LESS
-// specialised than the literal depth-1 specs above, so the compiler
-// picks the literal depth-1 specs when applicable (no overlap).
-// They're MORE specialised than the primary `is_subsort<T, U>`
-// (which uses `is_same` with no constraints) because they carry a
-// `requires` clause.  The constraint `unwrap_content_addressed_t<X>
-// == Y && X != Y` ensures we only match when (a) one side is
-// content-addressed at depth ≥ 1 and (b) the other side is its
-// recursive unwrap — never the reflexive `is_subsort<X, X>` case
-// which the primary already handles.
+// They sit between the two rules above and the reflexive fall-through:
+// looser than the literal one-layer rules, which therefore still win
+// where they apply, and tighter than the unconstrained fall-through.
+// Requiring the two sides to differ keeps a type from matching against
+// itself here.
 
 template <typename T, typename U>
     requires(is_content_addressed_v<T> && std::is_same_v<unwrap_content_addressed_t<T>, U> && !std::is_same_v<T, U>)
@@ -279,42 +104,29 @@ template <typename T, typename U>
     requires(is_content_addressed_v<U> && std::is_same_v<T, unwrap_content_addressed_t<U>> && !std::is_same_v<T, U>)
 struct is_subsort<T, U> : std::true_type {};
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Framework self-test static_asserts ─────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::ca::ca_self_test {
 
-// Fixture payload.
 struct Msg {};
 struct Ack {};
-
-// ─── Shape traits ─────────────────────────────────────────────────
 
 static_assert(is_content_addressed_v<ContentAddressed<Msg>>);
 static_assert(!is_content_addressed_v<Msg>);
 static_assert(!is_content_addressed_v<int>);
 static_assert(!is_content_addressed_v<End>);
 
-// Concept form.
 template <ContentAddressedType T>
 consteval bool requires_content_addressed() {
     return true;
 }
 static_assert(requires_content_addressed<ContentAddressed<Msg>>());
 
-// ─── content_addressed_underlying_t (single-layer strip) ──────────
-
 static_assert(std::is_same_v<content_addressed_underlying_t<ContentAddressed<Msg>>, Msg>);
 static_assert(std::is_same_v<content_addressed_underlying_t<Msg>, Msg>);
 static_assert(std::is_same_v<content_addressed_underlying_t<int>, int>);
 
-// Nested: strips only the OUTER wrapper, leaves inner intact.
 static_assert(
     std::is_same_v<content_addressed_underlying_t<ContentAddressed<ContentAddressed<Msg>>>, ContentAddressed<Msg>>);
-
-// ─── unwrap_content_addressed_t (recursive strip) ─────────────────
 
 static_assert(std::is_same_v<unwrap_content_addressed_t<Msg>, Msg>);
 static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<Msg>>, Msg>);
@@ -322,121 +134,79 @@ static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<Content
 static_assert(
     std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>, Msg>);
 
-// ─── content_addressed_depth_v ────────────────────────────────────
-
 static_assert(content_addressed_depth_v<Msg> == 0);
 static_assert(content_addressed_depth_v<int> == 0);
 static_assert(content_addressed_depth_v<ContentAddressed<Msg>> == 1);
 static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<Msg>>> == 2);
 static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>> == 3);
 
-// ─── is_subsort: mutual interchangeability ────────────────────────
-
 static_assert(is_subsort_v<ContentAddressed<Msg>, Msg>);
 static_assert(is_subsort_v<Msg, ContentAddressed<Msg>>);
 
-// Reflexivity via the primary is_subsort<T, T>.
 static_assert(is_subsort_v<ContentAddressed<Msg>, ContentAddressed<Msg>>);
 static_assert(is_subsort_v<Msg, Msg>);
 
-// Unrelated pairs are NOT subsortable (primary returns false).
 static_assert(!is_subsort_v<ContentAddressed<Msg>, Ack>);
 static_assert(!is_subsort_v<Msg, Ack>);
 static_assert(!is_subsort_v<ContentAddressed<Msg>, ContentAddressed<Ack>>);
 
-// ─── Depth ≥ 2: nested-wrap interchangeability (#370) ─────────────
-//
-// Doubly-wrapped (and arbitrarily-deeply-wrapped) ContentAddressed
-// values are mutually substitutable with the raw payload, in BOTH
-// directions, via the constrained-spec rules above.
-
 using CaCa = ContentAddressed<ContentAddressed<Msg>>;
 using CaCaCa = ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>;
 
-// Depth 2 ↔ raw.
 static_assert(is_subsort_v<CaCa, Msg>);
 static_assert(is_subsort_v<Msg, CaCa>);
 
-// Depth 3 ↔ raw.
 static_assert(is_subsort_v<CaCaCa, Msg>);
 static_assert(is_subsort_v<Msg, CaCaCa>);
 
-// Depth 5 ↔ raw — confirms unbounded depth via the recursive trait.
 using CaDepth5 = ContentAddressed<ContentAddressed<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>>;
 static_assert(is_subsort_v<CaDepth5, Msg>);
 static_assert(is_subsort_v<Msg, CaDepth5>);
 
-// Reflexivity at every depth (primary is_subsort<T, T>).
 static_assert(is_subsort_v<CaCa, CaCa>);
 static_assert(is_subsort_v<CaCaCa, CaCaCa>);
 static_assert(is_subsort_v<CaDepth5, CaDepth5>);
 
-// Cross-depth (depth N ↔ depth N+1) is also true — but via the
-// EXISTING depth-1 specs, not the new depth-N-to-raw specs.  The
-// depth-1 spec `is_subsort<ContentAddressed<X>, X>` matches with
-// X = CaCa for the (CaCaCa, CaCa) pair; the symmetric direction
-// matches via `is_subsort<T, ContentAddressed<T>>` with T = CaCa.
-// So adjacent depths are mutually subsortable already.
+// Depths one apart are related by the one-layer rules, taking the
+// inner nest as the payload.
 
-static_assert(is_subsort_v<CaCaCa, CaCa>);  // depth-1 spec, X = CaCa
-static_assert(is_subsort_v<CaCa, CaCaCa>);  // depth-1 spec, T = CaCa
+static_assert(is_subsort_v<CaCaCa, CaCa>);
+static_assert(is_subsort_v<CaCa, CaCaCa>);
 
-// Cross-depth (depth N ↔ depth N+2) WOULD need transitive closure
-// — neither the depth-1 specs nor the new depth-N-to-raw specs
-// cover it directly.  Subsort is not transitive in the framework
-// (per SessionSubtype.h:133-153), so this remains false.  In
-// practice protocols traverse depth changes via Send/Recv payload
-// covariance, which DOES compose through `Send<CaCaCaCa, K> ⩽
-// Send<Msg, K> ⩽ Send<CaCa, K>` by routing through the raw
-// payload — so cross-depth-2 hops at the protocol level work
-// even when the value-level subsort doesn't.
+// Depths two apart are related by no rule here, and the relation does
+// not compose on its own.  A protocol still crosses that gap, by
+// relating each side to the unwrapped payload and meeting there.
 
 using CaDepth4 = ContentAddressed<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>;
 static_assert(!is_subsort_v<CaDepth4, CaCa>);
 static_assert(!is_subsort_v<CaCa, CaDepth4>);
 
-// Unrelated pairs at higher depth are still not subsortable.
 static_assert(!is_subsort_v<CaCa, Ack>);
 static_assert(!is_subsort_v<Ack, CaCa>);
 static_assert(!is_subsort_v<CaDepth5, Ack>);
 
-// Different inner payloads at any depth are unrelated.
 static_assert(!is_subsort_v<ContentAddressed<ContentAddressed<Msg>>, ContentAddressed<ContentAddressed<Ack>>>);
 
-// ─── Session-type protocol-level integration ─────────────────────
-
-// Send is covariant in payload — so Send<ContentAddressed<Msg>, K>
-// and Send<Msg, K> are mutual subtypes.
 static_assert(is_subtype_sync_v<Send<ContentAddressed<Msg>, End>, Send<Msg, End>>);
 static_assert(is_subtype_sync_v<Send<Msg, End>, Send<ContentAddressed<Msg>, End>>);
 
-// Equivalence (sync): both directions hold.
 static_assert(equivalent_sync_v<Send<ContentAddressed<Msg>, End>, Send<Msg, End>>);
 
-// Recv is contravariant in payload.  Mutual interchangeability
-// means both directions hold for Recv too.
+// A one-way payload relation would give only one direction on a
+// receive.  This one being two-way, both directions survive.
 static_assert(is_subtype_sync_v<Recv<ContentAddressed<Msg>, End>, Recv<Msg, End>>);
 static_assert(is_subtype_sync_v<Recv<Msg, End>, Recv<ContentAddressed<Msg>, End>>);
 
 static_assert(equivalent_sync_v<Recv<ContentAddressed<Msg>, End>, Recv<Msg, End>>);
-
-// Depth ≥ 2 also flows through Send / Recv via the constrained spec
-// from #370 — a doubly-wrapped payload is interchangeable with raw
-// at the protocol level.
 
 static_assert(is_subtype_sync_v<Send<ContentAddressed<ContentAddressed<Msg>>, End>, Send<Msg, End>>);
 static_assert(is_subtype_sync_v<Send<Msg, End>, Send<ContentAddressed<ContentAddressed<Msg>>, End>>);
 
 static_assert(equivalent_sync_v<Send<ContentAddressed<ContentAddressed<Msg>>, End>, Send<Msg, End>>);
 
-// Recv contravariance through depth ≥ 2.
 static_assert(is_subtype_sync_v<Recv<ContentAddressed<ContentAddressed<Msg>>, End>, Recv<Msg, End>>);
 static_assert(is_subtype_sync_v<Recv<Msg, End>, Recv<ContentAddressed<ContentAddressed<Msg>>, End>>);
 
-// ─── Composition: wrapping inside Loop/Select/Offer ──────────────
-
-// Loop over a content-addressed payload is a subtype of the raw-
-// payload loop, and vice versa.
 using CaLoopSend = Loop<Send<ContentAddressed<Msg>, Continue>>;
 using RawLoopSend = Loop<Send<Msg, Continue>>;
 
@@ -444,53 +214,29 @@ static_assert(is_subtype_sync_v<CaLoopSend, RawLoopSend>);
 static_assert(is_subtype_sync_v<RawLoopSend, CaLoopSend>);
 static_assert(equivalent_sync_v<CaLoopSend, RawLoopSend>);
 
-// Select with mixed branches — a content-addressed branch is
-// interchangeable with its raw counterpart.
 using SelectMixed = Select<Send<ContentAddressed<Msg>, End>, Send<Ack, End>>;
 using SelectRaw = Select<Send<Msg, End>, Send<Ack, End>>;
 
 static_assert(is_subtype_sync_v<SelectMixed, SelectRaw>);
 static_assert(is_subtype_sync_v<SelectRaw, SelectMixed>);
 
-// ─── Dual preservation ──────────────────────────────────────────
-//
-// ContentAddressed<T> is a VALUE TYPE, not a session combinator, so
-// it's NOT dualised by dual_of.  The wrapper passes through duality
-// unchanged — peers see the same wrapper or lack-of-wrapper.
+// The marker is a payload, not a combinator, so duality leaves it
+// where it is.  Both peers see the payload marked, or neither does.
 
 using CaProto = Send<ContentAddressed<Msg>, End>;
 using CaProtoDual = dual_of_t<CaProto>;
 static_assert(std::is_same_v<CaProtoDual, Recv<ContentAddressed<Msg>, End>>);
 
-// Involution.
 static_assert(std::is_same_v<dual_of_t<CaProtoDual>, CaProto>);
-
-// ─── Well-formedness ────────────────────────────────────────────
 
 static_assert(is_well_formed_v<Send<ContentAddressed<Msg>, End>>);
 static_assert(is_well_formed_v<Loop<Send<ContentAddressed<Msg>, Continue>>>);
 static_assert(is_well_formed_v<Recv<ContentAddressed<Ack>, End>>);
 
-// ─── Mix with other payload subsort relations ──────────────────
-//
-// If a user declares an additional subsort relation (e.g., Derived <:
-// Base), that relation COMPOSES with the ContentAddressed<> mutual
-// interchangeability — sort of.  Actually our framework doesn't
-// compose subsort transitively (see SessionSubtype.h's explicit
-// note on user-responsibility for transitivity); so we don't
-// automatically conclude:
-//
-//     Send<ContentAddressed<Derived>, End>  ⩽  Send<Base, End>
-//
-// unless the user EXPLICITLY declares is_subsort<Derived, Base>.
-// Our ContentAddressed<T> ↔ T specialisation doesn't create
-// compositional closures it shouldn't.
-
-// ─── Canonical worked example: Cipher-like publication ─────────
-
-// Cipher publishes content-addressed snapshots on a Loop.  The
-// content-addressed variant is interchangeable with the raw variant
-// at the session-type level.
+// The rules here relate a payload to its own marked form and nothing
+// else.  A separately declared relation between two payload types does
+// not reach across the marker on its own, which is deliberate: that
+// would be composing two relations the code never claimed compose.
 
 struct CipherSnapshot {};
 using CipherPublisher_CA = Loop<Send<ContentAddressed<CipherSnapshot>, Continue>>;
@@ -500,7 +246,6 @@ static_assert(std::is_same_v<CipherSubscriber_CA, Loop<Recv<ContentAddressed<Cip
 static_assert(is_well_formed_v<CipherPublisher_CA>);
 static_assert(is_well_formed_v<CipherSubscriber_CA>);
 
-// Equivalence with the non-dedup variant.
 using CipherPublisher_Raw = Loop<Send<CipherSnapshot, Continue>>;
 static_assert(equivalent_sync_v<CipherPublisher_CA, CipherPublisher_Raw>);
 

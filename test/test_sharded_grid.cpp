@@ -1,17 +1,9 @@
-// ═══════════════════════════════════════════════════════════════════
-// test_sharded_grid — ShardedSpscGrid + SpscRing correctness.
-//
-// Covers:
-//   1. SpscRing single-thread round-trip + capacity bound + wrap
-//   2. SpscRing multi-thread SPSC stress (1 producer + 1 consumer)
-//   3. ShardedSpscGrid single-thread routing for each policy
-//   4. ShardedSpscGrid 4×4 multi-thread stress: each producer sends
-//      a unique stream of items; consumers collect; verify every
-//      item delivered exactly once via per-(producer, seq) bitmap
-//   5. HashKeyRouting per-key ordering: items with the same key
-//      go to the same consumer, in producer-order
-//   6. Compile-time: not copyable, not movable
-// ═══════════════════════════════════════════════════════════════════
+// The concurrent tests need no reference implementation to compare
+// against, because each item carries the identity of the producer that
+// sent it and its place in that producer's stream.  After the threads
+// stop, every item must be marked exactly once: a missing mark means
+// the grid dropped work, a repeated one means two consumers were handed
+// the same work.
 
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/SpscRing.h>
@@ -27,8 +19,6 @@
 
 using namespace crucible::concurrent;
 
-// ── Compile-time checks ────────────────────────────────────────────
-
 using TestRing = SpscRing<uint64_t, 64>;
 using TestGrid = ShardedSpscGrid<uint64_t, 4, 4, 256>;
 
@@ -41,21 +31,17 @@ static_assert(TestGrid::num_producers() == 4);
 static_assert(TestGrid::num_consumers() == 4);
 static_assert(TestGrid::ring_capacity() == 256);
 
-// ── SpscRing unit: empty, FIFO, capacity ──────────────────────────
-
 static void test_spsc_ring_basic() {
     SpscRing<uint64_t, 8> r;
     assert(r.empty_approx());
     assert(!r.try_pop().has_value());
 
-    // Fill to capacity
     for (uint64_t i = 0; i < 8; ++i) {
         assert(r.try_push(i));
     }
-    assert(!r.try_push(99));  // full
+    assert(!r.try_push(99));
     assert(r.size_approx() == 8);
 
-    // Drain in FIFO order
     for (uint64_t i = 0; i < 8; ++i) {
         auto opt = r.try_pop();
         assert(opt.has_value());
@@ -66,12 +52,12 @@ static void test_spsc_ring_basic() {
     std::printf("  test_spsc_ring_basic: PASSED\n");
 }
 
-// ── SpscRing wrap-around ──────────────────────────────────────────
-
+// Ten fill-and-drain cycles on a four-slot ring take the indices well
+// past the end of the buffer, so the wrap is exercised repeatedly
+// rather than once.
 static void test_spsc_ring_wrap() {
     SpscRing<uint64_t, 4> r;
 
-    // Push/pop cycles past CAPACITY to force wrap
     for (uint64_t cycle = 0; cycle < 10; ++cycle) {
         for (uint64_t i = 0; i < 4; ++i) {
             assert(r.try_push(cycle * 100 + i));
@@ -85,8 +71,6 @@ static void test_spsc_ring_wrap() {
 
     std::printf("  test_spsc_ring_wrap: PASSED\n");
 }
-
-// ── SpscRing SPSC stress ──────────────────────────────────────────
 
 static void test_spsc_ring_threaded() {
     SpscRing<uint64_t, 1024> r;
@@ -110,8 +94,7 @@ static void test_spsc_ring_threaded() {
             if (auto opt = r.try_pop()) {
                 mirror.push_back(*opt);
                 received.fetch_add(1, std::memory_order_release);
-            } else if (producer_done.load(std::memory_order_acquire)
-                       && r.empty_approx()) {
+            } else if (producer_done.load(std::memory_order_acquire) && r.empty_approx()) {
                 break;
             } else {
                 CRUCIBLE_SPIN_PAUSE;
@@ -119,45 +102,41 @@ static void test_spsc_ring_threaded() {
         }
     });
 
+    // Assigning a default-constructed thread destroys the running one,
+    // which joins it.  Main must not read the mirror before this.
     producer = std::jthread{};
     consumer = std::jthread{};
 
     assert(mirror.size() == N);
     for (uint64_t i = 0; i < N; ++i) {
-        assert(mirror[i] == i);  // FIFO preserved
+        assert(mirror[i] == i);
     }
 
-    std::printf("  test_spsc_ring_threaded: PASSED (%llu items)\n",
-                static_cast<unsigned long long>(N));
+    std::printf("  test_spsc_ring_threaded: PASSED (%llu items)\n", static_cast<unsigned long long>(N));
 }
 
-// ── ShardedSpscGrid single-thread RoundRobin routing ──────────────
-
+// Eight items across four consumers means two full rounds, so each
+// consumer holds exactly two and their values are four apart.
 static void test_grid_round_robin_single_thread() {
     ShardedSpscGrid<uint64_t, 1, 4, 16> grid;
 
-    // Single producer sends 8 items; round-robin should distribute
-    // 2 items to each of 4 consumers.
     for (uint64_t i = 0; i < 8; ++i) {
         assert(grid.try_push(0, i));
     }
 
-    // Each consumer gets 2 items
     for (std::size_t c = 0; c < 4; ++c) {
         assert(grid.size_approx(0, c) == 2);
     }
 
-    // Drain and verify FIFO per consumer
     for (std::size_t c = 0; c < 4; ++c) {
         auto first = grid.try_pop(c);
         assert(first.has_value());
-        assert(*first == c);  // first round: producer sent to consumer c=seq%4
+        assert(*first == c);
         auto second = grid.try_pop(c);
         assert(second.has_value());
-        assert(*second == c + 4);  // second round: c=(seq+4)%4=c
+        assert(*second == c + 4);
     }
 
-    // All consumers empty now
     for (std::size_t c = 0; c < 4; ++c) {
         assert(!grid.try_pop(c).has_value());
     }
@@ -165,20 +144,17 @@ static void test_grid_round_robin_single_thread() {
     std::printf("  test_grid_round_robin_single_thread: PASSED\n");
 }
 
-// ── ShardedSpscGrid HashKeyRouting per-key ordering ───────────────
-
+// An item packs its key into the high half and its position within that
+// key into the low half, so a single value identifies both.
 struct KeyExtract {
-    [[nodiscard]] std::uint64_t operator()(uint64_t v) const noexcept {
-        return v >> 32;  // high 32 bits = key
-    }
+    [[nodiscard]] std::uint64_t operator()(uint64_t v) const noexcept { return v >> 32; }
 };
 
 static void test_grid_hash_key_ordering() {
-    ShardedSpscGrid<uint64_t, 1, 4, 64,
-                    HashKeyRouting<KeyExtract>> grid;
+    ShardedSpscGrid<uint64_t, 1, 4, 64, HashKeyRouting<KeyExtract>> grid;
 
-    // Send 10 items each for 3 distinct keys.
-    // Encoding: high 32 = key, low 32 = sequence within key.
+    // Three keys across four consumers, so at least one consumer takes
+    // none and the routing cannot pass by spreading items evenly.
     constexpr uint64_t KEYS[] = {0xAAAA, 0xBBBB, 0xCCCC};
     for (uint64_t k : KEYS) {
         for (uint64_t s = 0; s < 10; ++s) {
@@ -187,12 +163,10 @@ static void test_grid_hash_key_ordering() {
         }
     }
 
-    // Drain all consumers into per-consumer vectors.  Collecting
-    // first (instead of peek-and-resend) avoids perturbing the FIFO
-    // order within each ring — try_recv IS the only way to observe
-    // ring contents, and sending items back would re-route them to
-    // the tail of their target consumer's queue, breaking the
-    // ordering invariant we're trying to verify.
+    // Everything is collected before anything is checked.  Popping is
+    // the only way to see what a ring holds, and pushing an item back
+    // would send it to the tail of its queue, destroying the very
+    // ordering being examined.
     std::array<std::vector<uint64_t>, 4> received;
     for (std::size_t c = 0; c < 4; ++c) {
         while (auto opt = grid.try_pop(c)) {
@@ -200,21 +174,18 @@ static void test_grid_hash_key_ordering() {
         }
     }
 
-    // All rings should now be empty.
     for (std::size_t c = 0; c < 4; ++c) {
         assert(!grid.try_pop(c).has_value());
     }
 
-    // Verify total items received = total sent.
     std::size_t total = 0;
-    for (const auto& v : received) total += v.size();
-    assert(total == 30);  // 3 keys × 10 items
+    for (const auto& v : received)
+        total += v.size();
+    assert(total == 30);
 
-    // Verify per-key invariants:
-    //   (a) all items for key k landed in ONE consumer (HashKey
-    //       routing is deterministic)
-    //   (b) within that consumer, items for key k appear in
-    //       producer-order (seq 0, 1, 2, ..., 9)
+    // Two claims per key: every item for it reached one consumer and
+    // not several, and within that consumer the items are still in the
+    // order the producer sent them.
     for (uint64_t k : KEYS) {
         std::size_t target_consumer = static_cast<std::size_t>(-1);
         for (std::size_t c = 0; c < 4; ++c) {
@@ -224,32 +195,30 @@ static void test_grid_hash_key_ordering() {
                         target_consumer = c;
                     } else if (target_consumer != c) {
                         std::fprintf(stderr,
-                            "HashKeyRouting broken: key 0x%llx found on "
-                            "consumers %zu AND %zu\n",
-                            static_cast<unsigned long long>(k),
-                            target_consumer, c);
+                                     "HashKeyRouting broken: key 0x%llx found on "
+                                     "consumers %zu AND %zu\n",
+                                     static_cast<unsigned long long>(k), target_consumer, c);
                         std::abort();
                     }
                 }
             }
         }
-        assert(target_consumer != static_cast<std::size_t>(-1)
-            && "no consumer received any item for this key");
+        assert(target_consumer != static_cast<std::size_t>(-1) && "no consumer received any item for this key");
 
-        // Extract the per-key sub-sequence from target_consumer's
-        // received stream; sequence numbers MUST be 0, 1, ..., 9
-        // in order (producer-order preserved).
+        // Items for other keys are interleaved in the same stream, so
+        // the walk skips them and checks only that the positions for
+        // this key rise one at a time.
         uint64_t expected_seq = 0;
         for (uint64_t item : received[target_consumer]) {
             if (KeyExtract{}(item) == k) {
                 const uint64_t actual_seq = item & 0xFFFFFFFFu;
                 if (actual_seq != expected_seq) {
                     std::fprintf(stderr,
-                        "Per-key ordering broken: key 0x%llx on consumer %zu "
-                        "expected seq %llu, got %llu\n",
-                        static_cast<unsigned long long>(k), target_consumer,
-                        static_cast<unsigned long long>(expected_seq),
-                        static_cast<unsigned long long>(actual_seq));
+                                 "Per-key ordering broken: key 0x%llx on consumer %zu "
+                                 "expected seq %llu, got %llu\n",
+                                 static_cast<unsigned long long>(k), target_consumer,
+                                 static_cast<unsigned long long>(expected_seq),
+                                 static_cast<unsigned long long>(actual_seq));
                     std::abort();
                 }
                 ++expected_seq;
@@ -261,12 +230,9 @@ static void test_grid_hash_key_ordering() {
     std::printf("  test_grid_hash_key_ordering: PASSED\n");
 }
 
-// ── ShardedSpscGrid 4×4 multi-thread stress ───────────────────────
-//
-// 4 producer threads each send N items; 4 consumer threads each
-// drain its column.  Item-tracking invariant: every (producer,
-// seq) received exactly once across all consumers.
-
+// Each consumer thread drains only its own column, so no two consumers
+// ever touch the same ring and the exactly-once property is a claim
+// about the routing rather than about mutual exclusion.
 static void test_grid_4x4_stress() {
     constexpr std::size_t M = 4;
     constexpr std::size_t N_consumers = 4;
@@ -281,12 +247,14 @@ static void test_grid_4x4_stress() {
     std::atomic<std::size_t> producers_done{0};
     std::atomic<std::uint64_t> duplicate_count{0};
 
-    // Per-(producer, seq) marker bitmap.  Item encoding:
-    //   high 16 = producer id, low 48 = seq.
+    // An item packs its producer into the high bits and its position
+    // into the low ones, which is what the consumer below decodes to
+    // find the flag to set.
     std::vector<std::vector<std::atomic<bool>>> markers(M);
     for (auto& v : markers) {
         v = std::vector<std::atomic<bool>>(N_PER_PRODUCER);
-        for (auto& m : v) m.store(false, std::memory_order_relaxed);
+        for (auto& m : v)
+            m.store(false, std::memory_order_relaxed);
     }
 
     auto encode = [](std::size_t p, std::uint64_t s) -> std::uint64_t {
@@ -310,25 +278,26 @@ static void test_grid_4x4_stress() {
     const std::size_t total_expected = M * N_PER_PRODUCER;
     for (std::size_t c = 0; c < N_consumers; ++c) {
         consumers.emplace_back([&, c](std::stop_token /*st*/) {
-            while (total_received.load(std::memory_order_relaxed)
-                   < total_expected) {
+            while (total_received.load(std::memory_order_relaxed) < total_expected) {
                 if (auto opt = grid.try_pop(c)) {
                     const std::size_t p = *opt >> 48;
                     const std::uint64_t s = *opt & ((std::uint64_t{1} << 48) - 1);
+                    // A value outside the ranges was never pushed, so
+                    // reading one means an uninitialised slot was
+                    // handed out.  It is counted here rather than
+                    // given a channel of its own.
                     if (p >= M || s >= N_PER_PRODUCER) {
                         duplicate_count.fetch_add(1, std::memory_order_relaxed);
                         continue;
                     }
-                    bool prev = markers[p][s].exchange(
-                        true, std::memory_order_relaxed);
+                    bool prev = markers[p][s].exchange(true, std::memory_order_relaxed);
                     if (prev) {
                         duplicate_count.fetch_add(1, std::memory_order_relaxed);
                     } else {
                         total_received.fetch_add(1, std::memory_order_release);
                     }
                 } else if (producers_done.load(std::memory_order_acquire) == M
-                           && total_received.load(std::memory_order_acquire)
-                              == total_expected) {
+                           && total_received.load(std::memory_order_acquire) == total_expected) {
                     break;
                 } else {
                     CRUCIBLE_SPIN_PAUSE;
@@ -337,21 +306,20 @@ static void test_grid_4x4_stress() {
         });
     }
 
+    // Clearing the vectors destroys the threads, which joins them.  The
+    // marks are only read afterwards.
     producers.clear();
     consumers.clear();
 
-    // Verify every (producer, seq) was received exactly once.
     std::size_t missing = 0;
     for (std::size_t p = 0; p < M; ++p) {
         for (std::size_t s = 0; s < N_PER_PRODUCER; ++s) {
             if (!markers[p][s].load(std::memory_order_relaxed)) ++missing;
         }
     }
-    const std::uint64_t dup =
-        duplicate_count.load(std::memory_order_relaxed);
+    const std::uint64_t dup = duplicate_count.load(std::memory_order_relaxed);
 
-    std::printf("    expected: %zu, missing: %zu, duplicates: %llu\n",
-                total_expected, missing,
+    std::printf("    expected: %zu, missing: %zu, duplicates: %llu\n", total_expected, missing,
                 static_cast<unsigned long long>(dup));
 
     assert(missing == 0 && "item lost — producer sent but no consumer received");

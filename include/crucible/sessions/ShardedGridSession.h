@@ -1,19 +1,5 @@
 #pragma once
 
-// ── ShardedGridSession.h — typed-session facade for ShardedGrid shards ─
-//
-// PermissionedShardedGrid exposes M statically-indexed producers and N
-// statically-indexed consumers.  This header gives each slot the same
-// infinite streaming session shape used by SPSC:
-//
-//   Producer<I>: Loop<Send<T, Continue>>
-//   Consumer<J>: Loop<Recv<T, Continue>>
-//
-// Shard identity remains in the handle type, not in the payload and not
-// in a runtime integer.  That is the point of this facade: session
-// composition can talk about producer shard I or consumer shard J without
-// weakening the underlying linear permission split.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/permissions/Permission.h>

@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P sock_ops telemetry stub.
- *
- * Future role: per-socket RTT, retransmit, state, and pacing observations.
- * Current behavior: observe no callbacks and publish no maps.
- */
-
 #include "common.h"
 
 SEC("sockops")

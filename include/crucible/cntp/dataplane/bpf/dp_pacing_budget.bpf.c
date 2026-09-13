@@ -1,11 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * CNT-P dataplane pacing-budget stub.
- *
- * Future role: enforce dataplane send budget decisions at TC egress. Current
- * behavior: TC_ACT_OK for every skb; CNT-P remains the policy owner.
- */
-
 #include "net_common.h"
 
 #ifndef TC_ACT_OK

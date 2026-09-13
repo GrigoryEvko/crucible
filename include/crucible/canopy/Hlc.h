@@ -1,19 +1,12 @@
 #pragma once
 
-// Hybrid Logical Clock (HLC) primitive.
-//
-// Implements Kulkarni-Demirbas-Madappa-Avva-Leone logical physical
-// clocks for per-Cog event ordering.  The public wire timestamp keeps
-// the canonical `(physical_ns, counter)` shape; provenance-sensitive
-// boundaries use Tagged<HlcTimestamp, source::Hlc>.
-
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/safety/ClockSource.h>  // FIXY-V-195: RealtimeClockBytes
+#include <crucible/safety/ClockSource.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
-#include <crucible/safety/Stale.h>  // FIXY-V-195: Stale<>
+#include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 
 #include <algorithm>
@@ -67,22 +60,18 @@ __extension__ using uint128_t = unsigned __int128;
     };
 }
 
-// fixy-A5-033: x86_64 has no atomic 128-bit MOV instruction.  The portable
-// atomic 128-bit load idiom is `lock cmpxchg16b` with expected=desired=0:
-//   * If cell_ == 0: CAS succeeds, writes desired=0 to cell_ (a literal
-//     write of zero, but cell_ was already zero — semantically no-op).
-//     RDX:RAX stays 0; we return 0.
-//   * If cell_ != 0: CAS fails, hardware loads cell_ into RDX:RAX, no
-//     write to memory.  We return the loaded value.
-// The `lock` prefix is mandatory for both atomicity and acquire-fence
-// semantics.  libatomic implements `std::atomic<__int128>::load` the
-// same way; we inline the asm to avoid the libatomic dependency and to
-// guarantee always-lock-free even on toolchains that link a stub
-// libatomic.  Note: this idiom requires cell_ to be zero-initialized
-// (NSDMI at `cell_ = 0` below).  Any caller that mutates cell_ outside
-// of compare_exchange below (e.g., direct stores) would break the
-// invariant that the first load before any compare_exchange returns 0.
-// DetSafe preserved: cmpxchg16b is bit-identical across x86_64 vendors.
+// x86_64 has no atomic 128-bit load instruction.  The portable idiom is a
+// `lock cmpxchg16b` whose expected and desired values are both zero.  With a
+// zero cell the compare succeeds and writes zero back, which leaves the cell
+// as it was, and the result is zero.  With any other cell value the compare
+// fails, the hardware loads the cell into RDX:RAX and writes nothing, and the
+// result is the loaded value.  The `lock` prefix is mandatory for both the
+// atomicity and the acquire fence.
+//
+// Inlining the asm rather than calling the library 128-bit load keeps the
+// operation lock-free even where the toolchain links a stub libatomic.  The
+// idiom depends on the cell starting at zero, so nothing may store into it
+// outside compare_exchange.
 class alignas(16) AtomicPackedHlcState {
 public:
     constexpr AtomicPackedHlcState() noexcept = default;
@@ -126,22 +115,17 @@ private:
 #if defined(__x86_64__)
     mutable uint128_t cell_ = 0;
 #else
-    // fixy-A5-015: where the ISA provides a lock-free 128-bit atomic
-    // (AArch64 with FEAT_LSE128, Apple Silicon under toolchains that
-    // report is_always_lock_free), use it directly — `now()` stays on
-    // the lock-free hot path.  Where it does NOT (notably AArch64
-    // without LSE-128 on stock GCC, which lowers 16-byte atomics to a
-    // hidden libstdc++ mutex), fall back to a plain 128-bit cell guarded
-    // by a minimal test-and-set spinlock.  Making the mutual exclusion
-    // explicit removes the hidden-mutex surprise that motivated the
-    // original build-refusal: the latency cost is now visible and
-    // auditable on the canopy hot path, and the fallback contends only
-    // on the brief HLC CAS.  DetSafe holds — the spinlock imposes a
-    // total order and touches no floating point.  x86_64 (cmpxchg16b,
-    // above) and LSE128 silicon both remain lock-free.
+    // Where the ISA provides a lock-free 128-bit atomic, use it directly and
+    // now() stays lock-free.  Where it does not, a 16-byte atomic lowers to a
+    // hidden library mutex, so the fallback is a plain cell guarded by an
+    // explicit test-and-set spinlock.  Making the mutual exclusion explicit
+    // keeps its cost visible instead of buried in the standard library, and
+    // the fallback contends only for the brief clock update.  The spinlock
+    // imposes a total order and touches no floating point, so determinism
+    // holds.
     struct LockFreeCell {
         mutable std::atomic<uint128_t> value_{
-            0};  // LOCK-FREE-OK: fixy-A5-029 — conditional-selected (lock-free only); SpinlockCell covers the rest, so a sibling static_assert would wrongly fire on non-LSE128 aarch64
+            0};  // LOCK-FREE-OK: selected only where the atomic is lock-free.  SpinlockCell covers every other target, so a static_assert here would fire wrongly
         [[nodiscard]] uint128_t load() const noexcept { return value_.load(std::memory_order_acquire); }
         [[nodiscard]] bool compare_exchange(uint128_t& expected, uint128_t desired) noexcept {
             return value_.compare_exchange_weak(expected, desired, std::memory_order_acq_rel,
@@ -177,7 +161,7 @@ private:
     };
     using Cell = std::conditional_t<
         std::atomic<uint128_t>::
-            is_always_lock_free,  // LOCK-FREE-OK: fixy-A5-029 — dispatch predicate (picks LockFreeCell vs SpinlockCell), not an atomic field
+            is_always_lock_free,  // LOCK-FREE-OK: a dispatch predicate that picks the cell type, not an atomic field
         LockFreeCell, SpinlockCell>;
     mutable Cell cell_{};
 #endif
@@ -195,10 +179,6 @@ public:
     Hlc() noexcept = default;
 
     [[nodiscard]] HlcTimestamp now() noexcept {
-        // FIXY-V-195: read_realtime_ns_ returns Stale<RealtimeClockBytes<u64>>;
-        // consume here to extract the raw nanosecond count for HLC update.
-        // Wall-clock reads are inherently stale relative to "now" — the wrap
-        // documents the source-of-truth provenance at the read site.
         auto stale_rt = read_realtime_ns_();
         return update_local_(std::move(stale_rt).consume().consume());
     }
@@ -206,7 +186,6 @@ public:
     [[nodiscard]] HlcTimestamp on_send() noexcept { return now(); }
 
     void on_recv(HlcTimestamp peer_ts) noexcept {
-        // FIXY-V-195: same Stale<RealtimeClockBytes<u64>> consume pattern as now().
         auto stale_rt = read_realtime_ns_();
         (void)update_recv_(std::move(stale_rt).consume().consume(), peer_ts);
     }
@@ -256,32 +235,20 @@ private:
         return HlcTimestamp{.physical_ns = physical_ns, .counter = counter};
     }
 
-    // FIXY-V-195: typed witness over the raw read.  The return is
-    // `Stale<RealtimeClockBytes<uint64_t>>` — the inner ClockSource grade
-    // pins the source-of-truth to CLOCK_REALTIME (wall clock); the outer
-    // Stale<> documents that wall-clock reads age relative to "now" and
-    // can jump backwards under NTP slew or manual time adjustment.
-    //
-    // Downstream consumers that should refuse a Monotonic or Boot read
-    // (e.g. Cipher event timestamps that need wall-clock binding)
-    // statically reject other ClockSource grades at compile time.
-    //
-    // We start at staleness=0 ("fresh") because the read is BY DEFINITION
-    // the freshest measurement available at this instant; staleness
-    // accumulates as the value is propagated through async pipelines.
+    // The clock-source grade pins this read to the wall clock, which can jump
+    // backwards under a time adjustment or a slew.  Staleness starts at zero
+    // because the read is the freshest measurement available at the instant it
+    // happens.  It grows as the value travels onward.
     [[nodiscard]] static safety::Stale<safety::RealtimeClockBytes<std::uint64_t>> read_realtime_ns_() noexcept {
         const std::uint64_t bits = read_realtime_ns_raw_();
         return safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>::fresh(
             safety::mint_clock_source<safety::ClockSource_v::Realtime, std::uint64_t>(bits));
     }
 
-    // FIXY-V-195: raw read split from typed wrap so the (Linux-syscall
-    // boilerplate, overflow handling, zero-sentinel) stays single-purpose
-    // and the wrap is a 3-line `mint_clock_source + Stale::fresh`.
     [[nodiscard]] static std::uint64_t read_realtime_ns_raw_() noexcept {
         ::timespec ts{};
         if (::clock_gettime(CLOCK_REALTIME, &ts) != 0)
-            [[unlikely]] {  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Bg via Hlc::now()'s Bg-drain path (wrapped in mint_clock_source); co-located, drift-proof
+            [[unlikely]] {  // SYSCALL-CAP-OK: the background drain path that reaches now() carries the capability
             return std::uint64_t{1};
         }
 
@@ -335,33 +302,25 @@ static_assert(sizeof(Hlc) == 64);
 static_assert(!std::is_copy_constructible_v<Hlc>);
 static_assert(!std::is_move_constructible_v<Hlc>);
 
-// FIXY-V-195: typed-contract sentinels.  The HLC wall-clock read MUST
-// return `Stale<RealtimeClockBytes<uint64_t>>`; any drift (raw uint64_t
-// regression, Monotonic-source confusion, missing Stale wrap) reddens
-// the build here, not at the consumer site.  These ride the same
-// "discipline at the definition site" pattern as the §XXI mint-pattern
-// concept gates — invariants documented where they're enforced.
-namespace detail::hlc_v195_sentinels {
+namespace detail::hlc_clock_source_sentinels {
 
-// We can't directly assert against the private static read_realtime_ns_,
-// but the construction expression is public-namespace-reachable through
-// the same factory chain (mint_clock_source + Stale::fresh); the test
-// below shadows what read_realtime_ns_ produces.
+// These asserts cannot name the private read helper, so they restate the type
+// it returns and check that type instead.
 using ExpectedRealtimeBytes = safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>;
 
 static_assert(sizeof(ExpectedRealtimeBytes) == sizeof(std::uint64_t) + sizeof(std::uint64_t),
-              "FIXY-V-195: Stale<RealtimeClockBytes<u64>> must be value + grade "
-              "(16 B on a 64-bit target); regime-4 storage per Graded taxonomy.");
+              "Stale<RealtimeClockBytes<u64>> must carry a value plus a grade, "
+              "which is 16 bytes on a 64-bit target.");
 
 static_assert(std::is_same_v<ExpectedRealtimeBytes::value_type, safety::RealtimeClockBytes<std::uint64_t>>,
-              "FIXY-V-195: outer wrapper must be Stale; inner must be "
+              "The outer wrapper must be Stale and the inner one must be "
               "RealtimeClockBytes<u64>.");
 
 static_assert(safety::RealtimeClockBytes<std::uint64_t>::source == safety::ClockSource_v::Realtime,
-              "FIXY-V-195: HLC reads CLOCK_REALTIME (wall clock).  Any drift to "
-              "Monotonic, Boot, or other ClockSource_v values is a category error.");
+              "The clock reads CLOCK_REALTIME.  Drift to Monotonic, Boot, or any "
+              "other ClockSource_v value is a category error.");
 
-}  // namespace detail::hlc_v195_sentinels
+}  // namespace detail::hlc_clock_source_sentinels
 
 [[nodiscard]] inline Hlc mint_hlc(effects::Init) noexcept { return Hlc{}; }
 

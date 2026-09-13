@@ -1,23 +1,12 @@
 #pragma once
 
-// NetworkSimplex: minimum-cost rank assignment for DAGs.
+// Minimum-cost rank assignment for a DAG.
 //
-// Solves: minimize Σ weight(e) * |rank(head) - rank(tail)|
-//         subject to: rank(head) - rank(tail) >= minlen(e) for all edges
+// Minimize the sum over edges of weight(e) * |rank(head) - rank(tail)|,
+// subject to rank(head) - rank(tail) >= minlen(e) for every edge. The solver
+// is network simplex on the dual of that rank LP.
 //
-// Used for:
-//   - Vertical rank assignment (Y coordinates in Sugiyama layout)
-//   - Horizontal coordinate assignment (X positioning with constraints)
-//
-// Algorithm: network simplex on the dual of the rank LP.
-//   1. Find feasible initial ranks (longest path from sources)
-//   2. Build feasible spanning tree of tight edges (slack = 0)
-//   3. Compute cutvalues for all tree edges
-//   4. Pivot: swap leaving edge (most negative cutvalue) with entering
-//      edge (minimum slack non-tree edge) until optimal
-//
-// Standalone C++26 implementation — no Graphviz dependencies.
-// Not hot path — std::vector is appropriate.
+// This is not a hot path, so std::vector is appropriate.
 
 #include <algorithm>
 #include <cstdint>
@@ -27,31 +16,19 @@
 
 namespace crucible::vis {
 
-// ═══════════════════════════════════════════════════════════════════
-// Input: weighted directed graph with minimum length constraints
-// ═══════════════════════════════════════════════════════════════════
-
 struct NSEdge {
-    uint32_t tail = 0;  // source node
-    uint32_t head = 0;  // destination node
-    int32_t minlen = 1;  // minimum rank difference (head - tail >= minlen)
-    int32_t weight = 1;  // cost weight (higher = straighter)
+    uint32_t tail = 0;
+    uint32_t head = 0;
+    int32_t minlen = 1;
+    int32_t weight = 1;  // Higher weight pulls the edge straighter.
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// Output: rank assignment per node
-// ═══════════════════════════════════════════════════════════════════
-
 struct NSResult {
-    std::vector<int32_t> rank;  // rank[node_id] = assigned rank
+    std::vector<int32_t> rank;
     int32_t min_rank = 0;
     int32_t max_rank = 0;
     bool converged = false;
 };
-
-// ═══════════════════════════════════════════════════════════════════
-// Network Simplex solver
-// ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline NSResult network_simplex(uint32_t num_nodes, const std::vector<NSEdge>& edges,
                                               uint32_t max_iterations = 1000) {
@@ -66,11 +43,8 @@ struct NSResult {
     const uint32_t n = num_nodes;
     const uint32_t m = static_cast<uint32_t>(edges.size());
 
-    // ── Phase 1: Feasible initial ranks (longest path from sources) ────
-
-    // Build adjacency
-    std::vector<std::vector<uint32_t>> fwd(n);  // outgoing edge indices
-    std::vector<std::vector<uint32_t>> rev(n);  // incoming edge indices
+    std::vector<std::vector<uint32_t>> fwd(n);
+    std::vector<std::vector<uint32_t>> rev(n);
     std::vector<uint32_t> in_deg(n, 0);
 
     for (uint32_t i = 0; i < m; i++) {
@@ -82,7 +56,6 @@ struct NSResult {
         }
     }
 
-    // Topological order (Kahn's)
     std::vector<uint32_t> topo;
     {
         std::vector<uint32_t> queue;
@@ -100,13 +73,16 @@ struct NSResult {
         }
     }
 
-    // If graph has cycles, can't solve — return initial ranks
+    // The order covers every node unless the graph has a cycle. A short
+    // order means a cycle, and the rank LP then has no solution.
     if (topo.size() != n) {
         result.converged = false;
         return result;
     }
 
-    // Longest path assignment (forward pass)
+    // Relaxing in topological order gives each node the longest path from a
+    // source. That is the smallest rank assignment satisfying every minlen,
+    // so it is a feasible starting point.
     auto& rank = result.rank;
     for (uint32_t u : topo) {
         for (uint32_t ei : fwd[u]) {
@@ -115,28 +91,20 @@ struct NSResult {
         }
     }
 
-    // ── Phase 2: Feasible spanning tree ────────────────────────────────
-    //
-    // Find a spanning tree of tight edges (slack = 0).
-    // Slack(e) = rank[head] - rank[tail] - minlen
-
+    // The spanning tree must be built from tight edges, those of zero slack.
     auto slack = [&](uint32_t ei) -> int32_t {
         const auto& e = edges[ei];
         return rank[e.head] - rank[e.tail] - e.minlen;
     };
 
-    // Tree membership
-    std::vector<bool> in_tree(m, false);  // edge in spanning tree?
+    std::vector<bool> in_tree(m, false);
     std::vector<bool> node_in_tree(n, false);
     std::vector<uint32_t> tree_edges;
 
-    // Parent in tree (for DFS traversal)
-    std::vector<int32_t> parent_edge(n, -1);  // edge index connecting to parent
+    std::vector<int32_t> parent_edge(n, -1);
     std::vector<int32_t> parent_node(n, -1);
 
-    // BFS to find tight edges for spanning tree
     {
-        // Start from all sources
         std::vector<uint32_t> queue;
         for (uint32_t i = 0; i < n; i++) {
             if (in_deg[i] == 0) {
@@ -173,8 +141,8 @@ struct NSResult {
             }
         }
 
-        // If spanning tree incomplete, add min-slack edges to connect
-        // remaining components
+        // Tight edges alone need not span the graph. Where they do not, the
+        // least-slack crossing edge is made tight by moving ranks.
         for (uint32_t attempts = 0; tree_edges.size() < n - 1 && attempts < n; attempts++) {
             int32_t best_slack = std::numeric_limits<int32_t>::max();
             uint32_t best_ei = 0;
@@ -193,10 +161,8 @@ struct NSResult {
             }
             if (best_slack == std::numeric_limits<int32_t>::max()) break;
 
-            // Adjust ranks to make this edge tight
             const auto& be = edges[best_ei];
             if (node_in_tree[be.tail] && !node_in_tree[be.head]) {
-                // head not in tree — shift head's component down
                 rank[be.head] = rank[be.tail] + be.minlen;
                 node_in_tree[be.head] = true;
             } else {
@@ -210,21 +176,18 @@ struct NSResult {
         }
     }
 
-    // ── Phase 3: Compute cutvalues ─────────────────────────────────────
-    //
-    // For each tree edge e, cutvalue(e) = sum of weights of edges crossing
-    // the cut defined by removing e from the tree. Positive direction =
-    // same as e, negative = opposite.
-
+    // Removing a tree edge splits the tree into a head side and a tail side.
+    // The cutvalue of that edge is the summed weight of every edge crossing
+    // the split, counted positive when it runs the same way as the tree edge
+    // and negative when it runs the other way.
     std::vector<int32_t> cutvalue(m, 0);
 
-    // DFS postorder for cutvalue computation
-    // Simplified: for each tree edge, count non-tree edges that cross it
+    // Each cut is rebuilt from scratch rather than maintained incrementally
+    // through the tree. That costs a graph sweep per tree edge, and buys a
+    // result that can be checked against the definition directly.
     auto compute_cutvalues = [&]() {
         for (uint32_t ei : tree_edges) {
             const auto& te = edges[ei];
-            // The cut divides tree into two components: head-side and tail-side.
-            // Mark head-side via BFS in tree excluding this edge.
             std::vector<bool> head_side(n, false);
             {
                 std::vector<uint32_t> q = {te.head};
@@ -248,14 +211,13 @@ struct NSResult {
                 }
             }
 
-            // Cutvalue = Σ w(e) for edges tail→head side - Σ w(e) for head→tail side
             int32_t cv = 0;
             for (uint32_t i = 0; i < m; i++) {
                 const auto& e2 = edges[i];
                 bool t_head = head_side[e2.tail];
                 bool h_head = head_side[e2.head];
-                if (!t_head && h_head) cv += e2.weight;  // same direction as tree edge
-                if (t_head && !h_head) cv -= e2.weight;  // opposite direction
+                if (!t_head && h_head) cv += e2.weight;  // Same way as the tree edge.
+                if (t_head && !h_head) cv -= e2.weight;  // The other way.
             }
             cutvalue[ei] = cv;
         }
@@ -263,10 +225,7 @@ struct NSResult {
 
     compute_cutvalues();
 
-    // ── Phase 4: Pivot loop ────────────────────────────────────────────
-
     for (uint32_t iter = 0; iter < max_iterations; iter++) {
-        // Find leaving edge: tree edge with most negative cutvalue
         int32_t worst_cv = 0;
         uint32_t leave_ei = UINT32_MAX;
         for (uint32_t tei : tree_edges) {
@@ -277,14 +236,13 @@ struct NSResult {
         }
 
         if (leave_ei == UINT32_MAX) {
-            // All cutvalues >= 0 → optimal
+            // No negative cutvalue is left, so the tree is optimal.
             result.converged = true;
             break;
         }
 
-        // Find entering edge: non-tree edge with minimum slack that crosses
-        // the same cut as the leaving edge (from tail-side to head-side).
-        // Reuse the head_side computation from cutvalue.
+        // The entering edge is the non-tree edge of least slack crossing the
+        // same cut, and it must run from the tail side to the head side.
         const auto& le = edges[leave_ei];
         std::vector<bool> head_side(n, false);
         {
@@ -313,7 +271,6 @@ struct NSResult {
         for (uint32_t i = 0; i < m; i++) {
             if (in_tree[i]) continue;
             const auto& e2 = edges[i];
-            // Must cross the cut in the right direction
             if (!head_side[e2.tail] && head_side[e2.head]) {
                 int32_t s = slack(i);
                 if (s < best_slack) {
@@ -323,27 +280,25 @@ struct NSResult {
             }
         }
 
-        if (enter_ei == UINT32_MAX) break;  // shouldn't happen if feasible
+        if (enter_ei == UINT32_MAX) break;  // Unreachable on a feasible instance.
 
-        // Pivot: adjust ranks by the slack of the entering edge
+        // Moving the whole head side by the entering edge's slack makes that
+        // edge tight. Every remaining tree edge lies wholly inside one side,
+        // so its slack does not change and the tree stays tight.
         if (best_slack != 0) {
-            // Shift head-side component down by best_slack
             for (uint32_t i = 0; i < n; i++) {
                 if (head_side[i]) rank[i] -= best_slack;
             }
         }
 
-        // Swap tree edges
         in_tree[leave_ei] = false;
         in_tree[enter_ei] = true;
         tree_edges.erase(std::find(tree_edges.begin(), tree_edges.end(), leave_ei));
         tree_edges.push_back(enter_ei);
 
-        // Recompute cutvalues (expensive but correct)
         compute_cutvalues();
     }
 
-    // Normalize: shift so min rank = 0
     result.min_rank = *std::ranges::min_element(rank);
     result.max_rank = *std::ranges::max_element(rank);
     for (auto& r : rank)

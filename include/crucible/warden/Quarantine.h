@@ -1,13 +1,12 @@
 #pragma once
 
-// GAPS-118. Bounded runtime quarantine policy for Cogs.
-//
-// This header consumes already-scored health snapshots, asymmetric-failure
-// classifications, and recovery probe outcomes. It does not evict from gossip,
-// mutate routing tables, schedule live probes, or write Cipher records. Those
-// side effects are owned by later Canopy/CNTP/Cipher tasks. The invariant here
-// is a typed hysteretic action substrate with explicit operator authority for
-// permanent removal.
+// The policy consumes health snapshots, failure classifications and
+// probe outcomes that were scored elsewhere, and it decides a state
+// for each Cog. It has no side effects of its own: it evicts nobody
+// from the mesh, rewrites no routing table, schedules no probe and
+// persists nothing. A caller acts on the state it reports. Removing a
+// Cog permanently additionally requires operator authority, carried as
+// a permission token.
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
@@ -392,14 +391,11 @@ public:
         return snapshot(*slot);
     }
 
-    // fixy-A5-040: returns a contiguous view of the physical events_
-    // array.  Pre-wrap (event_count_ < MaxEvents) the slots [0..count)
-    // are chronologically ordered by happy accident.  Post-wrap, slot 0
-    // holds a recently-overwritten event and the chronological order is
-    // broken across the ring boundary.  Consumers that need correct
-    // post-wrap chronological access MUST use transition_event_at()
-    // below; this span accessor is preserved only for pre-wrap
-    // callers + as the legacy raw view.
+    // A view of the storage in physical order. Until the ring wraps
+    // that order is also chronological. After it wraps, slot zero
+    // holds a recently written event and the sequence breaks at the
+    // wrap point. A caller that needs events in order reads them
+    // through transition_event_at instead.
     [[nodiscard]] constexpr std::span<const QuarantineEvent> transition_events() const noexcept {
         return std::span<const QuarantineEvent>{events_.data(), event_count_};
     }
@@ -410,12 +406,11 @@ public:
         if (index >= event_count_) {
             return nullptr;
         }
-        // fixy-A5-040: events_[index] returns the PHYSICAL slot — junk
-        // post-wrap.  Same wrap-handling formula as
-        // cntp::ConnectionPool::event_at (fixy-A5-010): pre-wrap
-        // next_event_ ≡ event_count_ so the subtraction is zero modulo
-        // size and base=0; post-wrap base=next_event_ which IS the
-        // oldest surviving slot.
+        // index counts from the oldest surviving event, which is not
+        // slot zero once the ring has wrapped. Before the wrap the
+        // write cursor equals the count, so the subtraction is zero
+        // modulo the size and the base is slot zero. After the wrap
+        // the write cursor is itself the oldest surviving slot.
         const std::size_t size = events_.size();
         const std::size_t base = (next_event_ + size - event_count_) % size;
         return &events_[(base + index) % size];

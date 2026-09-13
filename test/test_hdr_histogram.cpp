@@ -24,17 +24,10 @@ int main() {
 
     assert(h.total_count() == 4);
 
-    // fixy-A5-008 regression: zero is a first-class sample value.  Pre-fix
-    // the value_type predicate `in_range<1, MaxValue>` rejected zero by
-    // firing Refined<>'s contract — aborting the Keeper daemon the moment
-    // any cold-path transport emitted its first sample (no-RTT-yet on a
-    // fresh socket, no-bytes-yet on an idle fd, zero-queue-depth on
-    // load-shed paths).  After widening to `in_range<0, MaxValue>`:
-    //   (a) construction succeeds (no contract violation),
-    //   (b) the sample lands in bucket 0 (counts_index(0) == 0),
-    //   (c) percentile(100.0) reports a value ≤ existing max — i.e. the
-    //       zero sample does not steal probability mass from positive
-    //       samples already recorded.
+    // Zero is a sample like any other.  A socket with no round trip
+    // yet, an idle descriptor, a queue that shed its load: each emits
+    // zero as its first reading, and a range that started at one would
+    // fire a contract and take the process down on that first reading.
     {
         Hist zero_h;
         zero_h.record(Hist::checked_value(0));
@@ -42,17 +35,17 @@ int main() {
         assert(zero_h.percentile(100.0) == 0);
         assert(zero_h.mean() == 0);
 
-        // Recording zero alongside positive samples must not perturb
-        // their bucket counts — the zero sample contributes count 1 to
-        // bucket 0 and that's all.
+        // A zero must not take probability mass from the samples
+        // already recorded: it adds one to the lowest bucket and
+        // changes nothing else.
         Hist mixed;
         mixed.record(Hist::checked_value(0));
         mixed.record(Hist::checked_value(0));
         mixed.record(Hist::checked_value(100));
         assert(mixed.total_count() == 3);
-        // Two-thirds of mass is at 0; p50 lands in bucket 0.
+        // Two of the three samples are zero, so the median is zero and
+        // the single positive sample is the maximum.
         assert(mixed.percentile(50.0) == 0);
-        // The lone positive sample reaches p100.
         assert(mixed.percentile(100.0) >= 100);
 
         std::uint64_t bucket0_count = 0;
@@ -72,12 +65,12 @@ int main() {
     assert(h.mean() > 0);
     assert(h.std_dev() > 0);
 
-    // FIXY-V-096b exactness witness: all-identical samples → variance is
-    // EXACTLY zero.  Σ count·(value − mean)² now accumulates in unsigned
-    // __int128 (exact, cross-platform bit-identical) instead of `long double`
-    // (80-bit x86 / 64-bit aarch64).  With every sample in one bucket the
-    // deviation is identically zero, so std_dev() must be precisely 0 — and
-    // mean() must equal that single bucket's reported value (its p50 == p100).
+    // The sum of squared deviations accumulates in exact integer
+    // arithmetic, not in an extended-precision float whose width
+    // differs between architectures.  With every sample in one bucket
+    // each deviation is zero, so the deviation has to come out exactly
+    // zero rather than merely small, and the mean has to equal the one
+    // value present.
     {
         Hist same;
         for (int rep = 0; rep < 1000; ++rep) {
@@ -125,11 +118,9 @@ int main() {
     merged.merge_from(delta);
     assert(merged.total_count() == 4);
 
-    // fixy-A5-019 regression: subtract_from must publish bucket writes
-    // via release on total_count_ matching merge_from's discipline.  A
-    // consumer that reads total_count() via acquire must then see the
-    // post-subtract bucket state consistently — i.e. percentile reads
-    // never observe a "total decreased but buckets unchanged" tear.
+    // Subtraction publishes its bucket writes the same way merging
+    // does.  Without that, a reader could see the lowered total while
+    // the buckets it then reads still hold the old counts.
     Hist publish_h;
     for (int i = 0; i < 16; ++i) {
         publish_h.record(Hist::checked_value(500));
@@ -141,16 +132,12 @@ int main() {
     }
     publish_h.subtract_from(publish_delta);
     {
-        // Reader-side: load total_count() (acquire), then read bucket
-        // state via percentile().  If subtract_from's publish discipline
-        // works, the bucket sum must equal the post-subtract total.
+        // Read in the order a consumer does: the total first, then the
+        // buckets.  The two must agree.
         const std::uint64_t post_total = publish_h.total_count();
         assert(post_total == 12);
         std::uint64_t bucket_sum = 0;
-        publish_h.for_each_nonzero(
-            [&](const Hist::EncodedBucket& bucket) noexcept {
-                bucket_sum += bucket.count;
-            });
+        publish_h.for_each_nonzero([&](const Hist::EncodedBucket& bucket) noexcept { bucket_sum += bucket.count; });
         assert(bucket_sum == post_total);
         assert(publish_h.percentile(50.0) >= 500);
     }
@@ -188,38 +175,21 @@ int main() {
     c.reset();
     assert(c.total_count() == 0);
 
-    // fixy-V-208 regression: distinct UniqueTag instances must keep
-    // distinct shard counters AND distinct per-thread shard caches.
-    // Pre-fix, `next_thread_shard_` was inline-static and the
-    // `thread_shard()` thread_local was per-function-static, so two
-    // ConcurrentHdrHistogram<...> instances with the same template
-    // arguments (or even different ones, when both used the default
-    // tag) shared the same allocation stream — a thread that landed
-    // on shard 0 of histogram A also landed on shard 0 of histogram B,
-    // defeating the contention-avoidance discipline.
-    //
-    // The fix routes the cache through safety::ThreadLocalRef<Tag,
-    // std::size_t>, gated by the new mandatory UniqueTag template
-    // parameter.  Distinct tags → distinct (Tag, size_t) instantiations
-    // → distinct thread_local cells.  This regression test pins the
-    // invariant by:
-    //   1. Declaring two distinct tag structs.
-    //   2. Recording into both histograms on the same thread.
-    //   3. Asserting that each histogram's total_count is independent
-    //      (== exactly the records made into it, no cross-record).
+    // The tag parameter is what keeps two histograms apart.  The shard
+    // a thread is assigned is cached in storage keyed by that tag, so
+    // without it two histograms would share one cache and a thread
+    // that landed on the first shard of one would land on the first
+    // shard of the other, which is exactly the collision the sharding
+    // exists to avoid.
     {
         struct LatencyHistogramTag {};
         struct DrainHistogramTag {};
 
-        using LatencyHist =
-            crucible::observe::ConcurrentHdrHistogram<
-                2, 1'000'000, 4, LatencyHistogramTag>;
-        using DrainHist =
-            crucible::observe::ConcurrentHdrHistogram<
-                2, 1'000'000, 4, DrainHistogramTag>;
+        using LatencyHist = crucible::observe::ConcurrentHdrHistogram<2, 1'000'000, 4, LatencyHistogramTag>;
+        using DrainHist = crucible::observe::ConcurrentHdrHistogram<2, 1'000'000, 4, DrainHistogramTag>;
 
-        // Distinct types — caller cannot accidentally swap them at
-        // the call site.  This is the TypeSafe axiom kicking in.
+        // The tag also makes the two histograms different types, so a
+        // call site cannot pass one where the other belongs.
         static_assert(!std::is_same_v<LatencyHist, DrainHist>);
 
         LatencyHist latency;
@@ -235,29 +205,24 @@ int main() {
         assert(latency.total_count() == 64);
         assert(drain.total_count() == 32);
 
-        // Reset one; the other is untouched (per-instance state
-        // isolation — was the bug pre-fix).
+        // Resetting one leaves the other alone, which shared state
+        // would not.
         latency.reset();
         assert(latency.total_count() == 0);
         assert(drain.total_count() == 32);
     }
 
-    // fixy-A5-007 regression: N producers + concurrent reader must never
-    // observe sum(counts_) < total_count.  Pre-fix the producer-side
-    // total_count_.fetch_add used release-only, which on weakly-ordered
-    // targets (ARM / Apple Silicon / Graviton) failed to publish the
-    // FIRST producer's counts_ writes to a reader who saw the SECOND
-    // producer's release — the second RMW's read side has no acquire
-    // semantics under release-only, breaking the happens-before chain.
+    // The producers' update of the total both publishes their own
+    // bucket writes and acquires the previous producer's, which is what
+    // chains the publications together.  A release without the acquire
+    // half breaks that chain: a reader who sees the second producer's
+    // total is not thereby guaranteed to see the first producer's
+    // buckets, and it reads a total larger than the counts it can find.
     //
-    // The invariant guarded: at every snapshot, sum(visible counts_) ≥
-    // total_count_observed.  Violation surfaces as percentile() falling
-    // off the end of its loop and returning MaxValue when rank ≤ total
-    // would otherwise have landed in a bucket.  On x86 the producer code
-    // generates LOCK XADD either way (full barrier) so this test
-    // accumulates statistical confidence rather than a hard repro, but
-    // the regression guard catches any future change that drops the
-    // acq_rel discipline (e.g. someone reverting to release-only).
+    // On the machine this usually runs on, the read-modify-write is a
+    // full barrier whichever ordering is written, so a run that passes
+    // is confidence rather than proof.  The guard is still worth having
+    // because it fails on a target where the distinction is real.
     {
         crucible::observe::HdrHistogram<2, 1'000'000> shared;
         std::atomic<bool> ready_flag{false};
@@ -271,20 +236,18 @@ int main() {
 
         std::array<std::jthread, kProducerCount> producers{};
         for (std::size_t p = 0; p < kProducerCount; ++p) {
-            producers[p] = std::jthread{[&shared, &ready_flag, p]{
+            producers[p] = std::jthread{[&shared, &ready_flag, p] {
                 while (!ready_flag.load(std::memory_order_acquire)) {
                     CRUCIBLE_SPIN_PAUSE;
                 }
                 for (std::size_t i = 0; i < kSamplesPerProducer; ++i) {
-                    const std::uint64_t v =
-                        (static_cast<std::uint64_t>(p) * 1000) + ((i % 90) + 10);
+                    const std::uint64_t v = (static_cast<std::uint64_t>(p) * 1000) + ((i % 90) + 10);
                     shared.record(HRegress::checked_value(v));
                 }
             }};
         }
 
-        std::jthread reader{[&shared, &ready_flag, &stop_flag,
-                             &torn_observations, &reader_iterations]{
+        std::jthread reader{[&shared, &ready_flag, &stop_flag, &torn_observations, &reader_iterations] {
             while (!ready_flag.load(std::memory_order_acquire)) {
                 CRUCIBLE_SPIN_PAUSE;
             }
@@ -295,13 +258,11 @@ int main() {
                 }
                 std::uint64_t bucket_sum = 0;
                 shared.for_each_nonzero(
-                    [&](const HRegress::EncodedBucket& bucket) noexcept {
-                        bucket_sum += bucket.count;
-                    });
-                // Invariant: bucket_sum ≥ total observed at this snapshot.
-                // bucket_sum may exceed total when more producers updated
-                // counts_ but not yet total_count_ — that's expected; the
-                // bug is bucket_sum < total.
+                    [&](const HRegress::EncodedBucket& bucket) noexcept { bucket_sum += bucket.count; });
+                // The comparison is deliberately one-sided.  Counting
+                // more than the total is normal, because a producer
+                // writes its bucket before it raises the total.  The
+                // other direction is the defect.
                 if (bucket_sum < total) {
                     torn_observations.fetch_add(1, std::memory_order_relaxed);
                 }
@@ -316,12 +277,10 @@ int main() {
         stop_flag.store(true, std::memory_order_release);
         reader.join();
 
-        assert(shared.total_count() ==
-               kProducerCount * kSamplesPerProducer);
-        // At least one reader pass must have observed a nonzero total;
-        // otherwise the regression guard is vacuous.
+        assert(shared.total_count() == kProducerCount * kSamplesPerProducer);
+        // A reader that never got past the empty-histogram check would
+        // report zero violations without having looked at anything.
         assert(reader_iterations.load(std::memory_order_relaxed) > 0);
-        // Strict invariant under acq_rel: zero torn observations.
         assert(torn_observations.load(std::memory_order_relaxed) == 0);
     }
 
@@ -329,9 +288,8 @@ int main() {
     Channel channel;
     auto whole = crucible::safety::mint_permission_root<typename Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =
-        crucible::safety::mint_permission_split<
-            typename Channel::producer_tag,
-            typename Channel::consumer_tag>(std::move(whole));
+        crucible::safety::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(
+            std::move(whole));
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
 

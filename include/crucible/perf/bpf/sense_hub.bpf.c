@@ -1,40 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/*
- * sense_hub.bpf.c — The organism's complete sensory nervous system.
- *
- * 96 counters in a single BPF_F_MMAPABLE array = 768 bytes = 12 cache lines.
- * Userspace reads via mmap pointer dereference: ~200ns same-CCD on Zen 3.
- *
- * Domains tracked:
- *   Network    — TCP states, UDP/UNIX counts, bytes tx/rx
- *   I/O        — syscall-level read/write byte counts and ops
- *   Files      — open FD count, open/close operations
- *   Memory     — mmap/munmap, page faults, RSS breakdown, reclaim, THP, NUMA
- *   Scheduler  — vol/invol switches, migrations, runtime, wait, sleep/iowait/blocked
- *   Contention — futex wait + kernel lock contention
- *   Threads    — creation + exit tracking
- *   Block I/O  — actual disk bytes, latency, unplug batching
- *   Page Cache — cache misses, readahead pages
- *   Writeback  — dirty page throttling
- *   Net Health — TCP retransmits, resets, errors, packet drops, RTT, congestion
- *   Reliability— signals, OOM, thermal, MCE
- *
- * 59 tracepoint programs attached.
- *
- * TODO(perf): sense_sched_switch runs system-wide (no early tgid gate).
- * On a busy box ~200K ctx switches/sec × 2 map lookups adds ~6 ms/s of
- * overhead. We deliberately tolerate this cost rather than gating on
- * another map: the lookups ARE the filter — our_tids is the source of
- * truth, and adding a second "populated" flag creates a race window.
- * If overhead becomes painful, re-evaluate then.
- */
-
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
-
-/* ─── Constants ────────────────────────────────────────────────────── */
 
 #ifndef BPF_F_MMAPABLE
 #define BPF_F_MMAPABLE (1U << 10)
@@ -51,44 +19,35 @@
 #define STYPE_UDP 1
 #define STYPE_UNIX 2
 
-/* FUTEX operations */
 #define FUTEX_WAIT 0
 #define FUTEX_WAIT_BITSET 9
 #define FUTEX_LOCK_PI 6
 #define FUTEX_CMD_MASK 127
 
-/* Task states */
 #define TASK_RUNNING 0
 
-/* RSS stat members */
 #define MM_FILEPAGES 0
 #define MM_ANONPAGES 1
 #define MM_SWAPENTS 2
 #define MM_SHMEMPAGES 3
 
-/* vmscan write_folio flags */
 #define RECLAIM_WB_ANON 0x0001u
 
-/* TCP congestion states */
 #define TCP_CA_Loss 4
 
-/* Fatal signals */
 #define SIGBUS 7
 #define SIGFPE 8
 #define SIGKILL 9
 #define SIGSEGV 11
 #define SIGABRT 6
 
-/* ─── PID filter (set from userspace via .rodata) ──────────────────── */
-
+/* Userspace rewrites this in .rodata before the program is loaded. */
 const volatile __u32 target_tgid = 0;
 
 /*
- * Inverted default: when target_tgid is 0 (the userspace rewrite of .rodata
- * silently failed, or the loader forgot to do it), is_target() returns
- * false for every task. Result: zero readings, loud and visible to the
- * user. The old `target_tgid == 0 || tgid == target_tgid` would have
- * recorded every tracepoint system-wide in that scenario — a firehose.
+ * A target_tgid of 0 means the rewrite never happened, and every task then
+ * fails this test. The reading comes back empty, which is visible. Treating 0
+ * as a wildcard instead would record every tracepoint on the host.
  */
 static __always_inline bool is_target(void) {
     __u32 tgid = bpf_get_current_pid_tgid() >> 32;
@@ -99,10 +58,12 @@ static __always_inline __u32 get_tid(void) { return (__u32)bpf_get_current_pid_t
 
 static __always_inline __u32 get_tgid(void) { return bpf_get_current_pid_tgid() >> 32; }
 
-/* ─── Counter indices (MUST match Rust SenseCounters layout) ───────── */
-
+/*
+ * Userspace mmaps the counter array and indexes it by these values. The order
+ * is the shared contract, and the groups of eight are laid out so that one
+ * domain occupies one cache line.
+ */
 enum sense_idx {
-    /* ── Cache line 0 (bytes 0-63): Network State ────────────────── */
     NET_TCP_ESTABLISHED = 0,
     NET_TCP_LISTEN = 1,
     NET_TCP_TIME_WAIT = 2,
@@ -112,7 +73,6 @@ enum sense_idx {
     NET_UNIX_ACTIVE = 6,
     NET_TX_BYTES = 7,
 
-    /* ── Cache line 1 (bytes 64-127): I/O + Files ────────────────── */
     NET_RX_BYTES = 8,
     FD_CURRENT = 9,
     FD_OPEN_OPS = 10,
@@ -122,7 +82,6 @@ enum sense_idx {
     IO_WRITE_OPS = 14,
     MEM_MMAP_COUNT = 15,
 
-    /* ── Cache line 2 (bytes 128-191): Memory + Scheduler Core ───── */
     MEM_MUNMAP_COUNT = 16,
     MEM_PAGE_FAULTS_MIN = 17,
     MEM_PAGE_FAULTS_MAJ = 18,
@@ -132,7 +91,6 @@ enum sense_idx {
     SCHED_MIGRATIONS = 22,
     SCHED_RUNTIME_NS = 23,
 
-    /* ── Cache line 3 (bytes 192-255): Scheduler + Contention ────── */
     SCHED_WAIT_NS = 24,
     FUTEX_WAIT_COUNT = 25,
     FUTEX_WAIT_NS = 26,
@@ -142,7 +100,6 @@ enum sense_idx {
     SCHED_BLOCKED_NS = 30,
     WAKEUPS_RECEIVED = 31,
 
-    /* ── Cache line 4 (bytes 256-319): CPU Extended ──────────────── */
     KERNEL_LOCK_COUNT = 32,
     KERNEL_LOCK_NS = 33,
     SOFTIRQ_STOLEN_NS = 34,
@@ -152,7 +109,6 @@ enum sense_idx {
     _RESERVED_38 = 38,
     _RESERVED_39 = 39,
 
-    /* ── Cache line 5 (bytes 320-383): Memory Pressure ───────────── */
     RSS_ANON_BYTES = 40,
     RSS_FILE_BYTES = 41,
     RSS_SWAP_ENTRIES = 42,
@@ -162,7 +118,6 @@ enum sense_idx {
     SWAP_OUT_PAGES = 46,
     THP_COLLAPSE_OK = 47,
 
-    /* ── Cache line 6 (bytes 384-447): Memory Adv + Block I/O ────── */
     THP_COLLAPSE_FAIL = 48,
     NUMA_MIGRATE_PAGES = 49,
     COMPACTION_STALLS = 50,
@@ -172,7 +127,6 @@ enum sense_idx {
     DISK_IO_LATENCY_NS = 54,
     DISK_IO_COUNT = 55,
 
-    /* ── Cache line 7 (bytes 448-511): I/O Adv + Net Health ──────── */
     PAGE_CACHE_MISSES = 56,
     READAHEAD_PAGES = 57,
     WRITE_THROTTLE_JIFFIES = 58,
@@ -182,7 +136,6 @@ enum sense_idx {
     TCP_ERROR_COUNT = 62,
     SKB_DROP_COUNT = 63,
 
-    /* ── Cache line 8 (bytes 512-575): Net Health + Reliability ──── */
     TCP_MIN_SRTT_US = 64,
     TCP_MAX_SRTT_US = 65,
     TCP_LAST_CWND = 66,
@@ -192,17 +145,15 @@ enum sense_idx {
     OOM_KILLS_SYSTEM = 70,
     OOM_KILL_US = 71,
 
-    /* ── Cache line 9 (bytes 576-639): Reliability + Reserved ────── */
     RECLAIM_STALL_LOOPS = 72,
     THERMAL_MAX_TRIP = 73,
     MCE_COUNT = 74,
-    MAP_FULL_DROPS = 75, /* BPF map updates that returned non-zero */
+    MAP_FULL_DROPS = 75, /* map updates that returned non-zero */
     _RESERVED_76 = 76,
     _RESERVED_77 = 77,
     _RESERVED_78 = 78,
     _RESERVED_79 = 79,
 
-    /* ── Cache lines 10-11 (bytes 640-767): Reserved ─────────────── */
     _RESERVED_80 = 80,
     _RESERVED_81 = 81,
     _RESERVED_82 = 82,
@@ -223,8 +174,6 @@ enum sense_idx {
     NUM_COUNTERS = 96,
 };
 
-/* ─── The mmapable counter array ────────────────────────────────────── */
-
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, NUM_COUNTERS);
@@ -233,13 +182,9 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
 } counters SEC(".maps");
 
-/* ─── Helper maps (BPF-internal) ────────────────────────────────────── */
-
-/* GAPS-004g-AUDIT-3 (2026-05-04): LRU_HASH (was plain HASH).
- * socket_fds tracks open sockets across the process lifetime; close()
- * removes the entry.  With plain HASH and MAX_ENTRIES=4096, a workload
- * opening >4096 sockets has subsequent socket() calls silently dropped.
- * LRU evicts the oldest entry — graceful degradation. */
+/* A workload with more live sockets than this map holds would, under a plain
+ * HASH, have every later socket silently dropped. LRU_HASH evicts the oldest
+ * entry instead. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 4096);
@@ -252,9 +197,8 @@ struct socket_args {
     __u32 type;
 };
 
-/* GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  enter/exit-paired —
- * orphan if socket() syscall is interrupted mid-call.  Rare but
- * accumulates to MAX_ENTRIES=256 then silently rejects new enters. */
+/* An interrupted socket() call leaves an enter with no exit. LRU_HASH evicts
+ * the orphan rather than letting it hold a slot forever. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 256);
@@ -262,13 +206,8 @@ struct {
     __type(value, struct socket_args);
 } socket_enter SEC(".maps");
 
-/* GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same orphaned-entry
- * leak class as lock_contention.bpf.c's wait_start (fixed GAPS-004d-
- * AUDIT) and syscall_latency.bpf.c's syscall_start (fixed GAPS-004e):
- * a sched_switch enter not followed by a matching exit (thread killed
- * mid-context-switch, prev_pid filtering rejected exit, etc.) orphans
- * the timestamp; orphans accumulate to MAX_ENTRIES=1024 then silently
- * block new inserts. */
+/* A thread switched out and never seen switching back in leaves an orphan
+ * timestamp. LRU_HASH evicts it rather than letting it hold a slot forever. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 1024);
@@ -276,9 +215,8 @@ struct {
     __type(value, __u64);
 } switch_ts SEC(".maps");
 
-/* Thread IDs belonging to our target process. Userspace populates this
- * at load time (main TID) and at thread create time. Multi-threaded
- * benches can spawn hundreds of worker threads, so 4096 gives headroom. */
+/* Userspace fills this map with the tids of the target process, at load time
+ * for the main thread and again as threads are created. */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 4096);
@@ -286,10 +224,7 @@ struct {
     __type(value, __u8);
 } our_tids SEC(".maps");
 
-/* Futex enter timestamps: tid -> ktime_ns
- *
- * GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same fix class as
- * lock_contention.bpf.c's wait_start (GAPS-004d-AUDIT). */
+/* An enter with no matching exit leaves an orphan, which LRU_HASH evicts. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 1024);
@@ -297,9 +232,7 @@ struct {
     __type(value, __u64);
 } futex_ts SEC(".maps");
 
-/* Kernel lock contention timestamps: tid -> ktime_ns
- *
- * GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same fix class. */
+/* An enter with no matching exit leaves an orphan, which LRU_HASH evicts. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 1024);
@@ -308,11 +241,9 @@ struct {
 } lock_ts SEC(".maps");
 
 /*
- * Softirq entry timestamps: per-cpu array, keyed by softirq vector.
- * Linux has 10 softirq vectors (HI, TIMER, NET_TX, NET_RX, BLOCK,
- * IRQ_POLL, TASKLET, SCHED, HRTIMER, RCU). Nested softirqs on the same
- * CPU — e.g. TIMER interrupting NET_RX — need separate slots so they
- * don't clobber each other's timestamps.
+ * One slot per softirq vector, of which the kernel defines ten. A softirq can
+ * nest on another on the same CPU, and separate slots keep the outer start
+ * timestamp intact while the inner one runs.
  */
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -321,10 +252,7 @@ struct {
     __type(value, __u64);
 } softirq_ts SEC(".maps");
 
-/* Direct reclaim timestamps: tid -> ktime_ns
- *
- * GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same fix class as
- * lock_contention.bpf.c's wait_start (GAPS-004d-AUDIT). */
+/* An enter with no matching exit leaves an orphan, which LRU_HASH evicts. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 256);
@@ -333,21 +261,11 @@ struct {
 } reclaim_ts SEC(".maps");
 
 /*
- * Block I/O start timestamps: bio_key -> ktime_ns.
- *
- * The key is (dev, sector, bytes) combined — see bio_key() below. Two
- * concurrent BIOs can collide on identical (dev, sector, bytes) only if
- * they both target the same disk extent with the same length, which is
- * vanishingly rare during a bench but possible under heavy contention.
- *
- * LRU_HASH auto-evicts the oldest entry when full. That gives bounded
- * memory even if block_io_done tracepoints miss (e.g. a device driver
- * path that skips the normal completion), and keeps latency attribution
- * approximately correct under collision.
- *
- * Ideal fix would be keying by `struct request *` but the raw tracepoint
- * exposes only the decoded (dev, sector, bytes, ...) tuple, not the
- * request pointer itself.
+ * Two concurrent requests collide here only when they target the same device
+ * and the same sector with the same length. Keying by the request pointer
+ * would be exact, but the tracepoint exposes only the decoded fields, not the
+ * pointer. LRU_HASH bounds the memory even when a driver path completes a
+ * request without firing the done tracepoint.
  */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -356,15 +274,12 @@ struct {
     __type(value, __u64);
 } bio_ts SEC(".maps");
 
-/* TCP probe rate limit: per-cpu last timestamp */
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __uint(max_entries, 1);
     __type(key, __u32);
     __type(value, __u64);
 } tcp_probe_ts SEC(".maps");
-
-/* ─── Atomic counter helpers ────────────────────────────────────────── */
 
 static __always_inline void counter_add(__u32 idx, __u64 delta) {
     __u64* val = bpf_map_lookup_elem(&counters, &idx);
@@ -376,18 +291,16 @@ static __always_inline void counter_sub(__u32 idx, __u64 delta) {
     if (val) __sync_fetch_and_sub(val, delta);
 }
 
-/* Set a gauge counter (non-atomic but fine for gauges) */
+/* Not atomic. A lost update on a gauge costs one stale reading. */
 static __always_inline void counter_set(__u32 idx, __u64 new_val) {
     __u64* val = bpf_map_lookup_elem(&counters, &idx);
     if (val) *val = new_val;
 }
 
 /*
- * Update gauge to max(current, new) via bounded CAS loop.
- * Concurrent CPUs in tracepoints can race: A reads 100, B reads 100, A
- * writes 200, B writes 150 → lost update, final gauge = 150. CAS ensures
- * we only commit if the value we compared against is still there.
- * Loop bounded so the BPF verifier can prove termination.
+ * A plain read-then-write loses the larger value when two CPUs interleave, so
+ * the write commits only if the compared value is still in place. The loop is
+ * bounded because the verifier has to see it terminate.
  */
 static __always_inline void counter_max(__u32 idx, __u64 new_val) {
     __u64* val = bpf_map_lookup_elem(&counters, &idx);
@@ -400,10 +313,7 @@ static __always_inline void counter_max(__u32 idx, __u64 new_val) {
     }
 }
 
-/*
- * Update gauge to min(current, new), treating 0 as "not set".
- * Same CAS pattern as counter_max. Skip new_val == 0 early.
- */
+/* Zero means unset, so it is never a candidate minimum. */
 static __always_inline void counter_min_nz(__u32 idx, __u64 new_val) {
     if (new_val == 0) return;
     __u64* val = bpf_map_lookup_elem(&counters, &idx);
@@ -417,9 +327,8 @@ static __always_inline void counter_min_nz(__u32 idx, __u64 new_val) {
 }
 
 /*
- * Saturating subtract: never goes below zero. Counters like FD_CURRENT
- * get underflowed when we see close(3) for an FD inherited from exec
- * that we never counted in open. CAS loop keeps the invariant *val >= 0.
+ * A close of a descriptor inherited through exec has no matching open on this
+ * side, so a plain subtract would wrap the counter to its maximum.
  */
 static __always_inline void counter_sub_sat(__u32 idx, __u64 delta) {
     __u64* val = bpf_map_lookup_elem(&counters, &idx);
@@ -433,27 +342,19 @@ static __always_inline void counter_sub_sat(__u32 idx, __u64 delta) {
 }
 
 /*
- * Record a map-update failure so userspace can see when tracepoint state
- * is getting dropped. Cheap: one map lookup + one atomic add.  Call
- * site: wherever bpf_map_update_elem returns non-zero.
- *
- * Post GAPS-004g-AUDIT-3 (LRU_HASH conversion of socket_fds, socket_enter,
- * switch_ts, futex_ts, lock_ts, reclaim_ts, bio_ts), capacity pressure on
- * THOSE maps is handled by LRU eviction — they don't fail-on-full any
- * more.  This counter still fires for:
- *   • the remaining plain HASH (`our_tids`)
- *   • LRU maps reporting E2BIG (malformed key) or other non-zero return
- *     paths libbpf may emit.
- *   • PERCPU_ARRAY (softirq_ts) on indices >= max_entries (we already
- *     bound to <10 inline so this can't fire today).
+ * Records that tracepoint state is dropped, so a reader can tell an empty
+ * result from a lossy one. The LRU maps evict rather than fail, so what
+ * reaches here is the plain hash filling up, or a malformed key.
  */
 static __always_inline void note_map_full(void) { counter_add(MAP_FULL_DROPS, 1); }
 
-/* ─── Manual tracepoint context structs ─────────────────────────────── */
-/* Used where vmlinux.h lacks a clean type or the layout is stable enough
- * that hand-rolling is simpler than pulling in CO-RE machinery. For the
- * authoritative ABI (sched_stat, rss_stat, etc.) we prefer the
- * vmlinux.h struct trace_event_raw_* types via BPF_CORE_READ. */
+/*
+ * Each struct below mirrors one tracepoint format, and the offsets are the
+ * kernel's, not this program's. They are hand-rolled where vmlinux.h has no
+ * clean type for the event. Where the kernel type does exist, the handler
+ * takes it and reads through BPF_CORE_READ so that the offsets relocate at
+ * load time.
+ */
 
 /* sched/sched_waking */
 struct sense_sched_waking_ctx {
@@ -746,8 +647,6 @@ struct sense_thermal_trip_ctx {
     __u32 trip_type; /* offset 20: 0=ACTIVE,1=PASSIVE,2=HOT,3=CRITICAL */
 };
 
-/* ─── TCP state mapping ─────────────────────────────────────────────── */
-
 static __always_inline __u32 tcp_state_to_idx(int state) {
     switch (state) {
         case 1:
@@ -764,28 +663,22 @@ static __always_inline __u32 tcp_state_to_idx(int state) {
 }
 
 /*
- * Block I/O key: combine dev, sector, and bytes so concurrent BIOs on
- * the same sector but different lengths don't collide. Not collision-
- * free but far better than sector^dev alone, and LRU eviction bounds
- * the damage of any collision we do hit.
+ * Folding the length in as well as the device and sector separates two
+ * requests that share a start sector but differ in size. The result is not
+ * collision free.
  */
 static __always_inline __u64 bio_key(__u32 dev, __u64 sector, __u32 bytes) {
     return (sector << 20) ^ ((__u64)dev << 52) ^ (__u64)bytes;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════
- * NETWORK DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
 
 SEC("tracepoint/sock/inet_sock_set_state")
 int sense_tcp_state(struct trace_event_raw_inet_sock_set_state* ctx) {
     if (ctx->protocol != IPPROTO_TCP) return 0;
 
     __u32 tgid = bpf_get_current_pid_tgid() >> 32;
-    /* Inverted default: zero readings if loader didn't rewrite .rodata.
-     * Keep the tgid==0 allowance: TCP state transitions sometimes fire
-     * from softirq where current is idle/swapper, and we still want to
-     * count those when they belong to our sockets. */
+    /* A tgid of 0 is allowed through because a TCP state change can fire from
+     * softirq, where the current task is the idle task rather than the socket
+     * owner. A target_tgid of 0 still rejects everything. */
     if (target_tgid == 0) return 0;
     if (tgid != target_tgid && tgid != 0) return 0;
 
@@ -867,10 +760,6 @@ int sense_recvmsg_exit(struct trace_event_raw_sys_exit* ctx) {
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * I/O DOMAIN (syscall-level)
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/syscalls/sys_exit_read")
 int sense_read_exit(struct trace_event_raw_sys_exit* ctx) {
     if (!is_target()) return 0;
@@ -911,10 +800,6 @@ int sense_writev_exit(struct trace_event_raw_sys_exit* ctx) {
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * FILES DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/syscalls/sys_exit_openat")
 int sense_openat_exit(struct trace_event_raw_sys_exit* ctx) {
     if (!is_target()) return 0;
@@ -930,9 +815,8 @@ int sense_close_enter(struct trace_event_raw_sys_enter* ctx) {
     if (!is_target()) return 0;
 
     __u32 fd = (__u32)ctx->args[0];
-    /* Saturating: a bench may close an FD it inherited from exec
-     * (stdin/stdout/stderr) without us having counted it in open.
-     * Old counter_sub would underflow to UINT64_MAX. */
+    /* A descriptor inherited through exec is closed here without ever having
+     * been counted at open. */
     counter_sub_sat(FD_CURRENT, 1);
 
     __u8* stype = bpf_map_lookup_elem(&socket_fds, &fd);
@@ -946,10 +830,6 @@ int sense_close_enter(struct trace_event_raw_sys_enter* ctx) {
     }
     return 0;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════
- * MEMORY DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
 
 SEC("tracepoint/syscalls/sys_exit_mmap")
 int sense_mmap_exit(struct trace_event_raw_sys_exit* ctx) {
@@ -965,7 +845,7 @@ int sense_munmap_enter(struct trace_event_raw_sys_enter* ctx) {
     return 0;
 }
 
-/* Page faults — manual struct for exceptions/page_fault_user */
+/* exceptions/page_fault_user */
 struct trace_event_raw_page_fault_user {
     unsigned short common_type;
     unsigned char common_flags;
@@ -977,17 +857,11 @@ struct trace_event_raw_page_fault_user {
 };
 
 /*
- * Count ALL user page faults as MEM_PAGE_FAULTS_MIN.
- *
- * The old code tried to split minor/major via error_code bit 0, but
- * that bit is x86 "present": 1 means the PTE was present (CoW or
- * protection fault), 0 means not present. Neither correlates with
- * "major" (backing store I/O required). Real major faults need
- * disk/swap touches — which we already track elsewhere (SWAP_OUT_PAGES
- * via vmscan_write_folio, DISK_*_BYTES via block_io_start).
- *
- * MEM_PAGE_FAULTS_MAJ is left as zero; a future fix could populate it
- * from exceptions/page_fault_kernel or a dedicated major-fault probe.
+ * Every user fault counts as minor. Bit 0 of the x86 error code says whether
+ * the page table entry was present, which separates a copy-on-write or
+ * protection fault from an absent one, and neither of those is the same
+ * question as whether the fault needed backing store. MEM_PAGE_FAULTS_MAJ
+ * stays at zero.
  */
 SEC("tracepoint/exceptions/page_fault_user")
 int sense_page_fault(struct trace_event_raw_page_fault_user* ctx) {
@@ -1003,13 +877,11 @@ int sense_brk_exit(struct trace_event_raw_sys_exit* ctx) {
     return 0;
 }
 
-/* ── NEW: RSS stat — real-time RSS breakdown by type ────────────────── */
-
 /*
- * CO-RE read of the kernel's trace_event_raw_rss_stat. The field layout
- * changed twice between 5.18 and 6.2 (curr was added, then member went
- * from enum to int). BPF_CORE_READ relocates at load time so this works
- * across that range without rebuilding.
+ * The field layout of this tracepoint changed twice between kernel 5.18 and
+ * 6.2, first gaining a field and then changing the type of member. Reading
+ * through BPF_CORE_READ relocates the offsets at load time, so one build
+ * covers that range.
  */
 SEC("tracepoint/kmem/rss_stat")
 int sense_rss_stat(struct trace_event_raw_rss_stat* ctx) {
@@ -1018,7 +890,7 @@ int sense_rss_stat(struct trace_event_raw_rss_stat* ctx) {
     int member = BPF_CORE_READ(ctx, member);
     long size = BPF_CORE_READ(ctx, size);
 
-    /* size is in bytes (can be negative for decrements) */
+    /* The kernel reports a byte count that goes negative on a decrement. */
     __u64 abs_size = size >= 0 ? (__u64)size : 0;
     switch (member) {
         case MM_FILEPAGES:
@@ -1037,12 +909,8 @@ int sense_rss_stat(struct trace_event_raw_rss_stat* ctx) {
     return 0;
 }
 
-/* ── NEW: Direct reclaim — thread stalled doing kernel GC ───────────── */
-
-/* ctx is never dereferenced — this tracepoint carries order/gfp_flags we
- * don't need, and trace_event_raw_sys_enter is the wrong type for a
- * non-syscall tracepoint. Use void* so we can't accidentally misread
- * fields that aren't there. */
+/* The parameter is void* on purpose. This is not a syscall tracepoint, so a
+ * syscall context type would name fields that are not there. */
 SEC("tracepoint/vmscan/mm_vmscan_direct_reclaim_begin")
 int sense_reclaim_begin(void* ctx) {
     if (!is_target()) return 0;
@@ -1056,11 +924,6 @@ int sense_reclaim_begin(void* ctx) {
 SEC("tracepoint/vmscan/mm_vmscan_direct_reclaim_end")
 int sense_reclaim_end(struct sense_reclaim_end_ctx* ctx) {
     if (!is_target()) return 0;
-    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() call —
-     * was two before (one for delta, one wasted on the early-out path).
-     * Same discipline as lock_contention.bpf.c GAPS-004d-AUDIT and
-     * syscall_latency.bpf.c GAPS-004e: capture once at handler entry,
-     * reuse for delta. Saves ~50 ns per event. */
     __u64 now = bpf_ktime_get_ns();
     __u32 tid = get_tid();
     __u64* start = bpf_map_lookup_elem(&reclaim_ts, &tid);
@@ -1072,21 +935,17 @@ int sense_reclaim_end(struct sense_reclaim_end_ctx* ctx) {
     return 0;
 }
 
-/* ── NEW: Swap-out detection — system-wide, not PID-filtered ────────── */
-
+/* Not filtered to the target. Anonymous pages going out to swap is memory
+ * pressure on the whole host, whoever owns the pages. */
 SEC("tracepoint/vmscan/mm_vmscan_write_folio")
 int sense_write_folio(struct sense_write_folio_ctx* ctx) {
-    /* System-wide: if anonymous pages are being swapped out, the
-     * environment is under memory pressure affecting everyone */
     if (ctx->reclaim_flags & RECLAIM_WB_ANON) counter_add(SWAP_OUT_PAGES, 1);
     return 0;
 }
 
-/* ── NEW: THP collapse tracking ─────────────────────────────────────── */
-
 SEC("tracepoint/huge_memory/mm_collapse_huge_page")
 int sense_thp_collapse(struct sense_thp_collapse_ctx* ctx) {
-    /* status: 1 = succeeded */
+    /* status 1 is success */
     if (ctx->status == 1)
         counter_add(THP_COLLAPSE_OK, 1);
     else
@@ -1094,16 +953,12 @@ int sense_thp_collapse(struct sense_thp_collapse_ctx* ctx) {
     return 0;
 }
 
-/* ── NEW: NUMA migration detection ──────────────────────────────────── */
-
 SEC("tracepoint/migrate/mm_migrate_pages")
 int sense_migrate_pages(struct sense_migrate_pages_ctx* ctx) {
-    /* reason 5 = numa_misplaced — the most interesting one */
+    /* reason 5 is numa_misplaced */
     if (ctx->reason == 5) counter_add(NUMA_MIGRATE_PAGES, ctx->succeeded + ctx->thp_succeeded);
     return 0;
 }
-
-/* ── NEW: Compaction stalls — system-wide fragmentation indicator ───── */
 
 SEC("tracepoint/compaction/mm_compaction_end")
 int sense_compaction_end(struct sense_compaction_end_ctx* ctx) {
@@ -1112,25 +967,24 @@ int sense_compaction_end(struct sense_compaction_end_ctx* ctx) {
     return 0;
 }
 
-/* ── NEW: External fragmentation events ─────────────────────────────── */
-
 SEC("tracepoint/kmem/mm_page_alloc_extfrag")
 int sense_extfrag(struct sense_extfrag_ctx* ctx) {
     if (ctx->change_ownership) counter_add(EXTFRAG_EVENTS, 1);
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * SCHEDULER DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
-
+/*
+ * This one runs for every switch on the host, not only for the target. The
+ * two map lookups are the filter. A separate flag saying the tid map is
+ * populated would gate them earlier, but it would also open a window where
+ * the flag and the map disagree.
+ */
 SEC("tracepoint/sched/sched_switch")
 int sense_sched_switch(struct trace_event_raw_sched_switch* ctx) {
     __u64 now = bpf_ktime_get_ns();
     __u32 prev_pid = ctx->prev_pid;
     __u32 next_pid = ctx->next_pid;
 
-    /* Switched OUT */
     __u8* is_prev = bpf_map_lookup_elem(&our_tids, &prev_pid);
     if (is_prev) {
         if (ctx->prev_state == TASK_RUNNING)
@@ -1140,7 +994,6 @@ int sense_sched_switch(struct trace_event_raw_sched_switch* ctx) {
         if (bpf_map_update_elem(&switch_ts, &prev_pid, &now, BPF_ANY) != 0) note_map_full();
     }
 
-    /* Switched IN — compute wait time */
     __u8* is_next = bpf_map_lookup_elem(&our_tids, &next_pid);
     if (is_next) {
         __u64* ts = bpf_map_lookup_elem(&switch_ts, &next_pid);
@@ -1168,13 +1021,12 @@ int sense_runtime(struct trace_event_raw_sched_stat_runtime* ctx) {
     return 0;
 }
 
-/* ── NEW: Off-CPU breakdown — sleep / iowait / blocked ──────────────── */
-/* These require CONFIG_SCHEDSTATS=y and sched_schedstats=1 at runtime.
- *
- * Uses the vmlinux.h trace_event_raw_sched_stat_template + BPF_CORE_READ
- * so we get the authoritative kernel-side field layout with load-time
- * relocation. Avoids the trap of hand-rolled offsets falling behind
- * kernel field-reorderings. */
+/*
+ * The three handlers below stay silent unless the kernel is built with
+ * CONFIG_SCHEDSTATS and sched_schedstats is on at run time. They take the
+ * kernel's own context type and read through BPF_CORE_READ, so a field
+ * reordering relocates rather than corrupting the read.
+ */
 
 SEC("tracepoint/sched/sched_stat_sleep")
 int sense_stat_sleep(struct trace_event_raw_sched_stat_template* ctx) {
@@ -1200,25 +1052,19 @@ int sense_stat_blocked(struct trace_event_raw_sched_stat_template* ctx) {
     return 0;
 }
 
-/* ── NEW: Wakeup tracking — who woke whom ───────────────────────────── */
-
 SEC("tracepoint/sched/sched_waking")
 int sense_waking(struct sense_sched_waking_ctx* ctx) {
     __u32 wakee = (__u32)ctx->pid;
     __u32 waker = get_tid();
 
-    /* Count wakeups received by our threads */
     __u8* wakee_ours = bpf_map_lookup_elem(&our_tids, &wakee);
     if (wakee_ours) counter_add(WAKEUPS_RECEIVED, 1);
 
-    /* Count wakeups sent by our threads */
     __u8* waker_ours = bpf_map_lookup_elem(&our_tids, &waker);
     if (waker_ours) counter_add(WAKEUPS_SENT, 1);
 
     return 0;
 }
-
-/* ── NEW: Thread exit tracking ──────────────────────────────────────── */
 
 SEC("tracepoint/sched/sched_process_exit")
 int sense_process_exit(struct sense_sched_exit_ctx* ctx) {
@@ -1226,7 +1072,6 @@ int sense_process_exit(struct sense_sched_exit_ctx* ctx) {
     __u8* is_ours = bpf_map_lookup_elem(&our_tids, &pid);
     if (is_ours) {
         counter_add(THREADS_EXITED, 1);
-        /* Clean up maps to prevent leaks */
         bpf_map_delete_elem(&our_tids, &pid);
         bpf_map_delete_elem(&switch_ts, &pid);
         bpf_map_delete_elem(&futex_ts, &pid);
@@ -1236,18 +1081,13 @@ int sense_process_exit(struct sense_sched_exit_ctx* ctx) {
     return 0;
 }
 
-/* ── NEW: CPU frequency changes ─────────────────────────────────────── */
-
+/* Not filtered to the target. A frequency change moves the clock for every
+ * task on that CPU. */
 SEC("tracepoint/power/cpu_frequency")
 int sense_cpu_freq(struct sense_cpu_freq_ctx* ctx) {
-    /* Count frequency change events (system-wide indicator) */
     counter_add(CPU_FREQ_CHANGES, 1);
     return 0;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════
- * CONTENTION DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
 
 SEC("tracepoint/syscalls/sys_enter_futex")
 int sense_futex_enter(struct trace_event_raw_sys_enter* ctx) {
@@ -1266,10 +1106,6 @@ SEC("tracepoint/syscalls/sys_exit_futex")
 int sense_futex_exit(struct trace_event_raw_sys_exit* ctx) {
     if (!is_target()) return 0;
 
-    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() — captured
-     * once at exit-handler entry, reused for delta. Mirrors the discipline
-     * applied in lock_contention.bpf.c (GAPS-004d-AUDIT) and the upfront
-     * fix in syscall_latency.bpf.c. */
     __u64 now = bpf_ktime_get_ns();
     __u32 tid = get_tid();
     __u64* enter_ts = bpf_map_lookup_elem(&futex_ts, &tid);
@@ -1286,8 +1122,6 @@ int sense_futex_exit(struct trace_event_raw_sys_exit* ctx) {
     return 0;
 }
 
-/* ── NEW: Kernel lock contention ────────────────────────────────────── */
-
 SEC("tracepoint/lock/contention_begin")
 int sense_lock_begin(struct sense_lock_begin_ctx* ctx) {
     if (!is_target()) return 0;
@@ -1300,9 +1134,6 @@ int sense_lock_begin(struct sense_lock_begin_ctx* ctx) {
 SEC("tracepoint/lock/contention_end")
 int sense_lock_end(struct sense_lock_end_ctx* ctx) {
     if (!is_target()) return 0;
-    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() captured
-     * once at exit-handler entry, reused for delta. Same fix-class as
-     * lock_contention.bpf.c GAPS-004d-AUDIT. */
     __u64 now = bpf_ktime_get_ns();
     __u32 tid = get_tid();
     __u64* start = bpf_map_lookup_elem(&lock_ts, &tid);
@@ -1315,27 +1146,18 @@ int sense_lock_end(struct sense_lock_end_ctx* ctx) {
     return 0;
 }
 
-/* ── NEW: Softirq stolen time ───────────────────────────────────────── */
 /*
- * Softirqs run in interrupt context on whatever task was unlucky enough
- * to be current when the IRQ fired — bpf_get_current_pid_tgid() does NOT
- * identify US, so is_target() is wrong here.
- *
- * Instead we record softirq duration system-wide. This gauge measures
- * per-CPU softirq time during the bench window; elevated values mean
- * the kernel was stealing cycles from whatever was running on that CPU,
- * including our bench. The PERCPU_ARRAY is keyed by softirq vector
- * (0..9) so nested softirqs on the same CPU — e.g. TIMER interrupting
- * NET_RX — keep independent start timestamps.
- *
- * SOFTIRQ_STOLEN_NS is therefore "system-wide per-CPU softirq time,
- * summed across CPUs during the bench window", NOT tgid-filtered.
+ * A softirq runs in interrupt context on whichever task happened to be current
+ * when the interrupt arrived, so bpf_get_current_pid_tgid() names that task
+ * and not the owner of the work. Filtering on it here would be wrong, and
+ * SOFTIRQ_STOLEN_NS is a per-CPU total summed across CPUs rather than a
+ * per-process figure.
  */
 
 SEC("tracepoint/irq/softirq_entry")
 int sense_softirq_entry(struct trace_event_raw_softirq* ctx) {
     __u32 vec = BPF_CORE_READ(ctx, vec);
-    if (vec >= 10) return 0; /* bound to NR_SOFTIRQS */
+    if (vec >= 10) return 0; /* the kernel defines NR_SOFTIRQS vectors */
     __u64 ts = bpf_ktime_get_ns();
     if (bpf_map_update_elem(&softirq_ts, &vec, &ts, BPF_ANY) != 0) note_map_full();
     return 0;
@@ -1345,9 +1167,6 @@ SEC("tracepoint/irq/softirq_exit")
 int sense_softirq_exit(struct trace_event_raw_softirq* ctx) {
     __u32 vec = BPF_CORE_READ(ctx, vec);
     if (vec >= 10) return 0;
-    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() captured
-     * once at exit-handler entry, reused for delta. Same fix-class as
-     * lock_contention.bpf.c GAPS-004d-AUDIT. */
     __u64 now = bpf_ktime_get_ns();
     __u64* start = bpf_map_lookup_elem(&softirq_ts, &vec);
     if (start && *start > 0) {
@@ -1359,10 +1178,6 @@ int sense_softirq_exit(struct trace_event_raw_softirq* ctx) {
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * THREAD DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/syscalls/sys_exit_clone")
 int sense_clone_exit(struct trace_event_raw_sys_exit* ctx) {
     if (!is_target()) return 0;
@@ -1370,7 +1185,7 @@ int sense_clone_exit(struct trace_event_raw_sys_exit* ctx) {
     return 0;
 }
 
-/* clone3() — modern glibc/musl use this instead of clone() */
+/* Current C libraries call clone3 rather than clone, so both are hooked. */
 SEC("tracepoint/syscalls/sys_exit_clone3")
 int sense_clone3_exit(struct trace_event_raw_sys_exit* ctx) {
     if (!is_target()) return 0;
@@ -1378,15 +1193,10 @@ int sense_clone3_exit(struct trace_event_raw_sys_exit* ctx) {
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * BLOCK I/O DOMAIN — actual disk-level metrics
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/block/block_io_start")
 int sense_block_io_start(struct sense_block_io_ctx* ctx) {
     if (!is_target()) return 0;
 
-    /* Track bytes by direction */
     if (ctx->rwbs[0] == 'R')
         counter_add(DISK_READ_BYTES, (__u64)ctx->bytes);
     else if (ctx->rwbs[0] == 'W')
@@ -1394,12 +1204,10 @@ int sense_block_io_start(struct sense_block_io_ctx* ctx) {
 
     counter_add(DISK_IO_COUNT, 1);
 
-    /* Store timestamp for latency tracking */
     __u64 key = bio_key(ctx->dev, ctx->sector, ctx->bytes);
     __u64 ts = bpf_ktime_get_ns();
-    /* LRU_HASH auto-evicts on pressure, but bpf_map_update_elem can
-     * still return non-zero (e.g. E2BIG if the key somehow exceeds the
-     * configured size). Count those. */
+    /* The map evicts under pressure rather than failing, so a non-zero return
+     * here means a malformed key rather than a full map. */
     if (bpf_map_update_elem(&bio_ts, &key, &ts, BPF_ANY) != 0) note_map_full();
 
     return 0;
@@ -1407,9 +1215,6 @@ int sense_block_io_start(struct sense_block_io_ctx* ctx) {
 
 SEC("tracepoint/block/block_io_done")
 int sense_block_io_done(struct sense_block_io_ctx* ctx) {
-    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() captured
-     * once at exit-handler entry, reused for delta. Same fix-class as
-     * lock_contention.bpf.c GAPS-004d-AUDIT. */
     __u64 now = bpf_ktime_get_ns();
     __u64 key = bio_key(ctx->dev, ctx->sector, ctx->bytes);
     __u64* start = bpf_map_lookup_elem(&bio_ts, &key);
@@ -1428,10 +1233,6 @@ int sense_block_unplug(struct sense_block_unplug_ctx* ctx) {
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * PAGE CACHE DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/filemap/mm_filemap_add_to_page_cache")
 int sense_page_cache_add(struct sense_filemap_add_ctx* ctx) {
     if (!is_target()) return 0;
@@ -1446,28 +1247,21 @@ int sense_readahead(struct sense_readahead_ctx* ctx) {
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * WRITEBACK DOMAIN — dirty page throttling
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/writeback/balance_dirty_pages")
 int sense_dirty_pages(struct sense_dirty_pages_ctx* ctx) {
     if (!is_target()) return 0;
-    /* pause > 0 means the kernel throttled our writes (in jiffies) */
     if (ctx->pause > 0) counter_add(WRITE_THROTTLE_JIFFIES, (__u64)ctx->pause);
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * NETWORK HEALTH DOMAIN
- * ═══════════════════════════════════════════════════════════════════════ */
-
-/* ctx type: none of these are syscalls, and we never read fields from
- * ctx. Using void* documents intent and prevents silent misuse if a
- * future edit tries to dereference ctx->args[] or similar. */
+/* The parameter is void* on purpose in the handlers below. None of them is a
+ * syscall tracepoint, so a syscall context type would name fields that are not
+ * there.
+ *
+ * A retransmit fires in the context of the task that owns the connection, so
+ * the target test is meaningful here. */
 SEC("tracepoint/tcp/tcp_retransmit_skb")
 int sense_tcp_retransmit(void* ctx) {
-    /* tcp_retransmit fires in context of the connection owner */
     if (!is_target()) return 0;
     counter_add(TCP_RETRANSMIT_COUNT, 1);
     return 0;
@@ -1475,7 +1269,6 @@ int sense_tcp_retransmit(void* ctx) {
 
 SEC("tracepoint/tcp/tcp_send_reset")
 int sense_tcp_reset(void* ctx) {
-    /* System-wide: any RST is interesting */
     counter_add(TCP_RST_SENT, 1);
     return 0;
 }
@@ -1489,24 +1282,21 @@ int sense_sk_error(void* ctx) {
 
 SEC("tracepoint/skb/kfree_skb")
 int sense_skb_drop(void* ctx) {
-    /* System-wide packet drop counter */
     counter_add(SKB_DROP_COUNT, 1);
     return 0;
 }
 
-/* TCP probe — rate-limited to once per ms per CPU to control overhead */
 SEC("tracepoint/tcp/tcp_probe")
 int sense_tcp_probe(struct sense_tcp_probe_ctx* ctx) {
     if (!is_target()) return 0;
 
-    /* Rate limit: once per 1ms per CPU */
+    /* At most one sample per millisecond per CPU. */
     __u32 zero = 0;
     __u64 now = bpf_ktime_get_ns();
     __u64* last = bpf_map_lookup_elem(&tcp_probe_ts, &zero);
     if (last && (now - *last) < 1000000) return 0;
     bpf_map_update_elem(&tcp_probe_ts, &zero, &now, BPF_ANY);
 
-    /* Update srtt min/max and cwnd gauge */
     if (ctx->srtt > 0) {
         counter_min_nz(TCP_MIN_SRTT_US, (__u64)ctx->srtt);
         counter_max(TCP_MAX_SRTT_US, (__u64)ctx->srtt);
@@ -1519,25 +1309,17 @@ int sense_tcp_probe(struct sense_tcp_probe_ctx* ctx) {
 SEC("tracepoint/tcp/tcp_cong_state_set")
 int sense_cong_state(struct sense_cong_state_ctx* ctx) {
     if (!is_target()) return 0;
-    /* Count transitions to Loss state (the worst) */
     if (ctx->cong_state == TCP_CA_Loss) counter_add(TCP_CONG_LOSS, 1);
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
- * RELIABILITY DOMAIN — is the organism sick or dying?
- * ═══════════════════════════════════════════════════════════════════════ */
-
 SEC("tracepoint/signal/signal_generate")
 int sense_signal(struct sense_signal_ctx* ctx) {
-    /* Check if the signal targets our process */
     __u32 target = (__u32)ctx->pid;
     if (target_tgid != 0 && target != (__s32)target_tgid) return 0;
 
-    /* Record any signal */
     counter_set(SIGNAL_LAST_SIGNO, (__u64)ctx->sig);
 
-    /* Count fatal signals */
     int sig = ctx->sig;
     if (sig == SIGSEGV || sig == SIGBUS || sig == SIGKILL || sig == SIGABRT || sig == SIGFPE)
         counter_add(SIGNAL_FATAL_COUNT, 1);
@@ -1547,10 +1329,8 @@ int sense_signal(struct sense_signal_ctx* ctx) {
 
 SEC("tracepoint/oom/mark_victim")
 int sense_oom_kill(struct sense_oom_victim_ctx* ctx) {
-    /* Count all OOM kills (system-wide awareness) */
     counter_add(OOM_KILLS_SYSTEM, 1);
 
-    /* Flag if WE are the victim */
     if (target_tgid != 0 && (__u32)ctx->pid == target_tgid) counter_set(OOM_KILL_US, 1);
 
     return 0;
@@ -1558,22 +1338,18 @@ int sense_oom_kill(struct sense_oom_victim_ctx* ctx) {
 
 SEC("tracepoint/oom/reclaim_retry_zone")
 int sense_oom_retry(struct sense_reclaim_retry_ctx* ctx) {
-    /* Track worst-case stall loops (system-wide pressure indicator) */
     if (ctx->no_progress_loops > 0) counter_max(RECLAIM_STALL_LOOPS, (__u64)ctx->no_progress_loops);
     return 0;
 }
 
 SEC("tracepoint/thermal/thermal_zone_trip")
 int sense_thermal_trip(struct sense_thermal_trip_ctx* ctx) {
-    /* Track highest trip type: 0=ACTIVE, 1=PASSIVE, 2=HOT, 3=CRITICAL */
     counter_max(THERMAL_MAX_TRIP, (__u64)ctx->trip_type);
     return 0;
 }
 
-/* Not a syscall; ctx carries mce_record fields we don't use. */
 SEC("tracepoint/mce/mce_record")
 int sense_mce(void* ctx) {
-    /* Any MCE is noteworthy — hardware error */
     counter_add(MCE_COUNT, 1);
     return 0;
 }

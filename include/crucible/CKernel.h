@@ -1,51 +1,10 @@
 #pragma once
 
-// CKernel: Crucible abstract compute-op taxonomy.
-//
-// Maps Vessel op identity (SchemaHash, a strong-typed uint64) to a Crucible-native
-// CKernelId. Used by the background thread to annotate TraceEntry at build time
-// so Tier 2+ replay can dispatch directly without going through the Vessel.
-//
-// Design: ~143 device-agnostic ops covering transformers, vision, SSMs, 3D
-// rendering, linear algebra, production inference, distributed comms, and I/O.
-// Multiple Vessel dispatch names can map to one CKernelId (e.g., "softmax" and
-// "_softmax" both register to ACT_SOFTMAX; all 5 SDPA backend variants → SDPA).
-// Everything else → CKernelId::OPAQUE (fallback to full Vessel dispatch).
-//
-// Registration model (two-phase):
-//   1. Vessel calls register_schema_hash() once per known op at init time,
-//      computing the hash via its own hash function (e.g. std::hash<OperatorName>).
-//      The standalone library ships with an empty table — all OPAQUE.
-//   2. BackgroundThread calls classify_kernel() during build_trace().
-//      Returns OPAQUE until the Vessel has registered ops.
-//
-// Lifecycle (compile-time + runtime enforced — same discipline as SchemaTable):
-//
-//   Mutable (fresh/after clear) → Sealed (one-way, set by seal())
-//
-// BackgroundThread::start() seals the global CKernelTable automatically so
-// the documented invariant — "all registrations complete before bg starts"
-// — is now a load-bearing rule.  The runtime guard catches FFI callers; the
-// typed register_op(MutableView, ...) overload is available for code that
-// wants to prove the Mutable state at compile time.
-
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>  // FIXY-U-096l: tags::source::Singleton + External
-#include <crucible/fixy/Wrap.h>  // FIXY-U-096l: Refined / BoundedMonotonic / ScopedView / Tagged
-#include <crucible/safety/Post.h>  // CRUCIBLE_POST macro (substrate dep)
-
-// FIXY-U-096l production migration: Refined / bounded_above / BoundedMonotonic
-// / ScopedView / mint_view / no_scoped_view_field_check / Tagged reached
-// through the fixy:: umbrella instead of safety::* directly.  CKernel.h is
-// runtime-tier (fan-in: BackgroundThread + 1 positive test + 4 neg-compile
-// fixtures, all runtime-tier).  fixy/Wrap.h's transitive Arena.h pull is
-// redundant (CKernel doesn't touch Arena) — not cyclic.  Bug class: op-
-// taxonomy table (146-op enum) with seal-once flag at startup + std::abort
-// on overflow + Tagged<source::Singleton> singleton-handle + Tagged<source::
-// External> Vessel-FFI trust boundary + Refined<bounded_above<NUM_KERNELS-1>>
-// ValidCKernelIdRaw widening proof.  fixy::tags::source::* path (NOT fixy::
-// source::*) per the federation-namespace reservation (fixy-A4-013).
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
+#include <crucible/safety/Post.h>
 
 #include <algorithm>
 #include <atomic>
@@ -58,322 +17,205 @@
 
 namespace crucible {
 
-// ── Compute-op taxonomy ─────────────────────────────────────────────────────
+// Enumerator values are a persisted format. They are written into trace files
+// and recovered from untrusted bytes, so an existing enumerator is never
+// renumbered or removed, and a new one is appended immediately before
+// NUM_KERNELS. OPAQUE is 0 so a zero-initialised classification field already
+// holds the safe fallback.
 //
-// Organized by compute family. OPAQUE = 0 so zero-initialized TraceEntry
-// fields are correct before classification. All values fit in uint8_t.
-//
-// Inplace variants (add_, relu_) are folded into their out-of-place counterparts.
-// Memory aliasing is tracked separately in TraceEntry flags; the kernel compute
-// identity is the same.
+// Aliases and backend variants of one mathematical operation share a single
+// identifier. An in-place variant folds into its out-of-place identifier. The
+// aliasing itself is recorded in the trace entry flags, not here.
 
 enum class CKernelId : uint8_t {
-    OPAQUE = 0,  // Unknown op — fallback to Vessel dispatch (always correct)
+    OPAQUE = 0,
 
-    // ═══════════════════════════════════════════════════════════════════
-    // SECTION 1: Core DNN Ops (values 1–99, ordinals frozen since v3)
-    // ═══════════════════════════════════════════════════════════════════
+    GEMM_MM,
+    GEMM_BMM,
+    GEMM_MATMUL,
+    GEMM_ADDMM,
+    GEMM_LINEAR,
+    GEMM_ADDBMM,
+    GEMM_BADDBMM,
+    GEMM_EINSUM,
 
-    // ── Linear Algebra (8) ──────────────────────────────────────────────────
-    // Hot path for every linear layer. Tier 2: cuBLAS/cuBLASLt direct call.
-    GEMM_MM,  // aten::mm                 — 2D × 2D, no bias
-    GEMM_BMM,  // aten::bmm                — batched 3D × 3D
-    GEMM_MATMUL,  // aten::matmul             — general rank + broadcast
-    GEMM_ADDMM,  // aten::addmm              — bias + mat1@mat2 (Linear hot path)
-    GEMM_LINEAR,  // aten::linear             — weight + optional bias wrapper
-    GEMM_ADDBMM,  // aten::addbmm             — batched addmm with alpha/beta
-    GEMM_BADDBMM,  // aten::baddbmm            — batched bias + batched matmul
-    GEMM_EINSUM,  // aten::einsum             — general tensor contraction
+    CONV1D,
+    CONV2D,
+    CONV3D,
+    CONV_TRANSPOSE1D,
+    CONV_TRANSPOSE2D,
+    CONV_TRANSPOSE3D,
 
-    // ── Convolution (6) ─────────────────────────────────────────────────────
-    // aten::convolution dispatches to the variant below based on ndim.
-    CONV1D,  // aten::conv1d / aten::convolution (1D)
-    CONV2D,  // aten::conv2d / aten::convolution (2D)
-    CONV3D,  // aten::conv3d / aten::convolution (3D)
-    CONV_TRANSPOSE1D,  // aten::conv_transpose1d
-    CONV_TRANSPOSE2D,  // aten::conv_transpose2d
-    CONV_TRANSPOSE3D,  // aten::conv_transpose3d
+    SDPA,
+    MHA,
+    ROPE,
+    POSITION_BIAS,
 
-    // ── Attention (4) ───────────────────────────────────────────────────────
-    // All 5 ATen SDPA backend variants register to SDPA:
-    //   scaled_dot_product_attention, _scaled_dot_product_flash_attention,
-    //   _scaled_dot_product_efficient_attention, _scaled_dot_product_cudnn_attention,
-    //   _flash_attention_forward
-    SDPA,  // scaled_dot_product_attention (+ all backend variants)
-    MHA,  // multi_head_attention_forward (pre-F.scaled_dot_product_attention)
-    ROPE,  // rotary_embedding (LLaMA/Mistral — may be extension op)
-    POSITION_BIAS,  // ALiBi and additive position bias variants
+    LAYER_NORM,
+    BATCH_NORM_TRAIN,
+    BATCH_NORM_EVAL,
+    GROUP_NORM,
+    INSTANCE_NORM,
+    RMS_NORM,
 
-    // ── Normalization (6) ───────────────────────────────────────────────────
-    // Vessel must register both the user-facing and the native dispatch name:
-    //   layer_norm + native_layer_norm             → LAYER_NORM
-    //   batch_norm (training=true)                 → BATCH_NORM_TRAIN
-    //   _native_batch_norm_legit_no_training       → BATCH_NORM_EVAL
-    //   group_norm + native_group_norm             → GROUP_NORM
-    LAYER_NORM,  // layer_norm / native_layer_norm
-    BATCH_NORM_TRAIN,  // batch_norm (training=true, updates running stats)
-    BATCH_NORM_EVAL,  // batch_norm inference / _native_batch_norm_legit_no_training
-    GROUP_NORM,  // group_norm / native_group_norm
-    INSTANCE_NORM,  // instance_norm
-    RMS_NORM,  // rms_norm (LLaMA/Mistral — often a custom extension op)
+    ACT_RELU,
+    ACT_GELU,
+    ACT_SILU,
+    ACT_SIGMOID,
+    ACT_TANH,
+    ACT_HARDSWISH,
+    ACT_LEAKY_RELU,
+    ACT_ELU,
+    ACT_SOFTMAX,
+    ACT_LOG_SOFTMAX,
+    ACT_DROPOUT,
+    ACT_CLAMP,
+    ACT_MISH,
 
-    // ── Activations (13) ────────────────────────────────────────────────────
-    // softmax + _softmax → ACT_SOFTMAX; log_softmax + _log_softmax → ACT_LOG_SOFTMAX.
-    ACT_RELU,  // relu / relu_
-    ACT_GELU,  // gelu / gelu_ (exact and tanh-approximation variants)
-    ACT_SILU,  // silu / silu_ (swish)
-    ACT_SIGMOID,  // sigmoid / sigmoid_
-    ACT_TANH,  // tanh / tanh_
-    ACT_HARDSWISH,  // hardswish / hardswish_
-    ACT_LEAKY_RELU,  // leaky_relu (negative slope parameter)
-    ACT_ELU,  // elu / elu_ / selu / celu
-    ACT_SOFTMAX,  // softmax / _softmax
-    ACT_LOG_SOFTMAX,  // log_softmax / _log_softmax
-    ACT_DROPOUT,  // dropout (training: stochastic mask; inference: identity)
-    ACT_CLAMP,  // clamp / hardtanh / relu6
-    ACT_MISH,  // mish
+    EWISE_ADD,
+    EWISE_MUL,
+    EWISE_SUB,
+    EWISE_DIV,
+    EWISE_POW,
+    EWISE_MAX,
+    EWISE_MIN,
+    EWISE_MOD,
+    EWISE_WHERE,
 
-    // ── Elementwise Binary (9) ──────────────────────────────────────────────
-    // Inplace variants (add_, mul_, …) fold into the out-of-place CKernelId.
-    // Memory aliasing captured separately in TraceEntry.
-    EWISE_ADD,  // add.Tensor / add_.Tensor / add.Scalar
-    EWISE_MUL,  // mul.Tensor / mul_.Tensor / mul.Scalar
-    EWISE_SUB,  // sub.Tensor / sub_.Tensor
-    EWISE_DIV,  // div.Tensor / div_.Tensor
-    EWISE_POW,  // pow.Tensor_Tensor / pow.Tensor_Scalar
-    EWISE_MAX,  // maximum (elementwise — not reduction)
-    EWISE_MIN,  // minimum (elementwise — not reduction)
-    EWISE_MOD,  // fmod / remainder
-    EWISE_WHERE,  // where.self — ternary broadcast select
+    EWISE_EXP,
+    EWISE_LOG,
+    EWISE_SQRT,
+    EWISE_RSQRT,
+    EWISE_ABS,
+    EWISE_NEG,
+    EWISE_SIGN,
+    EWISE_FLOOR,
+    EWISE_CAST,
+    EWISE_FILL,
 
-    // ── Elementwise Unary (10) ──────────────────────────────────────────────
-    EWISE_EXP,  // exp / exp_ / exp2
-    EWISE_LOG,  // log / log_ / log2 / log10
-    EWISE_SQRT,  // sqrt / sqrt_
-    EWISE_RSQRT,  // rsqrt (common in LLMs: 1/sqrt(var+eps))
-    EWISE_ABS,  // abs / abs_
-    EWISE_NEG,  // neg / neg_
-    EWISE_SIGN,  // sign / sgn
-    EWISE_FLOOR,  // floor / ceil / round / trunc
-    EWISE_CAST,  // to(dtype) — element-type conversion
-    EWISE_FILL,  // fill_ / fill_diagonal_ — broadcast scalar into storage
+    REDUCE_SUM,
+    REDUCE_MEAN,
+    REDUCE_MAX,
+    REDUCE_MIN,
+    REDUCE_ARGMAX,
+    REDUCE_ARGMIN,
+    REDUCE_CUMSUM,
+    REDUCE_TOPK,
 
-    // ── Reductions (8) ──────────────────────────────────────────────────────
-    REDUCE_SUM,  // sum / nansum (optional keepdim, over dim list)
-    REDUCE_MEAN,  // mean / nanmean
-    REDUCE_MAX,  // max / amax (value only — no index)
-    REDUCE_MIN,  // min / amin
-    REDUCE_ARGMAX,  // argmax (returns index tensor)
-    REDUCE_ARGMIN,  // argmin
-    REDUCE_CUMSUM,  // cumsum / cumprod
-    REDUCE_TOPK,  // topk (values + indices — used in LM sampling)
+    POOL_MAX1D,
+    POOL_MAX2D,
+    POOL_MAX3D,
+    POOL_AVG1D,
+    POOL_AVG2D,
+    POOL_AVG3D,
+    POOL_ADAPTIVE_MAX,
+    POOL_ADAPTIVE_AVG,
 
-    // ── Pooling (8) ─────────────────────────────────────────────────────────
-    POOL_MAX1D,  // max_pool1d
-    POOL_MAX2D,  // max_pool2d / max_pool2d_with_indices
-    POOL_MAX3D,  // max_pool3d
-    POOL_AVG1D,  // avg_pool1d
-    POOL_AVG2D,  // avg_pool2d
-    POOL_AVG3D,  // avg_pool3d
-    POOL_ADAPTIVE_MAX,  // adaptive_max_pool{1,2,3}d
-    POOL_ADAPTIVE_AVG,  // adaptive_avg_pool{1,2,3}d
+    VIEW,
+    RESHAPE,
+    PERMUTE,
+    TRANSPOSE,
+    CONTIGUOUS,
+    EXPAND,
+    SQUEEZE,
+    SLICE,
+    INDEX_SELECT,
+    INDEX,
+    SCATTER,
+    MASKED_FILL,
+    PAD,
+    CAT,
+    STACK,
+    UNFOLD,
 
-    // ── Data Movement / Indexing (16) ───────────────────────────────────────
-    VIEW,  // view — non-copying reshape (same storage, same numel)
-    RESHAPE,  // reshape — may copy if non-contiguous
-    PERMUTE,  // permute / movedim — arbitrary axis reorder
-    TRANSPOSE,  // transpose.int — swap exactly two axes
-    CONTIGUOUS,  // contiguous — force C-contiguous layout
-    EXPAND,  // expand / expand_as — broadcast via stride-0 (no copy)
-    SQUEEZE,  // squeeze / unsqueeze
-    SLICE,  // narrow / slice / select — contiguous subview
-    INDEX_SELECT,  // index_select / gather — 1-D integer index lookup
-    INDEX,  // advanced indexing via tensor indices (non-contiguous)
-    SCATTER,  // scatter / scatter_add / scatter_reduce
-    MASKED_FILL,  // masked_fill / masked_fill_ (attention mask application)
-    PAD,  // pad / constant_pad_nd / reflection_pad_nd
-    CAT,  // cat — concatenate along existing dim
-    STACK,  // stack — concatenate with new leading/trailing dim
-    UNFOLD,  // unfold / as_strided (sliding window patch extraction)
+    EMBEDDING,
+    EMBEDDING_BAG,
 
-    // ── Embedding (2) ───────────────────────────────────────────────────────
-    EMBEDDING,  // embedding (dense lookup table)
-    EMBEDDING_BAG,  // embedding_bag (lookup + pooling: mean / sum / max)
+    COPY_,
+    CLONE,
 
-    // ── Copy / I/O (2) ──────────────────────────────────────────────────────
-    COPY_,  // copy_ (cross-device or cross-dtype in-place copy)
-    CLONE,  // clone (always allocates new storage)
+    INTERPOLATE,
+    GRID_SAMPLE,
+    IM2COL,
 
-    // ── Vision (3) ──────────────────────────────────────────────────────────
-    INTERPOLATE,  // upsample / interpolate (bilinear, nearest, bicubic)
-    GRID_SAMPLE,  // grid_sample (spatial transformer network)
-    IM2COL,  // im2col / col2im / unfold (explicit patch extraction)
+    FUSED_ATTENTION,
+    FUSED_LINEAR_ACT,
+    FUSED_NORM_LINEAR,
+    FUSED_SOFTMAX_DROP,
 
-    // ── Fused high-level (4) ────────────────────────────────────────────────
-    // Registered by Vessel when it recognises a fused kernel being dispatched.
-    // These allow Tier 2+ to treat entire transformer sub-graphs as atomic units.
-    FUSED_ATTENTION,  // full MHSA block (FlashAttention-2/3 style)
-    FUSED_LINEAR_ACT,  // linear + activation gate (SwiGLU, GeGLU, GLU)
-    FUSED_NORM_LINEAR,  // pre-norm + linear (T5/LLaMA fused blocks)
-    FUSED_SOFTMAX_DROP,  // softmax + dropout (attention score path)
+    LINALG_SVD,
+    LINALG_CHOLESKY,
+    LINALG_QR,
+    LINALG_SOLVE,
+    LINALG_EIGH,
+    LINALG_NORM,
+    LINALG_CROSS,
+    CDIST,
+    FFT,
 
-    // ═══════════════════════════════════════════════════════════════════
-    // SECTION 2: Extended Ops (values 100+, added in v4)
-    // ═══════════════════════════════════════════════════════════════════
+    ASSOC_SCAN,
+    SELECTIVE_SCAN,
+    SSD_CHUNK,
+    WKV_RECURRENCE,
+    RETENTION,
+    MLSTM_RECURRENCE,
 
-    // ── Linear Algebra Decompositions (9) ───────────────────────────────────
-    // cuSOLVER / MAGMA primitives. Each has a fundamentally different algorithm
-    // from GEMM (Jacobi, Householder, etc.) and numerically fragile backward pass.
-    LINALG_SVD,  // A = UΣVᵀ — LoRA, spectral norm, compression, low-rank approx
-    LINALG_CHOLESKY,  // A = LLᵀ for pos-def — Gaussian processes, Bayesian DL
-    LINALG_QR,  // A = QR — orthogonal init, Gram-Schmidt, 3DGS-LM Jacobian
-    LINALG_SOLVE,  // Ax = b (+ triangular solve) — GP inference, Kalman, physics NN
-    LINALG_EIGH,  // A = QΛQᵀ symmetric — spectral graph conv, PCA layers, SSM init
-    LINALG_NORM,  // vector/matrix norms (L2, Frobenius, nuclear, spectral)
-    LINALG_CROSS,  // 3D cross product (batched) — normals, areas, torques
-    CDIST,  // pairwise distance matrix (B×N×D, B×M×D → B×N×M)
-    FFT,  // fast Fourier transform (1D/nD, complex) — also IFFT
+    DEQUANT_GEMM,
+    MOE_ROUTE_GEMM,
+    PAGED_ATTENTION,
+    FUSED_CROSS_ENTROPY,
+    LINEAR_ATTN_CAUSAL,
+    RAGGED_ATTN,
 
-    // ── SSM / Recurrence Primitives (6) ─────────────────────────────────────
-    // The post-attention revolution. Each has a parallel associative scan at its
-    // core but differs in operator structure (scalar, matrix, affine, gated).
-    //
-    // Refs: Mamba (Gu & Dao 2023), Mamba-2 SSD (Dao & Gu 2024),
-    //       RWKV (Peng 2023), RetNet (Sun 2023), xLSTM (Beck 2024)
-    ASSOC_SCAN,  // generic parallel prefix scan with associative operator
-    SELECTIVE_SCAN,  // Mamba S6: input-dependent affine recurrence, SRAM-resident state
-    SSD_CHUNK,  // Mamba-2: chunked semiseparable matmul (tensor-core-friendly scan)
-    WKV_RECURRENCE,  // RWKV: exponentially-decayed prefix sum with normalizer
-    RETENTION,  // RetNet: decay-masked semi-attention (parallel + recurrent dual)
-    MLSTM_RECURRENCE,  // xLSTM: matrix-memory covariance update, exponential gating
+    GAUSSIAN_RASTERIZE,
+    HASH_GRID_ENCODE,
+    VOLUME_RENDER,
+    SH_EVAL,
 
-    // ── Production Inference Primitives (6) ─────────────────────────────────
-    // Found in every production LLM serving stack (vLLM, SGLang, TRT-LLM).
-    // Each has a fused compute+memory pattern that cannot be decomposed efficiently.
-    //
-    // Refs: Marlin (IST-DASLab 2024), Megablocks (Gale 2022),
-    //       PagedAttention (Kwon, SOSP 2023), Liger Kernel (LinkedIn 2024),
-    //       GLA (Yang 2024), cuDNN THD layout
-    DEQUANT_GEMM,  // INT4/FP8 dequant fused with tensor core GEMM (Marlin/AWQ)
-    MOE_ROUTE_GEMM,  // top-k routing + permute + grouped GEMM (MoE dispatch)
-    PAGED_ATTENTION,  // page-table-indirect KV gather + tiled attention (vLLM)
-    FUSED_CROSS_ENTROPY,  // tiled matmul + online softmax + log-sum-exp (Liger)
-    LINEAR_ATTN_CAUSAL,  // chunked cumulative outer-product reduction (GLA/Based)
-    RAGGED_ATTN,  // variable-length packed sequences, no padding waste (THD)
+    FFT_CONV,
+    MONARCH_MATMUL,
+    SPMM_GNN,
+    SDDMM_GNN,
+    SINKHORN,
 
-    // ── 3D / Neural Rendering (4) ───────────────────────────────────────────
-    // Entirely novel access patterns with no tensor algebra analog.
-    //
-    // Refs: 3DGS (Kerbl, SIGGRAPH 2023), Instant-NGP (Mueller, SIGGRAPH 2022),
-    //       NeRF (Mildenhall 2020), gsplat, NerfAcc
-    GAUSSIAN_RASTERIZE,  // 3DGS: tile-sort-alpha-blend, per-pixel sequential compositing
-    HASH_GRID_ENCODE,  // Instant-NGP: multi-resolution hash + trilinear interp
-    VOLUME_RENDER,  // NeRF: per-ray irregular compositing with early termination
-    SH_EVAL,  // spherical harmonics basis evaluation (fused with rasterize)
+    COMM_ALLREDUCE,
+    COMM_ALLGATHER,
+    COMM_REDUCE_SCATTER,
+    COMM_BROADCAST,
+    COMM_ALL_TO_ALL,
+    COMM_SEND,
+    COMM_RECV,
+    COMM_REDUCE,
+    COMM_GATHER,
+    COMM_SCATTER,
 
-    // ── Structured Matrix / Graph (5) ───────────────────────────────────────
-    // Specialized matrix structure or graph topology determines memory access pattern.
-    //
-    // Refs: Monarch (Dao, ICML 2022), FlashConv/H3 (Fu, ICML 2023),
-    //       Hyena (Poli, ICML 2023), DGL g-SpMM, Sinkhorn (Cuturi 2013)
-    FFT_CONV,  // fused FFT + pointwise mul + IFFT (Hyena/H3 long convolution)
-    MONARCH_MATMUL,  // block-diagonal GEMM + permutation + block-diagonal GEMM
-    SPMM_GNN,  // graph message passing: generalized SpMM with custom aggregation
-    SDDMM_GNN,  // sampled dense-dense matmul: edge score computation
-    SINKHORN,  // iterative optimal transport (log-domain stabilized Sinkhorn-Knopp)
+    IO_LOAD,
+    IO_PREFETCH,
+    IO_CHECKPOINT_SAVE,
+    IO_CHECKPOINT_LOAD,
 
-    // ── Collective Communication (10) ───────────────────────────────────
-    // Device-agnostic names (NCCL on NVIDIA, RCCL on AMD, Gloo on CPU).
-    // Transport layer (IB verbs, RoCE, NVLink, TCP) is invisible — libraries
-    // auto-negotiate. These are the most expensive ops in multi-GPU workloads.
-    // Crucible must know about them for compute-communication overlap scheduling.
-    //
-    // Refs: NCCL, c10d::ProcessGroup, FSDP, DeepSpeed, Megatron-LM
-    COMM_ALLREDUCE,  // gradient synchronization (DDP, FSDP, ZeRO)
-    COMM_ALLGATHER,  // weight gathering (FSDP forward, tensor parallel column)
-    COMM_REDUCE_SCATTER,  // gradient reduce + scatter (FSDP backward, ZeRO-3)
-    COMM_BROADCAST,  // parameter broadcast (model init, checkpoint load)
-    COMM_ALL_TO_ALL,  // token permutation across ranks (MoE expert routing)
-    COMM_SEND,  // point-to-point send (pipeline parallel, inter-stage)
-    COMM_RECV,  // point-to-point receive (pipeline parallel, inter-stage)
-    COMM_REDUCE,  // root-only reduction (parameter server, metric aggregation)
-    COMM_GATHER,  // root-only gather (centralized logging, eval collection)
-    COMM_SCATTER,  // root-only scatter (data distribution from coordinator)
+    RNG_UNIFORM,
+    RNG_NORMAL,
 
-    // ── I/O (4) ─────────────────────────────────────────────────────────
-    // Data pipeline and checkpoint operations. These dominate wall-clock time
-    // in training when compute is fast enough (the "data loading bottleneck").
-    IO_LOAD,  // batch load from storage (DataLoader → CPU tensor)
-    IO_PREFETCH,  // async CPU→GPU data prefetch (pinned memory DMA)
-    IO_CHECKPOINT_SAVE,  // model state serialization to persistent storage
-    IO_CHECKPOINT_LOAD,  // model state deserialization from persistent storage
+    COMM_BARRIER,
 
-    // ── RNG (2) ─────────────────────────────────────────────────────────
-    // ATen-dispatched cuRAND kernels. Non-deterministic by default; distinct
-    // compute pattern (philox PRNG state) from elementwise ops.
-    RNG_UNIFORM,  // rand / randint / bernoulli (uniform distribution)
-    RNG_NORMAL,  // randn / normal_ (Gaussian distribution)
-
-    // ── Synchronization (1) ─────────────────────────────────────────────
-    COMM_BARRIER,  // all-rank barrier (phase boundary in distributed training)
-
-    NUM_KERNELS  // sentinel — must be last; value == 147
+    NUM_KERNELS
 };
 
-// ── Validated FFI/deserialize boundary: uint8_t → CKernelId ─────────
-//
-// Internal callers pass CKernelId values directly from enumerator
-// literals (CKernelId::GEMM_LINEAR, CKernelId::SDPA, ...) and never
-// synthesise an out-of-range CKernelId; for them a raw enum-class
-// argument is already type-safe.
-//
-// External callers — Cipher deserialize, TraceLoader, FFI bridges,
-// version-skew scenarios — recover a CKernelId's underlying byte
-// from disk or wire and must widen it back into the enum type.
-// `static_cast<CKernelId>(raw)` is unguarded: a corrupted byte
-// (e.g. a v9 file replayed by a v8 reader, or a bit-flipped page)
-// silently produces an invalid CKernelId in [NUM_KERNELS, 255], which
-// classify() / replay readers then propagate as an unknown opcode.
-//
-// `ValidCKernelIdRaw` is the type-system gate at that boundary.
-// Refined<bounded_above<NUM_KERNELS - 1>, uint8_t> admits 0
-// (OPAQUE) through static_cast<uint8_t>(COMM_BARRIER) and rejects
-// the NUM_KERNELS sentinel and every value above it.  The ctor's
-// `pre(bounded_above<NUM_KERNELS - 1>(v))` clause fires on
-// out-of-range bytes; in constexpr context it's rejected as a
-// non-constant expression per P1494R5 (the neg-compile fixtures
-// drive both directions of drift).
-//
-// Zero-cost: regime-1 EBO collapse — sizeof(ValidCKernelIdRaw) ==
-// sizeof(uint8_t) == 1B.  The wrapper exists for the construction-
-// time invariant; downstream readers .value() into a plain uint8_t.
-//
-// Use:
-//   te.kernel_id = make_ckernel_id(ValidCKernelIdRaw{byte_from_disk});
-// at every uint8_t → CKernelId widening site.  `make_ckernel_id` is
-// the only well-typed widening API; it consumes the proof-of-bound
-// in the ValidCKernelIdRaw value.
+// The gate for widening an untrusted byte back into CKernelId. A byte
+// recovered from a trace file or across a foreign-runtime boundary can be out
+// of range after version skew or corruption, and a bare static_cast would turn
+// it into an enum value no switch handles. Admitting only [0, NUM_KERNELS)
+// makes the widening below total.
 using ValidCKernelIdRaw = ::crucible::fixy::wrap::Refined<
     ::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1}>, uint8_t>;
 
-// Construct a CKernelId from a validated byte.  The Refined<>
-// argument *is* the proof that the value is in
-// [0, NUM_KERNELS).  `gnu::const`: depends only on the argument,
-// no global state.  `noexcept`: the predicate is already established
-// at the Refined ctor; this widening cannot fail.
 [[nodiscard, gnu::const]] inline constexpr CKernelId make_ckernel_id(ValidCKernelIdRaw raw) noexcept {
     return static_cast<CKernelId>(raw.value());
 }
 
-// ── Registration table ──────────────────────────────────────────────────────
-//
-// Sorted array of (schema_hash, CKernelId) pairs.
-// Written once at startup (Vessel registration), then read-only forever.
-//
-// 256 slots: ~143 canonical ops, most with 1 registration, ATen ops with 2-3
-// aliases (e.g. softmax + _softmax, layer_norm + native_layer_norm, 5 SDPA
-// variants). SSM/rendering/inference/comm ops typically have 1 registration each.
-
+// Headroom over the kernel count: one operation can carry several aliases, so
+// the number of registrations exceeds the number of identifiers.
 static constexpr uint32_t CKERNEL_TABLE_CAP = 256;
 
 struct CKernelEntry {
@@ -383,94 +225,53 @@ struct CKernelEntry {
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CKernelEntry);
 
-// ── CKernelTable state tags ─────────────────────────────────────────
-// Same shape as SchemaTable's schema_state tags — register_op lives in
-// Mutable, classify() works in any phase, seal() is the one-way
-// transition driven by BackgroundThread::start().
 namespace ckernel_state {
 struct Mutable {};
 struct Sealed {};
 }  // namespace ckernel_state
 
 struct CKernelTable {
-    // ── size counter wrapper (#890 WRAP-CKernel-2) ─────────────────────
-    // The entries[] array is structurally append-only: register_op
-    // pushes one entry per call, never erases or reorders.  size is
-    // bounded above by CKERNEL_TABLE_CAP (the existing `if (size >=
-    // CAP) std::abort()` is the user-facing diagnostic for overflow)
-    // and rewinds to 0 only via clear() (test/teardown).
-    //
-    // BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP> pins both
-    // invariants at the type level: monotonic forward progress (no
-    // accidental backward write via raw assignment) AND the upper
-    // bound (no accidental size > CAP via aliasing or memcpy).  The
-    // clear() rewind is the only legitimate non-monotonic mutation
-    // and uses std::construct_at to re-establish the invariant from
-    // a known floor (0u) — same pattern as IterationDetector's
-    // boundaries_detected / signature_len / ops_since_boundary.
-    //
-    // Zero-cost: regime-2 collapse — sizeof(SizeCounter) ==
-    // sizeof(uint32_t) == 4 B; CKernelTable layout preserved.
     using SizeCounter = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP>;
 
     CKernelEntry entries[CKERNEL_TABLE_CAP]{};
     SizeCounter size{0u};
 
-    // Seal gate. Release-store in seal() pairs with acquire-load in
-    // is_sealed() so any bg-thread classify() reader observing Sealed
-    // also observes every entry registered before seal().
+    // The release store in seal() pairs with the acquire load in is_sealed():
+    // a reader that observes the sealed state also observes every entry
+    // registered before the seal.
     std::atomic<bool> sealed_{false};
 
     CKernelTable() = default;
 
-    // atomic<bool> member deletes copy/move for us, but spell it out
-    // with a reason so the rule survives a future member refactor.
     CKernelTable(const CKernelTable&) = delete("table is a global registration singleton; no copies");
     CKernelTable& operator=(const CKernelTable&) = delete("table is a global registration singleton; no copies");
     CKernelTable(CKernelTable&&) = delete("table is a global registration singleton; no moves");
     CKernelTable& operator=(CKernelTable&&) = delete("table is a global registration singleton; no moves");
 
-    // ── Seal transition ────────────────────────────────────────────
     void seal() noexcept {
         sealed_.store(true, std::memory_order_release);
-        // CONTRACT-CKernel-Seal-POST: one-way state transition — after
-        // seal() the table is sealed, period.  Catches a future refactor
-        // that drops the store or uses the wrong memory order (relaxed
-        // would let bg thread observe Mutable post-seal, breaking the
-        // sealed-before-classify discipline documented in the file
-        // banner).  acquire-load on the post mirrors the discipline:
-        // every legitimate reader uses acquire, so this post pins the
-        // happens-before edge that the seal-store half-establishes.
-        // Routes through CRUCIBLE_POST because the predicate references
-        // `this->sealed_` — same GCC 16.1.1 consteval-bypass family as
-        // every prior POST commit in this session.  Void return: first
-        // arg `0` is the conventional sentinel.
         CRUCIBLE_POST(0, sealed_.load(std::memory_order_acquire));
     }
 
     [[nodiscard]] bool is_sealed() const noexcept { return sealed_.load(std::memory_order_acquire); }
 
-    // ── Typed views (ScopedView discipline) ────────────────────────
     using MutableView = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Mutable>;
     using SealedView = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Sealed>;
 
+    // A contract predicate that reads a member through `this` is skipped when
+    // the compiler folds the body at compile time, so every such check in this
+    // file runs from the body instead of a pre/post clause.
     [[nodiscard]] MutableView mint_mutable_view() const noexcept {
-        // CONTRACT-fix-10: is_sealed() reads `this->sealed_`, so the vanilla
-        // pre(!is_sealed()) is the GCC 16.1.1 consteval-bypass family (same
-        // family as the CKernel-Seal-POST above).  In-body CRUCIBLE_PRE
-        // fires toolchain-independently; [[assume]] under NDEBUG keeps the
-        // view-mint path zero-cost.
         CRUCIBLE_PRE(!is_sealed());
         return crucible::fixy::wrap::mint_view<ckernel_state::Mutable>(*this);
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept {
-        // CONTRACT-fix-10: same `this->sealed_` member-predicate migration.
         CRUCIBLE_PRE(is_sealed());
         return crucible::fixy::wrap::mint_view<ckernel_state::Sealed>(*this);
     }
 
-    // ADL-discovered predicates for mint_view<>.
+    // Found by argument-dependent lookup from mint_view.
     [[nodiscard]] friend constexpr bool view_ok(CKernelTable const& t,
                                                 std::type_identity<ckernel_state::Mutable>) noexcept {
         return !t.is_sealed();
@@ -480,27 +281,13 @@ struct CKernelTable {
         return t.is_sealed();
     }
 
-    // Typed overload — requires MutableView proof. Zero runtime phase check.
-    //
-    // Overflow policy: hard abort.  CKERNEL_TABLE_CAP=256 is sized for
-    // the 146-op CKernel taxonomy with headroom for aliases; hitting the
-    // cap means a Vessel adapter is registering schemas it shouldn't or
-    // the taxonomy has drifted past the cap.  Silent truncation would
-    // leave classify() returning OPAQUE for the dropped entries — a
-    // correctness bug that only manifests at replay time on a specific
-    // schema hash.  Abort at registration is the early, loud failure.
+    // Overflow aborts rather than truncating. A dropped registration would
+    // leave classify() answering OPAQUE for that one schema, and that only
+    // shows up much later, at replay, on whichever trace happens to use it.
     void register_op(MutableView const&, SchemaHash schema_hash, CKernelId id) {
-        // Check for existing entry first (idempotent / alias update).
         for (uint32_t i = 0; i < size.get(); i++) {
             if (entries[i].schema_hash == schema_hash) {
                 entries[i].id = id;
-                // CONTRACT-CKernel-RegisterOp-POST (alias-update path):
-                // the existing entry's id is now `id`; classify(schema_hash)
-                // must return `id`.  Pinned via the binary-search semantics
-                // of classify (defined just below) — entries[i] is still
-                // sorted (only id mutated), so classify(schema_hash) finds
-                // index i and returns entries[i].id == id.  Routes through
-                // CRUCIBLE_POST per the GCC 16.1.1 consteval-bypass family.
                 CRUCIBLE_POST(0, classify(schema_hash) == id);
                 return;
             }
@@ -512,36 +299,16 @@ struct CKernelTable {
                          size.get(), CKERNEL_TABLE_CAP);
             std::abort();
         }
-        // Append + bump.  Two-step instead of `entries[size++]` because
-        // BoundedMonotonic's bump() is a separate mutation; the index
-        // .get() and the bump() bracket the store.
         entries[size.get()] = {.schema_hash = schema_hash, .id = id};
-        size.bump();  // monotonic +1; bound-checked at CKERNEL_TABLE_CAP
+        size.bump();
         std::ranges::sort(std::span{entries, size.get()}, {}, &CKernelEntry::schema_hash);
-        // CONTRACT-CKernel-RegisterOp-POST (insert path):
-        //   (1) classify(schema_hash) == id  — the freshly registered
-        //       schema is now findable.  This is the load-bearing
-        //       contract: a registration that doesn't make the schema
-        //       findable would silently dispatch through the OPAQUE
-        //       fallback (slow path), defeating the whole registration
-        //       phase.  After ranges::sort the entry is at its sorted
-        //       position; classify's binary search finds it.
-        //   (2) size.get() <= CKERNEL_TABLE_CAP — bound preserved by
-        //       BoundedMonotonic but pinned here because BoundedMonotonic's
-        //       bump() pre is `current < Max`; post-bump current ≤ Max.
-        // Catches a future refactor that drops the sort (binary search
-        // would fail to find the inserted entry) or that breaks the
-        // bounded-monotonic counter contract.
         CRUCIBLE_POST(0, classify(schema_hash) == id);
         CRUCIBLE_POST(0, size.get() <= CKERNEL_TABLE_CAP);
     }
 
-    // Binary search over the sorted entries[] array.  gnu::pure: depends
-    // only on the argument + the table contents (read via implicit this).
-    // Called on the hot path by Vigil::record_op for every op — the
-    // optimizer can CSE classify(h) across multiple calls within a basic
-    // block as long as no register_op() intervenes.  The table is sealed
-    // before bg start(), so hot-path calls can assume stable contents.
+    // gnu::pure lets the optimiser cache a result across calls. That is sound
+    // only because registration finishes and the table is sealed before any
+    // classifying reader runs. An interleaved registration would invalidate it.
     [[nodiscard, gnu::pure]] CKernelId classify(SchemaHash schema_hash) const noexcept {
         uint32_t lo = 0, hi = size.get();
         while (lo < hi) {
@@ -557,65 +324,27 @@ struct CKernelTable {
 
     [[nodiscard]] uint32_t count() const noexcept { return size.get(); }
 
-    // Reset to empty Mutable state.  Unseals so tests can reuse the
-    // table across cases.
-    //
-    // clear() is not a monotonic operation — it deliberately rewinds
-    // size from N back to 0.  Re-construct the BoundedMonotonic in
-    // place so the bound + monotonicity invariants are established
-    // afresh from the known floor.  Same pattern as IterationDetector's
-    // reset() rewinds for boundaries_detected / signature_len /
-    // ops_since_boundary.
+    // Rewinding the counter is the one non-monotonic mutation the type
+    // otherwise forbids, so the counter is reconstructed in place rather than
+    // assigned, re-establishing its bound and its ordering from a known floor.
     void clear() noexcept {
         std::construct_at(&size, SizeCounter{0u});
         sealed_.store(false, std::memory_order_release);
-        // CONTRACT-CKernel-Clear-POST: state-machine reset invariant —
-        // after clear() the table returns to the Mutable-with-zero-entries
-        // initial condition:
-        //   (1) size.get() == 0 — counter rewound via construct_at
-        //       (BoundedMonotonic doesn't permit backward writes; the
-        //       in-place reconstruction is the deliberate exception
-        //       documented in the field comment above).
-        //   (2) !is_sealed() — relaxed-load on the post mirrors the
-        //       release-store; same-thread reads-our-own-write applies.
-        // Routes through CRUCIBLE_POST per the GCC 16.1.1 consteval-bypass
-        // family.  Catches a future refactor that drops the sealed_ store
-        // (clear() would leak a sealed table to subsequent Mutable test
-        // cases, which would then trip mint_mutable_view's pre-clause).
-        // Mirrors IterDet::reset's CONTRACT-IterDet-Reset-POST and
-        // PoolAllocator::destroy's CONTRACT-127-POST (lifecycle reset
-        // pattern).
         CRUCIBLE_POST(0, size.get() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
     }
 };
 
-// Tier 2 opt-in: nothing inside CKernelTable may be a ScopedView.
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CKernelTable>());
 
 using CKernelTableSingleton = crucible::fixy::wrap::Tagged<CKernelTable*, crucible::fixy::tags::source::Singleton>;
 static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
 
-// Global singleton — sealed automatically by BackgroundThread::start().
 [[nodiscard]] inline CKernelTableSingleton global_ckernel_table() {
     static CKernelTable table;
     return CKernelTableSingleton{&table};
 }
 
-// Called by Vessel at startup, before BackgroundThread::start().
-//
-// Provenance: the SchemaHash parameter is Tagged<source::External>
-// because every real caller is the Vessel adapter translating an
-// ATen OperatorHandle schema from PyTorch — a foreign runtime.  The
-// type discipline documents the trust boundary: internal code (bg
-// thread, replay engine) never synthesizes schema hashes for
-// registration; tests that pre-populate the table must construct a
-// Tagged<..., source::External> explicitly, making "this test is
-// simulating what Vessel would pass" visible at the call site.
-//
-// Overload resolution: an untyped `register_schema_hash(hash, id)`
-// call now fails to compile; callers must wrap with
-// `Tagged<SchemaHash, source::External>{hash}`.
 inline void
 register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::tags::source::External> schema_hash,
                      CKernelId id) {
@@ -632,8 +361,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
         case CKernelId::OPAQUE:
             return "OPAQUE";
 
-        // ── Section 1: Core DNN Ops ─────────────────────────────────────────
-        // Linear Algebra
         case CKernelId::GEMM_MM:
             return "GEMM_MM";
         case CKernelId::GEMM_BMM:
@@ -650,7 +377,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "GEMM_BADDBMM";
         case CKernelId::GEMM_EINSUM:
             return "GEMM_EINSUM";
-        // Convolution
         case CKernelId::CONV1D:
             return "CONV1D";
         case CKernelId::CONV2D:
@@ -663,7 +389,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "CONV_TRANSPOSE2D";
         case CKernelId::CONV_TRANSPOSE3D:
             return "CONV_TRANSPOSE3D";
-        // Attention
         case CKernelId::SDPA:
             return "SDPA";
         case CKernelId::MHA:
@@ -672,7 +397,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "ROPE";
         case CKernelId::POSITION_BIAS:
             return "POSITION_BIAS";
-        // Normalization
         case CKernelId::LAYER_NORM:
             return "LAYER_NORM";
         case CKernelId::BATCH_NORM_TRAIN:
@@ -685,7 +409,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "INSTANCE_NORM";
         case CKernelId::RMS_NORM:
             return "RMS_NORM";
-        // Activations
         case CKernelId::ACT_RELU:
             return "ACT_RELU";
         case CKernelId::ACT_GELU:
@@ -712,7 +435,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "ACT_CLAMP";
         case CKernelId::ACT_MISH:
             return "ACT_MISH";
-        // Elementwise Binary
         case CKernelId::EWISE_ADD:
             return "EWISE_ADD";
         case CKernelId::EWISE_MUL:
@@ -731,7 +453,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "EWISE_MOD";
         case CKernelId::EWISE_WHERE:
             return "EWISE_WHERE";
-        // Elementwise Unary
         case CKernelId::EWISE_EXP:
             return "EWISE_EXP";
         case CKernelId::EWISE_LOG:
@@ -752,7 +473,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "EWISE_CAST";
         case CKernelId::EWISE_FILL:
             return "EWISE_FILL";
-        // Reductions
         case CKernelId::REDUCE_SUM:
             return "REDUCE_SUM";
         case CKernelId::REDUCE_MEAN:
@@ -769,7 +489,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "REDUCE_CUMSUM";
         case CKernelId::REDUCE_TOPK:
             return "REDUCE_TOPK";
-        // Pooling
         case CKernelId::POOL_MAX1D:
             return "POOL_MAX1D";
         case CKernelId::POOL_MAX2D:
@@ -786,7 +505,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "POOL_ADAPTIVE_MAX";
         case CKernelId::POOL_ADAPTIVE_AVG:
             return "POOL_ADAPTIVE_AVG";
-        // Data Movement
         case CKernelId::VIEW:
             return "VIEW";
         case CKernelId::RESHAPE:
@@ -819,24 +537,20 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "STACK";
         case CKernelId::UNFOLD:
             return "UNFOLD";
-        // Embedding
         case CKernelId::EMBEDDING:
             return "EMBEDDING";
         case CKernelId::EMBEDDING_BAG:
             return "EMBEDDING_BAG";
-        // Copy / I/O
         case CKernelId::COPY_:
             return "COPY_";
         case CKernelId::CLONE:
             return "CLONE";
-        // Vision
         case CKernelId::INTERPOLATE:
             return "INTERPOLATE";
         case CKernelId::GRID_SAMPLE:
             return "GRID_SAMPLE";
         case CKernelId::IM2COL:
             return "IM2COL";
-        // Fused
         case CKernelId::FUSED_ATTENTION:
             return "FUSED_ATTENTION";
         case CKernelId::FUSED_LINEAR_ACT:
@@ -846,8 +560,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
         case CKernelId::FUSED_SOFTMAX_DROP:
             return "FUSED_SOFTMAX_DROP";
 
-        // ── Section 2: Extended Ops ─────────────────────────────────────────
-        // Linear Algebra Decompositions
         case CKernelId::LINALG_SVD:
             return "LINALG_SVD";
         case CKernelId::LINALG_CHOLESKY:
@@ -866,7 +578,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "CDIST";
         case CKernelId::FFT:
             return "FFT";
-        // SSM / Recurrence
         case CKernelId::ASSOC_SCAN:
             return "ASSOC_SCAN";
         case CKernelId::SELECTIVE_SCAN:
@@ -879,7 +590,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "RETENTION";
         case CKernelId::MLSTM_RECURRENCE:
             return "MLSTM_RECURRENCE";
-        // Production Inference
         case CKernelId::DEQUANT_GEMM:
             return "DEQUANT_GEMM";
         case CKernelId::MOE_ROUTE_GEMM:
@@ -892,7 +602,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "LINEAR_ATTN_CAUSAL";
         case CKernelId::RAGGED_ATTN:
             return "RAGGED_ATTN";
-        // 3D / Neural Rendering
         case CKernelId::GAUSSIAN_RASTERIZE:
             return "GAUSSIAN_RASTERIZE";
         case CKernelId::HASH_GRID_ENCODE:
@@ -901,7 +610,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "VOLUME_RENDER";
         case CKernelId::SH_EVAL:
             return "SH_EVAL";
-        // Structured Matrix / Graph
         case CKernelId::FFT_CONV:
             return "FFT_CONV";
         case CKernelId::MONARCH_MATMUL:
@@ -912,7 +620,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "SDDMM_GNN";
         case CKernelId::SINKHORN:
             return "SINKHORN";
-        // Collective Communication
         case CKernelId::COMM_ALLREDUCE:
             return "COMM_ALLREDUCE";
         case CKernelId::COMM_ALLGATHER:
@@ -933,7 +640,6 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "COMM_GATHER";
         case CKernelId::COMM_SCATTER:
             return "COMM_SCATTER";
-        // I/O
         case CKernelId::IO_LOAD:
             return "IO_LOAD";
         case CKernelId::IO_PREFETCH:
@@ -942,12 +648,10 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
             return "IO_CHECKPOINT_SAVE";
         case CKernelId::IO_CHECKPOINT_LOAD:
             return "IO_CHECKPOINT_LOAD";
-        // RNG
         case CKernelId::RNG_UNIFORM:
             return "RNG_UNIFORM";
         case CKernelId::RNG_NORMAL:
             return "RNG_NORMAL";
-        // Synchronization
         case CKernelId::COMM_BARRIER:
             return "COMM_BARRIER";
 

@@ -1,8 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/* Shared definitions for the Crucible perf BPF programs (sched_switch,
- * syscall_latency, lock_contention, pmu_sample). Ported 1:1 from
- * symbiotic's bpf/common.h. */
-
 #ifndef __CRUCIBLE_PERF_BPF_COMMON_H
 #define __CRUCIBLE_PERF_BPF_COMMON_H
 
@@ -11,17 +7,12 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-/* ─── Target PID filter (set from userspace via .rodata rewrite) ──────── */
-
+/* Userspace rewrites this in .rodata before the program is loaded. */
 const volatile __u32 target_tgid = 0;
-
-/* ─── Shared constants ────────────────────────────────────────────────── */
 
 #define MAX_STACK_DEPTH 127
 #define MAX_ENTRIES 65536
 #define MAX_STACKS 16384
-
-/* ─── Off-CPU types (shared between BPF and userspace) ───────────────── */
 
 struct offcpu_key {
     __s32 stack_id;
@@ -34,8 +25,6 @@ struct offcpu_val {
     __u64 max_ns;
 };
 
-/* ─── Syscall latency types ──────────────────────────────────────────── */
-
 struct syscall_stats {
     __u64 count;
     __u64 total_ns;
@@ -43,11 +32,9 @@ struct syscall_stats {
     __u64 min_ns;
 };
 
-/* ─── Lock contention types ──────────────────────────────────────────── */
-
 struct lock_key {
-    __u64 addr; /* futex address (userspace VA) */
-    __s32 stack_id; /* stack trace at contention point */
+    __u64 addr; /* futex address in the user address space */
+    __s32 stack_id;
     __u32 _pad;
 };
 
@@ -56,8 +43,6 @@ struct lock_val {
     __u64 count;
     __u64 max_wait_ns;
 };
-
-/* ─── Page fault types ───────────────────────────────────────────────── */
 
 struct fault_key {
     __s32 stack_id;
@@ -69,60 +54,41 @@ struct fault_val {
     __u64 major_count;
 };
 
-/* ─── BPF_F_MMAPABLE for zero-copy shared memory ─────────────────────── */
-
 #ifndef BPF_F_MMAPABLE
 #define BPF_F_MMAPABLE (1U << 10)
 #endif
 
-/* ─── Timeline circular buffer (mmap'd zero-copy, sub-ns reads) ──────── */
-
-#define TIMELINE_CAPACITY 4096 /* events per category, power of 2 */
+#define TIMELINE_CAPACITY 4096
 #define TIMELINE_MASK (TIMELINE_CAPACITY - 1)
 
 /*
- * Per-event records. Write ts_ns LAST — non-zero signals completion.
- * Reader checks ts_ns != 0 before trusting other fields.
- * x86_64: TSO guarantees store order — ts_ns visible implies prior stores visible.
- * aarch64: __sync_fetch_and_add (LDAXR/STLXR) provides full barrier before stores;
- *          all fields share the same cache line, delivered atomically by coherency.
+ * The writer stores ts_ns last, and a non-zero ts_ns is what marks a record
+ * complete. The reader tests ts_ns before it trusts any other field.
+ * On x86-64 the store order follows from TSO, so a visible ts_ns implies the
+ * earlier stores are visible. On aarch64 the LDAXR and STLXR pair behind
+ * __sync_fetch_and_add is a full barrier ahead of the field stores, and all
+ * fields sit in one cache line, which coherency delivers as a unit.
  */
 struct timeline_sched_event {
-    __u64 off_cpu_ns; /* how long thread was off-CPU */
+    __u64 off_cpu_ns;
     __u32 tid;
     __u32 on_cpu; /* CPU core switched onto */
-    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
-    __u64 _pad; /* GAPS-004b-AUDIT (2026-05-04): pad to 32 B
-                        * so the events array's slots are always
-                        * cache-line-coresident (32 divides 64
-                        * evenly).  Without this, slot N at byte
-                        * (64 + 24*N) would straddle two 64-byte
-                        * cache lines for N ∈ {2, 5} (mod 8), and
-                        * the reader could see ts_ns visible while
-                        * off_cpu_ns/tid/on_cpu are still in a
-                        * stale cache line — silently breaking the
-                        * "ts_ns LAST as completion marker"
-                        * contract documented above.  We don't
-                        * write to _pad; struct padding is free. */
+    __u64 ts_ns; /* written last */
+    __u64 _pad; /* Rounds the record to 32 bytes, which divides
+                        * the cache line, so no slot straddles two
+                        * lines.  At 24 bytes a slot could deliver a
+                        * visible ts_ns on one line while the other
+                        * fields sit stale on the next. */
 };
 
 struct timeline_syscall_event {
     __u64 duration_ns;
     __u32 tid;
     __u32 syscall_nr;
-    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
-    __u64 _pad; /* GAPS-004e (2026-05-04): pad to 32 B so the
-                        * events array's slots are always cache-line-
-                        * coresident (32 divides 64 evenly).  Without
-                        * this, slot N at byte (64 + 24*N) straddles
-                        * two 64-byte cache lines for N ∈ {2, 5} (mod 8),
-                        * and the reader could observe ts_ns visible
-                        * while duration_ns/tid/syscall_nr are still
-                        * stale — silently breaking the "ts_ns LAST as
-                        * completion marker" contract documented above.
-                        * Same fix class as TimelineSchedEvent
-                        * GAPS-004b-AUDIT and TimelineLockEvent at
-                        * GAPS-004d ship time. */
+    __u64 ts_ns; /* written last */
+    __u64 _pad; /* Rounds the record to 32 bytes so no slot
+                        * straddles a cache line.  Refer to
+                        * timeline_sched_event. */
 };
 
 struct timeline_lock_event {
@@ -130,17 +96,17 @@ struct timeline_lock_event {
     __u64 wait_ns;
     __u32 tid;
     __u32 _pad;
-    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 ts_ns; /* written last */
 };
 
 /*
- * Circular buffer header: write_idx is atomically incremented.
- * Slot = write_idx & TIMELINE_MASK.
- * Padded to 64 bytes (one cache line) so events start cache-aligned.
+ * write_idx counts every record ever published and never resets. The slot is
+ * write_idx masked to the capacity. The header fills a whole cache line so
+ * that the events array starts cache-aligned.
  */
 struct timeline_header {
-    __u64 write_idx; /* monotonically increasing, never resets */
-    __u64 _pad[7]; /* pad to 64 bytes */
+    __u64 write_idx;
+    __u64 _pad[7];
 };
 
 struct sched_timeline {
@@ -158,33 +124,24 @@ struct lock_timeline {
     struct timeline_lock_event events[TIMELINE_CAPACITY];
 };
 
-/* ─── PMU sample circular buffer (BPF perf_event → mmap'd zero-copy) ─── */
-
-#define PMU_SAMPLE_CAPACITY 32768 /* 2^15 events, larger than timeline */
+#define PMU_SAMPLE_CAPACITY 32768
 #define PMU_SAMPLE_MASK (PMU_SAMPLE_CAPACITY - 1)
 
 /*
- * PMU sample event — one per hardware counter overflow.
- * event_type: 0=cycles, 1=L1D-miss, 2=LLC-miss, 3=branch-miss, 4=DTLB-miss,
- *             5=IBS-Op (AMD precise micro-op), 6=IBS-Fetch (AMD instruction fetch),
- *             7=major-pagefault, 8=cpu-migration, 9=alignment-fault
- * Write ts_ns LAST as completion marker.
+ * One record per hardware counter overflow. event_type is 0 for cycles,
+ * 1 for L1D miss, 2 for LLC miss, 3 for branch miss, 4 for DTLB miss,
+ * 5 for AMD IBS-Op, 6 for AMD IBS-Fetch, 7 for major page fault,
+ * 8 for CPU migration and 9 for alignment fault.
  */
 struct pmu_sample_event {
-    __u64 ip; /* instruction pointer (userspace virtual addr) */
-    __u32 tid; /* thread ID */
-    __u8 event_type; /* PMU event discriminator */
-    __u8 _pad[3]; /* align ts_ns to 8 bytes */
-    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
-    __u64 _pad8; /* GAPS-004c (2026-05-04): cache-line-
-                         * coresidence pad.  Same bug + same fix
-                         * as TimelineSchedEvent — without this
-                         * 24+8=32 byte struct, slots straddle
-                         * 64-byte boundaries and torn reads on
-                         * the second line silently break the
-                         * "ts_ns LAST as completion marker"
-                         * contract.  Zero per-event runtime
-                         * cost (we don't write _pad8). */
+    __u64 ip; /* instruction pointer in the user address space */
+    __u32 tid;
+    __u8 event_type;
+    __u8 _pad[3];
+    __u64 ts_ns; /* written last */
+    __u64 _pad8; /* Rounds the record to 32 bytes so no slot
+                         * straddles a cache line.  Refer to
+                         * timeline_sched_event. */
 };
 
 struct pmu_sample_timeline {
@@ -192,21 +149,10 @@ struct pmu_sample_timeline {
     struct pmu_sample_event events[PMU_SAMPLE_CAPACITY];
 };
 
-/* ─── Helpers: target filter + tid extraction ────────────────────────── */
-
 /*
- * GAPS-004c-AUDIT-2 (2026-05-04): defense-in-depth hardening.
- * Match sense_hub.bpf.c's is_target() — `target_tgid != 0` guard
- * makes the function return false when userspace's .rodata rewrite
- * silently failed (target_tgid stays 0).  Without this, tgid==0
- * (swapper/idle) would silently match and pollute downstream maps:
- * - sched_switch tracks swapper context switches → wastes map slots
- * - syscall_latency / lock_contention same risk
- * - pmu_sample is protected by exclude_kernel=1 already, but
- *   defense-in-depth costs nothing (~1 ns extra register compare)
- * Cost: one comparison; called O(events/sec) per BPF program.
- * Pure additive — when target_tgid != 0 (normal case), behavior
- * identical to the previous form.
+ * The target_tgid != 0 test rejects the case where the userspace .rodata
+ * rewrite never happened. Without it the idle task, whose tgid is 0, matches
+ * every call and fills the downstream maps with swapper records.
  */
 static __always_inline bool is_target(void) {
     __u32 tgid = bpf_get_current_pid_tgid() >> 32;

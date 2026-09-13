@@ -1,6 +1,3 @@
-// Tests for build_csr — the counting-sort CSR builder used by
-// BackgroundThread::build_trace and by the Sugiyama layout pass.
-
 #include <crucible/Arena.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/TraceGraph.h>
@@ -15,8 +12,7 @@
 using namespace crucible;
 
 static Edge E(uint32_t src, uint32_t dst, EdgeKind k = EdgeKind::DATA_FLOW) {
-    return Edge{.src = OpIndex{src}, .dst = OpIndex{dst},
-                .src_port = 0, .dst_port = 0, .kind = k, .pad = 0};
+    return Edge{.src = OpIndex{src}, .dst = OpIndex{dst}, .src_port = 0, .dst_port = 0, .kind = k, .pad = 0};
 }
 
 static void test_empty_graph() {
@@ -24,8 +20,7 @@ static void test_empty_graph() {
     Arena arena{1 << 16};
     TraceGraph g{};
     build_csr(t.alloc, arena, &g, nullptr, 0, 0);
-    static_assert(std::is_same_v<TraceGraph::BuiltCount,
-                                 safety::WriteOnce<uint32_t>>);
+    static_assert(std::is_same_v<TraceGraph::BuiltCount, safety::WriteOnce<uint32_t>>);
     assert(g.num_edges.get_assuming_set() == 0);
     std::printf("  test_empty:                     PASSED\n");
 }
@@ -37,11 +32,9 @@ static void test_single_edge_fwd_rev() {
     Edge edges[] = {E(0, 1)};
     build_csr(t.alloc, arena, &g, edges, 1, /*num_ops=*/2);
     assert(g.num_edges.get_assuming_set() == 1);
-    // fwd: op 0 has 1 out-edge.
     assert(g.out_degree(OpIndex{0}) == 1);
     assert(g.out_degree(OpIndex{1}) == 0);
     assert(g.fwd_begin(OpIndex{0})->dst == OpIndex{1});
-    // rev: op 1 has 1 in-edge.
     assert(g.in_degree(OpIndex{0}) == 0);
     assert(g.in_degree(OpIndex{1}) == 1);
     assert(g.rev_begin(OpIndex{1})->src == OpIndex{0});
@@ -53,13 +46,9 @@ static void test_counting_sort_groups_by_src() {
     auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
-    std::vector<Edge> edges = {
-        E(2, 3), E(0, 1), E(2, 4), E(1, 2), E(0, 2), E(2, 5)
-    };
-    build_csr(t.alloc, arena, &g, edges.data(),
-              static_cast<uint32_t>(edges.size()), /*num_ops=*/6);
+    std::vector<Edge> edges = {E(2, 3), E(0, 1), E(2, 4), E(1, 2), E(0, 2), E(2, 5)};
+    build_csr(t.alloc, arena, &g, edges.data(), static_cast<uint32_t>(edges.size()), /*num_ops=*/6);
 
-    // Degrees.
     assert(g.out_degree(OpIndex{0}) == 2);
     assert(g.out_degree(OpIndex{1}) == 1);
     assert(g.out_degree(OpIndex{2}) == 3);
@@ -98,9 +87,9 @@ static void test_edge_kind_preserved() {
     bool saw_df = false, saw_alias = false, saw_cf = false;
     const OpIndex oi0{0};
     for (const Edge* e = g.fwd_begin(oi0); e != g.fwd_end(oi0); ++e) {
-        if (e->kind == EdgeKind::DATA_FLOW)     saw_df = true;
-        if (e->kind == EdgeKind::ALIAS)         saw_alias = true;
-        if (e->kind == EdgeKind::CONTROL_FLOW)  saw_cf = true;
+        if (e->kind == EdgeKind::DATA_FLOW) saw_df = true;
+        if (e->kind == EdgeKind::ALIAS) saw_alias = true;
+        if (e->kind == EdgeKind::CONTROL_FLOW) saw_cf = true;
     }
     assert(saw_df && saw_alias && saw_cf);
     std::printf("  test_edge_kind_preserved:       PASSED\n");
@@ -112,18 +101,16 @@ static void test_offsets_prefix_sum_invariant() {
     TraceGraph g{};
     std::vector<Edge> edges;
     // Chain: 0->1->2->...->9
-    for (uint32_t i = 0; i + 1 < 10; ++i) edges.push_back(E(i, i + 1));
-    build_csr(t.alloc, arena, &g, edges.data(),
-              static_cast<uint32_t>(edges.size()), /*num_ops=*/10);
+    for (uint32_t i = 0; i + 1 < 10; ++i)
+        edges.push_back(E(i, i + 1));
+    build_csr(t.alloc, arena, &g, edges.data(), static_cast<uint32_t>(edges.size()), /*num_ops=*/10);
 
-    // Offsets monotonic non-decreasing.
     for (uint32_t i = 0; i <= 10; ++i) {
         if (i > 0) {
             assert(g.fwd_offsets[i] >= g.fwd_offsets[i - 1]);
             assert(g.rev_offsets[i] >= g.rev_offsets[i - 1]);
         }
     }
-    // Last offset equals num_edges.
     assert(g.fwd_offsets[10] == 9);
     assert(g.rev_offsets[10] == 9);
     std::printf("  test_prefix_sum:                PASSED\n");
@@ -135,7 +122,8 @@ static void test_fanout_node_has_multiple_edges() {
     TraceGraph g{};
     // Hub-and-spoke: node 0 → {1, 2, 3, 4, 5, 6, 7, 8, 9}
     std::vector<Edge> edges;
-    for (uint32_t i = 1; i < 10; ++i) edges.push_back(E(0, i));
+    for (uint32_t i = 1; i < 10; ++i)
+        edges.push_back(E(0, i));
     build_csr(t.alloc, arena, &g, edges.data(), 9, /*num_ops=*/10);
 
     assert(g.out_degree(OpIndex{0}) == 9);

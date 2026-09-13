@@ -1,38 +1,15 @@
 #pragma once
 
-// Arena: bump-pointer allocator with block growth. No individual free.
-// All memory returned to the OS on destruction.
-//
-// Fast path ~2ns (pointer bump + AND mask). Slow path malloc + vector push,
-// amortized across block_size_ bytes.
-//
-// Hot fields (cur_block_, offset_, end_offset_) packed at struct head in one
-// cache line; cold fields (block_size_, total_block_bytes_, blocks_) follow,
-// touched only on slow path or total_allocated() query. sizeof(Arena) == 64.
-
 #include "effects/Capabilities.h"
 #include "Platform.h"
 #include "Saturate.h"
-// FIXY-U-096y production migration: Arena spells its safety wrappers
-// (Positive / PowerOfTwo / Monotonic / AppendOnly / AllocClass /
-// AllocClassTag_v) through fixy::wrap::, never safety::* — see the
-// usages below.
-//
-// NOTE: Arena.h sits BELOW the fixy/Wrap.h umbrella in the include
-// graph.  fixy/Wrap.h re-exports OwnedRegion, and safety/OwnedRegion.h
-// (line 72) includes <crucible/Arena.h> and uses a COMPLETE Arena in
-// its template bodies.  Pulling the umbrella here would therefore cycle
-// Arena.h -> fixy/Wrap.h -> safety/OwnedRegion.h -> Arena.h (skipped by
-// #pragma once, leaving `Arena` undeclared) — a hard parse error in
-// EVERY Arena-consuming TU.  So we mirror the Saturate.h (FIXY-U-096b)
-// precedent: (a) include the NARROW substrate headers Arena actually
-// needs, and (b) re-open `crucible::fixy::wrap` below to install the 6
-// using-decls Arena references.  fixy/Wrap.h re-declares the same decls
-// independently in its own TU — idempotent (multiple using-decls naming
-// one entity in one namespace are not a redeclaration error), and
-// Wrap.h's dual-export sentinels continue to witness identity.  This
-// irreducible `::crucible::safety::` re-export plumbing is exactly why
-// Arena.h is deliberately ABSENT from scripts/fixy-clean-headers.txt.
+// The umbrella header that re-exports these wrappers pulls in a header that
+// includes this one and uses a complete Arena, so including the umbrella here
+// cycles and leaves Arena undeclared in every consuming translation unit.
+// Instead: include the narrow substrate headers and re-open the wrapper
+// namespace below with the using declarations Arena needs. Naming one entity
+// from two using declarations in one namespace is not a redeclaration, so the
+// umbrella's own declarations stay compatible.
 #include "safety/AllocClass.h"
 #include "safety/Decide.h"
 #include "safety/Mutation.h"
@@ -62,35 +39,13 @@ namespace crucible {
 
 class CRUCIBLE_OWNER Arena {
 public:
-    // block_size: default bump-block size (must be > 0). Individual allocations
-    // larger than block_size get their own dedicated block.
     explicit Arena(size_t block_size = size_t{1} << 20) pre(::crucible::decide::positive(block_size))
         : block_size_{block_size} {
         alloc_new_block_(block_size_);
-        // CONTRACT-Arena-CTOR-POST: construction-state invariant — after
-        // ctor, the four load-bearing fields agree with the supplied
-        // block_size:
-        //   (1) block_size_ matches the caller's requested block_size
-        //       (set via member-init list above; post catches a future
-        //       refactor that rounds up internally).
-        //   (2) cur_block_ != nullptr — alloc_new_block_ on the OOM path
-        //       std::abort()s, so post-ctor reaching this point implies
-        //       success.  Mirrors KernelCache and PoolAllocator post-init
-        //       discipline.
-        //   (3) offset_ == 0 — alloc_new_block_ sets fresh-block offset
-        //       to zero.  Catches a future refactor that pre-allocates
-        //       header bytes during ctor without bumping offset_.
-        //   (4) end_offset_ == block_size_ — alloc_new_block_ sets the
-        //       end of the bump region to the requested allocation size.
-        //       Together with (3) implies the full block is available
-        //       for the first alloc().
-        // Routes through CRUCIBLE_POST because every predicate references
-        // a class member through `this->` — P2900 `post (r:...)` is
-        // consteval-bypass-vulnerable per the GCC 16.1.1 family (same
-        // gotcha that drove CONTRACT-100..108-POST and 116..127-POST).
-        // Void return: first arg `0` is the conventional sentinel.  Under
-        // NDEBUG these collapse to `[[assume]]` for downstream alloc()
-        // optimizer.
+        // A post clause whose predicate reads a member through `this` is
+        // skipped at consteval, so every postcondition in this file routes
+        // through the macro instead. The leading 0 is the placeholder return
+        // value for a function that returns void.
         CRUCIBLE_POST(0, block_size_ == block_size);
         CRUCIBLE_POST(0, cur_block_ != nullptr);
         CRUCIBLE_POST(0, offset_ == 0u);
@@ -102,39 +57,26 @@ public:
             std::free(block);
     }
 
-    // Interior pointers returned by alloc() must remain valid for the Arena's
-    // lifetime; copying or moving would invalidate them.
     Arena(const Arena&) = delete("Arena is non-copyable: interior pointers would dangle");
     Arena& operator=(const Arena&) = delete("Arena is non-copyable: interior pointers would dangle");
     Arena(Arena&&) = delete("Arena is non-movable: interior pointers would dangle");
     Arena& operator=(Arena&&) = delete("Arena is non-movable: interior pointers would dangle");
 
-    // Allocate `size` bytes aligned to `align`.  Both invariants are now
-    // type-carried: size is a Positive<size_t>, align is a PowerOfTwo<size_t>.
-    // Construction of the wrappers fires a contract on violation, so the
-    // callee body can read .value() without re-checking.
+    // The alignment arithmetic runs on absolute addresses. malloc only
+    // guarantees alignof(std::max_align_t), so a stricter alignment cannot be
+    // satisfied by rounding the block-relative offset alone.
     //
-    // Returns a non-null pointer valid for the Arena's lifetime; OOM aborts.
-    // Alignment uses absolute address arithmetic because malloc only
-    // guarantees alignof(std::max_align_t) = 16B; larger alignments
-    // (64B cache-line, 256B PoolAllocator) cannot assume block-relative
-    // offset suffices.
-    //
-    // gnu::alloc_size / alloc_align dropped: those attributes require a
-    // scalar size_t parameter index, and Refined<> is a class wrapper.
-    // The replacement guarantee comes from the type system: every alloc
-    // call carries a proved size invariant, statically verified at
-    // construction.  Direct callers of alloc() are internal-only (alloc_obj
-    // and alloc_array do the wrapping); GCC's -Wstringop-overflow
-    // diagnostics still apply transitively via those wrappers.
+    // gnu::alloc_size and gnu::alloc_align cannot be applied here: they take
+    // the index of a scalar size_t parameter, and both parameters are class
+    // wrappers. The size invariant is carried by the parameter type instead.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::malloc, gnu::returns_nonnull]]
     CRUCIBLE_INLINE void* alloc(effects::Alloc, crucible::fixy::wrap::Positive<size_t> size,
                                 crucible::fixy::wrap::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND {
         const size_t s = size.value();
         const size_t a = align.value();
-        // Refined guarantees these at ctor time; [[assume]] propagates the
-        // fact to the optimizer so the alignment arithmetic below compiles
-        // to a single AND instead of a branch on `(a & (a-1)) == 0`.
+        // The parameter types already hold these. Restating them as
+        // assumptions lets the alignment arithmetic below fold to a single
+        // mask rather than a test of `(a & (a - 1)) == 0`.
         [[assume(s > 0)]];
         [[assume(a != 0 && (a & (a - 1)) == 0)]];
         const uintptr_t base = std::bit_cast<uintptr_t>(cur_block_);
@@ -149,28 +91,23 @@ public:
         return alloc_slow_(s, a);
     }
 
-    // Default-align overload — convenience for the common case where the
-    // caller doesn't have a stricter alignment constraint.
     [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE void*
     alloc(effects::Alloc a, crucible::fixy::wrap::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
         return alloc(a, size, crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(std::max_align_t)});
     }
 
-    // Allocate a single default-constructible T. Storage only — caller must
-    // placement-new if T requires construction. For trivial T this compiles to
-    // the same code as alloc(sizeof(T), alignof(T)).
+    // Returns storage only. A T that needs construction must be
+    // placement-new'd by the caller.
     template <typename T>
     [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_obj(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
         static_assert(sizeof(T) > 0, "alloc_obj<T> requires complete T");
-        static_assert(std::has_single_bit(alignof(T)), "alignof(T) must be a power of two — true on every "
-                                                       "ABI we support; assert here to surface ports");
+        static_assert(std::has_single_bit(alignof(T)), "alignof(T) must be a power of two");
         return static_cast<T*>(alloc(a, crucible::fixy::wrap::Positive<size_t>{sizeof(T)},
                                      crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
     }
 
-    // Allocate N elements of T. n == 0 returns nullptr (paired with count=0 at
-    // call sites per NullSafe axiom). Overflow in sizeof(T)*n saturates to
-    // SIZE_MAX, forcing the downstream malloc to fail and std::abort cleanly.
+    // An overflowing element count saturates to SIZE_MAX, which makes the
+    // eventual malloc fail and abort rather than wrap to a small block.
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
         if (n == 0) [[unlikely]]
@@ -180,23 +117,11 @@ public:
                                      crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
     }
 
-    // Allocate N elements of T where N > 0 is guaranteed by the caller.
-    //
-    // Unlike alloc_array(), this variant never returns nullptr — the
-    // pre() contract rejects n == 0 at the call site.  Use when the
-    // count is structurally non-zero (e.g., bracketed by `if (count > 0)`
-    // at the caller) to eliminate redundant null checks downstream.
-    //
-    // Rationale: NullSafe demands (pointer, count) agreement.  Mixing
-    // alloc_array with if-count-nonzero guards creates two places where
-    // the "non-zero → non-null" invariant must be maintained; a refactor
-    // dropping either guard silently yields (null, N > 0) — every
-    // subsequent read dereferences null.  alloc_array_nonzero collapses
-    // the invariant into the callee: the contract fires if count is
-    // ever 0, [[assume]] propagates n > 0 into the downstream mul_sat
-    // so the optimizer can prove the result non-zero, and
-    // gnu::returns_nonnull exposes the proof to callers' null-check
-    // elimination.
+    // A caller that already knows the count is nonzero uses this instead of
+    // guarding a call to alloc_array. Splitting the guard between caller and
+    // callee leaves two places where "nonzero count implies nonnull pointer"
+    // has to be maintained, and dropping either one yields a nonzero count
+    // paired with null.
     template <typename T>
     [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_array_nonzero(effects::Alloc a, size_t n) noexcept
         CRUCIBLE_LIFETIMEBOUND pre(::crucible::decide::positive(n)) {
@@ -206,59 +131,22 @@ public:
                                      crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // FOUND-G42: AllocClass-pinned production surface
-    // ═══════════════════════════════════════════════════════════════════
-    //
-    // These wrappers return `fixy::wrap::AllocClass<AllocClassTag_v::Arena, T*>`,
-    // pinning the allocation tier at the type level so consumers can
-    // declare `requires AllocClass<...>::satisfies<Arena>` (or stronger)
-    // gates that REJECT heap-allocated pointers at compile time.
-    //
-    // Tier rationale: every pinned variant returns Arena tier — the
-    // pointer points into a bump-allocated arena chunk.  By the
-    // AllocClass lattice (HugePage ⊑ Mmap ⊑ Heap ⊑ Arena ⊑ Pool ⊑
-    // Stack), Arena-tier pointers satisfy any consumer whose required
-    // tier is Arena-or-weaker (Heap / Mmap / HugePage), but FAIL the
-    // gate at Pool or Stack tier — those tiers promise stronger
-    // bounds (Pool = preallocated freelist, no bump cost; Stack = no
-    // allocator call at all).
-    //
-    // Why additive (not replacing) the raw alloc_obj/alloc_array:
-    //
-    //   The raw alloc_obj<T> surface is consumed by ~50+ call sites
-    //   in the production tree (TraceGraph, MerkleDag, Graph, etc.).
-    //   Most do not yet need type-level allocation-tier discipline;
-    //   forcing the wrapper everywhere is a churn migration without
-    //   immediate benefit.  The `_pinned` variants are for NEW
-    //   production sites that explicitly want the type-level fence
-    //   (CLAUDE.md §VIII memory-plan discipline at the type system).
-    //
-    // The pinned variants forward to the raw alloc_obj / alloc_array /
-    // alloc_array_nonzero with no additional cost — the AllocClass
-    // wrapper is EBO-collapsed (sizeof(AllocClass<Arena, T*>) ==
-    // sizeof(T*)) and the constructor is a single move.
-
-    // Allocate a single default-constructible T, return AllocClass<Arena, T*>.
-    // Mirrors alloc_obj's contract: never returns a null wrapper (the
-    // pointer inside is always non-null per gnu::returns_nonnull).
+    // The pinned variants exist alongside the raw ones rather than replacing
+    // them: only a call site that wants the allocation tier fixed in the type
+    // pays for the wrapper, and the raw surface stays available everywhere
+    // else.
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
     alloc_obj_pinned(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
         return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{alloc_obj<T>(a)};
     }
 
-    // Allocate N elements of T, return AllocClass<Arena, T*>.  n == 0
-    // produces a wrapper around nullptr (same contract as alloc_array).
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
     alloc_array_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
         return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{alloc_array<T>(a, n)};
     }
 
-    // Allocate N > 0 elements of T, return AllocClass<Arena, T*>.  The
-    // contract on n > 0 is preserved; the wrapped pointer is always
-    // non-null.
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
     alloc_array_nonzero_pinned(effects::Alloc a, size_t n) noexcept
@@ -266,8 +154,6 @@ public:
         return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{alloc_array_nonzero<T>(a, n)};
     }
 
-    // Copy a null-terminated string into the arena. Returns nullptr iff src is
-    // null, non-null otherwise (NullSafe: both pointer and length agree).
     [[nodiscard]] const char* copy_string(effects::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
         if (src == nullptr) return nullptr;
         const size_t len = std::strlen(src) + 1;
@@ -277,42 +163,14 @@ public:
         return dst;
     }
 
-    // Total bytes allocated by this arena across all blocks, counting the full
-    // size of oversized blocks (>block_size_) and excluding only the unused
-    // tail of the current block. A single 1MB request in a 32B arena reports
-    // ~1MB, not 32B. Used by ExprPool::bytes_used() and test assertions.
+    // Counts the full size of every block, including the whole of a block
+    // that was sized for one oversized request, and subtracts only the unused
+    // tail of the current block. A single one-megabyte request served by a
+    // thirty-two-byte arena therefore reports about one megabyte.
     //
-    // Invariant: total_block_bytes_ >= end_offset_ >= offset_ (each new block
-    // adds its exact size to the total; offset_ never exceeds end_offset_),
-    // so the subtraction below cannot underflow.
-    //
-    // Pre-condition: lifts the load-bearing class invariants offset_ <=
-    // end_offset_ <= total_block_bytes_.get() to function-level
-    // contracts.  These hold by construction across the alloc paths
-    // (alloc_new_block_ resets offset_=0, advances offset_ <=
-    // end_offset_, monotonically grows total_block_bytes_); the
-    // CRUCIBLE_PRE makes the optimizer's job explicit and surfaces any
-    // future refactor that would inadvertently violate the chain.
-    //
-    // The chain is discharged through the named predicate
-    // crucible::decide::weakly_increasing<size_t> so the obligation
-    // "offset_ <= end_offset_ <= total_block_bytes_" is reviewable as
-    // one citation rather than a bespoke conjunction.  In-body
-    // CRUCIBLE_PRE because P2900 pre() on member functions referencing
-    // multiple class members through a non-trivial helper is bypassed
-    // at consteval in GCC 16.1.1.
-    //
-    // Post-condition: result <= total_block_bytes_.get() — total
-    // allocated never exceeds the running byte total.  The optimizer
-    // can drop redundant capacity guards in callers that compare
-    // total_allocated() against a known upper bound.  CONTRACT-101-POST:
-    // the post moves from P2900 `post (r: ...)` to in-body
-    // CRUCIBLE_POST because P2900 `post (r: ...)` referencing a class
-    // member through `this->` (`total_block_bytes_`) is silently
-    // bypassed at consteval in GCC 16.1.1 — same family as the in-body
-    // pre above.  Capturing the return into a named local `result`
-    // gives CRUCIBLE_POST a referent without disturbing codegen
-    // (gnu::pure + always_inline in callers + -O3 elides it).
+    // Each new block adds its exact size to the running total and offset_
+    // never passes end_offset_, so the chain below holds and the subtraction
+    // cannot underflow.
     [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept {
         const std::array<size_t, 3> chain = {offset_, end_offset_, total_block_bytes_.get()};
         CRUCIBLE_PRE(::crucible::decide::weakly_increasing(std::span<const size_t>(chain)));
@@ -321,16 +179,14 @@ public:
         return result;
     }
 
-    // Number of blocks currently held. Diagnostic only.
     [[nodiscard, gnu::pure]] size_t block_count() const noexcept { return blocks_.size(); }
 
 private:
-    // Slow path separated to keep the fast path's instruction footprint tight.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[gnu::noinline, gnu::cold, gnu::returns_nonnull]]
     void* alloc_slow_(size_t size, size_t align) {
-        // An oversized request (size + align padding > block_size_) gets its own
-        // block sized for it. Saturating add ensures size ≈ SIZE_MAX triggers an
-        // abort via malloc failure rather than wrapping to a tiny block.
+        // A size near SIZE_MAX saturates instead of wrapping, so the block
+        // request stays large and malloc fails rather than handing back a
+        // tiny block that the caller would then overrun.
         const size_t needed = crucible::sat::add_sat(size, align);
         const size_t new_size = (needed > block_size_) ? needed : block_size_;
         alloc_new_block_(new_size);
@@ -344,8 +200,6 @@ private:
         return ptr;
     }
 
-    // Establish a fresh block of exactly `nbytes` as the current bump region.
-    // Updates cached hot fields and the running byte-count total.
     [[gnu::cold]]
     void alloc_new_block_(size_t nbytes) pre(::crucible::decide::positive(nbytes)) {
         auto* p = static_cast<char*>(std::malloc(nbytes));
@@ -357,40 +211,20 @@ private:
         offset_ = 0;
         end_offset_ = nbytes;
 
-        // Saturating add against pathological totals; clamping here keeps
-        // total_allocated() sane even under adversarial tests.  advance() is
-        // monotonicity-checked: saturating_add never decreases, so the contract
-        // holds by construction.
+        // advance() rejects a decrease. A saturating add never decreases, so
+        // the contract holds for any nbytes, including one that saturates.
         total_block_bytes_.advance(crucible::sat::add_sat(total_block_bytes_.get(), nbytes));
-        // CONTRACT-Arena-AllocBlock-POST: post-allocation invariant — after
-        // alloc_new_block_:
-        //   (1) cur_block_ == p — the freshly malloc'd block is the active
-        //       bump region (set above; post catches a future refactor that
-        //       does the registration but forgets the cur_block_ assignment,
-        //       which would silently leak the new block out of the bump path).
-        //   (2) offset_ == 0 — the new block starts at the head; the previous
-        //       block's offset state is replaced.
-        //   (3) end_offset_ == nbytes — the bump region's end matches the
-        //       caller's allocation request.
-        // Routes through CRUCIBLE_POST: the predicates reference `this->`
-        // members + the local `p`, hitting the GCC 16.1.1 consteval-bypass
-        // surface.  Under NDEBUG these collapse to `[[assume]]` so the next
-        // call to alloc()/alloc_slow_() can speculate that cur_block_ is
-        // non-null and offset_/end_offset_ have known values.
         CRUCIBLE_POST(0, cur_block_ == p);
         CRUCIBLE_POST(0, offset_ == 0u);
         CRUCIBLE_POST(0, end_offset_ == nbytes);
     }
 
-    // Hot fields (one cache line, touched on every alloc).
+    // Hot fields, read on every alloc, kept first so they share a line.
     char* cur_block_ = nullptr;
     size_t offset_ = 0;
     size_t end_offset_ = 0;
 
-    // Cold fields (slow path / diagnostic only).  blocks_ grows append-only:
-    // alloc_new_block_ push_backs each fresh block; the dtor frees every
-    // entry; nothing ever erases in between.  AppendOnly<> makes that a
-    // type-level guarantee — a future .erase() would be a build error.
+    // Cold fields, read on the slow path and by the size queries only.
     size_t block_size_ = 0;
     crucible::fixy::wrap::Monotonic<size_t> total_block_bytes_{0};
     crucible::fixy::wrap::AppendOnly<char*> blocks_{};

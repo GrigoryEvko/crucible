@@ -1,49 +1,13 @@
 #pragma once
 
-// ── crucible::concurrent::ExecCtxBridge — ExecCtx ↔ concurrent/ ─────
+// Translates an execution context's tags into the vocabulary the
+// parallelism rule speaks.  Every mapping resolves at instantiation, so
+// none of it survives into the runtime call graph.
 //
-// Typed composition boundary between effects::ExecCtx (the universal
-// context carrier) and concurrent::ParallelismRule's WorkBudget /
-// NumaPolicy / Tier vocabulary.  Every metafunction in this header is a
-// consteval lookup: zero runtime cost, cleanly composable.
-//
-//   Axiom coverage: TypeSafe — each bridge is a 1-1 / 4-1 mapping
-//                   from a closed set of effects::ctx_* tags to the
-//                   matching concurrent enum value.  Drift on either
-//                   side fires a static_assert in the self-test.
-//                   DetSafe — all consteval; the runtime call graph
-//                   is unchanged.
-//   Runtime cost:   zero.  Bridges resolve at template instantiation.
-//
-// ── Why a separate header ───────────────────────────────────────────
-//
-// effects/ has historically not depended on concurrent/.  Putting
-// the bridges in effects/ would invert that — effects/ would
-// suddenly need WorkBudget / NumaPolicy / Tier from concurrent/.
-// Putting them in concurrent/ keeps the layering: concurrent/ has
-// always known about effects/ (via the WorkBudget conversion
-// helpers), and this header just adds the explicit ExecCtx surface.
-// Production code that wants the bridge includes this header
-// explicitly.
-//
-// ── Bridges shipped ─────────────────────────────────────────────────
-//
-//   numa_to_policy_v<NumaT>      → NumaPolicy enum
-//   numa_node_of_v<NumaT>        → int (specific node, or -1, -2)
-//   resid_to_tier_v<ResidT>      → Tier enum (4-1 mapping; see below)
-//   workload_to_budget_v<WlT>    → WorkBudget value
-//
-// ── Ctx-driven extractors ───────────────────────────────────────────
-//
-//   ctx_workbudget<Ctx>()        → WorkBudget
-//   ctx_numa_policy<Ctx>()       → NumaPolicy
-//   ctx_numa_node<Ctx>()         → int
-//   ctx_residency_tier<Ctx>()    → Tier
-//
-// The Ctx-driven helpers are the typical production entry points:
-// a function holding a `IsExecCtx Ctx const&` calls
-// `ctx_workbudget<Ctx>()` and feeds the result to
-// `recommend_parallelism()`.
+// The bridges live on this side of the boundary because the effect
+// layer does not depend on this one, and putting them there would
+// invert that.  This layer already knows about the effect layer, so
+// adding the surface here costs no new edge.
 
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/effects/ExecCtx.h>
@@ -52,8 +16,6 @@
 #include <type_traits>
 
 namespace crucible::concurrent {
-
-// ── ctx_numa::* → NumaPolicy ────────────────────────────────────────
 
 template <class NumaT>
 struct numa_to_policy;
@@ -72,20 +34,17 @@ struct numa_to_policy<::crucible::effects::ctx_numa::Spread> {
 };
 template <int Node>
 struct numa_to_policy<::crucible::effects::ctx_numa::Pinned<Node>> {
-    // Pinned<N> is local-to-N.  The NumaPolicy enum doesn't carry
-    // the node id; the companion numa_node_of_v<...> exposes it.
+    // Pinning to a node is a special case of staying on one node.  The
+    // policy enum has no room for the node itself, which is why the
+    // node lookup below exists alongside it.
     static constexpr NumaPolicy value = NumaPolicy::NumaLocal;
 };
 
 template <class NumaT>
 inline constexpr NumaPolicy numa_to_policy_v = numa_to_policy<NumaT>::value;
 
-// ── ctx_numa::* → numa node id ──────────────────────────────────────
-//
-// Conventions:
-//   • -1 ⇒ "current thread's home" (Local, but no specific node)
-//   • -2 ⇒ "unbound" (Any / Spread)
-//   • >=0 ⇒ specific node (Pinned<N>)
+// Node ids run from zero.  Minus one stands for the calling thread's
+// own node, unnamed, and minus two for no node at all.
 
 template <class NumaT>
 struct numa_to_node;
@@ -109,12 +68,9 @@ struct numa_to_node<::crucible::effects::ctx_numa::Pinned<Node>> {
 template <class NumaT>
 inline constexpr int numa_node_of_v = numa_to_node<NumaT>::value;
 
-// ── ctx_resid::* → concurrent::Tier ─────────────────────────────────
-//
-// 1-1 mapping.  Both axes have identical 4-tier resolutions
-// (L1 / L2 / L3 / DRAM).  Distinct from the algebra::lattices::
-// ResidencyHeatTag bridge in ExecCtx.h — that one collapses 4→3 to
-// match the wrapper's coarser enum.
+// One to one, since both sides resolve the hierarchy to the same four
+// levels.  The residency-heat bridge in the effect layer is a different
+// mapping that folds four levels into three.
 
 template <class ResidT>
 struct resid_to_tier;
@@ -138,24 +94,20 @@ struct resid_to_tier<::crucible::effects::ctx_resid::DRAM> {
 template <class ResidT>
 inline constexpr Tier resid_to_tier_v = resid_to_tier<ResidT>::value;
 
-// ── ctx_workload::* → WorkBudget ───────────────────────────────────
-//
-// Default WorkBudget for Unspecified is all-zero (the cost model
-// treats it as "no information; assume cache-resident, run
-// sequentially").  ByteBudget<N> splits N bytes evenly between
-// read and write — the most common workload shape.  Callers with
-// specific R/W info should construct WorkBudget directly.
-// ItemBudget<N> sets item_count; WorkBudget's size fields stay 0
-// because item_count is informational at the cost-model level.
+// An unstated workload becomes a zero budget, which the rule reads as
+// no information and answers sequentially.  A byte budget splits evenly
+// between reading and writing, which is the common shape.  A caller that
+// knows its own split builds the budget itself.  An item budget leaves
+// the byte fields at zero, because the item count carries no weight in
+// the rule.
 
 template <class WlT>
 struct workload_to_budget {
-    static constexpr WorkBudget value{};  // unspecified → all zeros
+    static constexpr WorkBudget value{};
 };
 
 template <std::size_t N>
 struct workload_to_budget<::crucible::effects::ctx_workload::ByteBudget<N>> {
-    // Split: half read, half write (most common shape).
     static constexpr WorkBudget value{N / 2, N - N / 2, 0};
 };
 
@@ -171,12 +123,6 @@ struct workload_to_budget<::crucible::effects::ctx_workload::ChannelBudget<Bytes
 
 template <class WlT>
 inline constexpr WorkBudget workload_to_budget_v = workload_to_budget<WlT>::value;
-
-// ── Ctx-driven extractors ──────────────────────────────────────────
-//
-// The typical production entry points: hold an `IsExecCtx Ctx
-// const&`, call `ctx_workbudget<Ctx>()` to get the matching
-// WorkBudget, then feed it to recommend_parallelism().
 
 template <::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] consteval WorkBudget ctx_workbudget() noexcept {
@@ -198,14 +144,10 @@ template <::crucible::effects::IsExecCtx Ctx>
     return resid_to_tier_v<typename Ctx::residency>;
 }
 
-// ── Discrimination concepts on the bridged enums ───────────────────
-//
-// Selective dispatch on a Ctx's residency or NUMA policy, projected
-// through the consteval bridges.  These mirror the per-axis
-// discrimination concepts in ExecCtx.h (IsHotCtx, IsArenaCtx, etc.)
-// but operate on the concurrent::Tier / NumaPolicy enum side, useful
-// when downstream code branches on those types directly (e.g.,
-// AdaptiveScheduler picks worker-binding strategy from NumaPolicy).
+// The effect layer has its own per-axis discrimination concepts.  These
+// answer the same questions on this side of the bridge, for code that
+// branches on the enums directly, such as a scheduler choosing how to
+// bind its workers.
 
 template <class Ctx>
 concept IsL1ResidentCtx = ::crucible::effects::IsExecCtx<Ctx> && ctx_residency_tier<Ctx>() == Tier::L1Resident;
@@ -223,25 +165,18 @@ concept IsNumaLocalCtx = ::crucible::effects::IsExecCtx<Ctx> && ctx_numa_policy<
 template <class Ctx>
 concept IsNumaSpreadCtx = ::crucible::effects::IsExecCtx<Ctx> && ctx_numa_policy<Ctx>() == NumaPolicy::NumaSpread;
 
-// ── Parallelism decision from Ctx (one-call ergonomic) ─────────────
-//
-// The composition closure: given a Ctx, get the runtime parallelism
-// decision in one call.  recommend_parallelism is RUNTIME (consults
-// Topology singleton) so this wrapper is `inline`, not consteval —
-// the WorkBudget extraction is consteval, the actual decision is
-// resolved at the first call after Topology is initialized.
+// Not consteval: extracting the budget is, but the recommendation
+// reads the host's cache sizes and so waits for the first call.
 
 template <::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] inline auto parallelism_decision_for() noexcept {
     return recommend_parallelism(ctx_workbudget<Ctx>());
 }
 
-// ── Self-test block ─────────────────────────────────────────────────
 namespace detail::exec_ctx_bridge_self_test {
 
 namespace eff = ::crucible::effects;
 
-// ── numa_to_policy / numa_node_of pinning ───────────────────────────
 static_assert(numa_to_policy_v<eff::ctx_numa::Any> == NumaPolicy::NumaIgnore);
 static_assert(numa_to_policy_v<eff::ctx_numa::Local> == NumaPolicy::NumaLocal);
 static_assert(numa_to_policy_v<eff::ctx_numa::Spread> == NumaPolicy::NumaSpread);
@@ -254,13 +189,11 @@ static_assert(numa_node_of_v<eff::ctx_numa::Spread> == -2);
 static_assert(numa_node_of_v<eff::ctx_numa::Pinned<0>> == 0);
 static_assert(numa_node_of_v<eff::ctx_numa::Pinned<3>> == 3);
 
-// ── resid_to_tier pinning ───────────────────────────────────────────
 static_assert(resid_to_tier_v<eff::ctx_resid::L1> == Tier::L1Resident);
 static_assert(resid_to_tier_v<eff::ctx_resid::L2> == Tier::L2Resident);
 static_assert(resid_to_tier_v<eff::ctx_resid::L3> == Tier::L3Resident);
 static_assert(resid_to_tier_v<eff::ctx_resid::DRAM> == Tier::DRAMBound);
 
-// ── workload_to_budget pinning ──────────────────────────────────────
 static_assert(workload_to_budget_v<eff::ctx_workload::Unspecified>.read_bytes == 0);
 static_assert(workload_to_budget_v<eff::ctx_workload::Unspecified>.write_bytes == 0);
 static_assert(workload_to_budget_v<eff::ctx_workload::Unspecified>.item_count == 0);
@@ -269,7 +202,7 @@ static_assert(workload_to_budget_v<eff::ctx_workload::ByteBudget<4096>>.read_byt
 static_assert(workload_to_budget_v<eff::ctx_workload::ByteBudget<4096>>.write_bytes == 2048);
 static_assert(workload_to_budget_v<eff::ctx_workload::ByteBudget<4096>>.item_count == 0);
 
-// Odd N: split is N/2 read + (N - N/2) write (no rounding loss).
+// An odd byte count loses nothing: the write side takes the extra.
 static_assert(workload_to_budget_v<eff::ctx_workload::ByteBudget<7>>.read_bytes == 3);
 static_assert(workload_to_budget_v<eff::ctx_workload::ByteBudget<7>>.write_bytes == 4);
 
@@ -279,24 +212,19 @@ static_assert(workload_to_budget_v<eff::ctx_workload::ItemBudget<128>>.item_coun
 static_assert(workload_to_budget_v<eff::ctx_workload::ChannelBudget<4097, 4, 2, false>>.read_bytes == 2048);
 static_assert(workload_to_budget_v<eff::ctx_workload::ChannelBudget<4097, 4, 2, false>>.write_bytes == 2049);
 
-// ── Ctx-driven extractors on canonical contexts ─────────────────────
-
-// HotFgCtx is Local + L1, no workload budget.
 static_assert(ctx_numa_policy<eff::HotFgCtx>() == NumaPolicy::NumaLocal);
 static_assert(ctx_numa_node<eff::HotFgCtx>() == -1);
 static_assert(ctx_residency_tier<eff::HotFgCtx>() == Tier::L1Resident);
 static_assert(ctx_workbudget<eff::HotFgCtx>().read_bytes == 0);
 
-// BgDrainCtx is Local + L2.
 static_assert(ctx_numa_policy<eff::BgDrainCtx>() == NumaPolicy::NumaLocal);
 static_assert(ctx_residency_tier<eff::BgDrainCtx>() == Tier::L2Resident);
 
-// ColdInitCtx is Spread + DRAM.
 static_assert(ctx_numa_policy<eff::ColdInitCtx>() == NumaPolicy::NumaSpread);
 static_assert(ctx_numa_node<eff::ColdInitCtx>() == -2);
 static_assert(ctx_residency_tier<eff::ColdInitCtx>() == Tier::DRAMBound);
 
-// MaxCtx is Pinned<3> + L1 + ByteBudget<2 MiB>.
+// Every axis set to something other than its default.
 using MaxCtx =
     eff::ExecCtx<eff::Bg, eff::ctx_numa::Pinned<3>, eff::ctx_alloc::HugePage, eff::ctx_heat::Hot, eff::ctx_resid::L1,
                  eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>,
@@ -308,8 +236,6 @@ static_assert(ctx_residency_tier<MaxCtx>() == Tier::L1Resident);
 static_assert(ctx_workbudget<MaxCtx>().read_bytes == 1024 * 1024);
 static_assert(ctx_workbudget<MaxCtx>().write_bytes == 1024 * 1024);
 
-// ── Discrimination concepts ─────────────────────────────────────────
-
 static_assert(IsL1ResidentCtx<eff::HotFgCtx>);
 static_assert(!IsL1ResidentCtx<eff::BgDrainCtx>);
 static_assert(IsL2ResidentCtx<eff::BgDrainCtx>);
@@ -319,15 +245,14 @@ static_assert(IsDRAMBoundCtx<eff::ColdInitCtx>);
 static_assert(IsDRAMBoundCtx<eff::TestRunnerCtx>);
 static_assert(!IsDRAMBoundCtx<eff::HotFgCtx>);
 
-static_assert(IsNumaLocalCtx<eff::HotFgCtx>);  // Local
-static_assert(IsNumaLocalCtx<eff::BgDrainCtx>);  // Local
-static_assert(!IsNumaLocalCtx<eff::ColdInitCtx>);  // Spread
+static_assert(IsNumaLocalCtx<eff::HotFgCtx>);
+static_assert(IsNumaLocalCtx<eff::BgDrainCtx>);
+static_assert(!IsNumaLocalCtx<eff::ColdInitCtx>);
 static_assert(IsNumaSpreadCtx<eff::ColdInitCtx>);
 static_assert(IsNumaIgnoreCtx<eff::TestRunnerCtx>);
 static_assert(!IsNumaIgnoreCtx<eff::HotFgCtx>);
 
-// Pinned<N> reports as Local at the policy level (the node id is
-// exposed separately via numa_node_of_v).
+// A pinned context reads as node-local at the policy level.
 static_assert(IsNumaLocalCtx<MaxCtx>);
 
 }  // namespace detail::exec_ctx_bridge_self_test

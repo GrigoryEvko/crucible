@@ -1,7 +1,5 @@
 #pragma once
 
-// FOUND-D27 — wrapper-detection predicate for `MemOrder<Tag, T>`.
-
 #include <crucible/safety/MemOrder.h>
 
 #include <type_traits>
