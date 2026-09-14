@@ -428,18 +428,20 @@ if (CRUCIBLE_HAVE_BPF)
   # safety/Mutation.h, which transitively reaches algebra/Graded.h's
   # reflection-driven display_string_of() helper.
   #
-  # `-fcontract-evaluation-semantic=ignore` is critical here: under
-  # the default `enforce` semantic, every WriteOnce::set / .get
-  # contract emits a reference to `handle_contract_violation`.  That
-  # symbol lives in crucible's `src/ContractHandler.cpp`, but
-  # crucible_perf is linked BEFORE crucible in the consumer link
-  # order (crucible.a then crucible_perf.a; ld scans left-to-right
-  # and won't re-resolve crucible.a's symbols once it moves past).
-  # Ignoring contracts in this TU compiles them out entirely — the
-  # discipline still binds at the type-system level (WriteOnce's
-  # nodiscard-set-once-or-burn semantics persist), but no runtime
-  # handler call is generated, so the link is clean.  This matches
-  # the §XII semantic-per-TU pattern documented in CLAUDE.md.
+  # `-fcontract-evaluation-semantic=ignore` below buys a clean LINK,
+  # not speed.  This is not a hot path and it is not in SECTION 6b's
+  # opt-out list; do not cite it as precedent for a performance
+  # exemption.  Under an evaluating semantic, every WriteOnce::set /
+  # .get contract emits a reference to `handle_contract_violation`.
+  # That symbol lives in crucible's `src/ContractHandler.cpp`, but
+  # crucible_perf is scanned AFTER crucible in the consumer link order
+  # (crucible.a then crucible_perf.a; ld reads left-to-right and will
+  # not re-resolve crucible.a once it has moved past).  Ignoring
+  # contracts in this TU compiles them out entirely — the discipline
+  # still binds at the type-system level, because WriteOnce's
+  # nodiscard-set-once-or-burn semantics are a property of the type
+  # rather than of the check — and no runtime handler call is
+  # generated, so the link resolves.
   target_compile_options(crucible_perf PRIVATE
     -freflection
     -fcontracts
@@ -1226,15 +1228,68 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 6: Release-only — cheaper auto-init + contracts to [[assume]]
+# SECTION 6: Release-only — cheaper auto-init + contract policy
+#
+# Release evaluates every P2900 clause and reports a violation through
+# `handle_contract_violation`.  Read the "READ THIS" paragraph below
+# for what happens next, which is not what the flag's name implies.  A
+# translation unit leaves this policy only by appearing in
+# CRUCIBLE_CONTRACT_IGNORE_TUS, applied in SECTION 6b at the foot of
+# this file.
+#
+# This inverts the previous default.  Until 2026-09-14 this block set
+# `=ignore` PUBLIC for the whole of Release, under a comment that read
+# "Boundary TUs that want enforcement flip this."  No translation unit
+# ever flipped it, and no `#pragma GCC contract_evaluation_semantic`
+# exists anywhere in include/ or src/, so every P2900 clause in the
+# library was dead in the build we ship — on 2026-09-14 that was 179
+# of them, 145 `pre` + 5 `post` + 29 `contract_assert`, counted over
+# include/ and src/ with comment lines dropped.  Re-derive rather than
+# trust that figure; it moves with every commit.  What does not move
+# is the shape of the problem: an opt-in list that nobody opts into is
+# not a policy.  An opt-out list is auditable, because it is short and
+# each entry has to carry its justification at the point of exemption.
+#
+# `observe` costs one predicate evaluation and one not-taken branch per
+# guarded call.  Every source file in the `crucible` static library is
+# cold — cntp, canopy, topology, observe, cog — and none of them
+# instantiate the recording chain, so that branch lands where nobody is
+# counting nanoseconds.
+#
+# READ THIS BEFORE ASSUMING "log and continue".  P2900 says `observe`
+# evaluates, reports, and resumes.  This project's handler does not
+# resume: `handle_contract_violation` in src/ContractHandler.cpp is
+# `[[gnu::weak, noreturn]]` and ends in `std::abort()`.  So a Release
+# binary under this flag CHECKS AND DIES, which is stronger than the
+# word "observe" suggests and is the behaviour this build now ships.
+# Making Release genuinely continue means giving that handler a
+# returning definition — it is weak, so a program can override it —
+# and that is a deliberate decision about production failure policy,
+# not a side effect to make here.
+#
+# Three caveats this flag does NOT cover, recorded here so the next
+# reader does not mistake the scope:
+#
+#   1. The body-level CRUCIBLE_PRE / CRUCIBLE_POST family (around 217
+#      call sites, include/crucible/safety/{Pre,Post}.h) keys on NDEBUG,
+#      not on the contract semantic.  Release defines NDEBUG, so those
+#      sites keep only their consteval trap and their [[assume]] hint.
+#      Giving them a runtime arm in Release is a separate change with a
+#      separate cost argument.  Flipping this flag did not arm them, and
+#      anyone reading a "Release now enforces" summary should know that.
+#   2. CRUCIBLE_INVARIANT and CRUCIBLE_DEBUG_ASSERT are NDEBUG-keyed by
+#      design and stay compiled out.  CRUCIBLE_FATAL_INVARIANT (around
+#      73 call sites) checks in every mode and is unaffected either way.
+#   3. Test executables compile with `-UNDEBUG` (see test/CMakeLists.txt),
+#      so the NDEBUG-keyed families above ARE armed in a Release test
+#      binary and are NOT armed in a Release library or vessel binary.
+#      A green Release test run is therefore weaker evidence about
+#      production than it looks.
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE MATCHES "Release")
   target_compile_options(crucible PUBLIC
     -ftrivial-auto-var-init=zero        # 231  zero-fill (cheaper)
-    # Hot paths use contracts purely as invariant hints; release compiles
-    # them to [[assume]] so the optimizer can exploit them without a
-    # runtime check.  Boundary TUs that want enforcement flip this.
-    -fcontract-evaluation-semantic=ignore
+    -fcontract-evaluation-semantic=observe  # 231a  evaluate + report; see SECTION 6
   )
 endif()
 
@@ -1294,4 +1349,98 @@ endif()
 option(CRUCIBLE_FUZZ "Build property + boundary fuzz harnesses" OFF)
 if(CRUCIBLE_FUZZ)
   add_subdirectory(fuzz)
+endif()
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 6b: Release contract policy — the opt-out list
+#
+# SECTION 6 put Release on `observe`.  This block is the complete set
+# of translation units that opt back out to `ignore`, and it is the
+# only place in the tree that may do so.  Adding a line here means
+# claiming that a measured cost justifies giving up enforcement in
+# that file; the claim belongs in a comment beside the line.
+#
+# Mechanism: source-file COMPILE_OPTIONS.  CMake emits the compile
+# line as
+#
+#   CMAKE_CXX_FLAGS  CMAKE_CXX_FLAGS_<CONFIG>  <target options>  <source options>
+#
+# so a source-level flag is last on the line, and GCC 16.2.1 takes the
+# last `-fcontract-evaluation-semantic` it sees (verified: `ignore`
+# then `observe` fires the handler, `observe` then `ignore` does not).
+# The same precedence is what makes the `-Wno-alloc-size-larger-than`
+# override on src/ContractHandler.cpp work near the top of this file,
+# so this is a mechanism the tree already depends on.
+#
+# The alternatives were rejected.  A per-file `#pragma GCC
+# contract_evaluation_semantic` (what CLAUDE.md used to describe) is
+# useless here because the recording chain is header-only: the pragma
+# would have to be replicated into every TU that includes the header,
+# and there is no header to put it in that would not also silence the
+# cold callers.  An INTERFACE target carrying the flag is fragile,
+# because INTERFACE_COMPILE_OPTIONS from several linked libraries are
+# ordered by link order rather than by intent, and the winner of a
+# last-wins flag would then depend on an ordering nobody states.
+#
+# There is deliberately no `src/` entry.  Not one file in the
+# `crucible` static library instantiates TraceRing, MetaLog, Vigil,
+# Arena, PoolAllocator, or ReplayEngine — checked by grep over src/,
+# which returns zero hits for all six.  The recording chain lives in
+# headers whose only consumers today are bench/ and test/, plus the
+# vessel adapter.  When a production hot TU does land (vessel dispatch
+# is the expected first one), it goes in the list below with its
+# measurement.
+#
+# The entries are the six bench TUs that time the recording chain, one
+# per named component.  A benchmark exists to report the per-op cost of
+# the primitive it names, so it has to compile the primitive the way the
+# hot path would compile it; an enforcement branch inside the timed loop
+# would make the number describe the benchmark instead of the primitive.
+# Benches that merely include these headers without timing them
+# (bench_phases, bench_merkle_dag, bench_cipher, bench_serialize,
+# bench_content_hash, bench_region_cache, bench_concurrent_queues,
+# bench_metalog_session) are NOT listed, and stay on `observe`.
+#
+# PROVISIONAL, and the measurement says to keep it short.
+#
+# Measured 2026-09-14 on Arena::alloc_array_nonzero, which carries
+# `pre(decide::positive(n))` and is the bump path bench_arena times.
+# 15 trials x 2e6 allocations, pinned to isolated core 88/89, the two
+# variants interleaved:
+#
+#   n a compile-time constant: p50 1.737 ns (ignore) vs 1.733 ns
+#     (observe).  No cost at all — GCC folds the predicate away.
+#   n opaque to the optimizer: p50 2.089 ns (ignore) vs 3.212 ns
+#     (observe), so roughly +1.1 ns, but min-to-min is only +0.08 ns.
+#
+# The box was shared at the time (load average ~89) and the `ignore`
+# samples spread 47% p10-to-p90, well past the 5% bar the code guide
+# sets for a usable number, so treat the magnitude as unknown between
+# about +0.1 and +1.1 ns per guarded call.  The ordering held at every
+# quantile, which is the only part of this worth relying on.
+#
+# bench/ declares zero `add_test`, so there is no committed per-op
+# latency anywhere in the tree to compare against either.  Shrink this
+# list, do not grow it, until a quiet box gives a real number.
+# ═══════════════════════════════════════════════════════════════
+# The CRUCIBLE_BENCH guard is not a policy choice.  `DIRECTORY bench`
+# is an error when bench/ was never added, and bench/ is added only
+# under that option.  One consequence is worth stating plainly: with
+# the plain `release` preset (CRUCIBLE_BENCH=OFF) this block does
+# nothing, so every TU in that build evaluates its contracts — 2611 of
+# them on 2026-09-14.  The only `ignore` TUs left there are
+# crucible_perf's 43, which are exempt for link order, not for speed.
+if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
+  set(CRUCIBLE_CONTRACT_IGNORE_TUS
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_meta_log.cpp       # MetaLog append
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_dispatch.cpp       # Vigil::dispatch_op
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_arena.cpp          # Arena bump allocation
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_pool_allocator.cpp # PoolAllocator slot lookup
+    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_replay_engine.cpp  # ReplayEngine::advance
+  )
+  set_source_files_properties(
+    ${CRUCIBLE_CONTRACT_IGNORE_TUS}
+    DIRECTORY bench
+    PROPERTIES COMPILE_OPTIONS "-fcontract-evaluation-semantic=ignore")
 endif()

@@ -597,7 +597,7 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 | Preset    | Compiler              | Role                                          |
 |-----------|-----------------------|-----------------------------------------------|
 | `default` | GCC 16.0.1 (rawhide)  | Primary dev. Debug. Contracts + reflection.   |
-| `release` | GCC 16.0.1            | Production. `-O3 -march=native -flto=auto -DNDEBUG` |
+| `release` | GCC 16.0.1            | Production. `-O1 -march=native -DNDEBUG -g`, contracts `observe` |
 | `bench`   | GCC 16.0.1            | Release + `CRUCIBLE_BENCH=ON`                 |
 | `tsan`    | GCC 16.0.1            | ThreadSanitizer (mutually exclusive with ASan)|
 | `verify`  | GCC 16.0.1            | + internal small-SMT verification suite (deferred — interim: contracts-only, no external solver) |
@@ -814,7 +814,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Paper | Usage |
 |---|---|---|
-| Contracts (`pre`/`post`/`contract_assert`) | P2900R14 | Every boundary function. Hot-path TUs use `contract_evaluation_semantic=ignore` |
+| Contracts (`pre`/`post`/`contract_assert`) | P2900R14 | Every boundary function. Debug `enforce`, Release `observe`; only the TUs listed in CMakeLists.txt SECTION 6b drop to `ignore` |
 | Erroneous behavior for uninit reads | P2795R5 | Foundation of InitSafe axiom |
 | Partial program correctness | P1494R5 | Contract violation = `std::terminate`, not UB |
 | Trivial infinite loops not UB | P2809R3 | Closes LLVM `while(1){}` → unreachable optimization |
@@ -1007,6 +1007,12 @@ Common flags +
 
 ### Release preset
 
+The `release` preset in CMakePresets.json sets `-O1 -march=native -DNDEBUG -g`
+plus the common flags and `-fcontract-evaluation-semantic=observe`. The rest of
+the list below is the target shape, not what ships: `-O3`, `-mtune=native`,
+`-flto=auto`, the Graphite passes and PGO are not wired. Read the preset, not
+this block, when you need to know what a Release binary was built with.
+
 ```
 Common flags +
 -O3
@@ -1014,7 +1020,10 @@ Common flags +
 -DNDEBUG
 -g                                    keep frame info for profiling
 -flto=auto                            whole-program LTO, ~10-20% typical win
--fcontract-evaluation-semantic=observe  log but continue (or ignore on hot TUs)
+-fcontract-evaluation-semantic=observe  evaluate + report — the Release default;
+                                      the handler aborts, so a violation ends
+                                      the process; CMakeLists.txt SECTION 6b
+                                      holds the complete list of TUs that opt out
 -ftree-vectorize                      on by default at -O3
 -fvect-cost-model=unlimited           aggressive auto-vec
 -mprefer-vector-width=512             AVX-512 where HW supports
@@ -1233,7 +1242,7 @@ Crucible's vectorizable hot paths: Philox RNG, hash mixing, TensorMeta extractio
 
 ### Link-Time Optimization (LTO)
 
-`-flto=auto` — parallel LTO: whole-program inlining, dead code elimination, cross-TU constant propagation. Enabled unconditionally in release.
+`-flto=auto` — parallel LTO: whole-program inlining, dead code elimination, cross-TU constant propagation. Intended for release; NOT enabled in the shipped `release` preset, which builds at `-O1` without LTO.
 
 ### OS / kernel tuning
 
@@ -1859,23 +1868,54 @@ No exceptions (compiled out via `-fno-exceptions`). Three tiers of error respons
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
-| **Impossible** (contract violation) | `pre` / `post` / `contract_assert` | 0 ns on hot path (semantic=ignore), check in debug | Null pointer, OOB index, invariant violation |
+| **Impossible** (contract violation) | `pre` / `post` / `contract_assert` | Checked in Debug and in Release; both terminate, because the handler aborts. 0 ns only in a SECTION 6b TU | Null pointer, OOB index, invariant violation |
 | **Expected-but-rare** | `std::expected<T, E>` return | ~1 ns (branch on `.has_value()`) | Parse error, shape out of bucket, peer timeout |
 | **Catastrophic** | `crucible_abort(msg)` | — | OOM, hardware fault, corrupt state, FLR failure |
 
 ### Contract semantics per TU
 
-Hot-path TUs compile contracts with `ignore` semantic. Boundary TUs use `enforce`. Switch per file:
+The semantic is set by the build system, never in the source. Debug gets the
+compiler default `enforce`. Release gets `observe`, which evaluates the clause
+and reports through `handle_contract_violation`. A translation unit leaves that
+policy only by appearing in `CRUCIBLE_CONTRACT_IGNORE_TUS` in SECTION 6b at the
+foot of `CMakeLists.txt`, which is the complete and only opt-out list in the tree.
 
-```cpp
-// At top of a hot-path .cpp:
-#pragma GCC contract_evaluation_semantic ignore
+`observe` does not mean the program keeps running. P2900 says the handler returns
+and execution resumes, but this project's `handle_contract_violation`
+(`src/ContractHandler.cpp`) is `[[gnu::weak, noreturn]]` and ends in
+`std::abort()`. A Release binary therefore checks and dies. The handler is weak,
+so a program that wants true log-and-continue overrides it with a returning
+definition — that is a production failure-policy decision, not a build flag.
 
-// Boundary .cpp:
-#pragma GCC contract_evaluation_semantic enforce
+```cmake
+# CMakeLists.txt SECTION 6 — Release default, PUBLIC on the crucible target
+-fcontract-evaluation-semantic=observe
+
+# CMakeLists.txt SECTION 6b — the opt-out list, one line per exempt TU
+set_source_files_properties(${CRUCIBLE_CONTRACT_IGNORE_TUS}
+  DIRECTORY bench
+  PROPERTIES COMPILE_OPTIONS "-fcontract-evaluation-semantic=ignore")
 ```
 
-CI builds everything with `enforce`. Release builds default `observe` (log + continue) except hot TUs explicitly marked `ignore`.
+The mechanism is source-file `COMPILE_OPTIONS`, which CMake emits last on the
+compile line, and GCC takes the last `-fcontract-evaluation-semantic` it sees.
+
+Do NOT use `#pragma GCC contract_evaluation_semantic`. Earlier revisions of this
+section described a per-file pragma; it never shipped, appears zero times in
+`include/` and `src/`, and cannot work for this tree anyway, because the hot path
+is header-only and a pragma inside a header would silence that header's cold
+callers along with its hot ones.
+
+Two families sit outside this flag's reach. `CRUCIBLE_PRE` / `CRUCIBLE_POST`
+(`safety/Pre.h`, `safety/Post.h`) key on `NDEBUG`, so Release keeps only their
+consteval trap and their `[[assume]]` hint. `CRUCIBLE_INVARIANT` and
+`CRUCIBLE_DEBUG_ASSERT` are `NDEBUG`-keyed by design and carry no check in
+Release. `CRUCIBLE_FATAL_INVARIANT` checks in every mode and is unaffected.
+
+Test executables compile with `-UNDEBUG` (`test/CMakeLists.txt`), so those
+`NDEBUG`-keyed families are armed in a Release test binary and are not armed in
+a Release library or vessel binary. A green Release test run says less about
+production than it appears to.
 
 ### The canonical `std::expected` flow
 
@@ -1915,8 +1955,12 @@ const auto& ck = *r;  // happy path
 
 ```cpp
 // ── CRUCIBLE_ASSERT ────────────────────────────────────────────
-// Always-on boundary precondition. Cheap check, runs in release.
-// Maps to contracts; respects contract-evaluation-semantic.
+// Boundary precondition. NOT always-on: it expands to a P2900
+// `contract_assert`, so the build-system semantic decides whether it
+// checks. Debug enforces. Release observes, which reports through a
+// handler that aborts. Both therefore terminate on violation — except
+// in the TUs listed in SECTION 6b of CMakeLists.txt, where the macro
+// compiles to nothing at all.
 #define CRUCIBLE_ASSERT(cond) contract_assert(cond)
 
 // ── CRUCIBLE_DEBUG_ASSERT ──────────────────────────────────────
