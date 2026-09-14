@@ -57,6 +57,7 @@ Usage:
   audit-decide-cite-ratio.sh --soft              # always exit 0 (informational)
   audit-decide-cite-ratio.sh --min-cites N       # override threshold (default 2)
   audit-decide-cite-ratio.sh --grace-days N      # override grace (default 180)
+  audit-decide-cite-ratio.sh --self-test         # plant a violation, verify catch
   audit-decide-cite-ratio.sh -h | --help
 
 Buckets:
@@ -81,6 +82,208 @@ while [[ $# -gt 0 ]]; do
         --grace-days)
             if [[ $# -lt 2 ]]; then usage; exit 2; fi
             grace_days="$2"; shift 2 ;;
+        --self-test)
+            # A policy gate that never plants a violation has never
+            # demonstrated it fires.  Build a throwaway git repository whose
+            # history and cite counts are chosen so the bucketing MUST land
+            # one procedure in each bucket:
+            #
+            #   procedure #1  1 cite, Decide.h token introduced 400 days ago
+            #                 -> cites < min_cites, age >= grace -> VIOLATION
+            #   procedure #2  1 cite, token introduced today
+            #                 -> cites < min_cites, age <  grace -> GRACE
+            #   every other   2 cites                            -> GOOD
+            #
+            # This covers the WHOLE script, git-history join included: the
+            # only thing separating procedure #1 from procedure #2 is the
+            # commit date that `git log -S` resolves, so a broken pickaxe
+            # collapses the VIOLATION into GRACE and fails the test.
+            for selftest_tool in rg git python3; do
+                if ! command -v "$selftest_tool" >/dev/null 2>&1; then
+                    printf 'audit-decide-cite-ratio: %s is required\n' "$selftest_tool" >&2
+                    exit 2
+                fi
+            done
+
+            # The catalog is owned by the sibling audit; read it from there
+            # so the fixture cannot desync when CONTRACT-126 trims a name.
+            selftest_sibling="$root/scripts/audit-pre-callsite-count.sh"
+            if [[ ! -x "$selftest_sibling" ]]; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — missing %s\n' \
+                    "$selftest_sibling" >&2
+                exit 2
+            fi
+            mapfile -t selftest_procs < <("$selftest_sibling" --json | python3 -c '
+import json, sys
+for name in json.load(sys.stdin)["decide_per_procedure"]:
+    print(name)
+')
+            if [[ "${#selftest_procs[@]}" -lt 3 ]]; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — catalog too small (%d procedures).\n' \
+                    "${#selftest_procs[@]}" >&2
+                exit 2
+            fi
+            violation_proc="${selftest_procs[0]}"
+            grace_proc="${selftest_procs[1]}"
+            expected_goods=$(( ${#selftest_procs[@]} - 2 ))
+
+            tmp_root="$(mktemp -d)"
+            trap 'rm -rf "$tmp_root"' EXIT
+            mkdir -p "$tmp_root/scripts" "$tmp_root/include/crucible/safety" "$tmp_root/src"
+
+            # The sibling audit resolves its own root from BASH_SOURCE, so a
+            # copy inside the temp root scans the temp tree.  The env pin
+            # below makes that explicit and immune to an inherited override.
+            cp "$selftest_sibling" "$tmp_root/scripts/audit-pre-callsite-count.sh"
+            chmod +x "$tmp_root/scripts/audit-pre-callsite-count.sh"
+
+            # Every pattern the sibling counts must match at least once: `rg`
+            # exits 1 on no-match and `set -o pipefail` turns that into an
+            # abort, so a fixture missing ONE form would read as a self-test
+            # failure rather than the missing form it is.  The per-procedure
+            # regex is line-anchored, so each cite needs its own line.
+            selftest_fixture="$tmp_root/include/selftest_cites.h"
+            cat >"$selftest_fixture" <<'FIXTURE'
+#pragma once
+// Synthetic cite fixture for --self-test.
+namespace crucible::selftest {
+inline void planted_macro_forms(int n) {
+    CRUCIBLE_PRE(n > 0);
+    CRUCIBLE_PRE_FAST(n > 0);
+    CRUCIBLE_PRE_MSG(n > 0, "synthetic");
+    CRUCIBLE_POST(r, r > 0);
+    CRUCIBLE_POST_FAST(r, r > 0);
+    CRUCIBLE_POST_MSG(r, r > 0, "synthetic");
+    contract_assert(n > 0);
+}
+inline int planted_p2900_forms(int const n)
+    pre (n > 0)
+    post (r: r > 0)
+{ return n; }
+inline void planted_decide_cites(int n) {
+FIXTURE
+            for proc in "${selftest_procs[@]}"; do
+                printf '    decide::%s(n);\n' "$proc" >>"$selftest_fixture"
+                # The two under-cited procedures get exactly one cite each.
+                if [[ "$proc" != "$violation_proc" && "$proc" != "$grace_proc" ]]; then
+                    printf '    decide::%s(n);\n' "$proc" >>"$selftest_fixture"
+                fi
+            done
+            cat >>"$selftest_fixture" <<'FIXTURE_TAIL'
+}
+}  // namespace crucible::selftest
+FIXTURE_TAIL
+            cat >"$tmp_root/src/selftest_anchor.cpp" <<'ANCHOR'
+// Synthetic translation unit for --self-test.
+int crucible_selftest_anchor = 0;
+ANCHOR
+
+            # Decide.h carries its tokens on comment-only lines: the sibling's
+            # counter rejects lines opening with a comment, so this file
+            # contributes ZERO cites, while `git log -S` still sees the bytes.
+            selftest_decide_h="$tmp_root/include/crucible/safety/Decide.h"
+            {
+                printf '#pragma once\n'
+                printf '// Synthetic Decide.h for --self-test.\n'
+                printf '//   decide::%s\n' "$violation_proc"
+            } >"$selftest_decide_h"
+
+            # Identity and dates come from the environment.  `git -c
+            # user.email=...` is banned by CLAUDE.md; GIT_CONFIG_GLOBAL and
+            # GIT_CONFIG_SYSTEM are pinned to /dev/null so a developer's own
+            # gpgsign / hooksPath settings cannot break the fixture.
+            export GIT_CONFIG_GLOBAL=/dev/null
+            export GIT_CONFIG_SYSTEM=/dev/null
+            export GIT_AUTHOR_NAME="crucible-selftest"
+            export GIT_AUTHOR_EMAIL="crucible-selftest@invalid"
+            export GIT_COMMITTER_NAME="crucible-selftest"
+            export GIT_COMMITTER_EMAIL="crucible-selftest@invalid"
+
+            old_day="$(date -d '400 days ago' +%Y-%m-%d)"
+            new_day="$(date +%Y-%m-%d)"
+
+            if ! git init -q -b selftest "$tmp_root" >/dev/null 2>&1; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — git init failed.\n' >&2
+                exit 2
+            fi
+            git -C "$tmp_root" add -A >/dev/null 2>&1
+            GIT_AUTHOR_DATE="${old_day}T12:00:00" \
+            GIT_COMMITTER_DATE="${old_day}T12:00:00" \
+                git -C "$tmp_root" commit -q -m "selftest: introduce ${violation_proc}" \
+                >/dev/null 2>&1
+
+            printf '//   decide::%s\n' "$grace_proc" >>"$selftest_decide_h"
+            git -C "$tmp_root" add -A >/dev/null 2>&1
+            GIT_AUTHOR_DATE="${new_day}T12:00:00" \
+            GIT_COMMITTER_DATE="${new_day}T12:00:00" \
+                git -C "$tmp_root" commit -q -m "selftest: introduce ${grace_proc}" \
+                >/dev/null 2>&1
+
+            selftest_env=(CRUCIBLE_DECIDE_CITE_TEST_ROOT="$tmp_root"
+                          CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$tmp_root")
+
+            # ── Direction 1 — the planted VIOLATION MUST fail the gate ──
+            selftest_out="$tmp_root/report.txt"
+            if env "${selftest_env[@]}" bash "${BASH_SOURCE[0]}" \
+               >"$selftest_out" 2>&1; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — planted VIOLATION not caught.\n' >&2
+                printf '── report ───────────\n%s\n────────────────────\n' \
+                    "$(cat "$selftest_out")" >&2
+                exit 2
+            fi
+            if ! grep -qF "decide::${violation_proc}" "$selftest_out"; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — report never names decide::%s.\n' \
+                    "$violation_proc" >&2
+                printf '── report ───────────\n%s\n────────────────────\n' \
+                    "$(cat "$selftest_out")" >&2
+                exit 2
+            fi
+
+            # ── Bucketing + git-history join, asserted field by field ───
+            selftest_json="$tmp_root/report.json"
+            if ! env "${selftest_env[@]}" bash "${BASH_SOURCE[0]}" --json --soft \
+                 >"$selftest_json" 2>/dev/null; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — --json --soft aborted.\n' >&2
+                exit 2
+            fi
+            for expected in \
+                "\"summary\":{\"good\":${expected_goods},\"grace\":1,\"violation\":1}" \
+                "\"name\":\"${violation_proc}\",\"cites\":1," \
+                "\"intro\":\"${old_day}\",\"bucket\":\"VIOLATION\"" \
+                "\"name\":\"${grace_proc}\",\"cites\":1," \
+                "\"intro\":\"${new_day}\",\"bucket\":\"GRACE\""; do
+                if ! grep -qF "$expected" "$selftest_json"; then
+                    printf 'audit-decide-cite-ratio: SELF-TEST FAILED — missing JSON fragment: %s\n' \
+                        "$expected" >&2
+                    printf '── json ─────────────\n%s\n────────────────────\n' \
+                        "$(cat "$selftest_json")" >&2
+                    exit 2
+                fi
+            done
+
+            # ── Direction 2 — --soft downgrades the same tree to exit 0 ──
+            if ! env "${selftest_env[@]}" bash "${BASH_SOURCE[0]}" --soft \
+                 >/dev/null 2>&1; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — --soft did not suppress the VIOLATION.\n' >&2
+                exit 2
+            fi
+
+            # ── Direction 3 — both policy knobs clear the same VIOLATION ─
+            if ! env "${selftest_env[@]}" bash "${BASH_SOURCE[0]}" --min-cites 1 \
+                 >/dev/null 2>&1; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — --min-cites 1 did not clear the VIOLATION.\n' >&2
+                exit 2
+            fi
+            if ! env "${selftest_env[@]}" bash "${BASH_SOURCE[0]}" --grace-days 100000 \
+                 >/dev/null 2>&1; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — --grace-days 100000 did not move the VIOLATION into GRACE.\n' >&2
+                exit 2
+            fi
+
+            printf 'audit-decide-cite-ratio: self-test passed — VIOLATION caught (decide::%s, intro %s), GRACE honoured (decide::%s, intro %s), %d GOOD, --soft / --min-cites / --grace-days all live.\n' \
+                "$violation_proc" "$old_day" "$grace_proc" "$new_day" "$expected_goods" >&2
+            exit 0
+            ;;
         -h|--help)     usage; exit 0 ;;
         *)
             printf 'audit-decide-cite-ratio: unknown argument: %s\n' "$1" >&2
@@ -101,13 +304,18 @@ done
 # applies the threshold.  When CONTRACT-126 trims a procedure it
 # disappears from audit-pre-callsite-count.sh's catalog list and
 # automatically falls out of this audit too.
-audit_script="$root/scripts/audit-pre-callsite-count.sh"
+# ── Scan-root override for --self-test recursion ─────────────────────
+# The script's OWN location still resolves through BASH_SOURCE above;
+# only the tree it audits — sibling audit, Decide.h, git history — moves.
+scan_root="${CRUCIBLE_DECIDE_CITE_TEST_ROOT:-$root}"
+
+audit_script="$scan_root/scripts/audit-pre-callsite-count.sh"
 if [[ ! -x "$audit_script" ]]; then
     printf 'audit-decide-cite-ratio: missing %s\n' "$audit_script" >&2
     exit 2
 fi
 
-decide_h="$root/include/crucible/safety/Decide.h"
+decide_h="$scan_root/include/crucible/safety/Decide.h"
 if [[ ! -f "$decide_h" ]]; then
     printf 'audit-decide-cite-ratio: missing %s\n' "$decide_h" >&2
     exit 2
@@ -140,7 +348,7 @@ intro_date_for() {
     # SIGPIPE → 141, set -o pipefail propagates the failure.  Materialize
     # the full output and slice the first line in bash instead.
     local proc="$1" all
-    all="$(git -C "$root" log --reverse --format=%ad --date=short \
+    all="$(git -C "$scan_root" log --reverse --format=%ad --date=short \
         -S "decide::${proc}" \
         -- "include/crucible/safety/Decide.h" 2>/dev/null || true)"
     printf '%s' "${all%%$'\n'*}"

@@ -76,3 +76,54 @@ include/crucible/BackgroundThread.h:current_callsite_hashes.reserve(kInitialTrac
 # the CostModel's cap, would convert cleanly to inplace_vector
 # with NUMA-pinned capacity.  No dedicated ticket yet.
 include/crucible/concurrent/AdaptiveScheduler.h:workers_.reserve(worker_count_);
+#
+# ── bench/ COVERAGE EXTENSION — NOT pre-approved ────────────────────
+#
+# The entries below were NOT reviewed and NOT granted a waiver.  They
+# are the 21 pre-existing `.reserve(` sites (16 distinct content keys)
+# that the guard surfaced the moment `bench/` entered its scan set.
+# Until that change, `bench/` was invisible twice over: it was absent
+# from `scan_dirs` AND explicitly excluded by an `--glob '!bench/**'`
+# argument to rg.  Both were removed; these sites are grandfathered
+# only so the coverage extension lands green instead of reding CI on
+# code nobody has looked at yet.
+#
+# Status: benchmark-harness setup awaiting triage.  Every line here is
+# an open question, not a decision.  Triage must answer, per site:
+#   (1) Is the count known at compile time?  → std::inplace_vector<T,N>
+#   (2) Is the exact size known at construction?  → vector<T>(N) and
+#       fill by index (one allocation, no growth).
+#   (3) Is it genuinely unbounded?  → document why amortization is
+#       acceptable here and convert to an inline NO-RESERVE-OK marker
+#       carrying that reason, then delete the entry.
+#
+# Most of these look like case (1) or (2) — `reports.reserve(12)`,
+# `workloads.reserve(4)`, `reports.reserve(32)` are literal constants
+# and convert mechanically.  That is a hypothesis from reading the
+# call text, NOT a review finding.
+#
+# Mitigating context (explanation, not justification): this is
+# harness scaffolding that runs once during bench setup, outside the
+# measured region, so the §IV tail-latency and heap-churn arguments
+# bite less hard than they would on a hot path.  The ban is still
+# project-wide and these still owe a migration.
+#
+# No ticket yet.  When one is filed, reference it here and drain the
+# section as sites convert; the stale-entry gate (exit 2) forces the
+# entries out as soon as their call text changes.
+bench/bench_adaptive_scheduler.cpp:dispatch_samples.reserve(kJobsPerPolicy);
+bench/bench_adaptive_scheduler.cpp:results.reserve(10);
+bench/bench_auto_router.cpp:reports.reserve(136);
+bench/bench_auto_split.cpp:reports.reserve(32);
+bench/bench_auto_split_compare.cpp:reports.reserve(scenarios.size() * 3 * 4);
+bench/bench_expr_pool.cpp:pool.reserve(n_inserts);
+bench/bench_mpsc_contention.cpp:producers.reserve(producer_count);
+bench/bench_mpsc_contention.cpp:reports.reserve(12);
+bench/bench_no_regression.cpp:reports.reserve(workloads.size() * 3);
+bench/bench_no_regression.cpp:threads.reserve(w.forced_workers);
+bench/bench_no_regression.cpp:workloads.reserve(4);
+bench/bench_permissioned_calendar_grid.cpp:reports.reserve(12);
+bench/bench_scheduler_policies.cpp:ns.reserve(total_samples);
+bench/bench_scheduler_policies.cpp:per_thread_ns[0].reserve(batches_per_owner * CONTENDED_ITERATIONS);
+bench/bench_scheduler_policies.cpp:v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
+bench/bench_session_persistence.cpp:reports.reserve(3);

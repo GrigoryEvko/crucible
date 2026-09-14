@@ -44,23 +44,43 @@ usage() {
 gen-mint-inventory.sh — substrate mint inventory generator.
 
 Usage:
-  gen-mint-inventory.sh                 # write misc/mint-inventory.md
-  gen-mint-inventory.sh --stdout        # print to stdout
+  gen-mint-inventory.sh --write         # write misc/mint-inventory.md
+  gen-mint-inventory.sh --stdout        # print to stdout (read-only)
   gen-mint-inventory.sh --check         # diff against HEAD copy (drift gate)
   gen-mint-inventory.sh --check-floor   # FAIL if any production row HS14 < FLOOR
   gen-mint-inventory.sh --self-test     # plant a mint, verify capture
   gen-mint-inventory.sh -h | --help     # usage
+
+Writing is opt-in.  A bare invocation used to WRITE misc/mint-inventory.md,
+so anyone running the script to look at the output silently dirtied a
+tracked file — and during a multi-agent edit wave that write captures a
+half-finished tree.  Bare invocation now refuses and names both options.
 USAGE
 }
 
-mode="write"
+mode=""
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
+    --write)    mode="write" ;;
     --stdout)   mode="stdout" ;;
     --check)    mode="check" ;;
     --check-floor) mode="check-floor" ;;
     --self-test) mode="self-test" ;;
-    "") ;;
+    "")
+        # Bare invocation is NOT a no-op write.  Mutating a tracked file
+        # is opt-in: `--write` to regenerate, `--stdout` to look.
+        cat >&2 <<'BARE'
+gen-mint-inventory: refusing to write without an explicit mode.
+
+  --stdout   print the inventory (read-only — use this to look)
+  --write    regenerate misc/mint-inventory.md (mutates a tracked file)
+  --check    fail if the committed copy has drifted
+
+A bare invocation previously wrote misc/mint-inventory.md, which dirties
+the working tree as a side effect of merely running the script.
+BARE
+        exit 2
+        ;;
     *) printf 'gen-mint-inventory: unknown argument: %s\n' "$1" >&2
        usage; exit 2 ;;
 esac

@@ -70,10 +70,124 @@
 # Permissioned* primitive in production code should add it to the
 # concurrent/ tree (whitelisted) rather than splitting authoring
 # across multiple subsystems.
+#
+# This script excludes itself from the scan: its --self-test fixture
+# plants a forbidden specialization as literal heredoc text.
+#
+# Exit status:
+#   0 — clean (no specialization outside the authoring set)
+#   1 — at least one orphan specialization
+#   2 — bad invocation / self-test failure
 
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+    cat >&2 <<'USAGE'
+check-splits-into-orphan.sh — splits_into orphan-specialization guard.
+
+Usage:
+  check-splits-into-orphan.sh              # scan; exit 1 on violation
+  check-splits-into-orphan.sh --self-test  # plant a violation, verify catch
+  check-splits-into-orphan.sh -h | --help  # usage
+
+Exemptions:
+  include/crucible/permissions/*.h                  — authoring set
+  include/crucible/concurrent/*.h                   — per-channel substrate
+  include/crucible/safety/Permission{Tree,Grid}Generator.h
+  test/*                                            — test-local tag trees
+  a pure-comment line (leading // or *)             — doc-block citation
+
+CLAUDE.md §IX — the manifest must live in the same TU as the parent tag
+declaration; otherwise any foreign TU can forge cross-region authority.
+USAGE
+}
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    --self-test)
+        # Plant the SAME specialization three ways: under a non-exempt
+        # path (must be flagged), under the blessed concurrent/ path
+        # (path exemption), and as a doc-comment line (comment
+        # exemption).  Both exemption axes get a witness, so a future
+        # refactor cannot silently widen or narrow either one.
+        tmp_root="$(mktemp -d)"
+        trap 'rm -rf "$tmp_root"' EXIT
+        mkdir -p "$tmp_root/src/planted" "$tmp_root/include/crucible/concurrent"
+
+        planted_rel='src/planted/planted_splits.cpp'
+        exempt_rel='include/crucible/concurrent/PlantedChannel.h'
+
+        cat >"$tmp_root/$planted_rel" <<'PLANTED'
+// Synthetic orphan-specialization fixture for --self-test.
+namespace crucible::planted {
+struct Parent {};
+struct Left {};
+struct Right {};
+}  // namespace crucible::planted
+namespace crucible {
+template <>
+struct splits_into<planted::Parent, planted::Left, planted::Right> {
+    static constexpr bool value = true;
+};
+// struct splits_into_pack<planted::Parent, planted::Left> — doc-comment only.
+}  // namespace crucible
+PLANTED
+
+        cat >"$tmp_root/$exempt_rel" <<'EXEMPT'
+// Synthetic blessed-authoring fixture for --self-test.
+namespace crucible::planted {
+struct ChanParent {};
+struct ChanLeft {};
+struct ChanRight {};
+}  // namespace crucible::planted
+namespace crucible {
+template <>
+struct splits_into<planted::ChanParent, planted::ChanLeft, planted::ChanRight> {
+    static constexpr bool value = true;
+};
+}  // namespace crucible
+EXEMPT
+
+        scanner_stderr="$(mktemp)"
+
+        self_test_fail() {
+            printf 'check-splits-into-orphan: SELF-TEST FAILED — %s\n' "$1" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$scanner_stderr")" >&2
+            rm -f "$scanner_stderr"
+            exit 2
+        }
+
+        if CRUCIBLE_SPLITS_INTO_ORPHAN_TEST_ROOT="$tmp_root" \
+           bash "${BASH_SOURCE[0]}" 2>"$scanner_stderr"; then
+            self_test_fail 'planted orphan specialization not caught.'
+        fi
+        # The planted violation sits on line 9 of the fixture.
+        if ! grep -qF "$planted_rel:9" "$scanner_stderr"; then
+            self_test_fail "expected diagnostic for $planted_rel:9 missing."
+        fi
+        # The doc-comment citation on line 12 must be filtered out.
+        if grep -qF "$planted_rel:12" "$scanner_stderr"; then
+            self_test_fail 'pure-comment line leaked through the filter.'
+        fi
+        # The concurrent/ copy must be exempt by authoring location.
+        if grep -qF "$exempt_rel" "$scanner_stderr"; then
+            self_test_fail 'authoring-location exemption leaked.'
+        fi
+
+        rm -f "$scanner_stderr"
+        printf 'check-splits-into-orphan: self-test passed — orphan caught, authoring-location + comment exemptions honoured.\n' >&2
+        exit 0
+        ;;
+    "") ;;
+    *) printf 'check-splits-into-orphan: unknown argument: %s\n' "$1" >&2
+       usage; exit 2 ;;
+esac
+
+# ── Scan-root override for --self-test recursion ─────────────────────
+scan_root="${CRUCIBLE_SPLITS_INTO_ORPHAN_TEST_ROOT:-$root}"
 # Matches the four orphan-rejected traits:
 #   splits_into< ...                        — binary splits manifest
 #   splits_into_pack< ...                   — N-ary splits manifest
@@ -83,7 +197,7 @@ pattern='(struct|class)\s+splits_into(_pack)?(_authoring_witness)?\s*<'
 status=0
 
 while IFS=: read -r file line text; do
-    rel="${file#"$root"/}"
+    rel="${file#"$scan_root"/}"
 
     # Skip pure-comment lines.  `rg` is line-based and would otherwise
     # flag doc-comment occurrences of the trait names (e.g. headers that
@@ -117,8 +231,8 @@ done < <(
         --glob '!vendor/**' \
         --glob '!misc/**' \
         --glob '!**/*.md' \
-        --glob '!scripts/check-splits-into-orphan.sh' \
-        "$pattern" "$root" || true
+        --glob '!**/check-splits-into-orphan.sh' \
+        "$pattern" "$scan_root" || true
 )
 
 if [[ "$status" -ne 0 ]]; then

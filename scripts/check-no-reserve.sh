@@ -19,7 +19,7 @@
 #                         accept amortization (rare, cold path)
 #
 # This guard is intentionally aggressive: it flags ALL `.reserve(`
-# and `->reserve(` calls in include/crucible/ (excluding comments).
+# and `->reserve(` calls under include/ and bench/ (excluding comments).
 # False positives (e.g. third-party-style class methods named
 # `reserve`) go in the allowlist with a tracked-migration TODO.
 #
@@ -40,8 +40,10 @@
 # Inline suppression: `// NO-RESERVE-OK: <reason>` on the call line
 # exempts that single line.
 #
-# Exempt directories: test/, bench/, examples/ — fixtures may
-# deliberately plant the pattern to demonstrate rejection.
+# Exempt directories: test/, examples/ — fixtures may deliberately
+# plant the pattern to demonstrate rejection.  bench/ is NOT exempt:
+# it was excluded until the coverage extension, which surfaced 21 live
+# sites now grandfathered in the allowlist awaiting triage.
 #
 # Exit status:
 #   0 — clean (no NEW reserve sites, no stale allowlist entries)
@@ -91,7 +93,8 @@ case "${1:-}" in
         # this is the fix-18 invariant the self-test must pin.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
-        mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/scripts"
+        mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/bench" \
+                 "$tmp_root/scripts"
         cat >"$tmp_root/include/crucible/planted/planted_violation.h" <<'PLANTED'
 #pragma once
 // Synthetic no-reserve fixture for --self-test.
@@ -116,6 +119,25 @@ inline void planted_in_comment() {
 }
 }  // namespace crucible::planted
 PLANTED
+        # Second fixture, under bench/.  This pins the bench/ SCAN-DIR
+        # coverage: bench/ used to be invisible twice over (absent from
+        # scan_dirs AND excluded by an `--glob '!bench/**'`), so 21 live
+        # reserve sites accumulated unchecked.  Without this fixture a
+        # future edit could drop "$scan_root/bench" from scan_dirs (or
+        # re-add the glob) and every other assertion here would still
+        # pass — the regression would ship silently.  The call text is
+        # distinct from every include/ fixture call so the content key
+        # maps to exactly one site.
+        cat >"$tmp_root/bench/bench_planted.cpp" <<'PLANTED_BENCH'
+// Synthetic no-reserve fixture for --self-test (bench/ scan-dir cover).
+#include <vector>
+namespace crucible::planted {
+void planted_bench_drift() {
+    std::vector<int> v;
+    v.reserve(23);
+}
+}  // namespace crucible::planted
+PLANTED_BENCH
         # Allowlist entry is CONTENT-KEYED: it names the exact trimmed
         # source of the SECOND .reserve() call (`v.reserve(11);`), not
         # its line number.  This is the fix-18 drift-proof key.
@@ -164,7 +186,22 @@ ALLOW
             rm -f "$result_file"
             exit 2
         fi
+        # The bench/ planted call (`v.reserve(23);`) must be flagged.
+        # Load-bearing: this is the ONLY assertion that fails if
+        # "$scan_root/bench" is dropped from scan_dirs or the
+        # `!bench/**` rg glob is reinstated.
+        if ! grep -qF 'v.reserve(23);' "$result_file"; then
+            printf 'check-no-reserve: SELF-TEST FAILED — bench/ scan-dir coverage lost (expected diagnostic for v.reserve(23); missing).\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
         rm -f "$result_file"
+        # Phases 2 and 3 expect exits 0 and 2 respectively and drive the
+        # include/ fixture only; retire the bench/ fixture so its live
+        # violation does not mask those outcomes.
+        rm -f "$tmp_root/bench/bench_planted.cpp"
 
         # ── Phase 2: drift-proofing (the fix-18 core invariant) ──────
         # Insert a blank line ABOVE the allowlisted call so its LINE
@@ -300,7 +337,12 @@ live_set_file="$(mktemp)"
 trap 'rm -f "$live_set_file"' EXIT
 
 violation_count=0
-scan_dirs=("$scan_root/include")
+# Scan roots.  `bench/` is in scope: benchmark harnesses link the same
+# production headers and their setup code is real C++ that the §IV ban
+# governs.  The directory was previously invisible to this guard, so its
+# reserve sites accumulated unchecked; they are grandfathered in the
+# allowlist under the "bench/ coverage extension" section.
+scan_dirs=("$scan_root/include" "$scan_root/bench")
 
 while IFS= read -r match; do
     file="${match%%:*}"
@@ -348,7 +390,6 @@ done < <(
        --glob '!external/**' \
        --glob '!vendor/**' \
        --glob '!test/**' \
-       --glob '!bench/**' \
        --glob '!examples/**' \
        "$candidate_pattern" "${scan_dirs[@]}" 2>/dev/null || true
 )

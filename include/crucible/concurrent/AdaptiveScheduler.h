@@ -962,7 +962,7 @@ private:
         cpu_set_t set;
         CPU_ZERO(&set);
         CPU_SET(cpu_index, &set);
-        if (sched_setaffinity(0, sizeof(set), &set) == 0) {
+        if (::sched_setaffinity(0, sizeof(set), &set) == 0) {
             affinity_applied_.fetch_add(1, std::memory_order_release);
         }
 #else

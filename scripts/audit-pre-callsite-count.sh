@@ -38,6 +38,40 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ── Decide catalog ────────────────────────────────────────────────────
+# Catalog of named predicates in safety/Decide.h.  Declared ABOVE the
+# argument dispatcher so --self-test can synthesize a fixture that cites
+# EVERY procedure.  A fixture built from this same array cannot desync
+# from the catalog when CONTRACT-126 trims a procedure or a migration
+# adds one.  Counts are computed fresh each run; CONTRACT-125 audits
+# ratios (every procedure > 0 cites at 6mo); CONTRACT-126 trims the
+# unloved ones.
+decide_procedures=(
+    is_non_zero
+    in_range
+    all_in_range
+    aligned_in_range
+    no_overflow_mul
+    no_overflow_sum
+    no_overflow_pow2_shift
+    is_power_of_two_le
+    factorization_eq
+    coprime
+    intervals_pairwise_disjoint
+    intervals_cover_unit
+    tier_replaces
+    row_subset
+    fmix_preserves_non_zero
+    strictly_increasing
+    weakly_increasing
+    conjunction
+    disjunction
+    implies
+    positive
+    non_negative
+    valid_span
+)
+
 usage() {
     cat >&2 <<'USAGE'
 audit-pre-callsite-count.sh — count contracts-infra adoption in include/ + src/.
@@ -47,12 +81,162 @@ Usage:
   audit-pre-callsite-count.sh --json          # JSON to stdout
   audit-pre-callsite-count.sh --baseline F    # write JSON snapshot to F
   audit-pre-callsite-count.sh --check F       # compare to F; nonzero on regress
+  audit-pre-callsite-count.sh --self-test     # plant a regression, verify catch
+  audit-pre-callsite-count.sh -h | --help     # usage
 USAGE
 }
 
 mode="human"
 baseline_path=""
 case "${1:-}" in
+    --self-test)
+        # A regression gate that never plants a regression has never
+        # demonstrated it fires.  Build a synthetic production tree, then
+        # drive --check against it THREE times:
+        #
+        #   1. baseline counts ABOVE the tree's  -> every counter regresses
+        #                                          -> MUST exit non-zero
+        #   2. baseline counts EQUAL to the tree -> nothing moved
+        #                                          -> MUST exit 0
+        #   3. baseline counts BELOW the tree    -> adoption grew
+        #                                          -> MUST exit 0 (silent)
+        #
+        # Directions 1 and 2 are the two halves of the gate; direction 3
+        # proves growth stays silent rather than tripping the guard.
+        tmp_root="$(mktemp -d)"
+        trap 'rm -rf "$tmp_root"' EXIT
+        mkdir -p "$tmp_root/include" "$tmp_root/src"
+
+        # Every counted pattern must match at least once.  `rg` exits 1 on
+        # no-match and `set -o pipefail` turns that into a script abort, so
+        # a fixture missing ONE form would look like a self-test failure
+        # rather than the missing form it is.  The decide:: cites are
+        # generated from decide_procedures above, two lines apiece — the
+        # per-procedure regex is line-anchored, so two cites sharing a line
+        # would count as one.
+        fixture="$tmp_root/include/selftest_cites.h"
+        cat >"$fixture" <<'FIXTURE'
+#pragma once
+// Synthetic contracts-infra fixture for --self-test.
+namespace crucible::selftest {
+inline void planted_macro_forms(int n) {
+    CRUCIBLE_PRE(n > 0);
+    CRUCIBLE_PRE_FAST(n > 0);
+    CRUCIBLE_PRE_MSG(n > 0, "synthetic");
+    CRUCIBLE_POST(r, r > 0);
+    CRUCIBLE_POST_FAST(r, r > 0);
+    CRUCIBLE_POST_MSG(r, r > 0, "synthetic");
+    contract_assert(n > 0);
+}
+inline int planted_p2900_forms(int const n)
+    pre (n > 0)
+    post (r: r > 0)
+{ return n; }
+inline void planted_decide_cites(int n) {
+FIXTURE
+        for proc in "${decide_procedures[@]}"; do
+            printf '    decide::%s(n);\n' "$proc" >>"$fixture"
+            printf '    decide::%s(n);\n' "$proc" >>"$fixture"
+        done
+        cat >>"$fixture" <<'FIXTURE_TAIL'
+}
+}  // namespace crucible::selftest
+FIXTURE_TAIL
+        # src/ must exist and hold a cpp-typed file: the scan passes both
+        # include/ and src/ to rg, and a missing path is an rg error.
+        cat >"$tmp_root/src/selftest_anchor.cpp" <<'ANCHOR'
+// Synthetic translation unit for --self-test.
+int crucible_selftest_anchor = 0;
+ANCHOR
+
+        checked_fields=(crucible_pre crucible_pre_fast crucible_pre_msg
+                        crucible_post crucible_post_fast crucible_post_msg
+                        contract_assert decide_total
+                        total_pre_cites total_post_cites total_contract_cites)
+
+        # Direction 2's baseline IS the tree's own snapshot — an exact match
+        # by construction, which is what "no regression" must accept.
+        match_baseline="$tmp_root/baseline_match.json"
+        if ! CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$tmp_root" \
+             bash "${BASH_SOURCE[0]}" --json >"$match_baseline" 2>"$tmp_root/json.err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — --json aborted on the synthetic tree.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$tmp_root/json.err")" >&2
+            exit 2
+        fi
+
+        # Direction 1: a baseline claiming counts the tree cannot meet.
+        high_baseline="$tmp_root/baseline_high.json"
+        { printf '{'
+          high_first=1
+          for field in "${checked_fields[@]}"; do
+              if [[ $high_first -eq 0 ]]; then printf ','; fi
+              high_first=0
+              printf '"%s":9999' "$field"
+          done
+          printf '}\n'
+        } >"$high_baseline"
+
+        # Direction 3: a baseline the tree has already grown past.
+        low_baseline="$tmp_root/baseline_low.json"
+        { printf '{'
+          low_first=1
+          for field in "${checked_fields[@]}"; do
+              if [[ $low_first -eq 0 ]]; then printf ','; fi
+              low_first=0
+              printf '"%s":0' "$field"
+          done
+          printf '}\n'
+        } >"$low_baseline"
+
+        # ── Direction 1 — MUST fail ──────────────────────────────────
+        regress_err="$tmp_root/regress.err"
+        if CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$tmp_root" \
+           bash "${BASH_SOURCE[0]}" --check "$high_baseline" \
+           >/dev/null 2>"$regress_err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — planted regression not caught.\n' >&2
+            printf '── checker stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$regress_err")" >&2
+            exit 2
+        fi
+        # Non-zero is not enough: prove it failed for the REGRESSION reason
+        # and not because the scan blew up on the synthetic tree.
+        for field in "${checked_fields[@]}"; do
+            if ! grep -qF "REGRESSION ${field}: 9999 ->" "$regress_err"; then
+                printf 'audit-pre-callsite-count: SELF-TEST FAILED — no REGRESSION diagnostic for %s.\n' \
+                    "$field" >&2
+                printf '── checker stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$regress_err")" >&2
+                exit 2
+            fi
+        done
+
+        # ── Direction 2 — equal counts MUST pass ─────────────────────
+        match_err="$tmp_root/match.err"
+        if ! CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$tmp_root" \
+             bash "${BASH_SOURCE[0]}" --check "$match_baseline" \
+             >/dev/null 2>"$match_err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — exact-match baseline reported a regression.\n' >&2
+            printf '── checker stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$match_err")" >&2
+            exit 2
+        fi
+
+        # ── Direction 3 — growth MUST stay silent ────────────────────
+        grow_err="$tmp_root/grow.err"
+        if ! CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$tmp_root" \
+             bash "${BASH_SOURCE[0]}" --check "$low_baseline" \
+             >/dev/null 2>"$grow_err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — adoption growth tripped the gate.\n' >&2
+            printf '── checker stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$grow_err")" >&2
+            exit 2
+        fi
+
+        printf 'audit-pre-callsite-count: self-test passed — regression caught (%d counters), exact-match and growth both accepted.\n' \
+            "${#checked_fields[@]}" >&2
+        exit 0
+        ;;
     --json)
         mode="json"
         ;;
@@ -82,6 +266,11 @@ if ! command -v rg >/dev/null 2>&1; then
     exit 2
 fi
 
+# ── Scan-root override for --self-test recursion ─────────────────────
+# The script's OWN location still resolves through BASH_SOURCE above;
+# only the tree it counts moves.
+scan_root="${CRUCIBLE_PRE_CALLSITE_TEST_ROOT:-$root}"
+
 # ── Aggregate counters ────────────────────────────────────────────────
 # rg --type=cpp picks up .h / .hpp / .cpp / .cc — all the production
 # C++26 sources.  --glob excludes vendor + build trees.
@@ -110,7 +299,7 @@ count_pattern() {
     local total=0
     total=$(
         rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\K${pattern}" "${common_globs[@]}" \
-           "$root/include" "$root/src" 2>/dev/null | wc -l
+           "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
     )
     printf '%s' "$total"
 }
@@ -145,34 +334,9 @@ total_post_cites=$((crucible_post + crucible_post_fast + crucible_post_msg + p29
 total_contract_cites=$((total_pre_cites + total_post_cites + contract_assert))
 
 # ── Per-decide-procedure cite count ───────────────────────────────────
-# Catalog of named predicates in safety/Decide.h.  Counts are computed
-# fresh each run; CONTRACT-125 audits ratios (every procedure > 0 cites
-# at 6mo); CONTRACT-126 trims unloved ones.
-decide_procedures=(
-    is_non_zero
-    in_range
-    all_in_range
-    aligned_in_range
-    no_overflow_mul
-    no_overflow_sum
-    no_overflow_pow2_shift
-    is_power_of_two_le
-    factorization_eq
-    coprime
-    intervals_pairwise_disjoint
-    intervals_cover_unit
-    tier_replaces
-    row_subset
-    fmix_preserves_non_zero
-    strictly_increasing
-    weakly_increasing
-    conjunction
-    disjunction
-    implies
-    positive
-    non_negative
-    valid_span
-)
+# The catalog itself (decide_procedures) is declared near the top of the
+# script, above the argument dispatcher, so --self-test can build its
+# fixture from the same array.
 
 # ── Top-N file density ────────────────────────────────────────────────
 # Files with the most combined contract cites — the "boundary
@@ -214,7 +378,7 @@ HEADER
         n=$(
             rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
                --glob '!include/crucible/safety/Decide.h' \
-               "$root/include" "$root/src" 2>/dev/null | wc -l
+               "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
         )
         printf '  %-30s %s\n' "decide::$proc" "$n"
     done
@@ -228,11 +392,11 @@ MIDDLE
     # rg -c gives "file:count" lines; we sort by count desc, take top N.
     rg -cP '(CRUCIBLE_PRE|CRUCIBLE_POST|^\s*pre\s*\(|^\s*post\s*\(|contract_assert)\b' \
        "${common_globs[@]}" \
-       "$root/include" "$root/src" 2>/dev/null \
+       "$scan_root/include" "$scan_root/src" 2>/dev/null \
        | sort -t: -k2 -nr -s \
        | head -n "$top_n" \
        | while IFS=: read -r file count; do
-           rel="${file#"$root"/}"
+           rel="${file#"$scan_root"/}"
            printf '  %-60s %s\n' "$rel" "$count"
          done
 
@@ -279,7 +443,7 @@ print_json() {
         n=$(
             rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
                --glob '!include/crucible/safety/Decide.h' \
-               "$root/include" "$root/src" 2>/dev/null | wc -l
+               "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
         )
         if [[ $first -eq 0 ]]; then printf ','; fi
         first=0

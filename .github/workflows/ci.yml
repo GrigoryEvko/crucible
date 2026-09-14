@@ -83,14 +83,20 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
 
-      - name: trait injection guard
-        run: bash scripts/check-trait-injection.sh
+      - name: trait injection guard (self-test + scan)
+        run: |
+          bash scripts/check-trait-injection.sh --self-test
+          bash scripts/check-trait-injection.sh
 
-      - name: contract cite regression (pre-callsite count vs baseline)
-        run: bash scripts/audit-pre-callsite-count.sh --check scripts/contracts-baseline.json
+      - name: contract cite regression (self-test + pre-callsite count vs baseline)
+        run: |
+          bash scripts/audit-pre-callsite-count.sh --self-test
+          bash scripts/audit-pre-callsite-count.sh --check scripts/contracts-baseline.json
 
-      - name: contract decide-cite ratio
-        run: bash scripts/audit-decide-cite-ratio.sh
+      - name: contract decide-cite ratio (self-test + scan)
+        run: |
+          bash scripts/audit-decide-cite-ratio.sh --self-test
+          bash scripts/audit-decide-cite-ratio.sh
 
       - name: refined/pre subsumption (self-test + scan)
         run: |
@@ -142,8 +148,10 @@ jobs:
           bash scripts/check-fixy-clean-headers.sh --self-test
           bash scripts/check-fixy-clean-headers.sh
 
-      - name: fixy dimension prose
-        run: bash scripts/check-fixy-dim-prose.sh
+      - name: fixy dimension prose (self-test + scan)
+        run: |
+          bash scripts/check-fixy-dim-prose.sh --self-test
+          bash scripts/check-fixy-dim-prose.sh
 
       - name: syscall capability admission (self-test + scan)
         run: |
@@ -181,11 +189,25 @@ jobs:
           bash scripts/gen-mint-inventory.sh --check
           bash scripts/gen-mint-inventory.sh --check-floor
 
-      - name: fixy::grant namespace purity
-        run: bash scripts/check-fixy-grant-namespace-purity.sh
+      - name: fixy::grant namespace purity (self-test + scan)
+        run: |
+          bash scripts/check-fixy-grant-namespace-purity.sh --self-test
+          bash scripts/check-fixy-grant-namespace-purity.sh
 
-      - name: splits_into orphan-specialization purity
-        run: bash scripts/check-splits-into-orphan.sh
+      - name: splits_into orphan-specialization purity (self-test + scan)
+        run: |
+          bash scripts/check-splits-into-orphan.sh --self-test
+          bash scripts/check-splits-into-orphan.sh
+
+      - name: single combine_ids source of truth (self-test + scan)
+        run: |
+          bash scripts/check-no-combine-ids-duplicate.sh --self-test
+          bash scripts/check-no-combine-ids-duplicate.sh
+
+      - name: ci_guard label coverage (self-test + scan)
+        run: |
+          bash scripts/check-ci-guard-labels.sh --self-test
+          bash scripts/check-ci-guard-labels.sh
 
   # ---------------------------------------------------------------------------
   # Full compile + run + negative-compile + golden-binary suite. Matrix over
@@ -292,8 +314,10 @@ jobs:
           echo "regenerated $(wc -l < include/crucible/perf/bpf/vmlinux.h) lines for ${{ matrix.arch }}"
 
       # The one ci_guard that needs a compiler (traces #include edges via g++ -H).
-      - name: session-persistence include audit (needs gcc-16)
-        run: bash scripts/check-session-persistence-include-audit.sh
+      - name: session-persistence include audit (needs gcc-16; self-test + scan)
+        run: |
+          bash scripts/check-session-persistence-include-audit.sh --self-test
+          bash scripts/check-session-persistence-include-audit.sh
 
       # Presets carry the sanitizer/build-type choice; no -DCRUCIBLE_* overrides
       # except the ccache launchers (which compose with cmake/Toolchain-gcc16.cmake).

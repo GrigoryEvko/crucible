@@ -515,17 +515,27 @@ crucible_test(test_concept_cheat_probe)
 # feedback_header_only_static_assert_blind_spot.md +
 # feedback_algebra_runtime_smoke_test_discipline.md.
 crucible_test(test_smoke_algebra_effects)
+add_test(NAME trait_guard_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh
+          --self-test)
 add_test(NAME trait_guard
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
+set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
+  LABELS "ci_guard")
 # fixy-A2-014: regression guard for the SessionPersistence.h include-lift.
 # Probes `g++ -H` to verify the bridge header does not transitively pull
 # Cipher.h / MerkleDag.h / Arena.h / FederationProtocol.h / etc.  Without
 # this guard, a future edit re-adding the heavy include would silently
 # reverse the build-time-cost reduction.
+add_test(NAME session_persistence_include_audit_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-session-persistence-include-audit.sh
+          --self-test)
 add_test(NAME session_persistence_include_audit
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-session-persistence-include-audit.sh)
-set_tests_properties(session_persistence_include_audit PROPERTIES
-  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}")
+set_tests_properties(session_persistence_include_audit
+                     session_persistence_include_audit_self_test PROPERTIES
+  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
+  LABELS "ci_guard;fixy-A2-014")
 # CONTRACT-131: contracts-infra adoption regression guard.  --check
 # diffs the live tree against a committed baseline snapshot; counter
 # increases are silent (adoption growth is good), counter decreases
@@ -533,9 +543,14 @@ set_tests_properties(session_persistence_include_audit PROPERTIES
 # --baseline scripts/contracts-baseline.json` to refresh after a
 # deliberate removal — the regression is then explained and the
 # baseline owns the new counts.
+add_test(NAME contract_cite_regression_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
+          --self-test)
 add_test(NAME contract_cite_regression
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
           --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
+set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
+  LABELS "ci_guard;CONTRACT-131")
 # CONTRACT-125: per-procedure cite-ratio policy enforcer.  For every
 # decide::* procedure in the catalog, asks "≥ 2 production cites
 # within 180 days of introduction?".  Recently-introduced procedures
@@ -547,8 +562,13 @@ add_test(NAME contract_cite_regression
 # feedback_decide_catalog.md); this test enforces the bottom-up
 # discipline doesn't decay over time.  CONTRACT-126 trims procedures
 # this audit flags.
+add_test(NAME contract_decide_cite_ratio_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.sh
+          --self-test)
 add_test(NAME contract_decide_cite_ratio
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.sh)
+set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
+  LABELS "ci_guard;CONTRACT-125")
 # CONTRACT-120: Layer-C subsumption guard.  Catches double-enforcement
 # of a Refined<Pred, T> parameter via in-body CRUCIBLE_PRE that re-tests
 # the same predicate on the same parameter — the type-level proof
@@ -562,6 +582,8 @@ add_test(NAME refined_pre_subsumption_self_test
           --self-test)
 add_test(NAME refined_pre_subsumption
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
+set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
+  LABELS "ci_guard;CONTRACT-120")
 # FIXY-U-001 Phase F discipline gate (misc/16_05_2026_fixy.md §4
 # Phase F).  scripts/check-fixy-discipline.sh enforces the
 # greenfield rule: directories opted into CRUCIBLE_FIXY_ONLY must
@@ -578,6 +600,8 @@ add_test(NAME fixy_discipline_self_test
           --self-test)
 add_test(NAME fixy_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh)
+set_tests_properties(fixy_discipline fixy_discipline_self_test PROPERTIES
+  LABELS "ci_guard;FIXY-U-001")
 # FIXY-U-003 §XXI Universal Mint Pattern compliance scanner.  Today's
 # Phase 1 check: every mint_<noun>( factory definition MUST carry the
 # [[nodiscard]] attribute on the same line or the immediately
@@ -589,6 +613,8 @@ add_test(NAME mint_pattern_self_test
           --self-test)
 add_test(NAME mint_pattern
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh)
+set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
+  LABELS "ci_guard;FIXY-U-003")
 # fixy-L-03 #1519 — Permission<Tag> long-lived-struct antipattern
 # guard (Permission.h:144-148 doc-block, CLAUDE.md §IX).  Every
 # Permission<*> declared as a class/struct member MUST be on a line
@@ -606,6 +632,8 @@ add_test(NAME permission_storage_self_test
           --self-test)
 add_test(NAME permission_storage
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
+set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
+  LABELS "ci_guard;fixy-L-03")
 # FIXY-U-097 std::vector::reserve ban enforcement (CLAUDE.md §IV
 # opt-out matrix).  scripts/check-no-reserve.sh flags every NEW
 # `.reserve(` / `->reserve(` call site outside the allowlist; 12
@@ -711,9 +739,12 @@ set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
 # to the substrate form "DimensionAxis::<Name> = <ordinal>".  This
 # guard rejects regression back to the FX-only "Dim <N>" / "(dim <N>)"
 # spellings.  See Default.h's preamble for the convention statement.
+add_test(NAME fixy_dim_prose_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh
+          --self-test)
 add_test(NAME fixy_dim_prose
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh)
-set_tests_properties(fixy_dim_prose PROPERTIES
+set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
     LABELS "ci_guard;fixy-V-006")
 # FIXY-U-100 syscall capability discipline (closes fixy-A5-016
 # regression-prevention surface).  scripts/check-syscall-capability.sh
@@ -847,6 +878,37 @@ set_tests_properties(mint_inventory_self_test
                      mint_inventory_check
                      mint_inventory_check_floor PROPERTIES
     LABELS "ci_guard;fixy-U-106;fixy-FOUND-140")
+# FIXY-FOUND-050 — single combine_ids source of truth.  This guard
+# existed but was registered NOWHERE: not in ctest, not in CI.  It had
+# therefore never run, and its own header rotted (it cited
+# StableName.h:166 for a definition that now sits at :73) without
+# anything noticing.  Wired here and in .github/workflows/ci.yml.
+add_test(NAME no_combine_ids_duplicate_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.sh
+          --self-test)
+add_test(NAME no_combine_ids_duplicate
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.sh)
+set_tests_properties(no_combine_ids_duplicate
+                     no_combine_ids_duplicate_self_test PROPERTIES
+    LABELS "ci_guard;FIXY-FOUND-050")
+# ci_guard label-coverage gate.  `ctest -L ci_guard` is the LOCAL
+# pre-merge check; a guard registered without the label is silently
+# skipped by it, so the gate reports a pass having never run that
+# guard.  That is exactly what had happened: 12 of the 42
+# script-invoking entries were unlabelled, including fixy_discipline,
+# mint_pattern, permission_storage and both contract audits.  CI
+# invoked them directly, so only the local gate lied.
+#
+# This test makes the count self-guarding: a new guard script
+# registered without the label fails HERE, so the gap cannot reopen
+# silently.
+add_test(NAME ci_guard_labels_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.sh
+          --self-test)
+add_test(NAME ci_guard_labels
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.sh)
+set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
+    LABELS "ci_guard")
 # FIXY-FOUND-052 — Cross-build row_hash determinism witness.
 # Runs the dump_row_hashes executable and diffs stdout against the
 # committed golden file.  A mismatch indicates either (a) a
@@ -1054,10 +1116,15 @@ set_tests_properties(attack_fixy_grant_namespace_reopen PROPERTIES
 # explicit "// fixy-CR-09: known residual gap" acknowledgement
 # comment).  Any other file reopening the namespace fails the build
 # with a diagnostic naming the offending location.
+add_test(NAME fixy_grant_namespace_purity_self_test
+         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.sh
+                 --self-test
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME fixy_grant_namespace_purity
          COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.sh
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(fixy_grant_namespace_purity PROPERTIES
+set_tests_properties(fixy_grant_namespace_purity
+                     fixy_grant_namespace_purity_self_test PROPERTIES
     LABELS "safety_attack;ci_guard;fixy-CR-09")
 
 # fixy-A1-018 splits_into orphan-specialization guard — enforces that
@@ -1068,10 +1135,15 @@ set_tests_properties(fixy_grant_namespace_purity PROPERTIES
 # native orphan-rule; this script fills the gap at build time so a
 # foreign TU cannot forge cross-region authority by declaring an
 # arbitrary split for a foreign tag (CLAUDE.md §IX, §XVI).
+add_test(NAME splits_into_orphan_purity_self_test
+         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-splits-into-orphan.sh
+                 --self-test
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME splits_into_orphan_purity
          COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-splits-into-orphan.sh
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(splits_into_orphan_purity PROPERTIES
+set_tests_properties(splits_into_orphan_purity
+                     splits_into_orphan_purity_self_test PROPERTIES
     LABELS "safety_attack;ci_guard;fixy-A1-018")
 
 crucible_test(test_fx_aliases)

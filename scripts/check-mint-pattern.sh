@@ -29,13 +29,27 @@
 #                         instantiations through a single concept.
 #                         Non-templated token mints are exempt.
 #
-# Per-line allowlist: scripts/mint-pattern-allowlist.txt.  Each
-# line is either:
+# Allowlist: scripts/mint-pattern-allowlist.txt.  Two interchangeable
+# entry grammars are honoured:
 #
-#   path:line                        # full exemption (all four checks)
-#   path:line:<check>-ok             # partial — exempts ONE check
-#                                      where <check> ∈ {nodiscard,
-#                                      noexcept, constexpr, requires}
+#   NAME-KEYED (preferred — drift-proof)
+#     path:mint_name                 # full exemption (all four checks)
+#     path:mint_name:<check>-ok      # partial — exempts ONE check
+#
+#   LINE-KEYED (legacy — fragile, do not add new ones)
+#     path:line
+#     path:line:<check>-ok
+#
+#   where <check> ∈ {nodiscard, noexcept, constexpr, requires}.
+#
+# 4cbeac8d switched the live entries to the name-keyed form because a
+# line-keyed exemption stales the instant ANY edit lands above the
+# mint — a concurrent agent inserting a member, a reflowed comment —
+# at which point the real mint reads as un-exempted AND the dangling
+# entry trips the stale gate.  This doc-block kept describing the
+# line-keyed form as the only grammar for three months after that
+# switch; every entry in the file is in fact name-keyed.  See the
+# allowlist file's own header for the rationale in full.
 #
 # Inline suppression: `// MINT-PATTERN-OK: <reason>` on the
 # candidate signature line exempts ALL four checks for that line.

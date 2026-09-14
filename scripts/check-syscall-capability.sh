@@ -102,6 +102,31 @@ inline int planted_in_comment() {
     return 0;
 }
 struct PlantedTagDoc final {};  // ::socket(2) doc-comment — must NOT be caught
+// ── Unqualified branch ───────────────────────────────────────────────
+// `::` is a convention, not a requirement.  A syscall spelled without
+// it hits the same kernel, and was invisible to this guard until the
+// unqualified branch landed.  Assertions below resolve these lines by
+// grepping for the marker identifiers, so the fixture can grow without
+// desyncing the hardcoded line numbers above.
+inline int planted_unqualified_flagged() {
+    return sched_getaffinity(0, 0, nullptr);  // FLAGGED — must be caught
+}
+// Boundary: `close` is an ordinary C++ member spelling in this tree, so
+// the unqualified branch deliberately omits it.  Such a name still has
+// to be spelled `::close(` to be caught.
+struct PlantedAmbiguousSkip final {
+    int fd_ = -1;
+    void planted_ambiguous_ok() { close(fd_); }  // must NOT be caught
+};
+// A DECLARATION named after a syscall is not a call site: the return
+// type puts an identifier char immediately before the name, which the
+// call-position requirement rejects.
+struct PlantedDeclSkip final {
+    int planted_decl_ok_ioctl(unsigned long req) const noexcept;
+    int ioctl(unsigned long req) const noexcept;  // planted_decl_ok_bare
+};
+// A member call through `.` or `->` is not a syscall site either.
+inline int planted_member_ok(PlantedDeclSkip& d) { return d.ioctl(0); }
 }  // namespace crucible::planted
 PLANTED
         # Allowlist entry targets line 8 (second ::socket call).
@@ -159,8 +184,35 @@ ALLOW
             rm -f "$result_file"
             exit 2
         fi
+        # ── Unqualified branch assertions ────────────────────────────
+        # Line numbers resolved from the fixture by marker identifier,
+        # so appending further cases cannot silently desync them.
+        planted_file="$tmp_root/src/planted/planted_syscall.cpp"
+        sc_line_of() { grep -n -- "$1" "$planted_file" | head -1 | cut -d: -f1; }
+        sc_fail() {
+            printf 'check-syscall-capability: SELF-TEST FAILED — %s\n' "$1" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        }
+        # The bare `sched_getaffinity(` call MUST be caught.  Without
+        # this the unqualified branch could silently stop matching.
+        unq_line="$(sc_line_of 'return sched_getaffinity')"
+        grep -qF "planted_syscall.cpp:${unq_line}" "$result_file" || \
+            sc_fail "unqualified syscall at line ${unq_line} not caught — the unqualified branch is dead."
+        # Every deliberate boundary case MUST stay clean: an ambiguous
+        # name, a declaration named after a syscall, and a `.` member
+        # call.  These document why the branch is narrow rather than
+        # matching the full name list.
+        for marker in planted_ambiguous_ok planted_decl_ok_ioctl planted_decl_ok_bare planted_member_ok; do
+            skip_line="$(sc_line_of "$marker")"
+            if grep -qF "planted_syscall.cpp:${skip_line}" "$result_file"; then
+                sc_fail "boundary case ${marker} (line ${skip_line}) was flagged — the unqualified branch is over-matching."
+            fi
+        done
         rm -f "$result_file"
-        printf 'check-syscall-capability: self-test passed — drift caught, allowlist + inline marker + full-line- + trailing-comment filters all honoured.\n' >&2
+        printf 'check-syscall-capability: self-test passed — qualified drift caught, unqualified drift caught, allowlist + inline marker + full-line- + trailing-comment filters honoured, and ambiguous-name / declaration / member-call boundaries all stay clean.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -188,7 +240,47 @@ fi
 # manipulation, polling, sync, signal, BPF, random.  Each entry below
 # represents a kernel-state observation or mutation that requires
 # explicit effects::* capability admission.
-candidate_pattern='(?<![a-zA-Z_0-9])::(socket|bind|listen|connect|accept|send|sendto|sendmsg|recv|recvfrom|recvmsg|shutdown|setsockopt|getsockopt|mmap|munmap|mremap|mlock|mlock2|munlock|munlockall|mlockall|madvise|mincore|mprotect|brk|sbrk|sched_setaffinity|sched_getaffinity|sched_setattr|sched_getattr|sched_yield|prctl|syscall|epoll_create1|epoll_ctl|epoll_wait|eventfd|ioctl|open|openat|close|read|write|pread|pwrite|readv|writev|fsync|fdatasync|stat|fstat|lstat|unlink|rename|mkdir|rmdir|fork|vfork|clone|execve|waitpid|kill|sigaction|signal|sigprocmask|clock_gettime|clock_settime|nanosleep|gettimeofday|pipe|pipe2|dup|dup2|dup3|fcntl|flock|poll|select|pselect|futex|bpf|getrandom|getrlimit|setrlimit|chmod|chown|access|faccessat)\s*\('
+syscall_names='socket|bind|listen|connect|accept|send|sendto|sendmsg|recv|recvfrom|recvmsg|shutdown|setsockopt|getsockopt|mmap|munmap|mremap|mlock|mlock2|munlock|munlockall|mlockall|madvise|mincore|mprotect|brk|sbrk|sched_setaffinity|sched_getaffinity|sched_setattr|sched_getattr|sched_yield|prctl|syscall|epoll_create1|epoll_ctl|epoll_wait|eventfd|ioctl|open|openat|close|read|write|pread|pwrite|readv|writev|fsync|fdatasync|stat|fstat|lstat|unlink|rename|mkdir|rmdir|fork|vfork|clone|execve|waitpid|kill|sigaction|signal|sigprocmask|clock_gettime|clock_settime|nanosleep|gettimeofday|pipe|pipe2|dup|dup2|dup3|fcntl|flock|poll|select|pselect|futex|bpf|getrandom|getrlimit|setrlimit|chmod|chown|access|faccessat'
+
+# ── Branch 2: the UNQUALIFIED call form ──────────────────────────────
+# `::name(` is a convention, not a requirement — `sched_getaffinity(0,
+# ...)` compiles and hits the very same kernel.  Branch 1's leading
+# `::` made every such site INVISIBLE to this guard: no allowlist
+# entry, no marker, clean exit.  That is a class of bypass, not one
+# site (fixy-A5-016 says "EVERY syscall path").
+#
+# The unqualified form cannot use the full name list.  Roughly half of
+# it — open / close / read / write / send / recv / accept / select /
+# poll / connect / bind / listen / socket / stat / kill / signal /
+# fork / clone / access / rename / pipe / dup / brk — are ordinary C++
+# member and free-function spellings in this tree (`handle.close()`,
+# `SocketFd socket() const`, `Session::send(...)`, and clang-format
+# wrapping a return type onto its own line puts a bare `accept(` at
+# column 5).  Matching those unqualified would bury the signal.
+#
+# So branch 2 carries only the KERNEL-ONLY spellings: names that have
+# no plausible C++ identifier collision.  A site using an ambiguous
+# name still has to spell `::` to be caught — which is the existing
+# house convention anyway, and is what every allowlist entry uses.
+unqualified_syscall_names='sendto|sendmsg|recvfrom|recvmsg|setsockopt|getsockopt|mmap|munmap|mremap|mlock|mlock2|munlock|munlockall|mlockall|madvise|mincore|mprotect|sched_setaffinity|sched_getaffinity|sched_setattr|sched_getattr|sched_yield|prctl|syscall|epoll_create1|epoll_ctl|epoll_wait|eventfd|ioctl|openat|pread|pwrite|readv|writev|fsync|fdatasync|fstat|lstat|unlink|mkdir|rmdir|vfork|execve|waitpid|sigaction|sigprocmask|clock_gettime|clock_settime|nanosleep|gettimeofday|pipe2|dup2|dup3|fcntl|flock|pselect|futex|bpf|getrandom|getrlimit|setrlimit|chmod|chown|faccessat'
+
+# Divergence guard: every branch-2 name must also be a branch-1 name,
+# or the two lists have drifted and a syscall is covered unqualified
+# but not qualified.
+while IFS= read -r _n; do
+    case "|${syscall_names}|" in
+        *"|${_n}|"*) ;;
+        *) printf 'check-syscall-capability: internal error — %s is in unqualified_syscall_names but not syscall_names.\n' "$_n" >&2
+           exit 2 ;;
+    esac
+done < <(printf '%s\n' "$unqualified_syscall_names" | tr '|' '\n')
+
+# Branch 2 requires the name to sit in CALL position: at line start, or
+# right after one of `; { } ( , = & | ! ? :` or `return`.  That keeps
+# out declarations (`SocketFd socket() const` — preceded by an
+# identifier) while still catching a bare statement call.  The
+# lookbehind additionally rejects `.name(`, `->name(` and `ns::name(`.
+candidate_pattern="(?<![a-zA-Z_0-9])::(${syscall_names})\s*\(|(?:^|[;{}(,=&|!?:]|\breturn)\s*(?<![a-zA-Z_0-9:.>])(${unqualified_syscall_names})\s*\("
 
 # ── Allowlist lookup ─────────────────────────────────────────────────
 allowlisted() {

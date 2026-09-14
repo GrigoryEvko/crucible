@@ -19,7 +19,7 @@
 #     for this because it's the documented ABI form, hence allowlist.
 #
 # This guard is intentionally aggressive: it flags ALL `reinterpret_cast<`
-# token occurrences in include/crucible/ (excluding comments).
+# token occurrences under include/ and vessel/ (excluding comments).
 # False positives go in the allowlist with a tracked-migration TODO.
 #
 # Content-keyed allowlist: scripts/no-reinterpret-allowlist.txt.  Each
@@ -40,7 +40,10 @@
 # exempts that single line.
 #
 # Exempt directories: test/, bench/, examples/ — fixtures may
-# deliberately plant the pattern to demonstrate rejection.
+# deliberately plant the pattern to demonstrate rejection.  vessel/ is
+# NOT exempt: it was simply outside scan_dirs until the coverage
+# extension, which surfaced 5 live sites now grandfathered in the
+# allowlist awaiting triage.
 #
 # Exit status:
 #   0 — clean (no NEW reinterpret_cast sites beyond the allowlist)
@@ -86,7 +89,8 @@ case "${1:-}" in
         # to exactly one site — the fix-18 invariant the self-test pins.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
-        mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/scripts"
+        mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/vessel/torch" \
+                 "$tmp_root/scripts"
         cat >"$tmp_root/include/crucible/planted/planted_reinterpret.h" <<'PLANTED'
 #pragma once
 // Synthetic no-reinterpret fixture for --self-test.
@@ -107,6 +111,23 @@ inline void planted_in_comment() {
 }
 }  // namespace crucible::planted
 PLANTED
+        # Second fixture, under vessel/.  This pins the vessel/ SCAN-DIR
+        # coverage: vessel/ used to be absent from scan_dirs, so the
+        # PyTorch adapter — production C++ on the C ABI boundary — was
+        # never scanned and 5 live casts accumulated unchecked.  Without
+        # this fixture a future edit could drop "$scan_root/vessel" from
+        # scan_dirs and every other assertion here would still pass.
+        # The target type is distinct from every include/ fixture cast
+        # so the content key maps to exactly one site.
+        cat >"$tmp_root/vessel/torch/planted_vessel.cpp" <<'PLANTED_VESSEL'
+// Synthetic no-reinterpret fixture for --self-test (vessel/ scan-dir).
+#include <cstdint>
+namespace crucible::planted {
+std::uint16_t planted_vessel_drift(void* p) {
+    return reinterpret_cast<std::uint16_t>(p);
+}
+}  // namespace crucible::planted
+PLANTED_VESSEL
         # Allowlist entry is CONTENT-KEYED: it names the exact trimmed
         # source of the SECOND reinterpret_cast call
         # (`return reinterpret_cast<std::uint64_t>(p);`), not its line
@@ -166,6 +187,20 @@ ALLOW
             rm -f "$result_file"
             exit 2
         fi
+        # The vessel/ planted cast (uint16_t) must be flagged.
+        # Load-bearing: this is the ONLY assertion that fails if
+        # "$scan_root/vessel" is dropped from scan_dirs.
+        if ! grep -qF 'reinterpret_cast<std::uint16_t>(p);' "$result_file"; then
+            printf 'check-no-reinterpret: SELF-TEST FAILED — vessel/ scan-dir coverage lost (expected diagnostic for uint16_t cast missing).\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        # Sub-tests 2 and 3 expect exits 0 and 2 respectively and drive
+        # the include/ fixture only; retire the vessel/ fixture so its
+        # live violation does not mask those outcomes.
+        rm -f "$tmp_root/vessel/torch/planted_vessel.cpp"
 
         # ── Second sub-test: drift-proofing (the fix-18 core invariant)
         # Re-plant with an extra leading blank line so the allowlisted
@@ -266,7 +301,13 @@ live_set_file="$(mktemp)"
 trap 'rm -f "$live_set_file"' EXIT
 
 violation_count=0
-scan_dirs=("$scan_root/include")
+# Scan roots.  `vessel/` is in scope: the PyTorch adapter is production
+# C++ that crosses the C ABI, exactly where an unreviewed
+# reinterpret_cast does the most damage.  The directory was previously
+# invisible to this guard; its casts are grandfathered in the allowlist
+# under the "vessel/ coverage extension" section.  No glob change is
+# needed — none of the existing exclusions ever matched vessel/.
+scan_dirs=("$scan_root/include" "$scan_root/vessel")
 
 while IFS= read -r match; do
     file="${match%%:*}"

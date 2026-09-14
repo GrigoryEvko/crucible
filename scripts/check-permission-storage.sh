@@ -86,15 +86,40 @@ case "${1:-}" in
         mkdir -p "$tmp_root/include/crucible/test_planted" \
                  "$tmp_root/scripts"
         cat >"$tmp_root/include/crucible/test_planted/violation.h" <<'PLANTED'
-// Synthetic PERMISSION-STORAGE violation for --self-test verification.
-// The canonical handle storage shape uses [[no_unique_address]]; a
-// bare Permission<Tag> member field is the documented antipattern
-// (Permission.h:144-148).
+// Synthetic PERMISSION-STORAGE fixture for --self-test verification.
+// A bare Permission<Tag> member field is the documented antipattern
+// (Permission.h doc-block); the canonical shape carries the
+// no-unique-address attribute.  Each declarator carries a UNIQUE
+// member name; the assertions resolve their line numbers by grepping
+// for those names, so editing this fixture cannot silently desync the
+// expectations (a line-keyed list would).
 #pragma once
 namespace crucible::planted {
 struct tag_t {};
+// FLAGGED — bare member, no marker anywhere in the window.
 struct SharedAcrossThreads {
-    ::crucible::safety::Permission<tag_t> perm_;
+    ::crucible::safety::Permission<tag_t> flagged_bare_;
+};
+// CLEAN — canonical shape, attribute on the declarator line.
+struct SameLineAttribute {
+    [[no_unique_address]] ::crucible::safety::Permission<tag_t> clean_same_line_;
+};
+// CLEAN — clang-format pushed the declarator below the attribute, so
+// the marker sits ABOVE the match (backward window).
+struct WrappedAttribute {
+    [[no_unique_address]]
+    ::crucible::safety::Permission<tag_t> clean_wrapped_attr_;
+};
+// CLEAN — trailing suppression marker on the declarator line.
+// Unreachable before the pattern dropped its end-of-line anchor.
+struct TrailingSuppression {
+    ::crucible::safety::Permission<tag_t> clean_trailing_;  // PERMISSION-STORAGE-OK: synthetic
+};
+// FLAGGED — a LATER sibling's attribute must not leak backwards onto
+// this bare member.
+struct LeakProbe {
+    ::crucible::safety::Permission<tag_t> flagged_leak_probe_;
+    [[no_unique_address]] ::crucible::safety::Permission<tag_t> clean_sibling_;
 };
 }  // namespace crucible::planted
 PLANTED
@@ -116,8 +141,35 @@ PLANTED
             rm -f "$result_file"
             exit 2
         fi
+        # Per-shape assertions.  The bare members (lines 10, 30) MUST be
+        # flagged; every marked shape (same-line attribute 14, wrapped
+        # attribute 20, trailing suppression 25, later sibling 31) MUST
+        # NOT be.  Without these the window walk could regress to
+        # flag-everything or suppress-everything and still "pass".
+        selftest_fail() {
+            printf 'check-permission-storage: SELF-TEST FAILED — %s\n' "$1" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        }
+        planted_file="$tmp_root/include/crucible/test_planted/violation.h"
+        line_of() {
+            grep -n -- "$1" "$planted_file" | head -1 | cut -d: -f1
+        }
+        for member in flagged_bare_ flagged_leak_probe_; do
+            expect_line="$(line_of "$member")"
+            grep -q "violation.h:${expect_line} " "$result_file" || \
+                selftest_fail "bare member ${member} (line ${expect_line}) not flagged."
+        done
+        for member in clean_same_line_ clean_wrapped_attr_ clean_trailing_ clean_sibling_; do
+            clean_line="$(line_of "$member")"
+            if grep -q "violation.h:${clean_line} " "$result_file"; then
+                selftest_fail "marked declaration ${member} (line ${clean_line}) leaked through the window walk."
+            fi
+        done
         rm -f "$result_file"
-        printf 'check-permission-storage: self-test passed — regex fires on planted violation.\n' >&2
+        printf 'check-permission-storage: self-test passed — bare members flagged; same-line, wrapped-above, trailing-comment and later-sibling markers all honoured.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -148,7 +200,14 @@ fi
 #
 # Friend declarations (`friend Permission<Tag>;` with no name) are
 # excluded because the name-capture `\w+_?` requires an identifier.
-banned_pattern='\bPermission<.+?>\s+\w+_?\s*;\s*$'
+# The declarator terminator is the `;`, NOT end-of-line.  Anchoring on
+# `;\s*$` made the inline `// PERMISSION-STORAGE-OK:` marker
+# UNREACHABLE: the trailing comment pushes the `;` off end-of-line, so
+# the scanner never saw a marked line and the suppression branch was
+# dead code.  A single-line `struct S { Permission<T> p_; };` was
+# likewise invisible.  Accept an optional trailing comment or brace
+# after the `;` so both shapes reach the window walk below.
+banned_pattern='\bPermission<.+?>\s+\w+_?\s*;\s*(//.*|/\*.*|\}.*)?$'
 
 scan_paths=()
 for p in include src; do
@@ -186,15 +245,65 @@ while IFS= read -r match; do
         '//'*|'///'*|'*'*|'/*'*) continue ;;
     esac
 
-    # The canonical handle-storage pattern.
-    if [[ "$text" == *'[[no_unique_address]]'* ]]; then
-        continue
+    # Discipline markers — `[[no_unique_address]]` (the canonical
+    # handle-storage pattern) and `// PERMISSION-STORAGE-OK: <reason>`
+    # (inline suppression).  BOTH scope to the member DECLARATION, not
+    # to the line: clang-format may wrap a long declaration so the
+    # attribute lands on the line ABOVE the `Permission<` token and the
+    # trailing comment lands on a line BELOW it.  Line-scoped matching
+    # breaks on the next format pass — a failure mode that has already
+    # recurred four times across this guard family (check-syscall-
+    # capability.sh, check-row-contains-discipline.sh,
+    # check-lock-free-asserts.sh, check-fixy-discipline.sh all walk a
+    # 12-line statement window for exactly this reason).
+    #
+    # Walk the declaration in both directions, bounded at 12 lines each
+    # way.  A line bearing ';' or ending in '{' / '}' terminates the
+    # statement, so a NEIGHBOURING declaration's marker cannot leak in.
+    ps_suppressed=0
+
+    # Backward: the attribute precedes the declarator.  Stop one line
+    # past the end of the previous statement.
+    ps_probe=$((line - 1))
+    ps_floor=$((line - 12))
+    (( ps_floor < 1 )) && ps_floor=1
+    while (( ps_probe >= ps_floor )); do
+        ps_text="$(sed -n "${ps_probe}p" "$file" 2>/dev/null)"
+        case "$ps_text" in
+            *'[[no_unique_address]]'*|*'PERMISSION-STORAGE-OK'*)
+                ps_suppressed=1; break ;;
+        esac
+        case "$ps_text" in
+            *';'*) break ;;
+        esac
+        case "${ps_text%"${ps_text##*[![:space:]]}"}" in
+            *'{'|*'}') break ;;
+        esac
+        ps_probe=$((ps_probe - 1))
+    done
+
+    # Forward: the trailing comment follows the declarator.  Include the
+    # match line itself, and stop at the line that ends the statement.
+    if (( ! ps_suppressed )); then
+        ps_probe=$line
+        ps_limit=$((line + 12))
+        while (( ps_probe <= ps_limit )); do
+            ps_text="$(sed -n "${ps_probe}p" "$file" 2>/dev/null)"
+            case "$ps_text" in
+                *'[[no_unique_address]]'*|*'PERMISSION-STORAGE-OK'*)
+                    ps_suppressed=1; break ;;
+            esac
+            case "$ps_text" in
+                *';'*) break ;;
+            esac
+            case "${ps_text%"${ps_text##*[![:space:]]}"}" in
+                *'}') break ;;
+            esac
+            ps_probe=$((ps_probe + 1))
+        done
     fi
 
-    # Inline suppression marker.
-    if [[ "$text" == *'PERMISSION-STORAGE-OK'* ]]; then
-        continue
-    fi
+    (( ps_suppressed )) && continue
 
     # Per-line allowlist (repo-relative "path:line"; exact match).
     if [[ -f "$allowlist" ]] && grep -Fxq -- "$rel:$line" "$allowlist"; then

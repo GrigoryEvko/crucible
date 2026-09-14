@@ -4,9 +4,16 @@
 # Crucible's row_hash machinery (RowHashFold.h + every wrapper-specific
 # row_hash_contribution<W> specialization) folds via a SINGLE function:
 #
-#   include/crucible/safety/diag/StableName.h:166
+#   include/crucible/safety/diag/StableName.h
 #     [[nodiscard]] constexpr std::uint64_t combine_ids(
 #         std::uint64_t a, std::uint64_t b) noexcept
+#
+# Cited by SYMBOL, not by line.  This guard shipped citing ":166" and
+# the definition has since moved to :73 — prose keyed to a line number
+# rots the moment anything above it changes, and this one rotted
+# unnoticed for months because the guard was registered nowhere and so
+# never ran.  Both halves of that are fixed: the citation is now
+# line-free, and the guard is wired into ctest + CI.
 #
 # A runtime-only or test-only copy of this body is a DRIFT SURFACE:
 # any change to the salt (0x9e3779b97f4a7c15), the bit-mix shape, or
@@ -36,11 +43,122 @@
 # Exit status:
 #   0 — clean
 #   1 — a duplicate-shaped identifier was found
+#   2 — bad invocation / self-test failure
 
 set -euo pipefail
 
-script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd "$script_dir/.." && pwd)"
+
+usage() {
+    cat >&2 <<'USAGE'
+check-no-combine-ids-duplicate.sh — single combine_ids source of truth.
+
+Usage:
+  check-no-combine-ids-duplicate.sh              # scan; exit 1 on violation
+  check-no-combine-ids-duplicate.sh --self-test  # plant a violation, verify catch
+  check-no-combine-ids-duplicate.sh -h | --help  # usage
+
+Exemptions:
+  include/crucible/safety/diag/StableName.h   the canonical definition
+  test/safety_neg/**                          negative-compile fixtures
+  a match inside a `//` or `*` comment        prose, not a definition
+
+FIXY-FOUND-050 — row_hash folds through exactly one combine_ids body.
+USAGE
+}
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    --self-test)
+        # Plant one duplicate-shaped identifier plus one instance of
+        # each exemption axis, then re-run the scanner scoped to the
+        # temp tree.  A guard that never plants a violation has never
+        # demonstrated it fires — and this one was registered nowhere
+        # for months, so it had never even run.
+        tmp_root="$(mktemp -d)"
+        trap 'rm -rf "$tmp_root"' EXIT
+        mkdir -p "$tmp_root/src/planted" \
+                 "$tmp_root/include/crucible/safety/diag" \
+                 "$tmp_root/test/safety_neg"
+        cat >"$tmp_root/src/planted/planted_combine.cpp" <<'PLANTED'
+// Synthetic FIXY-FOUND-050 fixture for --self-test.
+#include <cstdint>
+namespace crucible::planted {
+// FLAGGED — suffix form, a parallel runtime body.
+constexpr std::uint64_t combine_ids_runtime(std::uint64_t a, std::uint64_t b) noexcept {
+    return a ^ b;
+}
+// FLAGGED — prefix form.
+constexpr std::uint64_t runtime_combine_ids(std::uint64_t a, std::uint64_t b) noexcept {
+    return a ^ b;
+}
+// CLEAN — the canonical call form carries no prefix or suffix.
+constexpr std::uint64_t planted_caller(std::uint64_t a, std::uint64_t b) noexcept {
+    return ::crucible::safety::diag::detail::combine_ids(a, b);
+}
+// CLEAN — combine_ids_in_comment named only in prose, not an identifier.
+}  // namespace crucible::planted
+PLANTED
+        # Exemption axis: the canonical definition site.
+        cat >"$tmp_root/include/crucible/safety/diag/StableName.h" <<'CANON'
+#pragma once
+// Canonical site — exempt even when it names combine_ids_runtime in prose.
+constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
+CANON
+        # Exemption axis: negative-compile fixtures may name the ban.
+        cat >"$tmp_root/test/safety_neg/planted_neg.cpp" <<'NEG'
+// Exempt — safety_neg fixtures document what they reject.
+constexpr unsigned long long combine_ids_forbidden(unsigned long long a) { return a; }
+NEG
+        result_file="$(mktemp)"
+        if CRUCIBLE_COMBINE_IDS_TEST_ROOT="$tmp_root" \
+           bash "${BASH_SOURCE[0]}" 2>"$result_file"; then
+            printf 'check-no-combine-ids-duplicate: SELF-TEST FAILED — planted duplicate not caught.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        ci_fail() {
+            printf 'check-no-combine-ids-duplicate: SELF-TEST FAILED — %s\n' "$1" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        }
+        # Both duplicate shapes must be caught.
+        grep -qF 'planted_combine.cpp' "$result_file" || \
+            ci_fail "planted duplicate file missing from the diagnostic."
+        if ! grep -qE 'planted_combine\.cpp:[0-9]+' "$result_file"; then
+            ci_fail "diagnostic carries no line reference for the planted file."
+        fi
+        # Exactly two sites in the planted file — the prefix and suffix
+        # forms.  A third would mean the canonical call form leaked.
+        planted_hits="$(grep -cE 'planted_combine\.cpp:[0-9]+' "$result_file" || true)"
+        [[ "$planted_hits" -eq 2 ]] || \
+            ci_fail "expected 2 planted hits, saw ${planted_hits} — the canonical call form or a comment leaked through."
+        # Neither exemption axis may leak.  Match the `path:line`
+        # diagnostic form, NOT the bare filename: the guard's own hint
+        # text names StableName.h, so a substring grep would report a
+        # leak that never happened.
+        if grep -qE 'StableName\.h:[0-9]+' "$result_file"; then
+            ci_fail "canonical-definition exemption leaked."
+        fi
+        if grep -qE 'planted_neg\.cpp:[0-9]+' "$result_file"; then
+            ci_fail "test/safety_neg exemption leaked."
+        fi
+        rm -f "$result_file"
+        printf 'check-no-combine-ids-duplicate: self-test passed — prefix + suffix duplicates caught; canonical call form, StableName.h and test/safety_neg all exempt.\n' >&2
+        exit 0
+        ;;
+    "") ;;
+    *) printf 'check-no-combine-ids-duplicate: unknown argument: %s\n' "$1" >&2
+       usage; exit 2 ;;
+esac
+
+# Scan-root override for --self-test recursion.
+scan_root="${CRUCIBLE_COMBINE_IDS_TEST_ROOT:-$project_root}"
 
 # Pattern: `combine_ids` immediately followed or preceded by a
 # non-`::` non-word character, AND the immediate context is NOT
@@ -88,7 +206,14 @@ while IFS= read -r match; do
     violations+="${file}:${line}"$'\n'
     violation_count=$((violation_count + 1))
 done < <(
-    cd "$project_root"
+    cd "$scan_root"
+    # Only pass directories that exist — a --self-test temp root carries
+    # a subset, and rg treats a missing target as a hard error.
+    scan_dirs=()
+    for d in include src test bench tools vessel; do
+        [[ -d "$d" ]] && scan_dirs+=("$d")
+    done
+    [[ ${#scan_dirs[@]} -eq 0 ]] && exit 0
     rg -nP \
        --no-heading \
        --type=cpp \
@@ -98,7 +223,7 @@ done < <(
        --glob '!external/**' \
        --glob '!vendor/**' \
        "$candidate_pattern" \
-       include/ src/ test/ bench/ tools/ vessel/ 2>/dev/null || true
+       "${scan_dirs[@]}" 2>/dev/null || true
 )
 
 if [[ "$violation_count" -ne 0 ]]; then
@@ -114,7 +239,7 @@ alternative name.  Route the call through:
 
   ::crucible::safety::diag::detail::combine_ids(a, b)
 
-(see include/crucible/safety/diag/StableName.h:166).
+(see combine_ids in include/crucible/safety/diag/StableName.h).
 HINT
     exit 1
 fi

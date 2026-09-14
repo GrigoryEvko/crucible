@@ -126,7 +126,7 @@ namespace detail {
 #ifdef __linux__
     cpu_set_t set;
     CPU_ZERO(&set);
-    if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+    if (::sched_getaffinity(0, sizeof(set), &set) == 0) {
         std::vector<int> out;
         for (int c = 0; c < CPU_SETSIZE; ++c)
             if (CPU_ISSET(static_cast<size_t>(c), &set)) out.push_back(c);

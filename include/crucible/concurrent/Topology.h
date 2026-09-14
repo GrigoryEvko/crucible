@@ -172,7 +172,7 @@ namespace topology_detail {
 #if CRUCIBLE_HAS_SCHED_AFFINITY
     cpu_set_t mask;
     CPU_ZERO(&mask);
-    if (sched_getaffinity(0, sizeof(mask), &mask) == 0) {
+    if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) {
         return static_cast<std::size_t>(CPU_COUNT(&mask));
     }
 #endif
