@@ -23,6 +23,15 @@ namespace crucible {
 // Nodes live in an arena, which never runs destructors. This type is
 // trivially destructible.
 struct Expr {
+    // The arity ceiling of the whole IR. `nargs` is a uint8_t, so a node
+    // cannot name a 256th child: a wider argument list would have to be
+    // truncated, and a node whose `nargs` disagrees with the length of its
+    // `args` array reads past that array on every later traversal.
+    //
+    // Every scratch buffer and every arity precondition in ExprPool is sized
+    // from this one constant, so the bound has a single place to change.
+    static constexpr uint8_t kMaxArgs = 255;
+
     const Op op = Op::INTEGER;
     const uint8_t nargs = 0;
     const uint16_t flags = 0;
@@ -93,6 +102,11 @@ struct Expr {
 };
 
 static_assert(sizeof(Expr) == 32, "Expr must be exactly 32 bytes");
+
+// Ties the ceiling to the field it comes from. Widening `nargs` without
+// raising kMaxArgs would leave every ExprPool scratch buffer short.
+static_assert(Expr::kMaxArgs == static_cast<uint8_t>(~static_cast<uint8_t>(0)),
+              "Expr::kMaxArgs must be the largest value Expr::nargs can hold");
 
 static_assert(std::is_same_v<decltype(std::declval<Expr>().hash),
                              const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>>,

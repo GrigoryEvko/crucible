@@ -4,6 +4,7 @@
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
+#include <crucible/Saturate.h>
 #include <crucible/SwissTable.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
@@ -13,7 +14,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -205,6 +205,116 @@ namespace detail {
     }
 }
 
+// The arity an operation admits, inclusive at both ends.
+//
+// An empty band, where `min` is above `max`, admits no argument list at all.
+// The atoms carry a payload rather than children and have no way through the
+// generic factory, so that is their band.
+struct ArityBand {
+    uint8_t min = 1;
+    uint8_t max = Expr::kMaxArgs;
+};
+
+// The bound each operation places on its own argument list.
+//
+// Two separate limits meet here.  The upper end of a variadic band is the
+// structural ceiling of the IR, because Expr::nargs cannot name a 256th
+// child.  A fixed band is what the constructor for that operation reads: the
+// WHERE arm indexes args[2], so a two-element list would read past the span.
+//
+// The default arm is not dead.  An operation byte read from out-of-range
+// memory lands there, and an empty band turns that into a rejection at the
+// boundary instead of a walk off the end of the argument list.
+[[nodiscard, gnu::const]] constexpr ArityBand op_arity_band(Op op) noexcept {
+    constexpr ArityBand kNone{.min = 1, .max = 0};
+    switch (op) {
+        // Variadic.  One operand is the floor because none of these has a
+        // useful nullary reading through a factory that names the operation.
+        case Op::ADD:
+        case Op::MUL:
+        case Op::AND:
+        case Op::OR:
+        case Op::MIN:
+        case Op::MAX:
+        case Op::IS_NON_OVERLAPPING_AND_DENSE:
+            return ArityBand{.min = 1, .max = Expr::kMaxArgs};
+
+        // Exactly one child.
+        case Op::NOT:
+        case Op::NEG:
+        case Op::IDENTITY:
+        case Op::ABS:
+        case Op::CEIL_TO_INT:
+        case Op::FLOOR_TO_INT:
+        case Op::TRUNC_TO_FLOAT:
+        case Op::TRUNC_TO_INT:
+        case Op::ROUND_TO_INT:
+        case Op::TO_FLOAT:
+        case Op::SQRT:
+        case Op::COS:
+        case Op::COSH:
+        case Op::SIN:
+        case Op::SINH:
+        case Op::TAN:
+        case Op::TANH:
+        case Op::ASIN:
+        case Op::ACOS:
+        case Op::ATAN:
+        case Op::EXP:
+        case Op::LOG:
+        case Op::ASINH:
+        case Op::LOG2:
+            return ArityBand{.min = 1, .max = 1};
+
+        // Exactly two children.
+        case Op::POW:
+        case Op::EQ:
+        case Op::NE:
+        case Op::LT:
+        case Op::LE:
+        case Op::GT:
+        case Op::GE:
+        case Op::FLOOR_DIV:
+        case Op::CLEAN_DIV:
+        case Op::CEIL_DIV:
+        case Op::INT_TRUE_DIV:
+        case Op::FLOAT_TRUE_DIV:
+        case Op::MOD:
+        case Op::PYTHON_MOD:
+        case Op::ROUND_DECIMAL:
+        case Op::LSHIFT:
+        case Op::RSHIFT:
+        case Op::POW_BY_NATURAL:
+        case Op::FLOAT_POW:
+        case Op::BITWISE_AND:
+        case Op::BITWISE_OR:
+        case Op::BITWISE_XOR:
+            return ArityBand{.min = 2, .max = 2};
+
+        // Exactly three children.
+        case Op::MODULAR_INDEXING:
+        case Op::WHERE:
+            return ArityBand{.min = 3, .max = 3};
+
+        // Atoms set their payload through a dedicated constructor.  The
+        // generic factory has no payload parameter, so it can only build a
+        // payload-less impostor of one.
+        case Op::INTEGER:
+        case Op::FLOAT:
+        case Op::SYMBOL:
+        case Op::BOOL_TRUE:
+        case Op::BOOL_FALSE:
+            return kNone;
+
+        // The enum sentinel, never a real op.
+        case Op::NUM_OPS:
+            return kNone;
+
+        default:
+            return kNone;
+    }
+}
+
 }  // namespace detail
 
 // Arena-based expression factory with Swiss-table interning.
@@ -364,7 +474,12 @@ public:
             uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, args, 2);
             return intern_node(a, Op::ADD, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
-        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, lhs->payload + rhs->payload);
+        // Folding saturates rather than wrapping.  Both answers are outside
+        // the integers, but a saturated one is the same on every target and
+        // in every build mode, and a wrapped one is undefined behaviour that
+        // only the -fno-strict-overflow flag currently tames.
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+            return integer(a, ::crucible::sat::add_sat(lhs->payload, rhs->payload));
         if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() + rhs->as_float());
         if (lhs->is_zero_int()) return rhs;
         if (rhs->is_zero_int()) return lhs;
@@ -383,7 +498,8 @@ public:
             uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, args, 2);
             return intern_node(a, Op::MUL, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
-        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, lhs->payload * rhs->payload);
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+            return integer(a, ::crucible::sat::mul_sat(lhs->payload, rhs->payload));
         if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() * rhs->as_float());
         if (lhs->is_zero_int() || rhs->is_zero_int()) return integer(a, 0);
         if (lhs->is_one()) return rhs;
@@ -401,7 +517,7 @@ public:
             int64_t base_value = base->payload;
             int64_t exponent_value = exp->payload;
             for (int64_t i = 0; i < exponent_value; ++i)
-                accumulated_product *= base_value;
+                accumulated_product = ::crucible::sat::mul_sat(accumulated_product, base_value);
             return integer(a, accumulated_product);
         }
         const Expr* args[] = {base, exp};
@@ -412,7 +528,9 @@ public:
     // The canonical form of a negation is MUL(-1, x).  No NEG node ever
     // reaches the intern table.
     [[nodiscard]] const Expr* neg(effects::Alloc a, const Expr* expr) {
-        if (expr->op == Op::INTEGER) return integer(a, -expr->payload);
+        // Negating the most negative int64 has no result in the type, so the
+        // subtraction saturates at the top instead.
+        if (expr->op == Op::INTEGER) return integer(a, ::crucible::sat::sub_sat(int64_t{0}, expr->payload));
         if (expr->op == Op::FLOAT) return float_(a, -expr->as_float());
         return mul(a, integer(a, -1), expr);
     }
@@ -495,13 +613,15 @@ public:
     // ---- Division / Modular ----
 
     [[nodiscard]] const Expr* floor_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && is_foldable_division_(lhs->as_int(), rhs->as_int())) {
             int64_t dividend = lhs->as_int();
             int64_t divisor = rhs->as_int();
             int64_t quotient = dividend / divisor;
             int64_t remainder = dividend % divisor;
             // Floor adjustment: C truncates toward zero; floor() rounds toward
             // -inf when the remainder has the opposite sign of the divisor.
+            // The decrement cannot run off the bottom: a quotient at the
+            // minimum needs a divisor of one, which leaves no remainder.
             if (remainder != 0 && ((remainder ^ divisor) < 0)) --quotient;
             return integer(a, quotient);
         }
@@ -515,13 +635,20 @@ public:
         // Extract divisible terms from ADD when divisor is constant
         if (lhs->op == Op::ADD && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
             int64_t divisor = rhs->as_int();
-            const Expr* quotients[256];
-            const Expr* remainders[256];
-            uint8_t num_quotients = 0;
-            uint8_t num_remainders = 0;
+            const Expr* quotients[kScratchArgs];
+            const Expr* remainders[kScratchArgs];
+            std::size_t num_quotients = 0;
+            std::size_t num_remainders = 0;
             for (uint8_t i = 0; i < lhs->nargs; ++i) {
                 int64_t coeff = integer_coefficient_(lhs->arg(i));
-                if (coeff != 0 && coeff % divisor == 0)
+                // Every term goes to exactly one of the two, and lhs is an
+                // interned node, so the two counts together never pass the
+                // ceiling either buffer is sized to.
+                CRUCIBLE_FATAL_INVARIANT(num_quotients < kScratchArgs && num_remainders < kScratchArgs);
+                // The divisor cannot be zero here, and the remainder of the
+                // most negative int64 by minus one is undefined, so that pair
+                // takes the remainder branch instead of folding.
+                if (coeff != 0 && is_foldable_division_(coeff, divisor) && coeff % divisor == 0)
                     quotients[num_quotients++] = divide_coefficients_(a, lhs->arg(i), divisor);
                 else
                     remainders[num_remainders++] = lhs->arg(i);
@@ -553,13 +680,15 @@ public:
     }
 
     [[nodiscard]] const Expr* ceil_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && is_foldable_division_(lhs->as_int(), rhs->as_int())) {
             int64_t dividend = lhs->as_int();
             int64_t divisor = rhs->as_int();
             int64_t quotient = dividend / divisor;
             int64_t remainder = dividend % divisor;
             // Ceil adjustment: when the remainder shares the divisor's sign,
             // C truncation already rounded down; bump up to round toward +inf.
+            // The increment cannot run off the top: a quotient at the maximum
+            // needs a divisor of one, which leaves no remainder.
             if (remainder != 0 && ((remainder ^ divisor) > 0)) ++quotient;
             return integer(a, quotient);
         }
@@ -581,13 +710,14 @@ public:
     }
 
     [[nodiscard]] const Expr* python_mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && is_foldable_division_(lhs->as_int(), rhs->as_int())) {
             int64_t dividend = lhs->as_int();
             int64_t divisor = rhs->as_int();
             int64_t remainder = dividend % divisor;
             // Python modulo: result has the same sign as the divisor; C truncation
-            // gives the wrong sign when remainder and divisor disagree.
-            if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder += divisor;
+            // gives the wrong sign when remainder and divisor disagree.  The
+            // sum stays inside the type, because the two have opposite signs.
+            if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder = ::crucible::sat::add_sat(remainder, divisor);
             return integer(a, remainder);
         }
         if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
@@ -603,8 +733,11 @@ public:
     [[nodiscard]] const Expr* modular_indexing(effects::Alloc a, const Expr* base, const Expr* div,
                                                const Expr* modulus) {
         if (base->is_zero_int() || modulus->is_one()) return integer(a, 0);
-        if (base->op == Op::INTEGER && div->op == Op::INTEGER && modulus->op == Op::INTEGER && div->as_int() != 0
-            && modulus->as_int() != 0) {
+        // Two divisions fold here, and each needs its own guard: the second
+        // takes the quotient of the first, which can itself be the most
+        // negative int64 against a modulus of minus one.
+        if (base->op == Op::INTEGER && div->op == Op::INTEGER && modulus->op == Op::INTEGER
+            && is_foldable_division_(base->as_int(), div->as_int())) {
             int64_t base_value = base->as_int();
             int64_t divisor_value = div->as_int();
             int64_t modulus_value = modulus->as_int();
@@ -612,9 +745,13 @@ public:
             int64_t remainder = base_value % divisor_value;
             // Floor adjustment for negative dividend (matches Python //).
             if (remainder != 0 && ((remainder ^ divisor_value) < 0)) --quotient;
-            int64_t mod_result = quotient % modulus_value;
-            if (mod_result < 0) mod_result += modulus_value;
-            return integer(a, mod_result);
+            if (is_foldable_division_(quotient, modulus_value)) {
+                int64_t mod_result = quotient % modulus_value;
+                // The two have opposite signs here, so the sum stays inside
+                // the type.
+                if (mod_result < 0) mod_result = ::crucible::sat::add_sat(mod_result, modulus_value);
+                return integer(a, mod_result);
+            }
         }
         // GCD on (base, divisor)
         if (!(div->op == Op::INTEGER && div->as_int() == 1)) {
@@ -625,13 +762,19 @@ public:
         }
         // Drop ADD terms divisible by modulus*divisor
         if (base->op == Op::ADD && modulus->op == Op::INTEGER && div->op == Op::INTEGER) {
-            int64_t mod_div_product = modulus->as_int() * div->as_int();
+            // A saturated product is still positive, so the branch below
+            // still admits it, and a coefficient can never be a multiple of a
+            // saturated bound unless it is that bound.
+            int64_t mod_div_product = ::crucible::sat::mul_sat(modulus->as_int(), div->as_int());
             if (mod_div_product > 0) {
-                const Expr* kept_terms[256];
-                uint8_t num_kept = 0;
+                const Expr* kept_terms[kScratchArgs];
+                std::size_t num_kept = 0;
                 bool any_dropped = false;
                 for (uint8_t i = 0; i < base->nargs; ++i) {
                     int64_t coeff = integer_coefficient_(base->arg(i));
+                    // base is interned, so its child count is inside the
+                    // ceiling the buffer is sized to.
+                    CRUCIBLE_FATAL_INVARIANT(num_kept < kScratchArgs);
                     if (coeff != 0 && coeff % mod_div_product == 0)
                         any_dropped = true;
                     else
@@ -696,7 +839,19 @@ public:
     }
 
 private:
+    // The one boundary every generically built node crosses.
+    //
+    // The arity band is checked before the dispatch below, because each arm
+    // reads a fixed set of positions out of `args` and the variadic arms
+    // copy the list into a scratch buffer sized from Expr::kMaxArgs.  A list
+    // outside the band is a caller defect with no defined result, and
+    // continuing past it reads or writes out of bounds, so the check holds in
+    // every build mode rather than only where contracts are enforced.
     [[nodiscard]] const Expr* make_raw_(effects::Alloc a, Op op, std::span<const Expr* const> args) {
+        const detail::ArityBand band = detail::op_arity_band(op);
+        CRUCIBLE_FATAL_INVARIANT(args.size() >= static_cast<std::size_t>(band.min));
+        CRUCIBLE_FATAL_INVARIANT(args.size() <= static_cast<std::size_t>(band.max));
+
         switch (op) {
             case Op::ADD:
                 if (args.size() == 2) [[likely]]
@@ -836,6 +991,31 @@ private:
     static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kIntCacheSize, std::size_t{1024}),
                   "kIntCacheSize must be a power of two ≤ 1024");
 
+    // Every n-ary constructor collects its operands in a stack buffer of this
+    // many entries.  The size comes from the IR ceiling rather than a round
+    // number, so a buffer that is full is exactly a node that cannot be
+    // named: the next operand would need an nargs of 256.
+    //
+    // A flatten that would pass the ceiling keeps the child node whole
+    // instead.  Flattening is a canonicalization, so min(min(a, b), c) and
+    // min(a, b, c) name the same value and the fallback costs one level of
+    // nesting, not correctness.
+    static constexpr std::size_t kScratchArgs = Expr::kMaxArgs;
+
+    // add_n and mul_n reattach the folded constant after collecting their
+    // terms, so their collection buffer holds one more entry than the
+    // ceiling.  The extra slot is never interned; the reattach path nests
+    // instead when the terms alone already fill the ceiling.
+    static constexpr std::size_t kScratchCollect = kScratchArgs + 1;
+
+    // C++ leaves the division and the remainder of the most negative int64
+    // by minus one undefined, because the quotient is one past the top of
+    // the type.  A fold that meets the pair declines to fold, which leaves
+    // the expression symbolic instead of producing a target-dependent value.
+    [[nodiscard, gnu::const]] static constexpr bool is_foldable_division_(int64_t dividend, int64_t divisor) noexcept {
+        return divisor != 0 && !(dividend == std::numeric_limits<int64_t>::min() && divisor == -1);
+    }
+
     // Rounds up to a power-of-two capacity holding at least one control
     // group.  The constructor precondition caps the input at 1 << 30, so the
     // shift cannot overflow for an admitted caller.
@@ -863,11 +1043,12 @@ private:
     }
 
     [[nodiscard]] static int64_t gcd_(int64_t a, int64_t b) {
-        // Negating INT64_MIN is undefined.  Callers route their operands
-        // through safe_abs_, which clamps INT64_MIN to INT64_MAX, so the
-        // negations below never see it.
-        a = (a < 0) ? -a : a;
-        b = (b < 0) ? -b : b;
+        // Every caller already routes its operands through safe_abs_, so the
+        // most negative int64 does not arrive here.  Taking the absolute
+        // value through the same clamp rather than a bare negation makes that
+        // a property of this function instead of a property of its callers.
+        a = safe_abs_(a);
+        b = safe_abs_(b);
         while (b) {
             int64_t t = b;
             b = a % b;
@@ -919,17 +1100,20 @@ private:
                     // A binary MUL whose coefficient collapsed to one is just
                     // its other factor.
                     if (new_coeff == 1 && expr->nargs == 2) return expr->args[1 - i];
-                    const Expr* rebuilt_factors[255];
-                    uint8_t num_rebuilt = 0;
-                    for (uint8_t j = 0; j < expr->nargs; ++j)
+                    const Expr* rebuilt_factors[kScratchArgs];
+                    std::size_t num_rebuilt = 0;
+                    for (uint8_t j = 0; j < expr->nargs; ++j) {
+                        CRUCIBLE_FATAL_INVARIANT(num_rebuilt < kScratchArgs);
                         rebuilt_factors[num_rebuilt++] = (j == i) ? integer(a, new_coeff) : expr->args[j];
+                    }
                     return mul_n(a, std::span{rebuilt_factors, num_rebuilt});
                 }
             }
             return expr;
         }
         if (expr->op == Op::ADD) {
-            const Expr* divided_terms[255];
+            const Expr* divided_terms[kScratchArgs];
+            CRUCIBLE_FATAL_INVARIANT(expr->nargs <= kScratchArgs);
             for (uint8_t i = 0; i < expr->nargs; ++i)
                 divided_terms[i] = divide_coefficients_(a, expr->args[i], divisor);
             return add_n(a, std::span{divided_terms, expr->nargs});
@@ -937,68 +1121,99 @@ private:
         return expr;
     }
 
+    // MIN and MAX have no identity element, so an empty operand list names no
+    // value and the dedup pass below would return a slot that was never
+    // written.  make_raw_ rejects the empty list at the boundary; the check
+    // here is the second of the two and holds in every build mode, because
+    // the read it guards is the return value.
     const Expr* min_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-        const Expr* scratch_buf[64];
-        uint8_t num_args = 0;
-        for (auto* input_expr : inputs) {
-            if (input_expr->op == Op::MIN) {
+        CRUCIBLE_FATAL_INVARIANT(!inputs.empty());
+        CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
+
+        const Expr* scratch_buf[kScratchArgs];
+        std::size_t num_args = 0;
+        for (std::size_t k = 0; k < inputs.size(); ++k) {
+            const Expr* input_expr = inputs[k];
+            // What the inputs after this one need at a minimum, one slot
+            // each.  Flattening is declined when it would eat that room,
+            // which keeps the buffer bound an inequality over the whole loop
+            // rather than a test at each write.
+            const std::size_t reserved = inputs.size() - k - 1;
+            if (input_expr->op == Op::MIN && num_args + input_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < input_expr->nargs; ++i)
                     scratch_buf[num_args++] = input_expr->arg(i);
             } else {
+                CRUCIBLE_FATAL_INVARIANT(num_args + reserved < kScratchArgs);
                 scratch_buf[num_args++] = input_expr;
             }
         }
         std::ranges::sort(std::span{scratch_buf, num_args});
-        uint8_t num_unique = 1;
-        for (uint8_t i = 1; i < num_args; ++i)
+        std::size_t num_unique = 1;
+        for (std::size_t i = 1; i < num_args; ++i)
             if (scratch_buf[i] != scratch_buf[num_unique - 1]) scratch_buf[num_unique++] = scratch_buf[i];
         if (num_unique == 1) return scratch_buf[0];
-        uint16_t composite_flag_bits = detail::composite_flags(Op::MIN, scratch_buf, num_unique);
-        return intern_node(a, Op::MIN, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
+        CRUCIBLE_FATAL_INVARIANT(num_unique <= kScratchArgs);
+        const auto arg_count = static_cast<uint8_t>(num_unique);
+        uint16_t composite_flag_bits = detail::composite_flags(Op::MIN, scratch_buf, arg_count);
+        return intern_node(a, Op::MIN, scratch_buf, arg_count, composite_flag_bits, SymbolId{}, 0);
     }
 
     const Expr* max_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-        const Expr* scratch_buf[64];
-        uint8_t num_args = 0;
-        for (auto* input_expr : inputs) {
-            if (input_expr->op == Op::MAX) {
+        CRUCIBLE_FATAL_INVARIANT(!inputs.empty());
+        CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
+
+        const Expr* scratch_buf[kScratchArgs];
+        std::size_t num_args = 0;
+        for (std::size_t k = 0; k < inputs.size(); ++k) {
+            const Expr* input_expr = inputs[k];
+            const std::size_t reserved = inputs.size() - k - 1;
+            if (input_expr->op == Op::MAX && num_args + input_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < input_expr->nargs; ++i)
                     scratch_buf[num_args++] = input_expr->arg(i);
             } else {
+                CRUCIBLE_FATAL_INVARIANT(num_args + reserved < kScratchArgs);
                 scratch_buf[num_args++] = input_expr;
             }
         }
         std::ranges::sort(std::span{scratch_buf, num_args});
-        uint8_t num_unique = 1;
-        for (uint8_t i = 1; i < num_args; ++i)
+        std::size_t num_unique = 1;
+        for (std::size_t i = 1; i < num_args; ++i)
             if (scratch_buf[i] != scratch_buf[num_unique - 1]) scratch_buf[num_unique++] = scratch_buf[i];
         if (num_unique == 1) return scratch_buf[0];
-        uint16_t composite_flag_bits = detail::composite_flags(Op::MAX, scratch_buf, num_unique);
-        return intern_node(a, Op::MAX, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
+        CRUCIBLE_FATAL_INVARIANT(num_unique <= kScratchArgs);
+        const auto arg_count = static_cast<uint8_t>(num_unique);
+        uint16_t composite_flag_bits = detail::composite_flags(Op::MAX, scratch_buf, arg_count);
+        return intern_node(a, Op::MAX, scratch_buf, arg_count, composite_flag_bits, SymbolId{}, 0);
     }
 
     // Flattens nested ADD, folds integer constants, combines like terms,
     // sorts and interns.  Term combining is what keeps expansion tractable:
     // (a+b)^n yields n+1 binomial terms instead of 2^n unmerged products.
     const Expr* add_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-        const Expr* term_scratch_buf[256];
-        uint8_t num_args = 0;
+        CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
+
+        const Expr* term_scratch_buf[kScratchArgs];
+        std::size_t num_args = 0;
         int64_t int_sum = 0;
 
-        for (auto* arg_expr : inputs) {
-            if (arg_expr->op == Op::ADD) {
+        for (std::size_t k = 0; k < inputs.size(); ++k) {
+            const Expr* arg_expr = inputs[k];
+            // An over-estimate, because an integer input folds into the sum
+            // and takes no slot.
+            const std::size_t reserved = inputs.size() - k - 1;
+            if (arg_expr->op == Op::ADD && num_args + arg_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
                     if (arg_expr->args[i]->op == Op::INTEGER)
-                        int_sum += arg_expr->args[i]->payload;
+                        int_sum = ::crucible::sat::add_sat(int_sum, arg_expr->args[i]->payload);
                     else {
-                        assert(num_args < 255 && "too many ADD terms");
+                        CRUCIBLE_FATAL_INVARIANT(num_args < kScratchArgs);
                         term_scratch_buf[num_args++] = arg_expr->args[i];
                     }
                 }
             } else if (arg_expr->op == Op::INTEGER) {
-                int_sum += arg_expr->payload;
+                int_sum = ::crucible::sat::add_sat(int_sum, arg_expr->payload);
             } else {
-                assert(num_args < 255 && "too many ADD terms");
+                CRUCIBLE_FATAL_INVARIANT(num_args + reserved < kScratchArgs);
                 term_scratch_buf[num_args++] = arg_expr;
             }
         }
@@ -1016,26 +1231,31 @@ private:
             int64_t coeff;
             const Expr* base;
         };
-        CoeffTerm decomposed_terms[256];
-        uint8_t num_decomposed = 0;
+        CoeffTerm decomposed_terms[kScratchArgs];
+        std::size_t num_decomposed = 0;
 
-        for (uint8_t j = 0; j < num_args; ++j) {
+        for (std::size_t j = 0; j < num_args; ++j) {
             int64_t combined_coefficient = 1;
             const Expr* base = term_scratch_buf[j];
 
             if (term_scratch_buf[j]->op == Op::MUL) {
-                const Expr* mul_factors[256];
-                uint8_t num_factors = 0;
+                const Expr* mul_factors[kScratchArgs];
+                std::size_t num_factors = 0;
                 for (uint8_t k = 0; k < term_scratch_buf[j]->nargs; ++k) {
                     if (term_scratch_buf[j]->args[k]->op == Op::INTEGER)
                         combined_coefficient = term_scratch_buf[j]->args[k]->payload;
-                    else
+                    else {
+                        // An interned node carries at most Expr::kMaxArgs
+                        // children, so its factors always fit.  The check is
+                        // what makes that a guarantee rather than a belief.
+                        CRUCIBLE_FATAL_INVARIANT(num_factors < kScratchArgs);
                         mul_factors[num_factors++] = term_scratch_buf[j]->args[k];
+                    }
                 }
                 if (num_factors == 0) {
                     // A MUL of integers only.  The flattening above should
                     // have folded it already.
-                    int_sum += combined_coefficient;
+                    int_sum = ::crucible::sat::add_sat(int_sum, combined_coefficient);
                     continue;
                 } else if (num_factors == 1) {
                     base = mul_factors[0];
@@ -1043,10 +1263,12 @@ private:
                     // The coefficient-free MUL is the grouping key.  Its
                     // factors came out of a canonical MUL, so they are
                     // already sorted.
-                    uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, mul_factors, num_factors);
-                    base = intern_node(a, Op::MUL, mul_factors, num_factors, composite_flag_bits, SymbolId{}, 0);
+                    const auto factor_count = static_cast<uint8_t>(num_factors);
+                    uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, mul_factors, factor_count);
+                    base = intern_node(a, Op::MUL, mul_factors, factor_count, composite_flag_bits, SymbolId{}, 0);
                 }
             }
+            CRUCIBLE_FATAL_INVARIANT(num_decomposed < kScratchArgs);
             decomposed_terms[num_decomposed++] = {.coeff = combined_coefficient, .base = base};
         }
 
@@ -1055,24 +1277,26 @@ private:
         std::ranges::sort(std::span{decomposed_terms, num_decomposed},
                           [](const CoeffTerm& lhs, const CoeffTerm& rhs) { return lhs.base < rhs.base; });
 
-        const Expr* collected_terms[256];
-        uint8_t num_collected = 0;
-        uint8_t i = 0;
+        const Expr* collected_terms[kScratchCollect];
+        std::size_t num_collected = 0;
+        std::size_t i = 0;
         while (i < num_decomposed) {
             int64_t total_coeff = decomposed_terms[i].coeff;
             const Expr* base = decomposed_terms[i].base;
-            auto j = static_cast<uint8_t>(i + 1);
+            std::size_t j = i + 1;
             while (j < num_decomposed && decomposed_terms[j].base == base) {
-                total_coeff += decomposed_terms[j].coeff;
+                total_coeff = ::crucible::sat::add_sat(total_coeff, decomposed_terms[j].coeff);
                 ++j;
             }
 
             if (total_coeff == 0) {
                 // The terms cancelled, as in a + (-a).
             } else if (total_coeff == 1) {
+                CRUCIBLE_FATAL_INVARIANT(num_collected < kScratchCollect);
                 collected_terms[num_collected++] = base;
             } else {
                 const Expr* mul_args[] = {integer(a, total_coeff), base};
+                CRUCIBLE_FATAL_INVARIANT(num_collected < kScratchCollect);
                 collected_terms[num_collected++] = mul_n(a, mul_args);
             }
             i = j;
@@ -1081,35 +1305,67 @@ private:
         // Reattach the integer sum, omitting a zero unless it is the only
         // term left.
         if (int_sum != 0 || num_collected == 0) {
-            assert(num_collected < 255);
+            if (num_collected == kScratchArgs) [[unlikely]] {
+                // The terms alone already fill the ceiling, so there is no
+                // slot left to name the constant as a sibling.  One level of
+                // nesting names the same value, ADD(ADD(t...), c), and both
+                // of its nodes are inside the ceiling.
+                //
+                // The outer node is built here rather than through add(),
+                // which would flatten the inner one straight back into this
+                // same state.
+                std::ranges::sort(std::span{collected_terms, num_collected});
+                return nest_folded_constant_(a, Op::ADD, collected_terms, int_sum);
+            }
+            CRUCIBLE_FATAL_INVARIANT(num_collected < kScratchCollect);
             collected_terms[num_collected++] = integer(a, int_sum);
         }
         if (num_collected == 1) return collected_terms[0];
 
         std::ranges::sort(std::span{collected_terms, num_collected});
-        uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, collected_terms, num_collected);
-        return intern_node(a, Op::ADD, collected_terms, num_collected, composite_flag_bits, SymbolId{}, 0);
+        CRUCIBLE_FATAL_INVARIANT(num_collected <= kScratchArgs);
+        const auto arg_count = static_cast<uint8_t>(num_collected);
+        uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, collected_terms, arg_count);
+        return intern_node(a, Op::ADD, collected_terms, arg_count, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    // Interns a full-width operand list and pairs it with the folded constant
+    // one level up.  Used by add_n and mul_n when the terms alone reach the
+    // arity ceiling, which leaves the constant no sibling slot.
+    const Expr* nest_folded_constant_(effects::Alloc a, Op op, const Expr* const* terms, int64_t folded_constant) {
+        const uint16_t inner_flags = detail::composite_flags(op, terms, Expr::kMaxArgs);
+        const Expr* inner = intern_node(a, op, terms, Expr::kMaxArgs, inner_flags, SymbolId{}, 0);
+        const Expr* constant = integer(a, folded_constant);
+        // Address order, the same canonical ordering the binary builders use.
+        const Expr* outer_args[] = {inner, constant};
+        if (outer_args[0] > outer_args[1]) std::swap(outer_args[0], outer_args[1]);
+        const uint16_t outer_flags = detail::composite_flags(op, outer_args, 2);
+        return intern_node(a, op, outer_args, 2, outer_flags, SymbolId{}, 0);
     }
 
     const Expr* mul_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-        const Expr* factor_scratch_buf[256];
-        uint8_t num_args = 0;
+        CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
+
+        const Expr* factor_scratch_buf[kScratchCollect];
+        std::size_t num_args = 0;
         int64_t int_prod = 1;
 
-        for (auto* arg_expr : inputs) {
-            if (arg_expr->op == Op::MUL) {
+        for (std::size_t k = 0; k < inputs.size(); ++k) {
+            const Expr* arg_expr = inputs[k];
+            const std::size_t reserved = inputs.size() - k - 1;
+            if (arg_expr->op == Op::MUL && num_args + arg_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
                     if (arg_expr->args[i]->op == Op::INTEGER)
-                        int_prod *= arg_expr->args[i]->payload;
+                        int_prod = ::crucible::sat::mul_sat(int_prod, arg_expr->args[i]->payload);
                     else {
-                        assert(num_args < 255 && "too many MUL terms");
+                        CRUCIBLE_FATAL_INVARIANT(num_args < kScratchArgs);
                         factor_scratch_buf[num_args++] = arg_expr->args[i];
                     }
                 }
             } else if (arg_expr->op == Op::INTEGER) {
-                int_prod *= arg_expr->payload;
+                int_prod = ::crucible::sat::mul_sat(int_prod, arg_expr->payload);
             } else {
-                assert(num_args < 255 && "too many MUL terms");
+                CRUCIBLE_FATAL_INVARIANT(num_args + reserved < kScratchArgs);
                 factor_scratch_buf[num_args++] = arg_expr;
             }
         }
@@ -1118,32 +1374,51 @@ private:
         // Reattach the integer product, omitting a one unless it is the only
         // factor left.
         if (int_prod != 1 || num_args == 0) {
-            assert(num_args < 255);
+            if (num_args == kScratchArgs) [[unlikely]] {
+                // As in add_n: the factors alone fill the ceiling, so the
+                // constant gets a level of its own.
+                std::ranges::sort(std::span{factor_scratch_buf, num_args});
+                return nest_folded_constant_(a, Op::MUL, factor_scratch_buf, int_prod);
+            }
+            CRUCIBLE_FATAL_INVARIANT(num_args < kScratchCollect);
             factor_scratch_buf[num_args++] = integer(a, int_prod);
         }
         if (num_args == 1) return factor_scratch_buf[0];
 
         std::ranges::sort(std::span{factor_scratch_buf, num_args});
-        uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, factor_scratch_buf, num_args);
-        return intern_node(a, Op::MUL, factor_scratch_buf, num_args, composite_flag_bits, SymbolId{}, 0);
+        CRUCIBLE_FATAL_INVARIANT(num_args <= kScratchArgs);
+        const auto arg_count = static_cast<uint8_t>(num_args);
+        uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, factor_scratch_buf, arg_count);
+        return intern_node(a, Op::MUL, factor_scratch_buf, arg_count, composite_flag_bits, SymbolId{}, 0);
     }
 
+    // Keeping an AND child whole when its operands do not fit drops no
+    // short-circuit opportunity.  A constant operand never survives into an
+    // interned AND: the loop below returns the false singleton on one and
+    // skips the true one, so a child that is already interned holds neither.
     const Expr* and_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-        const Expr* operand_scratch_buf[64];
-        uint8_t num_operands = 0;
+        CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
-        for (auto* input_expr : inputs) {
+        const Expr* operand_scratch_buf[kScratchArgs];
+        std::size_t num_operands = 0;
+
+        for (std::size_t k = 0; k < inputs.size(); ++k) {
+            const Expr* input_expr = inputs[k];
             if (input_expr == false_) return false_;
             if (input_expr == true_) continue;
-            if (input_expr->op == Op::AND) {
+            // An over-estimate, because a constant operand takes no slot.
+            // Declining a flatten one step early costs a level of nesting,
+            // never correctness.
+            const std::size_t reserved = inputs.size() - k - 1;
+            if (input_expr->op == Op::AND && num_operands + input_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < input_expr->nargs; ++i) {
                     if (input_expr->args[i] == false_) return false_;
                     if (input_expr->args[i] == true_) continue;
-                    assert(num_operands < 64);
+                    CRUCIBLE_FATAL_INVARIANT(num_operands < kScratchArgs);
                     operand_scratch_buf[num_operands++] = input_expr->args[i];
                 }
             } else {
-                assert(num_operands < 64);
+                CRUCIBLE_FATAL_INVARIANT(num_operands + reserved < kScratchArgs);
                 operand_scratch_buf[num_operands++] = input_expr;
             }
         }
@@ -1151,25 +1426,31 @@ private:
         if (num_operands == 0) return true_;
         if (num_operands == 1) return operand_scratch_buf[0];
         std::ranges::sort(std::span{operand_scratch_buf, num_operands});
-        return intern_node(a, Op::AND, operand_scratch_buf, num_operands, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+        CRUCIBLE_FATAL_INVARIANT(num_operands <= kScratchArgs);
+        const auto arg_count = static_cast<uint8_t>(num_operands);
+        return intern_node(a, Op::AND, operand_scratch_buf, arg_count, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
     const Expr* or_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-        const Expr* operand_scratch_buf[64];
-        uint8_t num_operands = 0;
+        CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
-        for (auto* input_expr : inputs) {
+        const Expr* operand_scratch_buf[kScratchArgs];
+        std::size_t num_operands = 0;
+
+        for (std::size_t k = 0; k < inputs.size(); ++k) {
+            const Expr* input_expr = inputs[k];
             if (input_expr == true_) return true_;
             if (input_expr == false_) continue;
-            if (input_expr->op == Op::OR) {
+            const std::size_t reserved = inputs.size() - k - 1;
+            if (input_expr->op == Op::OR && num_operands + input_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < input_expr->nargs; ++i) {
                     if (input_expr->args[i] == true_) return true_;
                     if (input_expr->args[i] == false_) continue;
-                    assert(num_operands < 64);
+                    CRUCIBLE_FATAL_INVARIANT(num_operands < kScratchArgs);
                     operand_scratch_buf[num_operands++] = input_expr->args[i];
                 }
             } else {
-                assert(num_operands < 64);
+                CRUCIBLE_FATAL_INVARIANT(num_operands + reserved < kScratchArgs);
                 operand_scratch_buf[num_operands++] = input_expr;
             }
         }
@@ -1177,7 +1458,9 @@ private:
         if (num_operands == 0) return false_;
         if (num_operands == 1) return operand_scratch_buf[0];
         std::ranges::sort(std::span{operand_scratch_buf, num_operands});
-        return intern_node(a, Op::OR, operand_scratch_buf, num_operands, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+        CRUCIBLE_FATAL_INVARIANT(num_operands <= kScratchArgs);
+        const auto arg_count = static_cast<uint8_t>(num_operands);
+        return intern_node(a, Op::OR, operand_scratch_buf, arg_count, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
     // Probes the table and inserts on miss, returning the interned node
@@ -1198,9 +1481,17 @@ private:
                                                                          int64_t payload) {
         // The load factor is 7/8.  Group-at-a-time probing tolerates a
         // denser table than linear probing does.
-        const size_t cap = capacity_.value();
-        if (intern_count_.get() * 8 >= cap * 7) [[unlikely]]
+        if (intern_count_.get() * 8 >= capacity_.value() * 7) [[unlikely]]
             rehash();
+
+        // Read after the rehash, never before.  A rehash replaces ctrl_ and
+        // slots_ with tables of twice the capacity and re-homes every entry
+        // across the whole of the new range.  A slot mask still derived from
+        // the old capacity confines the probe below to the lower half, so a
+        // node that moved into the upper half is not found and is interned a
+        // second time.  Two nodes then describe one structure, and pointer
+        // equality, which is what every Expr comparison rests on, is broken.
+        const size_t cap = capacity_.value();
 
         uint64_t expr_full_hash = detail::expr_hash(op, payload, symbol_id, flags, args, nargs);
         int8_t slot_match_tag = detail::h2_tag(expr_full_hash);
@@ -1218,6 +1509,18 @@ private:
         size_t probe_iteration = 0;
 
         while (true) {
+            // The probe base stays group-aligned, because the hash is scaled
+            // by the group width before the mask and the step below is a
+            // group multiple.  One check therefore covers the group load, the
+            // slot reads inside the match loop and the slot write on the
+            // insert path, since every index derived from the base adds less
+            // than one group width to it.
+            //
+            // This holds in every build mode.  A base outside the range means
+            // the mask disagrees with the live table, and each of the three
+            // accesses would then run off the end of the allocation.
+            CRUCIBLE_FATAL_INVARIANT(probe_base_slot + detail::group_width() <= cap);
+
             auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
 
             auto matches = group.match(slot_match_tag);
@@ -1361,6 +1664,9 @@ private:
             size_t probe_iteration = 0;
 
             while (true) {
+                // The same group-alignment bound the insert path carries.
+                CRUCIBLE_FATAL_INVARIANT(probe_base_slot + detail::group_width() <= capacity_.value());
+
                 auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
                 auto empties = group.match_empty();
                 if (empties) {

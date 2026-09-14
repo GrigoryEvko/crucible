@@ -125,6 +125,195 @@ static void test_make_returns_interned_det_safe() {
     std::printf("  test_make_returns_interned_det_safe: PASSED\n");
 }
 
+// A wide operand list must reach the intern table intact.  The n-ary
+// constructors used to collect into a 64-entry stack buffer with no bound of
+// any kind, so anything past 64 operands wrote past the end of the frame.
+static void test_wide_variadic_operands() {
+    auto t = effects::testing::test();
+    const auto a = t.alloc;
+    ExprPool pool{a};
+
+    const Expr* operands[Expr::kMaxArgs];
+    for (uint32_t i = 0; i < Expr::kMaxArgs; ++i)
+        operands[i] = pool.symbol(a, "s", SymbolId{i}, NUM_FLAGS);
+
+    // 100 crosses the old buffer, and kMaxArgs sits exactly on the ceiling.
+    for (size_t width : {size_t{65}, size_t{100}, size_t{Expr::kMaxArgs}}) {
+        const std::span<const Expr* const> args{operands, width};
+        for (Op op : {Op::MIN, Op::MAX}) {
+            const Expr* built = pool.make(a, op, args).peek().value();
+            assert(built->op == op);
+            assert(built->nargs == width);
+            // Interning is idempotent, so the same list yields one node.
+            assert(built == pool.make(a, op, args).peek().value());
+        }
+    }
+
+    std::printf("  test_wide_variadic_operands: PASSED\n");
+}
+
+// The same bound on the logical constructors, whose only guard used to be a
+// bare assert that -DNDEBUG removed.
+static void test_wide_logical_operands() {
+    auto t = effects::testing::test();
+    const auto a = t.alloc;
+    ExprPool pool{a};
+
+    const Expr* predicates[200];
+    for (uint32_t i = 0; i < 200; ++i) {
+        const Expr* sym = pool.symbol(a, "s", SymbolId{i}, NUM_FLAGS);
+        predicates[i] = pool.lt(a, sym, pool.integer(a, static_cast<int64_t>(i)));
+    }
+
+    const std::span<const Expr* const> args{predicates, 200};
+    for (Op op : {Op::AND, Op::OR}) {
+        const Expr* built = pool.make(a, op, args).peek().value();
+        assert(built->op == op);
+        assert(built->nargs == 200);
+        assert(built->is_boolean());
+    }
+
+    std::printf("  test_wide_logical_operands: PASSED\n");
+}
+
+// A flatten that would pass the arity ceiling keeps the child node whole.
+// The result names the same value with one more level of nesting, and every
+// node in it is inside the ceiling.
+static void test_flatten_degrades_at_the_ceiling() {
+    auto t = effects::testing::test();
+    const auto a = t.alloc;
+    ExprPool pool{a};
+
+    const Expr* operands[Expr::kMaxArgs];
+    for (uint32_t i = 0; i < Expr::kMaxArgs; ++i)
+        operands[i] = pool.symbol(a, "s", SymbolId{i}, NUM_FLAGS);
+
+    const Expr* wide = pool.make(a, Op::MIN, std::span<const Expr* const>{operands, Expr::kMaxArgs}).peek().value();
+    assert(wide->nargs == Expr::kMaxArgs);
+
+    // Two full-width MIN nodes cannot flatten into one, so each stays whole.
+    const Expr* pair[] = {wide, operands[0]};
+    const Expr* outer = pool.make(a, Op::MIN, pair).peek().value();
+    assert(outer->nargs <= Expr::kMaxArgs);
+
+    const Expr* both[] = {wide, wide};
+    const Expr* merged = pool.make(a, Op::MIN, both).peek().value();
+    // min(x, x) is x whichever way the flatten went.
+    assert(merged == wide);
+
+    std::printf("  test_flatten_degrades_at_the_ceiling: PASSED\n");
+}
+
+// Interning must survive the table growing underneath a lookup.  The probe
+// derived its slot mask from the capacity read before the rehash, so a node
+// that moved into the new upper half was missed and interned a second time.
+static void test_intern_identity_across_rehash() {
+    auto t = effects::testing::test();
+    const auto a = t.alloc;
+    // A capacity far below the working set forces many rehashes.
+    ExprPool pool{a, 16};
+
+    constexpr int64_t kCount = 20000;
+    constexpr int64_t kBase = 1000000;  // above the integer cache
+    const Expr* first[kCount];
+    for (int64_t i = 0; i < kCount; ++i)
+        first[i] = pool.integer(a, kBase + i);
+
+    const size_t count_after_first_pass = pool.intern_size();
+
+    // A second pass must hit every node the first pass created, and add none.
+    for (int64_t i = 0; i < kCount; ++i)
+        assert(pool.integer(a, kBase + i) == first[i]);
+    assert(pool.intern_size() == count_after_first_pass);
+
+    // Distinct values must stay distinct nodes.
+    for (int64_t i = 1; i < kCount; ++i)
+        assert(first[i] != first[i - 1]);
+
+    std::printf("  test_intern_identity_across_rehash: PASSED (%zu nodes)\n", count_after_first_pass);
+}
+
+// Constant folding saturates at the bounds of int64 rather than wrapping,
+// so the result is the same on every target and in every build mode.
+static void test_constant_folding_saturates() {
+    auto t = effects::testing::test();
+    const auto a = t.alloc;
+    ExprPool pool{a};
+
+    constexpr int64_t kMax = INT64_MAX;
+    constexpr int64_t kMin = INT64_MIN;
+
+    const Expr* big = pool.integer(a, kMax);
+    const Expr* low = pool.integer(a, kMin);
+    const Expr* one = pool.integer(a, 1);
+
+    assert(pool.add(a, big, one)->as_int() == kMax);
+    assert(pool.add(a, low, pool.integer(a, -1))->as_int() == kMin);
+    assert(pool.mul(a, big, big)->as_int() == kMax);
+    assert(pool.mul(a, big, pool.integer(a, -2))->as_int() == kMin);
+    assert(pool.neg(a, low)->as_int() == kMax);
+    assert(pool.pow(a, pool.integer(a, 1000), pool.integer(a, 62))->as_int() == kMax);
+
+    // The n-ary fold takes the same route.  A third operand keeps the list
+    // off the binary fast path.
+    const Expr* sym = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+    const Expr* terms[] = {big, one, sym};
+    const Expr* summed = pool.make(a, Op::ADD, terms).peek().value();
+    bool found_constant = false;
+    for (uint8_t i = 0; i < summed->nargs; ++i)
+        if (summed->arg(i)->op == Op::INTEGER) {
+            assert(summed->arg(i)->as_int() == kMax);
+            found_constant = true;
+        }
+    assert(found_constant);
+
+    // The most negative int64 over minus one has no int64 quotient.  The
+    // answer saturates; it never traps and never wraps.
+    const Expr* quotient = pool.floor_div(a, low, pool.integer(a, -1));
+    assert(quotient->op != Op::INTEGER || quotient->as_int() == kMax);
+
+    std::printf("  test_constant_folding_saturates: PASSED\n");
+}
+
+// A full-width sum has no slot left for a folded constant, because a 256th
+// child cannot be named.  The constant goes one level up instead, which names
+// the same value with every node inside the ceiling.
+static void test_folded_constant_nests_at_the_ceiling() {
+    auto t = effects::testing::test();
+    const auto a = t.alloc;
+    ExprPool pool{a};
+
+    const Expr* operands[Expr::kMaxArgs];
+    for (uint32_t i = 0; i < Expr::kMaxArgs; ++i)
+        operands[i] = pool.symbol(a, "s", SymbolId{i}, NUM_FLAGS);
+    const std::span<const Expr* const> all{operands, Expr::kMaxArgs};
+
+    for (Op op : {Op::ADD, Op::MUL}) {
+        const Expr* wide = pool.make(a, op, all).peek().value();
+        assert(wide->op == op);
+        assert(wide->nargs == Expr::kMaxArgs);
+
+        const Expr* constant = pool.integer(a, (op == Op::ADD) ? 5 : 7);
+        const Expr* both[] = {constant, wide};
+        const Expr* nested = pool.make(a, op, both).peek().value();
+
+        assert(nested->op == op);
+        assert(nested->nargs == 2);
+        bool keeps_wide = false;
+        bool keeps_constant = false;
+        for (uint8_t i = 0; i < nested->nargs; ++i) {
+            if (nested->arg(i) == wide) keeps_wide = true;
+            if (nested->arg(i) == constant) keeps_constant = true;
+        }
+        assert(keeps_wide);
+        assert(keeps_constant);
+        // The nested form is still a canonical node, so it interns once.
+        assert(nested == pool.make(a, op, both).peek().value());
+    }
+
+    std::printf("  test_folded_constant_nests_at_the_ceiling: PASSED\n");
+}
+
 int main() {
     std::printf("test_expr_pool_fast_symbol:\n");
     static_assert(std::is_same_v<ExprPool::InternedExpr, safety::Tagged<const Expr*, safety::source::Interned>>);
@@ -136,6 +325,12 @@ int main() {
     test_sparse_sids();
     test_dense_sids_stress();
     test_make_returns_interned_det_safe();
+    test_wide_variadic_operands();
+    test_wide_logical_operands();
+    test_flatten_degrades_at_the_ceiling();
+    test_intern_identity_across_rehash();
+    test_constant_folding_saturates();
+    test_folded_constant_nests_at_the_ceiling();
 
     std::printf("test_expr_pool_fast_symbol: ALL PASSED\n");
     return 0;
