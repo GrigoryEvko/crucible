@@ -3,10 +3,13 @@
 #include "test_assert.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <sys/socket.h>
+#include <thread>
 #include <unistd.h>
 
 namespace cog = crucible::cog;
@@ -115,6 +118,71 @@ static void test_handle_status_and_timestamp() {
     assert(handle.status().servo == topology::PtpServoState::Degraded);
     assert(handle.status().sequence == 6);
     std::printf("  test_handle_status_and_timestamp: PASSED\n");
+}
+
+// Every field of the status written at tick n is a function of n alone, so a
+// status whose fields disagree is a status the reader assembled out of two
+// different writes.  status() claims that cannot happen: it reads the epoch,
+// reads the payload and reads the epoch again, and returns only when the two
+// epoch reads agree.  Without an acquire fence between the payload reads and
+// the closing epoch read the payload reads are free to move past it, and the
+// comparison then says nothing about the payload it was meant to validate.
+static topology::PtpStatus status_at_tick(std::uint64_t tick) noexcept {
+    return topology::PtpStatus{
+        .servo = (tick & 1u) != 0u ? topology::PtpServoState::Slave : topology::PtpServoState::Master,
+        .offset_from_master_ns = static_cast<std::int64_t>(tick),
+        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{tick + 1u},
+        .frequency_adjustment_ppb = -static_cast<std::int64_t>(tick),
+        .skew_bound_ns = topology::PositivePtpSkewBoundNs{(tick * 2u) + 1u},
+        .sequence = tick,
+    };
+}
+
+static bool status_is_self_consistent(topology::PtpStatus const& observed) noexcept {
+    auto const expected = status_at_tick(observed.sequence);
+    return observed.servo == expected.servo && observed.offset_from_master_ns == expected.offset_from_master_ns
+        && observed.mean_path_delay_ns.value() == expected.mean_path_delay_ns.value()
+        && observed.frequency_adjustment_ppb == expected.frequency_adjustment_ppb
+        && observed.skew_bound_ns.value() == expected.skew_bound_ns.value();
+}
+
+static void test_status_seqlock_never_tears() {
+    auto fd = topology::admit_ptp_clock_fd(11);
+    assert(fd.has_value());
+    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{}, nic(4), *fd, status_at_tick(0));
+
+    constexpr std::uint64_t ticks = 200000;
+    std::atomic<bool> writer_done{false};
+    std::atomic<std::uint64_t> torn{0};
+    std::atomic<std::uint64_t> reads{0};
+
+    {
+        std::jthread writer{[&handle, &writer_done] {
+            for (std::uint64_t tick = 1; tick <= ticks; ++tick) {
+                handle.record_status(effects::BgDrainCtx{}, topology::DeclaredPtpStatus{status_at_tick(tick)});
+            }
+            writer_done.store(true, std::memory_order_release);
+        }};
+
+        std::jthread reader{[&handle, &writer_done, &torn, &reads] {
+            std::uint64_t local_torn = 0;
+            std::uint64_t local_reads = 0;
+            while (!writer_done.load(std::memory_order_acquire)) {
+                auto const observed = handle.status();
+                ++local_reads;
+                if (!status_is_self_consistent(observed)) {
+                    ++local_torn;
+                }
+            }
+            torn.store(local_torn, std::memory_order_release);
+            reads.store(local_reads, std::memory_order_release);
+        }};
+    }
+
+    assert(torn.load(std::memory_order_acquire) == 0);
+    assert(handle.status().sequence == ticks);
+    std::printf("  test_status_seqlock_never_tears: PASSED (%llu reads, 0 torn)\n",
+                static_cast<unsigned long long>(reads.load(std::memory_order_acquire)));
 }
 
 static void test_daemon_report_boundary() {
@@ -227,10 +295,11 @@ int main() {
     static_assert(topology::CtxFitsPtpRecord<effects::BgDrainCtx>);
     static_assert(!topology::CtxFitsPtpRecord<effects::HotFgCtx>);
 
-    std::printf("test_topology_ptp: 6 groups\n");
+    std::printf("test_topology_ptp: 7 groups\n");
     test_name_accessors();
     test_fd_and_nic_admission();
     test_handle_status_and_timestamp();
+    test_status_seqlock_never_tears();
     test_daemon_report_boundary();
     test_timestamped_packet_view();
     test_linux_boundaries_if_available();

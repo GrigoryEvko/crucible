@@ -105,8 +105,13 @@ static_assert(!CtxIsInitPhase<::crucible::effects::Test>);
 inline void runtime_smoke_test() {
     auto init = ::crucible::effects::testing::init();
     auto witness = mint_thread_name<"crux-smoke">(init);
-    CRUCIBLE_INVARIANT(std::string_view{witness.c_str()} == "crux-smoke");
-    CRUCIBLE_INVARIANT(witness.visible_length() == 10);
+    // Both facts live in the witness type, not in the value, so they hold by
+    // construction: c_str and visible_length read the Name template argument.
+    // Stating them to the optimizer would inform nothing, and an invariant
+    // would check them only where NDEBUG is absent, so they are asserted at
+    // compile time, where they hold in every preset at no runtime cost.
+    static_assert(std::string_view{decltype(witness)::c_str()} == "crux-smoke");
+    static_assert(decltype(witness)::visible_length() == 10);
     static_assert(IsThreadNamed<decltype(witness)>);
 }
 

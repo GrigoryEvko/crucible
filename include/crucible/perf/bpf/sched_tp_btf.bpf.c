@@ -75,7 +75,15 @@ int handle_sched_switch_btf(u64* ctx) {
     __u32 prev_tgid = BPF_CORE_READ(prev, tgid);
     __u32 next_pid = BPF_CORE_READ(next, pid);
 
-    if (prev_tgid == target_tgid) {
+    /* The target_tgid != 0 conjunct is the same guard is_target() carries,
+     * for the same reason: a target_tgid of 0 means the userspace .rodata
+     * rewrite never happened, and the idle task's tgid is also 0, so without
+     * it every switch out of swapper matches and fills switch_start,
+     * switch_stack and cs_count with idle-task records. is_target() itself
+     * cannot be called here because it reads bpf_get_current_pid_tgid(),
+     * while this filter tests prev, which the tracepoint hands over
+     * explicitly. */
+    if (target_tgid != 0 && prev_tgid == target_tgid) {
         bpf_map_update_elem(&switch_start, &prev_pid, &ts, BPF_ANY);
 
         __s32 sid = bpf_get_stackid(ctx, &stacks, BPF_F_USER_STACK | BPF_F_FAST_STACK_CMP);

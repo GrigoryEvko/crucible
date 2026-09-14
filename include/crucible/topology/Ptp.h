@@ -301,6 +301,16 @@ public:
                 .sequence = sequence_.load(std::memory_order_relaxed),
             };
 
+            // The acquire on the opening load at the top of the loop orders
+            // the payload loads after itself, but an acquire orders only what
+            // follows it.  Nothing in the closing load stops the six relaxed
+            // loads above from sinking past it, so without this fence the
+            // epoch can compare equal across a payload the writer tore.  The
+            // fence makes the payload loads happen before the re-read on both
+            // the compiler and the hardware side.  On x86 it emits no
+            // instruction, because TSO already forbids load-load reordering;
+            // on aarch64 it lowers to dmb ishld, where the reordering is real.
+            std::atomic_thread_fence(std::memory_order_acquire);
             auto const after = status_epoch_.load(std::memory_order_acquire);
             if (before == after) {
                 return out;

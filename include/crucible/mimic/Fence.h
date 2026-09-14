@@ -302,10 +302,21 @@ inline void runtime_smoke_test() noexcept {
     volatile auto a = FenceArch::Gpu;
     FenceSpec spec =
         fence_spec_for(static_cast<BarrierStrength>(s), static_cast<MemoryScope>(sc), static_cast<FenceArch>(a));
-    CRUCIBLE_INVARIANT(spec.kind == FenceKind::GpuFence);
-    CRUCIBLE_INVARIANT(spec.domain == FenceDomain::GpuCta);
+    // The volatile reads launder the arguments past the constant folder, which
+    // is the point of this function: the compiler cannot know what
+    // fence_spec_for returns here, so these are claims about its runtime
+    // output rather than facts.  Under [[assume]] they would state that output
+    // as a premise and let it propagate into the fence_mnemonic switch below,
+    // which turns the one fault this test exists to catch into a miscompile.
+    // They check in every build mode instead.
+    CRUCIBLE_FATAL_INVARIANT(spec.kind == FenceKind::GpuFence);
+    CRUCIBLE_FATAL_INVARIANT(spec.domain == FenceDomain::GpuCta);
     const char* m = fence_mnemonic(spec);
-    CRUCIBLE_INVARIANT(m != nullptr);
+    // Every return in fence_mnemonic is a string literal, so this one the
+    // compiler can prove on its own. It is kept as a real check rather than a
+    // hint because nothing downstream consumes m, which leaves a hint with no
+    // optimization to inform and this function with one assertion fewer.
+    CRUCIBLE_FATAL_INVARIANT(m != nullptr);
 }
 
 }  // namespace crucible::mimic

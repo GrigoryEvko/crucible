@@ -252,10 +252,15 @@ std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd con
     // of ifr_name.
     static_assert(::crucible::cntp::NicInterfaceName::max_bytes <= IFNAMSIZ,
                   "NicInterfaceName max bytes exceeds kernel ifr_name");
-    // NicInterfaceName::from rejects a size at or above max_bytes, so
-    // view().size() is strictly below max_bytes, which is at most IFNAMSIZ.
-    // The trailing-NUL write therefore lands at index IFNAMSIZ - 1 or lower.
-    CRUCIBLE_INVARIANT(iface.view().size() < IFNAMSIZ);
+    // NicInterfaceName::from rejects a size at or above max_bytes, but from()
+    // is not the only way to build one: the type is an aggregate whose bytes
+    // and size members are public, so a caller can write a size that no
+    // validation ever saw.  That makes this a claim about the caller, not a
+    // construction guarantee, and it guards a memcpy plus an indexed store
+    // into a 16-byte kernel field.  Under [[assume]] an over-long size would
+    // be a silent overflow of ifreq with the optimizer licensed to drop the
+    // very bounds reasoning that would catch it, so the check is always on.
+    CRUCIBLE_FATAL_INVARIANT(iface.view().size() < IFNAMSIZ);
     ifreq request{};
     std::memcpy(request.ifr_name, iface.view().data(), iface.view().size());
     request.ifr_name[iface.view().size()] = '\0';
