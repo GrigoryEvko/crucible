@@ -159,7 +159,13 @@ struct CrucibleContext {
         if (div_pos == 0) return activate(alt);
 
         const auto* old_region = active_region_.value();
-        assert(old_region && old_region->plan && "no active region to switch from");
+        // Armed in a release build, unlike the two beliefs further down this
+        // file. A null plan here does not fault: migrate_prefix_slots_ reads
+        // old_plan->slots[sid] at whatever address a null base plus a slot
+        // index lands on, and feeds the offsets it finds to a memcpy. That
+        // writes outside the pool with no diagnostic. The path runs once per
+        // shape change, so an always-on check costs nothing worth counting.
+        CRUCIBLE_FATAL_INVARIANT(old_region != nullptr && old_region->plan != nullptr);
 
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
@@ -176,7 +182,12 @@ struct CrucibleContext {
         auto av = engine_.mint_active_view();
         for (uint32_t i = 0; i < div_pos; i++) {
             auto s = engine_.advance(alt->ops[i].schema_hash, alt->ops[i].shape_hash, av);
-            assert(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
+            // Debug-only: the engine was just pointed at alt, and these are
+            // alt's own hashes read back in order, so anything but a match
+            // means the engine's cursor is out of step rather than that the
+            // data is bad. A release build carries no check because the next
+            // real op diverges and the recovery path already handles that.
+            CRUCIBLE_DEBUG_ASSERT(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
             (void)s;
         }
 
@@ -273,14 +284,36 @@ private:
 
             if (!old_te.output_slot_ids || !new_te.output_slot_ids) continue;
 
-            assert(old_te.num_outputs == new_te.num_outputs
-                   && "prefix ops with identical hashes must have equal output counts");
+            // Armed in a release build. The loop below runs to old_te's
+            // output count and indexes new_te's array with the same j, so a
+            // new entry with fewer outputs is read past its end. The slot id
+            // that comes back is arbitrary, it selects an arbitrary entry of
+            // new_plan->slots, and the offset there becomes the destination
+            // of the memcpy at the bottom of this function. The prefix ops
+            // carry identical schema and shape hashes, which is exactly why
+            // unequal output counts mean the region pair is corrupt.
+            CRUCIBLE_FATAL_INVARIANT(old_te.num_outputs == new_te.num_outputs);
 
             for (uint16_t j = 0; j < old_te.num_outputs; j++) {
                 const SlotId old_sid = old_te.output_slot_ids[j];
                 const SlotId new_sid = new_te.output_slot_ids[j];
 
                 if (!old_sid.is_valid() || !new_sid.is_valid()) continue;
+
+                // Each id indexes its own plan's slot array on the next
+                // line, and the new one then indexes a fixed-size stack
+                // bitset, so neither bound is optional.
+                //
+                // The MIGRATION_MAX_SLOTS half is not implied by the half
+                // before it. What bounds num_slots is a clause on this
+                // function, and a clause evaluates to nothing in a target
+                // built with the contract semantic set to `ignore`, as one
+                // target in this tree is. A plan wider than the bitset would
+                // then reach here and write past the end of `visited` on the
+                // stack. These two checks do not depend on that option.
+                CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_plan->num_slots);
+                CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_plan->num_slots
+                                         && new_sid.raw() < MIGRATION_MAX_SLOTS);
 
                 if (old_plan->slots[old_sid.raw()].is_external || new_plan->slots[new_sid.raw()].is_external) continue;
 

@@ -26,7 +26,11 @@
 
 namespace crucible {
 
-static constexpr uint32_t CDAG_MAGIC = 0x43444147u;  // reads "GDAG" little-endian
+// The four bytes spell "CDAG" most significant first. A little-endian host
+// stores them in the opposite order, so a hex dump of the file starts with
+// 47 41 44 43, which prints as "GADC". Both spellings have been written down
+// wrongly before; the value is what the reader compares, not the spelling.
+static constexpr uint32_t CDAG_MAGIC = 0x43444147u;
 using CdagFormatVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::FormatVersion>;
 using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::External>;
 using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;

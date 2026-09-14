@@ -37,14 +37,21 @@ namespace crucible {
 // small for a tensor's sizes, strides, type and device. That data lives here
 // instead, and each ring slot carries the index of its block. An append that
 // finds this buffer full yields no index: the operation is still recorded well
-// enough to detect an iteration boundary, and the graph build skips it.
+// enough to detect an iteration boundary, but the graph build does not skip
+// that operation and carry on. build_trace_from returns a null graph the
+// moment it meets an operation that had tensors and no index, which discards
+// the whole iteration. A full buffer costs the iteration, not one node.
 struct CRUCIBLE_OWNER MetaLog {
     static constexpr uint32_t CAPACITY = 1 << 20;
     static constexpr uint32_t MASK = CAPACITY - 1;
 
-    // The producer's three hot fields share one cache line, so a single hit
-    // serves the whole fast path, and the consumer's counter sits alone on the
-    // next one so neither thread invalidates the other's line.
+    // AtomicMonotonic carries its own alignas(64) and is 64 bytes wide, so
+    // head fills bytes 0 through 63 by itself. An append therefore touches
+    // two of the producer's lines, not one: head's, and the line after it
+    // that holds cached_tail_, the buffer owner and the entries pointer. The
+    // consumer's counter starts at byte 128 and sits alone, which is the
+    // part that matters — neither thread ever invalidates a line the other
+    // is reading.
     //
     // A thread reading its own counter needs no ordering, because coherence
     // already orders its own accesses. Publishing the counter with a release

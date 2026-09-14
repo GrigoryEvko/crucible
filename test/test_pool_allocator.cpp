@@ -2,6 +2,7 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
+#include "test_abort_probe.h"
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -433,6 +434,61 @@ static void test_integration_with_sweep_line() {
     std::printf("  test_integration_with_sweep_line: PASSED\n");
 }
 
+// The slot-bounds checks in PoolAllocator::init are CRUCIBLE_FATAL_INVARIANT
+// rather than contract clauses, so that they hold whatever the contract
+// evaluation semantic is set to for the translation unit doing the including.
+// The pointer they guard later becomes a memcpy destination.
+//
+// The guard ends the process by design, so test::aborts catches the abort in
+// place. Running this with NDEBUG defined is the point of it: the same body
+// under a bare assert returns normally and hands out the pointer.
+//
+// The allocator lives outside the aborting body on purpose. Leaving through
+// the guard skips every destructor between the abort and the arming point, so
+// an allocator declared inside would never free the pool init had already
+// taken. Declared here, its destructor runs when this function returns.
+static void expect_abort_on_init(const TensorSlot& slot, uint64_t pool_bytes, const char* what) {
+    TensorSlot slots[1]{slot};
+    MemoryPlan plan = make_manual_plan(slots, 1, pool_bytes, 0);
+    PoolAllocator pool;
+    if (!crucible::test::aborts([&pool, &plan] { pool.init(&plan); })) {
+        std::fprintf(stderr, "  %s: the guard did not fire\n", what);
+        std::abort();
+    }
+}
+
+static void test_slot_bounds_guard_is_armed() {
+    TensorSlot past_end = {.offset_bytes = 512,
+                           .nbytes = 1024,  // 512 + 1024 runs 512 bytes past a 1024-byte pool
+                           .birth_op = OpIndex{0},
+                           .death_op = OpIndex{1},
+                           .dtype = ScalarType::Float,
+                           .device_type = DeviceType::CPU,
+                           .device_idx = 0,
+                           .layout = Layout::Strided,
+                           .is_external = false,
+                           .pad = {},
+                           .slot_id = SlotId{0},
+                           .pad2 = {}};
+    expect_abort_on_init(past_end, 1024, "slot past pool end");
+
+    TensorSlot misaligned = {.offset_bytes = 1,  // not a multiple of PoolAllocator::ALIGNMENT
+                             .nbytes = 16,
+                             .birth_op = OpIndex{0},
+                             .death_op = OpIndex{1},
+                             .dtype = ScalarType::Float,
+                             .device_type = DeviceType::CPU,
+                             .device_idx = 0,
+                             .layout = Layout::Strided,
+                             .is_external = false,
+                             .pad = {},
+                             .slot_id = SlotId{0},
+                             .pad2 = {}};
+    expect_abort_on_init(misaligned, 4096, "misaligned slot offset");
+
+    std::printf("  test_slot_bounds_guard_is_armed: PASSED\n");
+}
+
 int main() {
     std::printf("test_pool_allocator:\n");
     test_basic_init();
@@ -441,6 +497,7 @@ int main() {
     test_all_external();
     test_reinit();
     test_integration_with_sweep_line();
+    test_slot_bounds_guard_is_armed();
     std::printf("test_pool_allocator: all tests passed\n");
     return 0;
 }

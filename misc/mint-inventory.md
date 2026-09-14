@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-13T13:48:01Z`.
+Snapshot generated: `2026-09-14T22:11:15Z`.
 
 ## bridges/
 
@@ -219,9 +219,9 @@ to distinguish this third authorization shape.
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h:203` | Y | Y | Y | - | member | HS14: 18 |
 | `Computation::mint_computation` | `include/crucible/effects/Computation.h:90` | Y | Y | Y | Y | member | HS14: 2 |
 | `Computation::mint_computation_in_ctx` | `include/crucible/effects/Computation.h:141` | Y | Y | Y | Y | member | HS14: 2 |
-| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:202` | Y | - | Y | - | member | HS14: 3 |
-| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h:177` | Y | - | Y | - | member | HS14: 2 |
-| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h:212` | Y | - | Y | - | member | HS14: 2 |
+| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:213` | Y | - | Y | - | member | HS14: 3 |
+| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h:192` | Y | - | Y | - | member | HS14: 2 |
+| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h:227` | Y | - | Y | - | member | HS14: 2 |
 | `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h:69` | Y | - | Y | - | member | HS14: 4 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h:74` | Y | - | Y | - | member | HS14: 3 |
 

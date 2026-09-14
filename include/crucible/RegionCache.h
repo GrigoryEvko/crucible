@@ -36,8 +36,19 @@ struct RegionCache {
     RegionCache(RegionCache&&) = delete("embedded in Vigil; no reason to move");
     RegionCache& operator=(RegionCache&&) = delete("embedded in Vigil; no reason to move");
 
-    void insert(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
-        assert(region && "inserting null region");
+    void insert(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr) {
+        // The clause above states the contract and rejects the caller in
+        // both build modes: the release preset evaluates contracts under the
+        // `observe` semantic and the violation handler is noreturn.
+        //
+        // The repeat below covers the one case the clause does not. The
+        // semantic is a per-target build option, and one target in this tree
+        // already sets `ignore`, which erases every contract in the headers
+        // it compiles. The read on the next line would fault on its own even
+        // then, but only after this has been inlined into a caller several
+        // frames up; the named check reports the contract that was broken
+        // rather than an address.
+        CRUCIBLE_FATAL_INVARIANT(region != nullptr);
 
         const ContentHash hash = region->content_hash;
 
@@ -64,8 +75,13 @@ struct RegionCache {
 
     // Call this once a region's memory plan exists, which is what makes the
     // region eligible for find_alternate.
-    void notify_plan_ready(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
-        assert(region && "null region");
+    void notify_plan_ready(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr) {
+        // Armed wherever the clause above is not, for the reason given in
+        // insert. It matters more here than there: a null argument does not
+        // fault in this body, it matches. An evicted slot holds an expired
+        // weak reference whose try_get also returns null, and the loop then
+        // reads region->plan through the null it just matched.
+        CRUCIBLE_FATAL_INVARIANT(region != nullptr);
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
             if (regions_[idx].try_get() == region) {

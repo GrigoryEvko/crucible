@@ -9,10 +9,12 @@
 #include <crucible/effects/FxAliases.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include "test_abort_probe.h"
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 
 using namespace crucible;
 
@@ -514,8 +516,61 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
                 "audit-C alias×COMPILED) PASSED\n");
 }
 
+// The recording ring is single-producer. Two threads calling dispatch_op
+// claim the same slot and the later write erases the earlier one, with no
+// diagnostic and no crash — the trace simply comes out short and wrong. A
+// backward pass under a foreign runtime dispatches part of its operations on
+// a worker thread of its own, so this is reachable from a first real model
+// rather than from a later rewrite.
+//
+// dispatch_op therefore claims the first thread that reaches it and rejects
+// every other one, in every build mode. This proves the rejection happens,
+// and the same source runs under the release preset where a contract clause
+// would have been compiled out.
+//
+// The rejection ends the process by design, so test::aborts arms a jump on
+// the intruder thread and catches it there. The arming is thread-local, which
+// is what lets the guard fire on a thread other than the one running main.
+static void test_second_producer_is_rejected() {
+    bool rejected = false;
+    {
+        Vigil vigil;
+
+        // Claims this thread as the producer.
+        auto first = make_op(0, 0);
+        auto r0 = vigil.dispatch_op(crucible::vouch(first.entry), first.metas, first.n_metas);
+        assert(r0.action == DispatchResult::Action::RECORD);
+
+        std::thread intruder([&vigil, &rejected] {
+            rejected = crucible::test::aborts([&vigil] {
+                auto second = make_op(0, 1);
+                (void)vigil.dispatch_op(crucible::vouch(second.entry), second.metas, second.n_metas);
+            });
+        });
+        intruder.join();
+    }
+
+    if (!rejected) {
+        std::fprintf(stderr, "  test_second_producer_is_rejected: a second thread reached the ring\n");
+        std::abort();
+    }
+
+    // The same call from the claiming thread keeps working, so the gate is a
+    // gate and not a blanket refusal.
+    Vigil vigil;
+    auto d = make_op(0, 0);
+    auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+    assert(r.action == DispatchResult::Action::RECORD);
+    auto again = make_op(0, 1);
+    auto r2 = vigil.dispatch_op(crucible::vouch(again.entry), again.metas, again.n_metas);
+    assert(r2.action == DispatchResult::Action::RECORD);
+
+    std::printf("  test_second_producer_is_rejected: PASSED\n");
+}
+
 int main() {
     std::printf("test_vigil_dispatch:\n");
+    test_second_producer_is_rejected();
     test_dispatch_basic();
     test_dispatch_divergence();
     test_dispatch_recovery();

@@ -6,6 +6,7 @@
 #include <crucible/Expr.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/NumericalRecipe.h>
+#include <crucible/Platform.h>
 #include <crucible/Reflect.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
@@ -804,7 +805,21 @@ public:
         // the 2^31 ceiling keeps `slot_index + probe` inside uint32_t.
         pre(::crucible::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}))
         : capacity_(capacity) {
-        assert(capacity != 0 && (capacity & (capacity - 1)) == 0 && "capacity must be a non-zero power of 2");
+        // The clause above is armed in a release build as well as a debug
+        // one: the release preset evaluates contracts under the `observe`
+        // semantic, and the project's violation handler is noreturn and ends
+        // in std::abort, so a violation stops the process either way.
+        //
+        // The repeat below is not therefore redundant. The semantic is a
+        // per-target build option, and one target in this tree already sets
+        // `ignore` — every contract in a header compiled into crucible_perf
+        // evaluates to nothing. This check does not depend on that option,
+        // and the whole probe sequence rests on the property it states:
+        // `(slot + probe) & mask` only wraps back into the table when the
+        // capacity is a power of two, so a capacity that is not one makes
+        // every probe past the first read and write outside the allocation.
+        // One construction per cache, so the repeat costs nothing.
+        CRUCIBLE_FATAL_INVARIANT(capacity != 0 && (capacity & (capacity - 1)) == 0);
         table_ = allocate_table_(capacity_);
         if (!table_) [[unlikely]]
             std::abort();  // OOM is unrecoverable
@@ -1328,7 +1343,12 @@ template <typename GuardEval, typename RegionExec>
 
             case TraceNodeKind::LOOP: {
                 auto* loop = static_cast<LoopNode*>(node);
-                assert(loop->body && "LoopNode body must be non-null");
+                // Armed in release. A null body does not fault: the
+                // recursive call walks `while (node)` zero times and returns
+                // true, so the loop reports a successful replay of a body
+                // that never ran. A wrong answer is worse than a trap, and
+                // this is a cold path, so the check stays in every build.
+                CRUCIBLE_FATAL_INVARIANT(loop->body != nullptr);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
                     if (!replay(loop->body, eval_guard, exec_region)) return false;
                 }

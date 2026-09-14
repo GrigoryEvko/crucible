@@ -163,7 +163,13 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     // The consumer is the only party that reads or writes this, so drains
     // track their position here and publish to tail only once the copies are
-    // complete. It shares the consumer's line with tail by design.
+    // complete.
+    //
+    // It does not share a line with tail, although sharing one would be
+    // harmless: AtomicMonotonic carries its own alignas(64) and is 64 bytes
+    // wide, so tail fills bytes 64 through 127 by itself and this field
+    // starts the line after it. The producer never touches either, so the
+    // extra line costs a second consumer-private fetch and no invalidation.
     uint64_t consumer_tail_ = 0;
 
     // The producer's private view of tail, on its own line. Packing it with

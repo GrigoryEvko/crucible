@@ -170,13 +170,28 @@ struct ReplayEngine {
     }
 
     [[nodiscard]] const TraceEntry& current_entry() const CRUCIBLE_LIFETIMEBOUND {
-        assert(current_ && "no matched entry");
-        return *current_;
+        // Debug-only: current_ is null only before the first advance
+        // returns MATCH, which is a caller-sequencing mistake rather than
+        // untrusted input. The dereference on the next line faults on its
+        // own in a release build, so the failure stays loud without a check.
+        //
+        // The member is read into a local first because a contract predicate
+        // that reaches a member through `this` is rejected as non-constant
+        // when the compiler folds this body.
+        const TraceEntry* const matched = current_;
+        CRUCIBLE_DEBUG_ASSERT(matched != nullptr);
+        return *matched;
     }
 
     [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
-        assert(current_ && "no matched entry");
-        return crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched>{OpIndex{static_cast<uint32_t>(current_ - ops_)}};
+        // Debug-only, and weaker than the one above: a null current_ makes
+        // the subtraction produce a garbage index rather than fault. Nothing
+        // in the recording chain calls this — only the replay-engine tests
+        // do — so the silent path is not reachable from production. The
+        // local is for the same folding reason as in current_entry.
+        const TraceEntry* const matched = current_;
+        CRUCIBLE_DEBUG_ASSERT(matched != nullptr);
+        return crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched>{OpIndex{static_cast<uint32_t>(matched - ops_)}};
     }
 
     // Carries the region's operation ceiling in the return type, so a caller

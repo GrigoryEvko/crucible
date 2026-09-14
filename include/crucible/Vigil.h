@@ -20,8 +20,10 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
 #include <crucible/CrucibleContext.h>
+#include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/Platform.h>
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
@@ -123,6 +125,14 @@ public:
     // before the replay context activates.  It equals the iteration
     // detector's signature length.
     static constexpr uint32_t ALIGNMENT_K = 5;
+    // The equality above was a comment until now, and a comment does not
+    // hold. The detector reports a boundary after K matching ops, and
+    // alignment then walks exactly that many entries of the published region
+    // to find where the boundary fell. Raise one without the other and
+    // alignment lands on the wrong op of every iteration.
+    static_assert(ALIGNMENT_K == IterationDetector::K,
+                  "Vigil::ALIGNMENT_K must equal IterationDetector::K.  Alignment replays the same "
+                  "window the detector matched on, so the two lengths are one constant.");
 
     // Structural upper bound on the value alignment_pos_ can hold.
     // try_align_ advances it toward min(region->num_ops, ALIGNMENT_K).  The
@@ -205,9 +215,17 @@ public:
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
     dispatch_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas, ScopeHash scope_hash = {},
                 CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
-#ifndef NDEBUG
+        // Armed in every build mode, release included. The ring behind this
+        // call is single-producer: two threads appending concurrently claim
+        // the same slot, and the second overwrites the first with no
+        // diagnostic. A backward pass under a foreign runtime dispatches
+        // part of its operations on a worker thread of its own, so this is
+        // reachable from a first run rather than from a rewrite.
+        //
+        // The cost is a relaxed load and a comparison on a path that already
+        // writes a full cache line and issues two release stores. It is a
+        // mitigation, not a repair; a multi-producer ring is separate work.
         assert_producer_thread_();
-#endif
         const TraceRing::Entry& entry = *ve.value();
 
         // The branch itself proves the context is compiled.  Minting the
@@ -253,25 +271,39 @@ public:
         return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
     }
 
-#ifndef NDEBUG
     // The first call claims the thread; every later call verifies the match.
+    //
+    // Split in two so the part that inlines into dispatch_op is a relaxed
+    // load, a comparison and a branch. The claim and the failure report sit
+    // out of line and cold, which keeps them out of the instruction cache
+    // lines the recording path occupies.
     CRUCIBLE_INLINE void assert_producer_thread_() noexcept {
         const auto current_tid = std::this_thread::get_id();
+        if (producer_tid_.load(std::memory_order_relaxed) == current_tid) [[likely]] return;
+        claim_or_reject_producer_thread_(current_tid);
+    }
+
+    [[gnu::cold, gnu::noinline]] void claim_or_reject_producer_thread_(std::thread::id current_tid) noexcept {
         auto claimed = producer_tid_.load(std::memory_order_relaxed);
-        if (claimed == current_tid) return;
         if (claimed == std::thread::id{}) {
-            // Relaxed is enough: this is a debug-only lifecycle gate and
-            // synchronizes nothing.
+            // Relaxed is enough: this gate synchronizes nothing, it only
+            // records which thread arrived first. A failed exchange leaves
+            // the winner's id in `claimed`, which the check below reports.
             if (producer_tid_.compare_exchange_strong(claimed, current_tid, std::memory_order_relaxed)) {
                 return;
             }
             // Another thread claimed first, so fall through and fail.
         }
-        contract_assert(claimed == current_tid
-                        && "Vigil::dispatch_op called from a thread other than the "
-                           "foreground producer — SPSC invariant violated");
+        // Not a contract clause, for two reasons. The predicate is about a
+        // thread identity this function just read, not about an argument the
+        // caller passed, so a precondition cannot state it. And a contract
+        // evaluates to nothing in a target built with the semantic set to
+        // `ignore`, as one target in this tree is, whereas this is the one
+        // check standing between a second producer and a ring that tears
+        // without a diagnostic: both threads claim the same slot and the
+        // later write erases the earlier one.
+        CRUCIBLE_FATAL_INVARIANT(claimed == current_tid);
     }
-#endif
 
     // Relaxed suffices: the mode is a status flag written and read mostly
     // by the foreground, and a cross-thread reader needs only eventual
@@ -580,8 +612,17 @@ private:
     // skips forward over the ops already matched.  One op could match by
     // coincidence; K in a row will not.
     [[gnu::cold]] void try_align_(SchemaHash schema, ShapeHash shape) {
-        assert(pending_activation_ && "try_align_ called without pending region");
+        // Debug-only: the single caller reaches this helper from inside a
+        // branch that has already tested pending_activation_, so a null here
+        // means that branch was rewritten, not that a caller misused the
+        // class. The region read below faults on its own in a release build,
+        // so the failure stays loud without a check.
+        //
+        // The member is read into the local first because a contract
+        // predicate that reaches a member through `this` is rejected as
+        // non-constant when the compiler folds this body.
         const auto* region = pending_activation_;
+        CRUCIBLE_DEBUG_ASSERT(region != nullptr);
 
         const uint8_t pos = alignment_pos_.value();
         if (schema == region->ops[pos].schema_hash && shape == region->ops[pos].shape_hash) {
@@ -614,8 +655,13 @@ private:
             // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
                 auto status = ctx_.advance(region->ops[i].schema_hash, region->ops[i].shape_hash);
-                // These were verified during alignment, so they must match.
-                assert(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
+                // Debug-only: the hashes fed in here are the region's own,
+                // and alignment already compared each one against the same
+                // entry, so a mismatch means the engine's cursor is out of
+                // step rather than that the data is bad. A release build
+                // carries no check because the next advance diverges and the
+                // recovery path already handles that.
+                CRUCIBLE_DEBUG_ASSERT(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
                 (void)status;
             }
 
@@ -665,7 +711,11 @@ private:
         // schema and shape in both regions.
         if (div_pos > 0) {
             const auto* old_region = ctx_.active_region();
-            assert(old_region && "no active region to switch from");
+            // Debug-only: a divergence position above zero can only come
+            // from a compiled context, which by construction holds an active
+            // region. The loop below reads old_region->ops, so a release
+            // build faults on the null rather than continuing past it.
+            CRUCIBLE_DEBUG_ASSERT(old_region != nullptr);
 
             if (div_pos > alt->num_ops) return false;
 
@@ -700,8 +750,8 @@ private:
     // Every dispatch and every record must come from one and the same
     // thread.  Another thread entering breaks the ring's single-producer
     // protocol and can corrupt the head-to-tail relationship.  This holds
-    // the first dispatching thread's id and the debug build asserts the
-    // match on every later dispatch.
+    // the first dispatching thread's id, and every later dispatch checks the
+    // match in every build mode, release included.
     //
     // An atomic thread id is not lock-free on every target.  Where the
     // underlying handle has no native atomic instruction, the standard

@@ -1088,7 +1088,16 @@ public:
                 te.input_trace_indices[j] = lookup.op_index;
                 if (lookup.op_index.is_valid()) {
                     te.input_slot_ids[j] = lookup.slot_id;
-                    assert(num_edges < edge_cap_max_.get());
+                    // Armed in a release build too. The very next statement
+                    // writes local_edges[num_edges], so a cap that the edge
+                    // count has already reached runs off an arena array and
+                    // corrupts whatever the arena handed out next.
+                    //
+                    // Not a contract clause because a precondition cannot
+                    // name a counter this loop is advancing, and because
+                    // this form does not depend on the contract evaluation
+                    // semantic, which is a per-target build option.
+                    CRUCIBLE_FATAL_INVARIANT(num_edges < edge_cap_max_.get());
                     local_edges[num_edges++] = {.src = OpIndex{lookup.op_index.raw()},
                                                 .dst = OpIndex{i},
                                                 .src_port = lookup.port,
@@ -1140,7 +1149,10 @@ public:
                         slot_info.nbytes = std::max(slot_info.nbytes, output_nbytes);
                     }
                     if (result.old_op.is_valid()) {
-                        assert(num_edges < edge_cap_max_.get());
+                        // Same bound as the data-flow edge above, and armed
+                        // for the same reason: the next statement writes
+                        // local_edges[num_edges].
+                        CRUCIBLE_FATAL_INVARIANT(num_edges < edge_cap_max_.get());
                         local_edges[num_edges++] = {.src = OpIndex{result.old_op.raw()},
                                                     .dst = OpIndex{i},
                                                     .src_port = result.old_port,

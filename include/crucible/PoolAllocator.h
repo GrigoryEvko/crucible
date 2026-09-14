@@ -135,8 +135,23 @@ struct CRUCIBLE_OWNER PoolAllocator {
                                      static_cast<unsigned long long>(slot.nbytes));
                         std::abort();
                     }
-                    assert(end_offset <= pool_bytes_ && "slot exceeds pool bounds");
-                    assert(slot.offset_bytes % ALIGNMENT == 0 && "slot offset not ALIGNMENT-aligned — sweep-line bug");
+                    // Both checks stay armed in a release build. The next
+                    // statement publishes a pointer that later becomes a
+                    // memcpy destination, so a slot reaching past the pool
+                    // corrupts the heap silently instead of trapping.
+                    //
+                    // A contract clause could not carry either one anyway:
+                    // they read a slot of a plan this loop is walking, which
+                    // no precondition on init can name. This form is also
+                    // independent of the contract evaluation semantic, which
+                    // is a per-target build option that already differs
+                    // across targets in this tree. Once per plan on a cold
+                    // path, so the cost is nil.
+                    CRUCIBLE_FATAL_INVARIANT(end_offset <= pool_bytes_);
+                    // An offset off the alignment means the sweep-line
+                    // planner produced a slot the hot path then reads with
+                    // aligned loads.
+                    CRUCIBLE_FATAL_INVARIANT(slot.offset_bytes % ALIGNMENT == 0);
                     ptr_table_[s] = base + slot.offset_bytes;
                 }
             }
