@@ -53,17 +53,60 @@ enum class VerdictId : std::uint16_t {
     // The trivial probe. It measures the cost of reading the cycle counter
     // twice with nothing in between, which is a real number, is stable, and
     // is useless for any decision. It exists to prove the loop closes:
-    // measure, judge, store, read back, serve. Real questions are #68-#70.
+    // measure, judge, store, read back, serve.
     TimerFloorNanos = 0,
+
+    // ── #68, vector width ──
+    //
+    // Three ids and not one, because one number cannot answer this
+    // honestly. The width that wins depends on the shape of the kernel:
+    // a compute-bound kernel on a part with a full-width datapath gets
+    // the whole doubling, and a memory-bound kernel gets nothing at all
+    // because it was never limited by the vector unit. A single
+    // "preferred width" hides which of those the host is, so the two
+    // margins are stored alongside it and a reader that cares which
+    // shape it has can look.
+    VectorWidthPreferredBits = 1,
+    VectorWidthComputeGainPercent = 2,
+    VectorWidthMemoryGainPercent = 3,
+
+    // ── #69, cache tier and NUMA ──
+    //
+    // The knee and the ceiling bracket the range over which splitting
+    // work across cores pays. Below the knee the fork-join costs more
+    // than the work saved. Above the ceiling the memory path is already
+    // saturated by one core and extra workers add traffic, not
+    // bandwidth. Both are byte counts and both are measured, which is
+    // the point: the rule in CLAUDE.md §IX derives them from cache
+    // sizes instead, and on at least one host that derivation is wrong
+    // in both directions.
+    ParallelKneeBytes = 4,
+    ParallelCeilingBytes = 5,
+    NumaRemoteCostPercent = 6,
+
+    // ── #70, transparent hugepages ──
+    ThpFaultCostNanosPerMib = 7,
+    ThpFaultGainPercent = 8,
+    ThpAccessGainPercent = 9,
 };
 
-inline constexpr std::uint16_t kVerdictIdCount = 1;
+inline constexpr std::uint16_t kVerdictIdCount = 10;
 
 enum class VerdictUnit : std::uint8_t {
     Nanoseconds = 0,
     Bytes = 1,
     Boolean = 2,
     Count = 3,
+    // 100 is parity. Every ratio in the ledger is expressed this way
+    // rather than as a fraction, so a stored entry has no float to round
+    // differently on read-back and a reader comparing two of them is
+    // comparing integers.
+    Percent = 4,
+    // A vector width. Distinct from Count because "512" under a count
+    // reads as a quantity of something and under bits reads as a width,
+    // and the printed ledger is meant to be understood without the
+    // header open next to it.
+    Bits = 5,
 };
 
 [[nodiscard]] constexpr std::string_view verdict_unit_name(VerdictUnit unit) noexcept {
@@ -76,6 +119,10 @@ enum class VerdictUnit : std::uint8_t {
             return "bool";
         case VerdictUnit::Count:
             return "count";
+        case VerdictUnit::Percent:
+            return "percent";
+        case VerdictUnit::Bits:
+            return "bits";
         default:
             return "<unknown VerdictUnit>";
     }
@@ -103,6 +150,15 @@ struct VerdictTtl {
 };
 
 inline constexpr std::uint32_t kDefaultTtlSeconds = 3600;
+
+// A verdict about the silicon, which changes when the machine is rebuilt
+// and not before. Not never-expires: the facts a fingerprint folds are
+// not the only facts a measurement depends on. Refer to the per-verdict
+// rationale in verdict_trait.
+inline constexpr std::uint32_t kDayTtlSeconds = 86400;
+
+// A verdict about how fragmented memory happens to be right now.
+inline constexpr std::uint32_t kFragmentationTtlSeconds = 900;
 
 // ── The value ─────────────────────────────────────────────────────────
 //
@@ -140,6 +196,73 @@ struct VerdictTrait {
             return VerdictTrait{.name = "timer_floor_ns",
                                 .unit = VerdictUnit::Nanoseconds,
                                 .ttl = VerdictTtl::of_seconds(kDefaultTtlSeconds)};
+
+        // ── #68 ──
+        //
+        // A day, not never. The width that wins is a property of the
+        // silicon, which the hardware half of the fingerprint already
+        // folds, so a geometry argument says never-expires. The argument
+        // does not hold: on a part that drops its clock to sustain a
+        // wide kernel, the winning width depends on how hot the part is
+        // and on how many of its neighbours are also running wide, and
+        // neither of those is in any fingerprint. A day is short enough
+        // to catch a machine that was rebuilt into a denser rack and
+        // long enough that nothing re-measures it on a whim.
+        case VerdictId::VectorWidthPreferredBits:
+            return VerdictTrait{.name = "vector_width_preferred_bits",
+                                .unit = VerdictUnit::Bits,
+                                .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+        case VerdictId::VectorWidthComputeGainPercent:
+            return VerdictTrait{.name = "vector_width_compute_gain_pct",
+                                .unit = VerdictUnit::Percent,
+                                .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+        case VerdictId::VectorWidthMemoryGainPercent:
+            return VerdictTrait{.name = "vector_width_memory_gain_pct",
+                                .unit = VerdictUnit::Percent,
+                                .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+
+        // ── #69 ──
+        //
+        // Also a day, and for a sharper reason than #68. The cache sizes
+        // are fixed, but where a fork-join starts to pay depends on what
+        // the fork-join costs, and that depends on what else is on the
+        // machine. The competence gate refuses to measure on a loaded
+        // host, so a stored answer was taken on a quiet one; a day bounds
+        // how long a quiet-host answer is allowed to describe a machine
+        // whose workload mix has since changed.
+        case VerdictId::ParallelKneeBytes:
+            return VerdictTrait{
+                .name = "parallel_knee_bytes", .unit = VerdictUnit::Bytes, .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+        case VerdictId::ParallelCeilingBytes:
+            return VerdictTrait{.name = "parallel_ceiling_bytes",
+                                .unit = VerdictUnit::Bytes,
+                                .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+        case VerdictId::NumaRemoteCostPercent:
+            return VerdictTrait{.name = "numa_remote_cost_pct",
+                                .unit = VerdictUnit::Percent,
+                                .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+
+        // ── #70 ──
+        //
+        // Fifteen minutes. What a hugepage fault costs is set by how
+        // fragmented physical memory is, and fragmentation is a running
+        // average of everything the machine has allocated since boot.
+        // It is the one quantity in this ledger that can be right at
+        // lunchtime and wrong by the afternoon, so it gets the shortest
+        // life of anything stored.
+        case VerdictId::ThpFaultCostNanosPerMib:
+            return VerdictTrait{.name = "thp_fault_cost_ns_per_mib",
+                                .unit = VerdictUnit::Nanoseconds,
+                                .ttl = VerdictTtl::of_seconds(kFragmentationTtlSeconds)};
+        case VerdictId::ThpFaultGainPercent:
+            return VerdictTrait{.name = "thp_fault_gain_pct",
+                                .unit = VerdictUnit::Percent,
+                                .ttl = VerdictTtl::of_seconds(kFragmentationTtlSeconds)};
+        case VerdictId::ThpAccessGainPercent:
+            return VerdictTrait{.name = "thp_access_gain_pct",
+                                .unit = VerdictUnit::Percent,
+                                .ttl = VerdictTtl::of_seconds(kFragmentationTtlSeconds)};
+
         // An id outside the enum can only come from a corrupt file or a
         // build mismatch. The empty name is deliberate: nothing resolves
         // to it through verdict_id_from_name, so such an entry can never
@@ -319,6 +442,13 @@ enum class LedgerError : std::uint8_t {
     StoreFull = 9,
     DuplicateVerdict = 10,
     ClockUnavailable = 11,
+    // The probe ran, understood the question, and the question does not
+    // apply to this host — there is no 512-bit vector unit to compare
+    // against, or only one NUMA node to be remote from. Distinct from
+    // ConfidenceBelowBar, which means the measurement happened and was
+    // not trustworthy. Conflating the two would have an operator hunting
+    // for a noise source on a machine that simply has one socket.
+    NotApplicableOnThisHost = 12,
 };
 
 [[nodiscard]] constexpr std::string_view ledger_error_name(LedgerError error) noexcept {
@@ -347,6 +477,8 @@ enum class LedgerError : std::uint8_t {
             return "DuplicateVerdict";
         case LedgerError::ClockUnavailable:
             return "ClockUnavailable";
+        case LedgerError::NotApplicableOnThisHost:
+            return "NotApplicableOnThisHost";
         default:
             return "<unknown LedgerError>";
     }

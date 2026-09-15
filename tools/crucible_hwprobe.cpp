@@ -24,6 +24,10 @@
 // A second rig would be a second set of bugs.
 
 #include <crucible/ledger/Ledger.h>
+#include <crucible/ledger/ProbeSupport.h>
+#include <crucible/ledger/probes/CacheTier.h>
+#include <crucible/ledger/probes/HugePage.h>
+#include <crucible/ledger/probes/VectorWidth.h>
 
 #include "bench_harness.h"
 
@@ -32,6 +36,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <charconv>
 #include <span>
 #include <string_view>
 
@@ -52,8 +57,33 @@ struct Options {
     bool force_remeasure = false;
     int pin_core = -1;
     std::size_t sample_count = 50000;
+    // Cores the cache-tier probe splits work onto. Left empty, the probe
+    // picks cores that share a last-level cache with the measuring core,
+    // which is what an unattended refresh gets.
+    std::array<int, crucible::ledger::kMaxHelperCores> helper_cores{-1, -1, -1, -1};
     bool is_valid = true;
 };
+
+// Parses "90,91,92" into the helper-core list. A core that does not parse
+// ends the list rather than being skipped, because a typo that silently
+// dropped one core would change which cluster the split ran on without
+// saying so.
+void parse_helper_cores(std::string_view text, std::span<int> into) noexcept {
+    std::size_t filled = 0;
+    std::size_t cursor = 0;
+    while (filled < into.size() && cursor <= text.size()) {
+        const std::size_t comma = std::min(text.find(',', cursor), text.size());
+        const std::string_view field = text.substr(cursor, comma - cursor);
+        int value = -1;
+        const auto outcome = std::from_chars(field.data(), field.data() + field.size(), value);
+        if (outcome.ec != std::errc{} || value < 0) {
+            break;
+        }
+        into[filled] = value;
+        ++filled;
+        cursor = comma + 1u;
+    }
+}
 
 [[nodiscard]] Options parse_options(int argc, char** argv) noexcept {
     Options options{};
@@ -65,6 +95,8 @@ struct Options {
             options.force_remeasure = true;
         } else if (argument == "--core" && index + 1 < argc) {
             options.pin_core = std::atoi(argv[++index]);
+        } else if (argument == "--helpers" && index + 1 < argc) {
+            parse_helper_cores(std::string_view{argv[++index]}, options.helper_cores);
         } else if (argument == "--samples" && index + 1 < argc) {
             const long requested = std::atol(argv[++index]);
             options.sample_count = (requested > 0) ? static_cast<std::size_t>(requested) : options.sample_count;
@@ -87,6 +119,8 @@ void print_usage() noexcept {
                "  crucible-hwprobe --force         remeasure every verdict regardless of age\n"
                "  crucible-hwprobe --show          print the stored ledger; measure nothing\n"
                "  crucible-hwprobe --core N        pin the measurement to CPU N\n"
+               "  crucible-hwprobe --helpers A,B   cores the cache-tier probe splits onto\n"
+               "                                   (default: cores sharing the L3 of --core)\n"
                "  crucible-hwprobe --samples N     samples per run (default 50000)\n"
                "\n"
                "The ledger lives at $XDG_CACHE_HOME/crucible/hwledger (or ~/.cache/...),\n"
@@ -100,42 +134,16 @@ void print_usage() noexcept {
                stderr);
 }
 
-// ── Options shared with the probe ─────────────────────────────────────
+// ── Options shared with the probes ────────────────────────────────────
 //
 // The probe signature takes only the competence report, because a probe has
-// no business knowing about command-line flags. The two knobs that are
-// genuinely measurement parameters reach it through this translation unit.
-
-std::size_t g_sample_count = 50000;
-int g_pin_core = -1;
+// no business knowing about command-line flags. The knobs that are
+// genuinely measurement parameters reach every probe through the settings
+// block in ProbeSupport.h, which the probes read and nothing else writes.
 
 // ── Evidence from a bench report ──────────────────────────────────────
 
-[[nodiscard]] std::uint32_t saturating_nanos(double value) noexcept {
-    if (!(value > 0.0)) {
-        return 0u;
-    }
-    // Round up. A floor of zero would read as "the timer did not run" at
-    // the admission, which is the correct reading for a failed measurement
-    // and the wrong one for a sub-nanosecond result.
-    const double rounded = value + 0.5;
-    if (rounded >= 4294967295.0) {
-        return 4294967295u;
-    }
-    const auto nanos = static_cast<std::uint32_t>(rounded);
-    return (nanos == 0u) ? 1u : nanos;
-}
-
-[[nodiscard]] std::uint32_t to_ppm(double ratio) noexcept {
-    if (!(ratio > 0.0)) {
-        return 0u;
-    }
-    const double parts = ratio * 1'000'000.0;
-    if (parts >= 4294967295.0) {
-        return 4294967295u;
-    }
-    return static_cast<std::uint32_t>(parts);
-}
+using crucible::ledger::evidence_from_two_runs;
 
 // Two runs, not one. The within-run coefficient of variation says how
 // steady the samples were inside a single burst; it says nothing about
@@ -150,9 +158,10 @@ int g_pin_core = -1;
 
     auto one_run = [&](const char* name) {
         auto run = bench::Run{name};
-        auto& configured = run.samples(g_sample_count).warmup(2000).max_wall_ms(4000);
-        if (g_pin_core >= 0) {
-            (void)configured.core(g_pin_core);
+        auto& configured = run.samples(ledger::probe_settings().sample_count).warmup(2000).max_wall_ms(4000);
+        const int core = ledger::probe_settings().pin_core;
+        if (core >= 0) {
+            (void)configured.core(core);
         } else {
             (void)configured.no_pin();
         }
@@ -169,46 +178,50 @@ int g_pin_core = -1;
         return std::unexpected(LedgerError::ConfidenceBelowBar);
     }
 
-    const double first_p50 = first.pct.p50;
-    const double second_p50 = second.pct.p50;
-    const double midpoint = (first_p50 + second_p50) * 0.5;
-    const double spread =
-        (midpoint > 0.0) ? (std::max(first_p50, second_p50) - std::min(first_p50, second_p50)) / midpoint : 1.0;
-
-    // The reported value is the better of the two runs, and the evidence is
-    // the worse of the two. Reporting the best number with the worst
-    // supporting statistics is the conservative pairing: a reader that
-    // trusts the value has already been shown the least flattering account
-    // of how it was obtained.
-    const bench::Report& worse = (first.pct.cv >= second.pct.cv) ? first : second;
-
-    VerdictEvidence evidence{};
-    evidence.quantiles.p50_ns = saturating_nanos(std::min(first_p50, second_p50));
-    evidence.quantiles.p99_ns = saturating_nanos(worse.pct.p99);
-    evidence.quantiles.p999_ns = saturating_nanos(worse.pct.p99_9);
-    // Saturation can flatten a sub-nanosecond spread into three equal
-    // values, and it can also invert them when p50 comes from the better
-    // run and the tail from the worse one. The ordering predicate rejects
-    // an inverted triple, so the tails are lifted to at least the median
-    // rather than being allowed to fail an admission for a rounding
-    // artefact.
-    evidence.quantiles.p99_ns = std::max(evidence.quantiles.p99_ns, evidence.quantiles.p50_ns);
-    evidence.quantiles.p999_ns = std::max(evidence.quantiles.p999_ns, evidence.quantiles.p99_ns);
-
-    evidence.sample_count = static_cast<std::uint32_t>(std::min<std::size_t>(worse.pct.n, 0xFFFFFFFFull));
-    evidence.within_run_cv_ppm = to_ppm(worse.pct.cv);
-    evidence.run_to_run_spread_ppm = to_ppm(spread);
+    // The two-run fold moved to ProbeSupport.h when #68-#70 turned out to
+    // want it too. This probe reads the shared one rather than keeping its
+    // own copy, so a change to how evidence is built cannot apply to three
+    // probes and miss the fourth.
+    const VerdictEvidence evidence = evidence_from_two_runs(first, second);
 
     return VerdictMeasurement{.value = VerdictValue{evidence.quantiles.p50_ns}, .evidence = evidence};
 }
 
 constexpr ledger::ProbeRegistration kProbeTable[] = {
     {.id = VerdictId::TimerFloorNanos, .run = &probe_timer_floor},
+    {.id = VerdictId::VectorWidthPreferredBits, .run = &ledger::probes::probe_vector_width_preferred_bits},
+    {.id = VerdictId::VectorWidthComputeGainPercent, .run = &ledger::probes::probe_vector_width_compute_gain},
+    {.id = VerdictId::VectorWidthMemoryGainPercent, .run = &ledger::probes::probe_vector_width_memory_gain},
+    {.id = VerdictId::ParallelKneeBytes, .run = &ledger::probes::probe_parallel_knee_bytes},
+    {.id = VerdictId::ParallelCeilingBytes, .run = &ledger::probes::probe_parallel_ceiling_bytes},
+    {.id = VerdictId::NumaRemoteCostPercent, .run = &ledger::probes::probe_numa_remote_cost},
+    {.id = VerdictId::ThpFaultCostNanosPerMib, .run = &ledger::probes::probe_thp_fault_cost},
+    {.id = VerdictId::ThpFaultGainPercent, .run = &ledger::probes::probe_thp_fault_gain},
+    {.id = VerdictId::ThpAccessGainPercent, .run = &ledger::probes::probe_thp_access_gain},
 };
 
+// Order matters here and nowhere else. Each of #68, #69 and #70 answers
+// several verdicts from one measurement, held behind a short-lived memo in
+// ProbeSupport.h, so the sibling ids have to be queued together for the
+// memo to be the thing that shares them. Interleaving two probes' ids
+// would expire each memo before its siblings read it and measure every
+// shape twice.
 constexpr VerdictId kWantedVerdicts[] = {
     VerdictId::TimerFloorNanos,
+    VerdictId::VectorWidthPreferredBits,
+    VerdictId::VectorWidthComputeGainPercent,
+    VerdictId::VectorWidthMemoryGainPercent,
+    VerdictId::ParallelKneeBytes,
+    VerdictId::ParallelCeilingBytes,
+    VerdictId::NumaRemoteCostPercent,
+    VerdictId::ThpFaultCostNanosPerMib,
+    VerdictId::ThpFaultGainPercent,
+    VerdictId::ThpAccessGainPercent,
 };
+
+static_assert(std::size(kProbeTable) == ledger::kVerdictIdCount,
+              "every verdict id needs a probe, or a refresh queues a question nothing can answer");
+static_assert(std::size(kWantedVerdicts) == ledger::kVerdictIdCount);
 
 // ── Reporting ─────────────────────────────────────────────────────────
 
@@ -268,8 +281,11 @@ int main(int argc, char** argv) {
         print_usage();
         return 1;
     }
-    g_sample_count = options.sample_count;
-    g_pin_core = options.pin_core;
+    ledger::set_probe_settings(ledger::ProbeSettings{
+        .sample_count = static_cast<std::uint32_t>(std::min<std::size_t>(options.sample_count, 0xFFFFFFFFull)),
+        .pin_core = options.pin_core,
+        .helper_cores = options.helper_cores,
+    });
 
     // A background capability, even though this is a one-shot tool at
     // process start. Reading and writing the store blocks on a disk, and
