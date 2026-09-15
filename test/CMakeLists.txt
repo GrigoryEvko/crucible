@@ -1653,18 +1653,53 @@ function(crucible_neg_compile_test name expected_diag)
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
-  # PASS_REGULAR_EXPRESSION passes the test iff the build output
-  # contains the expected-diagnostic substring.  A "clean" build
+  # The driver passes the test iff the compiler's own diagnostics
+  # contain the expected-diagnostic substring.  A "clean" build
   # (i.e., the discipline slipped and the .cpp compiled) produces no
-  # such text → test fails.  An unrelated compile error (typo in
-  # the .cpp) also produces different text → test fails, surfacing
-  # the drift.  This is strictly stronger than WILL_FAIL.
+  # such text → test fails.  This is strictly stronger than WILL_FAIL.
+  #
+  # The driver strips GCC's caret display before matching, so a regex
+  # cannot be satisfied by the compiler quoting the fixture's own
+  # source back at it.  It also reports, per fixture, how many
+  # distinct lines of that fixture produced an error; set
+  # CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1 in the environment to turn
+  # "rejects for more than one reason" into a failure and sweep the
+  # corpus for fixtures asserting more than they document.
   add_test(NAME ${name}
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp
             ${name}
             "${expected_diag}")
+  set_tests_properties(${name} PROPERTIES
+    LABELS "safety_neg")
+endfunction()
+
+# Conjunction form of the harness above.  `crucible_neg_compile_test`
+# takes ONE regex, and a regex is satisfied by its weakest alternative,
+# so a gate written as `A|B|C` proves only that the weakest of A, B, C
+# appeared.  When the weakest alternative is boilerplate that ANY failing
+# concept check emits — `constraints not satisfied`, `template constraint
+# failure`, `associated constraints` — the fixture proves that SOMETHING
+# in the TU failed a constraint, not that the invariant under test fired.
+#
+# The driver requires EVERY regex it is given (see the AND-semantics note
+# in neg_compile_driver.py), so passing the boilerplate reason and the
+# project-specific token as separate arguments pins both: the rejection
+# happened AND it happened to the named thing.  The two pieces of
+# evidence sit on different diagnostic lines, so `A.*B` cannot express
+# this — `.` does not cross a newline.
+function(crucible_neg_compile_multi_test name)
+  set(expected_diags ${ARGN})
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp
+            ${name}
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "safety_neg")
 endfunction()
@@ -2258,8 +2293,16 @@ crucible_neg_compile_fixy_test(neg_fixy_v_095_box_muller_polynomial_det_wrong_ti
 #   - direct_ctor_bypass — raw `fixy::fn<T, all-strict-grants>{42}`
 #   - stance_ctor_bypass — alias `fixy::stance::PureLinear<int>{42}`
 # Both reject with "private within this context" / "declared private".
-crucible_neg_compile_fixy_test(neg_fixy_fn_direct_ctor_bypass    "private")
-crucible_neg_compile_fixy_test(neg_fixy_fn_stance_ctor_bypass    "private")
+# A bare "private" is satisfied by ANY inaccessibility diagnostic the TU
+# happens to emit, including the tier-3 `AllDimsEngaged` failure a short
+# Grants pack produces — which is exactly how direct_ctor_bypass spent
+# its life asserting two rejections while documenting one.  Name the
+# rejected constructor instead, so the gate can only be met by the
+# private-ctor rejection these fixtures exist to witness.
+crucible_neg_compile_fixy_test(neg_fixy_fn_direct_ctor_bypass
+    "crucible::fixy::fn<Type, Grants>::fn\\(Type\\).*is private within this context")
+crucible_neg_compile_fixy_test(neg_fixy_fn_stance_ctor_bypass
+    "crucible::fixy::fn<Type, Grants>::fn\\(Type\\).*is private within this context")
 
 # FIXY-AUDIT-E10 + fixy-H-01 — HS14 floor for mint_fn_for stance-bound
 # mint.  fixy-H-01 hardened mint_fn_for with explicit requires-clauses
@@ -3661,8 +3704,13 @@ crucible_neg_compile_fixy_test(neg_fixy_struct_ct_signed_is_zero
     "constraints not satisfied|associated constraints|unsigned_integral|no matching function")
 crucible_neg_compile_fixy_test(neg_fixy_struct_simd_detsafe_float
     "constraints not satisfied|associated constraints|DetSafeSimd|std::integral")
-crucible_neg_compile_fixy_test(neg_fixy_struct_simd_iota_non_vec
-    "value_type|no type named|substitution failure|no matching function|template argument deduction")
+# `iota_v<int>` does reject, but none of the old alternatives appeared in
+# any diagnostic — `value_type` was matched out of the quoted body of
+# `iota_v` itself.  Require the instantiation that was attempted and the
+# error it produced, which are the two lines the compiler actually wrote.
+crucible_neg_compile_fixy_multi_test(neg_fixy_struct_simd_iota_non_vec
+    "constexpr V crucible::simd::iota_v\\(\\) .with V = int."
+    ".int. is not a class, struct, or union type")
 crucible_neg_compile_fixy_test(neg_fixy_struct_owned_region_copy
     "deleted function|move-only|use of deleted function|Permission")
 crucible_neg_compile_fixy_test(neg_fixy_struct_workload_zero_shards
@@ -4938,12 +4986,23 @@ crucible_neg_compile_test(neg_read_view_default_init_private
   "is private within this context")
 crucible_neg_compile_test(neg_sealed_refined_into_call
   "has no member named")
-crucible_neg_compile_test(neg_graded_concept_void_substrate
-  "constraints not satisfied")
-crucible_neg_compile_test(neg_graded_concept_no_lattice_type
-  "constraints not satisfied")
-crucible_neg_compile_test(neg_graded_concept_bare_int
-  "constraints not satisfied")
+# `constraints not satisfied` alone is emitted by EVERY failing concept
+# check in the TU, so these three gates were satisfied by any constraint
+# failure whatsoever — `static_assert(std::integral<double>)` in place of
+# the body passes them.  Each now also requires the concept under test by
+# name, plus the specific requirement that fixture claims to break.
+crucible_neg_compile_multi_test(neg_graded_concept_void_substrate
+  "constraints not satisfied"
+  "concept crucible::algebra::GradedWrapper"
+  "nested requirement .is_graded_specialization_v<typename W::graded_type>. is not satisfied")
+crucible_neg_compile_multi_test(neg_graded_concept_no_lattice_type
+  "constraints not satisfied"
+  "concept crucible::algebra::GradedWrapper"
+  "the required type .typename W::lattice_type. is invalid")
+crucible_neg_compile_multi_test(neg_graded_concept_bare_int
+  "constraints not satisfied"
+  "concept crucible::algebra::GradedWrapper"
+  "the required type .typename W::value_type. is invalid")
 
 # ─── fixy-A3-014 (#1621): is_graded_specialization_v cv-ref symmetry ──
 #
@@ -4991,16 +5050,32 @@ crucible_neg_compile_test(neg_lattice_name_sentinel_admits
 # surface; a maintainer adding a sixth concept family must ship a
 # matching neg-compile fixture or the per-concept rejection
 # behavior is unwitnessed.
-crucible_neg_compile_test(neg_dimension_traits_semiring_rejects_lattice_only
-  "constraints not satisfied")
-crucible_neg_compile_test(neg_dimension_traits_versioned_rejects_bare_int
-  "constraints not satisfied")
-crucible_neg_compile_test(neg_dimension_traits_lattice_rejects_int
-  "constraints not satisfied")
-crucible_neg_compile_test(neg_dimension_traits_typestate_rejects_lattice
-  "constraints not satisfied")
-crucible_neg_compile_test(neg_dimension_traits_foundational_rejects_void
-  "constraints not satisfied")
+#
+# "constraints not satisfied" on its own does NOT distinguish the five,
+# and does not distinguish any of them from an unrelated concept failure
+# elsewhere in the TU.  Each gate therefore also requires the overload
+# resolution failure that names its own probe helper and the rejected
+# type, which is the evidence that THIS concept refused THIS argument.
+crucible_neg_compile_multi_test(neg_dimension_traits_semiring_rejects_lattice_only
+  "constraints not satisfied"
+  "no matching function for call to .consumes_semiring<LatticeOnly>"
+  "requires  SemiringGrade<G>")
+crucible_neg_compile_multi_test(neg_dimension_traits_versioned_rejects_bare_int
+  "constraints not satisfied"
+  "no matching function for call to .consumes_versioned<int>"
+  "requires  VersionedGrade<G>")
+crucible_neg_compile_multi_test(neg_dimension_traits_lattice_rejects_int
+  "constraints not satisfied"
+  "no matching function for call to .consumes_lattice<int>"
+  "requires  LatticeGrade<G>")
+crucible_neg_compile_multi_test(neg_dimension_traits_typestate_rejects_lattice
+  "constraints not satisfied"
+  "no matching function for call to .consumes_typestate<TestLattice>"
+  "requires  TypestateGrade<G>")
+crucible_neg_compile_multi_test(neg_dimension_traits_foundational_rejects_void
+  "constraints not satisfied"
+  "no matching function for call to .consumes_foundational<void>"
+  "requires  FoundationalGrade<G>")
 crucible_neg_compile_test(neg_dimension_traits_quadruple_tier_mismatch
   "QUADRUPLE_TIER_MISMATCH")
 
@@ -6310,10 +6385,16 @@ crucible_neg_compile_test(neg_quic_raw_migration_plan
 #   * neg_ktls_tls12_crypto: TLS 1.2 record secrets cannot be admitted.
 #   * neg_ktls_chacha_crypto: software ChaCha20 TLS suites are not kTLS AES-GCM.
 #   * neg_ktls_raw_crypto_offload: offload requests require tagged crypto info.
+# Name the satisfaction failure and the rejected argument together, on
+# the one line GCC prints them.  The previous alternation let the bare
+# token `TlsVersion::V12` carry the gate, and that token also appears in
+# the quoted source line — so while these two fixtures had the wrong
+# using-directive and every name in them was undeclared, the gates still
+# went green on the echo.
 crucible_neg_compile_test(neg_ktls_tls12_crypto
-  "constraints not satisfied|SupportedKtlsVersion|TlsVersion::V12")
+  "required for the satisfaction of .SupportedKtlsVersion<Version>. .with Version = crucible::cntp::TlsVersion::V12.")
 crucible_neg_compile_test(neg_ktls_chacha_crypto
-  "constraints not satisfied|KtlsAesGcmCipherSuite|TlsChacha20Poly1305Sha256")
+  "required for the satisfaction of .KtlsAesGcmCipherSuite<Suite>. .with Suite = crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256.")
 crucible_neg_compile_test(neg_ktls_raw_crypto_offload
   "could not convert|no matching function|DeclaredTlsCryptoInfo|Tagged")
 
@@ -7286,6 +7367,25 @@ crucible_neg_compile_test(neg_reflect_supported_void
   "static assertion failed|WRAP-Reflect-4|IsReflectFieldSupported")
 crucible_neg_compile_test(neg_reflect_supported_function_type
   "static assertion failed|WRAP-Reflect-4|IsReflectFieldSupported")
+
+# ─── Wave-2 substrate correctness HS14 fixtures ─────────────────────
+#   PublishOnce/PublishSlot take a POINTEE; both slots add the star
+#   themselves, so a pointer T publishes the address of a pointer
+#   variable and a reference T has no pointer to form.
+crucible_neg_compile_test(neg_publish_once_pointer_pointee
+  "PublishOnce<T> hands off a T")
+crucible_neg_compile_test(neg_publish_once_reference_pointee
+  "A reference type has no pointer to form")
+crucible_neg_compile_test(neg_publish_slot_pointer_pointee
+  "PublishSlot<T> hands off a T")
+#   at_bottom(value) has no regime-invariant meaning, so it exists
+#   only on the Graded primary.
+crucible_neg_compile_test(neg_graded_at_bottom_value_element_lattice
+  "no matching function for call to .*at_bottom")
+crucible_neg_compile_test(neg_graded_at_bottom_value_derived_lattice
+  "no matching function for call to .*at_bottom")
+crucible_neg_compile_test(neg_reflect_pack_field_unsupported_category
+  "pack_field handles enum, integral")
 
 # ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
 #   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
@@ -8288,10 +8388,12 @@ crucible_neg_compile_test(neg_swiss_table_buffer_use_after_move
 # kGroupWidth=16 mask can be 0xF0F0.  The two fixtures pin the
 # boundary edge and a wide miss on the default AVX2/SSE/portable
 # widths used by the local preset.
+# Both gates name a real diagnostic on either ISA: the Refined contract on
+# widths below 64, the group-width static_assert on AVX512BW.
 crucible_neg_compile_test(neg_swiss_bitmask_one_past_group_mask
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "contract predicate is false|requires a group width below 64")
 crucible_neg_compile_test(neg_swiss_bitmask_wide_miss
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "contract predicate is false|requires a group width below 64")
 
 # WRAP-SwissTab-6 (#1028) — kGroupWidth is a
 # safety::PowerOfTwo<size_t> rather than a raw size_t.  The fixtures
@@ -11428,8 +11530,13 @@ crucible_neg_compile_test(neg_chainedge_raw_reset
 # catches via routed `static_assert` in safety/Diagnostic.h and
 # safety/diag/RowMismatch.h.  Every regex is FRAMEWORK-CONTROLLED —
 # matches a literal substring of a `static_assert` message we own.
-crucible_neg_compile_test(neg_diag_non_tag_in_diagnostic_wrapper
-    "constraints not satisfied")
+# Also require the trait that does the rejecting, and the type it
+# rejected.  Bare "constraints not satisfied" is emitted by every failing
+# concept check in the TU and witnesses nothing about Diagnostic<>.
+crucible_neg_compile_multi_test(neg_diag_non_tag_in_diagnostic_wrapper
+    "constraints not satisfied"
+    "requires  is_diagnostic_class_v<DiagnosticClass> struct crucible::safety::diag::Diagnostic"
+    "the expression .is_diagnostic_class_v<DiagnosticClass> .with DiagnosticClass = int.. evaluated to .false.")
 crucible_neg_compile_test(neg_diag_non_tag_in_row_mismatch
     "RowMismatchTag_NonTag")
 crucible_neg_compile_test(neg_diag_non_tag_accessor

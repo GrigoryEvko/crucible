@@ -10,8 +10,12 @@
 // `operator()(auto)`.  Routing through
 // `fixy::struct_::simd::iota_v` must reject identically.
 //
-// Expected diagnostic: "no type named 'value_type' in 'int'" or
-// substitution failure pointing at the lambda generator constructor.
+// Expected diagnostic: the `iota_v<int>` instantiation context plus
+// "'int' is not a class, struct, or union type" from the generator
+// constructor.  GCC does NOT say "no type named 'value_type'" here —
+// that phrase only ever appeared in the quoted source of `iota_v`, so
+// the earlier gate matched the fixture's own text rather than any
+// diagnostic.
 
 #include <crucible/fixy/Struct.h>
 

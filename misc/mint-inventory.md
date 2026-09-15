@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-14T22:11:15Z`.
+Snapshot generated: `2026-09-14T23:56:18Z`.
 
 ## bridges/
 
@@ -69,11 +69,11 @@ Snapshot generated: `2026-09-14T22:11:15Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_bg_context` | `include/crucible/effects/Capabilities.h:387` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:111` | HS14: 4 |
+| `mint_bg_context` | `include/crucible/effects/Capabilities.h:399` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:111` | HS14: 4 |
 | `mint_cap` | `include/crucible/effects/Capability.h:86` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:87` | HS14: 11 |
 | `mint_from_ctx` | `include/crucible/effects/Capability.h:133` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:101` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:395` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:115` | HS14: 5 |
-| `mint_test_context` | `include/crucible/effects/Capabilities.h:403` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:119` | HS14: 3 |
+| `mint_init_context` | `include/crucible/effects/Capabilities.h:407` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:115` | HS14: 5 |
+| `mint_test_context` | `include/crucible/effects/Capabilities.h:415` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:119` | HS14: 3 |
 
 ## perf/
 
@@ -246,10 +246,10 @@ mints) are listed in the substrate section instead.
 | `mint_bounded_sleep` | `include/crucible/fixy/Time.h:232` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_clock_reader` | `include/crucible/fixy/Time.h:220` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_cold_writer` | `include/crucible/fixy/CipherDurable.h:125` | - | - | Y | - | ctx | HS14: 2 |
-| `mint_durable_append_file` | `include/crucible/fixy/Fs.h:377` | Y | - (alloc) | Y | - | ctx | HS14: 2 |
-| `mint_durable_truncate_file` | `include/crucible/fixy/Fs.h:362` | Y | - (alloc) | Y | - | ctx | HS14: 3 |
+| `mint_durable_append_file` | `include/crucible/fixy/Fs.h:398` | Y | - (alloc) | Y | - | ctx | HS14: 2 |
+| `mint_durable_truncate_file` | `include/crucible/fixy/Fs.h:383` | Y | - (alloc) | Y | - | ctx | HS14: 3 |
 | `mint_federation_channel` | `include/crucible/fixy/SessFederation.h:40` | Y | Y | Y | Y | ctx | HS14: 5 |
-| `mint_file` | `include/crucible/fixy/Fs.h:290` | Y | Y | Y | Y | ctx | HS14: 13 |
+| `mint_file` | `include/crucible/fixy/Fs.h:309` | Y | Y | Y | Y | ctx | HS14: 13 |
 | `mint_fn_for` | `include/crucible/fixy/Fn.h:666` | Y | Y | Y | Y | token | HS14: 9 |
 | `mint_head_advancer` | `include/crucible/fixy/CipherDurable.h:129` | - | - | Y | - | ctx | HS14: 2 |
 | `mint_io_uring_ring` | `include/crucible/fixy/Io.h:474` | Y | Y | Y | Y | ctx | HS14: 5 |
