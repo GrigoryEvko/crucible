@@ -25,16 +25,19 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 
 #include "vessel_api_typed.h"
 
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 namespace {
 
@@ -110,9 +113,15 @@ struct ScalarArgs {
 // schema registry, never freed for the program's lifetime, and treated
 // as identity-only here (compared, never dereferenced).  The wrapper
 // is regime-1 EBO collapse, so the slot stays at 16B and the cache
-// stays L1-resident.
+// stays L1-resident.  The alias keeps that spelling in one place, so the
+// declaration and the assignment below cannot drift apart, and states the
+// `crucible::fixy::` form used by vessel_api_typed.h and TensorMeta.h --
+// `crucible::safety::` re-exports the same types, and picking one of the
+// two is the point.
+using ExternalOpKey = crucible::fixy::wrap::Tagged<const void*, crucible::fixy::tags::source::External>;
+
 struct SchemaHashSlot {
-    safety::Tagged<const void*, safety::source::External> key{nullptr};
+    ExternalOpKey key{nullptr};
     crucible::SchemaHash hash;
 };
 
@@ -179,9 +188,9 @@ struct SchemaInfo {
     // Re-tag at the FFI source: the OperatorHandle pointer just
     // crossed the boxed-fallback boundary, so it carries source::External
     // until something downstream proves otherwise.  Construction is
-    // explicit per safety::Tagged's API; the wrapper is move-assigned
+    // explicit per Tagged's API; the wrapper is move-assigned
     // into the slot at zero runtime cost.
-    slot.key = safety::Tagged<const void*, safety::source::External>{&op};
+    slot.key = ExternalOpKey{&op};
     slot.hash = schema_hash;
     schema_is_mutable[idx] = mutable_op;
     return {schema_hash, mutable_op};
@@ -212,9 +221,12 @@ static thread_local uint8_t s_training_phase = 0;
     for (uint16_t i = 0; i < n_inputs; i++) {
         // Hash ndim as separator (1 byte), continuing the chain.
         h = fnv1a_bytes(&metas[i].ndim, 1, h);
-        // Hash sizes[0..ndim-1], continuing the chain.
-        const uint32_t nbytes = metas[i].ndim * sizeof(int64_t);
-        h = fnv1a_bytes(metas[i].sizes, nbytes, h);
+        // Hash sizes[0..ndim-1], continuing the chain.  `sizes` is a
+        // TensorDimArray, whose lanes stay plain int64_t precisely so a bulk
+        // reader can take the block without a copy; `raw_data()` is that
+        // reader.  Only the write path goes through the refined TensorDim.
+        const uint32_t nbytes = static_cast<uint32_t>(metas[i].ndim) * static_cast<uint32_t>(sizeof(int64_t));
+        h = fnv1a_bytes(metas[i].sizes.raw_data(), nbytes, h);
     }
     return crucible::ShapeHash{h};
 }
@@ -250,7 +262,10 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
         const auto strides = t.strides();
         for (uint8_t d = 0; d < ndim; d++)
             meta.strides[d] = ::crucible::tensor_dim(strides[d]);
-        meta.data_ptr = t.data_ptr();
+        // The storage address crosses the ATen boundary here, so it enters
+        // as source::External: hashed and compared as an opaque cookie,
+        // never dereferenced, until some later validator retags it.
+        meta.data_ptr = ::crucible::external_data_ptr(t.data_ptr());
     }
 
     // #161: c10 and crucible enums mirror ordinals by design
@@ -262,23 +277,72 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
     // ordinary value conversion.  bit_cast is pure bit reinterpretation;
     // sizeof-mismatch is a compile error, not a runtime surprise.
     //
-    // Static-assert the size and a sentinel ordinal per enum so a c10
-    // renumber — past int8_t overflow or into a previously-hole ordinal
-    // — fails the build instead of silently corrupting tensor metadata.
+    // Static-assert the size and every mirrored ordinal so a c10 renumber —
+    // past int8_t overflow or into a previously-hole ordinal — fails the
+    // build instead of silently corrupting tensor metadata.
     static_assert(sizeof(c10::ScalarType) == sizeof(crucible::ScalarType));
     static_assert(sizeof(c10::DeviceType) == sizeof(crucible::DeviceType));
     static_assert(sizeof(c10::Layout) == sizeof(crucible::Layout));
-    static_assert(static_cast<int8_t>(c10::ScalarType::Float) == static_cast<int8_t>(crucible::ScalarType::Float),
-                  "c10::ScalarType::Float ordinal drifted from crucible mirror");
-    static_assert(static_cast<int8_t>(c10::ScalarType::Undefined)
-                      == static_cast<int8_t>(crucible::ScalarType::Undefined),
-                  "c10::ScalarType::Undefined ordinal drifted from crucible mirror");
+
+    // Every scalar type Crucible names, checked one by one.  A single
+    // sampled ordinal did not witness the invariant the bit_cast rests on:
+    // it only witnessed one lane of it.  The per-type message names the
+    // type that drifted, which a folded check could not.
+#define CRUCIBLE_MIRROR_SCALAR(name)                                                                             \
+    static_assert(static_cast<int8_t>(c10::ScalarType::name) == static_cast<int8_t>(crucible::ScalarType::name), \
+                  "c10::ScalarType::" #name " ordinal drifted from the crucible mirror")
+    CRUCIBLE_MIRROR_SCALAR(Byte);
+    CRUCIBLE_MIRROR_SCALAR(Char);
+    CRUCIBLE_MIRROR_SCALAR(Short);
+    CRUCIBLE_MIRROR_SCALAR(Int);
+    CRUCIBLE_MIRROR_SCALAR(Long);
+    CRUCIBLE_MIRROR_SCALAR(Half);
+    CRUCIBLE_MIRROR_SCALAR(Float);
+    CRUCIBLE_MIRROR_SCALAR(Double);
+    CRUCIBLE_MIRROR_SCALAR(ComplexHalf);
+    CRUCIBLE_MIRROR_SCALAR(ComplexFloat);
+    CRUCIBLE_MIRROR_SCALAR(ComplexDouble);
+    CRUCIBLE_MIRROR_SCALAR(Bool);
+    CRUCIBLE_MIRROR_SCALAR(BFloat16);
+    CRUCIBLE_MIRROR_SCALAR(Float8_e5m2);
+    CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fn);
+    CRUCIBLE_MIRROR_SCALAR(Float8_e5m2fnuz);
+    CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fnuz);
+#undef CRUCIBLE_MIRROR_SCALAR
+
+    // Undefined is the one deliberate divergence, so it must not be
+    // bit_cast.  c10 appends Undefined after the last scalar type, which
+    // puts it at a large positive ordinal; Crucible uses -1 as a sentinel
+    // so that "no dtype" sorts outside the value range instead of inside
+    // it.  Asserting the two equal was false, and it is the assert that
+    // was wrong, not the enums.  Assert the divergence instead, plus the
+    // property that makes the explicit map below total: every c10 ordinal
+    // is non-negative, so the -1 sentinel can never collide with one.
+    static_assert(static_cast<int8_t>(crucible::ScalarType::Undefined) < 0,
+                  "the crucible Undefined sentinel must stay negative so it cannot alias a c10 ordinal");
+    static_assert(static_cast<int16_t>(c10::ScalarType::Undefined) >= 0,
+                  "c10 scalar ordinals must stay non-negative for the sentinel to be disjoint");
+    static_assert(static_cast<int16_t>(c10::ScalarType::Undefined)
+                      != static_cast<int16_t>(crucible::ScalarType::Undefined),
+                  "if c10 ever adopts -1 for Undefined, drop the explicit map below and bit_cast it");
+
     static_assert(static_cast<int8_t>(c10::DeviceType::CUDA) == static_cast<int8_t>(crucible::DeviceType::CUDA),
                   "c10::DeviceType::CUDA ordinal drifted from crucible mirror");
     static_assert(static_cast<int8_t>(c10::Layout::Strided) == static_cast<int8_t>(crucible::Layout::Strided),
                   "c10::Layout::Strided ordinal drifted from crucible mirror");
 
-    meta.dtype = std::bit_cast<crucible::ScalarType>(t.scalar_type());
+    // The mirror is exact for every named type, so bit_cast carries them.
+    // Undefined is mapped, because its two ordinals differ by design.
+    //
+    // A dtype that c10 names and Crucible does not — a quantized type, a
+    // narrow integer width, one of the newer FP8 variants — still
+    // bit_casts to an ordinal that matches no crucible enumerator.  The
+    // enum has a fixed underlying type, so the value is well-defined
+    // rather than UB, and it round-trips through the trace unchanged.
+    // Widening the mirror is a Types.h change, which this file does not own.
+    const auto scalar_type = t.scalar_type();
+    meta.dtype = (scalar_type == c10::ScalarType::Undefined) ? crucible::ScalarType::Undefined
+                                                             : std::bit_cast<crucible::ScalarType>(scalar_type);
     meta.device_type = std::bit_cast<crucible::DeviceType>(t.device().type());
     // c10::DeviceIndex is already int8_t (c10/core/Device.h).  Direct
     // copy on the present-branch; literal -1 on the absent-branch.
@@ -302,7 +366,10 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
         if (node) {
             flags |= crucible::meta_flags::HAS_GRAD_FN;
             const auto& gfn_name = node->name();
-            meta.grad_fn_hash = fnv1a_str(gfn_name.data(), gfn_name.size());
+            // The value derives from an autograd node name, which is local
+            // to one process, so it carries hash_family::FamilyB and must
+            // never key anything that outlives the run.
+            meta.grad_fn_hash = ::crucible::grad_fn_hash(fnv1a_str(gfn_name.data(), gfn_name.size()));
         }
         meta.output_nr = static_cast<uint8_t>(torch::autograd::impl::get_autograd_meta(t)->output_nr_ & 0xFF);
     }
@@ -327,7 +394,13 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 
     meta.flags = flags;
 
-    meta.version = static_cast<uint32_t>(impl->version_counter().current_version() & 0xFFFFFFFF);
+    // c10's version counter is already uint32_t (TensorImpl.h), so the old
+    // mask-and-narrow was a no-op the compiler rejects as a useless cast.
+    // Assert the width instead: if a future c10 widens it, the build fails
+    // here rather than silently truncating a version into a false match.
+    static_assert(std::is_same_v<decltype(impl->version_counter().current_version()), uint32_t>,
+                  "c10 version counter width drifted — re-check the TensorMeta.version narrowing");
+    meta.version = impl->version_counter().current_version();
 }
 
 // =====================================================================
@@ -371,7 +444,12 @@ struct ExtractionResult {
                 r.counts.inputs++;
             }
         } else if (iv.isTensorList()) {
-            for (const at::Tensor& t : iv.toTensorList()) {
+            // Same proxy hazard as the OptionalTensorList branch below: the
+            // c10::List iterator dereferences to a proxy whose conversion
+            // returns by value, so `const at::Tensor&` binds to a temporary
+            // and -Wdangling-reference fires. Take the element by value.
+            for (const auto ref : iv.toTensorList()) {
+                const at::Tensor t = ref;
                 if (t.defined() && r.counts.inputs < MAX_INLINE_METAS) {
                     fill_meta(metas[r.counts.inputs], t);
                     r.counts.inputs++;
@@ -421,7 +499,9 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
                 counts.outputs++;
             }
         } else if (iv.isTensorList()) {
-            for (const at::Tensor& t : iv.toTensorList()) {
+            // Proxy-by-value, as on the input side.
+            for (const auto ref : iv.toTensorList()) {
+                const at::Tensor t = ref;
                 if (t.defined() && counts.total() < MAX_INLINE_METAS) {
                     fill_meta(metas[counts.total()], t);
                     counts.outputs++;
@@ -613,6 +693,23 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 // =====================================================================
 
 extern "C" {
+
+// Prototypes first. These are the whole C ABI of libcrucible_dispatch.so,
+// and crucible_native.py binds every one of them by name through ctypes.
+// Nothing compiles against a header, so without this block each definition
+// is its own first declaration and -Wmissing-declarations fires on all of
+// them. Stating the ABI once, in one place, is what silences it: a symbol
+// Python calls but this block does not name is a symbol nobody declared.
+CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode);
+CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx);
+CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode();
+CRUCIBLE_API void* crucible_dispatch_get_tls_context();
+CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash);
+CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope();
+CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase);
+CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase();
+CRUCIBLE_API uint32_t crucible_dispatch_schema_count();
+CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name);
 
 CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode) {
     c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));

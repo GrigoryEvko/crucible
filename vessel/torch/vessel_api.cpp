@@ -92,6 +92,34 @@ static bool validate_ffi_metas(const CrucibleMeta* metas, uint32_t n_metas) noex
     return true;
 }
 
+// ── Late schema-name registrations ───────────────────────────────────
+//
+// crucible_create() constructs a Vigil, whose constructor calls
+// BackgroundThread::start(), whose first statement seals the global
+// SchemaTable. Every crucible_register_schema_name() call after that
+// therefore arrives at a sealed table.
+//
+// The names cannot be registered any earlier. They are sourced from the
+// dispatch library's own SchemaTable, which is filled while ops record,
+// and ops cannot record until a Vigil handle exists. Names -> ops ->
+// handle -> create() is a strict causal chain, so the registrations are
+// late by construction, not by a caller's mistake.
+//
+// This second table is where they go. It is a plain SchemaTable that
+// this file never seals, so mint_mutable_view() always succeeds and the
+// registration path stays the audited one -- same bounds, same dedup by
+// hash, same abort on overflow. crucible_export_crtrace() writes the
+// union of the two, and crucible_schema_name() reads through both, so a
+// registration is observable immediately whichever table accepted it.
+//
+// Sealing exists to stop a registration racing the background thread.
+// Nothing here weakens that: the global table stays sealed, and this
+// table is touched only by the thread calling the C ABI.
+[[nodiscard]] static crucible::SchemaTable& late_schema_names() {
+    static crucible::SchemaTable table;
+    return table;
+}
+
 // ── C API implementation ─────────────────────────────────────────────
 
 extern "C" {
@@ -281,14 +309,32 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
     const size_t len = ::strnlen(name, MAX_NAME + 1);
     if (len == 0 || len > MAX_NAME) return;
 
-    auto& table = crucible::global_schema_table();
-    if (table.is_sealed()) return;
+    // Before the Vigil exists the global table still accepts writes, so
+    // an early registration goes there and the trace keeps one table.
+    // After crucible_create() seals it, the registration goes to the
+    // late table instead. It is never dropped: returning here is what
+    // made a whole run export zero names with nothing to show for it.
+    //
+    // The seal can in principle land between this check and the mint, and
+    // the mint's precondition would then abort. That window is inherited,
+    // not introduced -- the previous code checked and minted the same way
+    // -- and closing it needs an atomic test-and-acquire inside
+    // SchemaTable. It requires crucible_create() to run concurrently with
+    // a registration on another thread, which no caller does: the Python
+    // controller creates during __enter__ and registers during export.
+    auto& global_table = crucible::global_schema_table();
+    auto& table = global_table.is_sealed() ? late_schema_names() : global_table;
     auto view = table.mint_mutable_view();
-    crucible::register_schema_name(view, crucible::SchemaHash{schema_hash}, crucible::SchemaTable::SanitizedName{name});
+    crucible::SchemaTable::SanitizedName const name_tag{name};
+    table.register_name(view, crucible::SchemaHash{schema_hash}, name_tag);
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {
-    return crucible::schema_name(crucible::SchemaHash{schema_hash}).value().data();
+    // Read through both tables. A caller cannot tell which one accepted
+    // the registration, and should not have to.
+    const crucible::SchemaHash hash{schema_hash};
+    if (const char* name = crucible::schema_name(hash).value().data()) return name;
+    return late_schema_names().lookup(hash).value().data();
 }
 
 int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
@@ -367,18 +413,36 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
             w(&m, sizeof(crucible::TensorMeta), 1);
     }
 
-    // Schema name table.
+    // Schema name table: the union of the two tables described above.
+    // A hash registered before the seal and again after it appears in
+    // both, so the late table's copy is skipped -- the reader keys by
+    // hash and a second record for one hash is a malformed trace.
     const auto& table = crucible::global_schema_table();
+    const auto& late = late_schema_names();
+
+    const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept {
+        return table.lookup(hash).value().data() != nullptr;
+    };
+
+    // The count is written before the records, so it has to be the
+    // post-dedup count, not the sum of the two sizes.
     uint32_t num_names = table.count();
+    for (uint32_t i = 0; i < late.count(); i++)
+        if (!is_in_global(late.entries[i].hash)) num_names++;
     w(&num_names, 4, 1);
-    for (uint32_t i = 0; i < num_names; i++) {
-        uint64_t sh = table.entries[i].hash.raw();
-        const char* name = table.entries[i].name;
-        auto name_len = static_cast<uint16_t>(table.entries[i].name_len);
+
+    const auto write_entry = [&w](const crucible::SchemaEntry& entry) {
+        uint64_t sh = entry.hash.raw();
+        auto name_len = static_cast<uint16_t>(entry.name_len);
         w(&sh, 8, 1);
         w(&name_len, 2, 1);
-        w(name, 1, name_len);
-    }
+        w(entry.name, 1, name_len);
+    };
+
+    for (uint32_t i = 0; i < table.count(); i++)
+        write_entry(table.entries[i]);
+    for (uint32_t i = 0; i < late.count(); i++)
+        if (!is_in_global(late.entries[i].hash)) write_entry(late.entries[i]);
 
     std::fclose(f);
     return ok ? 1 : 0;

@@ -1,33 +1,15 @@
 add_library(crucible_vessel SHARED vessel_api.cpp)
 target_link_libraries(crucible_vessel PRIVATE crucible)
 
-# ── ABI compatibility with crucible_dispatch ─────────────────────────
+# ── Stdlib ABI ───────────────────────────────────────────────────────
 #
-# When TORCH_DIR is set, both libraries must use the same stdlib ABI.
-# crucible_dispatch uses libstdc++ (for PyTorch ABI compat).  If vessel
-# uses libc++ (from the Clang preset), the Vigil object layout would
-# differ — Vigil is header-only and compiled into BOTH .so files.
-# Accessing a libc++ Vigil through libstdc++ headers = instant segfault.
-#
-# When TORCH_DIR is NOT set, vessel can use whatever the preset says.
-if(TORCH_DIR AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(crucible_vessel PRIVATE -stdlib=libstdc++)
-    target_link_options(crucible_vessel PRIVATE -stdlib=libstdc++)
-else()
-    # Original libc++ rpath for standalone usage.
-    if(CMAKE_CXX_COMPILER MATCHES "llvm")
-        get_filename_component(_COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-        get_filename_component(_LLVM_ROOT "${_COMPILER_DIR}" DIRECTORY)
-        set(_LLVM_LIB "${_LLVM_ROOT}/lib/x86_64-unknown-linux-gnu")
-        if(EXISTS "${_LLVM_LIB}/libc++.so")
-            target_link_directories(crucible_vessel PRIVATE "${_LLVM_LIB}")
-            target_link_libraries(crucible_vessel PRIVATE c++abi)
-            set_target_properties(crucible_vessel PROPERTIES
-                BUILD_RPATH "${_LLVM_LIB}"
-            )
-        endif()
-    endif()
-endif()
+# This file used to select libstdc++ over libc++ per target, because
+# crucible_vessel and crucible_dispatch both compile the header-only
+# Vigil into their own .so and a layout mismatch between them segfaults
+# on the first cross-.so access.  The selection is gone: Crucible builds
+# with GCC 16 only (see the Code Guide, "Toolchain"), which has one
+# standard library and rejects -stdlib= outright.  Both .so files get
+# libstdc++ 16 from the toolchain file, so they agree by construction.
 
 set_target_properties(crucible_vessel PROPERTIES
     POSITION_INDEPENDENT_CODE ON
@@ -52,27 +34,29 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     target_link_libraries(crucible_dispatch PRIVATE crucible)
 
     # PyTorch headers from the built fork.
-    target_include_directories(crucible_dispatch PRIVATE
+    #
+    # SYSTEM is load-bearing, not tidiness.  crucible propagates the full
+    # PUBLIC warning set (-Werror -Wconversion -Wold-style-cast and ~190
+    # more) onto every target that links it.  PyTorch's own headers do not
+    # compile under it: with plain -I this target produces ~1300 errors
+    # from inside c10 and ATen before reaching a line of Crucible code.
+    # SYSTEM suppresses warnings from those headers while leaving every
+    # warning armed for crucible_fallback.cpp itself.
+    target_include_directories(crucible_dispatch SYSTEM PRIVATE
         "${TORCH_DIR}/torch/include"
         "${TORCH_DIR}/torch/include/torch/csrc/api/include"
     )
 
-    # ── ABI compatibility with PyTorch ───────────────────────────────
+    # ── Stdlib ABI ───────────────────────────────────────────────────
     #
-    # PyTorch is typically built with libstdc++ (even when using Clang).
-    # crucible_dispatch links against libtorch/libc10 and calls APIs with
-    # std::string, std::vector, std::optional in their signatures — the
-    # mangled names MUST match.
-    #
-    # Our preset sets CMAKE_CXX_FLAGS="-stdlib=libc++".  We can't remove
-    # it (CMake applies it before target options), but Clang uses the LAST
-    # -stdlib= flag on the command line.  So we append -stdlib=libstdc++
-    # to override it for this target.
-    #
-    # This is safe because crucible is header-only: no pre-compiled object
-    # with a fixed ABI.  The Crucible headers compile into libstdc++ here.
-    target_compile_options(crucible_dispatch PRIVATE -stdlib=libstdc++)
-    target_link_options(crucible_dispatch PRIVATE -stdlib=libstdc++)
+    # crucible_dispatch links libtorch/libc10 and calls APIs carrying
+    # std::string, std::vector and std::optional in their signatures, so
+    # the mangled names must match PyTorch's standard library.  This used
+    # to need -stdlib=libstdc++ to override a libc++ Clang preset.  GCC 16
+    # is now the only supported compiler, it has no -stdlib= flag and
+    # rejects it as an unrecognized option, and it links libstdc++ 16
+    # unconditionally — which is what PyTorch is built against.  Passing
+    # the flag broke the target outright; there is nothing to select.
 
     # Link against libtorch and libc10 from the fork build.
     find_library(TORCH_LIB torch HINTS "${TORCH_DIR}/torch/lib")

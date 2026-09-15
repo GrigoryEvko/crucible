@@ -12,7 +12,8 @@ dispatch) instead of the real C++ DispatchKey::Crucible. Known problems:
   - Python dispatch overhead is ~10μs/op. Real Crucible is ~5ns/op via C++.
   - No compiled mode, no shadow handles, no replay — just recording.
   - Scalar extraction is best-effort and misses many kwargs.
-  - The .crtrace export format has the scope_hash in the callsite slot (hack).
+  - The .crtrace export format puts a 7-bit op-tag bitmap in the callsite
+    slot (hack). scope_hash has its own slot and is populated.
 
 The REAL implementation uses DispatchKey::Crucible in c10 (see patches/).
 This file exists ONLY for recording traces to feed the visualization pipeline.
@@ -304,8 +305,14 @@ class CrucibleMode(TorchDispatchMode):
           Op records (num_ops × 80B each):
             uint64   schema_hash
             uint64   shape_hash
-            uint64   scope_hash     (= 0, Vessel doesn't set it yet)
-            uint64   callsite_hash  (= 0, Vessel doesn't set it yet)
+            uint64   scope_hash     FNV-1a of the innermost active nn.Module
+                                    path, from the forward pre-hooks; 0 when
+                                    no module scope is active
+            uint64   callsite_hash  carries the op-tag bitmap, not a callsite:
+                                    bit 0 core, 1 pointwise, 2 reduction,
+                                    3 view_copy, 4 dynamic_output_shape,
+                                    5 data_dependent_output,
+                                    6 nondeterministic_seeded
             int64[5] scalar_values
             uint16   num_inputs
             uint16   num_outputs

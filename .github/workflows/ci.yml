@@ -368,6 +368,127 @@ jobs:
           key: ccache-${{ matrix.arch }}-${{ matrix.preset }}-${{ github.ref_name }}-${{ github.run_id }}
 
   # ---------------------------------------------------------------------------
+  # Vessel native-dispatch COMPILE gate. x86_64 only.
+  #
+  # crucible_dispatch is the PyTorch-facing half of the Vessel, and no preset
+  # builds it: vessel/torch/CMakeLists.txt adds the target only when TORCH_DIR
+  # points at a tree with torch/include, and nothing set TORCH_DIR. The target
+  # was therefore skipped in silence for four months while the Crucible-side
+  # APIs it calls moved underneath it, and the breakage surfaced only when
+  # somebody built it by hand. This job exists so that cannot recur.
+  #
+  # It is a COMPILE gate, not a link gate. crucible_fallback.cpp calls
+  # c10::CrucibleState::get_tls_state(), which lives in the CrucibleState.cpp
+  # the patch adds to c10 -- a stock PyTorch wheel cannot resolve it, and
+  # rebuilding PyTorch does not fit a free runner. So the job builds the object
+  # file, which is where every defect this job is meant to catch lives.
+  # ---------------------------------------------------------------------------
+  vessel-dispatch:
+    name: vessel native dispatch (compile gate, x86_64)
+    needs: guards
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    # Non-blocking while this leg proves out, matching the aarch64 and bench
+    # legs above. Flip to blocking once it has been green for a few runs. The
+    # step-level `::error::` annotations below fire either way, so a failure is
+    # visible in the run summary rather than only in the log.
+    continue-on-error: true
+    env:
+      CRUCIBLE_CXX: /usr/bin/g++
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+    steps:
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+
+      - name: Install toolchain + BPF stack + ccache + pip
+        run: >
+          dnf install -y --setopt=install_weak_deps=False
+          gcc-c++ cmake ninja-build git ripgrep ccache diffutils patch
+          clang llvm xxd bpftool libbpf-devel
+          python3 python3-pip
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-vessel-dispatch-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-x86_64-vessel-dispatch-${{ github.ref_name }}-
+            ccache-x86_64-vessel-dispatch-main-
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # CPU wheel only: the CUDA wheels are several GB and the runner shares
+      # ~14 GB with the container. The wheel ships the full C++ header tree at
+      # site-packages/torch/include, which is all a compile gate needs.
+      - name: Install PyTorch CPU wheel (headers only are used)
+        run: |
+          python3 -m pip install --no-cache-dir --break-system-packages \
+            --index-url https://download.pytorch.org/whl/cpu torch
+          python3 -c "import torch; print('torch', torch.__version__)"
+
+      # TORCH_DIR is the directory CONTAINING torch/, i.e. site-packages.
+      - name: Locate the wheel and apply the Crucible patch to its headers
+        run: |
+          TORCH_DIR=$(python3 -c "import torch, os; print(os.path.dirname(os.path.dirname(torch.__file__)))")
+          echo "TORCH_DIR=$TORCH_DIR" >> "$GITHUB_ENV"
+          test -d "$TORCH_DIR/torch/include" || {
+            echo "::error::no torch/include under $TORCH_DIR"; exit 1; }
+          # The patch targets a PyTorch source tree; the wheel's header copy is
+          # the same files, so -p1 from torch/include lands DispatchKey.h and
+          # drops in the new CrucibleState.h. Hunks for .cpp files are not
+          # present in a header tree and are expected to be skipped -- only
+          # DispatchKey.h and CrucibleState.h decide this step.
+          cd "$TORCH_DIR/torch/include"
+          patch -p1 -N -t --no-backup-if-mismatch \
+            < "$GITHUB_WORKSPACE/patches/pytorch-crucible-integration.patch" || true
+          test -f c10/core/CrucibleState.h || {
+            echo "::error::patch did not produce c10/core/CrucibleState.h -- patches/pytorch-crucible-integration.patch no longer applies to this PyTorch"; exit 1; }
+          grep -q '^  Crucible,' c10/core/DispatchKey.h || {
+            echo "::error::patch did not add DispatchKey::Crucible -- the enum hunk no longer applies to this PyTorch"; exit 1; }
+          grep -q '^  DeferredInit,' c10/core/DispatchKey.h || {
+            echo "::error::DeferredInit vanished from DispatchKey.h -- the patch must ADD a key, never rename torchdistx's slot"; exit 1; }
+          rm -f c10/core/CrucibleState.cpp c10/core/*.rej c10/core/*.orig
+
+      - name: Configure with TORCH_DIR
+        run: >
+          cmake --preset default
+          -DTORCH_DIR="$TORCH_DIR"
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      # The whole point of this job. vessel/torch/CMakeLists.txt SKIPS the
+      # target when it cannot find the headers, and a skipped target is what
+      # let this rot unnoticed. A skip here is a failure, not a pass.
+      - name: Assert the dispatch target was actually generated
+        run: |
+          cmake --build build --target help 2>/dev/null | grep -qw crucible_dispatch \
+            || ninja -C build -t targets all | grep -q crucible_dispatch \
+            || { echo "::error::crucible_dispatch was not generated -- TORCH_DIR was not honoured, so this job would have passed without compiling anything"; exit 1; }
+
+      - name: Reset ccache stats
+        run: ccache -z
+
+      # Object, not library: see the link note in the job header.
+      - name: Compile crucible_fallback.cpp
+        run: >
+          cmake --build build -j 3
+          --target vessel/torch/CMakeFiles/crucible_dispatch.dir/crucible_fallback.cpp.o
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-vessel-dispatch-${{ github.ref_name }}-${{ github.run_id }}
+
+  # ---------------------------------------------------------------------------
   # Benchmark COMPILE gate. Shared-runner perf numbers are meaningless (noisy /
   # throttled), so this builds the bench tree to catch compile regressions and
   # does NOT run perf-gated assertions. x86_64 only.

@@ -1,3 +1,74 @@
+Crucible integration for PyTorch.
+
+Adds DispatchKey::Crucible and the CrucibleState TLS struct that
+libcrucible_dispatch.so needs. Verified against pytorch b594e86d432
+(2.14.0a0).
+
+WHAT THIS PATCH ADDS A KEY FOR, AND WHY IT DOES NOT RENAME ONE
+
+An earlier revision renamed DeferredInit to Crucible. DeferredInit is
+the out-of-core slot torchdistx registers against, and PyTorch's own
+FSDP imports torchdistx at torch/distributed/fsdp/_init_utils.py. The
+rename removed the "DeferredInit" string from parseDispatchKey, so a
+torchdistx build resolving the key by name hit the TORCH_CHECK in
+DispatchKey.cpp, and one resolving it by ordinal silently collided with
+the Crucible fallback -- Dispatcher::registerFallback rejects a second
+fallback on one key. This patch keeps DeferredInit, its name and its
+ordinal, and adds Crucible immediately after it.
+
+THE KEY BUDGET IS NOW FULL -- READ BEFORE ADDING ANOTHER KEY
+
+DispatchKeySet is a 64-bit bitset shared between backend and
+functionality keys, and c10/core/DispatchKey.h asserts:
+
+    num_backends + num_functionality_keys <= 64
+
+Stock b594e86d432 measures 16 + 47 = 63. This patch takes the last
+free slot: 16 + 48 = 64. Verified by compiling the patched header:
+
+    num_functionality_keys = 48
+    num_backends           = 16
+    SUM                    = 64   HEADROOM = 0
+    num_runtime_entries    = 138
+
+A further key makes it 65 and the static_assert fires. Anyone adding
+one must first free a slot.
+
+PLACEMENT AND THE PRIORITY IT BUYS
+
+Crucible takes ordinal 41, directly above DeferredInit (40) and
+directly below PythonTLSSnapshot (42). Higher enum value means higher
+priority -- DispatchKeySet counts leading zeros, so the largest set bit
+dispatches first.
+
+Verified by running highestFunctionalityKey() duels against the
+patched header:
+
+  Crucible runs BEFORE   DeferredInit, FuncTorchGradWrapper, VmapMode,
+                         Batched, FuncTorchBatched, every Autocast*,
+                         Tracer, every Autograd* (including the runtime
+                         AutogradCPU/AutogradCUDA keys), ADInplaceOrView,
+                         ZeroTensor, Functionalize, Python, Fake,
+                         BackendSelect, and every backend.
+
+  Crucible runs AFTER    PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode,
+                         TESTING_ONLY_GenericWrapper,
+                         TESTING_ONLY_GenericMode, PreDispatch,
+                         PythonDispatcher.
+
+Crucible is NOT the highest-priority functionality key; PythonDispatcher
+(47) is. Being below the functorch front mode, the __torch_dispatch__
+entry points and the pre-dispatch tracing keys is intended: those layers
+decompose ops and re-enter the dispatcher, so a key above them would
+record both an outer op and its decomposition.
+
+Ordinals 42 through 47 each shift up by one. Every in-tree user is
+recompiled with the fork. An out-of-core extension built against stock
+PyTorch must be rebuilt, as it must be for any forked c10 anyway --
+DeferredInit is the one such key kept ordinal-stable on purpose.
+
+Apply with:  git apply patches/pytorch-crucible-integration.patch
+
 diff --git a/c10/core/CrucibleState.h b/c10/core/CrucibleState.h
 new file mode 100644
 index 00000000000..23d27c1939a
@@ -141,63 +212,95 @@ index 00000000000..98b176681ac
 +
 +} // namespace c10
 diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
-index 6ccde711b74..32553187192 100644
 --- a/c10/core/DispatchKey.cpp
 +++ b/c10/core/DispatchKey.cpp
-@@ -176,8 +176,8 @@ const char* toString(DispatchKey t) {
-     case DispatchKey::FuncTorchGradWrapper:
-       return "FuncTorchGradWrapper";
+@@ -176,6 +176,8 @@
  
--    case DispatchKey::DeferredInit:
--      return "DeferredInit";
+     case DispatchKey::DeferredInit:
+       return "DeferredInit";
 +    case DispatchKey::Crucible:
 +      return "Crucible";
      case DispatchKey::PythonTLSSnapshot:
        return "PythonTLSSnapshot";
  
-@@ -315,7 +315,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
-       {"FuncTorchVmapMode", c10::DispatchKey::FuncTorchVmapMode},
+@@ -313,6 +315,7 @@
        {"Batched", c10::DispatchKey::Batched},
        {"VmapMode", c10::DispatchKey::VmapMode},
--      {"DeferredInit", c10::DispatchKey::DeferredInit},
+       {"DeferredInit", c10::DispatchKey::DeferredInit},
 +      {"Crucible", c10::DispatchKey::Crucible},
        {"FuncTorchGradWrapper", c10::DispatchKey::FuncTorchGradWrapper},
        {"FuncTorchDynamicLayerFrontMode",
         c10::DispatchKey::FuncTorchDynamicLayerFrontMode},
 diff --git a/c10/core/DispatchKey.h b/c10/core/DispatchKey.h
-index d0445f009af..100b7ced41d 100644
 --- a/c10/core/DispatchKey.h
 +++ b/c10/core/DispatchKey.h
-@@ -381,9 +381,10 @@ enum class DispatchKey : uint16_t {
+@@ -370,6 +370,36 @@
+   // See https://pytorch.org/torchdistx/latest/deferred_init.html
+   DeferredInit,
  
-   FuncTorchGradWrapper, // See Note [Out-of-tree vmap+grad prototype]
- 
--  // Out-of-core key for Deferred Module Initialization in torchdistx.
--  // See https://pytorch.org/torchdistx/latest/deferred_init.html
--  DeferredInit,
 +  // Crucible: execute-and-record compilation runtime.
-+  // Highest-priority functionality key — intercepts every op before
-+  // PreDispatch, functorch, autocast, autograd, and all backends.
++  //
++  // Placement is deliberate, and the position is the contract. A boxed
++  // fallback here runs BEFORE, and therefore sees:
++  //   - every backend (Dense, Sparse, Quantized, NestedTensor, ...)
++  //   - BackendSelect, Fake, Python, Functionalize
++  //   - Conjugate, Negative, ZeroTensor, ADInplaceOrView
++  //   - every Autograd* key, so autograd-decomposed backward ops are seen
++  //   - Tracer and every Autocast* key, so the post-cast op is recorded
++  //   - FuncTorchBatched, Batched, VmapMode, FuncTorchGradWrapper
++  //
++  // It runs AFTER, and therefore does NOT see ahead of:
++  //   - PythonTLSSnapshot
++  //   - FuncTorchDynamicLayerFrontMode
++  //   - TESTING_ONLY_GenericWrapper, TESTING_ONLY_GenericMode
++  //   - PreDispatch
++  //   - PythonDispatcher
++  //
++  // That is the intended order, not a limitation. Sitting below the
++  // functorch front mode, the __torch_dispatch__ entry points and the
++  // pre-dispatch tracing keys means Crucible records the ops that
++  // actually execute, once each. A key above them would also see each
++  // op those layers decompose, and record both the outer op and its
++  // decomposition.
++  //
++  // Higher enum value means higher priority: DispatchKeySet counts
++  // leading zeros to pick the winner, so the largest set bit dispatches
++  // first. Moving this enumerator changes what the fallback intercepts.
 +  Crucible,
- 
++
    // Used by Python key logic to know the set of tls on entry to the dispatcher
    // This kernel assumes it is the top-most non-functorch-related DispatchKey.
+   // If you add a key above, make sure to update the fallback implementation for
+diff --git a/torch/csrc/utils/python_dispatch.cpp b/torch/csrc/utils/python_dispatch.cpp
+--- a/torch/csrc/utils/python_dispatch.cpp
++++ b/torch/csrc/utils/python_dispatch.cpp
+@@ -734,6 +734,7 @@
+       DEF_ONE(Negative)
+       DEF_ONE(BackendSelect)
+       DEF_ONE(ADInplaceOrView)
++      DEF_ONE(Crucible)
+       DEF_ONE(PythonTLSSnapshot)
+       DEF_ONE(Python)
+       DEF_ONE(FuncTorchDynamicLayerFrontMode)
 diff --git a/torch/csrc/utils/tensor_new.cpp b/torch/csrc/utils/tensor_new.cpp
-index 8b758df7224..f5306f3fb8b 100644
 --- a/torch/csrc/utils/tensor_new.cpp
 +++ b/torch/csrc/utils/tensor_new.cpp
-@@ -389,11 +389,10 @@ Tensor internal_new_from_data(
+@@ -388,11 +388,15 @@
          c10::DispatchKey::FuncTorchDynamicLayerFrontMode);
      c10::impl::ExcludeDispatchKeyGuard functorch_back_guard(
          c10::DispatchKey::FuncTorchDynamicLayerBackMode);
 -    // We disable Fake and DeferredInit handlers for similar reasons as
 -    // functorch.
--    c10::impl::ExcludeDispatchKeyGuard fake_and_deferred_init_guard(
-+    // We disable Fake and Crucible handlers for similar reasons as functorch.
-+    c10::impl::ExcludeDispatchKeyGuard fake_and_crucible_guard(
++    // We disable Fake, DeferredInit and Crucible handlers for similar
++    // reasons as functorch. Crucible is excluded because a tensor built
++    // by the constructor is not an op the model issued, so recording it
++    // would put a phantom entry in the trace.
+     c10::impl::ExcludeDispatchKeyGuard fake_and_deferred_init_guard(
          c10::DispatchKeySet{
 -            c10::DispatchKey::Fake, c10::DispatchKey::DeferredInit});
-+            c10::DispatchKey::Fake, c10::DispatchKey::Crucible});
++            c10::DispatchKey::Fake,
++            c10::DispatchKey::DeferredInit,
++            c10::DispatchKey::Crucible});
      // Note [Functionalization <> torch.Tensor constructor]
      // Functionalization "lifts" the newly constructed tensor into a wrapper
      // using aten::lift().
