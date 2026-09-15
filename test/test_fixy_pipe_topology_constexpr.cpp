@@ -55,8 +55,8 @@ static_assert(ftop::l2_per_core_bytes_v == 256ULL * 1024ULL,
 #if !defined(CRUCIBLE_L3_TOTAL_BYTES)
 static_assert(ftop::l3_total_bytes_v == cc::conservative_l3_total,
               "with no override, l3_total_bytes_v must equal conservative_l3_total.");
-static_assert(ftop::l3_total_bytes_v == 16ULL * 1024ULL * 1024ULL,
-              "with no override, l3_total_bytes_v must equal 16 MiB.");
+static_assert(ftop::l3_total_bytes_v == 4ULL * 1024ULL * 1024ULL,
+              "with no override, l3_total_bytes_v must equal 4 MiB.");
 #endif
 
 #if !defined(CRUCIBLE_L1D_PER_CORE_BYTES)

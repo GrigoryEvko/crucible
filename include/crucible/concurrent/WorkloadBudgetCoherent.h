@@ -104,12 +104,17 @@ struct alloc_class_max_working_set<::crucible::effects::ctx_alloc::Stack> {
 template <class AllocClass>
 inline constexpr std::size_t alloc_class_max_working_set_v = alloc_class_max_working_set<AllocClass>::value;
 
-// A floor below every supported host's shared cache, so a working set
-// under it is certainly not DRAM-bound and spreading it certainly does
-// not pay.  The other placement policies say where a thread runs rather
-// than how work divides, so they carry no floor.
-
-inline constexpr std::size_t conservative_l3_total_bytes = 4 * 1024 * 1024;
+// A working set below the shared-cache floor is certainly not
+// DRAM-bound, so spreading it certainly does not pay.  The other
+// placement policies say where a thread runs rather than how work
+// divides, so they carry no floor.
+//
+// conservative_l3_total comes from WorkingSet.h, which this header
+// already reaches.  It used to be redeclared here under the name
+// conservative_l3_total_bytes, holding a different number from the
+// definition the residency-tier classifier read, so the same question
+// answered differently depending on which spelling a caller reached
+// for.
 
 template <class NumaPolicy>
 struct numa_policy_min_working_set {
@@ -118,7 +123,7 @@ struct numa_policy_min_working_set {
 
 template <>
 struct numa_policy_min_working_set<::crucible::effects::ctx_numa::Spread> {
-    static constexpr std::size_t value = conservative_l3_total_bytes;
+    static constexpr std::size_t value = conservative_l3_total;
 };
 
 template <class NumaPolicy>
@@ -171,7 +176,9 @@ static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Unbo
               == std::numeric_limits<std::size_t>::max());
 
 // Spread carries the only floor.
-static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Spread> == conservative_l3_total_bytes);
+// The spread floor and the residency-tier floor are one figure.  This
+// is the cell that fails if a second definition is reintroduced.
+static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Spread> == conservative_l3_total);
 
 static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Any> == 0);
 

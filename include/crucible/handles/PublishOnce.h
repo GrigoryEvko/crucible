@@ -28,6 +28,47 @@ namespace crucible::safety {
     std::abort();
 }
 
+// T names the pointee, never the pointer. Both slots below add the
+// star themselves and hand off a T*, so PublishOnce<Foo*> builds an
+// atomic<Foo**> and publishes the address of a pointer variable rather
+// than the handle the caller meant. That variable is usually a local,
+// and the double indirection is the whole defect: every observer reads
+// a live pointer through a dangling one.
+//
+// T stays incomplete on purpose. MerkleDag publishes a CompiledKernel
+// through a forward declaration, so no part of this guard may ask for
+// a size, an alignment or a member. void is admitted for the same
+// reason, as an opaque handle whose pointee type the publisher and the
+// observer agree on out of band.
+//
+// A reference type is rejected here rather than left to std::atomic,
+// where "forming pointer to reference type" names neither this header
+// nor the mistake.
+template <typename T>
+concept PublishOncePointee = (!std::is_pointer_v<T>) && (!std::is_reference_v<T>);
+
+// The guard this concept replaced read `is_pointer_v<T*> ||
+// is_same_v<T, T>`, whose second disjunct is true for every T. It
+// admitted PublishOnce<int*> and enforced nothing. These cells are the
+// witness that the replacement discriminates: a guard that went
+// tautological again would fail them here, in the header, rather than
+// wait for a caller to be silently admitted.
+static_assert(PublishOncePointee<int>);
+static_assert(PublishOncePointee<void>);
+static_assert(PublishOncePointee<const int>);
+static_assert(PublishOncePointee<int[4]>);
+static_assert(!PublishOncePointee<int*>, "a pointee that is itself a pointer is the T-versus-T* mistake");
+static_assert(!PublishOncePointee<void*>);
+static_assert(!PublishOncePointee<int&>, "T* over a reference type is ill-formed");
+static_assert(!PublishOncePointee<int&&>);
+
+namespace detail::publish_once_guard_probe {
+// An incomplete type must pass the guard, because MerkleDag's slot is
+// declared against one.
+struct Incomplete;
+static_assert(PublishOncePointee<Incomplete>);
+}  // namespace detail::publish_once_guard_probe
+
 // This class keeps the natural alignment of an atomic pointer while
 // PublishSlot below pads to a whole cache line. That slot is written
 // again and again, so it must not share a line with anything. This one
@@ -38,7 +79,9 @@ namespace crucible::safety {
 // at the embed site.
 template <typename T>
 class CRUCIBLE_OWNER PublishOnce {
-    static_assert(std::is_pointer_v<T*> || std::is_same_v<T, T>, "PublishOnce<T> is for pointer handoff — use T*");
+    static_assert(PublishOncePointee<T>, "PublishOnce<T> hands off a T*, so T is the pointee. PublishOnce<Foo*> "
+                                         "publishes the address of a pointer variable, not the handle — write "
+                                         "PublishOnce<Foo>. A reference type has no pointer to form.");
 
     alignas(alignof(std::atomic<T*>)) std::atomic<T*> slot_{nullptr};
 
@@ -88,6 +131,12 @@ static_assert(sizeof(PublishOnce<void>) == sizeof(std::atomic<void*>));
 
 template <typename T>
 class CRUCIBLE_OWNER alignas(64) PublishSlot {
+    // The same pointee-not-pointer contract as PublishOnce above, for
+    // the same reason: this slot also adds the star itself.
+    static_assert(PublishOncePointee<T>, "PublishSlot<T> hands off a T*, so T is the pointee. PublishSlot<Foo*> "
+                                         "publishes the address of a pointer variable, not the handle — write "
+                                         "PublishSlot<Foo>. A reference type has no pointer to form.");
+
     std::atomic<T*> slot_{nullptr};
 
 public:

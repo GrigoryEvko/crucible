@@ -381,13 +381,20 @@ public:
     }
 
 private:
-    // Deliberately small.  Understating the caches makes a workload look
-    // larger than the cache and so biases the cost model toward parallelism.
-    // Splitting a workload that did not need it costs a constant factor, while
-    // failing to split one that did costs a factor of the core count.
+    // These stand in for a measurement the probe could not take.  They
+    // are not the conservative floors in WorkingSet.h and must not be
+    // replaced by them: a floor is a lower bound, so using one here
+    // would make every unmeasured machine look like the smallest
+    // supported one, and a workload would read as larger than the cache
+    // whenever it is not.  That biases the cost model toward splitting
+    // work that did not need splitting, which is the regression the
+    // no-regression rule forbids.  Each figure is therefore deliberately
+    // above the matching floor, and the ordering below is what keeps it
+    // that way.
     static constexpr std::size_t kFallbackL1d = 32 * 1024;
     static constexpr std::size_t kFallbackL2 = 1024 * 1024;
     static constexpr std::size_t kFallbackL3 = 32ULL * 1024 * 1024;
+    static_assert(kFallbackL1d < kFallbackL2 && kFallbackL2 < kFallbackL3);
     static constexpr std::size_t kFallbackLine = 64;
 
     std::size_t l1d_ = kFallbackL1d;

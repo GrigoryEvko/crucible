@@ -128,11 +128,22 @@ template <typename T>
             return std::bit_cast<uint64_t>(val);
     } else if constexpr (std::is_pointer_v<T>) {
         return std::bit_cast<uintptr_t>(val);
+    } else if constexpr (std::is_array_v<T>) {
+        // The same reduction hash_field applies to an array, minus the
+        // trailing fmix64.  Keeping the two folds identical up to that
+        // last step is what makes an array field order-sensitive in
+        // both schemes, and the omission is what keeps this helper's
+        // "does no mixing" contract: the consuming fold supplies the
+        // avalanche once per field.
+        uint64_t h = 0;
+        for (size_t i = 0; i < std::extent_v<T>; i++)
+            h = h * 0x100000001b3ULL ^ pack_field(val[i]);
+        return h;
     } else if constexpr (std::is_class_v<T>) {
         return reflect_hash(val);
     } else {
         static_assert(false, "T is outside IsReflectFieldSupported: pack_field handles enum, integral, "
-                             "floating-point, pointer and class types only");
+                             "floating-point, pointer, array and class types only");
     }
 }
 

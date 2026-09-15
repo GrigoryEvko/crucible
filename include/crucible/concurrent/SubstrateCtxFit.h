@@ -24,25 +24,24 @@
 // signal rather than a refusal: a single producer and consumer over a
 // large ring is a perfectly good arrangement.
 //
-// The cache sizes here are floors, below every supported host's real
-// figures, which the topology reads at runtime.  Comparing against a
-// floor errs towards "does not fit, move up a tier", so this static
-// check refuses more configurations than the runtime one would and
-// never fewer.  A future target below these floors means lowering them
-// here and re-auditing the callers.
+// The cache sizes this header compares against are floors, below every
+// supported host's real figures, which the topology reads at runtime.
+// Comparing against a floor errs towards "does not fit, move up a
+// tier", so this static check refuses more configurations than the
+// runtime one would and never fewer.  They are defined in WorkingSet.h,
+// which the workload-budget concept also reaches; that header carries
+// the rationale for the figures.  A future target below those floors
+// means lowering them there and re-auditing the callers.
 
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/effects/ExecCtx.h>
 
 #include <cstddef>
 
 namespace crucible::concurrent {
-
-inline constexpr std::size_t conservative_l1d_per_core = 32 * 1024;
-inline constexpr std::size_t conservative_l2_per_core = 256 * 1024;
-inline constexpr std::size_t conservative_l3_total = 16 * 1024 * 1024;
 
 template <std::size_t Footprint, Tier T>
 inline constexpr bool fits_in_tier_v = [] consteval {
@@ -192,8 +191,11 @@ static_assert(required_tier_for_footprint<32 * 1024> == Tier::L1Resident);
 static_assert(required_tier_for_footprint<32 * 1024 + 1> == Tier::L2Resident);
 static_assert(required_tier_for_footprint<256 * 1024> == Tier::L2Resident);
 static_assert(required_tier_for_footprint<256 * 1024 + 1> == Tier::L3Resident);
-static_assert(required_tier_for_footprint<16 * 1024 * 1024> == Tier::L3Resident);
-static_assert(required_tier_for_footprint<32 * 1024 * 1024> == Tier::DRAMBound);
+// The L3 boundary sits on the floor, not above it.  Naming the floor
+// rather than a literal keeps these two cells pinned to it if the
+// figure is ever revised.
+static_assert(required_tier_for_footprint<conservative_l3_total> == Tier::L3Resident);
+static_assert(required_tier_for_footprint<conservative_l3_total + 1> == Tier::DRAMBound);
 
 static_assert(substrate_required_tier_v<SmallSpsc> == Tier::L1Resident);
 static_assert(substrate_required_tier_v<BoundarySpsc> == Tier::L2Resident);

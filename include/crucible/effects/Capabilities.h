@@ -337,7 +337,11 @@ private:
     // of the class that contains the member, so this friendship is what
     // lets an execution context default-initialize a Bg member while
     // every other translation unit stays locked out.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
+    // The parameter list must match the declaration above exactly.  A
+    // qualified friend name with the wrong arity is accepted in
+    // silence, so nothing here would report a drift; only unqualifying
+    // the name turns it into a diagnostic.
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
     friend class ::crucible::effects::ExecCtx;
 
 public:
@@ -354,7 +358,11 @@ private:
         requires CanMintInitContext<Key>
     friend constexpr Init mint_init_context(Key) noexcept;
 
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
+    // The parameter list must match the declaration above exactly.  A
+    // qualified friend name with the wrong arity is accepted in
+    // silence, so nothing here would report a drift; only unqualifying
+    // the name turns it into a diagnostic.
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
     friend class ::crucible::effects::ExecCtx;
 
 public:
@@ -370,7 +378,11 @@ private:
         requires CanMintTestContext<Key>
     friend constexpr Test mint_test_context(Key) noexcept;
 
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
+    // The parameter list must match the declaration above exactly.  A
+    // qualified friend name with the wrong arity is accepted in
+    // silence, so nothing here would report a drift; only unqualifying
+    // the name turns it into a diagnostic.
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
     friend class ::crucible::effects::ExecCtx;
 
 public:

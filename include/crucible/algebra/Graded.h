@@ -75,7 +75,29 @@ public:
                                                          && std::is_nothrow_move_constructible_v<grade_type>)
         : inner_{std::move(value)}, grade_{std::move(grade)} {}
 
-    // Both at_bottom overloads exist on all three specializations.
+    // at_bottom() exists on all three specializations and means the
+    // same thing on each: the bottom-graded element.
+    //
+    // at_bottom(T) exists only here.  It means "hold this value, graded
+    // at bottom", which needs a grade the caller can set without
+    // touching the value — the arrangement this specialization has and
+    // the other two do not.  Where the grade is the value, or is
+    // derived from it, honouring the request would mean discarding the
+    // argument or inverting grade_of, so the overload is absent there
+    // and the two-arg constructor covers the case.  That constructor
+    // takes the grade as a witness and checks it, which is exactly
+    // "assert this value is already at bottom" when the grade passed is
+    // L::bottom().
+    //
+    // The overload used to exist on all three, forcing the grade here
+    // and asserting it there.  One call then had two behaviours chosen
+    // by a storage regime the public API hides, so a value that this
+    // specialization accepted silently made the other two abort.
+    //
+    // No contract_assert guards the result.  The grade is set to
+    // L::bottom() one line above, and leq(bottom, bottom) is already
+    // consteval-checked by the Lattice concept, so a check here would
+    // be tautological — which is what it was.
     //
     // A post() clause on a templated class member crashes the compiler
     // when its predicate is template-dependent.  Every postcondition in
@@ -84,18 +106,14 @@ public:
     [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
-        Graded result{std::move(value), L::bottom()};
-        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
-        return result;
+        return Graded{std::move(value), L::bottom()};
     }
 
     [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_default_constructible_v<T>
                                                                && std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L> && std::default_initializable<T>
     {
-        Graded result{T{}, L::bottom()};
-        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
-        return result;
+        return Graded{T{}, L::bottom()};
     }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return inner_; }
@@ -255,18 +273,15 @@ public:
     constexpr explicit Graded(T value_or_grade) noexcept(std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(value_or_grade)} {}
 
+    // Here the value is the grade, so there is no at_bottom(T): a
+    // request to hold an arbitrary value at bottom could only be
+    // honoured by discarding the argument.  A caller asserting that a
+    // value is already at bottom writes Graded{value, L::bottom()},
+    // whose witness check is that assertion.
     [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
         return Graded{L::bottom()};
-    }
-
-    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L>
-    {
-        Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
-        return result;
     }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
@@ -407,22 +422,22 @@ public:
 
     constexpr explicit Graded(T value) noexcept(std::is_nothrow_move_constructible_v<T>) : value_{std::move(value)} {}
 
-    // The no-arg form relies on the default state of T deriving to
-    // bottom, which holds for a container whose grade is its size.  The
-    // one-arg form asserts the same of a caller-supplied value.
+    // This form relies on the default state of T deriving to bottom,
+    // which holds for a container whose grade is its size.  The check
+    // is not tautological here: grade_of reads the value, so a T whose
+    // default state grades above bottom fires it.
+    //
+    // There is no at_bottom(T).  The grade follows the value through
+    // grade_of, so holding an arbitrary value at bottom would need an
+    // inverse of grade_of, and none exists in general.  A caller
+    // asserting that a value already derives bottom writes
+    // Graded{value, L::bottom()}, whose witness check is that
+    // assertion.
     [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_default_constructible_v<T>
                                                                && std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L> && std::default_initializable<T>
     {
         Graded result{T{}};
-        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
-        return result;
-    }
-
-    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L>
-    {
-        Graded result{std::move(value)};
         contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
         return result;
     }
@@ -603,22 +618,38 @@ static_assert(!CanInject<GComonad>);
 static_assert(!CanInject<GAbsolute>);
 static_assert(!CanInject<GRelative>);
 
-// Both at_bottom overloads must be reachable on all three
-// specializations, subject only to each one's intrinsic requirement:
-// the primary needs a default-initializable T for the no-arg form, and
-// the derived-grade form asserts at runtime that the supplied value
-// derives bottom.
+// at_bottom() must be reachable on all three specializations, subject
+// only to each one's intrinsic requirement: the primary and the
+// derived-grade form need a default-initializable T.
+//
+// at_bottom(T) is reachable on the primary alone.  These cells are the
+// witness for that split, and they are what a reintroduction of the
+// overload on either specialization would fail.  The overload once
+// existed on all three with two different meanings — set the grade
+// here, assert it there — so the value that this concept admits below
+// is the value the other two aborted on.
 template <typename G>
 concept CanAtBottomNoArg = requires { G::at_bottom(); };
 template <typename G>
 concept CanAtBottomValue = requires(typename G::value_type v) { G::at_bottom(std::move(v)); };
 
+// Grade stored beside the value: both forms.
 static_assert(CanAtBottomNoArg<GOneByte>);
 static_assert(CanAtBottomValue<GOneByte>);
 
+// Grade is the value: the no-arg form only.
 using GBoolElement = Graded<ModalityKind::Absolute, TrivialBoolLattice, bool>;
 static_assert(CanAtBottomNoArg<GBoolElement>);
-static_assert(CanAtBottomValue<GBoolElement>);
+static_assert(!CanAtBottomValue<GBoolElement>,
+              "at_bottom(T) on a lattice whose element type is T could only honour the request by "
+              "discarding the argument.  Graded{value, L::bottom()} carries the checked form.");
+
+// The equivalent the absent overload points callers at.  The witness
+// check in the two-arg constructor is the assertion that this value is
+// already at bottom, and it is not tautological: passing true here
+// fails it.
+constexpr GBoolElement g_bool_bot_checked{false, TrivialBoolLattice::bottom()};
+static_assert(g_bool_bot_checked.grade() == TrivialBoolLattice::bottom());
 
 // The derived-grade lattice is written out here rather than reused,
 // because the real one includes this header.
@@ -645,14 +676,19 @@ static_assert(LatticeDerivesGrade<MiniDerivedLattice, MiniContainer>);
 
 using GDerivedSeq = Graded<ModalityKind::Absolute, MiniDerivedLattice, MiniContainer>;
 
+// Grade derived from the value: the no-arg form only.
 static_assert(CanAtBottomNoArg<GDerivedSeq>);
-static_assert(CanAtBottomValue<GDerivedSeq>);
+static_assert(!CanAtBottomValue<GDerivedSeq>,
+              "at_bottom(T) on a derived-grade lattice would need an inverse of grade_of.  "
+              "Graded{value, L::bottom()} carries the checked form.");
 
 constexpr GDerivedSeq g_derived_bot_noarg = GDerivedSeq::at_bottom();
 static_assert(g_derived_bot_noarg.grade() == MiniDerivedLattice::bottom());
 
-constexpr GDerivedSeq g_derived_bot_value = GDerivedSeq::at_bottom(MiniContainer{});
-static_assert(g_derived_bot_value.grade() == MiniDerivedLattice::bottom());
+// The equivalent the absent overload points callers at.  Not
+// tautological: MiniContainer{3} fails the witness check.
+constexpr GDerivedSeq g_derived_bot_checked{MiniContainer{}, MiniDerivedLattice::bottom()};
+static_assert(g_derived_bot_checked.grade() == MiniDerivedLattice::bottom());
 
 template <typename T>
 using AbsoluteOverEmpty = Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
@@ -718,15 +754,19 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] bool gb1 = prim_noarg.grade();
     [[maybe_unused]] auto vb1 = prim_value.peek().c;
 
+    // The two specializations publish at_bottom() alone.  The checked
+    // form runs here with a non-constant argument, where the witness
+    // predicate is evaluated under runtime semantics rather than folded
+    // away.
     GBoolElement same_noarg = GBoolElement::at_bottom();
-    GBoolElement same_value = GBoolElement::at_bottom(false);
+    GBoolElement same_checked{TrivialBoolLattice::bottom(), TrivialBoolLattice::bottom()};
     [[maybe_unused]] bool gs1 = same_noarg.grade();
-    [[maybe_unused]] bool gs2 = same_value.grade();
+    [[maybe_unused]] bool gs2 = same_checked.grade();
 
     GDerivedSeq der_noarg = GDerivedSeq::at_bottom();
-    GDerivedSeq der_value = GDerivedSeq::at_bottom(MiniContainer{});
+    GDerivedSeq der_checked{MiniContainer{static_cast<std::size_t>(0)}, MiniDerivedLattice::bottom()};
     [[maybe_unused]] std::size_t gd1 = der_noarg.grade();
-    [[maybe_unused]] std::size_t gd2 = der_value.grade();
+    [[maybe_unused]] std::size_t gd2 = der_checked.grade();
 }
 
 }  // namespace detail::graded_self_test
