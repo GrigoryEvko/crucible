@@ -194,9 +194,16 @@ public:
     // Appends the tensor metadata, then pushes an op fingerprint to the
     // ring.  Returns false when either is full, in which case the op is
     // dropped and the next iteration re-records everything.
+    //
+    // This is a producer entry point in its own right, not a helper of
+    // dispatch_op, so it carries the same thread gate.  Without one, a
+    // caller that reaches the ring through here from a second thread gets
+    // the torn append dispatch_op refuses, and the two entry points state
+    // different ownership rules for one ring.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
                                                            uint32_t n_metas, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
+        assert_producer_thread_();
         MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
             meta_start = meta_log_->try_append(metas, n_metas);
@@ -269,6 +276,24 @@ public:
     dispatch_op_pure(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
                      ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
         return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
+    }
+
+    // True when a call to record_op or dispatch_op from this thread is
+    // permitted: either no thread holds the producer role yet, or this
+    // thread holds it.
+    //
+    // An adapter asks this before it reaches the recording path from a
+    // thread it does not control.  A foreign thread is told to execute the
+    // op eagerly and leave the ring alone, which is what keeps the recorded
+    // op stream single-threaded and therefore reproducible.  The gate below
+    // stays as the last resort for a caller that does not ask.
+    //
+    // Two threads that both arrive before either has claimed both read true
+    // here, and the loser of the claim below ends the process.  That case is
+    // a program with no defined producer, and this query cannot repair it.
+    [[nodiscard]] bool is_producer_thread() const noexcept {
+        const auto claimed = producer_tid_.load(std::memory_order_relaxed);
+        return claimed == std::thread::id{} || claimed == std::this_thread::get_id();
     }
 
     // The first call claims the thread; every later call verifies the match.
@@ -358,6 +383,19 @@ public:
 
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.
+    //
+    // Call this only while the background thread is idle, which means after
+    // flush() and with nothing appended to the ring since.  TransactionLog
+    // says of itself that one thread writes it, and the background thread is
+    // the usual one: on_region_ready opens, commits and activates a
+    // transaction for every region it publishes.  This is the one path on
+    // which the foreground writes the same log, so the two overlap only if a
+    // publication is in flight when this is called.
+    //
+    // The constraint is documented rather than enforced because a check here
+    // would report the state of one moment and not hold it.  Closing it
+    // properly means giving the log an owner, which is a change to
+    // Transaction.h rather than to this call.
     [[nodiscard, gnu::cold]] bool rollback() {
         if (!tx_log_.rollback()) return false;
         if (ctx_.is_compiled()) ctx_.deactivate();
@@ -435,6 +473,17 @@ public:
     [[nodiscard]] const RegionCache& region_cache() const CRUCIBLE_LIFETIMEBOUND { return region_cache_; }
 
     [[nodiscard]] const TransactionLog<16>& tx_log() const CRUCIBLE_LIFETIMEBOUND { return tx_log_; }
+
+    // These two hand out the producer surface of the ring and of the
+    // metadata log directly, so the thread gate that record_op and
+    // dispatch_op carry does not travel with them.  A caller that appends
+    // through one of these references is the producer, and holds the same
+    // obligation it would have had going through record_op: one thread, for
+    // the life of this Vigil.  is_producer_thread() reports whether the
+    // calling thread already holds that role.
+    //
+    // Reading through them is unconstrained.  Introspection, bench
+    // measurement and the counters are all reads.
     [[nodiscard]] TraceRing& ring() CRUCIBLE_LIFETIMEBOUND { return *ring_; }
     [[nodiscard]] MetaLog& meta_log() CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
 
@@ -537,6 +586,32 @@ private:
         const TraceRing::Entry& entry, [[maybe_unused]] const TensorMeta* metas, [[maybe_unused]] uint32_t n_metas,
         [[maybe_unused]] ScopeHash scope_hash, [[maybe_unused]] CallsiteHash callsite_hash) {
         const uint32_t div_pos = ctx_.engine().ops_matched();
+
+        // A region the background thread published while the context was
+        // compiled is still in the slot, because the replay branch of
+        // dispatch_op never reads it.  Leave it there and the first dispatch
+        // after this reset consumes it and aligns against it.  That re-enters
+        // replay on the trace this divergence just invalidated.  Worse,
+        // alignment records nothing, so the background thread never receives
+        // the new trace it needs to build a region that matches.
+        //
+        // Its ops are not worthless, so it goes to the region cache rather
+        // than the floor.  find_alternate below can then pick it, but only
+        // through try_switch_region_, which first verifies that every op
+        // before the divergence position is identical.
+        //
+        // Take it before the reset signal below.  A region the background
+        // thread publishes after that signal belongs to the new trace, and
+        // stays in the slot for the next dispatch to observe.
+        if (auto* stale_pending = pending_region_.consume()) region_cache_.insert(stale_pending);
+
+        // Alignment state is foreground-only, and it describes a partial walk
+        // into a region this reset abandons.  This is not dead code: both
+        // rollback() and load() activate a context without clearing a walk in
+        // progress, which is how a divergence becomes reachable with one
+        // still open.
+        pending_activation_ = nullptr;
+        alignment_pos_ = AlignmentPos{uint8_t{0}};
 
         region_cache_.insert(ctx_.active_region());
 

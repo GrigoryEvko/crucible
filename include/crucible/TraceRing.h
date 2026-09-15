@@ -4,6 +4,26 @@
 // append onto a full ring drops the entry rather than blocking the producer:
 // the recording is re-taken on the next iteration, so a drop costs one
 // iteration of trace, never a stall on the recorded thread.
+//
+// Single-producer is a requirement on the caller, not a property this class
+// defends. try_append reads the head, writes the slot it names and then
+// advances it, and those three steps are not one atomic operation. Two
+// threads running them at once name the same slot, write over each other and
+// advance the head once, so one entry is lost and the surviving one can be
+// half of each. Nothing reports it.
+//
+// Vigil owns the enforcement. Its record_op and dispatch_op give the producer
+// role to the first thread that arrives and end the process on the second,
+// and Vigil::is_producer_thread() lets an adapter ask before it arrives. A
+// caller that reaches this class through Vigil::ring() instead carries the
+// obligation itself.
+//
+// Single-producer is also what makes the recorded op order reproducible. The
+// order is the trace's identity: it fixes the region content hash, the memory
+// plan and the replay order. An order that two threads interleaved is a
+// different order on every run, so a multi-producer ring would not be a
+// faster version of this one, it would be a ring that cannot support
+// bit-exact replay.
 
 #include <algorithm>
 #include <atomic>

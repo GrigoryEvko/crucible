@@ -1,5 +1,15 @@
 #pragma once
 
+// The tensor-metadata side channel of the trace ring, and single-producer
+// single-consumer for the same reason and under the same rule.
+//
+// try_append reserves a run of slots by reading the head and advancing it,
+// which is not one atomic operation, so two threads reserve the same run and
+// write over each other. A ring entry then names a metadata index whose
+// contents belong to a different op.
+//
+// Vigil owns the enforcement, and TraceRing.h states the rule in full.
+
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>

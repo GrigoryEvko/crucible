@@ -544,6 +544,43 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     auto vigil_typed = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(tls_ctx));
     auto* vigil = vigil_typed.value();
 
+    // -- Foreign thread: execute, do not record -----------------------
+    //
+    // The ring behind Vigil is single-producer and the recorded op order is
+    // the trace's identity: it fixes the region content hash, the memory
+    // plan and the replay order.  Two threads appending to it produce a
+    // torn ring, and two threads appending to any ring produce an op order
+    // that depends on how they interleaved, which is a different trace on
+    // every run.
+    //
+    // The autograd engine of this runtime runs a backward pass on a worker
+    // thread of its own, one per device.  GraphTask captures the caller's
+    // at::ThreadLocalState and the worker restores it before each node, and
+    // c10::impl::LocalDispatchKeySet is a member of that state.  So the
+    // Crucible key travels to the worker thread and this handler fires
+    // there, for every backward op of a model on an accelerator.
+    //
+    // Whether c10::CrucibleState travels the same way is a property of the
+    // fork this file builds against.  If it does not, the worker reads
+    // INACTIVE and returns at the mode branch above, and this branch is
+    // never reached.  If it does, this branch is what keeps the worker off
+    // the ring.  Either way the outcome below is the one that holds.
+    //
+    // A foreign thread executes its op eagerly and leaves the ring alone.
+    // The trace is then short by the ops of that thread, which is a trace
+    // that is incomplete and reproducible.  Recording them would make it
+    // complete and irreproducible, and the pipeline behind it — content
+    // addressing, the memory plan, bit-exact replay — is built on the
+    // reproducibility rather than on the completeness.
+    //
+    // Vigil refuses a second producer on its own and ends the process when
+    // it sees one.  That guard stays as the last resort for a caller that
+    // does not ask first.  This is the asking.
+    if (!vigil->is_producer_thread()) [[unlikely]] {
+        op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
+        return;
+    }
+
     const auto& schema = op.schema();
 
     // -- Extract input tensor metadata + scalars ----------------------
@@ -633,10 +670,39 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 //
 // What IS captured by DispatchKey::Crucible fallback:
 //   [x] Forward pass ATen ops (mm, conv2d, relu, etc.)
-//   [x] Backward/autograd decomposed ops (mm, addmm, threshold_backward, etc.)
+//   [~] Backward/autograd decomposed ops (mm, addmm, threshold_backward, etc.)
 //       The autograd engine decomposes backward into native ATen ops that
 //       all go through the dispatcher. DispatchKey::Crucible is above
-//       AutogradCPU/AutogradCUDA in the priority table, so we see them.
+//       AutogradCPU/AutogradCUDA in the priority table, so this handler
+//       fires on them.
+//
+//       Whether they are RECORDED depends on which thread runs them, and
+//       that is a property of the device rather than of the op:
+//
+//         - A backward pass over CPU tensors runs on the thread that called
+//           backward(), because that thread serves the engine's CPU ready
+//           queue itself. It is the recording thread, so these ops are
+//           recorded.
+//         - A backward pass over accelerator tensors runs on the engine's
+//           per-device worker thread. GraphTask carries the caller's
+//           at::ThreadLocalState to it, and LocalDispatchKeySet is part of
+//           that state, so the Crucible key arrives and this handler fires
+//           — on a thread that is not the recording thread. Those ops
+//           execute eagerly and are not recorded, either because
+//           c10::CrucibleState did not travel and the mode reads INACTIVE,
+//           or because the foreign-thread branch in crucibleFallback turns
+//           them away.
+//
+//       So the recorded trace of an accelerator model is forward plus
+//       optimizer, with the backward window absent from it. That window is
+//       a gap in the trace, not a corruption of it: the op order that is
+//       recorded is still exactly the order one thread produced.
+//
+//       Closing the gap is not a matter of admitting the worker thread to
+//       the ring. Two threads have no defined emission order, so a trace
+//       that contains both is a different trace on every run. It needs a
+//       recording path that gives the backward window its own single
+//       producer, which is a separate piece of work.
 //   [x] Optimizer ops (SGD: add_, mul_, addcdiv_; Adam: mul_, add_, etc.)
 //       optimizer.step() wraps ops in torch.no_grad(), but ops still dispatch
 //       through Crucible. no_grad() only affects autograd key, not Crucible.
