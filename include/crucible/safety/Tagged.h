@@ -295,6 +295,41 @@ private:
     graded_type impl_;
 
 public:
+    // THIS CONSTRUCTOR IS PUBLIC, AND THAT IS THE WHOLE CONTRACT.
+    //
+    // Tagged carries PROVENANCE, not VALIDATION.  `Tagged<T, Src>`
+    // asserts that somebody wrote the tag Src on this value.  It does
+    // not assert that the value passed any check, because nothing here
+    // runs one.  Any caller can write `Tagged<T, Src>{raw}` around a
+    // hand-built aggregate and get a value indistinguishable from one
+    // a validating factory produced.
+    //
+    // That matters most for the `Declared*` alias family, whose name
+    // reads like a guarantee.  There are 51 such aliases.  27 of them
+    // have a factory that genuinely validates — it returns
+    // std::expected and short-circuits on a failed predicate — and for
+    // those 27 this constructor is a bypass around a real check.  21
+    // have only a pass-through factory that wraps without checking, so
+    // the name is the entire guarantee.  3 (DeclaredPeerSet,
+    // DeclaredPingmeshMeasurement, DeclaredGossipMulticastPlan) have no
+    // factory at all.  Reading any `Declared*` as evidence of
+    // validation is therefore wrong for at least 24 of the 51, and is
+    // only conditionally right for the rest.
+    //
+    // The constructor stays public deliberately.  Closing it would
+    // reach 27 factories that need friending, 11 member-default-init
+    // sites that need a default-constructible carve-out, and 7
+    // negative-compile fixtures that forge a tag on purpose to prove a
+    // downstream API rejects it — those would then fail because the
+    // constructor is inaccessible, which is not the property under
+    // test.  It would also push validation semantics into a wrapper
+    // that is equally used for pure provenance (source::Arena,
+    // source::Interned, source::Recorded), where a factory is ceremony.
+    //
+    // When a value must carry a CHECKED property rather than a
+    // provenance mark, the type for that is Refined<Pred, T> — its
+    // constructor evaluates Pred.  Compose the two when both are
+    // wanted: Tagged<Refined<Pred, T>, Src>.
     constexpr explicit Tagged(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
@@ -616,10 +651,17 @@ static_assert(std::tuple_size_v<kCatalogRosterTuple> == kAdmittedForwardEdgeCoun
               "roster fires here: bump the count, extend the tuple, and extend "
               "kCatalogRosterMatchesCount in lockstep.");
 
-// Every factory that mints an authoritative value is named mint_, so
-// that one search finds every authorization point. Constructing a
-// Tagged directly compiles but escapes that search, so code crossing a
-// trust, provenance, access or version boundary goes through here.
+// mint_tagged is the §XXI-named factory, but it is NOT true that one
+// `mint_` search finds every authorization point in the tree.  The
+// factories that produce a Declared* value are also named declare_*,
+// admit_*, validate_*, plan_*, query_*, and several one-offs
+// (recommend_cc, eligibility_check, fallback_dispatch, open_stream,
+// ptp_status_from_daemon_report).  A `mint_` grep finds roughly half
+// of them.  Constructing a Tagged directly is likewise legal and
+// escapes any such search — see the constructor's comment above for
+// why that stays true by design.  To enumerate the authorization
+// surface, search the alias names (`Declared`), not the factory
+// prefix.
 
 template <typename Tag>
 concept ValidTaggedTag = std::is_class_v<Tag>;

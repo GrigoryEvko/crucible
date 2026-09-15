@@ -140,7 +140,12 @@ struct BoundedHashSetState {
                 return true;
             }
             if (!slots[idx].occupied) {
-                if (count == Capacity) {
+                // `>=`, not `==`: count is public, so a count already
+                // past Capacity would read as "not full" here and the
+                // ++ below would push it further out of range.  size()
+                // then mints a CrdtCount<Capacity> with Trusted{},
+                // handing a broken refinement to code that trusts it.
+                if (count >= Capacity) {
                     return false;
                 }
                 slots[idx].occupied = true;
@@ -221,7 +226,14 @@ public:
         return true;
     }
 
+    // `a` is the merge TARGET and arrives from the caller, so it is as
+    // untrusted as `b`.  BoundedHashSetState::merge validates only `b`,
+    // which left every walk of `a` unguarded.  Both sides are checked
+    // here; on refusal the existing convention returns `a` unchanged.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
+        if (!a.well_formed()) {
+            return a;
+        }
         state_type staged = a;
         return staged.merge(b) ? staged : a;
     }
@@ -305,7 +317,16 @@ public:
         return true;
     }
 
+    // `a` is the merge TARGET and arrives from the caller, so it is as
+    // untrusted as `b`.  merge_state_into_ validates only `b`, so a
+    // caller-supplied `a` with count past Capacity was walked by find_
+    // (out-of-bounds read) and then written at entries[count]
+    // (out-of-bounds write).  On refusal the existing convention
+    // returns `a` unchanged.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
+        if (!a.well_formed()) {
+            return a;
+        }
         OrSet tmp{};
         state_type staged = a;
         return tmp.merge_state_into_(staged, b) ? staged : a;
@@ -329,7 +350,10 @@ private:
             state.entries[*idx].removed = state.entries[*idx].removed || incoming.removed;
             return true;
         }
-        if (state.count == Capacity) {
+        // `>=`, not `==`: BoundedTaggedState::count is public, so a
+        // count already past Capacity read as "not full" here and the
+        // write below landed outside entries.
+        if (state.count >= Capacity) {
             return false;
         }
         state.entries[state.count] = incoming;
@@ -621,7 +645,15 @@ public:
         return true;
     }
 
+    // `a` is the merge TARGET and arrives from the caller.
+    // insert_version_into_ does gate `state.count > MaxVersions`, but
+    // only once it is reached — an empty `b` skips the loop entirely
+    // and returns a malformed `staged` to the caller.  Gate `a` up
+    // front so no malformed state leaves this function.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
+        if (a.count > MaxVersions) {
+            return a;
+        }
         MVRegister tmp{};
         state_type staged = a;
         return tmp.merge_state_into_(staged, b) ? staged : a;
@@ -689,7 +721,10 @@ private:
                 ++out;
             }
         }
-        if (out == MaxVersions) {
+        // `>=`, not `==`: `out` is bounded by state.count today, but
+        // the equality form only holds while that stays true, and the
+        // write below is the one that would land outside `kept`.
+        if (out >= MaxVersions) {
             return false;
         }
         kept[out] = incoming;
@@ -785,7 +820,16 @@ public:
         return true;
     }
 
+    // `a` is the merge TARGET and arrives from the caller, so it is as
+    // untrusted as `b`.  merge_state_into_ validates only `b`, so a
+    // caller-supplied `a` with count past Capacity was walked by
+    // find_in_ (out-of-bounds read) and then written at entries[count]
+    // (out-of-bounds write).  On refusal the existing convention
+    // returns `a` unchanged.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
+        if (!a.well_formed()) {
+            return a;
+        }
         RgaList tmp{};
         state_type staged = a;
         return tmp.merge_state_into_(staged, b) ? staged : a;
@@ -826,7 +870,10 @@ private:
             }
             return true;
         }
-        if (state.count == Capacity) {
+        // `>=`, not `==`: BoundedTaggedState::count is public, so a
+        // count already past Capacity read as "not full" here and the
+        // write below landed outside entries.
+        if (state.count >= Capacity) {
             return false;
         }
         state.entries[state.count] = incoming;

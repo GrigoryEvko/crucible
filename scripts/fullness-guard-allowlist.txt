@@ -1,0 +1,34 @@
+# fullness-guard-allowlist.txt — grandfathered `== <capacity>` sites.
+#
+# Format: path:line — <reason the equality is safe, or who owns the fix>
+# Lines beginning with '#' and blank lines are ignored.
+#
+# check-fullness-guard.sh reports a STALE entry (exit 2) when the named
+# line no longer holds an equality fullness test, so an entry cannot
+# outlive the site it excuses and silently re-grandfather a future one.
+#
+# ── DEFECTS, NOT EXEMPTIONS ──────────────────────────────────────────
+# The three entries in this block are REAL instances of the #62 bug
+# class, found by the sweep that produced this guard.  They are listed
+# here only because they fall outside the file-ownership boundary of
+# the change that added the guard.  Each is an out-of-bounds WRITE on a
+# public counter.  Remove the entry when the site is fixed; the fix in
+# every case is `>=`, or privatising the counter behind its push.
+
+include/crucible/canopy/Scuttlebutt.h:164 — DEFECT. ScuttlebuttDigest::push, public `std::uint16_t count` over a FixedArray of `capacity`; line 167 writes entries[count]. compare_digest() does call incoming.well_formed(), so the gossiped path is covered, but push() on a caller-built digest is not. Fix: `>=`.
+include/crucible/canopy/Scuttlebutt.h:223 — DEFECT, worse than :164. ScuttlebuttRequestSet::push, public `std::uint16_t count`; line 226 writes entries[count]. This struct has no well_formed() at all, so no path validates it. Reached via ScuttlebuttDiff::requests / ::offers. Fix: `>=` plus a well_formed().
+include/crucible/safety/diag/JsonEmitter.h:95 — DEFECT. detail::fixed_json_buffer::push, public `std::size_t size` over a raw `char data[Capacity]`; line 99 writes data[size++]. Companion defect on line 83: `s.size() > Capacity - size` wraps when size > Capacity, so append() overflows through the same hole. Only instantiation today is a function-local at line 281, so reachability is low. Fix: `>=` on :95 and `size > Capacity || s.size() > Capacity - size` on :83.
+
+# ── NOT-FOUND SENTINELS ──────────────────────────────────────────────
+# These compare an index against a container bound to detect a FAILED
+# LOOKUP, not a full container.  The equality is exact by construction:
+# the search returns exactly the bound on a miss, and the guard bails
+# before any indexed access.  `>=` would be equally correct but says
+# something weaker than the code means.
+
+include/crucible/topology/Pingmesh.h:221 — not-found sentinel. find_peer() returns MaxPeers on a miss; both operands are checked before peers_ is indexed.
+include/crucible/observe/SdcDetect.h:294 — not-found sentinel. `index` comes from a linear search over cogs_ and equals cogs_.size() only on a miss.
+include/crucible/observe/SyntheticProbe.h:278 — not-found sentinel. find_peer() returns peers_.size() on a miss; the `||` short-circuits before peers_[peer_index].
+include/crucible/observe/SyntheticProbe.h:291 — not-found sentinel, same shape as :278.
+include/crucible/observe/SyntheticProbe.h:327 — not-found sentinel, same shape as :278.
+include/crucible/safety/diag/RowMismatch.h:82 — not-found sentinel. `start` is a scan cursor that reaches pretty.size() only when the scan ran off the end; the guard returns before any indexing.

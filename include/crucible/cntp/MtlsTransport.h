@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -133,13 +134,27 @@ struct MtlsPrivateKeyBytes {
     }
 };
 
-struct MtlsDnsName {
+// The length lived in a public std::uint8_t beside a 253-byte array,
+// so a caller-built aggregate could carry 255 and view() then handed
+// every reader a string_view two bytes past the end of the object.
+// from() already bounds the length and is the only writer, so the two
+// members are private and the over-long state is unrepresentable
+// rather than merely unchecked.  A runtime check was not an option
+// worth taking: the release build ships -DNDEBUG with no
+// _GLIBCXX_ASSERTIONS, and CRUCIBLE_PRE is compiled out there, so the
+// only enforcement that reaches production is the one the type
+// carries.
+class MtlsDnsName {
+public:
     static constexpr std::size_t max_bytes = 253;
 
-    std::array<char, max_bytes> bytes{};
-    std::uint8_t size = 0;
+    constexpr MtlsDnsName() noexcept = default;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), size}; }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes_.data(), size_}; }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+
+    [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
 
     [[nodiscard]] static constexpr std::expected<MtlsDnsName, MtlsError> from(std::string_view name) noexcept {
         if (name.empty()) {
@@ -160,13 +175,20 @@ struct MtlsDnsName {
             if (!ok || (dot && previous_dot)) {
                 return std::unexpected(MtlsError::InvalidPeerName);
             }
-            out.bytes[i] = c;
+            out.bytes_[i] = c;
             previous_dot = dot;
         }
-        out.size = static_cast<std::uint8_t>(name.size());
+        out.size_ = static_cast<std::uint8_t>(name.size());
         return out;
     }
+
+private:
+    std::array<char, max_bytes> bytes_{};
+    std::uint8_t size_ = 0;
 };
+
+static_assert(MtlsDnsName::max_bytes <= std::numeric_limits<std::uint8_t>::max(),
+              "MtlsDnsName::size_ must be able to name every byte it admits");
 
 struct MtlsSha256Fingerprint {
     static constexpr std::size_t bytes_count = 32;
@@ -177,6 +199,38 @@ struct MtlsSha256Fingerprint {
 using MtlsCertificate = safety::Linear<MtlsCertificateBytes>;
 using MtlsPrivateKey = safety::Secret<MtlsPrivateKeyBytes>;
 using MtlsCertificateFingerprint = safety::Tagged<MtlsSha256Fingerprint, safety::source::Mtls>;
+
+struct MtlsPolicy;
+
+// allowed_peer_count indexes two 8-element arrays and used to be a
+// bare public std::uint8_t on an aggregate, so any caller could store
+// 255 into it.  Every reader loops to the count and indexes both
+// arrays, which walked roughly 62 KB past allowed_peer_dns, and
+// validate_mtls_policy never looked at the count at all.
+//
+// This type keeps the member-access spelling the readers already use
+// while confining every write to MtlsPolicy::allow_peer_with_pin,
+// which refuses at the bound.  A value above max_peer_names is
+// therefore unrepresentable, and no reader — here or in
+// src/cntp/MtlsTransport.cpp — needs a bound check in any build.
+class MtlsPeerCount {
+public:
+    constexpr MtlsPeerCount() noexcept = default;
+
+    // Implicit and lossless on purpose.  Readers spell
+    // `i < policy.allowed_peer_count` and `dns[policy.allowed_peer_count]`,
+    // and widening a bounded count to its own underlying type cannot
+    // lose information.  The conversion is one-way: nothing converts
+    // back in, so the bound cannot be re-entered from outside.
+    [[nodiscard]] constexpr operator std::uint8_t() const noexcept { return value_; }
+
+    [[nodiscard]] constexpr std::uint8_t value() const noexcept { return value_; }
+
+private:
+    std::uint8_t value_ = 0;
+
+    friend struct MtlsPolicy;
+};
 
 struct MtlsPolicy {
     static constexpr std::size_t max_peer_names = 8;
@@ -191,19 +245,25 @@ struct MtlsPolicy {
     };
     std::array<MtlsDnsName, max_peer_names> allowed_peer_dns{};
     std::array<MtlsSha256Fingerprint, max_peer_names> allowed_peer_pins{};
-    std::uint8_t allowed_peer_count = 0;
+    MtlsPeerCount allowed_peer_count{};
 
+    // The sole writer of allowed_peer_count, and the reason the bound
+    // holds structurally for every reader of it.
     [[nodiscard]] constexpr std::expected<void, MtlsError>
     allow_peer_with_pin(MtlsDnsName name, MtlsCertificateFingerprint fingerprint) noexcept {
-        if (allowed_peer_count >= max_peer_names) {
+        if (allowed_peer_count.value() >= max_peer_names) {
             return std::unexpected(MtlsError::TooManyPeerNames);
         }
-        allowed_peer_dns[allowed_peer_count] = name;
-        allowed_peer_pins[allowed_peer_count] = fingerprint.value();
-        ++allowed_peer_count;
+        allowed_peer_dns[allowed_peer_count.value()] = name;
+        allowed_peer_pins[allowed_peer_count.value()] = fingerprint.value();
+        ++allowed_peer_count.value_;
         return {};
     }
 };
+
+static_assert(sizeof(MtlsPeerCount) == sizeof(std::uint8_t));
+static_assert(MtlsPolicy::max_peer_names <= std::numeric_limits<std::uint8_t>::max(),
+              "MtlsPeerCount must be able to name every allowlist slot");
 
 struct MtlsConfig {
     MtlsCertificate ca_cert;
@@ -301,6 +361,8 @@ template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = Mtl
     return mtls_cipher_is_approved(suite) && policy.allowed_ciphers.test(suite);
 }
 
+// No bound check on the loop: MtlsPeerCount cannot hold a value above
+// MtlsPolicy::max_peer_names, which is the extent of both arrays.
 [[nodiscard]] constexpr bool mtls_policy_allows_peer_name(MtlsPolicy const& policy, MtlsDnsName peer) noexcept {
     for (std::uint8_t i = 0; i < policy.allowed_peer_count; ++i) {
         if (policy.allowed_peer_dns[i].view() == peer.view()) {

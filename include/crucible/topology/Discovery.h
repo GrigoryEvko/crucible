@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -79,22 +80,47 @@ struct DiscoverySourceStatus {
     DiscoveryError error = DiscoveryError::EmptyInput;
 };
 
-struct DiscoveryReport {
-    std::array<DiscoverySourceStatus, 16> statuses{};
-    std::uint8_t size = 0;
+// `size` used to sit public beside the array, so push() was not its
+// only writer.  A stored 255 then read as "not full" against the
+// equality test this carried, and push() wrote statuses[255] on a
+// 16-element array; view() handed the same range to every reader.
+// Both members are private now and push() is the only writer, so a
+// size above max_statuses is unrepresentable and neither accessor
+// needs a bound check.  A check would not have helped in production
+// anyway: the release build ships -DNDEBUG with no
+// _GLIBCXX_ASSERTIONS, so std::array::operator[] is unchecked there.
+class DiscoveryReport {
+public:
+    static constexpr std::size_t max_statuses = 16;
+
+    constexpr DiscoveryReport() noexcept = default;
 
     [[nodiscard]] constexpr std::span<const DiscoverySourceStatus> view() const noexcept {
-        return {statuses.data(), size};
+        return {statuses_.data(), size_};
     }
 
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+
+    [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
+
+    [[nodiscard]] constexpr bool full() const noexcept { return size_ >= max_statuses; }
+
     [[nodiscard]] constexpr bool push(DiscoverySourceStatus status) noexcept {
-        if (size == statuses.size()) {
+        if (full()) {
             return false;
         }
-        statuses[size++] = status;
+        statuses_[size_] = status;
+        ++size_;
         return true;
     }
+
+private:
+    std::array<DiscoverySourceStatus, max_statuses> statuses_{};
+    std::uint8_t size_ = 0;
 };
+
+static_assert(DiscoveryReport::max_statuses <= std::numeric_limits<std::uint8_t>::max(),
+              "DiscoveryReport::size_ must be able to name every slot");
 
 struct DiscoveryNodeFact {
     cog::Uuid uuid{};

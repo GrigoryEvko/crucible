@@ -763,6 +763,26 @@ add_test(NAME syscall_capability
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-100")
+# oob-62 fullness discipline.  `if (count == Capacity) return false;` reads
+# as a bounds check but only rejects the exact boundary: a count already
+# past Capacity compares unequal, the guard passes, and the next push
+# writes out of bounds.  Seven true positives were found this way, three of
+# them out-of-bounds WRITES that no fuzzer could reach because the
+# differential oracle reproduced the same `==` semantics.
+# scripts/check-fullness-guard.sh flags the idiom on public counters,
+# discriminating on the house trailing-underscore convention: every
+# invariant-protected counter in this tree ends in `_`, every unprotected
+# public one does not.  scripts/fullness-guard-allowlist.txt records nine
+# entries — three unfixed DEFECTS with the exact fix against each, six
+# sentinels.  Self-test verifies detection, allowlist exemption and stale-
+# entry reporting.
+add_test(NAME fullness_guard_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.sh
+          --self-test)
+add_test(NAME fullness_guard
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.sh)
+set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
+    LABELS "ci_guard;oob-62")
 # FIXY-V-210 process-spawn discipline (Agent 7 migration item 10 —
 # closes the regression-prevention surface for raw fork/exec/
 # posix_spawn/system/popen calls landing in production code).
