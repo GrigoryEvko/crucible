@@ -275,7 +275,7 @@ scan_root="${CRUCIBLE_PRE_CALLSITE_TEST_ROOT:-$root}"
 # rg --type=cpp picks up .h / .hpp / .cpp / .cc — all the production
 # C++26 sources.  --glob excludes vendor + build trees.
 common_globs=(--type=cpp \
-              --glob '!build/**' \
+              --glob '!build*/**' \
               --glob '!cmake-build-*/**' \
               --glob '!third_party/**' \
               --glob '!external/**' \

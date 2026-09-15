@@ -217,7 +217,7 @@ done < <(
     rg -nP \
        --no-heading \
        --type=cpp \
-       --glob '!build/**' \
+       --glob '!build*/**' \
        --glob '!cmake-build-*/**' \
        --glob '!third_party/**' \
        --glob '!external/**' \

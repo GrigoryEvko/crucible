@@ -334,7 +334,7 @@ done < <(
        --no-heading \
        --glob '*.cmake' --glob 'CMakeLists.txt' --glob '*.json' \
        --glob 'Makefile' --glob '*.mk' \
-       --glob '!build/**' \
+       --glob '!build*/**' \
        --glob '!cmake-build-*/**' \
        --glob '!third_party/**' \
        --glob '!external/**' \
@@ -376,7 +376,7 @@ done < <(
     rg -nP \
        --no-heading \
        --type=cpp \
-       --glob '!build/**' \
+       --glob '!build*/**' \
        --glob '!cmake-build-*/**' \
        --glob '!third_party/**' \
        --glob '!external/**' \

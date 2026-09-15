@@ -144,7 +144,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 common_globs=(--type=cpp \
-              --glob '!build/**' \
+              --glob '!build*/**' \
               --glob '!cmake-build-*/**' \
               --glob '!third_party/**' \
               --glob '!external/**' \

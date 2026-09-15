@@ -12,7 +12,7 @@ include/crucible/Platform.h:126  — effects::Init via parse_self_status (open /
 include/crucible/Platform.h:129  — effects::Init via parse_self_status (read /proc/self/status)
 include/crucible/Platform.h:130  — effects::Init via parse_self_status (close /proc/self/status)
 include/crucible/concurrent/AdaptiveScheduler.h:965  — effects::Init via NumaThreadPool worker pinning (sched_setaffinity, surfaced by the unqualified-call branch)
-include/crucible/concurrent/Topology.h:175  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch)
+include/crucible/concurrent/Topology.h:196  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch)
 include/crucible/fixy/Io.h:424  — effects::IO via IoUringRing::release_ (munmap SQEs, RAII, cap inherited)
 include/crucible/fixy/Io.h:430  — effects::IO via IoUringRing::release_ (munmap CQ ring, RAII, cap inherited)
 include/crucible/fixy/Io.h:435  — effects::IO via IoUringRing::release_ (munmap SQ ring, RAII, cap inherited)

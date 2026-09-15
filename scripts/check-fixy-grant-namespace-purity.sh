@@ -416,7 +416,7 @@ while IFS=: read -r file line text; do
     status=1
 done < <(
     rg -n --no-heading --pcre2 \
-        --glob '!build/**' \
+        --glob '!build*/**' \
         --glob '!cmake-build-*/**' \
         --glob '!third_party/**' \
         --glob '!external/**' \
