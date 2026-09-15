@@ -8,16 +8,30 @@
 # outlive the site it excuses and silently re-grandfather a future one.
 #
 # ── DEFECTS, NOT EXEMPTIONS ──────────────────────────────────────────
-# The three entries in this block are REAL instances of the #62 bug
-# class, found by the sweep that produced this guard.  They are listed
-# here only because they fall outside the file-ownership boundary of
-# the change that added the guard.  Each is an out-of-bounds WRITE on a
-# public counter.  Remove the entry when the site is fixed; the fix in
-# every case is `>=`, or privatising the counter behind its push.
-
-include/crucible/canopy/Scuttlebutt.h:164 — DEFECT. ScuttlebuttDigest::push, public `std::uint16_t count` over a FixedArray of `capacity`; line 167 writes entries[count]. compare_digest() does call incoming.well_formed(), so the gossiped path is covered, but push() on a caller-built digest is not. Fix: `>=`.
-include/crucible/canopy/Scuttlebutt.h:223 — DEFECT, worse than :164. ScuttlebuttRequestSet::push, public `std::uint16_t count`; line 226 writes entries[count]. This struct has no well_formed() at all, so no path validates it. Reached via ScuttlebuttDiff::requests / ::offers. Fix: `>=` plus a well_formed().
-include/crucible/safety/diag/JsonEmitter.h:95 — DEFECT. detail::fixed_json_buffer::push, public `std::size_t size` over a raw `char data[Capacity]`; line 99 writes data[size++]. Companion defect on line 83: `s.size() > Capacity - size` wraps when size > Capacity, so append() overflows through the same hole. Only instantiation today is a function-local at line 281, so reachability is low. Fix: `>=` on :95 and `size > Capacity || s.size() > Capacity - size` on :83.
+# This block held the three out-of-bounds writes the sweep found but
+# could not fix, because they fell outside that change's file-ownership
+# boundary.  All three are fixed and the entries are gone.  None of them
+# was fixed by writing `>=`, which is what the entries proposed: each
+# counter is now a type that cannot hold a value past its bound, so the
+# comparison is no longer the thing standing between a caller and the
+# array.
+#
+#   canopy/Scuttlebutt.h  ScuttlebuttDigest::count and
+#                         ScuttlebuttRequestSet::count are
+#                         ScuttlebuttSlotCount<capacity>, whose only
+#                         mutator is reserve_next().  It refuses at the
+#                         bound and hands back a proof-token index, so
+#                         push() has no comparison of its own left.
+#   safety/diag/JsonEmitter.h
+#                         fixed_json_buffer's data/size/ok are private.
+#                         That also closes the companion wrap on the old
+#                         line 83, where `Capacity - size` underflowed
+#                         for size > Capacity and let append() memcpy
+#                         past the array.
+#
+# The request set did NOT gain the well_formed() the old entry asked
+# for: it is an output-only local aggregate whose bound is now
+# structural and whose only consumer revalidates. The header says so.
 
 # ── NOT-FOUND SENTINELS ──────────────────────────────────────────────
 # These compare an index against a container bound to detect a FAILED

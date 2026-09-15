@@ -38,6 +38,33 @@
 // version==0 asymmetry are exercised densely; ~1/6 of entries are
 // malformed (zero origin / zero key hash / zero key length) to drive the
 // reject + ordering paths.
+//
+// ── WHY THIS FUZZER WAS BLIND TO THE OVERFLOW BUG ──────────────────
+//
+// Both pushes used to guard with `count == capacity` over a PUBLIC
+// count, so a count already past the bound compared unequal, the guard
+// passed, and the next push wrote outside `entries`.  This fuzzer could
+// not see it, for two independent reasons, and both are fixed here.
+//
+// 1. The oracle transcribed production's comparison operator.  step()
+//    spelled its own capacity guard `ref.n == kCap`, which is the same
+//    line production had wrong.  A differential oracle that copies the
+//    operator under test agrees with the bug instead of exposing it; it
+//    reads `>=` now, which is the rule stated independently of how
+//    production happens to spell it.  Measured against the pre-fix
+//    header, `==` AGREES with the buggy push and `>=` DISAGREES.
+//
+// 2. Nothing asserted the structural bound per push.  The digest's
+//    well_formed() opens with exactly this test, but it ran once at the
+//    END of a sequence, and ScuttlebuttRequestSet had no structural
+//    check at all.  count_within_capacity() below now runs after every
+//    push on BOTH structures.
+//
+// The generated sequences still cannot REACH a count past the bound, and
+// that is now a property of the code rather than a gap in the generator:
+// ScuttlebuttSlotCount has no caller-facing mutator, so the state is
+// unrepresentable.  The static_asserts below pin that, and are what
+// would fail if a future change reopened the hole.
 // ═══════════════════════════════════════════════════════════════════
 
 #include "property_runner.h"
@@ -48,6 +75,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 
@@ -61,6 +89,22 @@ using Entry = cc::ScuttlebuttVersionEntry;
 using Key = cc::ScuttlebuttKey;
 
 inline constexpr std::size_t kCap = Dig::capacity;  // MaxPeers*MaxKeys = 4
+
+// The generator drives push() from a default-constructed structure, so
+// it can never produce a count past the bound.  That used to be a gap in
+// this fuzzer; it is now a property of the code, and these pin it.  If a
+// future change hands `count` a caller-facing mutator, the gap reopens
+// and these fail rather than the fuzzer quietly going green.
+using DigCount = decltype(Dig::count);
+using ReqCount = decltype(Req::count);
+static_assert(!std::is_assignable_v<DigCount&, std::uint16_t>,
+              "ScuttlebuttDigest::count must not be settable past its bound");
+static_assert(!std::is_assignable_v<ReqCount&, std::uint16_t>,
+              "ScuttlebuttRequestSet::count must not be settable past its bound");
+static_assert(std::is_same_v<DigCount, cc::ScuttlebuttSlotCount<kCap>>,
+              "the count must stay the bounded type, not revert to a bare integer");
+static_assert(std::is_same_v<ReqCount, cc::ScuttlebuttSlotCount<kCap>>,
+              "the count must stay the bounded type, not revert to a bare integer");
 inline constexpr std::uint32_t kOrigins = 3;  // 3×3 universe > cap → overflow
 inline constexpr std::uint32_t kKeys = 3;
 inline constexpr std::uint32_t kMaxPushes = 16;
@@ -136,7 +180,11 @@ struct Ref {
             return true;  // update existing (even when full)
         }
     }
-    if (ref.n == kCap) return false;  // distinct-cell overflow
+    // `>=`, not `==`: the oracle states the rule, it does not copy the
+    // operator production uses.  With `==` here, an over-bound count in
+    // production would produce the same answer as this map and the
+    // differential would stay silent.
+    if (ref.n >= kCap) return false;  // distinct-cell overflow
     ref.c[ref.n] = Cell{s.oidx, s.kidx, s.version};
     ++ref.n;
     return true;
@@ -153,6 +201,15 @@ struct Ref {
         }
     }
     return false;
+}
+
+// The bound each push owes its array, asserted after EVERY push and on
+// BOTH structures.  This is the check that detects a count past the
+// bound; the digest only ever made it once at the end of a sequence, as
+// the first line of well_formed(), and the request set never made it.
+template <typename Structure>
+[[nodiscard]] bool count_within_capacity(const Structure& s) noexcept {
+    return static_cast<std::size_t>(s.count) <= Structure::capacity;
 }
 
 template <typename Structure>
@@ -201,6 +258,10 @@ int main(int argc, char** argv) {
 
                 if (dig.push(e) != step(rd, s, /*is_digest=*/true)) return false;
                 if (req.push(e) != step(rr, s, /*is_digest=*/false)) return false;
+
+                // Structural bound, per push, on both structures.
+                if (!count_within_capacity(dig)) return false;
+                if (!count_within_capacity(req)) return false;
             }
 
             // Final entry sets match the independently-maintained maps.

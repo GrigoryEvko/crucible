@@ -71,32 +71,53 @@ namespace detail {
     return true;
 }
 
+// `data`, `size` and `ok` used to be public members of an aggregate, so
+// any caller could store a size past Capacity.  Both writers then went
+// out of bounds, and neither guard could see it:
+//
+//   push()   `size == Capacity` is false for size > Capacity, so
+//            data[size++] wrote past the array.
+//   append() `Capacity - size` wraps in std::size_t when size >
+//            Capacity, giving a bound near 2^64, so the memcpy landed
+//            at data + size.
+//
+// They are private now and the mutators below are the only writers, so
+// `size_ <= Capacity` is an invariant of the class and the subtraction
+// in append() cannot wrap.  Nothing outside this header ever touched
+// the members, so this costs no call site anything.
+//
+// A contract would have reached production here -- none of this
+// header's three consumers is on CRUCIBLE_CONTRACT_IGNORE_TUS, and
+// Release compiles contracts as `observe` onto a handler that aborts.
+// The access specifier is still the better answer: it costs nothing,
+// it cannot be switched off by a build flag, and it refuses the bad
+// value at the assignment rather than one call later at the use.
 template <std::size_t Capacity>
-struct fixed_json_buffer {
+    requires(Capacity > 0)
+class fixed_json_buffer {
+public:
     fixed_json_buffer() noexcept = default;
 
-    char data[Capacity];
-    std::size_t size = 0;
-    bool ok = true;
-
     bool append(std::string_view s) noexcept {
-        if (!ok || s.size() > Capacity - size) {
-            ok = false;
+        // size_ <= Capacity is an invariant, so this cannot wrap.
+        if (!ok_ || s.size() > Capacity - size_) {
+            ok_ = false;
             return false;
         }
         if (!s.empty()) {
-            std::memcpy(data + size, s.data(), s.size());
-            size += s.size();
+            std::memcpy(data_ + size_, s.data(), s.size());
+            size_ += s.size();
         }
         return true;
     }
 
     bool push(char c) noexcept {
-        if (!ok || size == Capacity) {
-            ok = false;
+        if (!ok_ || size_ >= Capacity) {
+            ok_ = false;
             return false;
         }
-        data[size++] = c;
+        data_[size_] = c;
+        ++size_;
         return true;
     }
 
@@ -104,7 +125,7 @@ struct fixed_json_buffer {
         char tmp[32];
         const auto [ptr, ec] = std::to_chars(tmp, tmp + sizeof(tmp), value);
         if (ec != std::errc{}) {
-            ok = false;
+            ok_ = false;
             return false;
         }
         return append({tmp, static_cast<std::size_t>(ptr - tmp)});
@@ -156,7 +177,17 @@ struct fixed_json_buffer {
             && (!comma || push(','));
     }
 
-    bool flush(FILE* out) noexcept { return ok && out != nullptr && std::fwrite(data, 1, size, out) == size; }
+    bool flush(FILE* out) noexcept { return ok_ && out != nullptr && std::fwrite(data_, 1, size_, out) == size_; }
+
+private:
+    // No initializer, deliberately.  Only data_[0, size_) is ever read,
+    // and every byte in that range was written by append() or push()
+    // first, so the tail is never observed.  Zero-filling it would put a
+    // Capacity-byte memset on the emission path that bench_diag_emission
+    // measures, and buy nothing.
+    char data_[Capacity];
+    std::size_t size_ = 0;
+    bool ok_ = true;
 };
 
 }  // namespace detail

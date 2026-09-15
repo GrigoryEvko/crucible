@@ -113,14 +113,26 @@ int main() {
     assert(reg_b.value().has_value());
     assert(reg_b.value().value() == 99);
 
+    // A duplicated (origin, key) pair, which well_formed() must reject.
+    // push() dedups, so the pair is planted by overwriting a live slot
+    // rather than by advancing the count: ScuttlebuttSlotCount has no
+    // caller-facing mutator, which is what keeps a count past capacity
+    // unrepresentable.
     cc::ScuttlebuttDigest<4, 4> malformed{};
     assert(malformed.push(cc::ScuttlebuttVersionEntry{
         .origin = peer(1).uuid,
         .key = key.value(),
         .version = 1,
     }));
-    malformed.entries[malformed.count] = malformed.entries[0];
-    ++malformed.count;
+    assert(malformed.push(cc::ScuttlebuttVersionEntry{
+        .origin = peer(1).uuid,
+        .key = reg_key.value(),
+        .version = 1,
+    }));
+    assert(malformed.count.value() == 2);
+    malformed.entries[1] = malformed.entries[0];
+    static_assert(!std::is_assignable_v<decltype(malformed.count)&, std::uint16_t>,
+                  "count must not be settable past its bound from outside");
     auto malformed_diff = b.compare_digest(cc::GossipedScuttlebuttDigest<4, 4>{malformed});
     assert(!malformed_diff.has_value());
     assert(malformed_diff.error() == cc::ScuttlebuttError::MalformedDigest);

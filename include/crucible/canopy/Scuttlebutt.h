@@ -36,6 +36,71 @@ using ScuttlebuttEntryCount =
     safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(scuttlebutt_entry_capacity<MaxPeers, MaxKeys>)>,
                     std::uint16_t>;
 
+// The live-entry count of a bounded entry table.
+//
+// It used to be a bare public std::uint16_t sitting beside the entries
+// array on an aggregate, so any caller could store a value past
+// `capacity` and no path anywhere looked.  push() then read
+// entries[capacity, count) during its dedup scan and wrote
+// entries[count], both out of bounds.  The `count == capacity` fullness
+// test could not see it, because a count already past the bound
+// compares unequal against it: 41 == 4 is false.
+//
+// The value is private here and reserve_next() is the only thing that
+// moves it, so `value_ <= Capacity` is an invariant of the type rather
+// than a habit of its callers, and a count past the bound is
+// unrepresentable rather than merely unchecked.
+//
+// Every Debug-only backstop that masked this is absent from Release:
+// _GLIBCXX_ASSERTIONS is not defined there, CRUCIBLE_PRE degrades to
+// [[assume]], and safety::FixedArray::operator[] carries no
+// precondition by design.  A P2900 contract_assert would have survived
+// -- Release compiles contracts as `observe` onto a handler that aborts
+// -- but the type is the better answer.  It costs nothing, no build
+// flag can switch it off, and it refuses the bad value at the
+// assignment instead of one call later at the subscript.
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
+class ScuttlebuttSlotCount {
+public:
+    // Exactly safety::FixedArray<T, Capacity>::index_type, so the proof
+    // token reserve_next() returns is accepted by FixedArray::at().
+    using index_type = safety::Refined<safety::bounded_above<Capacity - 1>, std::size_t>;
+
+    constexpr ScuttlebuttSlotCount() noexcept = default;
+
+    // Implicit and lossless on purpose.  Readers spell `i < digest.count`
+    // and `static_cast<std::size_t>(set.count)`, and widening a bounded
+    // count to its own underlying type cannot lose information.  The
+    // conversion is one-way -- nothing converts back in -- so the bound
+    // cannot be re-entered from outside.
+    [[nodiscard]] constexpr operator std::uint16_t() const noexcept { return value_; }
+
+    [[nodiscard]] constexpr std::uint16_t value() const noexcept { return value_; }
+
+    [[nodiscard]] constexpr bool full() const noexcept { return value_ >= Capacity; }
+
+    // Reserves the slot one past the last live entry and hands back a
+    // proof-token index for it.  This is the sole mutator, and it
+    // refuses at the bound, so every index it returns is in range by
+    // construction and no caller needs a comparison of its own.
+    [[nodiscard]] constexpr std::optional<index_type> reserve_next() noexcept {
+        if (full()) {
+            return std::nullopt;
+        }
+        const auto slot = static_cast<std::size_t>(value_);
+        ++value_;
+        return index_type{slot};
+    }
+
+private:
+    std::uint16_t value_ = 0;
+};
+
+static_assert(sizeof(ScuttlebuttSlotCount<4>) == sizeof(std::uint16_t));
+static_assert(!std::is_assignable_v<ScuttlebuttSlotCount<4>&, std::uint16_t>,
+              "a count past the bound must stay unrepresentable");
+
 using ScuttlebuttDurationNs = safety::Refined<safety::positive, std::uint64_t>;
 using ScuttlebuttPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
 
@@ -137,11 +202,17 @@ template <std::size_t MaxPeers, std::size_t MaxKeys>
 struct ScuttlebuttDigest {
     static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
 
+    // Only entries[0, count) are live.  The tail keeps whatever the
+    // FixedArray default gave it and no reader looks at it.
     safety::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
-    std::uint16_t count = 0;
+    ScuttlebuttSlotCount<capacity> count{};
 
     [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
-        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count,
+        // Trusted is sound here because ScuttlebuttSlotCount cannot hold
+        // a value above capacity.  It was not sound while count was a
+        // bare public member: that path minted a Refined whose predicate
+        // its own value did not satisfy.
+        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count.value(),
                                                         typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
     }
 
@@ -161,18 +232,22 @@ struct ScuttlebuttDigest {
                 return true;
             }
         }
-        if (count == capacity) {
+        // The count enforces the bound and yields the slot, so the
+        // fullness test and the subscript cannot disagree.
+        const auto slot = count.reserve_next();
+        if (!slot) {
             return false;
         }
-        entries[static_cast<std::size_t>(count)] = entry;
-        ++count;
+        entries.at(*slot) = entry;
         return true;
     }
 
+    // No count-versus-capacity arm: ScuttlebuttSlotCount cannot carry a
+    // count above capacity, so the loop below indexes in range for every
+    // value the type admits.  What stays representable is entry content,
+    // because `entries` is public -- a caller can overwrite a live slot
+    // after push() validated it -- and that is what this checks.
     [[nodiscard]] bool well_formed() const noexcept {
-        if (count > capacity) {
-            return false;
-        }
         for (std::uint16_t i = 0; i < count; ++i) {
             auto const& a = entries[static_cast<std::size_t>(i)];
             if (a.version == 0 || a.origin.is_zero() || a.key.hash == 0 || a.key.length == 0) {
@@ -194,16 +269,25 @@ template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 using GossipedScuttlebuttDigest = safety::Tagged<ScuttlebuttDigest<MaxPeers, MaxKeys>, safety::source::Gossiped>;
 
+// This one carries no well_formed(), and unlike the digest it does not
+// need one.  It is an output-only local aggregate: compare_digest is its
+// only producer and it pushes entries drawn from an already-validated
+// digest and from the local peer/key tables.  Its bound is now a
+// property of ScuttlebuttSlotCount rather than of a comparison, and its
+// only consumer -- delta_for_request -- resolves origin and key through
+// find_peer_ and require_key_ before it indexes anything.  A validator
+// with no caller would be weight, not safety.
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 struct ScuttlebuttRequestSet {
     static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
 
+    // Only entries[0, count) are live.
     safety::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
-    std::uint16_t count = 0;
+    ScuttlebuttSlotCount<capacity> count{};
 
     [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
-        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count,
+        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count.value(),
                                                         typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
     }
 
@@ -220,11 +304,11 @@ struct ScuttlebuttRequestSet {
                 return true;
             }
         }
-        if (count == capacity) {
+        const auto slot = count.reserve_next();
+        if (!slot) {
             return false;
         }
-        entries[static_cast<std::size_t>(count)] = entry;
-        ++count;
+        entries.at(*slot) = entry;
         return true;
     }
 };
