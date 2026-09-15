@@ -767,15 +767,17 @@ set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
 # as a bounds check but only rejects the exact boundary: a count already
 # past Capacity compares unequal, the guard passes, and the next push
 # writes out of bounds.  Seven true positives were found this way, three of
-# them out-of-bounds WRITES that no fuzzer could reach because the
-# differential oracle reproduced the same `==` semantics.
+# them out-of-bounds WRITES that the differential fuzzer could not reach
+# because its oracle transcribed the same `==` semantics the code had wrong.
+# All seven are fixed; the counts are now structural, so the idiom is gone
+# rather than corrected in place, and the fuzzer asserts the bound after
+# every push instead of once at the end of a sequence.
 # scripts/check-fullness-guard.sh flags the idiom on public counters,
 # discriminating on the house trailing-underscore convention: every
 # invariant-protected counter in this tree ends in `_`, every unprotected
-# public one does not.  scripts/fullness-guard-allowlist.txt records nine
-# entries — three unfixed DEFECTS with the exact fix against each, six
-# sentinels.  Self-test verifies detection, allowlist exemption and stale-
-# entry reporting.
+# public one does not.  scripts/fullness-guard-allowlist.txt is down to six
+# entries, all sentinels — no defect is grandfathered.  Self-test verifies
+# detection, allowlist exemption and stale-entry reporting.
 add_test(NAME fullness_guard_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.sh
           --self-test)
@@ -1007,6 +1009,14 @@ crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_ledger)
+# The probes time through bench/bench_harness.h rather than carrying their
+# own rig — the harness already reports the quantiles, the within-run
+# coefficient of variation and the drift check a ledger evidence record
+# needs.  Same include-path dependency crucible_hwprobe has, and an include
+# path only: this is not a bench target and takes none of the bench tree's
+# -O3 -march=native.
+crucible_test(test_ledger_probes)
+target_include_directories(test_ledger_probes PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_topology_discovery)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
@@ -1808,6 +1818,15 @@ function(crucible_neg_compile_ledger_test name expected_diag)
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
+  # ledger/ProbeSupport.h includes <bench_harness.h> for bench::Report,
+  # bench::Compare and bench::compare, so anything reaching RefreshDaemon.h
+  # needs bench/ on its path.  Without it these fixtures failed to compile
+  # on the missing include and the driver reported them as passing
+  # neg-compile tests — failing for a reason that has nothing to do with
+  # the constraint they exist to witness.  The include path is the
+  # short-term answer; the layering itself wants the statistics surface
+  # promoted out of bench/ into include/crucible/, the way SenseHub was.
+  target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
   add_test(NAME ${name}
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
             ${CMAKE_BINARY_DIR}
@@ -4313,6 +4332,29 @@ crucible_neg_compile_ledger_test(neg_ledger_view_hot_fg_ctx
 crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
     "constraint|constraints not satisfied|CtxFitsLedgerStore|no matching function")
 
+# ─── #67 ledger/RefreshDaemon.h HS14 fixtures ─────────────────────
+#
+# Three fixtures pinning the three conjuncts of CtxFitsRefreshDaemon
+# separately, so a regression that dropped any one is caught:
+# * neg_refresh_daemon_test_ctx_lacks_bg — TestRunnerCtx has IO and
+#   Block and satisfies CtxFitsLedgerStore.  It lacks only Bg.  This is
+#   the fixture that matters: without it, dropping Bg leaves the concept
+#   identical to CtxFitsLedgerStore and the other two keep passing.
+# * neg_refresh_daemon_compile_ctx_cannot_block — BgCompileCtx has Bg
+#   and IO.  It lacks only Block.  The opposite conjunct from the above.
+# * neg_refresh_daemon_hot_fg_ctx — HotFgCtx carries Row<>, missing all
+#   three.  The blunt case, with the worst consequence.
+#
+# The regex deliberately omits `static assertion`.  With Bg removed the
+# fixture fails on its own premise assert instead of on the mint, and a
+# looser pattern would read that as a pass.
+crucible_neg_compile_ledger_test(neg_refresh_daemon_test_ctx_lacks_bg
+    "constraint|constraints not satisfied|CtxFitsRefreshDaemon|no matching function")
+crucible_neg_compile_ledger_test(neg_refresh_daemon_compile_ctx_cannot_block
+    "constraint|constraints not satisfied|CtxFitsRefreshDaemon|no matching function")
+crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsRefreshDaemon|no matching function")
+
 # ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
 #
 # Two fixtures, distinct mismatch classes:
@@ -6220,6 +6262,24 @@ crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
   "constraints not satisfied|ScuttlebuttCrdt|state_type|merge")
 crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# oob-62 — the three counters whose `== Capacity` guard let a count already
+# past the bound through, so the next push wrote out of bounds.  All three
+# are now structural: the count is private behind a single mutator that
+# refuses at the bound and hands back a proof-token index, so the bad value
+# cannot be built rather than being tested for.  Each fixture compiles
+# against the pre-fix header and is rejected by the fixed one, so it targets
+# exactly the repair.
+#   * neg_scuttlebutt_digest_count_assign: the count cannot be assigned.
+#   * neg_scuttlebutt_request_count_advance: nor incremented past the bound.
+#   * neg_json_buffer_size_write: fixed_json_buffer's size is private, which
+#     also closes the companion wrap at its append() bounds computation.
+crucible_neg_compile_test(neg_scuttlebutt_digest_count_assign
+  "no match for .operator=.|ScuttlebuttSlotCount|count")
+crucible_neg_compile_test(neg_scuttlebutt_request_count_advance
+  "no match for .operator\\+\\+.|ScuttlebuttSlotCount|count")
+crucible_neg_compile_test(neg_json_buffer_size_write
+  "has no member named .size.|not accessible|private")
 
 # GAPS-120 — cntp/CongestionControl.h per-socket TCP CC selection.
 #   * neg_congestion_control_raw_algorithm_apply: raw enum values cannot

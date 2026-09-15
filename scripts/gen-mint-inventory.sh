@@ -377,16 +377,42 @@ extract_qualifiers() {
     # (plain `auto`, takes `Snap&`) sits four lines above
     # mint_snapshot_writer_session (`constexpr`, takes `Ctx const&`), so the
     # fixed five-line window reported the reader as cx=Y and ctx-bound.
-    # Walk forward from `line`; the first line whose stripped form starts
-    # with `}` closes this mint's body, so the window ends there.
-    probe=$(( line + 1 ))
+    #
+    # fix-cx: stopping at the next `}` was not enough.  A mint whose BODY is
+    # longer than the window never reaches that brace, so the window ran on
+    # into the body and picked up body-local declarations.  Five mints read
+    # cx=Y off a `constexpr int flags = ...` on the line after their own
+    # signature — mint_file, mint_io_uring_ring, mint_zerocopy_transfer,
+    # mint_mmap, mint_mmap_anon — none of which is constexpr.  That is the
+    # same class as the mint_snapshot_reader defect above, which was fixed
+    # per-instance rather than per-class, and it made this script contradict
+    # check-mint-pattern.sh, which scans backward and gets these right.
+    #
+    # The declarator ends at the brace that OPENS the body, so the window
+    # must end there too.  That brace is the first `{` seen at parenthesis
+    # depth zero: a `{` inside the parameter list is a default argument
+    # (`Foo f = {}`), and stopping on one of those would cut the window
+    # before a `noexcept` that follows the closing paren on a later line.
+    local depth=0 fwd_text fwd_stripped
+    probe=$line
     while (( probe <= end )); do
-        local fwd_text
         fwd_text="$(sed -n "${probe}p" "$file" 2>/dev/null)"
-        local fwd_stripped="${fwd_text#"${fwd_text%%[![:space:]]*}"}"
-        case "$fwd_stripped" in
-            '}'*) end=$probe; break ;;
-        esac
+        if (( probe > line )); then
+            fwd_stripped="${fwd_text#"${fwd_text%%[![:space:]]*}"}"
+            case "$fwd_stripped" in
+                '}'*) end=$probe; break ;;
+            esac
+        fi
+        local rest="$fwd_text" ch
+        while [[ -n "$rest" ]]; do
+            ch="${rest:0:1}"
+            rest="${rest:1}"
+            case "$ch" in
+                '(') depth=$(( depth + 1 )) ;;
+                ')') (( depth > 0 )) && depth=$(( depth - 1 )) ;;
+                '{') if (( depth == 0 )); then end=$probe; break 2; fi ;;
+            esac
+        done
         probe=$(( probe + 1 ))
     done
 

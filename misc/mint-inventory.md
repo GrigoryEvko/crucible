@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-15T03:36:29Z`.
+Snapshot generated: `2026-09-15T16:26:10Z`.
 
 ## bridges/
 
@@ -66,7 +66,7 @@ Snapshot generated: `2026-09-15T03:36:29Z`.
 | `mint_hyparview` | `include/crucible/canopy/HyParView.h:382` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 5 |
 | `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h:483` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_plumtree` | `include/crucible/canopy/Plumtree.h:439` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h:539` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 4 |
+| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h:623` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 4 |
 | `mint_swim_membership` | `include/crucible/canopy/Swim.h:427` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_vector_clock` | `include/crucible/canopy/VectorClock.h:303` | Y | - | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 
@@ -163,6 +163,7 @@ Snapshot generated: `2026-09-15T03:36:29Z`.
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_ledger_view` | `include/crucible/ledger/Ledger.h:154` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h:414` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 
 ## mimic/
 
@@ -174,9 +175,9 @@ Snapshot generated: `2026-09-15T03:36:29Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h:72` | Y | - | Y | - | token | `include/crucible/fixy/Observe.h:14` | HS14: 1 ⚠ |
-| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h:67` | Y | - | Y | - | token | `include/crucible/fixy/Observe.h:13` | HS14: 1 ⚠ |
-| `mint_metrics_writer` | `include/crucible/observe/Metrics.h:60` | Y | - | Y | - | token | `include/crucible/fixy/Observe.h:12` | HS14: 1 ⚠ |
+| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h:124` | Y | - | Y | - | token | `include/crucible/fixy/Observe.h:15` | HS14: 1 ⚠ |
+| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h:117` | Y | - | Y | - | token | `include/crucible/fixy/Observe.h:14` | HS14: 1 ⚠ |
+| `mint_metrics_writer` | `include/crucible/observe/Metrics.h:60` | Y | - | Y | - | token | `include/crucible/fixy/Observe.h:13` | HS14: 1 ⚠ |
 | `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h:315` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
 | `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h:348` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 1 ⚠ |
 
@@ -313,7 +314,7 @@ Snapshot generated: `2026-09-15T03:36:29Z`.
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:223` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:133` | HS14: 5 |
-| `mint_hardening` | `include/crucible/warden/Hardening.h:495` | Y | - | Y | Y | ctx | `include/crucible/fixy/Warden.h:133` | HS14: 7 |
+| `mint_hardening` | `include/crucible/warden/Hardening.h:514` | Y | - | Y | Y | ctx | `include/crucible/fixy/Warden.h:133` | HS14: 7 |
 | `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:212` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:134` | HS14: 5 |
 | `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:423` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:134` | HS14: 5 |
 
@@ -368,14 +369,14 @@ mints) are listed in the substrate section instead.
 | `mint_durable_append_file` | `include/crucible/fixy/Fs.h:398` | Y | - (alloc) | Y | - | ctx | HS14: 2 |
 | `mint_durable_truncate_file` | `include/crucible/fixy/Fs.h:383` | Y | - (alloc) | Y | - | ctx | HS14: 2 |
 | `mint_federation_channel` | `include/crucible/fixy/SessFederation.h:40` | Y | Y | Y | Y | ctx | HS14: 4 |
-| `mint_file` | `include/crucible/fixy/Fs.h:309` | Y | Y | Y | Y | ctx | HS14: 4 |
+| `mint_file` | `include/crucible/fixy/Fs.h:309` | Y | - | Y | Y | ctx | HS14: 4 |
 | `mint_fn_for` | `include/crucible/fixy/Fn.h:663` | Y | Y | Y | Y | token | HS14: 6 |
 | `mint_head_advancer` | `include/crucible/fixy/CipherDurable.h:129` | - | - | Y | - | ctx | HS14: 2 |
-| `mint_io_uring_ring` | `include/crucible/fixy/Io.h:474` | Y | Y | Y | Y | ctx | HS14: 5 |
+| `mint_io_uring_ring` | `include/crucible/fixy/Io.h:474` | Y | - | Y | Y | ctx | HS14: 5 |
 | `mint_mbarrier_arrive` | `include/crucible/fixy/Async.h:92` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_mbarrier_wait` | `include/crucible/fixy/Async.h:98` | Y | Y | Y | Y | ctx | HS14: 2 |
-| `mint_mmap` | `include/crucible/fixy/Mmap.h:447` | Y | Y | Y | Y | ctx | HS14: 4 |
-| `mint_mmap_anon` | `include/crucible/fixy/Mmap.h:468` | Y | Y | Y | Y | ctx | HS14: 2 |
+| `mint_mmap` | `include/crucible/fixy/Mmap.h:447` | Y | - | Y | Y | ctx | HS14: 4 |
+| `mint_mmap_anon` | `include/crucible/fixy/Mmap.h:468` | Y | - | Y | Y | ctx | HS14: 2 |
 | `mint_mpsc_consumer_endpoint` | `include/crucible/fixy/Substr.h:440` | Y | Y | Y | - | token | HS14: 2 |
 | `mint_mpsc_consumer_session` | `include/crucible/fixy/Substr.h:458` | Y | Y | Y | - | ctx | HS14: 2 |
 | `mint_mpsc_producer_endpoint` | `include/crucible/fixy/Substr.h:433` | Y | Y | Y | - | token | HS14: 2 |
@@ -392,12 +393,12 @@ mints) are listed in the substrate section instead.
 | `mint_tsc_reader` | `include/crucible/fixy/Time.h:226` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_vendor_intrinsic` | `include/crucible/fixy/Hw.h:272` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_warm_writer` | `include/crucible/fixy/CipherDurable.h:121` | - | - | Y | - | ctx | HS14: 2 |
-| `mint_zerocopy_transfer` | `include/crucible/fixy/Io.h:549` | Y | Y | Y | Y | ctx | HS14: 2 |
+| `mint_zerocopy_transfer` | `include/crucible/fixy/Io.h:549` | Y | - | Y | Y | ctx | HS14: 2 |
 
 ## Summary
 
-- Total substrate mints: 191
-- Missing fixy re-export: 64
+- Total substrate mints: 192
+- Missing fixy re-export: 65
 - Member-function mints: 10 (separate §XXI grep-target — see above)
 - fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.
