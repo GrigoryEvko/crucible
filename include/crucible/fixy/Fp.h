@@ -146,6 +146,14 @@ static_assert(which_dim_v<with_fp_reassociate<sf::FpReassociate::Forbidden>> == 
 static_assert(which_dim_v<with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>> == D::FpMode);
 static_assert(which_dim_v<fp_strict_ieee> == D::FpMode);
 
+// fix-36: FpMode ships twelve grant tags, yet the audit table in Fn.h called
+// it grantless for as long as both of that table's pins compared a literal
+// against itself.  This witness reads the axis out of the tag's own
+// which_dim specialization, so the claim cannot go stale silently again.
+static_assert(::crucible::fixy::grant::audit::grant_family_witnessed_v<fp_strict_ieee>,
+              "Fp.h ships a grant family for FpMode, so FpMode must not appear in "
+              "grant::kAxesWithoutNonDefaultGrants.");
+
 static_assert(
     !std::is_same_v<with_fp_rounding<sf::FpRounding::RoundToNearestEven>, with_fp_ftz<sf::FpFtz::PreserveSubnormals>>);
 static_assert(!std::is_same_v<with_fp_ftz<sf::FpFtz::PreserveSubnormals>, with_fp_contract<sf::FpContract::Off>>);

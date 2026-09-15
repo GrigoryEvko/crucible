@@ -136,6 +136,11 @@ static_assert(which_dim_v<ctrl::exit<ctrl::at_exit>> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::exit<ctrl::no_cleanup>> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::exit<ctrl::exit_immediate>> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::builtin_trap_ok> == D::ControlFlow);
+
+// fix-36: ControlFlow ships grant tags, so it is not a grantless axis.
+static_assert(audit::grant_family_witnessed_v<ctrl::builtin_trap_ok>,
+              "grant/Ctrl.h ships a grant family for ControlFlow, so ControlFlow must "
+              "not appear in grant::kAxesWithoutNonDefaultGrants.");
 static_assert(which_dim_v<ctrl::unreachable_ok> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::coroutine<ctrl::co_await_only>> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::coroutine<ctrl::generator>> == D::ControlFlow);

@@ -68,6 +68,11 @@ static_assert(which_dim_v<dispatch::virtual_call<sample_base>> == D::CallShape);
 static_assert(which_dim_v<dispatch::recurses<32>> == D::CallShape);
 static_assert(which_dim_v<dispatch::recurses<1>> == D::CallShape);
 static_assert(which_dim_v<dispatch::tail_call> == D::CallShape);
+
+// fix-36: CallShape ships grant tags, so it is not a grantless axis.
+static_assert(audit::grant_family_witnessed_v<dispatch::tail_call>,
+              "grant/Dispatch.h ships a grant family for CallShape, so CallShape must "
+              "not appear in grant::kAxesWithoutNonDefaultGrants.");
 static_assert(which_dim_v<accept_default_strict_for_CallShape> == D::CallShape);
 
 static_assert(!std::is_same_v<dispatch::indirect_call<sample_family>, dispatch::virtual_call<sample_base>>);

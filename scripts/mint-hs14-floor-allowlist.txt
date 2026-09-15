@@ -1,0 +1,94 @@
+# scripts/mint-hs14-floor-allowlist.txt — grandfathered HS14 floor deficits.
+#
+# Format: `mint_name|path` (one per line, path relative to project root).
+# No line number: a mint moves down its own header every time an edit lands
+# above it, so a line key stales on contact.  Name plus path is a content
+# key in the sense the sibling guards use — it survives line drift and
+# still pins the entry to one declaration site.  Comments start with '#'.
+# Blank lines ignored.
+#
+# Why this file exists.  HS14 (CLAUDE.md §XVIII) demands two negative-compile
+# fixtures per mint, because a `requires` clause with no witness that it
+# FIRES is a comment.  The floor gate enforced that against 11 trees.  Task
+# #43 extended the scan to `cntp`, `topology`, `canopy`, `observe`, `cog`
+# and `mimic`, which added 69 mints — and with them the 42 deficits below.
+# They are pre-existing, not new: the gate could not see these trees, so
+# nothing ever asked them for fixtures.  Task #53 surfaced the last one
+# (`mint_computation_in_ctx`) by teaching the counter to ignore mentions
+# inside comments.
+#
+# Listing them here keeps the gate doing its actual job.  A mint added
+# tomorrow without fixtures reds CI immediately; these 42 are tracked debt
+# instead of an invisible hole or a blanket red that trains everyone to
+# ignore the gate.
+#
+# Every entry is a TODO.  Write the fixtures, delete the line.  A stale
+# entry — one naming a mint that now meets the floor, or that was renamed
+# or moved — reds CI at exit 2, so the file drains in lockstep and cannot
+# quietly outlive the debt it records.
+#
+# 16 of the 42 have ZERO fixtures; the rest have exactly one.
+
+# ── canopy ───────────────────────────────────────────────────────────
+mint_plumtree|include/crucible/canopy/Plumtree.h
+mint_swim_membership|include/crucible/canopy/Swim.h
+
+# ── cntp ─────────────────────────────────────────────────────────────
+mint_admission_controller|include/crucible/cntp/BackpressureRuntime.h
+mint_admission_decision|include/crucible/cntp/Backpressure.h
+mint_af_xdp_config|include/crucible/cntp/AfXdp.h
+mint_bbr_qdisc_config|include/crucible/cntp/Pacing.h
+mint_connection|include/crucible/cntp/ConnectionPool.h
+mint_connection_pool|include/crucible/cntp/ConnectionPoolRuntime.h
+mint_connection_request|include/crucible/cntp/Backpressure.h
+mint_credit_flow_control|include/crucible/cntp/BackpressureRuntime.h
+mint_dctcp_incast_config|include/crucible/cntp/IncastControl.h
+mint_fountain_decoder|include/crucible/cntp/Fountain.h
+mint_incast_config|include/crucible/cntp/IncastControl.h
+mint_path_swap_plan|include/crucible/cntp/PathSwap.h
+mint_pool_event|include/crucible/cntp/ConnectionPool.h
+mint_resource_limit|include/crucible/cntp/Backpressure.h
+mint_resource_pressure|include/crucible/cntp/Backpressure.h
+mint_tcam_table|include/crucible/cntp/Tcam.h
+
+# ── cntp/dataplane ───────────────────────────────────────────────────
+mint_bpf_map_spec|include/crucible/cntp/dataplane/Xdp.h
+mint_tc_flow_class|include/crucible/cntp/dataplane/TcEbpf.h
+mint_tc_program|include/crucible/cntp/dataplane/TcEbpf.h
+mint_xdp_program|include/crucible/cntp/dataplane/Xdp.h
+
+# ── cntp/_wip ────────────────────────────────────────────────────────
+mint_doca_deploy_plan|include/crucible/cntp/_wip/Doca.h
+mint_gpu_direct_mr_plan|include/crucible/cntp/_wip/GpuDirect.h
+mint_gpu_direct_storage_plan|include/crucible/cntp/_wip/GpuDirect.h
+mint_ktls_offload_for_socket|include/crucible/cntp/_wip/KtlsOffload.h
+mint_ktls_socket|include/crucible/cntp/_wip/KtlsOffload.h
+mint_p4_program|include/crucible/cntp/_wip/P4.h
+mint_sharp_context|include/crucible/cntp/_wip/Sharp.h
+mint_wireguard_config|include/crucible/cntp/_wip/Wireguard.h
+mint_wireguard_config_with_psk|include/crucible/cntp/_wip/Wireguard.h
+mint_wireguard_tunnel|include/crucible/cntp/_wip/Wireguard.h
+
+# ── cog ──────────────────────────────────────────────────────────────
+mint_nic_config|include/crucible/cog/NicConfig.h
+mint_sriov_plan|include/crucible/cog/SrIov.h
+
+# ── mimic ────────────────────────────────────────────────────────────
+mint_cog_mimic|include/crucible/mimic/CogMimic.h
+
+# ── observe ──────────────────────────────────────────────────────────
+mint_canopy_metrics_reader|include/crucible/observe/Metrics.h
+mint_keeper_metrics_reader|include/crucible/observe/Metrics.h
+mint_metrics_writer|include/crucible/observe/Metrics.h
+mint_synthetic_probes|include/crucible/observe/SyntheticProbe.h
+
+# ── topology ─────────────────────────────────────────────────────────
+mint_congestion_telemetry_worker|include/crucible/topology/CongestionTelemetryWorker.h
+mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
+
+# ── effects (pre-existing, surfaced by the comment-stripping fix) ─────
+#
+# `mint_computation_in_ctx` read as HS14: 2 while one of the two mentions
+# lived in a `//` comment in neg_mint_computation_non_pure_row.cpp.  One
+# real fixture remains.
+Computation::mint_computation_in_ctx|include/crucible/effects/Computation.h

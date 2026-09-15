@@ -303,42 +303,39 @@ struct project<grant::stale_to<TauMax>> {
     using type = safety::fn::stale::Stale<TauMax>;
 };
 
-// An axis listed here has no grant tag of its own.  A binding on such an axis
-// reaches `project<accept_default_strict_for<D>>` and can only accept the
-// strict default.  No alternative stance is expressible.
+// An axis with no grant tag of its own reaches
+// `project<accept_default_strict_for<D>>` and can only accept the strict
+// default.  No alternative stance is expressible.
 
 namespace audit {
 
-inline constexpr std::array<dim::DimensionAxis, 13> kAxesWithoutNonDefaultGrants = {
-    dim::DimensionAxis::Synchronization, dim::DimensionAxis::Regime,          dim::DimensionAxis::FpMode,
-    dim::DimensionAxis::SyscallSurface,  dim::DimensionAxis::ControlFlow,     dim::DimensionAxis::CallShape,
-    dim::DimensionAxis::StackUse,        dim::DimensionAxis::GlobalState,     dim::DimensionAxis::Stdio,
-    dim::DimensionAxis::HwInstruction,   dim::DimensionAxis::BarrierStrength, dim::DimensionAxis::SimdIsa,
-    dim::DimensionAxis::MemoryScope,
-};
+// fix-36: the table of grantless axes moved to Grant.h, and its two
+// self-comparing length pins are gone.  Both asserted a hand-written
+// literal against the same literal — `size() == 13` next to a 13-element
+// array, and `33 - 13 == 20` — so neither could observe that TWELVE of the
+// thirteen listed axes had grown a grant family.  Fn.h even includes Hw.h
+// and exercises `grant::hw::msr` further down this file while the table it
+// owned called HwInstruction grantless.
+//
+// The table lives in Grant.h now because Grant.h is the one header every
+// grant family includes, which lets each family witness its own axis at the
+// site of its `which_dim` specializations.  Those witnesses, not a length
+// count, are what make the claim checkable: see
+// `grant::audit::grant_family_witnessed_v`.
+using ::crucible::fixy::grant::kAxesWithoutNonDefaultGrants;
+using ::crucible::fixy::grant::audit::axis_has_grant_family;
+using ::crucible::fixy::grant::audit::axis_is_grantless;
 
-static_assert(kAxesWithoutNonDefaultGrants.size() == 13,
-              "Cardinality pin on the list of axes without a grant family.  When "
-              "the first non-default grant ships for a listed axis, drop that axis "
-              "from `kAxesWithoutNonDefaultGrants` and decrement this assertion.  "
-              "When a new axis lands with no grant family, append it and increment "
-              "this assertion.  A fire means the list and the count disagree.");
-
-[[nodiscard]] constexpr bool axis_has_grant_family(dim::DimensionAxis D) noexcept {
-    for (auto gap_axis : kAxesWithoutNonDefaultGrants) {
-        if (gap_axis == D) return false;
-    }
-    return true;
-}
-
-// The Observability axis has no grant tag either, but it is derived from the
-// Effect axis rather than awaiting a grant family, so it stays out of the list
-// above and counts on this side of the pin.
-static_assert(safety::DIMENSION_AXIS_COUNT - kAxesWithoutNonDefaultGrants.size() == 20,
-              "20 axes either ship a grant family or are structurally derived "
-              "(Observability).  A fire means a DimensionAxis was added or "
-              "removed without updating the list of axes that lack a grant "
-              "family.");
+// Fn.h sees Grant.h and Hw.h, so it can witness the four hardware axes here
+// without widening its include set.  Fp.h, Fs.h and the grant/ headers are
+// deliberately NOT pulled in — Fs.h alone drags <filesystem>, <fcntl.h> and
+// handles/FileHandle.h into a core header — so those eight axes witness
+// themselves in their own headers.
+static_assert(axis_is_grantless(dim::DimensionAxis::Regime),
+              "Regime is the one axis still awaiting a grant family.  When its "
+              "first grant tag ships, that header's witness will contradict "
+              "kAxesWithoutNonDefaultGrants and this assertion is the paired "
+              "reminder to drop Regime from the list.");
 
 }  // namespace audit
 

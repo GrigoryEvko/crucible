@@ -47,6 +47,13 @@ static_assert(sizeof(stdio::write<st::Stderr>) == 1);
 static_assert(which_dim_v<stdio::write<st::Stderr>> == D::Stdio);
 static_assert(which_dim_v<stdio::write<st::Stdout>> == D::Stdio);
 static_assert(which_dim_v<stdio::write<st::Debug>> == D::Stdio);
+
+// fix-36: Stdio ships a grant tag, so it is not a grantless axis.  It was the
+// smallest family on the stale list — one specialization — and still enough to
+// make the old table wrong.
+static_assert(audit::grant_family_witnessed_v<stdio::write<st::Debug>>,
+              "grant/Stdio.h ships a grant family for Stdio, so Stdio must not appear "
+              "in grant::kAxesWithoutNonDefaultGrants.");
 static_assert(which_dim_v<accept_default_strict_for_Stdio> == D::Stdio);
 
 static_assert(!std::is_same_v<stdio::write<st::Stderr>, stdio::write<st::Stdout>>);

@@ -452,6 +452,13 @@ static_assert(which_dim_v<gfs::with_flag<fl::NoFollow>> == D::SyscallSurface);
 static_assert(which_dim_v<gfs::durable<so::Fsync>> == D::SyscallSurface);
 static_assert(which_dim_v<gfs::atomic_write<at_::LinkAtomic>> == D::SyscallSurface);
 
+// fix-36: SyscallSurface has 33 which_dim specializations — the largest grant
+// family in the tree — and the stale audit table in Fn.h still called it
+// grantless.  This witness makes that contradiction a build error.
+static_assert(::crucible::fixy::grant::audit::grant_family_witnessed_v<gfs::mode<om::ReadOnly>>,
+              "Fs.h ships a grant family for SyscallSurface, so SyscallSurface must "
+              "not appear in grant::kAxesWithoutNonDefaultGrants.");
+
 static_assert(!std::is_same_v<gfs::mode<om::ReadOnly>, gfs::mode<om::WriteTruncate>>);
 static_assert(!std::is_same_v<gfs::with_flag<fl::NoFollow>, gfs::with_flag<fl::Direct>>);
 static_assert(!std::is_same_v<gfs::durable<so::Fdatasync>, gfs::durable<so::Fsync>>);

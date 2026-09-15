@@ -123,6 +123,11 @@ static_assert(which_dim_v<ga::mbarrier_wait<MemoryScope::Cta>> == D::Synchroniza
 static_assert(which_dim_v<copy_cta<2, 16>> == D::Synchronization);
 static_assert(which_dim_v<mbarrier_arrive_cluster> == D::Synchronization);
 
+// fix-36: Synchronization grant tags live here, so the axis is not grantless.
+static_assert(::crucible::fixy::grant::audit::grant_family_witnessed_v<ga::copy<2, MemoryScope::Cta, 16>>,
+              "Async.h ships a grant family for Synchronization, so Synchronization "
+              "must not appear in grant::kAxesWithoutNonDefaultGrants.");
+
 static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>, ga::copy<4, MemoryScope::Cta, 16>>);
 static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>, ga::copy<2, MemoryScope::Cluster, 16>>);
 static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>, ga::copy<2, MemoryScope::Cta, 32>>);

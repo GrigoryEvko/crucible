@@ -7,6 +7,8 @@
 #include <crucible/algebra/Modality.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 
@@ -106,9 +108,32 @@ static_assert(::crucible::fixy::modality::modality_kind_count >= 6,
               "The modality form count has fallen below six. A form was removed "
               "without updating the pins that bracket the count.");
 
-constexpr int u060_concept_cardinality = 7;
-constexpr int u060_tag_cardinality = 6;
-constexpr int u060_query_cardinality = 3;
+// fix-21: all three counts are DERIVED from the namespace.  Each used to be a
+// hand-written literal pinned against the same literal, so none of the three
+// assertions could fire: adding an eighth concept, a seventh dispatch tag or a
+// fourth query would have left every "exactly N" claim standing.  Reflection
+// makes the surface itself the catalog — the three member kinds map one-to-one
+// onto the three counts, so no separate list has to be kept in step.
+//
+// The `self_test` namespace this code sits in is also a member of
+// fixy::modality::, but it is a namespace, not a concept, type alias or
+// variable template, so it lands in none of the three buckets.
+enum class ModalitySurfaceKind : std::uint8_t { Concept, Tag, Query };
+
+[[nodiscard]] consteval int count_modality_surface(ModalitySurfaceKind kind) {
+    int found = 0;
+    for (auto member : std::meta::members_of(^^::crucible::fixy::modality, std::meta::access_context::current())) {
+        const bool matches = (kind == ModalitySurfaceKind::Concept)  ? std::meta::is_concept(member)
+                             : (kind == ModalitySurfaceKind::Tag)    ? std::meta::is_type_alias(member)
+                                                                     : std::meta::is_variable_template(member);
+        if (matches) ++found;
+    }
+    return found;
+}
+
+constexpr int u060_concept_cardinality = count_modality_surface(ModalitySurfaceKind::Concept);
+constexpr int u060_tag_cardinality = count_modality_surface(ModalitySurfaceKind::Tag);
+constexpr int u060_query_cardinality = count_modality_surface(ModalitySurfaceKind::Query);
 
 static_assert(u060_concept_cardinality == 7,
               "The concept surface is one well-formedness gate plus one concept per modality form.");

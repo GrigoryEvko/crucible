@@ -55,6 +55,11 @@ static_assert(which_dim_v<stack::alloc<64>> == D::StackUse);
 static_assert(which_dim_v<stack::alloc<4096>> == D::StackUse);
 static_assert(which_dim_v<stack::vla_ok> == D::StackUse);
 static_assert(which_dim_v<stack::alloca_ok> == D::StackUse);
+
+// fix-36: StackUse ships grant tags, so it is not a grantless axis.
+static_assert(audit::grant_family_witnessed_v<stack::alloca_ok>,
+              "grant/Stack.h ships a grant family for StackUse, so StackUse must not "
+              "appear in grant::kAxesWithoutNonDefaultGrants.");
 static_assert(which_dim_v<accept_default_strict_for_StackUse> == D::StackUse);
 
 static_assert(!std::is_same_v<stack::alloc<64>, stack::alloc<128>>);

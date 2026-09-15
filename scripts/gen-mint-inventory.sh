@@ -97,6 +97,11 @@ esac
 # documentation (visual ⚠ marker) and enforcement (build red).
 HS14_FLOOR=2
 
+# Grandfathered HS14 deficits, consulted by --check-floor only.  See the
+# header of that file for why it exists and how it drains.  Overridable so
+# the self-test can point the gate at a planted fixture tree.
+FLOOR_ALLOWLIST="${CRUCIBLE_MINT_FLOOR_ALLOWLIST:-$root/scripts/mint-hs14-floor-allowlist.txt}"
+
 # ── Tautological-requires registry (fix-16, fixy-A2-026 / CLAUDE.md §XXI) ──
 # These bridge-wrap mints carry an explicit `requires
 # IsSessionHandle<SessionHandle<Proto,Resource,LoopCtx>>` clause whose argument
@@ -121,7 +126,180 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 scan_root="${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-$root}"
-trees=(safety effects algebra concurrent sessions permissions bridges handles cipher warden perf)
+# fix-43: the tree list used to name eleven directories out of the ~20 that
+# hold C++ headers, so ~31% of the codebase's free-function mints were
+# invisible to the inventory — including every cntp/ mint.  A mint outside
+# the list is not "clean", it is UNAUDITED: no §XXI compliance row, no
+# fixy-re-export cell, and no HS14 floor enforcement.  The six directories
+# appended below (cntp, topology, canopy, observe, cog, mimic) close that
+# gap.  None of them holds a member-shaped mint, so the free-function
+# scanner alone suffices.  Adding a new header directory under
+# include/crucible/ REQUIRES appending it here.
+trees=(safety effects algebra concurrent sessions permissions bridges handles cipher warden perf
+       cntp topology canopy observe cog mimic ledger)
+
+# fix-66: the paragraph above says appending is REQUIRED, and prose does
+# not enforce anything — `ledger` landed with three mints and the list did
+# not grow, so `mint_ledger_view` was unaudited on arrival.  That is the
+# same shape as the list itself, which sat eleven entries long while nine
+# directories accumulated mints.  This derives the answer instead of
+# asking anyone to remember: every depth-1 directory under
+# include/crucible/ that declares a `mint_` must appear in `trees`.
+#
+# `fixy` is exempt because it is not a substrate tree — the emitter scans
+# it separately for the fixy re-export cell and the fixy-origin section,
+# and putting it in `trees` would duplicate every row it owns.
+#
+# Only runs against the real tree.  The self-test plants a two-directory
+# fixture root whose shape would otherwise trip this on every invocation.
+if [[ -z "${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-}" && -d "$scan_root/include/crucible" ]]; then
+    unlisted=""
+    for tree_dir in "$scan_root"/include/crucible/*/; do
+        tree_name="$(basename "$tree_dir")"
+        [[ "$tree_name" == "fixy" ]] && continue
+        rg -q --no-messages 'mint_[A-Za-z0-9_]+\s*\(' "$tree_dir" || continue
+        listed=0
+        for known in "${trees[@]}"; do
+            [[ "$known" == "$tree_name" ]] && { listed=1; break; }
+        done
+        (( listed )) || unlisted+="  include/crucible/$tree_name"$'\n'
+    done
+    if [[ -n "$unlisted" ]]; then
+        printf 'gen-mint-inventory: UNAUDITED TREE — these directories declare mints but are absent from the `trees` list in %s, so their mints carry no §XXI compliance row and no HS14 floor enforcement:\n' \
+            "${BASH_SOURCE[0]}" >&2
+        printf '%s' "$unlisted" >&2
+        printf 'Append each to `trees` and regenerate.\n' >&2
+        exit 2
+    fi
+fi
+
+# ── Strip comments and string literals from a code window ────────────
+# fix-35: `extract_qualifiers` greps its window for the bare tokens
+# `constexpr` / `noexcept` / `requires` / `[[nodiscard]]`.  Those tokens
+# also occur inside PROSE — a `static_assert` diagnostic message that
+# says "… requires splits_into<In, L, R>::value true", or a doc comment
+# that says "silently skipped at consteval".  The grep cannot tell code
+# from prose, so three mints in permissions/Permission.h reported a
+# `requires`-clause they do not have, and Cipher::mint_open_view reported
+# `constexpr` from the word inside a `//` comment.  A compliance flag that
+# turns Y because of an English sentence is worse than no flag at all.
+#
+# Remove, in one left-to-right pass: `//` line comments, `/* */` block
+# comments (which may span lines), and the CONTENTS of string literals
+# (the quotes are kept so the shape of the line survives).  Character
+# literals are handled too, so `'"'` does not open a phantom string.
+# The pass is state-machine-based rather than regex-based because block
+# comments and strings nest neither with themselves nor with each other,
+# but each masks the other's opening delimiter.
+#
+# Carve-out markers (`§XXI carve-out: cx=alloc` / `rq=pre`) live IN
+# comments by design, so their detection runs against the RAW window —
+# see extract_qualifiers.
+strip_code_noise() {
+    awk '
+    BEGIN { in_block = 0 }
+    {
+        line = $0
+        out = ""
+        i = 1
+        n = length(line)
+        while (i <= n) {
+            c = substr(line, i, 1)
+            two = substr(line, i, 2)
+            if (in_block) {
+                if (two == "*/") { in_block = 0; i += 2 } else { i += 1 }
+                continue
+            }
+            if (two == "/*") { in_block = 1; i += 2; continue }
+            if (two == "//") { break }
+            if (c == "\"" || c == "'\''") {
+                quote = c
+                out = out quote
+                i += 1
+                while (i <= n) {
+                    d = substr(line, i, 1)
+                    if (d == "\\") { i += 2; continue }
+                    if (d == quote) { out = out quote; i += 1; break }
+                    i += 1
+                }
+                continue
+            }
+            out = out c
+            i += 1
+        }
+        print out
+    }'
+}
+
+# ── Join a wrapped declarator into one logical line ──────────────────
+# fix-35: the `= delete` / `= default` skips below test the declaration
+# text for special-member syntax.  clang-format is free to wrap a
+# declarator anywhere, and in commit 12de6ea0 it split
+# `… noexcept = delete("…")` so that `noexcept =` ended one line and
+# `delete("…")` began the next.  Neither the single-line glob nor the
+# old five-line forward walk (which looked for the CONTIGUOUS string
+# `= delete`) could see the split, so a REMOVED overload —
+# `sessions/SessionMint.h`'s deleted `mint_session(ctx, resource)` —
+# re-entered the inventory as a live ctx-bound mint with four HS14
+# fixtures.  The inventory said a deleted function was shipped.
+#
+# Emit the declaration as ONE whitespace-normalized line: start at
+# $2 and append following lines until a `;` appears outside parens
+# and outside a string literal, or 12 lines have been consumed (a
+# declarator longer than that is not a special-member declaration).
+# Comments and string contents are stripped first so a `;` inside a
+# diagnostic message does not terminate the join early.
+#
+# Implemented as ONE awk process (not sed | strip_code_noise | awk): this
+# runs once per candidate declaration site, ~600 times per full scan, and
+# three processes apiece would cost more than the whole rest of the scan.
+declarator_text() {
+    local file="$1" line="$2"
+    awk -v start="$2" -v stop="$(( $2 + 12 ))" '
+    NR < start { next }
+    NR > stop  { exit }
+    {
+        line = $0; out = ""; i = 1; n = length(line)
+        while (i <= n) {
+            c = substr(line, i, 1); two = substr(line, i, 2)
+            if (in_block) {
+                if (two == "*/") { in_block = 0; i += 2 } else { i += 1 }
+                continue
+            }
+            if (two == "/*") { in_block = 1; i += 2; continue }
+            if (two == "//") { break }
+            if (c == "\"" || c == "'\''") {
+                quote = c; out = out quote; i += 1
+                while (i <= n) {
+                    d = substr(line, i, 1)
+                    if (d == "\\") { i += 2; continue }
+                    if (d == quote) { out = out quote; i += 1; break }
+                    i += 1
+                }
+                continue
+            }
+            out = out c; i += 1
+        }
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", out)
+        buf = (buf == "" ? out : buf " " out)
+        if (index(out, ";")) { print buf; found = 1; exit }
+    }
+    END { if (!found) print buf }' "$file" 2>/dev/null
+}
+
+# ── Is this declaration a defaulted / deleted special member? ────────
+# fix-35: the old test was a glob on the raw line —
+# `*'= default'*` — which is a SUBSTRING match.  A defaulted function
+# argument spelled `= default_peer_key_fingerprint<Org>()` contains the
+# substring `= default`, so `permissions/FederationPermission.h`'s
+# `mint_self_signed_handshake` was silently dropped from the inventory.
+# One phantom added and one real mint dropped in the same clang-format
+# pass held the total at 121, so `--check` stayed green while both the
+# false row and the missing row persisted.  Match on a WORD boundary:
+# `default` / `delete` must not be followed by an identifier character.
+is_deleted_or_defaulted() {
+    grep -qE '=[[:space:]]*(default|delete)([^A-Za-z0-9_]|$)' <<<"$1"
+}
 
 # ── Extract qualifiers for one declaration site ──────────────────────
 # Inputs: file path (absolute), line number.
@@ -212,15 +390,21 @@ extract_qualifiers() {
         probe=$(( probe + 1 ))
     done
 
-    local window
+    local window code_window
     window="$(sed -n "${start},${end}p" "$file" 2>/dev/null || true)"
+    # fix-35: flag detection runs against the CODE, not the prose.  See
+    # strip_code_noise above — a `requires` inside a static_assert message
+    # and a `consteval` inside a doc comment are English, not qualifiers.
+    # Carve-out markers are detected below against the RAW window, because
+    # a carve-out marker IS a comment by construction.
+    code_window="$(strip_code_noise <<<"$window")"
 
     local nd=0 cx=0 ne=0 rq=0 cb=0 cv=0 cv_rq=0
-    if grep -qE '\[\[nodiscard\]\]' <<<"$window"; then nd=1; fi
-    if grep -qE '\b(constexpr|consteval)\b' <<<"$window"; then cx=1; fi
-    if grep -qE '\bnoexcept\b' <<<"$window"; then ne=1; fi
-    if grep -qE '\brequires\b' <<<"$window"; then rq=1; fi
-    if grep -qE '(Ctx[[:space:]]+const[[:space:]]*&|effects::IsExecCtx|eff::IsExecCtx)' <<<"$window"; then cb=1; fi
+    if grep -qE '\[\[nodiscard\]\]' <<<"$code_window"; then nd=1; fi
+    if grep -qE '\b(constexpr|consteval)\b' <<<"$code_window"; then cx=1; fi
+    if grep -qE '\bnoexcept\b' <<<"$code_window"; then ne=1; fi
+    if grep -qE '\brequires\b' <<<"$code_window"; then rq=1; fi
+    if grep -qE '(Ctx[[:space:]]+const[[:space:]]*&|effects::IsExecCtx|eff::IsExecCtx)' <<<"$code_window"; then cb=1; fi
     # FIXY-V-021 / FIXY-FOUND-088: cx=alloc carve-out marker.  Mirrors
     # cv_rq below — the marker is AUTHORITATIVE.  Force cx=0 when cv=1
     # because the carve-out comment legitimately contains the word
@@ -229,9 +413,17 @@ extract_qualifiers() {
     # that prose.  A site that has BOTH the marker AND a real constexpr
     # qualifier is an internal contradiction; the marker wins (reviewers
     # grep the marker and see the intent).
+    #
+    # fix-35: the forced `cx=0` is GONE.  It existed only because the
+    # carve-out's own rationale prose ("constexpr would lie about the
+    # runtime cost") tripped the bare-token grep.  strip_code_noise now
+    # removes comments before detection, so prose cannot set cx and the
+    # override has nothing left to suppress except a REAL `constexpr`
+    # qualifier — exactly the contradiction the legend says must render
+    # as `Y`.  Marker and qualifier together now surface the conflict
+    # instead of hiding it.
     if grep -qF '§XXI carve-out: cx=alloc' <<<"$window"; then
         cv=1
-        cx=0
     fi
     # FIXY-FOUND-082: §XXI carve-out for value-dependent gates that
     # cannot lift into a `requires`-clause (the predicate inspects
@@ -243,9 +435,11 @@ extract_qualifiers() {
     # cv_rq=1 because the carve-out comment legitimately contains the
     # word "requires" (rationale text), and the `\brequires\b` regex
     # would otherwise false-positive on that prose.
+    # fix-35: forced `rq=0` removed for the same reason as `cx` above —
+    # comment stripping, not an override, is what keeps rationale prose
+    # out of the flag.
     if grep -qF '§XXI carve-out: rq=pre' <<<"$window"; then
         cv_rq=1
-        rq=0
     fi
 
     printf '%d\t%d\t%d\t%d\t%d\t%d\t%d\n' "$nd" "$cx" "$ne" "$rq" "$cb" "$cv" "$cv_rq"
@@ -267,17 +461,16 @@ scan_substrate() {
         case "$stripped" in
             '//'*|'///'*|'*'*|'/*'*) continue ;;
             'return '*|'return('*|'auto '*=*) continue ;;
-            # Defaulted/deleted special member.  A passkey class named
-            # `mint_*_key` declares its OWN ctor as
-            # `mint_*_key() ... = default;` (or `= delete;`), which
-            # matches `\bmint_…(` but is a CONSTRUCTOR, not a factory
-            # (e.g. PermissionInherit.h's mint_permission_inherit_key —
-            # the real factory there is `mint_permission_inherit`).
-            # `= default` / `= delete` is special-member-only syntax,
-            # never used by a mint factory, so this is a zero-false-
-            # positive drop — the third phantom class after the U-110
-            # word-boundary fix (substring phantoms) closed the first two.
-            *'= default'*|*'=default'*|*'= delete'*|*'=delete'*) continue ;;
+            # Defaulted/deleted special members (a passkey class's own
+            # `mint_*_key() = default;` ctor, a removed overload's
+            # `= delete("…")`) are NOT handled here any more — see the
+            # joined-declarator test below.  fix-35: the substring globs
+            # that used to occupy this arm were both too loose and too
+            # tight.  Too loose: `= default_peer_key_fingerprint<Org>()`
+            # is a defaulted ARGUMENT, not a defaulted function, and the
+            # glob dropped a live mint.  Too tight: a clang-format wrap
+            # between `=` and `delete(` hid a deleted overload.
+            #
             # FIXY-U-118: string-literal continuation.  A multi-line
             # static_assert diagnostic message naming a mint factory
             # (e.g. `"mint_persisted_session(ctx, ...) requires ..."`)
@@ -351,39 +544,22 @@ scan_substrate() {
         done
         (( saw_friend == 1 )) && continue
 
-        # FIXY-FOUND-086: multi-line `= delete` declarations also need to
-        # skip.  The `= delete(...)` suffix appears on a SUBSEQUENT line
-        # when the declaration is wrapped across lines, e.g.:
-        #     template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
-        #     void mint_session(
-        #         Ctx const&, Resource&&, std::source_location = ...) noexcept
-        #         = delete("mint_session<Proto>(ctx, resource) is removed");
-        # The single-line skip above (line 201) misses this because line N
-        # (the mint_NAME line) does NOT contain `= delete`; the suffix is
-        # on lines N+2..N+5.  Walk forward from `line+1` until we hit `;`
-        # (declaration terminator) or 5 lines forward.  If `= delete`
-        # appears in that range, skip.  Mirror of the FIXY-FOUND-082
-        # multi-line friend backward-scan above.
-        local next_idx=$(( line + 1 ))
-        local saw_delete=0
-        local fwd_walked=0
-        while (( fwd_walked < 5 )); do
-            local next_text
-            next_text="$(sed -n "${next_idx}p" "$file" 2>/dev/null)"
-            [[ -z "$next_text" ]] && break
-            case "$next_text" in
-                *'= delete'*|*'=delete'*) saw_delete=1; break ;;
-            esac
-            # Declaration terminator (semicolon NOT inside parens — we
-            # use a loose check: if the line ends with `;` after any
-            # non-space, it's the end).
-            case "$next_text" in
-                *';') break ;;
-            esac
-            next_idx=$(( next_idx + 1 ))
-            fwd_walked=$(( fwd_walked + 1 ))
-        done
-        (( saw_delete == 1 )) && continue
+        # FIXY-FOUND-086 / fix-35: defaulted-or-deleted special members are
+        # detected on the JOINED declarator, not on any single line.  The
+        # previous implementation walked forward looking for the CONTIGUOUS
+        # string `= delete` and stopped at the first line ending in `;`.
+        # clang-format defeated both halves: it split `noexcept =` from
+        # `delete("…")` across two lines (so the contiguous match never
+        # fired) in sessions/SessionMint.h, resurrecting a REMOVED
+        # `mint_session(ctx, resource)` overload as a live inventory row.
+        # declarator_text() normalizes the whole declaration to one line
+        # with comments and string contents stripped, so neither the wrap
+        # point nor a `;` inside a diagnostic message can hide the suffix.
+        local decl_text
+        decl_text="$(declarator_text "$file" "$line")"
+        if is_deleted_or_defaulted "$decl_text"; then
+            continue
+        fi
 
         # FIXY-FOUND-141: skip `static` member-function mints.  A
         # `[[nodiscard]] static constexpr … mint_X(` inside a class body is
@@ -626,10 +802,17 @@ scan_fixy_mints() {
         case "$stripped" in
             '//'*|'///'*|'*'*|'/*'*) continue ;;
             'return '*|'return('*|'auto '*=*) continue ;;
-            *'= default'*|*'=default'*|*'= delete'*|*'=delete'*) continue ;;
             '"'*) continue ;;
             'friend '*|'friend('*) continue ;;
         esac
+
+        # fix-35: joined-declarator word-boundary test, mirroring
+        # scan_substrate.  The substring globs this replaces both dropped
+        # live mints (defaulted ARGUMENTS spelled `= default_x()`) and
+        # admitted dead ones (clang-format-wrapped `= delete`).
+        if is_deleted_or_defaulted "$(declarator_text "$file" "$line")"; then
+            continue
+        fi
 
         local name
         name="$(awk 'match($0, /(^|[^A-Za-z0-9_])mint_[a-z0-9_]+[[:space:]]*\(/) {
@@ -708,21 +891,77 @@ build_hs14_index() {
     done
     [[ ${#dirs[@]} -eq 0 ]] && return 0
 
+    # fix-53: count CODE mentions, not comment mentions.
+    #
+    # A neg-compile fixture witnesses HS14 by making the compiler reject
+    # something — that witness lives in the code.  A `//` comment naming
+    # the mint is documentation; it compiles identically whether the
+    # requires-clause fires or not, so it proves nothing.  The old index
+    # counted both, inflating the corpus-wide total by 95 across 41 rows
+    # and lifting `mint_computation_in_ctx` to a passing 2 on the strength
+    # of ONE real fixture plus one comment-only mention in
+    # neg_mint_computation_non_pure_row.cpp.  A floor gate that a comment
+    # can satisfy is not a floor.
+    #
+    # Files are streamed through strip_code_noise first, which removes
+    # `//` and `/* */` comments (and string-literal contents, so a mint
+    # named only inside an expected-diagnostic message does not count
+    # either).  `rg` cannot filter mid-stream, so the token scan runs in
+    # the same awk pass, keyed on FILENAME.
+    local f files=()
+    for d in "${dirs[@]}"; do
+        for f in "$d"*; do
+            [[ -f "$f" ]] && files+=("$f")
+        done
+    done
+    [[ ${#files[@]} -eq 0 ]] && return 0
+
     local name count
     # Process substitution (`< <(...)`) runs the while loop in THIS shell
     # so the global associative-array assignments persist; a pipe would
-    # spawn a subshell and lose them.  No -n, so the token is the last
-    # colon-field and the file is $1 (test/*_neg/ paths contain no colon).
+    # spawn a subshell and lose them.
     while IFS=$'\t' read -r name count; do
         [[ -n "$name" ]] && CRUCIBLE_HS14_INDEX["$name"]="$count"
     done < <(
-        rg -oP --no-heading --with-filename '\bmint_[a-z0-9_]+\b' \
-           "${dirs[@]}" 2>/dev/null \
-          | awk -F: '{
-                file = $1; tok = $NF;
-                key = file SUBSEP tok;
+        # One awk process for the whole corpus: strip comments and string
+        # contents inline (block-comment state resets at each FNR==1), then
+        # tokenize.  Spawning strip_code_noise per file would cost ~600
+        # processes and blow the FIXY-U-106 <5s generation budget.
+        awk '
+        FNR == 1 { in_block = 0 }
+        {
+            line = $0; out = ""; i = 1; n = length(line)
+            while (i <= n) {
+                c = substr(line, i, 1); two = substr(line, i, 2)
+                if (in_block) {
+                    if (two == "*/") { in_block = 0; i += 2 } else { i += 1 }
+                    continue
+                }
+                if (two == "/*") { in_block = 1; i += 2; continue }
+                if (two == "//") { break }
+                if (c == "\"" || c == "'\''") {
+                    quote = c; out = out quote; i += 1
+                    while (i <= n) {
+                        d = substr(line, i, 1)
+                        if (d == "\\") { i += 2; continue }
+                        if (d == quote) { out = out quote; i += 1; break }
+                        i += 1
+                    }
+                    continue
+                }
+                out = out c; i += 1
+            }
+            rest = out
+            while (match(rest, /(^|[^A-Za-z0-9_])mint_[a-z0-9_]+([^A-Za-z0-9_]|$)/)) {
+                tok = substr(rest, RSTART, RLENGTH)
+                sub(/^[^A-Za-z0-9_]*/, "", tok)
+                sub(/[^A-Za-z0-9_]*$/, "", tok)
+                key = FILENAME SUBSEP tok
                 if (!(key in seen)) { seen[key] = 1; cnt[tok]++ }
-            } END { for (t in cnt) printf "%s\t%s\n", t, cnt[t] }'
+                rest = substr(rest, RSTART + RLENGTH - 1)
+            }
+        }
+        END { for (t in cnt) printf "%s\t%s\n", t, cnt[t] }' "${files[@]}"
     )
 }
 
@@ -763,13 +1002,27 @@ struct FixyOriginToken {};
 mint_planted_fixy_origin() noexcept { return {}; }
 }
 FIXY
+    # fix-53: these two fixtures used to name the mint ONLY inside a `//`
+    # comment, and the HS14:2 assertion below passed because the counter
+    # scanned comments.  The self-test therefore certified the very bug it
+    # should have caught.  Both fixtures now exercise the mint in CODE, and
+    # a third fixture mentions it ONLY in a comment and ONLY in a string
+    # literal — so the assertion `HS14 == 2` is now a two-sided witness:
+    # it fails if code mentions stop counting, and it fails if comment or
+    # string mentions start counting again.
     cat >"$tmp_root/test/fixy_neg/neg_fixy_planted_a.cpp" <<'NEG'
 #include <crucible/fixy/Planted.h>
-// references mint_planted_token to verify HS14 counter
+auto probe_a() { return ::crucible::fixy::planted::mint_planted_token(); }
 NEG
     cat >"$tmp_root/test/fixy_neg/neg_fixy_planted_b.cpp" <<'NEG'
 #include <crucible/fixy/Planted.h>
-// references mint_planted_token (second fixture for HS14 threshold)
+auto probe_b() { return ::crucible::fixy::planted::mint_planted_token(); }
+NEG
+    cat >"$tmp_root/test/fixy_neg/neg_fixy_planted_comment_only.cpp" <<'NEG'
+#include <crucible/fixy/Planted.h>
+// mint_planted_token is named here in a line comment only.
+/* mint_planted_token is named here in a block comment only. */
+static const char* why = "mint_planted_token is named here in a string only.";
 NEG
     # ── Plant class-method mints — covers scan_member_function_mints ──
     # FIXY-U-118c extension: the substrate path above tests free-function
@@ -820,10 +1073,16 @@ HOST
         rm -f "$out"
         exit 2
     fi
-    # Verify HS14 count >= 2 (we planted 2 fixtures).
+    # fix-53: HS14 must be exactly 2 — the two fixtures that CALL the mint.
+    # A third fixture names it only in a line comment, a block comment and a
+    # string literal.  A count of 3 means comment/string stripping regressed
+    # and the floor gate is satisfiable by documentation again; a count of 1
+    # or 0 means real code mentions stopped being seen.
     line="$(grep -F 'mint_planted_token' "$out" | head -1)"
-    if ! grep -qE 'HS14:[[:space:]]*2' <<<"$line"; then
-        printf 'gen-mint-inventory: SELF-TEST FAILED — HS14 count not 2.\n' >&2
+    if ! grep -qE 'HS14:[[:space:]]*2( |\||$)' <<<"$line"; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — HS14 count not exactly 2.\n' >&2
+        printf '   (3 => comment/string stripping regressed, a comment-only mention counted.\n' >&2
+        printf '    <2 => a real in-code mention stopped being counted.)\n' >&2
         printf '── line ───\n%s\n──────────\n' "$line" >&2
         rm -f "$out"
         exit 2
@@ -876,8 +1135,75 @@ HOST
         rm -f "$out"
         exit 2
     fi
+    # ── --check-floor allowlist arms ─────────────────────────────────
+    #
+    # Three arms against the planted tree, which holds mints below the
+    # floor by construction (mint_planted_fixy_origin has no fixtures at
+    # all).  An allowlist that silently swallowed everything, or one that
+    # never noticed a dead entry, would pass the first two arms and fail
+    # the third — the file has to drain, not just suppress.
+    floor_al="$tmp_root/floor-allowlist.txt"
+
+    # Arm 1: empty allowlist — every deficient planted mint is a live
+    # violation.  This is what the gate does for a mint added tomorrow.
+    : >"$floor_al"
+    floor_rc=0
+    CRUCIBLE_MINT_INVENTORY_TEST_ROOT="$tmp_root" \
+        CRUCIBLE_MINT_FLOOR_ALLOWLIST="$floor_al" \
+        bash "${BASH_SOURCE[0]}" --check-floor >/dev/null 2>"$out" || floor_rc=$?
+    if (( floor_rc != 1 )); then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — empty HS14 allowlist must report the planted deficits (want exit 1, got %d).\n' \
+            "$floor_rc" >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+
+    # Arm 2: allowlist the exact violators the gate just named, derived
+    # from its own report rather than hand-written, so the arm cannot
+    # drift out of step with the planted tree.
+    while IFS= read -r st_row; do
+        [[ "$st_row" == '| `'* ]] || continue
+        IFS='|' read -r _ st_name st_path _st_rest <<<"$st_row"
+        st_name="${st_name//[\` ]/}"
+        st_path="${st_path//[\` ]/}"
+        printf '%s|%s\n' "$st_name" "${st_path%:*}" >>"$floor_al"
+    done <"$out"
+    if [[ ! -s "$floor_al" ]]; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — could not parse any violator row out of the --check-floor report.\n' >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+    floor_rc=0
+    CRUCIBLE_MINT_INVENTORY_TEST_ROOT="$tmp_root" \
+        CRUCIBLE_MINT_FLOOR_ALLOWLIST="$floor_al" \
+        bash "${BASH_SOURCE[0]}" --check-floor >/dev/null 2>"$out" || floor_rc=$?
+    if (( floor_rc != 0 )); then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — a complete HS14 allowlist must pass (want exit 0, got %d).\n' \
+            "$floor_rc" >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+
+    # Arm 3: one entry naming a mint that does not exist.  Without this
+    # the allowlist would outlive the debt it records.
+    printf 'mint_planted_never_existed|include/crucible/nowhere/Absent.h\n' >>"$floor_al"
+    floor_rc=0
+    CRUCIBLE_MINT_INVENTORY_TEST_ROOT="$tmp_root" \
+        CRUCIBLE_MINT_FLOOR_ALLOWLIST="$floor_al" \
+        bash "${BASH_SOURCE[0]}" --check-floor >/dev/null 2>"$out" || floor_rc=$?
+    if (( floor_rc != 2 )); then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — a stale HS14 allowlist entry must red at exit 2 (got %d).\n' \
+            "$floor_rc" >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+
     rm -f "$out"
-    printf 'gen-mint-inventory: self-test passed — substrate mint + fixy re-export + HS14 count + member-function discovery (CRUCIBLE_* + [[...]] annotation families) + fixy-origin capture/exclusion all honoured.\n' >&2
+    printf 'gen-mint-inventory: self-test passed — substrate mint + fixy re-export + HS14 count + member-function discovery (CRUCIBLE_* + [[...]] annotation families) + fixy-origin capture/exclusion + HS14 floor allowlist (live / suppressed / stale) all honoured.\n' >&2
     exit 0
 fi
 
@@ -915,9 +1241,23 @@ This is the auditor-facing companion to \`test/test_fixy_umbrella_reach.cpp\`
 in the same PR that adds, removes, or renames a substrate \`mint_*\` factory:
 
 \`\`\`bash
-scripts/gen-mint-inventory.sh                 # write misc/mint-inventory.md
+scripts/gen-mint-inventory.sh --write         # regenerate misc/mint-inventory.md
+scripts/gen-mint-inventory.sh --stdout        # print it (read-only — use this to look)
 scripts/gen-mint-inventory.sh --check         # diff against HEAD; exit 1 on drift
+scripts/gen-mint-inventory.sh --check-floor   # exit 1 if any production row is under the HS14 floor
 \`\`\`
+
+A bare invocation refuses and names the options: writing a tracked file is
+opt-in, so merely looking at the output cannot dirty the working tree.
+
+\`--check-floor\` reads \`scripts/mint-hs14-floor-allowlist.txt\`, which
+grandfathers the mints that predate the gate's reach over their own tree.
+A mint added without fixtures still reds CI; a listed mint that reaches the
+floor leaves a stale entry, which reds at exit 2 so the file drains.  Every
+line there is a TODO: write the two fixtures, delete the line.  The count of
+grandfathered mints is deliberately NOT repeated here — it would be a second
+copy of a number the file already holds, and this document is regenerated on
+a different trigger than that file is edited.
 
 Per CLAUDE.md §XXI Universal Mint Pattern, every cross-tier composition
 factory is named \`mint_<noun>\`.  Each row records:
@@ -1192,19 +1532,82 @@ case "$mode" in
         # filter that out before counting.  Real rows always begin with
         # "| `mint_" (a markdown table row whose first column is the
         # backtick-quoted mint name).
+        # fix-43/fix-53 — grandfathered deficits live in
+        # scripts/mint-hs14-floor-allowlist.txt, keyed `mint_name|path`
+        # (no line number: a mint slides down its own header on any edit
+        # above it, so a line key stales on contact).  Extending the scan
+        # to six more trees surfaced 42 PRE-EXISTING deficits at once.
+        # Blanket-redding CI for those would train everyone to ignore the
+        # gate, and deleting the gate would stop it catching the next
+        # fixture-less mint.  The allowlist keeps it live for new code and
+        # turns the 42 into tracked, draining debt — the same shape as
+        # no-reserve-allowlist.txt and no-reinterpret-allowlist.txt.
+        #
+        # A listed mint that now MEETS the floor (or was renamed, or
+        # moved) leaves a stale entry, which exits 2 so the file cannot
+        # outlive the debt it records.  Live violations report first and
+        # exit 1: an un-witnessed mint is the more urgent of the two.
         inventory_text="$(emit_inventory)"
-        violators="$(printf '%s\n' "$inventory_text" \
+        violator_rows="$(printf '%s\n' "$inventory_text" \
                       | grep -E '^\| `(mint_|[A-Za-z_][A-Za-z0-9_]*::mint_)' \
                       | grep 'HS14:.*⚠' || true)"
-        if [[ -z "$violators" ]]; then
-            printf 'gen-mint-inventory: HS14 floor (%d) honoured by all production mints.\n' \
-                "$HS14_FLOOR" >&2
-            exit 0
+
+        declare -A floor_allowed=()
+        declare -A floor_seen=()
+        if [[ -r "$FLOOR_ALLOWLIST" ]]; then
+            while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+                entry="${raw_line%%#*}"
+                entry="${entry#"${entry%%[![:space:]]*}"}"
+                entry="${entry%"${entry##*[![:space:]]}"}"
+                [[ -z "$entry" ]] && continue
+                if [[ "$entry" != *"|"* ]]; then
+                    printf 'gen-mint-inventory: malformed allowlist entry (want `mint_name|path`): %s\n' \
+                        "$entry" >&2
+                    exit 2
+                fi
+                floor_allowed["$entry"]=1
+            done <"$FLOOR_ALLOWLIST"
         fi
-        printf 'gen-mint-inventory: HS14 FLOOR VIOLATION — the following production mints ship with HS14 < %d:\n' \
-            "$HS14_FLOOR" >&2
-        printf '%s\n' "$violators" >&2
-        printf '\nAdd neg-compile fixtures under test/*_neg/ mentioning the offending mint(s) by name (HS14 floor enforced by scripts/gen-mint-inventory.sh --check-floor).\n' >&2
-        exit 1
+
+        live_violators=""
+        if [[ -n "$violator_rows" ]]; then
+            while IFS= read -r row; do
+                [[ -z "$row" ]] && continue
+                IFS='|' read -r _ name_cell path_cell _rest <<<"$row"
+                row_name="${name_cell//[\` ]/}"
+                row_path="${path_cell//[\` ]/}"
+                row_path="${row_path%:*}"
+                row_key="${row_name}|${row_path}"
+                if [[ -n "${floor_allowed[$row_key]:-}" ]]; then
+                    floor_seen["$row_key"]=1
+                    continue
+                fi
+                live_violators+="$row"$'\n'
+            done <<<"$violator_rows"
+        fi
+
+        if [[ -n "$live_violators" ]]; then
+            printf 'gen-mint-inventory: HS14 FLOOR VIOLATION — the following production mints ship with HS14 < %d:\n' \
+                "$HS14_FLOOR" >&2
+            printf '%s' "$live_violators" >&2
+            printf '\nAdd neg-compile fixtures under test/*_neg/ mentioning the offending mint(s) by name (HS14 floor enforced by scripts/gen-mint-inventory.sh --check-floor).\n' >&2
+            exit 1
+        fi
+
+        stale_entries=""
+        for allow_key in "${!floor_allowed[@]}"; do
+            [[ -n "${floor_seen[$allow_key]:-}" ]] && continue
+            stale_entries+="  $allow_key"$'\n'
+        done
+        if [[ -n "$stale_entries" ]]; then
+            printf 'gen-mint-inventory: STALE HS14 allowlist entries — these mints no longer violate the floor (or were renamed or moved).  Delete them from %s:\n' \
+                "$FLOOR_ALLOWLIST" >&2
+            printf '%s' "$stale_entries" | sort >&2
+            exit 2
+        fi
+
+        printf 'gen-mint-inventory: HS14 floor (%d) honoured by all production mints (%d grandfathered in %s).\n' \
+            "$HS14_FLOOR" "${#floor_allowed[@]}" "$FLOOR_ALLOWLIST" >&2
+        exit 0
         ;;
 esac

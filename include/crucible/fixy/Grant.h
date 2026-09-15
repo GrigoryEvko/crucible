@@ -8,6 +8,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 
+#include <array>
 #include <concepts>
 #include <cstdint>
 #include <type_traits>
@@ -94,6 +95,85 @@ struct which_dim;
 
 template <typename G>
 inline constexpr dim::DimensionAxis which_dim_v = which_dim<G>::value;
+
+// ── Which axes ship no grant tag of their own ────────────────────────
+//
+// An axis listed here has no grant tag.  A binding on such an axis reaches
+// `project<accept_default_strict_for<D>>` and can only accept the strict
+// default, because no alternative stance is expressible.
+//
+// fix-36: this list used to live in Fn.h and name THIRTEEN axes, twelve of
+// which had since grown a grant family — SyscallSurface alone has 33
+// `which_dim` specializations, FpMode 12, HwInstruction 9.  Fn.h even
+// included Hw.h and exercised `grant::hw::msr` while its own table called
+// HwInstruction grantless.  The two assertions guarding the table pinned
+// only its LENGTH against a hand-written literal equal to that length, so
+// they compared a number to itself and could not see that the CONTENTS had
+// gone false.  A list that names the wrong axes routes real grants into the
+// strict-default path in any future consumer of `axis_has_grant_family`.
+//
+// The table now lives here, in Grant.h, because Grant.h is the one header
+// every grant family already includes.  That lets each family assert, at
+// the site where its `which_dim` specializations are written, that its own
+// axis is NOT in the table — see `grant_family_witnessed_v` below.  The
+// claim "axis D has zero which_dim specializations" is not directly
+// expressible (C++ cannot enumerate the specializations of a template), so
+// it is enforced from the other side: every axis that HAS a specialization
+// carries a witness, and a witness contradicting the table is a hard error.
+//
+// Three axes are genuinely grantless, for two different reasons:
+//   * Type and Observability are STRUCTURAL.  Type is the carrier type
+//     itself and Observability is derived from the Effect row, so neither
+//     is awaiting a grant family — neither will ever get one.
+//   * Regime is AWAITING one.  When the first `with_regime<…>` tag ships,
+//     its header adds a witness, the witness contradicts this table, and
+//     the build goes red until Regime is removed from the list.
+inline constexpr std::array kAxesWithoutNonDefaultGrants = {
+    dim::DimensionAxis::Type,
+    dim::DimensionAxis::Observability,
+    dim::DimensionAxis::Regime,
+};
+
+namespace audit {
+
+[[nodiscard]] constexpr bool axis_is_grantless(dim::DimensionAxis D) noexcept {
+    for (auto gap_axis : kAxesWithoutNonDefaultGrants) {
+        if (gap_axis == D) return true;
+    }
+    return false;
+}
+
+[[nodiscard]] constexpr bool axis_has_grant_family(dim::DimensionAxis D) noexcept {
+    return !axis_is_grantless(D);
+}
+
+// A grant tag witnesses its own axis.  Reading `which_dim_v<G>` is what
+// makes this a real check rather than a restatement: the value comes from
+// G's `which_dim` specialization, so the assertion fails exactly when a
+// specialization exists for an axis the table calls grantless.
+template <typename G>
+inline constexpr bool grant_family_witnessed_v = axis_has_grant_family(which_dim_v<G>);
+
+template <typename... Gs>
+inline constexpr bool grant_families_witnessed_v = (grant_family_witnessed_v<Gs> && ...);
+
+// Both operands are derived.  `kAxesWithoutNonDefaultGrants.size()` comes
+// from the initializer list above (class template argument deduction — no
+// hand-written extent to drift), and `DIMENSION_AXIS_COUNT` is computed by
+// reflection over the enum.  Appending or removing an axis on either side
+// moves one of the two numbers, so the pin fires.
+static_assert(kAxesWithoutNonDefaultGrants.size() == 3,
+              "Three DimensionAxis values ship no grant tag: Type and Observability "
+              "structurally, Regime pending its first grant family.  Adding a fourth "
+              "means a new axis landed without grants; removing one means a family "
+              "shipped.  Either way, update this count in the same edit.");
+
+static_assert(safety::DIMENSION_AXIS_COUNT - kAxesWithoutNonDefaultGrants.size() == 30,
+              "Thirty of the 33 DimensionAxis values ship a grant family.  A fire "
+              "means an axis was added or removed without reconciling "
+              "kAxesWithoutNonDefaultGrants against it.");
+
+}  // namespace audit
 
 // This marker confers nothing.  It asserts only that the author read the
 // discipline for axis D and chose its strict default, which the resolver
@@ -468,6 +548,55 @@ static_assert(which_dim_v<version<3>> == dim::DimensionAxis::Version);
 static_assert(which_dim_v<stale_to<5>> == dim::DimensionAxis::Staleness);
 static_assert(which_dim_v<repr<safety::fn::ReprKind::C>> == dim::DimensionAxis::Representation);
 static_assert(which_dim_v<overflow_wrap> == dim::DimensionAxis::Overflow);
+
+// ── Grant-family witnesses for the axes Grant.h itself serves ────────
+//
+// fix-36: one witness per axis whose grant tags are declared in this
+// header.  Each reads the axis out of the tag's own `which_dim`
+// specialization and checks it against `kAxesWithoutNonDefaultGrants`.
+// Listing any of these eighteen axes as grantless is now a hard error
+// instead of a silent lie, which is what let the old table drift for
+// twelve axes at once.  The remaining twelve witnesses live beside the
+// `which_dim` specializations they attest — four in Hw.h, and one each in
+// Fp.h, Fs.h, Async.h, grant/Ctrl.h, grant/Dispatch.h, grant/Global.h,
+// grant/Stack.h and grant/Stdio.h.
+static_assert(audit::grant_families_witnessed_v<
+                  affine,                                                   // Usage
+                  with<effects::Effect::IO>,                                // Effect
+                  declassify<::crucible::safety::secret_policy::AuditedLogging>,  // Security
+                  trust_verified,                                           // Trust
+                  refined_with<safety::fn::pred::True>,                     // Refinement
+                  version<3>,                                               // Version
+                  stale_to<5>,                                              // Staleness
+                  repr<safety::fn::ReprKind::C>,                            // Representation
+                  overflow_wrap,                                            // Overflow
+                  reentrancy::reentrant>,                                   // Reentrancy
+              "Ten axes served by Grant.h carry grant tags, so none of Usage, Effect, "
+              "Security, Trust, Refinement, Version, Staleness, Representation, "
+              "Overflow or Reentrancy may appear in kAxesWithoutNonDefaultGrants.");
+
+// Protocol, Lifetime and Provenance tags are parameterized by a caller tag
+// type, and their concepts require a COMPLETE empty class — an elaborated
+// `struct X` written inline forward-declares instead, which the concept
+// rejects.  Three local witnesses, defined here rather than borrowed from a
+// production tag tree so the audit does not couple to one.
+// `in_region` takes a non-type `auto` parameter, so it witnesses with a
+// value rather than one of these tags.
+struct grant_axis_witness_proto final {};
+struct grant_axis_witness_source final {};
+
+static_assert(audit::grant_families_witnessed_v<
+                  protocol<grant_axis_witness_proto>,                       // Protocol
+                  in_region<0>,                                             // Lifetime
+                  from_source<grant_axis_witness_source>,                   // Provenance
+                  cost_constant,                                            // Complexity
+                  precision_f32,                                            // Precision
+                  space_bounded<1>,                                         // Space
+                  mut_mutable,                                              // Mutation
+                  sized_at<1>>,                                             // Size
+              "Eight further axes served by Grant.h carry grant tags, so none of "
+              "Protocol, Lifetime, Provenance, Complexity, Precision, Space, Mutation "
+              "or Size may appear in kAxesWithoutNonDefaultGrants.");
 static_assert(which_dim_v<mut_mutable> == dim::DimensionAxis::Mutation);
 static_assert(which_dim_v<reentrant> == dim::DimensionAxis::Reentrancy);
 static_assert(which_dim_v<cost_constant> == dim::DimensionAxis::Complexity);

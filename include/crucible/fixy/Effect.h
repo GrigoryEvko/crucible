@@ -2,6 +2,8 @@
 
 #include <crucible/effects/Computation.h>
 
+#include <cstddef>
+#include <meta>
 #include <type_traits>
 
 namespace crucible::fixy::effect {
@@ -70,7 +72,21 @@ static_assert(
     "Row<Bg>, whatever discipline produced the value. A substrate-level "
     "discipline gate would make this pin red.");
 
-inline constexpr std::size_t effect_surface_cardinality = 1;
+// fix-21: the left-hand side is DERIVED.  This constant used to be a
+// hand-written `1` pinned against the literal `1`, so the assertion compared
+// a number to itself and could not fire — adding a sibling concept to
+// fixy::effect:: would have left the "exactly one concept" claim standing.
+// Counting `is_concept` members of the namespace makes the pin track reality:
+// ship a second concept and the count becomes 2 while the literal stays 1.
+[[nodiscard]] consteval std::size_t count_effect_concepts() {
+    std::size_t found = 0;
+    for (auto member : std::meta::members_of(^^::crucible::fixy::effect, std::meta::access_context::current())) {
+        if (std::meta::is_concept(member)) ++found;
+    }
+    return found;
+}
+
+inline constexpr std::size_t effect_surface_cardinality = count_effect_concepts();
 static_assert(effect_surface_cardinality == 1, "fixy::effect:: ships exactly one concept today "
                                                "(RowEngagementWitnessed). A sibling concept must bump this "
                                                "constant.");

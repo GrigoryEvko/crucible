@@ -67,6 +67,11 @@ static_assert(which_dim_v<global::singleton<sample_tag>> == D::GlobalState);
 static_assert(which_dim_v<global::thread_local_<sample_tag>> == D::GlobalState);
 static_assert(which_dim_v<global::namespace_static<sample_tag>> == D::GlobalState);
 static_assert(which_dim_v<global::atexit_handler> == D::GlobalState);
+
+// fix-36: GlobalState ships grant tags, so it is not a grantless axis.
+static_assert(audit::grant_family_witnessed_v<global::atexit_handler>,
+              "grant/Global.h ships a grant family for GlobalState, so GlobalState "
+              "must not appear in grant::kAxesWithoutNonDefaultGrants.");
 static_assert(which_dim_v<accept_default_strict_for_GlobalState> == D::GlobalState);
 
 static_assert(!std::is_same_v<global::singleton<sample_tag>, global::singleton<other_tag>>);
