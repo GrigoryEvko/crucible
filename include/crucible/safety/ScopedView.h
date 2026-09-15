@@ -165,9 +165,13 @@ template <typename X, std::size_t N>
 struct sv_unwrap_single<X[N]> {
     using type = X;
 };
-// The reflection walk respects access control and so cannot see
-// Linear's private member.  Without this entry a view wrapped in a
-// Linear would slip past the audit.
+// Linear stores its payload in a private member.  Since the walk moved
+// to access_context::unchecked() reflection reaches that member on its
+// own, so this entry is no longer the only thing standing between a
+// Linear-wrapped view and the audit.  It stays because it is the
+// cheaper path — one alias substitution instead of a member walk — and
+// because naming the wrapper here documents that the audit deliberately
+// looks through it.
 template <typename X>
 struct sv_unwrap_single<crucible::safety::Linear<X>> {
     using type = X;
@@ -201,10 +205,67 @@ consteval bool any_contains_view_seq(std::index_sequence<Is...>) {
     return (... || contains_scoped_view<std::tuple_element_t<Is, Tup>>());
 }
 
+// Node-based and type-erased containers keep their elements behind a
+// pointer or a raw byte buffer, so the reflective walk over their
+// fields sees only `X*` or `unsigned char[N]` and stops there.  What
+// every such container does expose is its element typedef.  Recursing
+// through that typedef is a structural rule rather than an
+// enumeration, so a container shape the tree has not used yet is
+// covered the day someone uses it: std::deque, std::list,
+// std::forward_list, std::span, std::inplace_vector, std::expected and
+// the associative containers all audited clean before this.
+//
+// The sizeof() probe keeps an incomplete, void or reference associated
+// type out, since naming it would be ill-formed and a container whose
+// element type is not complete here cannot be storing a view anyway.
+// The is_same guard stops a self-referential typedef recursing forever.
+// nonstatic_data_members_of throws on an incomplete class, so the walk
+// has to stop at one.  It could not reach one before: a pimpl keeps its
+// `unique_ptr<State>` private and State forward-declared, and under
+// access_context::current() the private member was invisible, so the
+// incomplete State was never named.  Under unchecked() it is.
+//
+// Stopping there leaves the one hole this audit knowingly has: a State
+// defined in a .cpp could hold a view and nothing here would see it.
+// That hole is not new — the whole pimpl was invisible before — and it
+// is the same shape as the existing rule that the walk does not follow
+// a raw pointer.  Everything reachable by value is still audited.
+template <typename T>
+concept sv_complete = requires { sizeof(T); };
+
+template <typename T>
+concept sv_has_associated_value = requires { typename T::value_type; sizeof(typename T::value_type); }
+                                  && !std::is_same_v<std::remove_cv_t<typename T::value_type>, std::remove_cv_t<T>>;
+
+template <typename T>
+concept sv_has_associated_element = requires { typename T::element_type; sizeof(typename T::element_type); }
+                                    && !std::is_same_v<std::remove_cv_t<typename T::element_type>, std::remove_cv_t<T>>;
+
+template <typename T>
+consteval bool associated_contains_view() {
+    bool found = false;
+    if constexpr (sv_has_associated_value<T>) {
+        if (contains_scoped_view<typename T::value_type>()) found = true;
+    }
+    if constexpr (sv_has_associated_element<T>) {
+        if (contains_scoped_view<typename T::element_type>()) found = true;
+    }
+    return found;
+}
+
 template <typename T>
 consteval bool reflect_contains_view() {
     using namespace std::meta;
-    constexpr auto ctx = access_context::current();
+    // unchecked(), not current().  access_context::current() is fixed
+    // at the point it is written, which is inside this namespace, so
+    // the walk saw only the members this namespace may name.  A
+    // carrier that made its ScopedView field private — ordinary
+    // encapsulation, not evasion — audited clean.  The audit asks a
+    // structural question about layout, not an access question, so it
+    // takes the context that answers the question it is asking.
+    // Secret.h's policy-roster walk already uses unchecked() for the
+    // same reason.
+    constexpr auto ctx = access_context::unchecked();
     static constexpr auto members = std::define_static_array(nonstatic_data_members_of(^^T, ctx));
     bool found = false;
     template for (constexpr auto m : members) {
@@ -227,7 +288,11 @@ consteval bool contains_scoped_view() {
         using Tup = detail::sv_pack_for_t<U>;
         return detail::any_contains_view_seq<Tup>(std::make_index_sequence<std::tuple_size_v<Tup>>{});
     } else if constexpr (std::is_class_v<U> && !std::is_fundamental_v<U> && !std::is_pointer_v<U>) {
-        return detail::reflect_contains_view<U>();
+        if constexpr (detail::sv_complete<U>) {
+            return detail::reflect_contains_view<U>() || detail::associated_contains_view<U>();
+        } else {
+            return false;
+        }
     } else {
         return false;
     }
