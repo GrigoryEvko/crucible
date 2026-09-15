@@ -1,6 +1,8 @@
 #include <crucible/cntp/Pacing.h>
 
+#include <array>
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -13,6 +15,18 @@ namespace cntp = crucible::cntp;
 namespace saf = crucible::safety;
 
 namespace {
+
+// Probes for the construction guarantee on NicInterfaceName.  The length
+// is private and from() is its only writer, so a caller cannot install a
+// length that no validation saw.  Before that,
+// `cntp::NicInterfaceName n{}; n.size = 200;` was well-formed and the
+// value reached the memcpy plus indexed NUL store into ifreq::ifr_name in
+// configure_hardware_timestamping, a char[IFNAMSIZ].
+template <typename T>
+concept HasWritableLengthMember = requires(T value) { value.size = static_cast<std::uint8_t>(200); };
+
+template <typename T>
+concept HasReadableByteMember = requires(T value) { value.bytes; };
 
 class TestSocket {
 public:
@@ -183,6 +197,23 @@ int main() {
     static_assert(!cntp::BbrCompatibleQdisc<cntp::Qdisc::Pfifo>);
     static_assert(std::is_trivially_copyable_v<cntp::NicInterfaceName>);
     static_assert(std::is_trivially_copyable_v<cntp::QdiscConfig>);
+
+    // The length and the bytes are unreachable from outside, the type is
+    // not an aggregate, and there is no constructor that takes a length,
+    // so from() is the only way a length is ever set.
+    static_assert(!HasWritableLengthMember<cntp::NicInterfaceName>);
+    static_assert(!HasReadableByteMember<cntp::NicInterfaceName>);
+    static_assert(!std::is_aggregate_v<cntp::NicInterfaceName>);
+    static_assert(
+        !std::is_constructible_v<cntp::NicInterfaceName, std::array<char, cntp::NicInterfaceName::max_bytes>,
+                                 std::uint8_t>);
+    // Default construction stays available and yields the empty name,
+    // which every consumer treats as "no interface selected".
+    static_assert(std::is_nothrow_default_constructible_v<cntp::NicInterfaceName>);
+    static_assert(cntp::NicInterfaceName{}.view().empty());
+    // The guarantee every consumer relies on when it copies view() into a
+    // fixed-size kernel field.
+    static_assert(cntp::NicInterfaceName::from("eth0").value().view().size() < cntp::NicInterfaceName::max_bytes);
     static_assert(std::same_as<cntp::DeclaredQdiscConfig::tag_type, saf::source::QdiscConfig>);
 
     std::printf("test_cntp_pacing:\n");

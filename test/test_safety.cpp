@@ -273,6 +273,14 @@ static void test_mutation() {
         struct ByStep {
             constexpr std::uint64_t operator()(const Entry& e) const noexcept { return e.step; }
         };
+        // OrderedAppendOnly rejects a KeyFn or Cmp that carries state:
+        // append compares each item only against the back element, so a
+        // functor that answers differently at two appends would admit a
+        // sequence ordered under no single comparator.  Emptiness is also
+        // what lets the layout assertion above hold.
+        static_assert(std::is_empty_v<ByStep> && std::is_default_constructible_v<ByStep>);
+        static_assert(sizeof(OrderedAppendOnly<Entry, ByStep>) == sizeof(AppendOnly<Entry>),
+                      "a projected key must still collapse to zero layout cost");
         OrderedAppendOnly<Entry, ByStep> log_by_step;
         log_by_step.append({.step = 10, .payload = 100});
         log_by_step.append({.step = 10, .payload = 101});  // duplicate step OK

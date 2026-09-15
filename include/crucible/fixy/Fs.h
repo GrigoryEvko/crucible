@@ -32,6 +32,12 @@ struct WriteCreate final {};
 struct WriteAppend final {};
 struct WriteTruncate final {};
 struct ReadWrite final {};
+// Reserved for the dirfd surface that atomicity::LinkAtomic needs.  Its
+// path argument is the directory that receives the unnamed inode, so it
+// does not compose with mint_file, which opens the file it is given;
+// CtxFitsFileMint refuses it.  do_commit_atomic_impl returns ENOSYS for
+// LinkAtomic until that surface is wired, and this tag is the placeholder
+// for it.
 struct TmpFile final {};
 }  // namespace open_mode
 
@@ -256,6 +262,19 @@ inline constexpr bool has_mode_v = (is_mode_grant<Grants>::value || ...);
 template <typename... Grants>
 inline constexpr bool has_duplicate_mode_v = (static_cast<int>(is_mode_grant<Grants>::value) + ...) > 1;
 
+template <typename Grant>
+struct is_tmpfile_mode_grant : std::false_type {};
+template <>
+struct is_tmpfile_mode_grant<::crucible::fixy::grant::fs::mode<open_mode::TmpFile>> : std::true_type {};
+
+// O_TMPFILE names the directory that is to hold the new unnamed inode.
+// It does not name a file to open.  mint_file takes the path of a file,
+// so the two cannot be composed: passing a file path with O_TMPFILE set
+// asks the kernel to treat that file as a directory, and the kernel
+// answers ENOTDIR.  The tier failed on every call it was given.
+template <typename... Grants>
+inline constexpr bool has_tmpfile_mode_v = (is_tmpfile_mode_grant<Grants>::value || ...);
+
 }  // namespace detail
 
 // A filesystem syscall crosses the kernel boundary and can park the caller
@@ -267,8 +286,8 @@ concept CtxAdmitsIoBlock =
     && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::Block>;
 
 template <typename Ctx, typename... Grants>
-concept CtxFitsFileMint =
-    CtxAdmitsIoBlock<Ctx> && detail::has_mode_v<Grants...> && !detail::has_duplicate_mode_v<Grants...>;
+concept CtxFitsFileMint = CtxAdmitsIoBlock<Ctx> && detail::has_mode_v<Grants...>
+                       && !detail::has_duplicate_mode_v<Grants...> && !detail::has_tmpfile_mode_v<Grants...>;
 
 // sync_op::None is excluded.  A caller that needs no durability does not
 // call sync at all.
@@ -289,8 +308,10 @@ template <typename... Grants, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] inline std::expected<::crucible::safety::Linear<::crucible::safety::FileHandle>, std::error_code>
 mint_file(Ctx const&, Path<::crucible::safety::source::Sanitized> sanitized_path, mode_t perms = 0644) noexcept {
     constexpr int flags = detail::fold_open_flags<Grants...>();
-    // O_TMPFILE takes a directory argument, but this call passes the full
-    // path to ::open().
+    // Every mode that reaches here opens the path it is given.  The one
+    // mode that does not, open_mode::TmpFile, is refused by
+    // CtxFitsFileMint above rather than passed to ::open() and failed by
+    // the kernel.
     auto fh = detail::impl::do_open_impl(sanitized_path.value().c_str(), flags, perms);
     if (!fh) {
         return std::unexpected{fh.error()};
@@ -439,6 +460,11 @@ static_assert(detail::has_mode_v<gfs::mode<om::ReadOnly>>);
 static_assert(!detail::has_mode_v<gfs::with_flag<fl::NoFollow>>);
 static_assert(detail::has_duplicate_mode_v<gfs::mode<om::ReadOnly>, gfs::mode<om::WriteTruncate>>);
 static_assert(!detail::has_duplicate_mode_v<gfs::mode<om::ReadOnly>, gfs::with_flag<fl::NoFollow>>);
+
+static_assert(detail::has_tmpfile_mode_v<gfs::mode<om::TmpFile>>);
+static_assert(detail::has_tmpfile_mode_v<gfs::mode<om::TmpFile>, gfs::with_flag<fl::NoFollow>>);
+static_assert(!detail::has_tmpfile_mode_v<gfs::mode<om::ReadWrite>>);
+static_assert(!detail::has_tmpfile_mode_v<gfs::with_flag<fl::NoFollow>>);
 
 static_assert(detail::fold_open_flags<gfs::mode<om::ReadOnly>>() == (O_RDONLY | O_CLOEXEC));
 static_assert(detail::fold_open_flags<gfs::mode<om::WriteTruncate>, gfs::with_flag<fl::NoFollow>>()

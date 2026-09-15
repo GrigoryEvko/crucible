@@ -49,13 +49,27 @@ enum class PacingError : std::uint8_t {
 using PositivePacingRate = safety::Positive<std::uint64_t>;
 using PositiveFqParam = safety::Positive<std::uint32_t>;
 
-struct NicInterfaceName {
+// The stored length is private and from() is the only code that writes
+// it, so every NicInterfaceName that exists satisfies
+// view().size() < max_bytes.  That is a construction guarantee, not a
+// claim about the caller: consumers copy view() into a kernel
+// char[IFNAMSIZ] field and write the terminating NUL at view().size(),
+// and the invariant is what keeps that store in range.
+//
+// The class deliberately is not an aggregate.  While bytes and size
+// were public members, `NicInterfaceName n{}; n.size = 200;` was
+// well-formed and reached that kernel field, so each consumer had to
+// re-check a bound the type already claimed to hold.
+class NicInterfaceName {
+public:
     static constexpr std::size_t max_bytes = 16;
 
-    std::array<char, max_bytes> bytes{};
-    std::uint8_t size = 0;
+    // A default-constructed name is empty.  Consumers read that as "no
+    // interface selected"; it copies zero bytes and stores the NUL at
+    // index 0, which is in range for every buffer of max_bytes or more.
+    constexpr NicInterfaceName() noexcept = default;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), size}; }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes_.data(), size_}; }
 
     [[nodiscard]] static constexpr std::expected<NicInterfaceName, PacingError> from(std::string_view name) noexcept {
         if (name.empty() || name.size() >= max_bytes) {
@@ -70,11 +84,15 @@ struct NicInterfaceName {
             if (!ok) {
                 return std::unexpected(PacingError::InvalidInterfaceName);
             }
-            out.bytes[i] = c;
+            out.bytes_[i] = c;
         }
-        out.size = static_cast<std::uint8_t>(name.size());
+        out.size_ = static_cast<std::uint8_t>(name.size());
         return out;
     }
+
+private:
+    std::array<char, max_bytes> bytes_{};
+    std::uint8_t size_ = 0;
 };
 
 struct FqConfig {
@@ -95,6 +113,11 @@ using DeclaredQdiscConfig = safety::Tagged<QdiscConfig, safety::source::QdiscCon
 static_assert(sizeof(PositivePacingRate) == sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<NicInterfaceName>);
 static_assert(std::is_trivially_copyable_v<QdiscConfig>);
+// Aggregate initialization would reach the private length again, this
+// time through `NicInterfaceName{bytes, 200}` rather than assignment.
+// from() must stay the only writer of the length.
+static_assert(!std::is_aggregate_v<NicInterfaceName>,
+              "NicInterfaceName must not be an aggregate: from() is the only path that may set the length");
 
 template <Qdisc Q>
 concept BbrCompatibleQdisc = Q == Qdisc::Fq || Q == Qdisc::FqCodel;

@@ -72,10 +72,16 @@ struct GossipNeighborList {
     std::array<GossipNeighborTarget, MaxNeighbors> entries{};
     std::uint16_t count = 0;
 
-    [[nodiscard]] constexpr bool full() const noexcept { return count == MaxNeighbors; }
+    // count is public, so push() is not the only writer and the stored
+    // value need not be one push() ever produced.  Both members below
+    // therefore clamp against MaxNeighbors rather than trust it.  With
+    // the equality test this used to carry, a count of 200 on an
+    // 8-element list read as "not full" and push() then wrote
+    // entries[200]; the loop below read the same range.
+    [[nodiscard]] constexpr bool full() const noexcept { return count >= MaxNeighbors; }
 
     [[nodiscard]] constexpr bool contains(cog::Uuid peer) const noexcept {
-        for (std::uint16_t i = 0; i < count; ++i) {
+        for (std::uint16_t i = 0; i < count && i < MaxNeighbors; ++i) {
             if (entries[static_cast<std::size_t>(i)].peer == peer) {
                 return true;
             }

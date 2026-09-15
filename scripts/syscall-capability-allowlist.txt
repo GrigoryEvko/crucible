@@ -81,5 +81,5 @@ src/topology/Ptp.cpp:184  — effects::IO via open_ptp_clock (open /dev/ptp<N> O
 src/topology/Ptp.cpp:195  — effects::IO via query_ptp_clock_caps (PTP_CLOCK_GETCAPS2 ioctl)
 src/topology/Ptp.cpp:215  — effects::IO via ptp_now (clock_gettime PHC clockid_from_fd)
 src/topology/Ptp.cpp:235  — effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
-src/topology/Ptp.cpp:269  — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded fixy-A5-027)
-src/topology/Ptp.cpp:298  — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)
+src/topology/Ptp.cpp:273  — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded fixy-A5-027)
+src/topology/Ptp.cpp:302  — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)

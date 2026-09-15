@@ -51,13 +51,25 @@ enum class CcError : std::uint8_t {
 using SocketFd = safety::NonNegative<int>;
 using CcAlgorithmMask = safety::Bits<CcAlgorithm>;
 
-struct KernelCcName {
+// The stored length is private and from() is its only writer, so every
+// KernelCcName satisfies view().size() < max_bytes by construction.
+// set_cc_for_socket relies on that: it copies view() into a
+// max_bytes-wide buffer and hands the kernel view().size() + 1 as the
+// socklen_t, so a length the validation never saw would both overflow
+// that buffer and send the kernel a length past the end of it.
+//
+// This mirrors cntp::NicInterfaceName, which carries the same shape for
+// the same reason.  Neither type is an aggregate: while the members were
+// public, `KernelCcName n{}; n.size = 200;` was well-formed.
+class KernelCcName {
+public:
     static constexpr std::size_t max_bytes = 16;
 
-    std::array<char, max_bytes> bytes{};
-    std::uint8_t size = 0;
+    // A default-constructed name is empty, which reads as "no algorithm
+    // selected" and copies zero bytes.
+    constexpr KernelCcName() noexcept = default;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), size}; }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes_.data(), size_}; }
 
     [[nodiscard]] static constexpr std::expected<KernelCcName, CcError> from(std::string_view name) noexcept {
         if (name.empty() || name.size() >= max_bytes) {
@@ -71,15 +83,21 @@ struct KernelCcName {
             if (!ok) {
                 return std::unexpected(CcError::InvalidAlgorithmName);
             }
-            out.bytes[i] = c;
+            out.bytes_[i] = c;
         }
-        out.size = static_cast<std::uint8_t>(name.size());
+        out.size_ = static_cast<std::uint8_t>(name.size());
         return out;
     }
+
+private:
+    std::array<char, max_bytes> bytes_{};
+    std::uint8_t size_ = 0;
 };
 
 static_assert(sizeof(SocketFd) == sizeof(int));
 static_assert(std::is_trivially_copyable_v<KernelCcName>);
+static_assert(!std::is_aggregate_v<KernelCcName>,
+              "KernelCcName must not be an aggregate: from() is the only path that may set the length");
 
 struct CcSelection {
     CcAlgorithm algorithm = CcAlgorithm::Cubic;

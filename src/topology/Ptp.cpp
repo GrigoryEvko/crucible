@@ -252,14 +252,18 @@ std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd con
     // of ifr_name.
     static_assert(::crucible::cntp::NicInterfaceName::max_bytes <= IFNAMSIZ,
                   "NicInterfaceName max bytes exceeds kernel ifr_name");
-    // NicInterfaceName::from rejects a size at or above max_bytes, but from()
-    // is not the only way to build one: the type is an aggregate whose bytes
-    // and size members are public, so a caller can write a size that no
-    // validation ever saw.  That makes this a claim about the caller, not a
-    // construction guarantee, and it guards a memcpy plus an indexed store
-    // into a 16-byte kernel field.  Under [[assume]] an over-long size would
-    // be a silent overflow of ifreq with the optimizer licensed to drop the
-    // very bounds reasoning that would catch it, so the check is always on.
+    // The bound now holds by construction.  NicInterfaceName keeps its
+    // length private and from() is the only writer, so view().size() is
+    // below max_bytes for every value of the type, and the static_assert
+    // above puts max_bytes at or below IFNAMSIZ.  Together those give
+    // view().size() < IFNAMSIZ without reading anything at run time.
+    //
+    // The check stays because it costs one predictable branch on a path
+    // that then makes an ioctl, and because it is what turns a future
+    // regression in NicInterfaceName into an abort here rather than a
+    // memcpy plus an indexed store past the end of ifr_name.  It is not
+    // [[assume]]: an assume would hand the optimizer the very bound the
+    // check exists to confirm.
     CRUCIBLE_FATAL_INVARIANT(iface.view().size() < IFNAMSIZ);
     ifreq request{};
     std::memcpy(request.ifr_name, iface.view().data(), iface.view().size());

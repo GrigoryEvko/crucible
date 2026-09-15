@@ -116,13 +116,42 @@ static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(std::vector<std::uint6
               "AppendOnly<uint64_t> must collapse to sizeof(Storage<T>). The grade is "
               "computed from c.size() rather than stored separately.");
 
-// KeyFn and Cmp must be stateless. The precondition constructs a fresh
-// one per call rather than reading the stored member, so a stateful
-// projection or comparator is silently ignored.
+// KeyFn and Cmp must be empty and default-constructible, and the two
+// static_asserts below reject anything else.
+//
+// The requirement is semantic before it is structural. append compares
+// each item against the one already at the back and against nothing
+// else, so the ordering claim of the whole sequence is the conjunction
+// of those pairwise answers. That conjunction means "sorted" only while
+// one fixed comparator gives every answer. A comparator carrying state
+// can answer differently for the same pair at two different appends, and
+// the accepted sequence is then ordered under no single comparator --
+// the invariant the wrapper exists to hold stops being a property of the
+// contents. The same argument applies to a projection that reads state:
+// the key of an element would depend on when it was appended.
+//
+// Emptiness is also what the layout static_assert below relies on. Both
+// members collapse into the AppendOnly through [[no_unique_address]]
+// only while they have nothing to store.
+//
+// Before this constraint the members existed but were dead: append
+// constructed a fresh KeyFn{} and Cmp{} per call instead of reading
+// them, so a stateful functor was accepted and then ignored. append now
+// reads the members, which is equivalent for an empty functor and keeps
+// the code honest if the constraint is ever relaxed.
 
 template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>,
           template <typename...> class Storage = std::vector>
 class [[nodiscard]] OrderedAppendOnly {
+    static_assert(std::is_empty_v<KeyFn> && std::is_default_constructible_v<KeyFn>,
+                  "OrderedAppendOnly: KeyFn must be empty and default-constructible. A projection that reads state "
+                  "makes an element's key depend on when it was appended, so the stored order stops being a property "
+                  "of the contents.");
+    static_assert(std::is_empty_v<Cmp> && std::is_default_constructible_v<Cmp>,
+                  "OrderedAppendOnly: Cmp must be empty and default-constructible. append compares only against the "
+                  "back element, so a comparator that changes its answer between calls admits a sequence that is "
+                  "ordered under no single comparator.");
+
     AppendOnly<T, Storage> inner_;
     [[no_unique_address]] KeyFn key_{};
     [[no_unique_address]] Cmp cmp_{};
@@ -138,7 +167,7 @@ public:
     OrderedAppendOnly() = default;
 
     void append(T item) {
-        CRUCIBLE_PRE(inner_.empty() || !Cmp{}(KeyFn{}(item), KeyFn{}(inner_.back())));
+        CRUCIBLE_PRE(inner_.empty() || !cmp_(key_(item), key_(inner_.back())));
         inner_.append(std::move(item));
     }
 
