@@ -41,7 +41,10 @@
 # Status: awaiting triage.  Two shapes are present:
 #
 #   (a) Pointer→integer for a debug plausibility check or a cache-index
-#       hash (vessel_api_typed.h:118/140, crucible_fallback.cpp:134).
+#       hash (vessel_api_typed.h, crucible_fallback.cpp — the entries
+#       below carry the call text, which is the stable key; line numbers
+#       are left out of this prose because they drift and this comment
+#       is not checked against anything).
 #       `std::bit_cast<std::uintptr_t>(ptr)` is the §III replacement
 #       and is a mechanical swap.  Two of the three are inside
 #       `#ifndef NDEBUG` blocks, so they carry no release-build cost —
