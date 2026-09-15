@@ -783,6 +783,22 @@ add_test(NAME fullness_guard
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.sh)
 set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
     LABELS "ci_guard;oob-62")
+# #66 DetSafe discipline on the hardware-ledger hashing path.  A host
+# fingerprint decides whether a cached measurement verdict is still
+# valid, so anything that reaches the fold has to be deterministic:
+# one non-deterministic source and the fingerprint stops matching
+# itself across runs, which silently discards every cached verdict.
+# scripts/check-detsafe-ledger.sh walks the TRANSITIVE include closure
+# of the hashing-path roots, so a violation three headers down is
+# caught, and it catches the forward-declaration dodge.  No allowlist
+# by design — an exception here is a DetSafe violation with paperwork.
+add_test(NAME detsafe_ledger_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.sh
+          --self-test)
+add_test(NAME detsafe_ledger
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.sh)
+set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
+    LABELS "ci_guard;hw-66")
 # FIXY-V-210 process-spawn discipline (Agent 7 migration item 10 —
 # closes the regression-prevention surface for raw fork/exec/
 # posix_spawn/system/popen calls landing in production code).
@@ -990,6 +1006,7 @@ crucible_test(test_stub_discipline)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
+crucible_test(test_ledger)
 crucible_test(test_topology_discovery)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
@@ -1781,6 +1798,24 @@ function(crucible_neg_compile_cog_test name expected_diag)
             "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
     LABELS "cog_neg")
+endfunction()
+
+# Sister harness for ledger_neg/.  The hardware-capability ledger (#66)
+# reads a cached measurement verdict from disk, so its mint has to refuse
+# a context that cannot block on a file and a context that must not.
+# These fixtures witness the CtxFitsLedgerStore clause firing on both.
+function(crucible_neg_compile_ledger_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
+  set_tests_properties(${name} PROPERTIES
+    LABELS "ledger_neg")
 endfunction()
 
 # Sister harness for warden_neg/. Warden-policy negative tests live here
@@ -4259,6 +4294,24 @@ crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
     "constraint|constraints not satisfied|HasCaps|lookup_caps|PsuRail|GAPS-186")
 crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
     "static assertion|contract|precondition|power_of_two|non-constant|Refined|PowerOfTwoLane|GAPS-186")
+
+# ─── #66 ledger/Ledger.h HS14 fixtures ────────────────────────────
+#
+# Two fixtures pinning the two halves of CtxFitsLedgerStore, so a
+# regression that dropped either conjunct is still caught by the other:
+# * neg_ledger_view_hot_fg_ctx — HotFgCtx carries Row<>, claiming
+#   nothing.  Missing both IO and Block.  This is the mismatch that
+#   matters in practice: the hot path consults a value someone else
+#   measured, and a caller that loaded the file itself would turn a
+#   ~2 ns dispatch into a disk read.
+# * neg_ledger_view_init_ctx_cannot_block — ColdInitCtx carries
+#   Row<Init, Alloc, IO>, so it CAN touch the kernel.  Missing only
+#   Block, because cap_permitted_row<Init> deliberately omits it:
+#   initialization is not permitted to park on a disk.
+crucible_neg_compile_ledger_test(neg_ledger_view_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsLedgerStore|no matching function")
+crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
+    "constraint|constraints not satisfied|CtxFitsLedgerStore|no matching function")
 
 # ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
 #

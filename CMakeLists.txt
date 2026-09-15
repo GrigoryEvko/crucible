@@ -243,6 +243,27 @@ add_executable(dump_row_hashes
 )
 target_link_libraries(dump_row_hashes PRIVATE crucible)
 
+# #66 — the one-shot writer for the hardware-capability ledger.
+#
+# Fingerprints the host, judges whether the host is fit to measure
+# anything, measures whatever the ledger is missing or has let go stale,
+# and commits to $XDG_CACHE_HOME/crucible/hwledger.  The runtime reads
+# that file through crucible::ledger::mint_ledger_view and never
+# measures on its own.
+#
+# It reaches into bench/ for bench_harness.h rather than carrying its
+# own timing rig: the harness already reports the quantiles, the
+# within-run coefficient of variation and the drift check that a ledger
+# evidence record wants.  That is an include path only — the tool is not
+# a bench target, is built in every configuration, and does not take the
+# bench tree's -O3 -march=native.
+add_executable(crucible_hwprobe
+  tools/crucible_hwprobe.cpp
+)
+target_link_libraries(crucible_hwprobe PRIVATE crucible)
+target_include_directories(crucible_hwprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/bench)
+set_target_properties(crucible_hwprobe PROPERTIES OUTPUT_NAME crucible-hwprobe)
+
 # ── eBPF observability substrate (crucible::perf::SenseHub etc.) ────
 #
 # Promoted from bench/ on 2026-05-03 (GAPS-004a).  When libbpf + a
