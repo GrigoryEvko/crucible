@@ -453,6 +453,16 @@ concept CtxFitsHardeningMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapabi
 // type level so the set is discoverable and auditable. This is a
 // classification, not a gate: admission is decided by the concept
 // above, which requires only the start-up capability.
+//
+// The set covers reads as well as writes. An auditor asking what this
+// code does to the kernel is owed the whole answer, and apply() reads
+// the prior affinity mask and the prior scheduling attributes before it
+// replaces them. Leaving the two read halves out made the declared set
+// smaller than the truth while every check beside it stayed green.
+//
+// scripts/check-syscall-grant-coverage.sh derives this set from the
+// call sites in this header and fails when the two disagree, so the
+// list is checked against the code rather than against its own prose.
 using mint_hardening_syscall_grants =
     std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setaffinity>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setattr>,
@@ -460,7 +470,9 @@ using mint_hardening_syscall_grants =
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mlock2>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::munlock>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::madvise>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::prctl>>;
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::prctl>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_getaffinity>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_getattr>>;
 
 // Each grant's declared family is checked against the classifier here,
 // so a disagreement fails while this header is parsed rather than at
@@ -482,12 +494,19 @@ static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mu
 static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::madvise>>
               == fll::SyscallFamily::MemoryMapping);
 static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::prctl>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_getaffinity>>
+              == fll::SyscallFamily::ThreadSync);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_getattr>>
+              == fll::SyscallFamily::ThreadSync);
 
-static_assert(std::tuple_size_v<mint_hardening_syscall_grants> == 7,
-              "mint_hardening_syscall_grants no longer holds 7 entries. A syscall "
+static_assert(std::tuple_size_v<mint_hardening_syscall_grants> == 9,
+              "mint_hardening_syscall_grants no longer holds 9 entries. A syscall "
               "added to Hardening::apply() needs an entry in the tuple and a family "
               "check beside it. A syscall removed from the set changes the cache key "
-              "derived from it, so audit the removal first.");
+              "derived from it, so audit the removal first. This count agrees with "
+              "the code only because scripts/check-syscall-grant-coverage.sh derives "
+              "the set from the call sites; a hand-written count is a claim about "
+              "the code that nothing reads the code to confirm.");
 }  // namespace detail::hardening_grant_check
 
 template <effects::IsExecCtx Ctx>

@@ -50,7 +50,10 @@ namespace saf = ::crucible::safety;
 namespace v062_neg_gamma {
 using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
 struct ProvTag {};
-using Wrapped = saf::Tagged<IoComp, ProvTag>;
+// The drift under test is in the substrate's own unwrap, so the fixture
+// names the substrate type directly.
+using Wrapped = saf::Tagged<IoComp,  // FIXY-DISCIPLINE-OK: see above
+                            ProvTag>;
 }  // namespace v062_neg_gamma
 
 // Should FAIL: the substrate's transparent-unwrap specialisation

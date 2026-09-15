@@ -63,25 +63,62 @@
 #     `mint_permission_root` / `_split` / `_combine` / `_split_n` /
 #     `_combine_n` / `_share`).
 #
-#   `noexcept-ok` — a mint being migrated to noexcept, OR (in a BANNED
-#     directory the guard may not edit) a real omission that can only be
-#     remediated by an allowlist entry.  See cntp/AfXdp.h below.
+#   `noexcept-ok` — §XXI admits NO noexcept exemption: "Every mint MUST
+#     be [[nodiscard]] constexpr noexcept", and only the constexpr half
+#     has an escape for allocating factories.  So an entry in this
+#     category is a DEFECT, not an exemption.  It is listed under
+#     DEFECTS below, with the remediation named.
 #
 #   `nodiscard-ok` — a mint whose return value can legitimately be
-#     discarded, or a passkey-ctor false positive.
+#     discarded.  A passkey constructor is NOT in this category: the
+#     guard skips `= default` declarations outright, because a
+#     constructor cannot carry [[nodiscard]] and an entry describing a
+#     rule the site is structurally unable to obey is not an exemption.
+#
+# ── DEFECTS, not exemptions ──────────────────────────────────────────
+#
+# One entry in this file records a real §XXI violation with no fix
+# applied.  It is called out here rather than buried in the list,
+# because an entry that reads like a category and is actually an open
+# defect is the failure this whole file exists to prevent.
+#
+#   include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:noexcept-ok
+#     mint_af_xdp_socket is not noexcept.  §XXI requires it, including
+#     for allocating mints.  The remediation is one word on the
+#     signature at AfXdp.h:335 plus a check that nothing on the XDP
+#     setup path can throw (nothing can: the tree builds with
+#     -fno-exceptions).  Delete this entry in the same change.
+#
+# An earlier revision of this file attributed that entry, and a further
+# eleven entries under canopy/ and cntp/, to those trees being
+# "edit-banned".  No such ban is declared in CLAUDE.md, in AGENTS.md, in
+# any guard script, or in any commit message — this file was the only
+# document asserting it, and the only document relying on it.  A
+# justification that cites nothing but itself is not a justification, so
+# the claim is withdrawn.  The canopy/ and cntp/ entries stand or fall
+# on their own category, like every other entry here; the section
+# headers below no longer label either tree as banned.
+#
+# If a per-session ownership split does make a file untouchable for a
+# particular change, say so on the entry with the date and the scope,
+# not as a standing property of the directory.
 #
 # Cross-references:
 #   fixy-M-22 (#1507) — CLOSED: mint_vigil_mode_bridge gained constexpr.
 #   fixy-M-23 (#1508) — CLOSED: mint_persisted_session gained noexcept on
 #       all three live overloads.  constexpr-ok carve-out retained.
-#   fixy-A4-027 (#1666) tracks mint_federation_admittance nodiscard drift.
+#   fixy-A4-027 (#1666) — CLOSED: mint_federation_admittance gained a
+#       standalone [[nodiscard]]; it has no entry in this file.
 #
-# NOTE for human review — real omissions in BANNED directories:
-#   cntp/AfXdp.h mint_af_xdp_socket genuinely SHOULD be `noexcept` (it
-#   forwards to allocating XDP-socket setup with no documented throw),
-#   but cntp/ is a guard-edit-banned tree, so the only available
-#   remediation is the `:noexcept-ok` entry below.  Fix the source when
-#   the cntp/ edit ban lifts and remove the entry.
+# ── Known over-breadth in `constexpr-ok` ─────────────────────────────
+#
+# §XXI's constexpr escape is conditioned on the factory "genuinely
+# allocating".  Several `constexpr-ok` entries name a mint that builds a
+# fixed-capacity aggregate in place and allocates nothing — the canopy/
+# gossip-state mints are the clearest cases.  Those entries are carrying
+# a rationale that does not apply to them.  Nothing here fails on it
+# today, which is precisely why it is written down: an over-broad
+# category is how a real drift gets absorbed without anyone noticing.
 
 # ── Class-method / allocating view mints ─────────────────────────────
 include/crucible/Cipher.h:mint_open_view:constexpr-ok
@@ -95,9 +132,8 @@ include/crucible/SchemaTable.h:mint_sealed_view:constexpr-ok
 
 # ── bridges/ allocating session mints ────────────────────────────────
 include/crucible/bridges/SessionPersistence.h:mint_persisted_session:constexpr-ok
-include/crucible/bridges/CrashTransport.h:mint_event_:requires-ok
 
-# ── canopy/ gossip-state allocating mints (edit-banned tree) ──────────
+# ── canopy/ gossip-state mints ───────────────────────────────────────
 include/crucible/canopy/Hlc.h:mint_hlc:constexpr-ok
 include/crucible/canopy/HyParView.h:mint_hyparview:constexpr-ok
 include/crucible/canopy/Lifeguard.h:mint_lifeguard_swim:constexpr-ok
@@ -106,12 +142,12 @@ include/crucible/canopy/Scuttlebutt.h:mint_scuttlebutt:constexpr-ok
 include/crucible/canopy/Swim.h:mint_swim_membership:constexpr-ok
 include/crucible/canopy/VectorClock.h:mint_vector_clock:constexpr-ok
 
-# ── cntp/ transport mints (edit-banned tree) ─────────────────────────
+# ── cntp/ transport mints ────────────────────────────────────────────
 include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
+# DEFECT — see the DEFECTS block in the header.  Not an exemption.
 include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:noexcept-ok
 include/crucible/cntp/dataplane/Xdp.h:mint_bpf_map_spec:requires-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
-include/crucible/cntp/_wip/QuicTransport.h:mint_quic_config:noexcept-ok
 
 # ── fixy/ syscall / resource mints ───────────────────────────────────
 include/crucible/fixy/CipherDurable.h:mint_cold_writer:constexpr-ok
@@ -164,7 +200,6 @@ include/crucible/permissions/Permission.h:mint_permission_share:requires-ok
 include/crucible/permissions/Permission.h:mint_permission_split:requires-ok
 include/crucible/permissions/Permission.h:mint_permission_split_n:requires-ok
 include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
-include/crucible/permissions/PermissionInherit.h:mint_permission_inherit_key:nodiscard-ok
 include/crucible/permissions/ReadView.h:mint_read_view:requires-ok
 
 # ── safety/ concept-constrained view + syscall mints ─────────────────

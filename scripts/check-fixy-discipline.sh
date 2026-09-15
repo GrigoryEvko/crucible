@@ -48,6 +48,36 @@
 # so it survives a formatter wrapping the declaration.  Comment-only
 # mentions (//, ///, /* */ lines) are skipped automatically.
 #
+# The marker scope runs FORWARD from the flagged line, never backward.
+# A marker written in a comment ABOVE the statement does not suppress
+# it; put the marker on the flagged line, or on a line inside the same
+# statement below it.  Getting this wrong fails loud — the violation
+# still fires — rather than silently exempting the site.
+#
+# ── Two passes: the literal spelling and the aliased one ─────────────
+#
+# Pass 1 matches the literal `safety::` spellings.  Pass 2 resolves
+# namespace aliases, because `namespace fn = crucible::safety::fn;`
+# followed by `fn::Fn<...>` is the same reach past the umbrella and
+# pass 1 cannot see it.  This was a real hole, not a hypothetical one:
+# all five files under examples/fn/ and nine sites under test/fixy_neg/
+# reached the substrate through an alias while the guard read clean.
+#
+# Pass 2 resolves an alias whose right hand side is `safety` or
+# `safety::fn` (with or without a leading `::` or a `crucible::`
+# prefix), and an alias naming an already-resolved alias, to a
+# fixpoint.  It does NOT resolve:
+#
+#   • `using namespace crucible::safety;` plus an unqualified
+#     `Refined<` — unqualified lookup is not a grep problem;
+#   • a type alias declared elsewhere (`using R = safety::Refined<…>;`
+#     in a non-fixy-only header) and then used here as `R`;
+#   • a spelling produced by a macro or a template parameter.
+#
+# Full C++ name resolution is out of scope for a shell guard.  What
+# pass 2 buys is that the obvious way to route around the rule — give
+# the namespace a short name — now fails.
+#
 # Exit status:
 #   0  — clean (no raw substrate spellings, no stale allowlist entries)
 #   1  — at least one violation (takes precedence over stale)
@@ -388,7 +418,109 @@ PLANTED
         rm -f "$result_file"
         printf 'check-fixy-discipline: self-test phase 5 passed — marker is statement-scoped and does not leak past a terminator.\n' >&2
 
-        printf 'check-fixy-discipline: self-test passed — all 5 phases green.\n' >&2
+        # ── Phase 6: namespace-alias resolution ──────────────────────
+        # The banned_pattern anchors on the literal `safety::`, so a file
+        # that writes `namespace fn = crucible::safety::fn;` and then
+        # `fn::Fn<...>` reaches past the umbrella with the guard reading
+        # clean.  That was not hypothetical: every file under examples/fn
+        # did exactly this.  Plant one case per resolution shape, plus
+        # two that must NOT fire, and check each independently.
+        rm -rf "$tmp_root/examples/fn"
+        mkdir -p "$tmp_root/examples/fn"
+        cat >"$tmp_root/examples/fn/planted_alias.cpp" <<'PLANTED'
+// Synthetic alias-resolution fixture.
+namespace shortfn = crucible::safety::fn;
+namespace shortsafe = ::crucible::safety;
+namespace chained = shortsafe;
+namespace notsafety = crucible::effects;
+namespace crucible::planted {
+using AliasAggregator = shortfn::Fn<int>;
+using AliasPrimitive = shortsafe::Refined<int, int>;
+using AliasChained = chained::Linear<int>;
+using AliasSuppressed = shortsafe::Secret<  // FIXY-DISCIPLINE-OK: planted marker
+    int>;
+using NotASubstrate = notsafety::Row<int>;
+using AlsoNotASubstrate = shortfn::pred::True;
+}  // namespace crucible::planted
+PLANTED
+        : >"$tmp_root/scripts/fixy-discipline-allowlist.txt"
+        result_file="$(mktemp)"
+        if CRUCIBLE_FIXY_DISCIPLINE_TEST_ROOT="$tmp_root" \
+           bash "${BASH_SOURCE[0]}" 2>"$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — alias-routed spellings were not caught.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        alias_hits="$(grep -c '^FIXY-DISCIPLINE violation:' "$result_file" || true)"
+        if [[ "$alias_hits" -ne 3 ]]; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — expected exactly 3 alias violations, got %s.\n' \
+                "$alias_hits" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        for _want in 'safety::fn::Fn<' 'safety::Refined<' 'safety::Linear<'; do
+            if ! grep -Fq "$_want" "$result_file"; then
+                printf 'check-fixy-discipline: SELF-TEST FAILED — alias resolution did not report %s.\n' \
+                    "$_want" >&2
+                printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$result_file")" >&2
+                rm -f "$result_file"
+                exit 2
+            fi
+        done
+        unset _want
+        if ! grep -Fq 'reached through a namespace alias' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — alias diagnostic did not say how the spelling was reached.\n' >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        # An alias to something other than safety, and a non-substrate
+        # member of a resolved alias, must both stay clean — otherwise
+        # the pass is matching on the alias name rather than on what it
+        # resolves to.
+        if grep -Fq 'safety::Secret<' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — the marker did not suppress an alias-routed site.\n' >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        if grep -Fq 'planted_alias.cpp:11' "$result_file" || grep -Fq 'planted_alias.cpp:12' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — a non-substrate spelling was flagged; the alias pass is over-matching.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        rm -f "$result_file"
+        printf 'check-fixy-discipline: self-test phase 6 passed — alias, alias-of-alias and marker suppression all resolve; non-safety aliases stay clean.\n' >&2
+
+        # ── Phase 7: alias pass feeds the stale detector ─────────────
+        # An allowlist entry for a file whose ONLY banned spelling is
+        # alias-routed must read as live, not stale.  Before the alias
+        # pass existed such a file was invisible, so allowlisting it
+        # would have tripped the stale gate — and the obvious "fix"
+        # would have been to delete a live exemption.
+        printf 'examples/fn/planted_alias.cpp\n' \
+            >"$tmp_root/scripts/fixy-discipline-allowlist.txt"
+        result_file="$(mktemp)"
+        alias_stale_rc=0
+        CRUCIBLE_FIXY_DISCIPLINE_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$result_file" || alias_stale_rc=$?
+        if [[ "$alias_stale_rc" -ne 0 ]]; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — allowlisting an alias-only file expected rc=0, got %s.\n' \
+                "$alias_stale_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        rm -f "$result_file"
+        printf 'check-fixy-discipline: self-test phase 7 passed — an alias-only file counts as live for the stale detector.\n' >&2
+
+        printf 'check-fixy-discipline: self-test passed — all 7 phases green.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -442,9 +574,126 @@ fi
 # AFTER the no-scan-paths early exit so absent opt-in dirs never make
 # every allowlist entry look stale.
 live_set_file="$(mktemp)"
-trap 'rm -f "$live_set_file"' EXIT
+match_file="$(mktemp)"
+trap 'rm -f "$live_set_file" "$match_file"' EXIT
 
-while IFS= read -r match; do
+# ── Pass 1: the literal spelling ─────────────────────────────────────
+# Records are `DIRECT<TAB>-<TAB>file:line:text`; the spelling is read
+# back out of the text in the loop below.
+rg -nP \
+   --no-heading \
+   --type=cpp \
+   --glob '!build*/**' \
+   --glob '!cmake-build-*/**' \
+   --glob '!third_party/**' \
+   --glob '!external/**' \
+   --glob '!vendor/**' \
+   "$banned_pattern" "${scan_paths[@]}" 2>/dev/null \
+   | sed 's/^/DIRECT\t-\t/' >> "$match_file" || true
+
+# ── Pass 2: the spelling reached through a namespace alias ───────────
+# `namespace fn = crucible::safety::fn;` followed by `fn::Fn<...>` is
+# the same reach past the umbrella as writing safety::fn::Fn<...>, and
+# pass 1 cannot see it: its regex anchors on the literal `safety::`.
+# That is not an exotic evasion — it is how anyone who prefers short
+# names writes C++, and examples/fn/ had five files doing exactly this
+# under a registered fixy-only directory while the guard read clean.
+#
+# Resolution is deliberately shallow.  A namespace alias whose right
+# hand side is `safety` or `safety::fn` (with or without a leading `::`
+# or a `crucible::` prefix) is resolved, and so is an alias that names
+# an already-resolved alias, to a fixpoint.  Everything else is left
+# alone.  So this catches the alias form and the alias-of-alias form,
+# and it still misses:
+#
+#   • `using namespace crucible::safety;` plus an unqualified `Refined<`
+#     (nothing in a fixy-only directory does this today, and unqualified
+#     lookup is not resolvable by grep);
+#   • a type alias — `using R = safety::Refined<int, int>;` written in a
+#     non-fixy-only header and then used as `R` here;
+#   • a spelling produced by a macro or a template parameter.
+#
+# Full C++ name resolution is out of scope for a shell guard.  The point
+# is that the obvious way to route around the rule now fails.
+alias_pattern='^[[:space:]]*namespace[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*([A-Za-z_:][A-Za-z0-9_:]*)[[:space:]]*;'
+aggregator_arm='fn::Fn'
+primitive_arms='Refined|Tagged|Linear|Monotonic|Stale|Secret|Permission|Affine'
+
+while IFS= read -r alias_file; do
+    # kind_of[name] is "safety" or "safety::fn"; rhs_of[name] is the raw
+    # right hand side, kept so the fixpoint can chase an alias of alias.
+    declare -A kind_of=() rhs_of=()
+    while IFS= read -r decl_line; do
+        [[ "$decl_line" =~ $alias_pattern ]] || continue
+        rhs_of["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+    done < "$alias_file"
+    [[ ${#rhs_of[@]} -eq 0 ]] && { unset kind_of rhs_of; continue; }
+
+    for _round in 1 2 3 4 5; do
+        _settled=1
+        for _name in "${!rhs_of[@]}"; do
+            [[ -n "${kind_of[$_name]:-}" ]] && continue
+            _rhs="${rhs_of[$_name]}"
+            _rhs="${_rhs#::}"
+            _rhs="${_rhs#crucible::}"
+            case "$_rhs" in
+                safety)     kind_of["$_name"]='safety';     _settled=0 ;;
+                safety::fn) kind_of["$_name"]='safety::fn'; _settled=0 ;;
+                *)
+                    # An alias naming another alias inherits its kind.
+                    if [[ -n "${kind_of[$_rhs]:-}" ]]; then
+                        kind_of["$_name"]="${kind_of[$_rhs]}"
+                        _settled=0
+                    fi
+                    ;;
+            esac
+        done
+        (( _settled )) && break
+    done
+
+    for _name in "${!kind_of[@]}"; do
+        case "${kind_of[$_name]}" in
+            safety::fn) _arms="Fn" ;;
+            safety)     _arms="${aggregator_arm}|${primitive_arms}" ;;
+            *) continue ;;
+        esac
+        # `(?<!::)` keeps `crucible::safety::fn::Fn<` from being reported
+        # a second time here after pass 1 already reported it.
+        while IFS= read -r _m; do
+            [[ -z "$_m" ]] && continue
+            # `|| true` because grep exits 1 on no match and the script
+            # runs under `set -e`; an assignment takes the substitution's
+            # status, so an unguarded miss would abort the whole scan.
+            _arm="$(printf '%s' "$_m" \
+                | grep -oP "(?<![A-Za-z_0-9:])${_name}::\K(${_arms})" \
+                | head -1 || true)"
+            [[ -z "$_arm" ]] && continue
+            if [[ "${kind_of[$_name]}" == 'safety::fn' ]]; then
+                _arm='fn::Fn'
+            fi
+            printf 'ALIAS\tsafety::%s\t%s\n' "$_arm" "$_m" >> "$match_file"
+        done < <(
+            # -H keeps the filename on every record: rg omits it when it
+            # is handed exactly one file, and the loop below splits on
+            # `file:line:text`.
+            rg -nP -H --no-heading \
+               "(?<![A-Za-z_0-9:])${_name}::(${_arms})\s*<" "$alias_file" 2>/dev/null || true
+        )
+    done
+    unset kind_of rhs_of
+done < <(
+    rg -lP --type=cpp \
+       --glob '!build*/**' --glob '!cmake-build-*/**' \
+       --glob '!third_party/**' --glob '!external/**' --glob '!vendor/**' \
+       "$alias_pattern" "${scan_paths[@]}" 2>/dev/null || true
+)
+
+while IFS= read -r record; do
+    kind="${record%%	*}"
+    rest0="${record#*	}"
+    alias_spelling="${rest0%%	*}"
+    match="${rest0#*	}"
+
     file="${match%%:*}"
     rest="${match#*:}"
     line="${rest%%:*}"
@@ -494,27 +743,28 @@ while IFS= read -r match; do
     fi
 
     # Identify which substrate spelling fired for a sharper diagnostic.
-    # Falls back to the generic banner if no alternation matches (regex
-    # drift / future extension that this branch doesn't know about).
-    if [[ "$text" =~ safety::(fn::Fn|Refined|Tagged|Linear|Monotonic|Stale|Secret|Permission|Affine)[[:space:]]*\< ]]; then
+    # A pass-2 record already carries the resolved spelling, because the
+    # text on the line names the alias rather than safety::.  Falls back
+    # to the generic banner if no alternation matches (regex drift, or a
+    # future extension this branch does not know about).
+    if [[ "$kind" == 'ALIAS' ]]; then
+        matched_spelling="${alias_spelling}<"
+        wrap_name="${alias_spelling#safety::}"
+        wrap_name="${wrap_name#fn::}"
+        via=" (reached through a namespace alias)"
+    elif [[ "$text" =~ safety::(fn::Fn|Refined|Tagged|Linear|Monotonic|Stale|Secret|Permission|Affine)[[:space:]]*\< ]]; then
         matched_spelling="safety::${BASH_REMATCH[1]}<"
+        wrap_name="${BASH_REMATCH[1]}"
+        via=""
     else
         matched_spelling="raw safety::<substrate><"
+        wrap_name="Fn"
+        via=""
     fi
-    printf 'FIXY-DISCIPLINE violation: %s:%s — raw %s spelling.  Use fixy::wrap::%s or fixy::fn<...> instead.\n' \
-        "$rel" "$line" "$matched_spelling" "${BASH_REMATCH[1]:-Fn}" >&2
+    printf 'FIXY-DISCIPLINE violation: %s:%s — raw %s spelling%s.  Use fixy::wrap::%s or fixy::fn<...> instead.\n' \
+        "$rel" "$line" "$matched_spelling" "$via" "$wrap_name" >&2
     violation_count=$((violation_count + 1))
-done < <(
-    rg -nP \
-       --no-heading \
-       --type=cpp \
-       --glob '!build*/**' \
-       --glob '!cmake-build-*/**' \
-       --glob '!third_party/**' \
-       --glob '!external/**' \
-       --glob '!vendor/**' \
-       "$banned_pattern" "${scan_paths[@]}" 2>/dev/null || true
-)
+done < "$match_file"
 
 # ── Outcome (violations — take precedence over stale) ─────────────────
 if [[ "$violation_count" -ne 0 ]]; then

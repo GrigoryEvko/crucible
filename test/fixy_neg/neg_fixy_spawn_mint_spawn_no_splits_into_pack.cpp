@@ -44,7 +44,10 @@ int main() {
     auto whole = safe::mint_permission_root<tags::Whole>();
     auto rebuilt = fspawn::mint_spawn<tags::Left, tags::Right>(
         eff::BgDrainCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {});
+        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {
+            // FIXY-DISCIPLINE-OK: the spawn body signature under test is the
+            // substrate's own, so the fixture has to spell it.
+        });
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

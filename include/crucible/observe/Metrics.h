@@ -63,14 +63,68 @@ mint_metrics_writer(RuntimeMetricsChannel& channel,
                                                                                             std::move(permission));
 }
 
-[[nodiscard]] inline std::optional<RuntimeMetricsReader>
+// Two consumers read this channel. The Keeper acts on a sample: it
+// feeds the sample into a decision it then applies locally. The Canopy
+// only forwards one: it gossips the sample to peers and never acts on
+// it. That is a real difference in what a reader is for, and it was
+// carried by nothing but the two factory names — both returned the same
+// type from the same call, so a function written for one accepted the
+// other and the names amounted to a comment.
+//
+// The role now rides in the type. Both roles read the same channel and
+// hold the same share, so the wrapper adds no state and no work; what
+// it adds is that KeeperMetricsReader and CanopyMetricsReader are
+// distinct types and do not convert.
+template <typename Role>
+class RuntimeMetricsRoleReader final {
+public:
+    using role_type = Role;
+    using value_type = RuntimeMetricsSample;
+
+    explicit RuntimeMetricsRoleReader(RuntimeMetricsReader&& handle) noexcept : handle_{std::move(handle)} {}
+
+    RuntimeMetricsRoleReader(RuntimeMetricsRoleReader const&) =
+        delete("a metrics reader owns one SharedPermissionPool share");
+    RuntimeMetricsRoleReader& operator=(RuntimeMetricsRoleReader const&) =
+        delete("a metrics reader owns one SharedPermissionPool share");
+    RuntimeMetricsRoleReader(RuntimeMetricsRoleReader&&) noexcept = default;
+    RuntimeMetricsRoleReader& operator=(RuntimeMetricsRoleReader&&) =
+        delete("the share lifetime is fixed at construction");
+
+    [[nodiscard]] RuntimeMetricsSample load() const noexcept { return handle_.load(); }
+    [[nodiscard]] std::optional<RuntimeMetricsSample> try_load() const noexcept { return handle_.try_load(); }
+    [[nodiscard]] std::uint64_t version() const noexcept { return handle_.version(); }
+
+private:
+    RuntimeMetricsReader handle_;
+};
+
+struct KeeperMetricsRole {};
+struct CanopyMetricsRole {};
+
+using KeeperMetricsReader = RuntimeMetricsRoleReader<KeeperMetricsRole>;
+using CanopyMetricsReader = RuntimeMetricsRoleReader<CanopyMetricsRole>;
+
+// The whole point of the split: neither role converts to the other, so
+// the two mint names below now differ in what they hand back.
+static_assert(!std::is_same_v<KeeperMetricsReader, CanopyMetricsReader>);
+static_assert(!std::is_convertible_v<KeeperMetricsReader, CanopyMetricsReader>);
+static_assert(!std::is_convertible_v<CanopyMetricsReader, KeeperMetricsReader>);
+static_assert(sizeof(KeeperMetricsReader) == sizeof(RuntimeMetricsReader),
+              "the role is a type-level marker; it must not cost a byte.");
+
+[[nodiscard]] inline std::optional<KeeperMetricsReader>
 mint_keeper_metrics_reader(RuntimeMetricsChannel& channel) noexcept {
-    return ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
+    auto handle = ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
+    if (!handle) return std::nullopt;
+    return KeeperMetricsReader{std::move(*handle)};
 }
 
-[[nodiscard]] inline std::optional<RuntimeMetricsReader>
+[[nodiscard]] inline std::optional<CanopyMetricsReader>
 mint_canopy_metrics_reader(RuntimeMetricsChannel& channel) noexcept {
-    return ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
+    auto handle = ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
+    if (!handle) return std::nullopt;
+    return CanopyMetricsReader{std::move(*handle)};
 }
 
 }  // namespace crucible::observe

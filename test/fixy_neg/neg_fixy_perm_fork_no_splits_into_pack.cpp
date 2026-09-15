@@ -51,7 +51,10 @@ int main() {
     auto whole = fperm::mint_permission_root<tags::Whole>();
     auto rebuilt = fperm::mint_permission_fork<tags::Left, tags::Right>(
         eff::BgDrainCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {});
+        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {
+            // FIXY-DISCIPLINE-OK: the fork body signature under test is the
+            // substrate's own, so the fixture has to spell it.
+        });
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

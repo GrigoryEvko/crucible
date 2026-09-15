@@ -130,6 +130,10 @@ KernelGraph fuse_phase_ref(const KernelGraph& input, Arena& arena) noexcept {
 //                                         already pinned
 
 using BoundForgePhase = fn::Fn<ForgePhasePtr,  // 1 Type
+                               // FIXY-DISCIPLINE-OK: this example exists to show
+                               // the raw 19-positional substrate signature.  It is
+                               // reached through the `fn` alias declared above,
+                               // which is the same reach as safety::fn::Fn<>.
                                fn::pred::True,  // 2 Refinement
                                fn::UsageMode::Copy,  // 3 Usage
                                fx::Row<fx::Effect::Bg, fx::Effect::Alloc>,  // 4 EffectRow

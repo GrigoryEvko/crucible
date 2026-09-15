@@ -51,7 +51,11 @@ struct NearMissSnap {
     using WriterHandle = FakeWriterHandle;
     using ReaderHandle = FakeReaderHandle;
 
-    FakeWriterHandle writer(fsafe::Permission<WTag>&&) noexcept { return {}; }
+    FakeWriterHandle writer(fsafe::Permission<WTag>&&) noexcept {
+        // FIXY-DISCIPLINE-OK: a near-miss surface only near-misses if it
+        // reproduces the substrate signature exactly.
+        return {};
+    }
     // BUG: must return std::optional<FakeReaderHandle>.
     FakeReaderHandle reader() noexcept { return {}; }
 };

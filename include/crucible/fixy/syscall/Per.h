@@ -66,6 +66,12 @@ enum class SyscallId : std::uint16_t {
 
     bpf = 41,
     perf_event_open = 42,
+
+    // The read halves of the two scheduler knobs above. Hardening::apply
+    // reads the prior affinity mask and the prior scheduling attributes
+    // before it writes new ones, so the audit set has to name them.
+    sched_getaffinity = 43,
+    sched_getattr = 44,
 };
 
 [[nodiscard]] constexpr ::crucible::algebra::lattices::SyscallFamily family_of(SyscallId id) noexcept {
@@ -132,6 +138,12 @@ enum class SyscallId : std::uint16_t {
         case SyscallId::sched_setaffinity:
             return SF::ThreadSync;
         case SyscallId::sched_setattr:
+            return SF::ThreadSync;
+        // Reading a scheduler knob touches the same kernel surface as
+        // writing one, so the read halves share the writers' family.
+        case SyscallId::sched_getaffinity:
+            return SF::ThreadSync;
+        case SyscallId::sched_getattr:
             return SF::ThreadSync;
 
         case SyscallId::socket:
@@ -312,6 +324,8 @@ static_assert(!std::is_same_v<sc::per<SI::clock_gettime>, sc::family_vdso_only>)
     if (sc::family_of(SI::sched_yield) != SF::ThreadSync) return false;
     if (sc::family_of(SI::sched_setaffinity) != SF::ThreadSync) return false;
     if (sc::family_of(SI::sched_setattr) != SF::ThreadSync) return false;
+    if (sc::family_of(SI::sched_getaffinity) != SF::ThreadSync) return false;
+    if (sc::family_of(SI::sched_getattr) != SF::ThreadSync) return false;
     if (sc::family_of(SI::socket) != SF::NetworkIo) return false;
     if (sc::family_of(SI::connect) != SF::NetworkIo) return false;
     if (sc::family_of(SI::sendmsg) != SF::NetworkIo) return false;
@@ -335,7 +349,7 @@ static_assert(every_syscall_id_classified_correctly(),
               "restrictive but never under-restrictive).");
 
 static constexpr std::size_t syscall_id_count = std::meta::enumerators_of(^^SI).size();
-static_assert(syscall_id_count == 43, "SyscallId catalog drifted from the 43-enumerator shipped surface.  "
+static_assert(syscall_id_count == 45, "SyscallId catalog drifted from the 45-enumerator shipped surface.  "
                                       "A new syscall appends at the next free ordinal AND extends the "
                                       "family_of() switch AND adds an arm to "
                                       "every_syscall_id_classified_correctly().  Reordering or shrinking "

@@ -1,5 +1,7 @@
 #include <crucible/topology/CongestionTelemetry.h>
 
+#include <crucible/observe/HdrHistogram.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <cstddef>

@@ -58,7 +58,10 @@ int main() {
     // CtxFitsPermissionFork → CtxOwnsCapability<Ctx, Bg> → fail.
     auto rebuilt = fspawn::mint_spawn<tags::Left, tags::Right>(
         eff::HotFgCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::HotFgCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::HotFgCtx const&) noexcept {});
+        [](safe::Permission<tags::Right>, eff::HotFgCtx const&) noexcept {
+            // FIXY-DISCIPLINE-OK: the spawn body signature under test is the
+            // substrate's own, so the fixture has to spell it.
+        });
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

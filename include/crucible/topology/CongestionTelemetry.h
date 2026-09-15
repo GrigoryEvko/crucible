@@ -3,7 +3,6 @@
 #include <crucible/Platform.h>
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/observe/HdrHistogram.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 

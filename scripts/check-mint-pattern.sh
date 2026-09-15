@@ -88,12 +88,20 @@ Checks:
   constexpr  — constexpr keyword in signature (allocating mints exempt)
   requires   — requires-clause in template block (only when templated)
 
+Structural skips (never need an allowlist entry):
+  = delete(...) tombstones, = default declarations (passkey ctors),
+  and trailing-underscore identifiers (§XXI internal helpers).
+
 Suppression:
   // MINT-PATTERN-OK: <reason>            on signature line, all checks
   scripts/mint-pattern-allowlist.txt:
-    path:line                             — exempts all four checks
-    path:line:<check>-ok                  — exempts ONE check
+    path:mint_name                        — exempts all four checks
+    path:mint_name:<check>-ok             — exempts ONE check
                                             (nodiscard/noexcept/constexpr/requires)
+  The name-keyed grammar above is the one to use: it survives a line
+  shift.  A legacy line-keyed form (path:line[:check-ok]) is still read,
+  but any edit above the mint silently invalidates it, so do not add new
+  ones.  Read the allowlist header before adding anything.
 USAGE
 }
 
@@ -454,7 +462,90 @@ ALLOW
         fi
         rm -f "$name_file"
 
-        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); comment/include mentions are not false-flagged; stale detection flags dead allowlist entries across line-keyed AND name-keyed grammars (none on live); name-keyed entries survive a line shift (drift-proof); violations preempt the stale pass.\n' >&2
+        # ── Phase 6: structural skips and the brace-init noexcept scan ──
+        # Three shapes that must NOT be reported, and one control that
+        # must be.  Each of the three was previously reported and then
+        # silenced by an allowlist entry whose stated reason was not the
+        # real reason — a guard being wrong and an allowlist writing the
+        # wrongness down as policy.
+        rm -f "$tmp_root/include/crucible/planted/planted_violation.h"
+        cat >"$tmp_root/include/crucible/planted/planted_skip.h" <<'PLANTED'
+#pragma once
+namespace crucible::planted {
+
+// (a) A brace-initialised default argument puts a `{` inside the
+// parameter list.  noexcept sits after the real `)`, below it.
+[[nodiscard]] constexpr int mint_brace_default(int a,
+                                               Mask features =
+                                                   {
+                                                       false,
+                                                       true,
+                                                   },
+                                               int b = 0) noexcept {
+    return a + b;
+}
+
+// (b) Control for (a): same brace-initialised default, NO noexcept.
+// This one MUST still be reported, or the depth fix disabled the check.
+[[nodiscard]] constexpr int mint_brace_default_bare(int a,
+                                                    Mask features =
+                                                        {
+                                                            false,
+                                                        },
+                                                    int b = 0) {
+    return a + b;
+}
+
+// (c) A passkey constructor.  Cannot carry [[nodiscard]] at all.
+class mint_passkey_key {
+    constexpr mint_passkey_key() noexcept = default;
+    friend struct Holder;
+};
+
+// (d) A §XXI internal helper: trailing underscore, not public surface.
+struct Holder final {
+    static int mint_helper_(int v) { return v; }
+};
+
+}  // namespace crucible::planted
+PLANTED
+        : >"$tmp_root/scripts/mint-pattern-allowlist.txt"
+        skip_file="$(mktemp)"
+        skip_rc=0
+        CRUCIBLE_MINT_PATTERN_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$skip_file" || skip_rc=$?
+        if [[ "$skip_rc" -ne 1 ]]; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 6) — expected rc=1 from the bare control, got %s.\n' \
+                "$skip_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$skip_file")" >&2
+            rm -f "$skip_file"
+            exit 2
+        fi
+        if ! grep -q 'mint_brace_default_bare missing noexcept' "$skip_file"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 6) — the no-noexcept control was not reported; the depth fix disabled the check.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$skip_file")" >&2
+            rm -f "$skip_file"
+            exit 2
+        fi
+        for _quiet in 'mint_brace_default missing noexcept' \
+                      'mint_passkey_key missing' \
+                      'mint_helper_ missing'; do
+            if grep -q -- "$_quiet" "$skip_file"; then
+                printf 'check-mint-pattern: SELF-TEST FAILED (phase 6) — a structurally-skipped shape was reported: %s\n' \
+                    "$_quiet" >&2
+                printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$skip_file")" >&2
+                rm -f "$skip_file"
+                exit 2
+            fi
+        done
+        unset _quiet
+        rm -f "$skip_file"
+        printf 'check-mint-pattern: self-test phase 6 passed — brace-initialised defaults no longer hide a trailing noexcept, `= default` and trailing-underscore shapes are skipped, and the no-noexcept control still fires.\n' >&2
+
+        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); comment/include mentions are not false-flagged; stale detection flags dead allowlist entries across line-keyed AND name-keyed grammars (none on live); name-keyed entries survive a line shift (drift-proof); violations preempt the stale pass; structural skips stay quiet while their controls fire.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -515,9 +606,20 @@ has_attribute_above() {
 # sits AFTER the closing `)`, so the scan must reach past the
 # end of the parameter list.  Word-boundary discipline as above
 # — bare substring would false-positive on mint_*_noexcept names.
+#
+# The terminator is only honoured once the PARAMETER LIST has closed.
+# A default argument written as a brace initializer puts a `{` inside
+# the parameter list, and a naive terminator test reads that brace as
+# the body and stops scanning — so a `noexcept` sitting after the real
+# `)` is never reached and a compliant mint is reported as drifting.
+# That is not hypothetical: cntp/_wip/QuicTransport.h mint_quic_config
+# IS noexcept, on the line after its brace-initialised default, and it
+# carried a `:noexcept-ok` allowlist entry blamed on an edit ban.  The
+# guard was wrong, and the allowlist wrote down a reason that was not
+# the reason.  Parenthesis depth tells the two braces apart.
 has_noexcept_in_signature() {
     local file="$1" line="$2"
-    local offset ln text
+    local offset ln text opens closes depth=0 seen_open=0
     for offset in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
         ln=$((line + offset))
         text="$(sed -n "${ln}p" "$file" 2>/dev/null || true)"
@@ -525,9 +627,15 @@ has_noexcept_in_signature() {
         if printf '%s\n' "$text" | grep -Fwq noexcept; then
             return 0
         fi
-        case "$text" in
-            *';'|*'{'|*' {'|*'){') return 1 ;;
-        esac
+        opens="${text//[^(]/}"
+        closes="${text//[^)]/}"
+        (( ${#opens} > 0 )) && seen_open=1
+        depth=$((depth + ${#opens} - ${#closes}))
+        if (( seen_open == 1 && depth <= 0 )); then
+            case "$text" in
+                *';'|*'{'|*' {'|*'){') return 1 ;;
+            esac
+        fi
     done
     return 1
 }
@@ -558,6 +666,31 @@ is_deleted_decl() {
         fi
         # A body-open brace means this is a real definition, not a
         # deletion — stop before mis-reading a later overload's deletion.
+        case "$text" in
+            *'{') return 1 ;;
+        esac
+    done
+    return 1
+}
+
+# ── Helper: defaulted-declaration detection ──────────────────────────
+# `= default` on a constructor is the passkey pattern, not a factory.
+# A constructor cannot carry [[nodiscard]], so the nodiscard axis can
+# never be satisfied and the site would need a permanent allowlist entry
+# describing a rule it is structurally unable to obey.  Mirrors
+# is_deleted_decl, including the joined-window handling for a signature
+# the formatter wrapped between the `=` and the `default`.
+is_defaulted_decl() {
+    local file="$1" line="$2"
+    local offset ln text joined=""
+    for offset in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+        ln=$((line + offset))
+        text="$(sed -n "${ln}p" "$file" 2>/dev/null || true)"
+        [[ -z "$text" ]] && break
+        joined="$joined $text"
+        if [[ "$joined" =~ =[[:space:]]*default ]]; then
+            return 0
+        fi
         case "$text" in
             *'{') return 1 ;;
         esac
@@ -735,6 +868,29 @@ while IFS= read -r match; do
         continue
     fi
 
+    # Skip defaulted declarations — `= default` on a constructor is the
+    # passkey pattern.  A constructor cannot carry [[nodiscard]], so the
+    # site can never satisfy that axis and an allowlist entry would be a
+    # permanent record of a rule it is structurally unable to obey.
+    if is_defaulted_decl "$file" "$line"; then
+        continue
+    fi
+
+    # Skip trailing-underscore identifiers.  CLAUDE.md §XXI: "Internal
+    # helpers do NOT use the `mint_` prefix … internal detail-namespace
+    # helpers carry the trailing-underscore convention … so
+    # `grep "mint_"` returns only the public surface."  The candidate
+    # regex cannot tell `mint_event_` from a public factory, so the
+    # convention has to be applied here.  A name ending in `_` is by
+    # that rule not part of the surface §XXI governs.
+    case "$text" in
+        *mint_[a-z_]*_\ *\(*|*mint_[a-z_]*_\(*)
+            if printf '%s' "$text" | grep -qP '\bmint_[a-z_]*_\s*\('; then
+                continue
+            fi
+            ;;
+    esac
+
     # Skip method-call / qualified-name call shapes:
     #   `.mint_X(`     — member call on an instance.
     #   `->mint_X(`    — member call through a pointer.
@@ -861,14 +1017,25 @@ Remediations, in order of preference:
       the site is structurally exempt (passkey ctor, void-return
       sink, friend stub).
 
-  (3) Per-check exemption: add 'path:line:<check>-ok' to
+  (3) Per-check exemption: add 'path:mint_name:<check>-ok' to
       scripts/mint-pattern-allowlist.txt where <check> is one of
       nodiscard / noexcept / constexpr / requires.  Use sparingly
       — every entry is a TODO.
 
-  (4) Full exemption: add 'path:line' (no suffix) to
+  (4) Full exemption: add 'path:mint_name' (no suffix) to
       scripts/mint-pattern-allowlist.txt for grandfathered §XXI-
       drift code awaiting a tracked migration.
+
+  Key by the mint's NAME, not by its line.  A line-keyed entry is
+  still honoured but any edit above the mint silently invalidates it.
+
+  Before adding anything, read the allowlist header and write the
+  entry under a category that is TRUE of the site.  §XXI admits no
+  noexcept exemption at all, so a ':noexcept-ok' entry is a recorded
+  defect and belongs in the header's DEFECTS block with a named
+  remediation — not filed as though it were a category.  An entry
+  whose stated reason is not the real reason keeps the guard green
+  and tells the next reader something false.
 HINT
     exit 1
 fi

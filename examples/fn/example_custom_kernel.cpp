@@ -91,6 +91,12 @@ void scalar_gemm_ref(const float* a, const float* b, float* c, int m, int n, int
 //   static_assert(sizeof(BoundGemm) == sizeof(GemmFp32Ptr));
 
 using BoundGemm = fn::Fn<GemmFp32Ptr,  // 1 Type
+                         // FIXY-DISCIPLINE-OK: this example exists to show the raw
+                         // 19-positional substrate signature one axis at a time.
+                         // fixy::fn<> is what production spells; writing it here
+                         // would hide the very thing the file is demonstrating.
+                         // Reached through the `fn` alias declared at the top of
+                         // this file, which is the same reach as safety::fn::Fn<>.
                          fn::pred::True,  // 2 Refinement
                          fn::UsageMode::Copy,  // 3 Usage
                          fx::Row<fx::Effect::Bg>,  // 4 EffectRow

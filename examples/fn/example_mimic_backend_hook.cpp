@@ -140,6 +140,10 @@ CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel, const TargetCaps& caps,
 //                  decoupled from Forge's IR002 version.
 
 using BoundMimicNvEmit = fn::Fn<EmitKernelPtr,  // 1 Type
+                                // FIXY-DISCIPLINE-OK: this example exists to show
+                                // the raw 19-positional substrate signature.  It is
+                                // reached through the `fn` alias declared above,
+                                // which is the same reach as safety::fn::Fn<>.
                                 fn::pred::True,  // 2 Refinement
                                 fn::UsageMode::Copy,  // 3 Usage
                                 fx::Row<fx::Effect::Bg,  // 4 EffectRow

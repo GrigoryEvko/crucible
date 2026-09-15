@@ -125,6 +125,10 @@ struct NetworkBufferTag {};
 //   Staleness   : stale::Fresh                        — no aging on receive
 
 using UnvalidatedCntpFrame = fn::Fn<CntpHeader,  // 1 Type
+                                    // FIXY-DISCIPLINE-OK: this example exists to
+                                    // show the raw 19-positional substrate
+                                    // signature.  Reached through the `fn` alias
+                                    // above, the same reach as safety::fn::Fn<>.
                                     fn::pred::True,  // 2 Refinement (none yet)
                                     fn::UsageMode::Borrow,  // 3 Usage
                                     fx::Row<>,  // 4 EffectRow (pure data)
@@ -169,6 +173,8 @@ using UnvalidatedCntpFrame = fn::Fn<CntpHeader,  // 1 Type
 
 using ValidatedCntpFrame =
     fn::Fn<CntpHeader,
+           // FIXY-DISCIPLINE-OK: the retag contrast this example draws is
+           // between two raw substrate spellings, so it has to write one.
            fn::pred::True,  // would be ValidCntpFrame in prod
            fn::UsageMode::Borrow,  // 3 same Borrow rationale as above
            fx::Row<>, fn::SecLevel::Public, fn::proto::None, fn::lifetime::In<NetworkBufferTag{}>,

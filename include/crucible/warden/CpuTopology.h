@@ -8,9 +8,21 @@
 // sentinel rather than failing, so an older kernel, a chroot or an
 // unusual filesystem costs a degraded answer and nothing worse.
 //
-// The queries are marked pure even though each one opens a file, which
-// lets the compiler fold repeated calls into one. A caller that needs
-// a fresh reading must put other work between two calls.
+// Only the two parsers below carry gnu::pure. Their answer is a
+// function of the bytes behind the string_view they are handed, and
+// that is memory the compiler models, so a reader can check the
+// justification by reading the body: no file is opened and no kernel
+// state is consulted.
+//
+// The queries that read sysfs or procfs deliberately carry no such
+// attribute. gnu::pure promises the result depends only on the
+// arguments and on memory the compiler can see, and the contents of
+// /sys are neither. GCC 16 at -O2 acts on the promise: two source-level
+// reads of one path emit a single fopen when the reader is marked pure
+// and two when it is not. Folding is a wrong answer rather than a fast
+// one for a sampling query such as cpu_cur_freq_khz, whose value moves
+// every few milliseconds. Nothing here sits on a hot path, so the fold
+// bought nothing worth that.
 
 #include <crucible/safety/Decide.h>
 #include <crucible/fixy/Handle.h>
@@ -36,7 +48,7 @@ namespace crucible::warden {
 
 namespace detail {
 
-[[nodiscard, gnu::pure]] inline std::string read_small_file(const char* path) noexcept {
+[[nodiscard]] inline std::string read_small_file(const char* path) noexcept {
     std::string out;
     // The close is discharged by the handle on every exit path,
     // including the early return below. Its result is ignored because
@@ -53,6 +65,8 @@ namespace detail {
 
 // A kernel CPU list names single CPUs and inclusive ranges, separated
 // by commas, as in "0-3,5,7-9,15".
+//
+// Pure: the answer reads only the bytes behind s, and it opens no file.
 [[nodiscard, gnu::pure]] inline std::vector<int> parse_cpulist(std::string_view s) noexcept {
     std::vector<int> out;
     size_t i = 0;
@@ -86,6 +100,9 @@ namespace detail {
 
 // /proc/self/status carries one line per field. The line of interest
 // reads "Cpus_allowed_list:" followed by a tab and a CPU list.
+//
+// Pure: the caller hands in the already-read text, so this reads only
+// the bytes behind status and opens no file.
 [[nodiscard, gnu::pure]] inline std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
     constexpr std::string_view key = "Cpus_allowed_list:";
     const auto pos = status.find(key);
@@ -108,7 +125,7 @@ static_assert(CPU_SETSIZE >= 1024, "The allowed_cpus fallback iterates a fixed-s
 #endif
 
 // One on failure, which is the conservative answer.
-[[nodiscard, gnu::pure]] inline int num_online_cpus() noexcept {
+[[nodiscard]] inline int num_online_cpus() noexcept {
 #ifdef __linux__
     const long n = sysconf(_SC_NPROCESSORS_ONLN);
     return (n > 0) ? static_cast<int>(n) : 1;
@@ -144,7 +161,7 @@ namespace detail {
 
 // The CPUs this task may run on, as granted by whatever placed it.
 // Procfs is the authoritative source and is consulted first.
-[[nodiscard, gnu::pure]] inline std::vector<int> allowed_cpus() noexcept {
+[[nodiscard]] inline std::vector<int> allowed_cpus() noexcept {
     const auto status = detail::read_small_file("/proc/self/status");
     if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
     return detail::allowed_cpus_fallback();
@@ -152,11 +169,11 @@ namespace detail {
 
 // The CPUs the kernel command line has withheld from the scheduler.
 // Empty when no such argument was given.
-[[nodiscard, gnu::pure]] inline std::vector<int> isolated_cpus() noexcept {
+[[nodiscard]] inline std::vector<int> isolated_cpus() noexcept {
     return detail::parse_cpulist(detail::read_small_file("/sys/devices/system/cpu/isolated"));
 }
 
-[[nodiscard, gnu::pure]] inline std::vector<int> smt_siblings(int cpu) noexcept {
+[[nodiscard]] inline std::vector<int> smt_siblings(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
     return detail::parse_cpulist(detail::read_small_file(path));
@@ -166,7 +183,7 @@ namespace detail {
 // core and "Atom" for an efficiency core. A uniform part does not
 // publish the file at all, and its absence counts as a performance
 // core so that every CPU on such a host answers the same way.
-[[nodiscard, gnu::pure]] inline bool is_p_core(int cpu) noexcept {
+[[nodiscard]] inline bool is_p_core(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/core_type", cpu);
     const auto s = detail::read_small_file(path);
@@ -178,7 +195,7 @@ namespace detail {
 // The kernel publishes the membership as a symlink named after the
 // node, so the node number is recovered by testing which name exists.
 // Nodes past the search bound below read as -1.
-[[nodiscard, gnu::pure]] inline int numa_node_of(int cpu) noexcept {
+[[nodiscard]] inline int numa_node_of(int cpu) noexcept {
     for (int n = 0; n < 64; ++n) {
         char path[128];
         std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/node%d", cpu, n);
@@ -189,7 +206,7 @@ namespace detail {
 
 // The NUMA node nearest a device. The caller passes the sysfs path of
 // that device's numa_node file. -1 when it cannot be read.
-[[nodiscard, gnu::pure]] inline int numa_node_of_device(const char* sysfs_numa_node_path) noexcept {
+[[nodiscard]] inline int numa_node_of_device(const char* sysfs_numa_node_path) noexcept {
     const auto s = detail::read_small_file(sysfs_numa_node_path);
     if (s.empty()) return -1;
     const int n = std::atoi(s.c_str());
@@ -197,7 +214,7 @@ namespace detail {
 }
 
 // Zero when the frequency driver publishes nothing for this CPU.
-[[nodiscard, gnu::pure]] inline uint64_t cpu_cur_freq_khz(int cpu) noexcept {
+[[nodiscard]] inline uint64_t cpu_cur_freq_khz(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
     const auto s = detail::read_small_file(path);
@@ -207,7 +224,7 @@ namespace detail {
 }
 
 // Zero when the frequency driver publishes nothing for this CPU.
-[[nodiscard, gnu::pure]] inline uint64_t cpu_max_freq_khz(int cpu) noexcept {
+[[nodiscard]] inline uint64_t cpu_max_freq_khz(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
     const auto s = detail::read_small_file(path);

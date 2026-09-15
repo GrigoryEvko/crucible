@@ -5,6 +5,15 @@
 # within its file.
 # A site covered by an in-statement `// SYSCALL-CAP-OK:` marker is exempted
 # by that marker and is deliberately absent here.
+#
+# The prose after the em dash is the audit surface.  check-syscall-capability.sh
+# only asks whether a path:line key exists, so an entry whose sentence is false
+# still reports clean — a green-and-wrong audit.  scripts/check-syscall-allowlist-prose.sh
+# holds each sentence to the code at the line it names: the syscall the line
+# invokes must be named, every SHOUTING_SNAKE constant in the prose must exist
+# in that file, and every `via Ns::member` name must exist in that file.  Run it
+# after any edit here.  Write what the line actually does, not what the
+# surrounding subsystem does.
 
 include/crucible/Cipher.h:157  — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
 include/crucible/Cipher.h:174  — effects::IO via Cipher::open (read HEAD file content at startup)
@@ -19,23 +28,23 @@ include/crucible/fixy/Io.h:435  — effects::IO via IoUringRing::release_ (munma
 include/crucible/fixy/Io.h:440  — effects::IO via IoUringRing::release_ (close ring fd, RAII, cap inherited)
 include/crucible/fixy/Time.h:122  — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
 include/crucible/handles/FileHandle.h:62  — effects::IO via FileHandle::~FileHandle (close on RAII drop)
-include/crucible/handles/FileHandle.h:73  — effects::IO via FileHandle::reset (close before reassign)
-include/crucible/handles/FileHandle.h:89  — effects::IO via FileHandle::release_close (explicit close)
-include/crucible/handles/FileHandle.h:100  — effects::IO via FileHandle::open_read (O_RDONLY)
-include/crucible/handles/FileHandle.h:109  — effects::IO via FileHandle::open_write (O_WRONLY|O_CREAT|O_TRUNC)
-include/crucible/handles/FileHandle.h:118  — effects::IO via FileHandle::open_append (O_WRONLY|O_CREAT|O_APPEND)
-include/crucible/handles/FileHandle.h:132  — effects::IO via FileHandle::read_all (read until EOF)
-include/crucible/handles/FileHandle.h:150  — effects::IO via FileHandle::write_all (write until done)
-include/crucible/handles/FileHandle.h:165  — effects::IO via FileHandle::stat_size (fstat)
+include/crucible/handles/FileHandle.h:73  — effects::IO via FileHandle::operator= (close the old fd before taking the moved-from one)
+include/crucible/handles/FileHandle.h:89  — effects::IO via FileHandle::close_explicit (close and report errno)
+include/crucible/handles/FileHandle.h:100  — effects::IO via open_read (open O_RDONLY|O_CLOEXEC)
+include/crucible/handles/FileHandle.h:109  — effects::IO via open_write_truncate (open O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC)
+include/crucible/handles/FileHandle.h:118  — effects::IO via open_write_append (open O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC)
+include/crucible/handles/FileHandle.h:132  — effects::IO via read_full (read until the caller's span is filled)
+include/crucible/handles/FileHandle.h:150  — effects::IO via write_full (write until the caller's span is drained)
+include/crucible/handles/FileHandle.h:165  — effects::IO via file_size (fstat)
 include/crucible/safety/OwnedMmap.h:104  — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
-include/crucible/warden/CpuTopology.h:129  — effects::Init via allowed_cpus_fallback (sched_getaffinity, surfaced by the unqualified-call branch)
-include/crucible/warden/CpuTopology.h:185  — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
+include/crucible/warden/CpuTopology.h:146  — effects::Init via allowed_cpus_fallback (sched_getaffinity, the fallback taken when procfs is unreadable)
+include/crucible/warden/CpuTopology.h:202  — effects::Init via numa_node_of (access on /sys/devices/system/cpu/cpuN/nodeM to find which node link exists)
 include/crucible/warden/DeadlineWatchdog.h:128  — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)
-include/crucible/warden/Hardening.h:75  — effects::Init via Hardening::apply (mint_hardening ctx-bound)
-include/crucible/warden/Hardening.h:79  — effects::Init via Hardening::apply
-include/crucible/warden/Hardening.h:83  — effects::Init via Hardening::apply
-include/crucible/warden/Hardening.h:148  — effects::Init via AppliedPolicy::revert (RAII pair of apply)
-include/crucible/warden/Hardening.h:152  — effects::Init via AppliedPolicy::revert
+include/crucible/warden/Hardening.h:75  — effects::Init via sched_setattr_sys (raw syscall SYS_sched_setattr; the only caller is Hardening::apply, which is ctx-bound through mint_hardening)
+include/crucible/warden/Hardening.h:79  — effects::Init via sched_getattr_sys (raw syscall SYS_sched_getattr; reads the prior scheduling attributes so AppliedPolicy can restore them)
+include/crucible/warden/Hardening.h:83  — effects::Init via mlock2_sys (raw syscall SYS_mlock2)
+include/crucible/warden/Hardening.h:148  — effects::Init via AppliedPolicy::revert (sched_setaffinity, restoring the mask apply replaced)
+include/crucible/warden/Hardening.h:152  — effects::Init via AppliedPolicy::revert (munlock, one per region apply locked)
 include/crucible/warden/Hardening.h:156  — effects::Init via AppliedPolicy::revert (prctl THP re-enable)
 include/crucible/warden/Hardening.h:215  — effects::Init via Hardening::apply (sched_getaffinity)
 include/crucible/warden/Hardening.h:222  — effects::Init via Hardening::apply (sched_setaffinity)
@@ -47,7 +56,7 @@ src/cntp/CongestionControl.cpp:147  — effects::IO via read_available_congestio
 src/cntp/CongestionControl.cpp:153  — effects::IO via read_available_congestion_control (read /proc CC list)
 src/cntp/CongestionControl.cpp:172  — effects::IO via set_cc_for_socket (setsockopt TCP_CONGESTION)
 src/cntp/CongestionControl.cpp:191  — effects::IO via query_cc_selection_for_socket (getsockopt TCP_CONGESTION)
-src/cntp/IncastControl.cpp:45  — effects::IO via IncastControl::apply (TCP_QUICKACK setsockopt)
+src/cntp/IncastControl.cpp:45  — effects::IO via set_socket_rto_min_usec (setsockopt TCP_RTO_MIN_US)
 src/cntp/Pacing.cpp:130  — effects::IO via query_active_qdisc (socket AF_NETLINK SOCK_RAW NETLINK_ROUTE, LocalFd-owned)
 src/cntp/Pacing.cpp:143  — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID, fixy-A5-036)
 src/cntp/Pacing.cpp:156  — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv, fixy-A5-004)
@@ -63,19 +72,19 @@ src/perf/PmuSample.cpp:172  — effects::Init via PmuSample::State::~State (clos
 src/perf/PmuSample.cpp:297  — effects::Init via PmuSample::attach (close perf fd on attach-failure rollback)
 src/perf/PmuSample.cpp:308  — effects::Init via PmuSample::attach (close perf fd on capacity-full rollback)
 src/perf/PmuSample.cpp:345  — effects::Init via PmuSample::attach (mmap pmu_sample_buf MAP_SHARED, OwnedMmap-owned)
-src/perf/ProcGauges.cpp:24  — effects::Bg via ProcGauges::~ProcGauges (RAII close)
-src/perf/ProcGauges.cpp:35  — effects::Bg via ProcGauges::open (open /proc gauge)
-src/perf/ProcGauges.cpp:44  — effects::Bg via ProcGauges::read_one (pread /proc gauge)
-src/perf/ProcGauges.cpp:352  — effects::Bg via ProcGauges::poll (pread /proc gauge)
-src/perf/ProcGauges.cpp:460  — effects::Bg via ProcGauges::loadavg (pread /proc/loadavg)
-src/perf/ProcGauges.cpp:476  — effects::Bg via ProcGauges::sample (pread /proc gauge)
+src/perf/ProcGauges.cpp:24  — effects::Bg via ScopedFd::close_ (close on RAII drop)
+src/perf/ProcGauges.cpp:35  — effects::Bg via open_ro (open /proc gauge O_RDONLY|O_CLOEXEC)
+src/perf/ProcGauges.cpp:44  — effects::Bg via pread_full (pread /proc gauge, EINTR-retried)
+src/perf/ProcGauges.cpp:352  — effects::Bg via ProcGauges::read_block_queue_depth_max_ (pread one block-stats gauge)
+src/perf/ProcGauges.cpp:460  — effects::Bg via ProcGauges::read_loadavg_x100_ (pread /proc/loadavg)
+src/perf/ProcGauges.cpp:476  — effects::Bg via ProcGauges::read_pressure_avg10_x100_ (pread a /proc/pressure gauge)
 src/perf/SchedSwitch.cpp:188  — effects::Init via SchedSwitch::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
 src/perf/SchedTpBtf.cpp:179  — effects::Init via SchedTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-src/perf/SenseHub.cpp:199  — effects::Init via SenseHub::load_subset (mmap counters array MAP_SHARED, OwnedMmap-owned)
+src/perf/SenseHub.cpp:199  — effects::Init via SenseHub::load (mmap counters array MAP_SHARED, OwnedMmap-owned)
 src/perf/SyscallLatency.cpp:177  — effects::Init via SyscallLatency::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
 src/perf/SyscallTpBtf.cpp:174  — effects::Init via SyscallTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-src/topology/CongestionTelemetry.cpp:237  — effects::IO via CongestionTelemetry::harvest_socket (TCP_INFO getsockopt)
-src/topology/CongestionTelemetry.cpp:258  — effects::IO via CongestionTelemetry::harvest_socket (TCP_CC_INFO getsockopt)
+src/topology/CongestionTelemetry.cpp:239  — effects::IO via CongestionTelemetry::harvest_socket (getsockopt TCP_INFO)
+src/topology/CongestionTelemetry.cpp:260  — effects::IO via CongestionTelemetry::harvest_socket (getsockopt TCP_CC_INFO)
 src/topology/Ptp.cpp:84  — effects::IO via PtpClock::close (close /dev/ptp* fd)
 src/topology/Ptp.cpp:184  — effects::IO via open_ptp_clock (open /dev/ptp<N> O_RDONLY|O_CLOEXEC, LocalFd→PtpClock)
 src/topology/Ptp.cpp:195  — effects::IO via query_ptp_clock_caps (PTP_CLOCK_GETCAPS2 ioctl)

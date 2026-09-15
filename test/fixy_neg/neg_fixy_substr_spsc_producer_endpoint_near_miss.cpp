@@ -58,8 +58,16 @@ struct NearMissChannel {
     using ConsumerHandle = FakeConsumerHandle;
 
     // BUG: must return FakeProducerHandle (bare), not optional<FakeProducerHandle>.
-    std::optional<FakeProducerHandle> producer(saf::Permission<PTag>&&) { return std::nullopt; }
-    FakeConsumerHandle consumer(saf::Permission<CTag>&&) { return FakeConsumerHandle{}; }
+    std::optional<FakeProducerHandle> producer(saf::Permission<PTag>&&) {
+        // FIXY-DISCIPLINE-OK: a near-miss surface only near-misses if it
+        // reproduces the substrate signature exactly.
+        return std::nullopt;
+    }
+    FakeConsumerHandle consumer(saf::Permission<CTag>&&) {
+        // FIXY-DISCIPLINE-OK: same reason — the correct half of the pair,
+        // kept exact so only the producer half is the near miss.
+        return FakeConsumerHandle{};
+    }
 };
 }  // namespace neg_fixy_substr_spsc_producer_endpoint_near_miss
 

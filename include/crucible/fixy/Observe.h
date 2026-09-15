@@ -1,7 +1,8 @@
 #pragma once
 
-// The keeper reader mint and the canopy reader mint differ in name
-// only. Both resolve to the same reader factory over the same channel.
+// The keeper reader mint and the canopy reader mint read the same
+// channel and hold the same share, but each hands back its own role
+// type, so one cannot be passed where the other is wanted.
 
 #include <crucible/observe/Metrics.h>
 
@@ -20,6 +21,12 @@ using ::crucible::observe::RuntimeMetricsComputation;
 using ::crucible::observe::RuntimeMetricsChannel;
 using ::crucible::observe::RuntimeMetricsWriter;
 using ::crucible::observe::RuntimeMetricsReader;
+
+using ::crucible::observe::CanopyMetricsReader;
+using ::crucible::observe::CanopyMetricsRole;
+using ::crucible::observe::KeeperMetricsReader;
+using ::crucible::observe::KeeperMetricsRole;
+using ::crucible::observe::RuntimeMetricsRoleReader;
 
 using ::crucible::observe::RuntimeMetricsWriterTag;
 using ::crucible::observe::RuntimeMetricsReaderTag;
@@ -70,5 +77,11 @@ static_assert(
     !std::is_same_v<::crucible::fixy::observe::RuntimeMetricsSample, ::crucible::fixy::observe::RuntimeMetrics>,
     "RuntimeMetricsSample must stay a staleness-wrapped payload. Collapsing "
     "it to the bare payload makes every sample read as fresh.");
+
+static_assert(!std::is_same_v<::crucible::fixy::observe::KeeperMetricsReader,
+                              ::crucible::fixy::observe::CanopyMetricsReader>,
+              "The keeper and canopy readers must stay distinct types. If they "
+              "collapse, the two mint names carry no more meaning than a comment "
+              "and either role can be passed where the other is wanted.");
 
 }  // namespace crucible::fixy::observe::self_test

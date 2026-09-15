@@ -96,6 +96,10 @@ void adam_step_ref(float* params, float* m, float* v, const float* grad, int n, 
 // is per-instance and cannot be shared across threads).
 
 using BoundOptimizer = fn::Fn<AdamStepPtr,  // 1 Type
+                              // FIXY-DISCIPLINE-OK: this example exists to show
+                              // the raw 19-positional substrate signature.  It is
+                              // reached through the `fn` alias declared above,
+                              // which is the same reach as safety::fn::Fn<>.
                               fn::pred::True,  // 2 Refinement
                               fn::UsageMode::Copy,  // 3 Usage
                               fx::Row<fx::Effect::Bg, fx::Effect::Alloc>,  // 4 EffectRow
