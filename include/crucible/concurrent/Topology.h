@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if __has_include(<filesystem>)
@@ -143,6 +144,24 @@ namespace topology_detail {
 
 // The CPU directory holds entries such as "cpufreq" and "cpuidle" alongside
 // the per-CPU ones, so only a "cpu" followed by digits alone counts.
+//
+// Returns the ONLINE CPUs, not the present ones.  A `cpuN` directory survives
+// the CPU going offline — only `cpuN/online` flips to 0 — so the directory
+// glob alone counts hardware the process can never run on.  Every other sysfs
+// source this file reads (node `cpulist`, cache `shared_cpu_list`) already
+// reports online CPUs only, and mixing the two sets makes `num_smt_threads()`
+// disagree with the union of `cores_on_node()`.
+//
+// Measured on the bench host with cores 280-287 offlined for SMT isolation:
+// 384 `cpuN` directories against 376 CPUs in the two node cpulists.  A caller
+// sizing a per-CPU array or a thread pool from the larger number reserves for
+// eight CPUs that cannot be scheduled on, and a scheduler pinning by index can
+// pick one of them.
+//
+// `cpu0` ships no `online` file on most kernels because it cannot be offlined,
+// and a kernel built without CPU hotplug ships none at all.  A missing file
+// therefore reads as online, which is the fail-open direction that keeps this
+// probe working on those kernels rather than returning an empty set.
 [[nodiscard]] inline std::vector<int> enumerate_cpus_() noexcept {
     std::vector<int> cpus;
 #if __has_include(<filesystem>)
@@ -156,6 +175,8 @@ namespace topology_detail {
             int id = 0;
             auto [p, ec] = std::from_chars(tail.data(), tail.data() + tail.size(), id);
             if (ec != std::errc{} || p != tail.data() + tail.size()) continue;
+            const std::string online_path = "/sys/devices/system/cpu/" + name + "/online";
+            if (fs::exists(online_path) && read_trimmed_(online_path) == "0") continue;
             cpus.push_back(id);
         }
         std::sort(cpus.begin(), cpus.end());
@@ -303,8 +324,20 @@ public:
     [[nodiscard]] std::size_t l3_total_bytes() const noexcept { return l3_; }
     [[nodiscard]] std::size_t cache_line_bytes() const noexcept { return line_; }
 
+    // Physical cores across every package, deduplicated on (package, core).
     [[nodiscard]] std::size_t num_cores() const noexcept { return cores_; }
+
+    // Hardware threads the kernel reports ONLINE.  An offlined CPU keeps its
+    // sysfs directory but does not count here, so this tracks hotplug and SMT
+    // changes.  It is not the same question as `process_cpu_count()`, which
+    // asks what this process is allowed to run on.
     [[nodiscard]] std::size_t num_smt_threads() const noexcept { return threads_; }
+
+    // Threads per core, averaged over the machine and truncated.  On a part
+    // with SMT disabled per core it is a FLOOR, not a per-core fact: the
+    // bench host with 8 of its 192 cores SMT-disabled reports 1, though 184
+    // still carry two threads.  Read `l3_groups()` when the caller needs to
+    // know whether one specific core has a sibling.
     [[nodiscard]] std::size_t smt_factor() const noexcept { return cores_ == 0 ? 1 : threads_ / cores_; }
 
     // How many CPUs this process is allowed to run on, which under a container
@@ -456,7 +489,10 @@ inline void Topology::probe_linux_() noexcept {
     const auto cpus = enumerate_cpus_();
     if (cpus.empty()) return;  // no sysfs: keep the fallback values
 
-    // Sysfs beats the standard library's count when CPUs have been unplugged.
+    // Sysfs beats the standard library's count when CPUs have been unplugged
+    // — but only because `enumerate_cpus_` filters on `cpuN/online`.  The
+    // directory glob on its own counts unplugged CPUs, which is the opposite
+    // of what this line claimed before that filter existed.
     threads_ = cpus.size();
 
     // Reading one CPU's caches assumes every core has the same hierarchy.  A
@@ -465,7 +501,6 @@ inline void Topology::probe_linux_() noexcept {
 
     {
         const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(cpus[0]) + "/cache";
-        std::set<int> physical_cores;  // dedup via core_id
 
         namespace fs = std::filesystem;
         try {
@@ -513,19 +548,37 @@ inline void Topology::probe_linux_() noexcept {
     }
 
     // Hardware threads on one core report the same core id, so the number of
-    // distinct ids is the number of physical cores.
-
+    // distinct ids is the number of physical cores — WITHIN ONE PACKAGE.
+    // `core_id` is unique per package, not per machine: every socket numbers
+    // its cores from 0, so socket 1's core 0 and socket 0's core 0 collide.
+    // Counting bare core_ids therefore reports the cores of a single socket
+    // and divides the true count by the number of sockets.
+    //
+    // Measured on the bench host (2 x EPYC 9655): 96 distinct core_ids
+    // against 192 distinct (package, core) pairs.  That undercount fed
+    // `smt_factor()`, which is `threads_ / cores_`, and turned an SMT2
+    // machine into an apparent SMT4 one — a number plausible enough to pass
+    // the sanity test in test_topology.cpp, which is why it went unnoticed.
     {
-        std::set<int> physical_core_ids;
+        std::set<std::pair<int, int>> physical_cores;  // (package, core)
         for (int cpu : cpus) {
-            const std::string p = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/core_id";
-            const auto s = read_trimmed_(p);
+            const std::string topo = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/";
+            const auto core_str = read_trimmed_(topo + "core_id");
             int core_id = -1;
-            std::from_chars(s.data(), s.data() + s.size(), core_id);
-            if (core_id >= 0) physical_core_ids.insert(core_id);
+            std::from_chars(core_str.data(), core_str.data() + core_str.size(), core_id);
+            if (core_id < 0) continue;
+
+            // A single-socket kernel, or one without package topology, ships
+            // no physical_package_id.  Package 0 for all is then correct,
+            // and reduces this to the original single-package count.
+            const auto pkg_str = read_trimmed_(topo + "physical_package_id");
+            int package_id = 0;
+            std::from_chars(pkg_str.data(), pkg_str.data() + pkg_str.size(), package_id);
+
+            physical_cores.emplace(package_id, core_id);
         }
-        if (!physical_core_ids.empty()) {
-            cores_ = physical_core_ids.size();
+        if (!physical_cores.empty()) {
+            cores_ = physical_cores.size();
         }
     }
 
