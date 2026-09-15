@@ -472,18 +472,22 @@ namespace {
 
     // The background thread folds a region's content hash one op at a
     // time as it drains the ring, while compute_content_hash folds the
-    // same region from a span.  The two must agree bit for bit.  The
-    // lambda below replicates the streaming composition (seed, one
-    // per-op fold, fmix64 finalize), so the comparison locks the seed,
-    // the per-op fold and the finalizer that both paths share.  A
-    // count == 0 op and an op with no tensors are the two shapes the
+    // same region from a span.  The two must agree bit for bit.
+    //
+    // The lambda below drives ContentHashFold exactly the way the
+    // background thread's build_trace_from does: construct, fold each op
+    // as it is populated, finish.  It is the production composition, not
+    // a replica of it — a replica would re-spell the seed and the
+    // finalizer and so could not witness a change to either.
+    //
+    // A count == 0 op and an op with no tensors are the two shapes the
     // two folds drift apart on first, so both appear here.
     {
         auto streaming_hash = [](std::span<const crucible::TraceEntry> region_ops) {
-            uint64_t content_h = 0x9E3779B97F4A7C15ULL;
+            crucible::ContentHashFold fold;
             for (const auto& op : region_ops)
-                crucible::fold_trace_entry_content(content_h, op);
-            return crucible::ContentHash{crucible::detail::fmix64(content_h)};
+                fold.fold(op);
+            return fold.finish();
         };
 
         crucible::TensorMeta input_meta{};
@@ -536,6 +540,159 @@ namespace {
 
         std::printf("  streaming fold matches the span fold "
                     "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
+
+        // Frozen content-hash vectors.
+        //
+        // The equivalence above is necessary and no longer sufficient.  The
+        // seed, the per-op mix and the finalizer are one object now, so the
+        // two producers move together: a change to any of the three keeps
+        // them equal to each other and changes what they both produce.
+        //
+        // These vectors are what makes that change loud.  A region's content
+        // hash is the compiler's cache key and is persisted in the Cipher,
+        // so moving the format invalidates every stored hash and every
+        // cached kernel.  That is a deliberate act, and it updates these
+        // numbers in the same commit.
+        //
+        // The failure path prints what it got, so a deliberate move does not
+        // need a separate harness to recover the new values.
+        uint32_t moved_vectors = 0;
+        auto golden = [&moved_vectors](const char* what, crucible::ContentHash got, uint64_t want) {
+            if (got.raw() == want) return;
+            ++moved_vectors;
+            // Every vector is reported before the abort, so one run recovers
+            // the whole replacement set.  stderr, because the abort below
+            // discards a block-buffered stdout.
+            std::fprintf(stderr,
+                         "  content-hash vector '%s' moved: got 0x%016llXULL, "
+                         "frozen at 0x%016llXULL\n",
+                         what, static_cast<unsigned long long>(got.raw()), static_cast<unsigned long long>(want));
+        };
+
+        // The tensor op above carries a default TensorMeta, whose dtype is
+        // Undefined.  That is one of the two shapes the fold currently
+        // collapses on, so it is a poor thing to pin a format against: the
+        // frozen value would be the collapse, not the format.  The vectors
+        // use a tensor with a real dtype and device instead, and the
+        // collapse gets its own block below.
+        crucible::TensorMeta real_meta{};
+        real_meta.dtype = crucible::ScalarType::Float;
+        real_meta.device_type = crucible::DeviceType::CUDA;
+        real_meta.device_idx = 0;
+
+        crucible::TraceEntry e_real_tensor{};
+        e_real_tensor.schema_hash = SchemaHash{0x66};
+        e_real_tensor.num_inputs = 1;
+        e_real_tensor.input_metas = &real_meta;
+
+        crucible::TraceEntry real_mix[] = {e_empty, e_count_only, e_one, e_five, e_real_tensor};
+        const std::span<const crucible::TraceEntry> real_mix_sp{real_mix, 5};
+
+        auto one_op = [](const crucible::TraceEntry& op) {
+            return crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&op, 1});
+        };
+
+        golden("empty region", crucible::compute_content_hash(empty_sp), 0x9CA066F1A4AB2EEAULL);
+        golden("no-tensor op", one_op(e_empty), 0xC618BE7298AA9E5EULL);
+        golden("scalar count only", one_op(e_count_only), 0xEAA9763A50C958B8ULL);
+        golden("one scalar", one_op(e_one), 0x9C8B77BB3E1047B2ULL);
+        golden("five scalars", one_op(e_five), 0xC48495C5B66BDFE2ULL);
+        golden("one tensor", one_op(e_real_tensor), 0x2E2953936E574B57ULL);
+        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0x6409B52C9172B550ULL);
+
+        // The recipe fold is part of the same format, so it is frozen too.
+        constexpr crucible::NumericalRecipe golden_recipe = crucible::hashed(crucible::NumericalRecipe{
+            .accum_dtype = crucible::ScalarType::Float,
+            .out_dtype = crucible::ScalarType::Half,
+            .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
+            .rounding = crucible::RoundingMode::RN,
+            .scale_policy = crucible::ScalePolicy::NONE,
+            .softmax = crucible::SoftmaxRecurrence::ONLINE_LSE,
+            .determinism = crucible::ReductionDeterminism::BITEXACT_TC,
+            .flags = {},
+            .hash = {},
+        });
+        golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, &golden_recipe),
+               0x63B60C6940443739ULL);
+
+        assert(moved_vectors == 0
+               && "the region content-hash format changed: every persisted content hash and "
+                  "every cached kernel keyed on one is now stale");
+
+        std::printf("  content-hash vectors frozen "
+                    "(seed, per-op mix, finalizer, recipe fold)\n");
+    }
+
+    // KNOWN DEFECT, recorded here so a change to the fold has to confront it.
+    //
+    // The per-tensor step is
+    //     state = wymix(state ^ dim_hash, meta_packed)
+    // and wymix(a, b) is lo(a*b) ^ hi(a*b), which has two absorbing values
+    // for b.  wymix(a, 0) is 0, and wymix(a, ~0) is ~0 for every non-zero a.
+    // Reaching either erases the whole region prefix: every op before the
+    // tensor stops contributing, and two regions that differ only before
+    // that op get the same content hash.
+    //
+    // Both are reachable from ordinary metadata:
+    //
+    //   meta_packed == ~0   The pack is
+    //                         dtype | device_type << 8 | uint8(device_idx) << 16
+    //                       and ScalarType is int8_t with Undefined == -1.
+    //                       to_underlying gives int8_t(-1), which
+    //                       sign-extends to 0xFFFF'FFFF'FFFF'FFFF and swamps
+    //                       the two shifted fields as well.  Any op whose
+    //                       first input is an undefined optional tensor
+    //                       lands here.  Note the third field already has
+    //                       the uint8_t cast the other two are missing.
+    //
+    //   meta_packed == 0    ScalarType::Byte is 0, DeviceType::CPU is 0, and
+    //                       device index 0 is ordinary, so a uint8 tensor on
+    //                       the first CPU device packs to zero.  The content
+    //                       hash is then 0, which is the KernelCache's
+    //                       empty-slot sentinel and what make_region's
+    //                       postcondition refuses.
+    //
+    // The fix changes the hash format, so it invalidates every persisted
+    // content hash and every cached kernel, and it belongs in a commit of
+    // its own that moves the vectors above with it.  These assertions pin
+    // the current behavior so that commit cannot land quietly.
+    {
+        auto with_meta = [](uint64_t schema, crucible::TensorMeta* meta) {
+            crucible::TraceEntry e{};
+            e.schema_hash = SchemaHash{schema};
+            e.num_inputs = 1;
+            e.input_metas = meta;
+            return e;
+        };
+        auto no_tensor = [](uint64_t schema) {
+            crucible::TraceEntry e{};
+            e.schema_hash = SchemaHash{schema};
+            return e;
+        };
+
+        crucible::TensorMeta undefined_meta{};  // dtype Undefined == -1
+        crucible::TensorMeta zero_packed_meta{};
+        zero_packed_meta.dtype = crucible::ScalarType::Byte;
+        zero_packed_meta.device_type = crucible::DeviceType::CPU;
+        zero_packed_meta.device_idx = 0;
+
+        for (auto* meta : {&undefined_meta, &zero_packed_meta}) {
+            crucible::TraceEntry region_a[2] = {no_tensor(0xAAAA), with_meta(0x5555, meta)};
+            crucible::TraceEntry region_b[2] = {no_tensor(0xBBBB), with_meta(0x5555, meta)};
+            const auto h_a = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region_a, 2});
+            const auto h_b = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region_b, 2});
+            assert(h_a == h_b
+                   && "the absorbing-element collapse was fixed: move the frozen vectors above "
+                      "and delete this block");
+        }
+
+        // The zero-packed case produces the sentinel hash outright.
+        crucible::TraceEntry sentinel_region[1] = {with_meta(0x5555, &zero_packed_meta)};
+        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{sentinel_region, 1}).raw() == 0
+               && "the zero-pack collapse was fixed: move the frozen vectors above and delete this block");
+
+        std::printf("  known absorbing-element collapse pinned "
+                    "(dtype Undefined and zero-packed metadata)\n");
     }
 
     std::printf("test_merkle_dag: all tests passed\n");

@@ -98,14 +98,69 @@ struct BackgroundThread {
 
     // The build stage and the publish stage are separate pipeline threads.
     // Arena storage is append-only, so pointers already handed out stay
-    // valid, but the bump cursor is shared mutable state.  A spin-only gate
-    // serializes the allocation windows without parking in the kernel and
-    // without weakening the permissioned SPSC stage topology.
+    // valid, but the bump cursor is shared mutable state.  This gate
+    // serializes the two allocation windows against each other without
+    // weakening the permissioned SPSC stage topology.
+    //
+    // The gate spins on a pause budget and then yields, so a waiter can
+    // reach the kernel.  That is why the windows it covers are kept to the
+    // arena bumps themselves: every extra statement inside the gate is
+    // another reason for the other stage to reach the yield.
     alignas(64) concurrent::SpinLock arena_alloc_gate_;
     Arena arena{1 << 20};
 
-    crucible::fixy::wrap::AppendOnly<RegionNode*> uncompiled_regions;
-    crucible::fixy::wrap::AppendOnly<TraceGraph*> iteration_graphs;
+    // Regions that have been published but not compiled.  This is the
+    // hand-off point a compiler backend attaches to, and until one exists
+    // nothing reads it.
+    //
+    // It is a bounded ring rather than a growing list for that reason: an
+    // unread list gains one pointer per published region and is never
+    // reclaimed, so it grows for the whole life of the process.  Bounding it
+    // keeps the hand-off point while making the retention constant.
+    //
+    // A backend that keeps pace with the publish stage never has more than
+    // one graph-publish channel's worth of regions outstanding, so the bound
+    // is that channel's depth.  A backend further behind than that is not
+    // catching up, and the regions it missed describe shapes the model has
+    // already moved past.
+    //
+    // The publish stage is the sole writer.  total() is safe to read from
+    // any thread; at() is not, and needs the pipeline quiescent.
+    class UncompiledRegionQueue {
+    public:
+        static constexpr uint32_t CAP = 64;
+
+        void push(RegionNode* region) noexcept {
+            slots_[static_cast<uint32_t>(total_.peek_relaxed() % CAP)] = region;
+            (void)total_.bump();
+        }
+
+        // Every region ever published, including the ones the bound
+        // dropped.  total() - size() is how many were dropped.
+        [[nodiscard]] uint64_t total() const noexcept { return total_.get(); }
+
+        [[nodiscard]] uint32_t size() const noexcept {
+            const uint64_t seen = total_.get();
+            return (seen < CAP) ? static_cast<uint32_t>(seen) : CAP;
+        }
+
+        // age 0 is the most recently published region.  The bound is size()
+        // rather than CAP so that a fresh queue cannot hand back the null a
+        // never-written slot still holds.  The clause is the in-body macro
+        // because its predicate reaches a member through `this`, which a
+        // plain pre() skips when the compiler folds this body.
+        [[nodiscard]] RegionNode* at(uint32_t age) const noexcept {
+            CRUCIBLE_PRE(age < size());
+            const uint64_t seen = total_.get();
+            return slots_[static_cast<uint32_t>((seen + CAP - 1u - age) % CAP)];
+        }
+
+    private:
+        RegionNode* slots_[CAP]{};
+        crucible::fixy::wrap::AtomicMonotonic<uint64_t> total_{0};
+    };
+
+    UncompiledRegionQueue uncompiled_regions;
 
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
@@ -133,6 +188,26 @@ struct BackgroundThread {
     // each drain cycle, and the neighbouring fields are background-private.
     alignas(64) crucible::fixy::handle::OneShotFlag reset_requested;
 
+    // Which side of the last reset a piece of pipeline work belongs to.
+    //
+    // Clearing the detect stage's accumulated trace is not enough on its
+    // own.  A region whose entries were all recorded before the divergence
+    // may already be queued for the build or the publish stage, and it
+    // finishes and publishes after the reset.  The foreground has just
+    // deactivated replay and gone back to recording, and that publish hands
+    // it the shape that diverged: it aligns against it, activates, and the
+    // region cache then offers it as an alternate for the next divergence.
+    //
+    // So each work item carries the epoch it was cut under, and the two
+    // stages downstream drop anything older than the current one.  The
+    // detect stage is the sole writer, and it bumps inside the reset itself,
+    // which puts every item already in flight one epoch behind.
+    //
+    // Commit markers are exempt.  They carry no region, only the count of
+    // entries a batch consumed, and total_processed has to advance past a
+    // dropped region for flush() to return.
+    alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> reset_epoch{0};
+
     static constexpr uint32_t BATCH_SIZE = 4096;
 
     struct BgTraceBatch {
@@ -149,6 +224,9 @@ struct BackgroundThread {
         bool commit_only = false;
         uint32_t commit_count = 0;
         uint32_t completed_len = 0;
+        // The reset epoch this work was cut under.  Meaningless on a
+        // commit-only marker, which is never dropped.
+        uint32_t epoch = 0;
         std::vector<TraceRing::Entry> trace;
         std::vector<MetaIndex> meta_starts;
         std::vector<ScopeHash> scope_hashes;
@@ -180,6 +258,10 @@ struct BackgroundThread {
         TraceGraph* graph = nullptr;
         bool commit_only = false;
         uint32_t commit_count = 0;
+        // Carried through from the BgBuildWork this came from, so a reset
+        // that lands while the build stage is mid-graph is still caught
+        // here, one stage later.
+        uint32_t epoch = 0;
     };
 
     struct BgPipelineStartTag {};
@@ -253,6 +335,7 @@ struct BackgroundThread {
             work = new BgBuildWork{};
             work->owner = this;
             work->completed_len = completed_len;
+            work->epoch = reset_epoch.get();
             work->trace.assign(current_trace.begin(), current_trace.begin() + completed_len);
             work->meta_starts.assign(current_meta_starts.begin(), current_meta_starts.begin() + completed_len);
             work->scope_hashes.assign(current_scope_hashes.begin(), current_scope_hashes.begin() + completed_len);
@@ -276,19 +359,43 @@ struct BackgroundThread {
         return work;
     }
 
+    // Releases a graph the publish stage will not publish.  The arena holds
+    // the graph itself and never gives storage back, but the metadata log is
+    // a ring the foreground keeps writing into, so its tail has to advance
+    // past the entries this graph read or the log fills for good.
+    void discard_trace_graph(TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
+        if (!graph) return;
+        const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
+        if (max_meta_end > 0) {
+            meta_log.get().value()->advance_tail(max_meta_end);
+        }
+    }
+
     void publish_trace_graph(effects::Alloc a, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
         if (!graph) return;
-
-        iteration_graphs.append(graph);
 
         const uint32_t num_ops = graph->num_ops.get_assuming_set();
         const uint32_t num_slots = graph->num_slots.get_assuming_set();
         const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
 
-        auto* region = make_region(a, arena, graph->ops, num_ops, graph->content_hash);
-
-        if (graph->slots && num_slots > 0) {
-            region->plan = compute_memory_plan(a, graph->slots, num_slots);
+        // The gate covers the arena bump cursor and nothing else.  It used
+        // to wrap this whole function, which meant the region-ready callback
+        // ran inside it: that callback commits a transaction, flips the mode
+        // cell and reads sampled counters, and the build stage was locked
+        // out of the arena for all of it.  The gate spins on a budget and
+        // then yields, so the build stage reached the kernel every time.
+        //
+        // Nothing after this scope touches the arena.  recompute_merkle
+        // walks nodes that already exist, advance_tail moves a counter in
+        // the metadata log, and the queue below is heap storage the publish
+        // stage owns alone.
+        RegionNode* region = nullptr;
+        {
+            concurrent::SpinGuard guard{arena_alloc_gate_};
+            region = make_region(a, arena, graph->ops, num_ops, graph->content_hash);
+            if (graph->slots && num_slots > 0) {
+                region->plan = compute_memory_plan(a, graph->slots, num_slots);
+            }
         }
 
         if (max_meta_end > 0) {
@@ -296,7 +403,7 @@ struct BackgroundThread {
         }
 
         recompute_merkle(region);
-        uncompiled_regions.append(region);
+        uncompiled_regions.push(region);
 
         active_region.store(region, std::memory_order_release);
         if (region_ready_cb) region_ready_cb(region);
@@ -370,6 +477,12 @@ struct BackgroundThread {
                 owner->current_meta_starts.clear();
                 owner->current_scope_hashes.clear();
                 owner->current_callsite_hashes.clear();
+                // Everything already handed downstream was cut from
+                // pre-divergence entries.  The bump is what the build and
+                // publish stages compare against to drop it.  It happens
+                // last so the cleared state above is visible to whoever
+                // observes the new epoch.
+                (void)owner->reset_epoch.bump();
             };
 
             (void)owner->reset_requested.check_and_run(do_reset);
@@ -430,10 +543,25 @@ struct BackgroundThread {
                 publish->graph = nullptr;
                 publish->commit_only = true;
                 publish->commit_count = work->commit_count;
+                publish->epoch = work->epoch;
                 push_pipeline(out, publish.get());
                 publish.release();
                 continue;
             }
+
+            // A stale work item is deliberately still built here rather
+            // than dropped on the spot.  Dropping it would save the arena
+            // bump, but the metadata entries it covers still have to be
+            // released or the log fills for good, and the only thing that
+            // knows that range is the scan inside build_trace_from.  Doing
+            // it here instead would put a second copy of "where does this
+            // work's metadata end" in the tree, which is the kind of
+            // duplicate that drifts.
+            //
+            // So the stale check sits one stage on, at the publish, where
+            // the graph carries its own max_meta_end.  The cost is one
+            // wasted graph per in-flight region per divergence, on a path
+            // that only runs when replay has already failed.
 
             TraceGraph* graph = nullptr;
             {
@@ -452,6 +580,7 @@ struct BackgroundThread {
             publish->graph = graph;
             publish->commit_only = false;
             publish->commit_count = 0;
+            publish->epoch = work->epoch;
             push_pipeline(out, publish.get());
             publish.release();
         }
@@ -492,10 +621,28 @@ struct BackgroundThread {
                 (void)PublishStageAuth::commit(owner->total_processed, publish->commit_count);
                 continue;
             }
-            {
-                concurrent::SpinGuard guard{owner->arena_alloc_gate_};
-                owner->publish_trace_graph(bg.alloc, publish->graph);
+
+            // A divergence reset landed after this region's entries were
+            // cut, so the region describes the shape that just failed to
+            // replay.  Publishing it would hand that shape back to a
+            // foreground that has already fallen back to recording.
+            //
+            // This is the only stale check, and it sits here rather than at
+            // the build stage so that the graph's own max_meta_end is the
+            // one thing that decides which metadata range to release.  It
+            // also catches a reset that landed while the build stage was
+            // mid-graph.
+            //
+            // The graph itself is arena storage and stays where it is.  Only
+            // the metadata log needs the hand-off: the entries this graph
+            // read are dead either way, and the foreground has to be able to
+            // reuse that space.
+            if (publish->epoch != owner->reset_epoch.get()) {
+                owner->discard_trace_graph(publish->graph);
+                continue;
             }
+
+            owner->publish_trace_graph(bg.alloc, publish->graph);
         }
     }
 
@@ -825,73 +972,6 @@ private:
         std::move(pipeline).run();
     }
 
-    void on_iteration_boundary(effects::Alloc a) CRUCIBLE_NO_THREAD_SAFETY {
-        uint32_t total = static_cast<uint32_t>(current_trace.size());
-        uint32_t iter_len = detector.last_completed_len;
-
-        uint32_t warmup = crucible::sat::sub_sat(crucible::sat::sub_sat(total, IterationDetector::K), iter_len);
-        if (warmup > 0) [[unlikely]] {
-            auto shift = [warmup](auto& vec) {
-                auto n = vec.size();
-                if (warmup < n) {
-                    std::memmove(vec.data(), vec.data() + warmup, (n - warmup) * sizeof(vec[0]));
-                    vec.resize(n - warmup);
-                } else {
-                    vec.clear();
-                }
-            };
-            shift(current_trace);
-            shift(current_meta_starts);
-            shift(current_scope_hashes);
-            shift(current_callsite_hashes);
-            total = crucible::sat::sub_sat(total, warmup);
-        }
-
-        uint32_t completed_len = crucible::sat::sub_sat(total, IterationDetector::K);
-        last_iteration_length = completed_len;
-        iterations_completed.bump();
-
-        if (meta_log && completed_len > 0) {
-            TraceGraph* graph = build_trace(a, completed_len);
-            if (graph) {
-                iteration_graphs.append(graph);
-                const uint32_t num_ops = graph->num_ops.get_assuming_set();
-                const uint32_t num_slots = graph->num_slots.get_assuming_set();
-                const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
-
-                auto* region = make_region(a, arena, graph->ops, num_ops, graph->content_hash);
-
-                if (graph->slots && num_slots > 0) {
-                    region->plan = compute_memory_plan(a, graph->slots, num_slots);
-                }
-
-                // Advance the tail only after every read, because the
-                // metadata pointers point straight into the log buffer.
-                if (max_meta_end > 0) meta_log.get().value()->advance_tail(max_meta_end);
-
-                recompute_merkle(region);
-                uncompiled_regions.append(region);
-
-                active_region.store(region, std::memory_order_release);
-                if (region_ready_cb) region_ready_cb(region);
-            }
-        }
-
-        // Keep the K signature ops that start the next iteration.
-        auto retain_tail = [](auto& vec) {
-            constexpr uint32_t K = IterationDetector::K;
-            auto n = vec.size();
-            if (n > K) {
-                std::memmove(vec.data(), vec.data() + n - K, K * sizeof(vec[0]));
-                vec.resize(K);
-            }
-        };
-        retain_tail(current_trace);
-        retain_tail(current_meta_starts);
-        retain_tail(current_scope_hashes);
-        retain_tail(current_callsite_hashes);
-    }
-
 public:
     static constexpr uint32_t MAX_SLOTS = 65536;
 
@@ -989,7 +1069,11 @@ public:
         const uint8_t local_gen = map_gen_;
         const uint32_t local_mask = ptr_mask_;
 
-        uint64_t content_h_local = 0x9E3779B97F4A7C15ULL;
+        // The fold object owns the seed, the per-op mix and the finalizer,
+        // so this streaming producer cannot drift from the span producer in
+        // MerkleDag.h.  Spelling the seed here instead is what used to make
+        // a change to one of them silent.
+        ContentHashFold content_fold;
 
         for (uint32_t i = 0; i < count; i++) {
             const auto& re = trace_data[i];
@@ -1057,11 +1141,11 @@ public:
             }
 
             // Both branches above fully populate `te`, so one fold covers
-            // the tensor and no-tensor cases alike.  This is the same helper
-            // the canonical whole-region hash uses, so the streaming result
-            // is bit-identical to that pass by construction and needs no
-            // second walk.
-            fold_trace_entry_content(content_h_local, te);
+            // the tensor and no-tensor cases alike.  This is the same object
+            // the canonical whole-region hash drives, so the streaming
+            // result is bit-identical to that pass by construction and needs
+            // no second walk.
+            content_fold.fold(te);
 
             // Prefetch the map slots the next op will probe.  Processing the
             // current op gives the lines time to arrive.
@@ -1200,7 +1284,7 @@ public:
         graph->ops = ops;
         graph->slots = slots;
         graph->num_slots.set(num_slots);
-        graph->content_hash = ContentHash{detail::fmix64(content_h_local)};
+        graph->content_hash = content_fold.finish();
         graph->max_meta_end.set(max_meta_end);
         build_csr(a, arena, graph, local_edges, num_edges, count);
 

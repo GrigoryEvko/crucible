@@ -487,79 +487,124 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return ContentHash{detail::fmix64(body_hash_state)};
 }
 
-// The per-entry contribution to a region's content hash.  Every path that
-// folds a trace entry calls this one helper: a second copy of the fold would
-// drift, and two disagreeing hashes for the same region destroy the suffix
-// and kernel sharing that compares them.
+// The whole region content-hash format, and the only place it is written.
 //
-// The fold order is part of the hash format.  Changing the order, or what
-// each step mixes in, invalidates every stored content hash.
+// A region's content hash is the compiler's cache key, so it has to come out
+// the same from every producer.  It has three steps — the seed, the per-op
+// mix, and the finalizer — and all three are part of the format.  Two
+// producers exist: the span fold below, and the streaming fold the
+// background thread runs as it builds a region out of the drained ring.  A
+// producer that spelled any one of the three steps for itself would move
+// independently of the other, and the two hashes for one region would then
+// disagree with no build failure to say so.
 //
-// The scalar count folds with an XOR-multiply rather than wymix, because
-// wymix(X, 0) is 0 and a scalar-free op legitimately has a count of 0: that
-// would zero the accumulator and produce a content hash of 0, which is the
-// empty-slot sentinel.  The count folds unconditionally, before the values,
-// so that N arguments differ from M even when the first min(N, M) agree, and
-// so an op with neither tensors nor scalars still perturbs the accumulator.
-//
-// Per tensor, the dimensions XOR-fold into one value and a single wymix
-// merges it.  The alternative, one wymix per dimension, makes each multiply
-// depend on the previous result and cannot pipeline.
-//
-// Every producer sizes the scalar_args allocation to num_scalar_args, so the
-// loop over it is in bounds.  A null scalar_args contributes the count only.
-[[gnu::always_inline]] inline void fold_trace_entry_content(uint64_t& content_hash_state,
-                                                            const TraceEntry& op_record) noexcept {
-    content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
+// Hence this object rather than three loose pieces: a producer drives it and
+// cannot reach the steps.  Changing a step here changes every producer at
+// once, and invalidates every stored content hash — which the frozen vectors
+// in test_merkle_dag are there to make loud.
+class ContentHashFold {
+public:
+    constexpr ContentHashFold() noexcept = default;
 
-    for (uint16_t j = 0; j < op_record.num_inputs; j++) {
-        const TensorMeta& input_meta = op_record.input_metas[j];
-        const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(input_meta));
-        uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
-                             | (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8)
-                             | (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
-        content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
+    // The recipe folds in before any op so its contribution propagates
+    // through every later mix.  Folding it after the ops would barely
+    // perturb the result for short op sequences.
+    //
+    // A non-null recipe makes the hash recipe-specific, so two regions with
+    // byte-identical ops but different numerical recipes land in different
+    // kernel-cache slots.  Without that, a kernel compiled under one recipe
+    // would serve lookups made under another.
+    //
+    // A recipe hash of zero means the recipe was never interned, and folding
+    // zero would produce the same hash as the no-recipe path — exactly the
+    // confusion the parameter exists to prevent.  UINT64_MAX is reserved as
+    // the end-of-region marker and can never be a real recipe hash.
+    [[gnu::always_inline]] void fold_recipe(const NumericalRecipe* recipe) noexcept
+        pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
+            pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
+        if (recipe == nullptr) return;
+        [[assume(recipe->hash.raw() != 0)]];
+        [[assume(recipe->hash.raw() != UINT64_MAX)]];
+        state_ = detail::wymix(state_, recipe->hash.raw());
     }
 
-    content_hash_state ^= static_cast<uint64_t>(op_record.num_scalar_args);
-    content_hash_state *= 0x100000001b3ULL;
-    if (op_record.scalar_args) {
-        for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
-            content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
-            content_hash_state *= 0x100000001b3ULL;
+    [[gnu::always_inline]] void fold(const TraceEntry& op_record) noexcept { fold_entry_(state_, op_record); }
+
+    [[nodiscard, gnu::always_inline]] ContentHash finish() const noexcept {
+        return ContentHash{detail::fmix64(state_)};
+    }
+
+private:
+    // The per-entry contribution to a region's content hash.  It is private
+    // because a second copy of the fold would drift, and two disagreeing
+    // hashes for one region destroy the suffix and kernel sharing that
+    // compares them.
+    //
+    // The fold order is part of the hash format.  Changing the order, or what
+    // each step mixes in, invalidates every stored content hash.
+    //
+    // The scalar count folds with an XOR-multiply rather than wymix, because
+    // wymix(X, 0) is 0 and a scalar-free op legitimately has a count of 0: that
+    // would zero the accumulator and produce a content hash of 0, which is the
+    // empty-slot sentinel.  The count folds unconditionally, before the values,
+    // so that N arguments differ from M even when the first min(N, M) agree, and
+    // so an op with neither tensors nor scalars still perturbs the accumulator.
+    //
+    // Per tensor, the dimensions XOR-fold into one value and a single wymix
+    // merges it.  The alternative, one wymix per dimension, makes each multiply
+    // depend on the previous result and cannot pipeline.
+    //
+    // KNOWN DEFECT: the per-tensor wymix has no such guard, and both of
+    // wymix's absorbing values for its second operand are reachable from
+    // ordinary metadata, which erases the region prefix.  dtype Undefined is
+    // int8_t(-1) and sign-extends the pack to all ones; a uint8 tensor on
+    // CPU device 0 packs to zero.  test_merkle_dag pins both cases and
+    // spells out the mechanism and the fix.  Repairing it changes the hash
+    // format, so it is its own commit.
+    //
+    // Every producer sizes the scalar_args allocation to num_scalar_args, so the
+    // loop over it is in bounds.  A null scalar_args contributes the count only.
+    [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
+        content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
+
+        for (uint16_t j = 0; j < op_record.num_inputs; j++) {
+            const TensorMeta& input_meta = op_record.input_metas[j];
+            const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(input_meta));
+            uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
+                                 | (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8)
+                                 | (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
+            content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
+        }
+
+        content_hash_state ^= static_cast<uint64_t>(op_record.num_scalar_args);
+        content_hash_state *= 0x100000001b3ULL;
+        if (op_record.scalar_args) {
+            for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
+                content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
+                content_hash_state *= 0x100000001b3ULL;
+            }
         }
     }
-}
 
-// A non-null recipe makes the hash recipe-specific, so two regions with
-// byte-identical ops but different numerical recipes land in different
-// kernel-cache slots.  Without that, a kernel compiled under one recipe
-// would serve lookups made under another.
-//
-// A recipe hash of zero means the recipe was never interned, and folding
-// zero would produce the same hash as the no-recipe path — exactly the
-// confusion the parameter exists to prevent.  UINT64_MAX is reserved as the
-// end-of-region marker and can never be a real recipe hash.
+    // The golden-ratio constant, matching the seed every other fold in this
+    // header starts from.  It is deliberately not shared with them: each
+    // fold is its own format, and a fold that adopted this name would tie
+    // its format to this one.
+    static constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
+
+    uint64_t state_ = kSeed;
+};
+
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops,
                                                                  const NumericalRecipe* recipe = nullptr) noexcept
     pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
         pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
-    uint64_t content_hash_state = 0x9E3779B97F4A7C15ULL;
-
-    // The recipe folds in before the ops loop so its contribution propagates
-    // through every later mix.  Folding it after the loop would barely
-    // perturb the result for short op sequences.
-    if (recipe != nullptr) {
-        [[assume(recipe->hash.raw() != 0)]];
-        [[assume(recipe->hash.raw() != UINT64_MAX)]];
-        content_hash_state = detail::wymix(content_hash_state, recipe->hash.raw());
-    }
-
+    ContentHashFold fold;
+    fold.fold_recipe(recipe);
     for (const auto& op_record : ops) {
-        fold_trace_entry_content(content_hash_state, op_record);
+        fold.fold(op_record);
     }
-
-    return ContentHash{detail::fmix64(content_hash_state)};
+    return fold.finish();
 }
 
 [[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode* node) noexcept {
