@@ -186,7 +186,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 9;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 10;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -194,7 +194,11 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         const uint64_t wire_hash = fnv1a_bytes(std::span<const uint8_t>{buf, n});
 
         constexpr size_t EXPECTED_WIRE_BYTES = 1772;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x2943ef7ba87a2dc3ULL;
+        // Moved 2026-09-15 with CDAG_VERSION 9 -> 10.  The byte COUNT is
+        // unchanged, which is the evidence that no field moved: what changed
+        // is the content-hash values embedded in those bytes, plus the
+        // version word itself.
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0xa277ab9687c7e38fULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,

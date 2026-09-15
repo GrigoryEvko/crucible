@@ -570,11 +570,12 @@ namespace {
         };
 
         // The tensor op above carries a default TensorMeta, whose dtype is
-        // Undefined.  That is one of the two shapes the fold currently
-        // collapses on, so it is a poor thing to pin a format against: the
-        // frozen value would be the collapse, not the format.  The vectors
-        // use a tensor with a real dtype and device instead, and the
-        // collapse gets its own block below.
+        // Undefined.  That was one of the two shapes the old wymix fold
+        // collapsed on, so pinning a format against it would have frozen the
+        // collapse rather than the format.  The fold is a fmix64 chain now
+        // and neither shape is special, but the vectors keep using a tensor
+        // with a real dtype and device: a vector should exercise the ordinary
+        // path, and the two former collapse shapes have their own block below.
         crucible::TensorMeta real_meta{};
         real_meta.dtype = crucible::ScalarType::Float;
         real_meta.device_type = crucible::DeviceType::CUDA;
@@ -592,13 +593,16 @@ namespace {
             return crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&op, 1});
         };
 
+        // Moved 2026-09-15 when the fold became a single fmix64 chain.  The
+        // empty-region vector is unchanged: an empty region never enters
+        // fold_entry_, so it is the seed through the finalizer and nothing else.
         golden("empty region", crucible::compute_content_hash(empty_sp), 0x9CA066F1A4AB2EEAULL);
-        golden("no-tensor op", one_op(e_empty), 0xC618BE7298AA9E5EULL);
-        golden("scalar count only", one_op(e_count_only), 0xEAA9763A50C958B8ULL);
-        golden("one scalar", one_op(e_one), 0x9C8B77BB3E1047B2ULL);
-        golden("five scalars", one_op(e_five), 0xC48495C5B66BDFE2ULL);
-        golden("one tensor", one_op(e_real_tensor), 0x2E2953936E574B57ULL);
-        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0x6409B52C9172B550ULL);
+        golden("no-tensor op", one_op(e_empty), 0x5C214273922EBA6BULL);
+        golden("scalar count only", one_op(e_count_only), 0x01F4DD25623E733AULL);
+        golden("one scalar", one_op(e_one), 0x138EA0820281091CULL);
+        golden("five scalars", one_op(e_five), 0xE52B0F5FD799E587ULL);
+        golden("one tensor", one_op(e_real_tensor), 0xF2F8630067F88C92ULL);
+        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0xFE8CCEF1DDFB4397ULL);
 
         // The recipe fold is part of the same format, so it is frozen too.
         constexpr crucible::NumericalRecipe golden_recipe = crucible::hashed(crucible::NumericalRecipe{
@@ -613,7 +617,7 @@ namespace {
             .hash = {},
         });
         golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, &golden_recipe),
-               0x63B60C6940443739ULL);
+               0xAF91A1980641E49DULL);
 
         assert(moved_vectors == 0
                && "the region content-hash format changed: every persisted content hash and "
@@ -623,17 +627,19 @@ namespace {
                     "(seed, per-op mix, finalizer, recipe fold)\n");
     }
 
-    // KNOWN DEFECT, recorded here so a change to the fold has to confront it.
+    // REGRESSION PIN for the absorbing-element collapse, fixed 2026-09-15.
     //
-    // The per-tensor step is
+    // The per-tensor step used to be
     //     state = wymix(state ^ dim_hash, meta_packed)
     // and wymix(a, b) is lo(a*b) ^ hi(a*b), which has two absorbing values
     // for b.  wymix(a, 0) is 0, and wymix(a, ~0) is ~0 for every non-zero a.
-    // Reaching either erases the whole region prefix: every op before the
-    // tensor stops contributing, and two regions that differ only before
-    // that op get the same content hash.
+    // Reaching either erased the whole region prefix: every op before the
+    // tensor stopped contributing, and two regions differing only before that
+    // op got the same content hash — on the value that keys the compiler's
+    // cache.
     //
-    // Both are reachable from ordinary metadata:
+    // Both were reachable from ordinary metadata, which is why these two
+    // metas and not some contrived pair:
     //
     //   meta_packed == ~0   The pack is
     //                         dtype | device_type << 8 | uint8(device_idx) << 16
@@ -642,20 +648,20 @@ namespace {
     //                       sign-extends to 0xFFFF'FFFF'FFFF'FFFF and swamps
     //                       the two shifted fields as well.  Any op whose
     //                       first input is an undefined optional tensor
-    //                       lands here.  Note the third field already has
+    //                       landed here.  Note the third field already has
     //                       the uint8_t cast the other two are missing.
     //
     //   meta_packed == 0    ScalarType::Byte is 0, DeviceType::CPU is 0, and
     //                       device index 0 is ordinary, so a uint8 tensor on
     //                       the first CPU device packs to zero.  The content
-    //                       hash is then 0, which is the KernelCache's
+    //                       hash was then 0, which is the KernelCache's
     //                       empty-slot sentinel and what make_region's
     //                       postcondition refuses.
     //
-    // The fix changes the hash format, so it invalidates every persisted
-    // content hash and every cached kernel, and it belongs in a commit of
-    // its own that moves the vectors above with it.  These assertions pin
-    // the current behavior so that commit cannot land quietly.
+    // The fold is a chain of fmix64 now.  fmix64 is a permutation of the
+    // 64-bit words, so no input can erase the accumulator and neither meta is
+    // special any more.  These assertions are the other side of the ones that
+    // used to pin the defect: same two metas, opposite expectation.
     {
         auto with_meta = [](uint64_t schema, crucible::TensorMeta* meta) {
             crucible::TraceEntry e{};
@@ -681,18 +687,27 @@ namespace {
             crucible::TraceEntry region_b[2] = {no_tensor(0xBBBB), with_meta(0x5555, meta)};
             const auto h_a = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region_a, 2});
             const auto h_b = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region_b, 2});
-            assert(h_a == h_b
-                   && "the absorbing-element collapse was fixed: move the frozen vectors above "
-                      "and delete this block");
+            assert(h_a != h_b
+                   && "absorbing-element collapse is back: two regions differing only in the op "
+                      "BEFORE the tensor now share a content hash, so the prefix stopped "
+                      "contributing");
         }
 
-        // The zero-packed case produces the sentinel hash outright.
+        // The zero-packed case used to produce the sentinel hash outright.
         crucible::TraceEntry sentinel_region[1] = {with_meta(0x5555, &zero_packed_meta)};
-        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{sentinel_region, 1}).raw() == 0
-               && "the zero-pack collapse was fixed: move the frozen vectors above and delete this block");
+        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{sentinel_region, 1}).raw() != 0
+               && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
 
-        std::printf("  known absorbing-element collapse pinned "
-                    "(dtype Undefined and zero-packed metadata)\n");
+        // A single mix is xor-symmetric, so a fold flattened into one xor
+        // would stop telling op order apart.  The chain is what carries it.
+        crucible::TraceEntry forward[2] = {no_tensor(0x1111), no_tensor(0x2222)};
+        crucible::TraceEntry reversed[2] = {no_tensor(0x2222), no_tensor(0x1111)};
+        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{forward, 2})
+                   != crucible::compute_content_hash(std::span<const crucible::TraceEntry>{reversed, 2})
+               && "the fold lost op-order sensitivity: it was flattened into a single xor");
+
+        std::printf("  absorbing-element collapse repaired and pinned "
+                    "(dtype Undefined, zero-packed metadata, op order)\n");
     }
 
     std::printf("test_merkle_dag: all tests passed\n");

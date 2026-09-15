@@ -60,20 +60,15 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
     return ::crucible::detail::fmix64(fnv1a_64(s));
 }
 
-// Boost-style combine, folding a golden-ratio salt with two shifts of
-// the accumulator. It is order-sensitive: combining a with b differs
-// from combining b with a. Callers that fold a sequence rely on that.
+// The body moved to Expr.h on 2026-09-15, beside the fmix64 it finalizes
+// with. It was already the only combiner here; the content-hash and
+// structural-hash folds in MerkleDag.h, Graph.h and ExprPool.h now use it
+// too, and those headers are fixy-certified, so they cannot name `safety::`
+// to reach it. Expr.h is upstream of all four and of this file.
 //
-// This is constexpr and not consteval because one body has to serve both
-// the compile-time fold and a runtime check that re-derives the same
-// value. A second copy of this body under any other name is a drift
-// surface. Changing the salt, the mix or the finalizer would leave that
-// copy stale and change the shared key while every assertion here still
-// passes.
-[[nodiscard]] constexpr std::uint64_t combine_ids(std::uint64_t a, std::uint64_t b) noexcept {
-    a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
-    return ::crucible::detail::fmix64(a);
-}
+// It stays reachable as `detail::combine_ids` from this namespace, which is
+// the spelling every call site in diag/ already uses.
+using ::crucible::detail::combine_ids;
 
 }  // namespace detail
 

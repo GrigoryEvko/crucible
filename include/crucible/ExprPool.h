@@ -51,24 +51,33 @@ namespace detail {
     uint64_t packed_metadata = static_cast<uint64_t>(std::to_underlying(op)) | (static_cast<uint64_t>(nargs) << 8)
                              | (static_cast<uint64_t>(flags) << 16) | (static_cast<uint64_t>(symbol_id.raw()) << 32);
 
-    uint64_t mixed_hash =
-        wymix(packed_metadata ^ 0x9E3779B97F4A7C15ULL, static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
+    uint64_t mixed_hash = detail::fmix64(packed_metadata ^ 0x9E3779B97F4A7C15ULL
+                                         ^ (static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL));
 
     // Each child is already interned, so its address is unique and carries
     // enough entropy on its own.  The zero, one and two argument cases are
     // unrolled because they dominate.
+    //
+    // Two arguments take two chained steps rather than one mix over both.
+    // A single fmix64 is xor-symmetric, so folding both addresses into one
+    // step would hash sub(a, b) and sub(b, a) alike.  The chain distinguishes
+    // them because the accumulator has been through fmix64 and the argument
+    // has not.  This is a bucket index that a real equality compare confirms,
+    // so a collision would cost a probe rather than correctness — but it
+    // costs nothing to keep, and the unroll still skips the loop.
     switch (nargs) {
         case 0:
             break;
         case 1:
-            mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[0]));
+            mixed_hash = detail::combine_ids(mixed_hash, std::bit_cast<uintptr_t>(args[0]));
             break;
         case 2:
-            mixed_hash = wymix(mixed_hash ^ std::bit_cast<uintptr_t>(args[0]), std::bit_cast<uintptr_t>(args[1]));
+            mixed_hash = detail::combine_ids(detail::combine_ids(mixed_hash, std::bit_cast<uintptr_t>(args[0])),
+                                             std::bit_cast<uintptr_t>(args[1]));
             break;
         default:
             for (uint8_t i = 0; i < nargs; ++i)
-                mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[i]));
+                mixed_hash = detail::combine_ids(mixed_hash, std::bit_cast<uintptr_t>(args[i]));
             break;
     }
     return mixed_hash;

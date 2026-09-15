@@ -446,18 +446,18 @@ struct LoopNode : TraceNode {
 static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line)");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 
-// An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The fold
-// uses fmix64 with a non-zero seed rather than wymix, because wymix(0, 0) is
-// 0 and would collapse the chain on a leading {0, 0} edge.  The edge count
-// folds in as well, so {A} and {A, A} differ.
+// An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The
+// non-zero seed is what makes the first claim hold: fmix64 is a permutation,
+// so only one accumulator state maps to 0, and the seed is not it.  The edge
+// count folds in as well, so {A} and {A, A} differ.
 CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) noexcept {
     if (edges.empty()) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;  // "feedbaks"
     uint64_t signature_state = kSeed;
     for (const auto& edge : edges) {
-        signature_state = detail::fmix64(signature_state ^ reflect_hash(edge));
+        signature_state = detail::combine_ids(signature_state, reflect_hash(edge));
     }
-    signature_state = detail::fmix64(signature_state ^ edges.size());
+    signature_state = detail::combine_ids(signature_state, edges.size());
     return signature_state;
 }
 
@@ -481,7 +481,7 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     TraceNode* walk = body;
     while (walk) {
         if (walk->kind == TraceNodeKind::REGION)
-            body_hash_state = detail::wymix(body_hash_state, static_cast<RegionNode*>(walk)->content_hash.raw());
+            body_hash_state = detail::combine_ids(body_hash_state, static_cast<RegionNode*>(walk)->content_hash.raw());
         walk = walk->next;
     }
     return ContentHash{detail::fmix64(body_hash_state)};
@@ -525,7 +525,7 @@ public:
         if (recipe == nullptr) return;
         [[assume(recipe->hash.raw() != 0)]];
         [[assume(recipe->hash.raw() != UINT64_MAX)]];
-        state_ = detail::wymix(state_, recipe->hash.raw());
+        state_ = detail::combine_ids(state_, recipe->hash.raw());
     }
 
     [[gnu::always_inline]] void fold(const TraceEntry& op_record) noexcept { fold_entry_(state_, op_record); }
@@ -543,29 +543,29 @@ private:
     // The fold order is part of the hash format.  Changing the order, or what
     // each step mixes in, invalidates every stored content hash.
     //
-    // The scalar count folds with an XOR-multiply rather than wymix, because
-    // wymix(X, 0) is 0 and a scalar-free op legitimately has a count of 0: that
-    // would zero the accumulator and produce a content hash of 0, which is the
-    // empty-slot sentinel.  The count folds unconditionally, before the values,
-    // so that N arguments differ from M even when the first min(N, M) agree, and
-    // so an op with neither tensors nor scalars still perturbs the accumulator.
+    // Every step is the same chain: `state = fmix64(state ^ input)`.  Three
+    // different spellings used to live here — a wymix for tensors, an
+    // XOR-multiply for scalars, and a bare wymix for the schema hash —
+    // because wymix collapsed on a zero second operand and each site worked
+    // around it separately.  fmix64 is a permutation and has no absorbing
+    // value, so there is nothing left to work around and one spelling covers
+    // the whole fold.  See the fmix64 doc-block in Expr.h.
     //
-    // Per tensor, the dimensions XOR-fold into one value and a single wymix
-    // merges it.  The alternative, one wymix per dimension, makes each multiply
-    // depend on the previous result and cannot pipeline.
+    // The count folds unconditionally, before the values, so that N arguments
+    // differ from M even when the first min(N, M) agree, and so an op with
+    // neither tensors nor scalars still perturbs the accumulator.
     //
-    // KNOWN DEFECT: the per-tensor wymix has no such guard, and both of
-    // wymix's absorbing values for its second operand are reachable from
-    // ordinary metadata, which erases the region prefix.  dtype Undefined is
-    // int8_t(-1) and sign-extends the pack to all ones; a uint8 tensor on
-    // CPU device 0 packs to zero.  test_merkle_dag pins both cases and
-    // spells out the mechanism and the fix.  Repairing it changes the hash
-    // format, so it is its own commit.
+    // Per tensor, the dimensions XOR-fold into one value and a single step
+    // merges it with the packed metadata.  The alternative, one step per
+    // dimension, makes each mix depend on the previous result and cannot
+    // pipeline.  The two are XORed into one operand rather than folded in
+    // separate steps for that reason; they are disjoint in meaning, and a
+    // permutation cannot lose either one.
     //
     // Every producer sizes the scalar_args allocation to num_scalar_args, so the
     // loop over it is in bounds.  A null scalar_args contributes the count only.
     [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
-        content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
+        content_hash_state = detail::combine_ids(content_hash_state, op_record.schema_hash.raw());
 
         for (uint16_t j = 0; j < op_record.num_inputs; j++) {
             const TensorMeta& input_meta = op_record.input_metas[j];
@@ -573,15 +573,14 @@ private:
             uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
                                  | (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8)
                                  | (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
-            content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
+            content_hash_state = detail::combine_ids(content_hash_state, per_dim_hash_xor ^ meta_packed);
         }
 
-        content_hash_state ^= static_cast<uint64_t>(op_record.num_scalar_args);
-        content_hash_state *= 0x100000001b3ULL;
+        content_hash_state = detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.num_scalar_args));
         if (op_record.scalar_args) {
             for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
-                content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
-                content_hash_state *= 0x100000001b3ULL;
+                content_hash_state =
+                    detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.scalar_args[s]));
             }
         }
     }
@@ -627,9 +626,9 @@ private:
         case TraceNodeKind::LOOP: {
             auto* loop = static_cast<LoopNode*>(node);
             // The salts keep a loop from hashing the same as a region with
-            // the same content.  Mixing is fmix64 and XOR rather than wymix,
-            // because wymix(x, 0) is 0 and would collapse the whole chain
-            // whenever a feedback or termination component is zero.
+            // the same content.  Mixing is fmix64 and XOR, which survives a
+            // zero feedback or termination component: fmix64 is a permutation
+            // and has no absorbing value.
             constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL;  // "LOOPNODE"
             constexpr uint64_t kFbSalt = 0x6665656462616B00ULL;  // "feedbak\0"
             merkle_hash_state = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);

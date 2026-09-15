@@ -1,4 +1,4 @@
-// Isolate compute_content_hash to inform wymix / fmix64 alternatives.
+// Isolate compute_content_hash to measure the cost of its fmix64 chain.
 //
 // vit_b.crtrace phase breakdown shows P2b (content hash) at ~30% of
 // phase-2 cost.  Bench varies tensor rank (4D vs 8D) and input count

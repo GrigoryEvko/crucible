@@ -33,8 +33,8 @@
 //
 //   - SIMD control-byte group probe off-by-one (match() vs match_empty())
 //   - Rehash losing an entry, or duplicating one under a new tag
-//   - wymix / expr_hash weakness that collides semantically-distinct
-//     inputs in the H2-tag + hash + args-compare funnel
+//   - expr_hash weakness that collides semantically-distinct inputs in
+//     the H2-tag + hash + args-compare funnel
 //   - composite_flags drift causing two "same" composites to carry
 //     distinct flag words, producing distinct hash + distinct slot
 //   - int cache / generic intern-path divergence (two paths for

@@ -36,7 +36,12 @@ using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::Ext
 using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;
 static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
-static constexpr CdagFormatVersion CDAG_VERSION{9u};
+// 10 (2026-09-15): the content-hash fold changed mixer.  Every region on
+// disk carries a content hash the current code no longer computes, so a
+// version-9 file would deserialize into regions whose hashes disagree with
+// their own contents and whose KernelCache entries key on nothing.  The
+// bump makes cdag_version_matches reject those files outright.
+static constexpr CdagFormatVersion CDAG_VERSION{10u};
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();

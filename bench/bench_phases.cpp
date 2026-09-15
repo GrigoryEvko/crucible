@@ -15,7 +15,7 @@
 //   P0  Pre-scan       count inputs/outputs/scalars, check MetaLog
 //   P1  Alloc+init     arena allocs, PtrMap gen bump, memset scratch
 //   P2a Copy fields    schema/shape/scope/callsite + meta ptrs + aux ptrs
-//   P2b Content hash   wymix over all tensor dims for streaming hash
+//   P2b Content hash   fmix64 chain over all tensor dims for streaming hash
 //   P2c PtrMap lookup  DFG edge building (input ptr_map_lookup)
 //   P2d PtrMap insert  output slot tracking (ptr_map_insert + aliases)
 //   P3  Slot copy      scratch SlotInfo → arena TensorSlot
@@ -473,7 +473,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             uint64_t content_h = 0x9E3779B97F4A7C15ULL;
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
-                content_h = detail::wymix(content_h, te.schema_hash.raw());
+                content_h = detail::combine_ids(content_h, te.schema_hash.raw());
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
                     const TensorMeta& m = te.input_metas[j];
                     uint64_t dim_h = 0;
@@ -484,7 +484,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                     const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(m.dtype))
                                                | (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8)
                                                | (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-                    content_h = detail::wymix(content_h ^ dim_h, meta_packed);
+                    content_h = detail::combine_ids(content_h, dim_h ^ meta_packed);
                 }
                 if (te.num_scalar_args > 0) {
                     const uint16_t n = std::min(te.num_scalar_args, uint16_t{5});

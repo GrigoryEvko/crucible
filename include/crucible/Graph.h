@@ -719,7 +719,7 @@ public:
                 detail::fmix64(static_cast<uint64_t>(static_cast<uint8_t>(current_node->device_idx))
                                | (static_cast<uint64_t>(current_node->ndim) << 8));
             for (uint8_t d = 0; d < current_node->ndim; ++d)
-                node_group_hash = detail::wymix(node_group_hash, std::bit_cast<uint64_t>(current_node->size[d]));
+                node_group_hash = detail::combine_ids(node_group_hash, std::bit_cast<uint64_t>(current_node->size[d]));
             current_node->group_hash = static_cast<uint32_t>(node_group_hash);
         }
 
@@ -901,11 +901,11 @@ private:
         // Size expressions are interned, so their addresses are identities.
         const auto total_dims = static_cast<uint8_t>(node->ndim + node->nred);
         for (uint8_t d = 0; d < total_dims; ++d)
-            structural_hash = detail::wymix(structural_hash, std::bit_cast<uint64_t>(node->size[d]));
+            structural_hash = detail::combine_ids(structural_hash, std::bit_cast<uint64_t>(node->size[d]));
 
         for (uint16_t j = 0; j < node->num_inputs; ++j)
             structural_hash =
-                detail::wymix(structural_hash, std::bit_cast<uint64_t>(canonical[node->inputs[j]->id.raw()]));
+                detail::combine_ids(structural_hash, std::bit_cast<uint64_t>(canonical[node->inputs[j]->id.raw()]));
 
         if ((node->kind == NodeKind::POINTWISE || node->kind == NodeKind::REDUCTION) && node->body) {
             auto* body = node->compute_body();
@@ -915,7 +915,7 @@ private:
             for (uint16_t k = 0; k < body->num_ops; ++k) {
                 uint64_t packed_inst;
                 std::memcpy(&packed_inst, &body->ops[k], 8);
-                structural_hash = detail::wymix(structural_hash, packed_inst);
+                structural_hash = detail::combine_ids(structural_hash, packed_inst);
             }
         }
 
@@ -923,7 +923,7 @@ private:
             auto* info = node->extern_info();
             if (info->python_kernel_name)
                 for (const char* char_cursor = info->python_kernel_name; *char_cursor; ++char_cursor)
-                    structural_hash = detail::wymix(structural_hash, static_cast<uint64_t>(*char_cursor));
+                    structural_hash = detail::combine_ids(structural_hash, static_cast<uint64_t>(*char_cursor));
         }
 
         if (node->kind == NodeKind::REDUCTION)

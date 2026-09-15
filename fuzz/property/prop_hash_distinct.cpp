@@ -5,8 +5,9 @@
 //   - Field-N-not-folded-in bugs (e.g., a future refactor drops a
 //     field from the fold; suddenly recipes differing only in that
 //     field collide)
-//   - Stuck-bit bugs in fmix64 / wymix that lose entropy on certain
-//     input patterns
+//   - Stuck-bit bugs in fmix64 that lose entropy on certain input
+//     patterns, or a fold that flattens its chain into one xor and so
+//     stops telling operand order apart
 //   - Endianness / sign-extension bugs that map distinct enum values
 //     to the same byte (we hit this earlier with ScalarType::Undefined)
 //
