@@ -22,3 +22,6 @@ __pycache__/
 # Binary artifacts
 *.pdf
 !papers/**/*.pdf
+
+# Local venv holding the Crucible-patched PyTorch (vessel/torch tracing)
+.venv-torch/
