@@ -12,7 +12,6 @@
 #include <thread>
 #include <vector>
 
-#include <crucible/DimHash.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
@@ -1073,7 +1072,31 @@ public:
         // so this streaming producer cannot drift from the span producer in
         // MerkleDag.h.  Spelling the seed here instead is what used to make
         // a change to one of them silent.
-        ContentHashFold content_fold;
+        //
+        // NoRecipe, and it is a statement about this build rather than about
+        // these ops.  A region's content hash is the compiler's cache key,
+        // and the key is only sound if it separates regions whose numerics
+        // differ.  Nothing in the runtime selects numerics: RecipePool and
+        // RecipeRegistry exist and are tested, and no production translation
+        // unit constructs either one, so there is exactly one unnamed
+        // numerical regime and every region belongs to it.  Under one regime
+        // a recipe-blind key separates nothing it needs to separate, and
+        // folding a placeholder in its place would move every persisted hash
+        // to distinguish a set of size one from itself.
+        //
+        // What must not happen is a SECOND regime arriving while this line
+        // still says NoRecipe: two regions with identical ops under
+        // different recipes would then share a key, and a lookup made under
+        // one would be served a kernel compiled under the other.  A wrong
+        // kernel is worse than no kernel, so the recipe has to reach this
+        // fold in the same change that first selects one.  It would reach it
+        // from the recording boundary, which is the only place that knows
+        // which numerics the caller asked for: Vigil::dispatch_op fills a
+        // TraceRing::Entry, that entry is drained into the TraceEntry below,
+        // and neither carries a recipe field today.  Adding one is a change
+        // to TraceRing.h and Vigil.h, and from there the recipe arrives here
+        // and this construction takes it.
+        ContentHashFold content_fold{ContentHashFold::NoRecipe{}};
 
         for (uint32_t i = 0; i < count; i++) {
             const auto& re = trace_data[i];

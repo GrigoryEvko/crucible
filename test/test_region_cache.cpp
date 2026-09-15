@@ -363,9 +363,77 @@ static void test_cache_repeated_switching() {
     std::printf("  test_cache_repeated_switching: PASSED\n");
 }
 
+// find_alternate reads the plan off the region, not off a snapshot taken
+// when the region was inserted.
+//
+// The distinction used to be invisible because the two agreed for every
+// region that never changed, and it decided everything for a region whose
+// plan arrived after it was cached: insert stored a zero op count for such a
+// region, the position bound rejected the zero, and the entry was unfindable
+// for the rest of its life in the cache. The one path that could repair it,
+// notify_plan_ready, had no caller anywhere in the tree.
+//
+// Every production insert happens to go through CrucibleContext::activate,
+// which refuses a planless region, so the poisoned state was unreachable
+// from the runtime and the repair path had nothing to repair. That is an
+// argument for deleting the repair path, not for keeping a cache whose
+// entries can be silently unfindable: insert is public and takes any region.
+static void test_find_alternate_tracks_live_plan() {
+    auto test = effects::testing::test();
+    RegionCache cache;
+    Arena arena(1 << 14);
+
+    TraceEntry ops[2]{};
+    ops[0].schema_hash = SchemaHash{0x900};
+    ops[0].shape_hash = ShapeHash{0x901};
+    ops[1].schema_hash = SchemaHash{0x902};
+    ops[1].shape_hash = ShapeHash{0x903};
+
+    auto* region = make_region(test.alloc, arena, ops, 2);
+    assert(region->plan == nullptr);
+
+    cache.insert(region);
+    assert(cache.size() == 1);
+    assert(cache.find(region->content_hash) == region && "a planless region is still cached and still findable by hash");
+
+    // Not eligible to switch to: without a plan the context cannot enter
+    // compiled mode, so offering it would strand the caller.
+    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash) == nullptr);
+    assert(cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash) == nullptr);
+
+    // The plan arrives after the insert. No second call into the cache.
+    TensorSlot slots[1]{};
+    slots[0].nbytes = 4096;
+    slots[0].birth_op = OpIndex{0};
+    slots[0].death_op = OpIndex{1};
+    slots[0].slot_id = SlotId{0};
+    auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
+    ::new(plan) MemoryPlan{};
+    plan->slots = slots;
+    plan->num_slots = 1;
+    plan->pool_bytes = 4096;
+    region->plan = plan;
+
+    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash) == region
+           && "a region cached before its plan existed stayed unfindable after the plan "
+              "arrived: find_alternate is reading an insert-time snapshot again, and the "
+              "repair path for it has no caller");
+    assert(cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash) == region);
+
+    // The position bound now means one thing: how many ops the region has.
+    assert(cache.find_alternate(2, ops[1].schema_hash, ops[1].shape_hash) == nullptr);
+    // A matching position with the wrong shape is still a miss.
+    assert(cache.find_alternate(0, ops[0].schema_hash, ShapeHash{0xDEAD}) == nullptr);
+    // And exclude still excludes.
+    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash, region) == nullptr);
+
+    std::printf("  test_find_alternate_tracks_live_plan: PASSED\n");
+}
+
 int main() {
     std::printf("test_region_cache:\n");
     test_cache_dedup_and_cap();
+    test_find_alternate_tracks_live_plan();
     test_cache_miss_fallback();
     test_cache_switch_mid_iter();
     test_cache_data_migration();

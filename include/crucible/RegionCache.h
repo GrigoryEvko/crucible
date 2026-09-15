@@ -62,10 +62,22 @@ struct RegionCache {
         regions_[slot] = safety::WeakRef<const RegionNode>::from_raw(region);
         content_hashes_[slot] = hash;
         ops_[slot] = OpsPtr{region->ops};
-        // A region with no memory plan is stored with a count of zero, which
-        // the position bound in find_alternate rejects. That is why there is
-        // no separate plan check there.
-        num_ops_[slot] = region->plan ? region->num_ops : 0;
+        // The op count, and nothing else. It used to be written as
+        // `region->plan ? region->num_ops : 0`, which overloaded it with a
+        // second meaning: a planless region was stored with a count of zero
+        // so that the position bound in find_alternate would reject it.
+        //
+        // That made a legal value do duty as a poison. A zero was both "this
+        // region has no ops" and "this region had no plan when it was
+        // inserted", and only the second one was recoverable -- by
+        // notify_plan_ready, a repair path that no caller ever called, so
+        // the entry stayed unfindable for the rest of its life in the cache.
+        //
+        // find_alternate now asks the region itself whether it has a plan.
+        // That read is of live state rather than of a snapshot taken at
+        // insert time, so a plan that arrives later needs no repair and
+        // there is nothing left for a repair path to do.
+        num_ops_[slot] = region->num_ops;
         head_.advance();
         // The counter does not saturate on its own. Its increment carries a
         // precondition that the value is below the bound, so this guard is
@@ -73,38 +85,31 @@ struct RegionCache {
         if (count_.get() < CAP) count_.bump();
     }
 
-    // Call this once a region's memory plan exists, which is what makes the
-    // region eligible for find_alternate.
-    void notify_plan_ready(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr) {
-        // Armed wherever the clause above is not, for the reason given in
-        // insert. It matters more here than there: a null argument does not
-        // fault in this body, it matches. An evicted slot holds an expired
-        // weak reference whose try_get also returns null, and the loop then
-        // reads region->plan through the null it just matched.
-        CRUCIBLE_FATAL_INVARIANT(region != nullptr);
-        for (uint32_t i = 0; i < count_.get(); i++) {
-            const uint32_t idx = head_.index_back(i);
-            if (regions_[idx].try_get() == region) {
-                num_ops_[idx] = region->plan ? region->num_ops : 0;
-                return;
-            }
-        }
-    }
-
     // The excluded region is the one that just diverged. The scan runs from
     // the most recently inserted entry backwards, because a shape that
     // matched recently is the one most likely to match again.
+    //
+    // A region is eligible only once it carries a memory plan, because
+    // switching to one without a plan cannot put the context into compiled
+    // mode: CrucibleContext::activate returns false on a null plan. The read
+    // goes through the slot's own pointer rather than through a flag written
+    // at insert time, so a region whose plan is built after it was cached
+    // becomes eligible on its own.
     [[nodiscard]] const RegionNode* find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
                                                    const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
     CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
 
-            if (regions_[idx].try_get() == exclude) continue;
+            // One read of the slot, checked once. The slot type is nullable
+            // by design, and every use below dereferences it.
+            const RegionNode* candidate = regions_[idx].try_get();
+            if (candidate == nullptr || candidate == exclude) continue;
+            if (candidate->plan == nullptr) continue;
             if (pos >= num_ops_[idx]) continue;
 
             const TraceEntry* ops_ptr = ops_[idx].value();
-            if (ops_ptr[pos].schema_hash == schema && ops_ptr[pos].shape_hash == shape) return regions_[idx].try_get();
+            if (ops_ptr[pos].schema_hash == schema && ops_ptr[pos].shape_hash == shape) return candidate;
         }
         return nullptr;
     }

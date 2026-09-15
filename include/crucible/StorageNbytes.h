@@ -33,8 +33,23 @@ namespace crucible::detail {
 
 // This is the reference. A change to the algorithm has to land here and in
 // the vector routine in one step, or the two stop agreeing.
+//
+// It is also the ONLY copy. MerkleDag.h used to carry a third transcription
+// of the same twelve steps under the public name compute_storage_nbytes, and
+// that third copy was the one the runtime ran: every caller of
+// compute_storage_nbytes_det in BackgroundThread.h reached it. So the
+// differential fuzzer that holds this routine and the vector one to bit
+// equality was comparing two functions with no production caller between
+// them, and could not have reported a divergence in the copy that mattered.
+// crucible::compute_storage_nbytes now forwards here, which is what puts
+// production on the far side of that comparison.
+//
+// constexpr because the public entry point is, and a constexpr function that
+// forwards to a non-constexpr one is only constexpr until someone evaluates
+// it. Nothing here is outside the constant-evaluation subset: the overflow
+// builtins are all constexpr-usable.
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
+[[nodiscard, gnu::const]] CRUCIBLE_INLINE constexpr fixy::wrap::Saturated<uint64_t>
 compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
     using Sat = fixy::wrap::Saturated<uint64_t>;
     const TensorMeta& raw = meta.value();

@@ -8,6 +8,7 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/Reflect.h>
+#include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/fixy/Handle.h>
@@ -119,41 +120,22 @@ template <std::size_t MaxLive>
 // Any overflow in the chain saturates to UINT64_MAX with the clamped flag
 // set, so a caller cannot mistake a saturated result for a real byte count
 // of 2^64-1.
+//
+// The algorithm itself lives in StorageNbytes.h, once, and this is the
+// public name for it. It used to live in both places: a transcription of the
+// same twelve overflow-checked steps stood here, and it was the copy the
+// runtime ran, while the differential fuzzer that pins scalar against vector
+// held the two copies over there. A divergence in the production copy was
+// unreportable by construction. Forwarding is what places this name on the
+// side of the comparison that has callers.
+//
+// What stays here is the precondition, which the reference deliberately does
+// not carry: the reference is also the fallback the vector routine takes
+// after its own screen, and re-checking ndim on that path would charge the
+// check twice for a value the caller already vouched for.
 [[nodiscard]] constexpr fixy::wrap::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta)
     pre(::crucible::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8})) {
-    using Sat = fixy::wrap::Saturated<uint64_t>;
-    const TensorMeta& raw = meta.value();
-    if (raw.ndim == 0) return Sat{element_size(raw.dtype).raw()};
-    int64_t max_offset = 0;
-    int64_t min_offset = 0;
-    for (uint8_t d = 0; d < raw.ndim; d++) {
-        const int64_t size = raw_tensor_dim(raw.sizes[d]);
-        const int64_t stride = raw_tensor_dim(raw.strides[d]);
-        if (size == 0) return Sat{uint64_t{0}};
-        int64_t dim_extent_bytes;
-        // size is positive here, so `size - 1` cannot overflow.
-        if (__builtin_mul_overflow(size - 1, stride, &dim_extent_bytes)) [[unlikely]]
-            return Sat{UINT64_MAX, true};
-        if (dim_extent_bytes > 0) {
-            if (__builtin_add_overflow(max_offset, dim_extent_bytes, &max_offset)) [[unlikely]]
-                return Sat{UINT64_MAX, true};
-        } else {
-            if (__builtin_add_overflow(min_offset, dim_extent_bytes, &min_offset)) [[unlikely]]
-                return Sat{UINT64_MAX, true};
-        }
-    }
-    int64_t span_signed;
-    if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]]
-        return Sat{UINT64_MAX, true};
-    if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]]
-        return Sat{UINT64_MAX, true};
-    // max_offset >= 0 >= min_offset, so the span is non-negative and the
-    // cast to uint64_t below preserves it.
-    uint64_t total_bytes;
-    if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
-                               &total_bytes)) [[unlikely]]
-        return Sat{UINT64_MAX, true};
-    return Sat{total_bytes};
+    return detail::compute_storage_nbytes_scalar(meta);
 }
 
 [[nodiscard]] constexpr fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
@@ -504,28 +486,50 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // in test_merkle_dag are there to make loud.
 class ContentHashFold {
 public:
-    constexpr ContentHashFold() noexcept = default;
+    // The tag a producer passes to say that it selects no numerics at all,
+    // as opposed to having forgotten to pass the recipe it does have.
+    //
+    // The two are the same 64 bits and always were, because the no-recipe
+    // path folds nothing.  What the tag buys is that they are no longer the
+    // same SOURCE CODE.  Under the old shape the recipe arrived through an
+    // optional method, so a producer that never called it got a
+    // recipe-blind cache key and no diagnostic: the whole runtime path did
+    // exactly that.  Under this shape omission does not compile, and the
+    // producers that genuinely have no recipe say so at the construction
+    // site, where a reader looking for the recipe finds the answer.
+    //
+    // Passing this tag is a claim about the producer, not about the region:
+    // "nothing in this build selects a numerical recipe, so every region it
+    // hashes is under the same unnamed numerics".  That claim holds today
+    // and stops holding the moment a recipe source exists.  The grep that
+    // finds every site to revisit then is `NoRecipe`.
+    struct NoRecipe {};
+
+    ContentHashFold() = delete("a content hash is a numerics-specific cache key, so a fold has to "
+                               "state which NumericalRecipe it covers: pass the recipe, or pass "
+                               "ContentHashFold::NoRecipe{} to state that this producer selects none");
+
+    explicit constexpr ContentHashFold(NoRecipe) noexcept {}
 
     // The recipe folds in before any op so its contribution propagates
     // through every later mix.  Folding it after the ops would barely
     // perturb the result for short op sequences.
     //
-    // A non-null recipe makes the hash recipe-specific, so two regions with
+    // Folding a recipe makes the hash recipe-specific, so two regions with
     // byte-identical ops but different numerical recipes land in different
     // kernel-cache slots.  Without that, a kernel compiled under one recipe
     // would serve lookups made under another.
     //
     // A recipe hash of zero means the recipe was never interned, and folding
-    // zero would produce the same hash as the no-recipe path — exactly the
+    // zero would produce the same hash as the NoRecipe path — exactly the
     // confusion the parameter exists to prevent.  UINT64_MAX is reserved as
     // the end-of-region marker and can never be a real recipe hash.
-    [[gnu::always_inline]] void fold_recipe(const NumericalRecipe* recipe) noexcept
-        pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
-            pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
-        if (recipe == nullptr) return;
-        [[assume(recipe->hash.raw() != 0)]];
-        [[assume(recipe->hash.raw() != UINT64_MAX)]];
-        state_ = detail::combine_ids(state_, recipe->hash.raw());
+    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept
+        pre(::crucible::decide::is_non_zero(recipe.hash))
+            pre(!recipe.hash.is_sentinel()) {
+        [[assume(recipe.hash.raw() != 0)]];
+        [[assume(recipe.hash.raw() != UINT64_MAX)]];
+        state_ = detail::combine_ids(state_, recipe.hash.raw());
     }
 
     [[gnu::always_inline]] void fold(const TraceEntry& op_record) noexcept { fold_entry_(state_, op_record); }
@@ -598,8 +602,8 @@ private:
                                                                  const NumericalRecipe* recipe = nullptr) noexcept
     pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
         pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
-    ContentHashFold fold;
-    fold.fold_recipe(recipe);
+    ContentHashFold fold = (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}}
+                                               : ContentHashFold{*recipe};
     for (const auto& op_record : ops) {
         fold.fold(op_record);
     }
@@ -1112,6 +1116,13 @@ private:
 
 // The ops array is stored, not copied: the caller keeps it alive for as long
 // as the node.
+//
+// This overload hashes under no numerical recipe, which the recipe-taking
+// overload further down is the counterpart to. The choice is visible in the
+// signature the caller picks rather than in an argument the caller can leave
+// out: a region hashed under the wrong numerics shares a kernel-cache slot
+// with one hashed under the right ones, and the runtime would serve either
+// kernel to either caller.
 [[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops)) {
@@ -1189,13 +1200,40 @@ private:
                                          ContentHash body_content_hash, FeedbackEdge* feedback, uint16_t num_feedback,
                                          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept
     pre(body != nullptr) pre(::crucible::decide::valid_span(num_feedback, feedback))
-    // A convergence distance cannot be negative, and the sign bit of epsilon
-    // reaches the termination hash, so two loops that behave identically
-    // would otherwise hash differently.  A repeat count of zero stays legal:
-    // it is the "skip the body, run the continuation" case.  An epsilon of
-    // zero is also accepted here, and the caller sets a real threshold before
-    // the loop runs.
-    pre(!(epsilon < 0.0f)) {
+    // A convergence distance is a finite number that cannot be negative, and
+    // every bit of epsilon reaches the termination hash through a bit_cast,
+    // so two loops that behave identically would otherwise hash differently.
+    //
+    // Spelled as a positive test rather than as the negation of its
+    // complement.  `!(epsilon < 0.0f)` reads as the same predicate and is
+    // not: every comparison against a NaN is false, so the negation is true
+    // and a NaN epsilon passed.  It then reached the bit_cast, where NaN is
+    // not one value but 2^24-2 of them, each hashing to a different
+    // termination hash — so two loops that agree on everything, including on
+    // having no usable threshold, would land in different cache slots.
+    //
+    // isfinite rejects the infinities on the same grounds: a threshold of
+    // +Inf converges on the first iteration whatever the distance, which is
+    // not a threshold, and a threshold of -Inf never converges.
+    //
+    // This is the third layer of CLAUDE.md §XII — an anonymous expression —
+    // because neither layer above it reaches a float.  There is no Refined
+    // predicate over floating point in the tree, and decide::non_negative is
+    // constrained to std::integral, deliberately: on an integral type the
+    // predicate has no NaN case to get wrong, which is the whole content of
+    // this guard.  Lifting it is a one-name change once a second float
+    // boundary wants the same test.
+    pre(std::isfinite(epsilon)) pre(epsilon >= 0.0f)
+    // An UNTIL loop counts the iterations that were observed, and observing
+    // convergence means running the body and measuring its output, so the
+    // count is at least one.  Zero says the loop never ran, and replay walks
+    // this count: a zero would replay the loop by skipping it, silently
+    // producing the continuation's inputs from the body's un-run outputs.
+    // A wrong answer is worse than a trap.
+    //
+    // REPEAT keeps zero, where it means what it says: run the body no times
+    // and continue.
+    pre(term_kind != LoopTermKind::UNTIL || repeat_count > 0u) {
     [[assume(body != nullptr)]];
     auto* node = new(arena.alloc_obj<LoopNode>(a)) LoopNode{};
     node->kind = TraceNodeKind::LOOP;
@@ -1259,7 +1297,18 @@ inline void recompute_merkle(TraceNode* node) {
 
 // Returns the first node of the shared suffix, or null when the new ops and
 // the existing continuation share no tail.
-[[nodiscard]] inline TraceNode* find_merge_point(std::span<TraceEntry> new_ops, TraceNode* existing_continuation) {
+//
+// The recipe is required rather than defaulted, and null is how a caller says
+// it selects no numerics. The comparison below is between a hash folded here
+// and a hash folded when the existing region was built, so the two have to be
+// folded under the same recipe to be comparable at all. A defaulted parameter
+// would let a caller that has a recipe omit it and get a silent stream of
+// missed merges, every suffix looking distinct because the two sides folded
+// different things.
+[[nodiscard]] inline TraceNode* find_merge_point(std::span<TraceEntry> new_ops, TraceNode* existing_continuation,
+                                                 const NumericalRecipe* recipe)
+    pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
+        pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
     constexpr uint32_t MAX_REGIONS = 1024;
     RegionNode* existing_regions[MAX_REGIONS];
     uint32_t num_existing = 0;
@@ -1281,7 +1330,8 @@ inline void recompute_merkle(TraceNode* node) {
         RegionNode* region = existing_regions[ex_idx];
         if (new_pos < region->num_ops) break;
 
-        ContentHash new_hash = compute_content_hash(new_ops.subspan(new_pos - region->num_ops, region->num_ops));
+        ContentHash new_hash =
+            compute_content_hash(new_ops.subspan(new_pos - region->num_ops, region->num_ops), recipe);
 
         if (new_hash == region->content_hash) {
             merge = region;
@@ -1296,13 +1346,28 @@ inline void recompute_merkle(TraceNode* node) {
 
 // Splits a straight-line trace at a divergence point into a two-arm branch
 // that rejoins where the continuations become identical again.
+//
+// The recipe is required, and null is how a caller says it selects no
+// numerics. This function holds the only KernelCache::lookup in the tree, so
+// the hash it builds is the one the compiler's cache is keyed on, and a hash
+// that leaves the numerics out keys a kernel by what it computes and not by
+// how. Two regions with byte-identical ops under different recipes would take
+// one slot, and whichever kernel landed there first would serve both.
+//
+// So this is the one parameter on this signature that cannot be defaulted.
+// It has no caller today -- this whole function does not -- and a default
+// would hand the first one a wrong-kernel path it never had to think about.
 [[nodiscard]] inline BranchNode*
 add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode* divergence_point, TraceEntry* new_ops,
-           uint32_t new_n, int64_t old_guard_value, int64_t new_guard_value, Guard guard, TraceNode* existing_suffix)
-    pre(divergence_point != nullptr) pre(old_guard_value != new_guard_value) {
-    auto* new_region = make_region(a, arena, new_ops, new_n);
+           uint32_t new_n, int64_t old_guard_value, int64_t new_guard_value, Guard guard, TraceNode* existing_suffix,
+           const NumericalRecipe* recipe)
+    pre(divergence_point != nullptr) pre(old_guard_value != new_guard_value)
+        pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
+            pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
+    auto* new_region = (recipe == nullptr) ? make_region(a, arena, new_ops, new_n)
+                                           : make_region(a, arena, new_ops, new_n, recipe);
 
-    TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix);
+    TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix, recipe);
 
     new_region->next = merge;
 
@@ -1311,6 +1376,9 @@ add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode*
     // on one slot, and row-tagged callers land in disjoint slots rather than
     // sharing this one.  A miss leaves compiled at its default null, which is
     // the right state for a region with no kernel yet.
+    //
+    // The content hash half of the key carries the recipe, because the region
+    // above was built under it.
     if (auto* cached_kernel = kernel_cache.lookup(new_region->content_hash, RowHash{0})) {
         new_region->compiled.publish(cached_kernel);
     }
@@ -1393,6 +1461,27 @@ template <typename GuardEval, typename RegionExec>
                 // that never ran. A wrong answer is worse than a trap, and
                 // this is a cold path, so the check stays in every build.
                 CRUCIBLE_FATAL_INVARIANT(loop->body != nullptr);
+                // repeat_count drives both termination kinds, and epsilon
+                // drives neither.  That is the DetSafe axiom, not an
+                // omission: replay reproduces a recorded execution, and a
+                // convergence test re-evaluated here would read the values
+                // this run produced rather than the ones the recording saw.
+                // Two replays of one trace could then take different numbers
+                // of iterations, which is the property replay exists to
+                // rule out.  So an UNTIL loop replays the count it observed,
+                // and epsilon stays what it is everywhere else in this
+                // header: part of the loop's identity, folded into the
+                // termination hash so that two loops with different
+                // thresholds are different computations and cannot share a
+                // compiled kernel.
+                //
+                // Reading epsilon here is therefore a regression, and the
+                // UNTIL case of test_loop_replay_ignores_epsilon is what
+                // reports it.
+                //
+                // An UNTIL count of zero cannot arrive: make_loop rejects it,
+                // because it would skip the body and report success.
+                CRUCIBLE_FATAL_INVARIANT(loop->term_kind != LoopTermKind::UNTIL || loop->repeat_count > 0u);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
                     if (!replay(loop->body, eval_guard, exec_region)) return false;
                 }

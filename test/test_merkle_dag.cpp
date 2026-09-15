@@ -2,8 +2,12 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include "test_assert.h"
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <type_traits>
 
 using crucible::SchemaHash;
@@ -50,6 +54,47 @@ namespace {
         auto nb = crucible::compute_storage_nbytes(crucible::external_tensor_meta(huge));
         assert(nb.value() == UINT64_MAX && "huge tensor must saturate value to UINT64_MAX");
         assert(nb.was_clamped() && "huge tensor must carry clamped=true");
+    }
+
+    // The public name and the vector routine are one algorithm.
+    //
+    // This assertion could not say anything before: compute_storage_nbytes
+    // was a separate transcription of the same steps in MerkleDag.h, so
+    // comparing it against the vector routine compared two independent
+    // copies that happened to agree, and the differential fuzzer next door
+    // was pinning the two copies production did not use. The public name
+    // forwards to the scalar reference now, which is the routine the fuzzer
+    // holds the vector one against.
+    //
+    // The shapes below are the ones the two paths diverge on first: a
+    // negative stride, which drives the min/max accumulators apart, a zero
+    // extent, which returns before the vector path's screen, and a scalar,
+    // which returns before either loop.
+    {
+        auto agrees = [](const crucible::TensorMeta& meta) {
+            return crucible::compute_storage_nbytes(crucible::external_tensor_meta(meta))
+                   == crucible::detail::compute_storage_nbytes_simd(crucible::external_tensor_meta(meta));
+        };
+
+        crucible::TensorMeta reversed{};
+        reversed.ndim = 2;
+        reversed.sizes[0] = ::crucible::tensor_dim(8);
+        reversed.sizes[1] = ::crucible::tensor_dim(4);
+        reversed.strides[0] = ::crucible::tensor_dim(-4);
+        reversed.strides[1] = ::crucible::tensor_dim(1);
+        reversed.dtype = crucible::ScalarType::Double;
+        assert(agrees(reversed) && "the public storage-span name stopped forwarding to the tested reference");
+
+        crucible::TensorMeta empty_extent = reversed;
+        empty_extent.sizes[1] = ::crucible::tensor_dim(0);
+        assert(agrees(empty_extent));
+
+        crucible::TensorMeta scalar_meta{};
+        scalar_meta.ndim = 0;
+        scalar_meta.dtype = crucible::ScalarType::ComplexDouble;
+        assert(agrees(scalar_meta));
+
+        assert(agrees(m));
     }
 
     crucible::TraceEntry ops[3]{};
@@ -484,7 +529,7 @@ namespace {
     // two folds drift apart on first, so both appear here.
     {
         auto streaming_hash = [](std::span<const crucible::TraceEntry> region_ops) {
-            crucible::ContentHashFold fold;
+            crucible::ContentHashFold fold{crucible::ContentHashFold::NoRecipe{}};
             for (const auto& op : region_ops)
                 fold.fold(op);
             return fold.finish();
@@ -708,6 +753,206 @@ namespace {
 
         std::printf("  absorbing-element collapse repaired and pinned "
                     "(dtype Undefined, zero-packed metadata, op order)\n");
+    }
+
+    // ── A recipe-blind content hash collides across numerics ──────────
+    //
+    // The content hash is the compiler's cache key. Two regions with
+    // byte-identical ops under different ReductionDeterminism tiers are
+    // different computations and must not share a slot: a kernel compiled
+    // under BITEXACT_STRICT answering a lookup made under UNORDERED is a
+    // wrong answer, not a slow one.
+    //
+    // The first assertion is the collision itself, and it is not a bug to be
+    // fixed -- it is what a hash that omits the recipe necessarily does, and
+    // it is here so the cost of omitting one is written down. The second is
+    // the repair: fold the recipe and the two separate. The third is the part
+    // that had gone wrong in practice, and it is a compile-time property
+    // rather than a runtime one, so it is asserted where it lives -- at
+    // ContentHashFold's deleted default constructor, which is what stops a
+    // producer from reaching the first case by saying nothing at all.
+    {
+        crucible::TraceEntry numerics_ops[2]{};
+        numerics_ops[0].schema_hash = SchemaHash{0xAC01};
+        numerics_ops[1].schema_hash = SchemaHash{0xAC02};
+        const std::span<const crucible::TraceEntry> numerics_sp{numerics_ops, 2};
+
+        constexpr auto unordered = crucible::hashed(crucible::NumericalRecipe{
+            .accum_dtype = crucible::ScalarType::Float,
+            .out_dtype = crucible::ScalarType::Float,
+            .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
+            .rounding = crucible::RoundingMode::RN,
+            .scale_policy = crucible::ScalePolicy::NONE,
+            .softmax = crucible::SoftmaxRecurrence::ONLINE_LSE,
+            .determinism = crucible::ReductionDeterminism::UNORDERED,
+            .flags = {},
+            .hash = {},
+        });
+        constexpr auto strict = crucible::hashed(crucible::NumericalRecipe{
+            .accum_dtype = crucible::ScalarType::Float,
+            .out_dtype = crucible::ScalarType::Float,
+            .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
+            .rounding = crucible::RoundingMode::RN,
+            .scale_policy = crucible::ScalePolicy::NONE,
+            .softmax = crucible::SoftmaxRecurrence::ONLINE_LSE,
+            .determinism = crucible::ReductionDeterminism::BITEXACT_STRICT,
+            .flags = {},
+            .hash = {},
+        });
+        static_assert(unordered.hash != strict.hash, "two determinism tiers must intern to different recipe hashes");
+
+        // What a recipe-blind producer computes: one key for both tiers.
+        const auto blind = crucible::compute_content_hash(numerics_sp);
+        assert(blind == crucible::compute_content_hash(numerics_sp)
+               && "a recipe-blind hash is a function of the ops alone, so both tiers land on it");
+
+        // What a recipe-aware producer computes: one key per tier.
+        const auto keyed_unordered = crucible::compute_content_hash(numerics_sp, &unordered);
+        const auto keyed_strict = crucible::compute_content_hash(numerics_sp, &strict);
+        assert(keyed_unordered != keyed_strict
+               && "the recipe left the content hash: two numerics tiers over identical ops "
+                  "now share a KernelCache slot, so a lookup under one is served the other's kernel");
+        assert(keyed_unordered != blind && keyed_strict != blind
+               && "folding a recipe must move the hash off the no-recipe value, or the "
+                  "recipe-aware and recipe-blind keys alias");
+
+        // The hole that let production reach the first case: a fold that
+        // could be built without answering the recipe question at all.
+        static_assert(!std::is_default_constructible_v<crucible::ContentHashFold>,
+                      "ContentHashFold is default-constructible again: a producer can build a "
+                      "recipe-blind cache key by omission, which is how the runtime path got one");
+        static_assert(std::is_constructible_v<crucible::ContentHashFold, crucible::ContentHashFold::NoRecipe>);
+        static_assert(std::is_constructible_v<crucible::ContentHashFold, const crucible::NumericalRecipe&>);
+
+        std::printf("  content hash separates numerics tiers; a fold cannot omit the recipe question\n");
+    }
+
+    // ── LoopNode: epsilon is identity, repeat_count is execution ──────
+    //
+    // replay walks repeat_count and never reads epsilon, for both
+    // termination kinds.  That is the DetSafe axiom rather than an
+    // oversight, and it is worth a test in both directions: a change that
+    // made replay converge on epsilon would break determinism, and a change
+    // that dropped epsilon from the hash would let two loops with different
+    // thresholds share a compiled kernel.
+    {
+        crucible::TraceEntry loop_body_ops[1]{};
+        loop_body_ops[0].schema_hash = SchemaHash{0x5EED};
+
+        // Two loops that agree on everything but the threshold.  Each gets
+        // its own body chain: recompute_merkle writes into the nodes it
+        // walks, so a shared body would have one loop's pass overwrite the
+        // other's.
+        auto build_until_loop = [&](float epsilon) {
+            auto* body = crucible::make_region(test.alloc, arena, loop_body_ops, 1);
+            body->next = crucible::make_terminal(test.alloc, arena);
+            auto* node = crucible::make_loop(test.alloc, arena, body, crucible::compute_body_content_hash(body),
+                                             nullptr, 0, crucible::LoopTermKind::UNTIL, 3, epsilon);
+            node->next = crucible::make_terminal(test.alloc, arena);
+            crucible::recompute_merkle(node);
+            return node;
+        };
+
+        auto* loose = build_until_loop(0.5f);
+        auto* tight = build_until_loop(0.001f);
+
+        auto never_diverges = [](const crucible::Guard&) -> int64_t { return 0; };
+
+        uint32_t loose_regions = 0;
+        assert(crucible::replay(loose, never_diverges, [&](crucible::RegionNode*) { ++loose_regions; }));
+        uint32_t tight_regions = 0;
+        assert(crucible::replay(tight, never_diverges, [&](crucible::RegionNode*) { ++tight_regions; }));
+
+        // 500x the threshold and the same number of iterations.  A replay
+        // that consulted epsilon could not produce this.
+        assert(loose_regions == 3 && "an UNTIL loop must replay the iteration count it observed");
+        assert(tight_regions == 3);
+        assert(loose_regions == tight_regions
+               && "replay read epsilon: the same recorded trace now executes a "
+                  "number of times that depends on the threshold, so two replays of "
+                  "one trace can disagree");
+
+        // The other direction.  Identical ops, identical count, different
+        // numerics — different computation, so different cache key.
+        assert(loose->merkle_hash != tight->merkle_hash
+               && "epsilon left the termination hash: two loops with different "
+                  "convergence thresholds now share a merkle hash, so one's "
+                  "compiled kernel can serve the other");
+
+        std::printf("  loop replay walks repeat_count and ignores epsilon; epsilon stays in the hash\n");
+    }
+
+    // ── make_loop's preconditions actually fire ───────────────────────
+    //
+    // These are runtime checks and handle_contract_violation is [[noreturn]],
+    // so a violation cannot be observed in-process: the only way to ask
+    // whether a clause fires is to run the call in a child and look at how
+    // the child died.  The child's stderr goes to /dev/null because the
+    // handler prints a diagnostic and a stack trace on the way out.
+    {
+        // FIXY-V-210 bans raw process spawn because a forked child carries no
+        // Permission<Tag> linearity proof and no Met(X) effect row. Neither
+        // is at stake here: the child evaluates one contract clause and dies,
+        // it owns no permission and outlives nothing. The alternative is to
+        // leave three preconditions with no test that they fire, which is
+        // the same dead-guard shape this change removes from RegionCache.
+        auto dies = [&](auto&& body) {
+            std::fflush(nullptr);
+            const pid_t child = ::fork();  // SPAWN-PROCESS-OK: observing a [[noreturn]] contract handler needs a child
+            assert(child >= 0 && "fork failed");
+            if (child == 0) {
+                if (::freopen("/dev/null", "w", stderr) == nullptr) ::_exit(2);
+                body();
+                ::_exit(0);  // the clause did not fire
+            }
+            int status = 0;
+            assert(::waitpid(child, &status, 0) == child);  // SPAWN-PROCESS-OK: reaps the child forked just above
+            return WIFSIGNALED(status) != 0;
+        };
+
+        crucible::TraceEntry guard_body_ops[1]{};
+        guard_body_ops[0].schema_hash = SchemaHash{0x6AA6};
+
+        // Each child builds its own arena: the parent's arena must not carry
+        // a bump from a child that was about to abort.
+        auto make = [&](crucible::LoopTermKind kind, uint32_t count, float epsilon) {
+            return [&, kind, count, epsilon] {
+                crucible::Arena child_arena(1 << 12);
+                auto* body = crucible::make_region(test.alloc, child_arena, guard_body_ops, 1);
+                body->next = crucible::make_terminal(test.alloc, child_arena);
+                auto* node = crucible::make_loop(test.alloc, child_arena, body,
+                                                 crucible::compute_body_content_hash(body), nullptr, 0, kind, count,
+                                                 epsilon);
+                // Keeps the optimizer from deciding the call had no effect
+                // and eliding the clause along with it.
+                asm volatile("" ::"r"(node) : "memory");
+            };
+        };
+
+        // The control. If this one dies the harness is wrong, not the guard.
+        assert(!dies(make(crucible::LoopTermKind::UNTIL, 3, 0.125f))
+               && "a well-formed UNTIL loop was rejected: the guard is over-tight");
+        assert(!dies(make(crucible::LoopTermKind::REPEAT, 0, 0.0f))
+               && "REPEAT with a zero count is legal: run the body no times, continue");
+
+        // NaN compares false against everything, so it passed the guard this
+        // replaced -- `!(epsilon < 0.0f)` -- and reached the bit_cast in the
+        // termination hash, where it is 2^24-2 distinct values.
+        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, std::numeric_limits<float>::quiet_NaN()))
+               && "a NaN epsilon was accepted: the guard is spelled as the negation of "
+                  "its complement again, and NaN makes that negation true");
+        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, -std::numeric_limits<float>::quiet_NaN())));
+        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, std::numeric_limits<float>::infinity()))
+               && "an infinite convergence threshold is not a threshold");
+        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, -1.0f)));
+
+        // An UNTIL count of zero says the loop never ran. replay would walk
+        // it zero times and report success.
+        assert(dies(make(crucible::LoopTermKind::UNTIL, 0, 0.125f))
+               && "an unobserved UNTIL loop was accepted: replay would skip its body "
+                  "and report a successful replay of a body that never ran");
+
+        std::printf("  make_loop rejects NaN, infinite and negative epsilon, and an UNTIL count of zero\n");
     }
 
     std::printf("test_merkle_dag: all tests passed\n");
