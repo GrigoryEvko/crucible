@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-15T16:26:10Z`.
+Snapshot generated: `2026-09-15T16:58:28Z`.
 
 ## bridges/
 
@@ -163,7 +163,7 @@ Snapshot generated: `2026-09-15T16:26:10Z`.
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_ledger_view` | `include/crucible/ledger/Ledger.h:154` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h:414` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h:413` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 
 ## mimic/
 
@@ -204,7 +204,7 @@ Snapshot generated: `2026-09-15T16:26:10Z`.
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:459` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:28` | HS14: 2 |
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:122` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 8 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:152` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:34` | HS14: 2 |
-| `mint_permission_root` | `include/crucible/permissions/Permission.h:309` | Y | Y | Y | - | token | `include/crucible/fixy/Hw.h:404` | HS14: 175 |
+| `mint_permission_root` | `include/crucible/permissions/Permission.h:309` | Y | Y | Y | - | token | `include/crucible/fixy/Hw.h:403` | HS14: 175 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:744` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:30` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:337` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:25` | HS14: 27 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:421` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:27` | HS14: 4 |

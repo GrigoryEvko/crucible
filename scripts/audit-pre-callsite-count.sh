@@ -295,11 +295,28 @@ count_pattern() {
     # line must not open as a comment, and no `//` may precede the match on
     # the line.  A cite named inside a multi-line block comment still counts,
     # which is the residual this cheap form accepts.
+    #
+    # The two paragraphs above describe the intent.  A single `rg -oP` with
+    # `^(?!...)(?:(?!//).)*?\K<pattern>` did NOT implement it: the `^` anchor
+    # can match only once per line, so the lazy prefix plus `\K` yields the
+    # FIRST cite on a line and no more.  That silently reinstated the
+    # line-counting the doc-block disclaims, and it stayed invisible until a
+    # clang-format pass joined two `pre(` clauses in RefreshDaemon.h onto one
+    # line — the file kept both contracts, both still abort on violation, and
+    # the audit reported a regression from 2 to 1.  A metric a reformat can
+    # move is not measuring adoption.
+    #
+    # Three stages instead, so the line filter and the occurrence count are
+    # separate concerns: select lines that do not open as a comment, cut each
+    # line at its first `//`, then count occurrences in what is left.
     local pattern="$1"
     local total=0
     total=$(
-        rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\K${pattern}" "${common_globs[@]}" \
-           "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
+        rg -N --no-filename -P "^(?!\s*(?://|\*|/\*)).*${pattern}" "${common_globs[@]}" \
+           "$scan_root/include" "$scan_root/src" 2>/dev/null \
+        | rg --passthru -P '//.*$' -r '' \
+        | rg -oP "${pattern}" \
+        | wc -l
     )
     printf '%s' "$total"
 }

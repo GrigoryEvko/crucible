@@ -80,8 +80,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+      - name: Install ripgrep, fd and clang-format
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep fd-find clang-format
+
+      # Non-blocking for now, matching the aarch64, bench and vessel-dispatch
+      # convention: flip `continue-on-error` off once a run confirms the
+      # runner's clang-format agrees with this tree.
+      #
+      # The repo .clang-format was verified byte-for-byte against 22.1.8 and
+      # 23.1.0, and this runner installs whatever Ubuntu ships — likely an
+      # older major.  clang-format's handling of `template for`, `^^T` and
+      # contract clauses has moved between releases, so a disagreement would
+      # be the formatter's, not the tree's.  The version is echoed so the
+      # first run answers that question instead of guessing at it, and the
+      # guard itself prints a NOTE when the major is one it has not been
+      # verified against.
+      #
+      # fd-find installs the binary as `fdfind`; the guard resolves either.
+      - name: clang-format (self-test + scan)
+        continue-on-error: true
+        run: |
+          clang-format --version
+          bash scripts/check-clang-format.sh --self-test
+          bash scripts/check-clang-format.sh
 
       - name: trait injection guard (self-test + scan)
         run: |
