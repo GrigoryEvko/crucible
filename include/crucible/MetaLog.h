@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
@@ -75,8 +76,59 @@ struct CRUCIBLE_OWNER MetaLog {
     MetaLog()
         : entries_buffer_{crucible::fixy::wrap::HugePageBuffer<TensorMeta>::allocate(CAPACITY)},
           entries{entries_buffer_.data()} {
-        // The buffer is allocated on a huge-page boundary, which the advice
-        // below requires: the kernel rejects it on any other address.
+        // Fault the whole buffer in here rather than one page at a time
+        // under the recording thread.
+        //
+        // TensorMeta is 168 bytes and CAPACITY is 1<<20, so this is
+        // 176,160,768 bytes, or 43,008 pages of 4 KiB. Left untouched, every
+        // one of them is a first-touch fault taken by whichever append
+        // reaches it. Measured on this buffer: an append on the first lap
+        // costs 25-31 ns against 5.1-5.6 ns once the page is resident, the
+        // faulting 4.1% of appends put the first lap's p99 at 534-703 ns,
+        // and each fault runs about 580 ns.
+        //
+        // The first lap is not a startup transient. SD 1.5's U-Net appends
+        // 81,532 records for each iteration, which is 7.78% of CAPACITY, so
+        // the lap spans roughly 13 iterations — exactly the window in which
+        // the detector is deciding whether to compile and the phase timings
+        // are being taken. Paying it here costs 28.6-30.6 ms in a
+        // constructor that is already cold and already asks the allocator
+        // for 168 MiB, and it makes the first recorded op cost the same as
+        // the millionth.
+        //
+        // Measured end to end: constructing a Vigil, which builds one of
+        // these, goes from 0.9 ms to 37.8 ms.
+        //
+        // Value-construction rather than a memset over the bytes. TensorMeta
+        // is trivially copyable, which is what lets try_append memcpy into
+        // it, but it carries member initializers and so is not trivially
+        // default-constructible; memset on it is what -Wclass-memaccess
+        // exists to reject. This form says the same thing to the optimizer,
+        // which lowers an all-zero initializer to the same stores, and it
+        // additionally begins the lifetime of every slot instead of leaving
+        // the buffer as raw storage.
+        if (entries != nullptr) {
+            std::uninitialized_value_construct_n(entries, CAPACITY);
+        }
+
+        // Registering the region records it in a process-wide table. It
+        // issues no system call, so despite the flag below nothing here
+        // asks for huge pages, and on a host with
+        // transparent_hugepage=madvise — the common setting, and this
+        // one — the buffer gets 4 KiB pages: measured AnonHugePages is 0 kB
+        // and THPeligible is 0, so khugepaged will not collapse it later
+        // either. The 2 MiB alignment HugePageBuffer provides is necessary
+        // for the advice and not sufficient on its own.
+        //
+        // The advice itself lives in warden::Hardening::hint_hugepage, which
+        // only a benchmark that opts into a hardening policy ever reaches.
+        // It is deliberately not called here: with defrag=madvise an advised
+        // region enters direct compaction at fault time, and on a fragmented
+        // host that turned this construction into a 2,724 ms stall in
+        // measurement. Trading a bounded 30 ms for an unbounded multi-second
+        // one is not a trade a runtime constructor can make. MADV_COLLAPSE,
+        // which puts the stall where the caller chooses, is the shape to
+        // reach for if huge pages are wanted later.
         crucible::warden::register_hot_region(entries, entries_buffer_.bytes(),
                                               /*huge=*/true, "MetaLog.entries");
     }

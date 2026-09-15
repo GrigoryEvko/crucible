@@ -117,6 +117,36 @@ crucible_bench(bench_chaselev_session)
 target_compile_definitions(bench_chaselev_session PRIVATE NDEBUG)
 crucible_bench(bench_scheduler_policies)
 
+# ── The one gated latency number ─────────────────────────────────────
+#
+# Deliberately absent from CRUCIBLE_CONTRACT_IGNORE_TUS in the root
+# CMakeLists.  The six TUs on that list compile with contracts erased,
+# so none of them can say what the production Release build costs —
+# which is the only question this target exists to answer.  It takes
+# the Release default, `observe`, and measures the armed shape.
+#
+# Keep it off that list.
+crucible_bench(bench_record_leaf)
+target_compile_definitions(bench_record_leaf PRIVATE
+  CRUCIBLE_RECORD_LEAF_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/baselines/record_leaf.json")
+
+# The only `add_test` in bench/.  The rest of the tree is a compile
+# gate; this one runs, compares against a committed ceiling and fails.
+#
+# It is registered unconditionally rather than behind a host check
+# because the binary decides for itself: a sample whose coefficient of
+# variation is past the code guide's 5% bar reports SKIP and passes,
+# so on a loaded box or a shared runner this reports rather than
+# flaps.  A real regression on a quiet box is what turns it red.
+#
+# Pinning is left to the harness, which routes through
+# warden::select_hot_cpu and already prefers an isolated core.
+add_test(NAME bench_record_leaf COMMAND bench_record_leaf)
+set_tests_properties(bench_record_leaf PROPERTIES
+  TIMEOUT 300
+  ENVIRONMENT "CRUCIBLE_BENCH_JSON=0"
+  LABELS "bench;latency")
+
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
 # Usage: ./render_trace <trace.crtrace> [-o output.svg] [--blocks-only]

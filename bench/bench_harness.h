@@ -1244,7 +1244,15 @@ public:
             // bodies and invisible for anything heavier.
             if (wall_cap_ms > 0 && (i & 63) == 63) {
                 const auto elapsed = std::chrono::steady_clock::now() - start_all;
-                if (elapsed.count() > warmup_budget.count()) {
+                // Compare the durations, not their counts. steady_clock's
+                // duration is nanoseconds and warmup_budget is milliseconds,
+                // so comparing .count() to .count() put 2,500 ns against a
+                // budget meant to read 2,500 ms — a factor of a million. The
+                // warmup then ended at the first 64-iteration check past
+                // 2.5 us, which is 64 or 128 iterations for any body worth
+                // measuring, never the 10,000 the default asks for. Letting
+                // chrono convert is the whole reason it carries units.
+                if (elapsed > warmup_budget) {
                     break;
                 }
             }
@@ -1300,7 +1308,13 @@ public:
             // already long relative to steady_clock::now() (~20 ns).
             if (wall_cap_ms > 0 && (i & 63) == 63) {
                 const auto elapsed = std::chrono::steady_clock::now() - start_all;
-                if (elapsed.count() > wall_budget.count()) {
+                // Durations, not counts — the same unit mismatch the warmup
+                // loop carried. This one ended the sample loop at the first
+                // check past 10 us, so a run asking for 100,000 samples
+                // collected 64 of them and every percentile above p95 came
+                // out of a handful of observations. The drift check below,
+                // which needs 200 samples, could never fire.
+                if (elapsed > wall_budget) {
                     break;
                 }
             }

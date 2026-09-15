@@ -148,6 +148,35 @@ namespace crucible::detail {
         __builtin_trap();
 }
 
+// The failure arm shared by the two assertion macros below.
+//
+// Written inline, that arm is a tracer probe, three address loads, a format
+// call and a trap, which the compiler lays down next to the code being
+// guarded. The guard itself is one compare, so the diagnostic outweighs it
+// by an order of magnitude and shares the instruction line with a hot body
+// that never executes it. Outlined behind a cold call, a use site keeps the
+// compare and a five-instruction call stub, and the rest moves to
+// .text.unlikely. That is the shape the code guide asks for.
+//
+// noreturn is what lets the caller drop everything after the call. It is the
+// same promise std::abort already carries, so the failure arm was terminal
+// before this and stays terminal now: a SIGABRT handler that jumps out, as
+// the test probe does, leaves through the jump rather than returning here.
+//
+// The tracer is read once. Written out, the check ran twice, once for the
+// message and once inside breakpoint_if_debugging.
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void fail_invariant(const char* what, const char* predicate,
+                                                                     const char* file, int line) noexcept {
+    const bool traced = is_debugger_present();
+    if (!traced) {
+        std::fprintf(stderr, "crucible: %s failed: %s (%s:%d)\n", what, predicate, file, line);
+    } else {
+        // Stop in the debugger at the failure, not inside abort.
+        __builtin_trap();
+    }
+    std::abort();
+}
+
 }  // namespace crucible::detail
 
 // CRUCIBLE_INVARIANT states a fact the optimizer may rely on, so under NDEBUG
@@ -166,31 +195,20 @@ namespace crucible::detail {
 #ifdef NDEBUG
 #define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
 #else
-#define CRUCIBLE_INVARIANT(cond)                                                                             \
-    do {                                                                                                     \
-        if (!(cond)) [[unlikely]] {                                                                          \
-            if (!::crucible::detail::is_debugger_present()) {                                                \
-                std::fprintf(stderr, "crucible: invariant failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-            }                                                                                                \
-            ::crucible::detail::breakpoint_if_debugging();                                                   \
-            std::abort();                                                                                    \
-        }                                                                                                    \
+#define CRUCIBLE_INVARIANT(cond)                                                              \
+    do {                                                                                      \
+        if (!(cond)) [[unlikely]] {                                                           \
+            ::crucible::detail::fail_invariant("invariant", #cond, __FILE__, __LINE__);       \
+        }                                                                                     \
     } while (0)
 #endif
 
 // This one checks in every build mode. Reach for it where the body cannot
 // continue safely if the predicate fails, such as a noexcept constructor
 // handed an unusable argument.
-#define CRUCIBLE_FATAL_INVARIANT(cond)                               \
-    do {                                                             \
-        if (!(cond)) [[unlikely]] {                                  \
-            if (!::crucible::detail::is_debugger_present()) {        \
-                std::fprintf(stderr,                                 \
-                             "crucible: fatal invariant failed: %s " \
-                             "(%s:%d)\n",                            \
-                             #cond, __FILE__, __LINE__);             \
-            }                                                        \
-            ::crucible::detail::breakpoint_if_debugging();           \
-            std::abort();                                            \
-        }                                                            \
+#define CRUCIBLE_FATAL_INVARIANT(cond)                                                        \
+    do {                                                                                      \
+        if (!(cond)) [[unlikely]] {                                                           \
+            ::crucible::detail::fail_invariant("fatal invariant", #cond, __FILE__, __LINE__); \
+        }                                                                                     \
     } while (0)
