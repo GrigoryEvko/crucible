@@ -470,8 +470,19 @@ jobs:
             echo "::error::patch did not produce c10/core/CrucibleState.h -- patches/pytorch-crucible-integration.patch no longer applies to this PyTorch"; exit 1; }
           grep -q '^  Crucible,' c10/core/DispatchKey.h || {
             echo "::error::patch did not add DispatchKey::Crucible -- the enum hunk no longer applies to this PyTorch"; exit 1; }
-          grep -q '^  DeferredInit,' c10/core/DispatchKey.h || {
-            echo "::error::DeferredInit vanished from DispatchKey.h -- the patch must ADD a key, never rename torchdistx's slot"; exit 1; }
+          if grep -q '^  DeferredInit,' c10/core/DispatchKey.h; then
+            echo "::error::DeferredInit survived the patch -- the removal hunk did not apply, so Crucible widened the key budget instead of reusing the dead torchdistx slot"; exit 1
+          fi
+          # Crucible must be the LAST functionality key: the dispatcher gives
+          # the highest priority to the highest ordinal, so anything appended
+          # after Crucible demotes the recorder below it -- silently, because
+          # the build still succeeds and the fallback still fires, just later.
+          last_key=$(sed -n '1,/^  EndOfFunctionalityKeys,/p' c10/core/DispatchKey.h \
+                     | grep -oE '^  [A-Za-z_][A-Za-z0-9_]*,' \
+                     | grep -v 'EndOfFunctionalityKeys' \
+                     | tail -1 | tr -d ' ,')
+          [ "$last_key" = Crucible ] || {
+            echo "::error::the last functionality key is '$last_key', not Crucible -- upstream appended a key after it and Crucible is no longer top dispatch priority"; exit 1; }
           rm -f c10/core/CrucibleState.cpp c10/core/*.rej c10/core/*.orig
 
       - name: Configure with TORCH_DIR
