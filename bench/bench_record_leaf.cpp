@@ -354,17 +354,19 @@ int main() {
 
         auto d = make_op(0, 1);
         uint64_t tick = 0;
-        return bench::Run("record leaf [2 appends, no drainer]").core(record_core >= 0 ? record_core : bench::env_core()).measure([&] {
-            d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-            MetaIndex meta_start = log->try_append(d.metas, d.n_metas);
-            if (!meta_start.is_valid()) [[unlikely]] {
-                log->reset();
-                meta_start = log->try_append(d.metas, d.n_metas);
-            }
-            if (!ring->try_append(d.entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
-                ring->reset();
-            }
-        });
+        return bench::Run("record leaf [2 appends, no drainer]")
+            .core(record_core >= 0 ? record_core : bench::env_core())
+            .measure([&] {
+                d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
+                MetaIndex meta_start = log->try_append(d.metas, d.n_metas);
+                if (!meta_start.is_valid()) [[unlikely]] {
+                    log->reset();
+                    meta_start = log->try_append(d.metas, d.n_metas);
+                }
+                if (!ring->try_append(d.entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
+                    ring->reset();
+                }
+            });
     }());
 
     // ── The recording leaf, ring guaranteed to have room ────────────
@@ -501,9 +503,8 @@ int main() {
         const double p50_max = want->p50_ns * kTolerance;
         const double p99_max = want->p99_ns * kTolerance;
         const bool ok = report.pct.p50 <= p50_max && (!kGateOnP99 || report.pct.p99 <= p99_max);
-        std::printf("  %-44s %s  p50 %6.2f / %6.2f ns   p99 %6.2f (recorded %6.2f, not gated)\n",
-                    report.name.c_str(), ok ? "PASS" : "FAIL", report.pct.p50, p50_max, report.pct.p99,
-                    want->p99_ns);
+        std::printf("  %-44s %s  p50 %6.2f / %6.2f ns   p99 %6.2f (recorded %6.2f, not gated)\n", report.name.c_str(),
+                    ok ? "PASS" : "FAIL", report.pct.p50, p50_max, report.pct.p99, want->p99_ns);
         if (!ok) failures++;
     }
 

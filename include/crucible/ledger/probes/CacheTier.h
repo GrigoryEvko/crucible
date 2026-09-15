@@ -120,7 +120,7 @@ inline constexpr std::size_t kMaxSweepPoints = 64;
 // with the same arguments produce the same sum and compute it once.
 
 [[gnu::noinline]] inline std::uint64_t stream_one_word_per_line(const std::uint64_t* words,
-                                                                 std::size_t line_count) noexcept {
+                                                                std::size_t line_count) noexcept {
     constexpr std::size_t kWordsPerLine = 8;
     std::uint64_t lane0 = 0, lane1 = 0, lane2 = 0, lane3 = 0;
     const std::size_t limit = line_count * kWordsPerLine;
@@ -147,7 +147,8 @@ class SliceWorker {
 public:
     SliceWorker() noexcept = default;
     SliceWorker(SliceWorker const&) = delete("a worker owns its thread; a copy would own the same one twice");
-    SliceWorker& operator=(SliceWorker const&) = delete("a worker owns its thread; a copy would own the same one twice");
+    SliceWorker&
+    operator=(SliceWorker const&) = delete("a worker owns its thread; a copy would own the same one twice");
     SliceWorker(SliceWorker&&) = delete("the worker thread captures `this`, so the address must not move");
     SliceWorker& operator=(SliceWorker&&) = delete("the worker thread captures `this`, so the address must not move");
 
@@ -482,8 +483,7 @@ struct SweepPass {
         std::max(first.knee_evidence.within_run_cv_ppm, second.knee_evidence.within_run_cv_ppm);
     folded.knee_evidence.run_to_run_spread_ppm =
         spread_ppm(static_cast<double>(first.knee_bytes), static_cast<double>(second.knee_bytes));
-    folded.knee_evidence.sample_count =
-        std::min(first.knee_evidence.sample_count, second.knee_evidence.sample_count);
+    folded.knee_evidence.sample_count = std::min(first.knee_evidence.sample_count, second.knee_evidence.sample_count);
 
     folded.ceiling_evidence =
         (first.ceiling_bytes <= second.ceiling_bytes) ? first.ceiling_evidence : second.ceiling_evidence;
@@ -505,7 +505,6 @@ struct SweepPass {
         result.fault = LedgerError::NotApplicableOnThisHost;
         return result;
     }
-
 
     const int self_cpu = measuring_cpu();
     const std::vector<int> helpers = helper_cores_for(self_cpu);
@@ -708,13 +707,11 @@ static_assert(!NumaMeasurement{}.is_usable());
 // ceiling on every winning point after the knee, so this can only come
 // from a corrupted structure, and the predicate catches it rather than
 // handing a caller an inverted range.
-static_assert(!CacheTierMeasurement{.fault = LedgerError::None,
-                                    .parallel_knee_bytes = 1024,
-                                    .parallel_ceiling_bytes = 512}
+static_assert(!CacheTierMeasurement{
+    .fault = LedgerError::None, .parallel_knee_bytes = 1024, .parallel_ceiling_bytes = 512}
                    .found_a_bracket());
-static_assert(CacheTierMeasurement{.fault = LedgerError::None,
-                                   .parallel_knee_bytes = 1024,
-                                   .parallel_ceiling_bytes = 1024}
+static_assert(CacheTierMeasurement{
+    .fault = LedgerError::None, .parallel_knee_bytes = 1024, .parallel_ceiling_bytes = 1024}
                   .found_a_bracket());
 
 // The sweep must actually step. A ratio that rounds back to itself would

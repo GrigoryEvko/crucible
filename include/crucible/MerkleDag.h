@@ -524,9 +524,8 @@ public:
     // zero would produce the same hash as the NoRecipe path — exactly the
     // confusion the parameter exists to prevent.  UINT64_MAX is reserved as
     // the end-of-region marker and can never be a real recipe hash.
-    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept
-        pre(::crucible::decide::is_non_zero(recipe.hash))
-            pre(!recipe.hash.is_sentinel()) {
+    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept pre(::crucible::decide::is_non_zero(recipe.hash))
+        pre(!recipe.hash.is_sentinel()) {
         [[assume(recipe.hash.raw() != 0)]];
         [[assume(recipe.hash.raw() != UINT64_MAX)]];
         state_ = detail::combine_ids(state_, recipe.hash.raw());
@@ -602,8 +601,8 @@ private:
                                                                  const NumericalRecipe* recipe = nullptr) noexcept
     pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
         pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
-    ContentHashFold fold = (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}}
-                                               : ContentHashFold{*recipe};
+    ContentHashFold fold =
+        (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}} : ContentHashFold{*recipe};
     for (const auto& op_record : ops) {
         fold.fold(op_record);
     }
@@ -1357,15 +1356,15 @@ inline void recompute_merkle(TraceNode* node) {
 // So this is the one parameter on this signature that cannot be defaulted.
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
-[[nodiscard]] inline BranchNode*
-add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache, TraceNode* divergence_point, TraceEntry* new_ops,
-           uint32_t new_n, int64_t old_guard_value, int64_t new_guard_value, Guard guard, TraceNode* existing_suffix,
-           const NumericalRecipe* recipe)
+[[nodiscard]] inline BranchNode* add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache,
+                                            TraceNode* divergence_point, TraceEntry* new_ops, uint32_t new_n,
+                                            int64_t old_guard_value, int64_t new_guard_value, Guard guard,
+                                            TraceNode* existing_suffix, const NumericalRecipe* recipe)
     pre(divergence_point != nullptr) pre(old_guard_value != new_guard_value)
         pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
             pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
-    auto* new_region = (recipe == nullptr) ? make_region(a, arena, new_ops, new_n)
-                                           : make_region(a, arena, new_ops, new_n, recipe);
+    auto* new_region =
+        (recipe == nullptr) ? make_region(a, arena, new_ops, new_n) : make_region(a, arena, new_ops, new_n, recipe);
 
     TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix, recipe);
 

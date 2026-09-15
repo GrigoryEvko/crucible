@@ -195,11 +195,11 @@ namespace crucible::detail {
 #ifdef NDEBUG
 #define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
 #else
-#define CRUCIBLE_INVARIANT(cond)                                                              \
-    do {                                                                                      \
-        if (!(cond)) [[unlikely]] {                                                           \
-            ::crucible::detail::fail_invariant("invariant", #cond, __FILE__, __LINE__);       \
-        }                                                                                     \
+#define CRUCIBLE_INVARIANT(cond)                                                        \
+    do {                                                                                \
+        if (!(cond)) [[unlikely]] {                                                     \
+            ::crucible::detail::fail_invariant("invariant", #cond, __FILE__, __LINE__); \
+        }                                                                               \
     } while (0)
 #endif
 

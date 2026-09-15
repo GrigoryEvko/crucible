@@ -111,6 +111,6 @@ static_assert(cal::hw_instruction_name(HwInstruction::PrivilegedMsr) == std::str
 }  // namespace
 
 int main() {
-    cal::detail::hw_instruction_lattice_self_test ::hw_instruction_lattice_runtime_smoke_test();
+    cal::detail::hw_instruction_lattice_self_test::hw_instruction_lattice_runtime_smoke_test();
     return 0;
 }

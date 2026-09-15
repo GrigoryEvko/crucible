@@ -78,10 +78,10 @@ static_assert(
     "RuntimeMetricsSample must stay a staleness-wrapped payload. Collapsing "
     "it to the bare payload makes every sample read as fresh.");
 
-static_assert(!std::is_same_v<::crucible::fixy::observe::KeeperMetricsReader,
-                              ::crucible::fixy::observe::CanopyMetricsReader>,
-              "The keeper and canopy readers must stay distinct types. If they "
-              "collapse, the two mint names carry no more meaning than a comment "
-              "and either role can be passed where the other is wanted.");
+static_assert(
+    !std::is_same_v<::crucible::fixy::observe::KeeperMetricsReader, ::crucible::fixy::observe::CanopyMetricsReader>,
+    "The keeper and canopy readers must stay distinct types. If they "
+    "collapse, the two mint names carry no more meaning than a comment "
+    "and either role can be passed where the other is wanted.");
 
 }  // namespace crucible::fixy::observe::self_test

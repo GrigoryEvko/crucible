@@ -227,17 +227,16 @@ struct RefreshDaemonConfig {
 class RefreshDaemon {
 public:
     RefreshDaemon(RefreshDaemonConfig config, HostFacts facts, HostFingerprint fingerprint, Ledger seed) noexcept
-        : config_{config},
-          facts_{facts},
-          fingerprint_{fingerprint},
-          working_{std::move(seed)} {
+        : config_{config}, facts_{facts}, fingerprint_{fingerprint}, working_{std::move(seed)} {
         publish_(working_);
     }
 
     RefreshDaemon(RefreshDaemon const&) = delete("the refresh thread captures `this`; a copy would share it");
-    RefreshDaemon& operator=(RefreshDaemon const&) = delete("the refresh thread captures `this`; a copy would share it");
+    RefreshDaemon&
+    operator=(RefreshDaemon const&) = delete("the refresh thread captures `this`; a copy would share it");
     RefreshDaemon(RefreshDaemon&&) = delete("the refresh thread captures `this`, so the address must not move");
-    RefreshDaemon& operator=(RefreshDaemon&&) = delete("the refresh thread captures `this`, so the address must not move");
+    RefreshDaemon&
+    operator=(RefreshDaemon&&) = delete("the refresh thread captures `this`, so the address must not move");
 
     ~RefreshDaemon() noexcept { stop(); }
 
@@ -417,9 +416,7 @@ template <effects::IsExecCtx Ctx>
     // whose idle period is zero, produces a thread that measures without
     // pause on a host that cannot measure, and there is no safe way to
     // continue from it.
-    pre(config.schedule.is_well_formed())
-    pre(!config.registry.empty())
-{
+    pre(config.schedule.is_well_formed()) pre(!config.registry.empty()) {
     const HostFacts facts = probe_host_facts();
     const HostFingerprint fingerprint = fold_fingerprint(facts);
     const CompetenceReport competence = probe_competence();

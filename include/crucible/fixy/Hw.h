@@ -343,11 +343,10 @@ static_assert(which_dim_v<scope_arm_osh> == D::MemoryScope);
 // audit table Fn.h owned called HwInstruction, BarrierStrength, SimdIsa and
 // MemoryScope grantless — a contradiction inside one translation unit that
 // survived because the table's only guards compared a literal to itself.
-static_assert(::crucible::fixy::grant::audit::grant_families_witnessed_v<
-                  ghw::msr<0x10u>,                                       // HwInstruction
-                  barrier_x86_mfence,                                    // BarrierStrength
-                  ghw::simd_width<256>,                                  // SimdIsa
-                  scope_arm_osh>,                                        // MemoryScope
+static_assert(::crucible::fixy::grant::audit::grant_families_witnessed_v<ghw::msr<0x10u>,  // HwInstruction
+                                                                         barrier_x86_mfence,  // BarrierStrength
+                                                                         ghw::simd_width<256>,  // SimdIsa
+                                                                         scope_arm_osh>,  // MemoryScope
               "Hw.h ships grant families for HwInstruction, BarrierStrength, SimdIsa "
               "and MemoryScope, so none of them may appear in "
               "grant::kAxesWithoutNonDefaultGrants.");

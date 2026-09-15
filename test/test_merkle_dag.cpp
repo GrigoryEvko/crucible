@@ -73,7 +73,7 @@ namespace {
     {
         auto agrees = [](const crucible::TensorMeta& meta) {
             return crucible::compute_storage_nbytes(crucible::external_tensor_meta(meta))
-                   == crucible::detail::compute_storage_nbytes_simd(crucible::external_tensor_meta(meta));
+                == crucible::detail::compute_storage_nbytes_simd(crucible::external_tensor_meta(meta));
         };
 
         crucible::TensorMeta reversed{};
@@ -920,9 +920,9 @@ namespace {
                 crucible::Arena child_arena(1 << 12);
                 auto* body = crucible::make_region(test.alloc, child_arena, guard_body_ops, 1);
                 body->next = crucible::make_terminal(test.alloc, child_arena);
-                auto* node = crucible::make_loop(test.alloc, child_arena, body,
-                                                 crucible::compute_body_content_hash(body), nullptr, 0, kind, count,
-                                                 epsilon);
+                auto* node =
+                    crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
+                                        nullptr, 0, kind, count, epsilon);
                 // Keeps the optimizer from deciding the call had no effect
                 // and eliding the clause along with it.
                 asm volatile("" ::"r"(node) : "memory");

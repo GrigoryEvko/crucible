@@ -163,10 +163,9 @@ void test_ratio_evidence_catches_an_unreproducible_ratio() {
 
     // And the other half of the record still works: a noisy side pushes
     // the within-run field over its own bar even when the ratio holds.
-    const VerdictEvidence noisy = evidence_for_ratio(synthetic_report("b3", 200.0, 0.40),
-                                                     synthetic_report("c3", 100.0, 0.0005),
-                                                     synthetic_report("b4", 200.0, 0.40),
-                                                     synthetic_report("c4", 100.0, 0.0005));
+    const VerdictEvidence noisy =
+        evidence_for_ratio(synthetic_report("b3", 200.0, 0.40), synthetic_report("c3", 100.0, 0.0005),
+                           synthetic_report("b4", 200.0, 0.40), synthetic_report("c4", 100.0, 0.0005));
     assert(audit_evidence(noisy) == EvidenceFault::WithinRunCvTooHigh);
 
     std::printf("  test_ratio_evidence_catches_an_unreproducible_ratio: PASSED\n");
@@ -225,8 +224,8 @@ void test_page_policy_is_verified_against_the_kernel() {
         // probe checks for before reporting a hugepage number. What IS
         // asserted is that the two policies cannot both be reported for
         // one region.
-        const bool took_huge = ledger::probes::huge_page_detail::verify_page_policy_took(
-            *huge, ledger::PagePolicy::HugePages);
+        const bool took_huge =
+            ledger::probes::huge_page_detail::verify_page_policy_took(*huge, ledger::PagePolicy::HugePages);
         const bool took_base =
             ledger::probes::huge_page_detail::verify_page_policy_took(*huge, ledger::PagePolicy::BasePages);
         assert(!(took_huge && took_base));

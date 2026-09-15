@@ -112,6 +112,6 @@ static_assert(cal::barrier_strength_name(BarrierStrength::FullFence) == std::str
 }  // namespace
 
 int main() {
-    cal::detail::barrier_strength_lattice_self_test ::barrier_strength_lattice_runtime_smoke_test();
+    cal::detail::barrier_strength_lattice_self_test::barrier_strength_lattice_runtime_smoke_test();
     return 0;
 }

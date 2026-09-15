@@ -205,10 +205,8 @@ struct FaultInOutcome {
     // comparing like with like rather than finding them a factor of
     // sixty-four apart with nothing saying why.
     outcome.evidence.quantiles.p50_ns = saturating_nanos(outcome.nanos_per_mib);
-    outcome.evidence.quantiles.p99_ns =
-        saturating_nanos(std::max(first.pct.p99, second.pct.p99) / kMibPerRegion);
-    outcome.evidence.quantiles.p999_ns =
-        saturating_nanos(std::max(first.pct.p99_9, second.pct.p99_9) / kMibPerRegion);
+    outcome.evidence.quantiles.p99_ns = saturating_nanos(std::max(first.pct.p99, second.pct.p99) / kMibPerRegion);
+    outcome.evidence.quantiles.p999_ns = saturating_nanos(std::max(first.pct.p99_9, second.pct.p99_9) / kMibPerRegion);
     outcome.evidence.quantiles.p99_ns = std::max(outcome.evidence.quantiles.p99_ns, outcome.evidence.quantiles.p50_ns);
     outcome.evidence.quantiles.p999_ns =
         std::max(outcome.evidence.quantiles.p999_ns, outcome.evidence.quantiles.p99_ns);
@@ -286,7 +284,6 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
         result.fault = LedgerError::NotApplicableOnThisHost;
         return result;
     }
-
 
     if (!concurrent::Topology::instance().hugepage_2mb_available()) {
         // The kernel has transparent hugepages switched off entirely, so

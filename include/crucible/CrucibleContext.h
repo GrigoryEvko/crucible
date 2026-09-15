@@ -312,8 +312,7 @@ private:
                 // then reach here and write past the end of `visited` on the
                 // stack. These two checks do not depend on that option.
                 CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_plan->num_slots);
-                CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_plan->num_slots
-                                         && new_sid.raw() < MIGRATION_MAX_SLOTS);
+                CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_plan->num_slots && new_sid.raw() < MIGRATION_MAX_SLOTS);
 
                 if (old_plan->slots[old_sid.raw()].is_external || new_plan->slots[new_sid.raw()].is_external) continue;
 

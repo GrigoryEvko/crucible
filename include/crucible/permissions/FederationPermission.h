@@ -323,7 +323,7 @@ mint_federation_admittance(const LocalCipherPermission& local_permission, Federa
         return std::unexpected(AdmittanceError::BadSignature);
     }
 
-    return ::crucible::permissions::detail::FederationMintAccess ::template mint<Org>();
+    return ::crucible::permissions::detail::FederationMintAccess::template mint<Org>();
 }
 
 }  // namespace crucible::permissions

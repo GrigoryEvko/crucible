@@ -295,8 +295,8 @@ inline void set_probe_settings(ProbeSettings settings) noexcept { g_probe_settin
 
     evidence.sample_count = static_cast<std::uint32_t>(
         std::min({baseline_first.pct.n, candidate_first.pct.n, baseline_second.pct.n, candidate_second.pct.n}));
-    evidence.within_run_cv_ppm = to_ppm(std::max({baseline_first.pct.cv, candidate_first.pct.cv,
-                                                  baseline_second.pct.cv, candidate_second.pct.cv}));
+    evidence.within_run_cv_ppm = to_ppm(
+        std::max({baseline_first.pct.cv, candidate_first.pct.cv, baseline_second.pct.cv, candidate_second.pct.cv}));
     evidence.run_to_run_spread_ppm = spread_ppm(first_ratio, second_ratio);
     return evidence;
 }
@@ -398,8 +398,7 @@ public:
     // Returns a region of at least `bytes`, or the reason there is none.
     // A probe that cannot get memory reports StoreReadFailed rather than
     // measuring something smaller and not saying so.
-    [[nodiscard]] static std::expected<ProbeRegion, LedgerError> create(std::size_t bytes,
-                                                                        PagePolicy policy) noexcept {
+    [[nodiscard]] static std::expected<ProbeRegion, LedgerError> create(std::size_t bytes, PagePolicy policy) noexcept {
         if (bytes == 0u) {
             return std::unexpected(LedgerError::MalformedRecord);
         }
@@ -425,9 +424,9 @@ public:
         region.usable_ = address;
         region.usable_bytes_ = bytes;
 
-        const int advice = (policy == PagePolicy::HugePages)  ? MADV_HUGEPAGE
+        const int advice = (policy == PagePolicy::HugePages) ? MADV_HUGEPAGE
                          : (policy == PagePolicy::BasePages) ? MADV_NOHUGEPAGE
-                                                              : MADV_NORMAL;
+                                                             : MADV_NORMAL;
         if (advice != MADV_NORMAL) {
             // Advisory by definition: a kernel built without transparent
             // hugepage support answers EINVAL and the region is still

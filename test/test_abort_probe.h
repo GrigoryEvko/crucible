@@ -49,8 +49,8 @@ extern "C" inline void abort_probe_handler(int) {
 // attribute turns it off for this one function rather than for the test.
 template <typename Body>
 [[nodiscard, gnu::optimize("no-harden-control-flow-redundancy")]] bool aborts(Body&& body) {
-    struct sigaction want {};
-    struct sigaction previous {};
+    struct sigaction want{};
+    struct sigaction previous{};
     want.sa_handler = abort_probe_handler;
     sigemptyset(&want.sa_mask);
     want.sa_flags = 0;

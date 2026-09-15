@@ -138,9 +138,9 @@ inline constexpr std::size_t substrate_capacity_v = substrate_traits<S>::capacit
 // is L1-resident.
 
 template <IsSubstrate S>
-inline constexpr std::size_t channel_byte_footprint_v = substrate_capacity_v<S> > 0
-                                                          ? sizeof(substrate_value_type_t<S>) * substrate_capacity_v<S>
-                                                          : sizeof(substrate_value_type_t<S>);
+inline constexpr std::size_t channel_byte_footprint_v =
+    substrate_capacity_v<S> > 0 ? sizeof(substrate_value_type_t<S>) * substrate_capacity_v<S>
+                                : sizeof(substrate_value_type_t<S>);
 
 // The per-call estimate charges one whole cache line for every cross-thread
 // atomic counter the hot path reads or writes, because each of those counters

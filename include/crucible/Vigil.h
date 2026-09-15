@@ -304,7 +304,8 @@ public:
     // lines the recording path occupies.
     CRUCIBLE_INLINE void assert_producer_thread_() noexcept {
         const auto current_tid = std::this_thread::get_id();
-        if (producer_tid_.load(std::memory_order_relaxed) == current_tid) [[likely]] return;
+        if (producer_tid_.load(std::memory_order_relaxed) == current_tid) [[likely]]
+            return;
         claim_or_reject_producer_thread_(current_tid);
     }
 

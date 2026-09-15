@@ -394,7 +394,8 @@ static void test_find_alternate_tracks_live_plan() {
 
     cache.insert(region);
     assert(cache.size() == 1);
-    assert(cache.find(region->content_hash) == region && "a planless region is still cached and still findable by hash");
+    assert(cache.find(region->content_hash) == region
+           && "a planless region is still cached and still findable by hash");
 
     // Not eligible to switch to: without a plan the context cannot enter
     // compiled mode, so offering it would strand the caller.

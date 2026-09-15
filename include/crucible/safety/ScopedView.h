@@ -234,12 +234,16 @@ template <typename T>
 concept sv_complete = requires { sizeof(T); };
 
 template <typename T>
-concept sv_has_associated_value = requires { typename T::value_type; sizeof(typename T::value_type); }
-                                  && !std::is_same_v<std::remove_cv_t<typename T::value_type>, std::remove_cv_t<T>>;
+concept sv_has_associated_value = requires {
+    typename T::value_type;
+    sizeof(typename T::value_type);
+} && !std::is_same_v<std::remove_cv_t<typename T::value_type>, std::remove_cv_t<T>>;
 
 template <typename T>
-concept sv_has_associated_element = requires { typename T::element_type; sizeof(typename T::element_type); }
-                                    && !std::is_same_v<std::remove_cv_t<typename T::element_type>, std::remove_cv_t<T>>;
+concept sv_has_associated_element = requires {
+    typename T::element_type;
+    sizeof(typename T::element_type);
+} && !std::is_same_v<std::remove_cv_t<typename T::element_type>, std::remove_cv_t<T>>;
 
 template <typename T>
 consteval bool associated_contains_view() {

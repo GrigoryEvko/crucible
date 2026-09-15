@@ -255,7 +255,6 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
         return result;
     }
 
-
 #if defined(__x86_64__) || defined(__i386__)
     if (!host_has_wide_vector_unit()) {
         // Not a failure. A host with one vector width has already answered
@@ -351,8 +350,8 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     // where that happens it is precisely the streaming shape that catches
     // it.
     const bool wide_wins_compute = compute.candidate_wins();
-    const bool wide_loses_memory = memory.is_statistically_distinguishable && memory.is_practically_wide
-                                && memory.candidate_gain_percent < 100u;
+    const bool wide_loses_memory =
+        memory.is_statistically_distinguishable && memory.is_practically_wide && memory.candidate_gain_percent < 100u;
     result.preferred_bits = (wide_wins_compute && !wide_loses_memory) ? kWideWidthBits : kNarrowWidthBits;
 
     // Every one of the three verdicts is decided by a comparison, so all
@@ -382,8 +381,7 @@ probe_vector_width_preferred_bits(CompetenceReport const&) noexcept {
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
-    return VerdictMeasurement{.value = VerdictValue{measured.preferred_bits},
-                              .evidence = measured.compute_evidence};
+    return VerdictMeasurement{.value = VerdictValue{measured.preferred_bits}, .evidence = measured.compute_evidence};
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>

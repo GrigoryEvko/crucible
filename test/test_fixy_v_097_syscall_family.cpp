@@ -135,6 +135,6 @@ static_assert(cal::SyscallFamilyLattice::meet(cal::SyscallFamily::Privilege, cal
 }  // namespace
 
 int main() {
-    cal::detail::syscall_family_lattice_self_test ::syscall_family_lattice_runtime_smoke_test();
+    cal::detail::syscall_family_lattice_self_test::syscall_family_lattice_runtime_smoke_test();
     return 0;
 }

@@ -138,6 +138,6 @@ static_assert(cal::CallShapeLattice::meet(cal::CallShape::Unbounded, cal::CallSh
 }  // namespace
 
 int main() {
-    cal::detail::call_shape_lattice_self_test ::call_shape_lattice_runtime_smoke_test();
+    cal::detail::call_shape_lattice_self_test::call_shape_lattice_runtime_smoke_test();
     return 0;
 }

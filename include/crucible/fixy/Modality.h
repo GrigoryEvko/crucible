@@ -118,14 +118,18 @@ static_assert(::crucible::fixy::modality::modality_kind_count >= 6,
 // The `self_test` namespace this code sits in is also a member of
 // fixy::modality::, but it is a namespace, not a concept, type alias or
 // variable template, so it lands in none of the three buckets.
-enum class ModalitySurfaceKind : std::uint8_t { Concept, Tag, Query };
+enum class ModalitySurfaceKind : std::uint8_t {
+    Concept,
+    Tag,
+    Query
+};
 
 [[nodiscard]] consteval int count_modality_surface(ModalitySurfaceKind kind) {
     int found = 0;
     for (auto member : std::meta::members_of(^^::crucible::fixy::modality, std::meta::access_context::current())) {
-        const bool matches = (kind == ModalitySurfaceKind::Concept)  ? std::meta::is_concept(member)
-                             : (kind == ModalitySurfaceKind::Tag)    ? std::meta::is_type_alias(member)
-                                                                     : std::meta::is_variable_template(member);
+        const bool matches = (kind == ModalitySurfaceKind::Concept) ? std::meta::is_concept(member)
+                           : (kind == ModalitySurfaceKind::Tag)     ? std::meta::is_type_alias(member)
+                                                                    : std::meta::is_variable_template(member);
         if (matches) ++found;
     }
     return found;

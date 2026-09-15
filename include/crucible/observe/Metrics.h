@@ -85,11 +85,11 @@ public:
 
     RuntimeMetricsRoleReader(RuntimeMetricsRoleReader const&) =
         delete("a metrics reader owns one SharedPermissionPool share");
-    RuntimeMetricsRoleReader& operator=(RuntimeMetricsRoleReader const&) =
-        delete("a metrics reader owns one SharedPermissionPool share");
+    RuntimeMetricsRoleReader&
+    operator=(RuntimeMetricsRoleReader const&) = delete("a metrics reader owns one SharedPermissionPool share");
     RuntimeMetricsRoleReader(RuntimeMetricsRoleReader&&) noexcept = default;
-    RuntimeMetricsRoleReader& operator=(RuntimeMetricsRoleReader&&) =
-        delete("the share lifetime is fixed at construction");
+    RuntimeMetricsRoleReader&
+    operator=(RuntimeMetricsRoleReader&&) = delete("the share lifetime is fixed at construction");
 
     [[nodiscard]] RuntimeMetricsSample load() const noexcept { return handle_.load(); }
     [[nodiscard]] std::optional<RuntimeMetricsSample> try_load() const noexcept { return handle_.try_load(); }

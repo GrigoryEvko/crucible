@@ -231,8 +231,9 @@ struct VerdictTrait {
         // how long a quiet-host answer is allowed to describe a machine
         // whose workload mix has since changed.
         case VerdictId::ParallelKneeBytes:
-            return VerdictTrait{
-                .name = "parallel_knee_bytes", .unit = VerdictUnit::Bytes, .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
+            return VerdictTrait{.name = "parallel_knee_bytes",
+                                .unit = VerdictUnit::Bytes,
+                                .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
         case VerdictId::ParallelCeilingBytes:
             return VerdictTrait{.name = "parallel_ceiling_bytes",
                                 .unit = VerdictUnit::Bytes,

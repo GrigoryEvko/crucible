@@ -143,9 +143,7 @@ namespace audit {
     return false;
 }
 
-[[nodiscard]] constexpr bool axis_has_grant_family(dim::DimensionAxis D) noexcept {
-    return !axis_is_grantless(D);
-}
+[[nodiscard]] constexpr bool axis_has_grant_family(dim::DimensionAxis D) noexcept { return !axis_is_grantless(D); }
 
 // A grant tag witnesses its own axis.  Reading `which_dim_v<G>` is what
 // makes this a real check rather than a restatement: the value comes from
@@ -560,20 +558,20 @@ static_assert(which_dim_v<overflow_wrap> == dim::DimensionAxis::Overflow);
 // `which_dim` specializations they attest — four in Hw.h, and one each in
 // Fp.h, Fs.h, Async.h, grant/Ctrl.h, grant/Dispatch.h, grant/Global.h,
 // grant/Stack.h and grant/Stdio.h.
-static_assert(audit::grant_families_witnessed_v<
-                  affine,                                                   // Usage
-                  with<effects::Effect::IO>,                                // Effect
-                  declassify<::crucible::safety::secret_policy::AuditedLogging>,  // Security
-                  trust_verified,                                           // Trust
-                  refined_with<safety::fn::pred::True>,                     // Refinement
-                  version<3>,                                               // Version
-                  stale_to<5>,                                              // Staleness
-                  repr<safety::fn::ReprKind::C>,                            // Representation
-                  overflow_wrap,                                            // Overflow
-                  reentrancy::reentrant>,                                   // Reentrancy
-              "Ten axes served by Grant.h carry grant tags, so none of Usage, Effect, "
-              "Security, Trust, Refinement, Version, Staleness, Representation, "
-              "Overflow or Reentrancy may appear in kAxesWithoutNonDefaultGrants.");
+static_assert(
+    audit::grant_families_witnessed_v<affine,  // Usage
+                                      with<effects::Effect::IO>,  // Effect
+                                      declassify<::crucible::safety::secret_policy::AuditedLogging>,  // Security
+                                      trust_verified,  // Trust
+                                      refined_with<safety::fn::pred::True>,  // Refinement
+                                      version<3>,  // Version
+                                      stale_to<5>,  // Staleness
+                                      repr<safety::fn::ReprKind::C>,  // Representation
+                                      overflow_wrap,  // Overflow
+                                      reentrancy::reentrant>,  // Reentrancy
+    "Ten axes served by Grant.h carry grant tags, so none of Usage, Effect, "
+    "Security, Trust, Refinement, Version, Staleness, Representation, "
+    "Overflow or Reentrancy may appear in kAxesWithoutNonDefaultGrants.");
 
 // Protocol, Lifetime and Provenance tags are parameterized by a caller tag
 // type, and their concepts require a COMPLETE empty class — an elaborated
@@ -585,15 +583,14 @@ static_assert(audit::grant_families_witnessed_v<
 struct grant_axis_witness_proto final {};
 struct grant_axis_witness_source final {};
 
-static_assert(audit::grant_families_witnessed_v<
-                  protocol<grant_axis_witness_proto>,                       // Protocol
-                  in_region<0>,                                             // Lifetime
-                  from_source<grant_axis_witness_source>,                   // Provenance
-                  cost_constant,                                            // Complexity
-                  precision_f32,                                            // Precision
-                  space_bounded<1>,                                         // Space
-                  mut_mutable,                                              // Mutation
-                  sized_at<1>>,                                             // Size
+static_assert(audit::grant_families_witnessed_v<protocol<grant_axis_witness_proto>,  // Protocol
+                                                in_region<0>,  // Lifetime
+                                                from_source<grant_axis_witness_source>,  // Provenance
+                                                cost_constant,  // Complexity
+                                                precision_f32,  // Precision
+                                                space_bounded<1>,  // Space
+                                                mut_mutable,  // Mutation
+                                                sized_at<1>>,  // Size
               "Eight further axes served by Grant.h carry grant tags, so none of "
               "Protocol, Lifetime, Provenance, Complexity, Precision, Space, Mutation "
               "or Size may appear in kAxesWithoutNonDefaultGrants.");

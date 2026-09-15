@@ -16,8 +16,7 @@
 // Release builds with -march=native, so on an AVX512BW host the body below
 // compiles clean.  Fail loudly there instead of silently proving nothing.
 #if defined(__AVX512BW__)
-static_assert(crucible::detail::group_width() < 64,
-              "WRAP-SwissTab-2 fixture requires a group width below 64");
+static_assert(crucible::detail::group_width() < 64, "WRAP-SwissTab-2 fixture requires a group width below 64");
 #else
 int main() {
     constexpr crucible::detail::BitMask bad{std::numeric_limits<uint64_t>::max()};

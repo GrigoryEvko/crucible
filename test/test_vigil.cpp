@@ -191,8 +191,8 @@ static void test_divergence_drops_the_unobserved_region() {
     // ring never grows.
     const uint64_t produced_before = vigil.ring().total_produced();
     auto after_divergence = op_at(7, 0);
-    auto result_after = vigil.dispatch_op(crucible::vouch(after_divergence.entry), after_divergence.metas,
-                                          after_divergence.n_metas);
+    auto result_after =
+        vigil.dispatch_op(crucible::vouch(after_divergence.entry), after_divergence.metas, after_divergence.n_metas);
     assert(result_after.action == DispatchResult::Action::RECORD);
     assert(vigil.ring().total_produced() == produced_before + 1
            && "the first op after a divergence must be recorded, not aligned against the region the "
@@ -253,8 +253,8 @@ static void test_divergence_drops_a_half_finished_alignment() {
     // open, and reaches the ring if it is not.
     const uint64_t produced_before = vigil.ring().total_produced();
     auto after_divergence = op_at(9, 2);
-    auto result_after = vigil.dispatch_op(crucible::vouch(after_divergence.entry), after_divergence.metas,
-                                          after_divergence.n_metas);
+    auto result_after =
+        vigil.dispatch_op(crucible::vouch(after_divergence.entry), after_divergence.metas, after_divergence.n_metas);
     assert(result_after.action == DispatchResult::Action::RECORD);
     assert(vigil.ring().total_produced() == produced_before + 1
            && "the first op after a divergence must be recorded, not fed to an alignment walk the "

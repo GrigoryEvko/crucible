@@ -135,6 +135,6 @@ static_assert(cal::ControlFlowLattice::meet(cal::ControlFlow::MaySignal, cal::Co
 }  // namespace
 
 int main() {
-    cal::detail::control_flow_lattice_self_test ::control_flow_lattice_runtime_smoke_test();
+    cal::detail::control_flow_lattice_self_test::control_flow_lattice_runtime_smoke_test();
     return 0;
 }

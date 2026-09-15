@@ -204,9 +204,8 @@ int main() {
     static_assert(!HasWritableLengthMember<cntp::NicInterfaceName>);
     static_assert(!HasReadableByteMember<cntp::NicInterfaceName>);
     static_assert(!std::is_aggregate_v<cntp::NicInterfaceName>);
-    static_assert(
-        !std::is_constructible_v<cntp::NicInterfaceName, std::array<char, cntp::NicInterfaceName::max_bytes>,
-                                 std::uint8_t>);
+    static_assert(!std::is_constructible_v<cntp::NicInterfaceName, std::array<char, cntp::NicInterfaceName::max_bytes>,
+                                           std::uint8_t>);
     // Default construction stays available and yields the empty name,
     // which every consumer treats as "no interface selected".
     static_assert(std::is_nothrow_default_constructible_v<cntp::NicInterfaceName>);
