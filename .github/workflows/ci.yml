@@ -231,6 +231,43 @@ jobs:
           bash scripts/check-ci-guard-labels.sh
 
   # ---------------------------------------------------------------------------
+  # The sibling-substrate guards (Stage A1). Same free runner, no compiler.
+  # Split from `guards` because frozen_tree needs full history: it diffs the
+  # working tree against the freeze base, and a depth-1 checkout cannot.
+  # ---------------------------------------------------------------------------
+  layers:
+    name: layer boundary, frozen tree, derived pins (toolchain-free)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+
+      - name: layer boundary (self-test + scan)
+        run: |
+          bash scripts/check-layer-boundary.sh --self-test
+          bash scripts/check-layer-boundary.sh
+
+      - name: frozen old substrate (self-test + scan)
+        run: |
+          bash scripts/check-frozen-tree.sh --self-test
+          bash scripts/check-frozen-tree.sh
+
+      - name: derived cardinality pins (self-test + scan)
+        run: |
+          bash scripts/check-derived-pins.sh --self-test
+          bash scripts/check-derived-pins.sh
+
+      - name: syscall allowlist prose (self-test + scan)
+        run: |
+          bash scripts/check-syscall-allowlist-prose.sh --self-test
+          bash scripts/check-syscall-allowlist-prose.sh
+
+  # ---------------------------------------------------------------------------
   # Full compile + run + negative-compile + golden-binary suite. Matrix over
   # (arch × preset) in a fedora:44 container with stock GCC 16.1.1 (matches
   # the host that captured tools/row_hash_golden.txt + misc/mint-inventory.md). BPF
@@ -240,7 +277,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     name: build+test ${{ matrix.arch }} / ${{ matrix.preset }}
-    needs: guards
+    needs: [guards, layers]
     runs-on: ${{ matrix.runner }}
     container: fedora:44
     # aarch64 is non-blocking while the arm legs prove out. Both prior

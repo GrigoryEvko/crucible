@@ -14450,3 +14450,50 @@ crucible_neg_compile_fixy_test(neg_fixy_observe_mint_keeper_metrics_reader_no_ar
     "no matching function|too few arguments|mint_keeper_metrics_reader")
 crucible_neg_compile_fixy_test(neg_fixy_observe_mint_canopy_metrics_reader_wrong_arg
     "cannot convert|no matching function|could not convert|invalid initialization|int")
+
+# ── Stage A1 — the sibling substrate and its three guards ─────────
+#
+# include/foundation/ and include/fixy/ are the canonical substrate,
+# extracted beside the old tree.  Three guards hold the extraction to its
+# rules from its first commit:
+#
+#   layer_boundary — foundation < fixy < crucible; a file names only its
+#                    own layer and the layers below it.  No allowlist.
+#   frozen_tree    — the old substrate under include/crucible/ only
+#                    shrinks until Stage D deletes it.  Exit 3 (freeze
+#                    base absent, shallow clone) is a SKIP here; the
+#                    `layers` CI job checks out full history and enforces.
+#   derived_pins   — a cardinality static_assert must have a derived
+#                    operand; a literal pinned to itself cannot fire.
+#
+# syscall_allowlist_prose is the companion of syscall_capability: it holds
+# each allowlist sentence to the code the entry names.  It existed without
+# a runner; it runs here now.
+add_test(NAME layer_boundary_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.sh --self-test)
+add_test(NAME layer_boundary
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.sh)
+set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
+    LABELS "ci_guard;stage-A1")
+add_test(NAME frozen_tree_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.sh --self-test)
+add_test(NAME frozen_tree
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.sh)
+set_tests_properties(frozen_tree frozen_tree_self_test PROPERTIES
+    LABELS "ci_guard;stage-A1")
+set_tests_properties(frozen_tree PROPERTIES SKIP_RETURN_CODE 3)
+add_test(NAME derived_pins_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.sh --self-test)
+add_test(NAME derived_pins
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.sh)
+set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
+    LABELS "ci_guard;stage-A1")
+add_test(NAME syscall_allowlist_prose_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-allowlist-prose.sh --self-test)
+add_test(NAME syscall_allowlist_prose
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-allowlist-prose.sh)
+set_tests_properties(syscall_allowlist_prose syscall_allowlist_prose_self_test PROPERTIES
+    LABELS "ci_guard;stage-A1")
+
+add_subdirectory(foundation)
+add_subdirectory(fixy)

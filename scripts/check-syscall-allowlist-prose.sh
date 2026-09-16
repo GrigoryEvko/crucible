@@ -5,13 +5,14 @@
 # ── WHY THIS EXISTS ──────────────────────────────────────────────────
 #
 # scripts/syscall-capability-allowlist.txt grandfathers bare-syscall
-# sites.  Each entry is `path:line — <effects::* cap proof + note>`, and
-# the note is the whole point: check-syscall-capability.sh only asks
-# whether a `path:line` key exists, never what the entry says about it.
+# sites.  Each entry is `path:<call text>  — <effects::* cap proof + note>`,
+# where <call text> is the trimmed, comment-stripped source of the call
+# line (a content key, immune to line shifts), and the note is the whole
+# point: check-syscall-capability.sh only asks whether a key exists, never
+# what the entry says about it.
 #
-# A key can therefore stay valid while the prose beside it rots.  That
-# is a different failure from line drift, which the key already catches:
-# the guard stays green, the audit surface reads as reviewed, and the
+# A key can therefore stay valid while the prose beside it rots: the
+# guard stays green, the audit surface reads as reviewed, and the
 # sentence a reviewer relies on is false.  The entry for
 # src/cntp/IncastControl.cpp said "TCP_QUICKACK setsockopt" for a call
 # that sets TCP_RTO_MIN_US, and TCP_QUICKACK appears nowhere in the
@@ -19,9 +20,10 @@
 #
 # ── WHAT IS CHECKED ──────────────────────────────────────────────────
 #
-# Three properties, each mechanical:
+# Four properties, each mechanical:
 #
-#   (A) resolvable key    — the file exists and the named line is not blank.
+#   (A) resolvable key    — the file exists and some line's comment-stripped
+#                           trimmed source equals the call text.
 #   (B) syscall agreement — the syscall invoked at that line is named in
 #                           the prose.  `::syscall(SYS_x, ...)` counts as
 #                           x, so a raw-multiplexer site has to name the
@@ -93,21 +95,32 @@ scan() {
 
     while IFS= read -r entry; do
         case "$entry" in ''|\#*) continue ;; esac
-        key="${entry%%[[:space:]]*}"
+        key="${entry%%—*}"
+        key="${key%"${key##*[![:space:]]}"}"
         prose="${entry#*—}"
         path="${key%%:*}"
-        lineno="${key##*:}"
+        call_text="${key#*:}"
         file="$scan_root/$path"
 
-        # (A) resolvable key
+        # (A) resolvable key — the file exists and holds a line whose
+        # comment-stripped, trimmed source is exactly the call text.
         if [[ ! -f "$file" ]]; then
             printf 'PROSE-ROT %s — names a file that does not exist.\n' "$key" >&2
             rc=1
             continue
         fi
-        code="$(sed -n "${lineno}p" "$file")"
-        if [[ -z "${code//[[:space:]]/}" ]]; then
-            printf 'PROSE-ROT %s — names a blank line.\n' "$key" >&2
+        code=""
+        while IFS= read -r candidate || [[ -n "$candidate" ]]; do
+            local stripped_line="${candidate%%//*}"
+            stripped_line="${stripped_line#"${stripped_line%%[![:space:]]*}"}"
+            stripped_line="${stripped_line%"${stripped_line##*[![:space:]]}"}"
+            if [[ "$stripped_line" == "$call_text" ]]; then
+                code="$candidate"
+                break
+            fi
+        done < <(grep -F -- "$call_text" "$file" || true)
+        if [[ -z "$code" ]]; then
+            printf 'PROSE-ROT %s — no line in %s has this call text.\n' "$key" "$path" >&2
             rc=1
             continue
         fi
@@ -189,7 +202,7 @@ struct PlantedSock final {
 };
 }  // namespace crucible::planted
 PLANTED
-        good='src/planted/planted_prose.cpp:6  — effects::IO via PlantedSock::apply (TCP_PLANTED_OPT setsockopt)'
+        good='src/planted/planted_prose.cpp:return ::setsockopt(fd, 6, TCP_PLANTED_OPT, nullptr, 0);  — effects::IO via PlantedSock::apply (TCP_PLANTED_OPT setsockopt)'
         al="$tmp_root/scripts/syscall-capability-allowlist.txt"
 
         phase() {  # $1 = label, $2 = entry, $3 = expected rc, $4 = expected diagnostic substring
@@ -215,16 +228,16 @@ PLANTED
 
         phase 'phase 0 (honest entry reads clean)' "$good" 0 ''
         phase 'phase A (unresolvable key)' \
-            'src/planted/planted_prose.cpp:900  — effects::IO via PlantedSock::apply (TCP_PLANTED_OPT setsockopt)' \
-            1 'names a blank line'
+            'src/planted/planted_prose.cpp:return ::setsockopt(fd, 6, NO_SUCH_LINE, nullptr, 0);  — effects::IO via PlantedSock::apply (TCP_PLANTED_OPT setsockopt)' \
+            1 'no line in src/planted/planted_prose.cpp has this call text'
         phase 'phase B (prose names no syscall)' \
-            'src/planted/planted_prose.cpp:6  — effects::IO via PlantedSock::apply (ctx-bound)' \
+            'src/planted/planted_prose.cpp:return ::setsockopt(fd, 6, TCP_PLANTED_OPT, nullptr, 0);  — effects::IO via PlantedSock::apply (ctx-bound)' \
             1 'prose names no syscall'
         phase 'phase C (constant absent from the file)' \
-            'src/planted/planted_prose.cpp:6  — effects::IO via PlantedSock::apply (TCP_QUICKACK setsockopt)' \
+            'src/planted/planted_prose.cpp:return ::setsockopt(fd, 6, TCP_PLANTED_OPT, nullptr, 0);  — effects::IO via PlantedSock::apply (TCP_QUICKACK setsockopt)' \
             1 'TCP_QUICKACK, which appears nowhere'
         phase 'phase D (symbol absent from the file)' \
-            'src/planted/planted_prose.cpp:6  — effects::IO via NoSuchType::apply (TCP_PLANTED_OPT setsockopt)' \
+            'src/planted/planted_prose.cpp:return ::setsockopt(fd, 6, TCP_PLANTED_OPT, nullptr, 0);  — effects::IO via NoSuchType::apply (TCP_PLANTED_OPT setsockopt)' \
             1 'symbol NoSuchType, which appears nowhere'
         phase 'phase E (rot removed, guard goes clean again)' "$good" 0 ''
 

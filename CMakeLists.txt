@@ -37,6 +37,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ── The dialect: one INTERFACE target that carries the compiler ────
+#
+# Every flag that makes a TU "a Crucible TU" — the C++26 feature flags, the
+# warning set, -Werror, hardening, FORTIFY, the release contract policy, the
+# linker hardening, the FP floor and libstdc++exp — lives on this target and
+# nowhere else.  `crucible` links it PUBLIC, so every consumer of `crucible`
+# inherits it exactly as before.  `foundation` links it too, which is how the
+# sibling substrate compiles under the same rules without depending on
+# `crucible`.  The flag blocks below are unchanged in content; only the
+# target they attach to moved.
+add_library(crucible_dialect INTERFACE)
+
 # Header-only library plus one TU for the weak contract-violation handler.
 # Downstream tests/benches need `handle_contract_violation` defined at link
 # time (GCC 16 libstdc++ does not provide a default); the weak symbol lets
@@ -89,6 +101,29 @@ add_library(crucible STATIC
 )
 target_include_directories(crucible PUBLIC include/)
 set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(crucible PUBLIC crucible_dialect)
+
+# ── The sibling substrate: foundation/ and fixy/ ───────────────────
+#
+# include/foundation/ (namespace ::foundation) is the algebra and the
+# discharge mechanisms; include/fixy/ (namespace ::fixy) is the axis table,
+# the atoms, the gate and the OS leaves.  Neither names crucible:: —
+# scripts/check-layer-boundary.sh enforces the order foundation < fixy <
+# crucible, and scripts/check-frozen-tree.sh freezes the old substrate under
+# include/crucible/ until Stage D deletes it.
+#
+# `foundation` is a static library for one reason: it owns the weak contract
+# handler and the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary
+# that links the new tree without `crucible`.  `fixy` is header-only.
+add_library(foundation STATIC
+  src/foundation/ContractHandler.cpp
+)
+target_include_directories(foundation PUBLIC include/)
+target_link_libraries(foundation PUBLIC crucible_dialect)
+set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(fixy INTERFACE)
+target_link_libraries(fixy INTERFACE foundation)
 
 # ContractHandler.cpp pulls in <stacktrace>, which inlines libstdc++'s
 # `std::stacktrace_entry::_Info::_S_set` — that helper materializes a
@@ -107,6 +142,7 @@ set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # we don't own, sentinel never executes.
 set_source_files_properties(
   src/ContractHandler.cpp
+  src/foundation/ContractHandler.cpp
   tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
   PROPERTIES COMPILE_OPTIONS "-Wno-alloc-size-larger-than")
 
@@ -209,7 +245,7 @@ endif()
 
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
-target_compile_options(crucible PUBLIC
+target_compile_options(crucible_dialect INTERFACE
   -freflection
   -fcontracts
 )
@@ -223,7 +259,7 @@ target_compile_options(crucible PUBLIC
 # target deliberately does NOT link `crucible_fp_strict` and the
 # author documents the engagement.
 include(cmake/FpStrict.cmake)
-target_link_libraries(crucible PUBLIC crucible_fp_strict)
+target_link_libraries(crucible_dialect INTERFACE crucible_fp_strict)
 
 add_executable(crucible_diag_lsp
   tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
@@ -762,7 +798,7 @@ unset(_script_sorted)
 # other C++26 lib features).  Propagated PUBLIC so every consumer
 # (test binaries, vessel adapters, bench TUs) auto-links it without
 # an extra target_link_libraries call.
-target_link_libraries(crucible PUBLIC stdc++exp)
+target_link_libraries(crucible_dialect INTERFACE stdc++exp)
 
 # Re `-fno-ipa-modref`: we considered it as a workaround for a GCC 16
 # miscompile where `asm volatile("" : "+m,r"(ptr) : : "memory")` applied
@@ -881,7 +917,7 @@ endif()
 # SECTION 1: Common flags — GCC 16
 #            52 warning flags + 13 hardening flags = 65
 # ═══════════════════════════════════════════════════════════════
-target_compile_options(crucible PUBLIC
+target_compile_options(crucible_dialect INTERFACE
   # ── 1.1  Baseline (3) ──────────────────────────────────────
   -Wall                                #   1
   -Wextra                              #   2
@@ -982,7 +1018,7 @@ if(CRUCIBLE_WERROR)
   # -Wno-error=suggest-attribute=cold: GCC 16's heuristic flags test
   # main() functions as cold under TSan instrumentation.  The code
   # guide lists -Wsuggest-* as suggestions, not errors.
-  target_compile_options(crucible PUBLIC
+  target_compile_options(crucible_dialect INTERFACE
     $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror
       -Wno-error=tsan
       -Wno-error=suggest-attribute=cold>)
@@ -993,7 +1029,7 @@ endif()
 #            220+ individual warning / hardening flags
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(crucible PUBLIC
+  target_compile_options(crucible_dialect INTERFACE
     # ── 3.1  Type conversion (7) ─────────────────────────────
     # -Wconversion-extra (Fortran-only), -Wenum-int-mismatch (C-only),
     # -Wabsolute-value (C-only), -Woverride-init (C-only),
@@ -1156,7 +1192,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   )
 
   # ── 3.15  Library hardening — libstdc++ ────────────────────
-  target_compile_definitions(crucible PUBLIC
+  target_compile_definitions(crucible_dialect INTERFACE
     $<$<CONFIG:Debug>:
       _GLIBCXX_ASSERTIONS=1             # 226  vector[]/string[] bounds
       _GLIBCXX_SANITIZE_VECTOR=1        # 227  vector realloc poison
@@ -1224,7 +1260,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       -Wanalyzer-imprecise-fp-arithmetic
       -Wanalyzer-undefined-behavior-strtok
     )
-    target_compile_options(crucible PUBLIC ${CRUCIBLE_ANALYZER_FLAGS})
+    target_compile_options(crucible_dialect INTERFACE ${CRUCIBLE_ANALYZER_FLAGS})
     if(TARGET crucible_perf)
       target_compile_options(crucible_perf PRIVATE ${CRUCIBLE_ANALYZER_FLAGS})
     endif()
@@ -1234,7 +1270,7 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 # SECTION 4: FORTIFY_SOURCE + defines — both compilers
 # ═══════════════════════════════════════════════════════════════
-target_compile_definitions(crucible PUBLIC
+target_compile_definitions(crucible_dialect INTERFACE
   _FORTIFY_SOURCE=3                     # 228  max glibc buffer checks
 )
 
@@ -1242,7 +1278,7 @@ target_compile_definitions(crucible PUBLIC
 # SECTION 5: Debug-only — auto-init
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_options(crucible PUBLIC
+  target_compile_options(crucible_dialect INTERFACE
     -ftrivial-auto-var-init=zero        # 229  zero-fill uninit stack (P2795R5)
     -fharden-control-flow-redundancy    # 230  redundant CFG checks
   )
@@ -1308,7 +1344,7 @@ endif()
 #      production than it looks.
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE MATCHES "Release")
-  target_compile_options(crucible PUBLIC
+  target_compile_options(crucible_dialect INTERFACE
     -ftrivial-auto-var-init=zero        # 231  zero-fill (cheaper)
     -fcontract-evaluation-semantic=observe  # 231a  evaluate + report; see SECTION 6
   )
@@ -1320,7 +1356,7 @@ endif()
 # Full RELRO, immediate binding, no-exec stack, separate code,
 # build-id for debuginfo, and more.
 # ═══════════════════════════════════════════════════════════════
-target_link_options(crucible PUBLIC
+target_link_options(crucible_dialect INTERFACE
   "LINKER:-z,relro"                     # 232  read-only relocations
   "LINKER:-z,now"                       # 233  immediate symbol binding
   "LINKER:-z,noexecstack"              # 234  non-executable stack
