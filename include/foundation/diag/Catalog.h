@@ -10,6 +10,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace foundation::diag {
 
@@ -735,47 +736,12 @@ struct is_diagnostic<Diagnostic<C, Ctx...>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 
-// Append-only. A new tag goes at the end of this tuple and gets a Category
-// enumerator at the same integer value. Reordering existing entries changes
-// the indices that federation cache keys are built from, which invalidates
+// Append-only. A new tag is a struct above, and a Category enumerator
+// appended here at the next integer value; the tuple below is derived
+// from this enum and is not written by hand. The integer values are the
+// ordinal pins: reordering or renumbering existing enumerators changes the
+// indices that federation cache keys are built from, which invalidates
 // every stored key.
-using Catalog = std::tuple<EffectRowMismatch,  //  0
-                           UnknownParameterShape,  //  1
-                           GradedWrapperViolation,  //  2
-                           LinearityViolation,  //  3
-                           RefinementViolation,  //  4
-                           HotPathViolation,  //  5
-                           DetSafeLeak,  //  6
-                           NumericalTierMismatch,  //  7
-                           MemOrderViolation,  //  8
-                           AllocClassViolation,  //  9
-                           VendorBackendMismatch,  // 10
-                           CrashClassMismatch,  // 11
-                           ConsistencyMismatch,  // 12
-                           LifetimeViolation,  // 13
-                           WaitStrategyViolation,  // 14
-                           ProgressClassViolation,  // 15
-                           CipherTierViolation,  // 16
-                           ResidencyHeatViolation,  // 17
-                           EpochMismatch,  // 18
-                           BudgetExceeded,  // 19
-                           NumaPlacementMismatch,  // 20
-                           RecipeSpecMismatch,  // 21
-                           PureFunctionViolation,  // 22
-                           DivergenceBudgetViolation,  // 23
-                           StateBudgetViolation,  // 24
-                           InsufficientWitness,  // 25
-                           ModalityMismatch,  // 26
-                           LinearAliasViolation,  // 27
-                           SharedPermissionPoolSaturated,  // 28
-                           HugePageAllocationFailed,  // 29
-                           PublishOnceDoublePublish,  // 30
-                           BitsInvariantViolation,  // 31
-                           BorrowedBoundsViolation  // 32
-                           >;
-
-inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-
 enum class Category : std::uint8_t {
     EffectRowMismatch = 0,
     UnknownParameterShape = 1,
@@ -811,6 +777,52 @@ enum class Category : std::uint8_t {
     BitsInvariantViolation = 31,
     BorrowedBoundsViolation = 32,
 };
+
+namespace detail {
+
+// The tag class declared directly in foundation::diag whose identifier is
+// `identifier`, or a reflection of void when no tag spells it. Only a
+// class derived from tag_base counts, so a stray type of the same name in
+// this namespace cannot stand in for a tag.
+[[nodiscard]] consteval std::meta::info tag_named(std::string_view identifier) noexcept {
+    for (const auto m : std::meta::members_of(^^::foundation::diag, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
+        if (!std::meta::has_identifier(m) || std::meta::identifier_of(m) != identifier) continue;
+        if (m == ^^tag_base || !std::meta::is_base_of_type(^^tag_base, m)) continue;
+        return m;
+    }
+    return ^^void;
+}
+
+// One tag reflection per enumerator, in declaration order. The mirror
+// check in the self-test pins declaration order to the integer values.
+[[nodiscard]] consteval std::vector<std::meta::info> catalog_tags() noexcept {
+    std::vector<std::meta::info> tags;
+    for (const auto en : std::meta::enumerators_of(^^Category)) {
+        tags.push_back(tag_named(std::meta::identifier_of(en)));
+    }
+    return tags;
+}
+
+[[nodiscard]] consteval bool every_category_names_a_tag() noexcept {
+    for (const auto tag : catalog_tags()) {
+        if (tag == ^^void) return false;
+    }
+    return true;
+}
+
+static_assert(every_category_names_a_tag(), "A Category enumerator names no tag: no class derived from "
+                                            "tag_base with that identifier is declared in foundation::diag. "
+                                            "Declare the tag struct above the enum, spelled exactly as the "
+                                            "enumerator, or remove the enumerator.");
+
+}  // namespace detail
+
+// The tuple of tag types at the enumerators' positions, derived from the
+// enum. tag_of_t<C> and category_of_v<Tag> index it.
+using Catalog = [:std::meta::substitute(^^std::tuple, detail::catalog_tags()):];
+
+inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
 
 // An alias template cannot carry a requires-clause, so the constraint on the
 // Category value lives on a struct template that the alias forwards to.
@@ -870,226 +882,56 @@ struct category_of_impl {
 template <typename Tag>
 inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
 
-// The switches below are exhaustive over Category. The default arm exists to
-// satisfy -Werror=switch-default and is reachable only for a value cast in
-// from an out-of-range integer.
+namespace detail {
+
+// The three text fields of every tag, at the tag's Category index, derived
+// from the tuple. An accessor indexes one of these with a range check, so
+// a value cast in from an out-of-range integer answers with the sentinel
+// rather than reading past the array.
+template <std::size_t... Is>
+[[nodiscard]] consteval auto catalog_names_impl(std::index_sequence<Is...>) noexcept
+    -> std::array<std::string_view, sizeof...(Is)> {
+    return {std::tuple_element_t<Is, Catalog>::name...};
+}
+
+template <std::size_t... Is>
+[[nodiscard]] consteval auto catalog_descriptions_impl(std::index_sequence<Is...>) noexcept
+    -> std::array<std::string_view, sizeof...(Is)> {
+    return {std::tuple_element_t<Is, Catalog>::description...};
+}
+
+template <std::size_t... Is>
+[[nodiscard]] consteval auto catalog_remediations_impl(std::index_sequence<Is...>) noexcept
+    -> std::array<std::string_view, sizeof...(Is)> {
+    return {std::tuple_element_t<Is, Catalog>::remediation...};
+}
+
+inline constexpr auto catalog_names_v = catalog_names_impl(std::make_index_sequence<catalog_size>{});
+inline constexpr auto catalog_descriptions_v = catalog_descriptions_impl(std::make_index_sequence<catalog_size>{});
+inline constexpr auto catalog_remediations_v = catalog_remediations_impl(std::make_index_sequence<catalog_size>{});
+
+inline constexpr std::string_view unknown_category_sentinel{"<unknown Category>"};
+
+[[nodiscard]] constexpr std::string_view catalog_field(std::array<std::string_view, catalog_size> const& fields,
+                                                       Category c) noexcept {
+    const auto index = static_cast<std::size_t>(std::to_underlying(c));
+    return index < catalog_size ? fields[index] : unknown_category_sentinel;
+}
+
+}  // namespace detail
+
+// The accessors answer with the tag's own field for every enumerator and
+// with the sentinel for a value cast in from an out-of-range integer.
 [[nodiscard]] constexpr std::string_view name_of(Category c) noexcept {
-    switch (c) {
-        case Category::EffectRowMismatch:
-            return EffectRowMismatch::name;
-        case Category::UnknownParameterShape:
-            return UnknownParameterShape::name;
-        case Category::GradedWrapperViolation:
-            return GradedWrapperViolation::name;
-        case Category::LinearityViolation:
-            return LinearityViolation::name;
-        case Category::RefinementViolation:
-            return RefinementViolation::name;
-        case Category::HotPathViolation:
-            return HotPathViolation::name;
-        case Category::DetSafeLeak:
-            return DetSafeLeak::name;
-        case Category::NumericalTierMismatch:
-            return NumericalTierMismatch::name;
-        case Category::MemOrderViolation:
-            return MemOrderViolation::name;
-        case Category::AllocClassViolation:
-            return AllocClassViolation::name;
-        case Category::VendorBackendMismatch:
-            return VendorBackendMismatch::name;
-        case Category::CrashClassMismatch:
-            return CrashClassMismatch::name;
-        case Category::ConsistencyMismatch:
-            return ConsistencyMismatch::name;
-        case Category::LifetimeViolation:
-            return LifetimeViolation::name;
-        case Category::WaitStrategyViolation:
-            return WaitStrategyViolation::name;
-        case Category::ProgressClassViolation:
-            return ProgressClassViolation::name;
-        case Category::CipherTierViolation:
-            return CipherTierViolation::name;
-        case Category::ResidencyHeatViolation:
-            return ResidencyHeatViolation::name;
-        case Category::EpochMismatch:
-            return EpochMismatch::name;
-        case Category::BudgetExceeded:
-            return BudgetExceeded::name;
-        case Category::NumaPlacementMismatch:
-            return NumaPlacementMismatch::name;
-        case Category::RecipeSpecMismatch:
-            return RecipeSpecMismatch::name;
-        case Category::PureFunctionViolation:
-            return PureFunctionViolation::name;
-        case Category::DivergenceBudgetViolation:
-            return DivergenceBudgetViolation::name;
-        case Category::StateBudgetViolation:
-            return StateBudgetViolation::name;
-        case Category::InsufficientWitness:
-            return InsufficientWitness::name;
-        case Category::ModalityMismatch:
-            return ModalityMismatch::name;
-        case Category::LinearAliasViolation:
-            return LinearAliasViolation::name;
-        case Category::SharedPermissionPoolSaturated:
-            return SharedPermissionPoolSaturated::name;
-        case Category::HugePageAllocationFailed:
-            return HugePageAllocationFailed::name;
-        case Category::PublishOnceDoublePublish:
-            return PublishOnceDoublePublish::name;
-        case Category::BitsInvariantViolation:
-            return BitsInvariantViolation::name;
-        case Category::BorrowedBoundsViolation:
-            return BorrowedBoundsViolation::name;
-        default:
-            return std::string_view{"<unknown Category>"};
-    }
+    return detail::catalog_field(detail::catalog_names_v, c);
 }
 
 [[nodiscard]] constexpr std::string_view description_of(Category c) noexcept {
-    switch (c) {
-        case Category::EffectRowMismatch:
-            return EffectRowMismatch::description;
-        case Category::UnknownParameterShape:
-            return UnknownParameterShape::description;
-        case Category::GradedWrapperViolation:
-            return GradedWrapperViolation::description;
-        case Category::LinearityViolation:
-            return LinearityViolation::description;
-        case Category::RefinementViolation:
-            return RefinementViolation::description;
-        case Category::HotPathViolation:
-            return HotPathViolation::description;
-        case Category::DetSafeLeak:
-            return DetSafeLeak::description;
-        case Category::NumericalTierMismatch:
-            return NumericalTierMismatch::description;
-        case Category::MemOrderViolation:
-            return MemOrderViolation::description;
-        case Category::AllocClassViolation:
-            return AllocClassViolation::description;
-        case Category::VendorBackendMismatch:
-            return VendorBackendMismatch::description;
-        case Category::CrashClassMismatch:
-            return CrashClassMismatch::description;
-        case Category::ConsistencyMismatch:
-            return ConsistencyMismatch::description;
-        case Category::LifetimeViolation:
-            return LifetimeViolation::description;
-        case Category::WaitStrategyViolation:
-            return WaitStrategyViolation::description;
-        case Category::ProgressClassViolation:
-            return ProgressClassViolation::description;
-        case Category::CipherTierViolation:
-            return CipherTierViolation::description;
-        case Category::ResidencyHeatViolation:
-            return ResidencyHeatViolation::description;
-        case Category::EpochMismatch:
-            return EpochMismatch::description;
-        case Category::BudgetExceeded:
-            return BudgetExceeded::description;
-        case Category::NumaPlacementMismatch:
-            return NumaPlacementMismatch::description;
-        case Category::RecipeSpecMismatch:
-            return RecipeSpecMismatch::description;
-        case Category::PureFunctionViolation:
-            return PureFunctionViolation::description;
-        case Category::DivergenceBudgetViolation:
-            return DivergenceBudgetViolation::description;
-        case Category::StateBudgetViolation:
-            return StateBudgetViolation::description;
-        case Category::InsufficientWitness:
-            return InsufficientWitness::description;
-        case Category::ModalityMismatch:
-            return ModalityMismatch::description;
-        case Category::LinearAliasViolation:
-            return LinearAliasViolation::description;
-        case Category::SharedPermissionPoolSaturated:
-            return SharedPermissionPoolSaturated::description;
-        case Category::HugePageAllocationFailed:
-            return HugePageAllocationFailed::description;
-        case Category::PublishOnceDoublePublish:
-            return PublishOnceDoublePublish::description;
-        case Category::BitsInvariantViolation:
-            return BitsInvariantViolation::description;
-        case Category::BorrowedBoundsViolation:
-            return BorrowedBoundsViolation::description;
-        default:
-            return std::string_view{"<unknown Category>"};
-    }
+    return detail::catalog_field(detail::catalog_descriptions_v, c);
 }
 
 [[nodiscard]] constexpr std::string_view remediation_of(Category c) noexcept {
-    switch (c) {
-        case Category::EffectRowMismatch:
-            return EffectRowMismatch::remediation;
-        case Category::UnknownParameterShape:
-            return UnknownParameterShape::remediation;
-        case Category::GradedWrapperViolation:
-            return GradedWrapperViolation::remediation;
-        case Category::LinearityViolation:
-            return LinearityViolation::remediation;
-        case Category::RefinementViolation:
-            return RefinementViolation::remediation;
-        case Category::HotPathViolation:
-            return HotPathViolation::remediation;
-        case Category::DetSafeLeak:
-            return DetSafeLeak::remediation;
-        case Category::NumericalTierMismatch:
-            return NumericalTierMismatch::remediation;
-        case Category::MemOrderViolation:
-            return MemOrderViolation::remediation;
-        case Category::AllocClassViolation:
-            return AllocClassViolation::remediation;
-        case Category::VendorBackendMismatch:
-            return VendorBackendMismatch::remediation;
-        case Category::CrashClassMismatch:
-            return CrashClassMismatch::remediation;
-        case Category::ConsistencyMismatch:
-            return ConsistencyMismatch::remediation;
-        case Category::LifetimeViolation:
-            return LifetimeViolation::remediation;
-        case Category::WaitStrategyViolation:
-            return WaitStrategyViolation::remediation;
-        case Category::ProgressClassViolation:
-            return ProgressClassViolation::remediation;
-        case Category::CipherTierViolation:
-            return CipherTierViolation::remediation;
-        case Category::ResidencyHeatViolation:
-            return ResidencyHeatViolation::remediation;
-        case Category::EpochMismatch:
-            return EpochMismatch::remediation;
-        case Category::BudgetExceeded:
-            return BudgetExceeded::remediation;
-        case Category::NumaPlacementMismatch:
-            return NumaPlacementMismatch::remediation;
-        case Category::RecipeSpecMismatch:
-            return RecipeSpecMismatch::remediation;
-        case Category::PureFunctionViolation:
-            return PureFunctionViolation::remediation;
-        case Category::DivergenceBudgetViolation:
-            return DivergenceBudgetViolation::remediation;
-        case Category::StateBudgetViolation:
-            return StateBudgetViolation::remediation;
-        case Category::InsufficientWitness:
-            return InsufficientWitness::remediation;
-        case Category::ModalityMismatch:
-            return ModalityMismatch::remediation;
-        case Category::LinearAliasViolation:
-            return LinearAliasViolation::remediation;
-        case Category::SharedPermissionPoolSaturated:
-            return SharedPermissionPoolSaturated::remediation;
-        case Category::HugePageAllocationFailed:
-            return HugePageAllocationFailed::remediation;
-        case Category::PublishOnceDoublePublish:
-            return PublishOnceDoublePublish::remediation;
-        case Category::BitsInvariantViolation:
-            return BitsInvariantViolation::remediation;
-        case Category::BorrowedBoundsViolation:
-            return BorrowedBoundsViolation::remediation;
-        default:
-            return std::string_view{"<unknown Category>"};
-    }
+    return detail::catalog_field(detail::catalog_remediations_v, c);
 }
 
 namespace detail {
@@ -1153,9 +995,9 @@ static_assert(is_diagnostic_class_v<user_defined_tag>);
 static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
 // The visitor further down walks indices 0 to catalog_size - 1 and so counts
-// the tuple, never the enum. An enumerator appended without a matching tag
-// would pass every other check here. This count reflects over the enum itself
-// and closes that gap.
+// the tuple. The tuple is derived from the enum, so the two counts agree by
+// construction; the count is kept as the witness that the derivation saw
+// every enumerator.
 inline constexpr auto category_enumerators = std::define_static_array(std::meta::enumerators_of(^^Category));
 
 inline constexpr std::size_t category_count = category_enumerators.size();
@@ -1175,11 +1017,11 @@ static_assert(category_count == catalog_size, "FIXY-FOUND-139: Category enum car
     return category_enumerators.size();  // sentinel: not found
 }
 
-// The enum mirrors the tuple by hand, so the mirror is checked by walking the
-// enum through reflection, in declaration order. The enumerator at position I
-// must have the value I, the tuple must hold its tag at I, that tag's name
-// must spell the enumerator, and the three switches must answer for it with
-// the tag's own fields rather than the default arm.
+// The tuple is derived from the enum in declaration order, so what is
+// checked here is the pin: the enumerator at position I must have the value
+// I, the tuple must hold its tag at I, that tag's name must spell the
+// enumerator, and the three accessors must answer for it with the tag's own
+// fields rather than the sentinel.
 [[nodiscard]] consteval bool category_mirrors_catalog() noexcept {
     constexpr std::string_view sentinel{"<unknown Category>"};
     bool mirrors = true;
@@ -1204,9 +1046,10 @@ static_assert(category_mirrors_catalog(), "The Category enum and the Catalog tup
                                           "enumerator at position I: its value must be I, the tuple must hold "
                                           "its tag at I, the tag's name must spell the enumerator, and name_of "
                                           "/ description_of / remediation_of must return that tag's fields. "
-                                          "Likely cause: a tag inserted at a non-terminal index (violates the "
-                                          "APPEND-ONLY discipline), an enumerator given a non-matching value, "
-                                          "or a switch arm that is missing or answers for the wrong tag.");
+                                          "Likely cause: an enumerator inserted at a non-terminal position "
+                                          "(violates the APPEND-ONLY discipline), an enumerator given a "
+                                          "non-matching value, or a tag whose name field does not spell its "
+                                          "class.");
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool category_of_reverse_map_impl(std::index_sequence<Is...>) noexcept {

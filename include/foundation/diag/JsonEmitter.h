@@ -8,6 +8,7 @@
 #include <foundation/diag/Catalog.h>
 
 #include <charconv>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <cstdint>
@@ -74,6 +75,77 @@ namespace detail {
     return true;
 }
 
+// A sink is whatever the escaper hands bytes to: the fixed buffer
+// below, or a FILE* through file_json_sink.  Both answer false on a
+// failed write, and the escaper stops at the first false.  One escaper
+// and one field writer then serve both emitters, so an escape the
+// format reserves is spelled once.
+template <class S>
+concept JsonSink = requires(S& sink, std::string_view text, char c) {
+    { sink.append(text) } -> std::same_as<bool>;
+    { sink.push(c) } -> std::same_as<bool>;
+};
+
+struct file_json_sink {
+    FILE* out = nullptr;
+    [[nodiscard]] bool append(std::string_view s) noexcept { return write_all(out, s); }
+    [[nodiscard]] bool push(char c) noexcept { return write_char(out, c); }
+};
+
+// Writes s with every byte JSON reserves escaped: the quote, the
+// backslash, the five named controls by their short form, and every
+// other byte below 0x20 as \u00XX with uppercase hex.
+template <JsonSink S>
+[[nodiscard]] bool append_json_escaped(S& sink, std::string_view s) noexcept {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    for (char raw : s) {
+        const auto c = static_cast<unsigned char>(raw);
+        switch (c) {
+            case '"':
+                if (!sink.append("\\\"")) return false;
+                break;
+            case '\\':
+                if (!sink.append("\\\\")) return false;
+                break;
+            case '\b':
+                if (!sink.append("\\b")) return false;
+                break;
+            case '\f':
+                if (!sink.append("\\f")) return false;
+                break;
+            case '\n':
+                if (!sink.append("\\n")) return false;
+                break;
+            case '\r':
+                if (!sink.append("\\r")) return false;
+                break;
+            case '\t':
+                if (!sink.append("\\t")) return false;
+                break;
+            default:
+                if (c < 0x20) {
+                    char escaped[6] = {
+                        '\\', 'u', '0', '0', hex[(c >> 4) & 0x0F], hex[c & 0x0F],
+                    };
+                    if (!sink.append({escaped, sizeof(escaped)})) return false;
+                } else if (!sink.push(static_cast<char>(c))) {
+                    return false;
+                }
+                break;
+        }
+    }
+    return true;
+}
+
+// Writes `"key":"value"` and, unless the field is the last of its
+// object, the comma after it.
+template <JsonSink S>
+[[nodiscard]] bool append_json_string_field(S& sink, std::string_view key, std::string_view value,
+                                            bool comma = true) noexcept {
+    return sink.push('"') && append_json_escaped(sink, key) && sink.append("\":\"") && append_json_escaped(sink, value)
+        && sink.push('"') && (!comma || sink.push(','));
+}
+
 // `data`, `size` and `ok` used to be public members of an aggregate, so
 // any caller could store a size past Capacity.  Both writers then went
 // out of bounds, and neither guard could see it:
@@ -134,50 +206,10 @@ public:
         return append({tmp, static_cast<std::size_t>(ptr - tmp)});
     }
 
-    bool append_escaped(std::string_view s) noexcept {
-        static constexpr char hex[] = "0123456789ABCDEF";
-        for (char raw : s) {
-            const auto c = static_cast<unsigned char>(raw);
-            switch (c) {
-                case '"':
-                    if (!append("\\\"")) return false;
-                    break;
-                case '\\':
-                    if (!append("\\\\")) return false;
-                    break;
-                case '\b':
-                    if (!append("\\b")) return false;
-                    break;
-                case '\f':
-                    if (!append("\\f")) return false;
-                    break;
-                case '\n':
-                    if (!append("\\n")) return false;
-                    break;
-                case '\r':
-                    if (!append("\\r")) return false;
-                    break;
-                case '\t':
-                    if (!append("\\t")) return false;
-                    break;
-                default:
-                    if (c < 0x20) {
-                        char escaped[6] = {
-                            '\\', 'u', '0', '0', hex[(c >> 4) & 0x0F], hex[c & 0x0F],
-                        };
-                        if (!append({escaped, sizeof(escaped)})) return false;
-                    } else if (!push(static_cast<char>(c))) {
-                        return false;
-                    }
-                    break;
-            }
-        }
-        return true;
-    }
+    bool append_escaped(std::string_view s) noexcept { return append_json_escaped(*this, s); }
 
     bool string_field(std::string_view key, std::string_view value, bool comma = true) noexcept {
-        return push('"') && append_escaped(key) && append("\":\"") && append_escaped(value) && push('"')
-            && (!comma || push(','));
+        return append_json_string_field(*this, key, value, comma);
     }
 
     bool flush(FILE* out) noexcept { return ok_ && out != nullptr && std::fwrite(data_, 1, size_, out) == size_; }
@@ -246,53 +278,17 @@ private:
     return pos;
 }
 
+// The unbuffered writers: the same escaper and field writer, over a
+// FILE* sink.
 [[nodiscard]] inline bool write_json_escaped(FILE* out, std::string_view s) noexcept {
-    static constexpr char hex[] = "0123456789ABCDEF";
-    for (char raw : s) {
-        const auto c = static_cast<unsigned char>(raw);
-        switch (c) {
-            case '"':
-                if (!detail::write_all(out, "\\\"")) return false;
-                break;
-            case '\\':
-                if (!detail::write_all(out, "\\\\")) return false;
-                break;
-            case '\b':
-                if (!detail::write_all(out, "\\b")) return false;
-                break;
-            case '\f':
-                if (!detail::write_all(out, "\\f")) return false;
-                break;
-            case '\n':
-                if (!detail::write_all(out, "\\n")) return false;
-                break;
-            case '\r':
-                if (!detail::write_all(out, "\\r")) return false;
-                break;
-            case '\t':
-                if (!detail::write_all(out, "\\t")) return false;
-                break;
-            default:
-                if (c < 0x20) {
-                    char escaped[6] = {
-                        '\\', 'u', '0', '0', hex[(c >> 4) & 0x0F], hex[c & 0x0F],
-                    };
-                    if (!detail::write_all(out, {escaped, sizeof(escaped)})) {
-                        return false;
-                    }
-                } else if (!detail::write_char(out, static_cast<char>(c))) {
-                    return false;
-                }
-                break;
-        }
-    }
-    return true;
+    detail::file_json_sink sink{out};
+    return detail::append_json_escaped(sink, s);
 }
 
 [[nodiscard]] inline bool write_json_string_field(FILE* out, std::string_view key, std::string_view value,
                                                   bool comma = true) noexcept {
-    return detail::write_char(out, '"') && write_json_escaped(out, key) && detail::write_all(out, "\":\"")
-        && write_json_escaped(out, value) && detail::write_char(out, '"') && (!comma || detail::write_char(out, ','));
+    detail::file_json_sink sink{out};
+    return detail::append_json_string_field(sink, key, value, comma);
 }
 
 [[nodiscard]] inline JsonDiagnosticRecord record_from_violation(Category cat, std::string_view context,

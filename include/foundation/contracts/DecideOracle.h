@@ -23,6 +23,7 @@
 #pragma once
 
 #include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -33,54 +34,32 @@ namespace foundation::decide::oracle {
 
 // The mapped type holds the sum or the product of any two values of T without
 // wrapping: 64 bits covers every T of 32 bits or fewer, 128 bits covers a
-// 64-bit T.
-
-template <typename T>
-struct widen;
-
-template <>
-struct widen<std::uint8_t> {
-    using type = std::uint64_t;
-};
-template <>
-struct widen<std::uint16_t> {
-    using type = std::uint64_t;
-};
-template <>
-struct widen<std::uint32_t> {
-    using type = std::uint64_t;
-};
-
-// ISO C++ ships no 128-bit integer type, so the 64-bit rows below rest on the
+// 64-bit T.  The width and the sign of T select the type, so `long` and
+// `long long` answer alongside the fixed-width spellings.
+//
+// ISO C++ ships no 128-bit integer type, so the 64-bit rows rest on the
 // compiler extension.  This header is test-only and never enters the production
 // library, which is what makes the extension acceptable here.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-template <>
-struct widen<std::uint64_t> {
-    using type = unsigned __int128;
-};
-
-template <>
-struct widen<std::int8_t> {
-    using type = std::int64_t;
-};
-template <>
-struct widen<std::int16_t> {
-    using type = std::int64_t;
-};
-template <>
-struct widen<std::int32_t> {
-    using type = std::int64_t;
-};
-template <>
-struct widen<std::int64_t> {
-    using type = __int128;
+template <std::integral T>
+struct widen {
+    static_assert(sizeof(T) <= 8, "widen<T>: no integer holds the product of two values wider than 64 bits");
+    using type =
+        std::conditional_t<sizeof(T) <= 4, std::conditional_t<std::is_signed_v<T>, std::int64_t, std::uint64_t>,
+                           std::conditional_t<std::is_signed_v<T>, __int128, unsigned __int128>>;
 };
 #pragma GCC diagnostic pop
 
 template <typename T>
 using widen_t = typename widen<T>::type;
+
+static_assert(std::is_same_v<widen_t<std::uint8_t>, std::uint64_t>);
+static_assert(std::is_same_v<widen_t<std::uint32_t>, std::uint64_t>);
+static_assert(std::is_same_v<widen_t<std::int8_t>, std::int64_t>);
+static_assert(std::is_same_v<widen_t<std::int32_t>, std::int64_t>);
+static_assert(sizeof(widen_t<std::uint64_t>) == 16 && std::is_unsigned_v<widen_t<std::uint64_t>>);
+static_assert(sizeof(widen_t<std::int64_t>) == 16 && std::is_signed_v<widen_t<std::int64_t>>);
 
 template <std::integral T>
 [[nodiscard]] constexpr bool no_overflow_mul_oracle(T a, T b) noexcept {

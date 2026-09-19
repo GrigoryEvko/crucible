@@ -18,10 +18,13 @@
 
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <tuple>
+#include <utility>
 
 namespace foundation::diag {
 
@@ -36,19 +39,12 @@ enum class Severity : std::uint8_t {
     Fatal = 3,  // as Error, and no override path
 };
 
+// The name is the enumerator's own, read by reflection, so a new
+// severity needs no arm here.  A value no enumerator carries, which
+// only a cast can produce, comes back as the sentinel.
 [[nodiscard]] constexpr std::string_view severity_name(Severity s) noexcept {
-    switch (s) {
-        case Severity::Hint:
-            return "Hint";
-        case Severity::Warning:
-            return "Warning";
-        case Severity::Error:
-            return "Error";
-        case Severity::Fatal:
-            return "Fatal";
-        default:
-            return "<unknown Severity>";
-    }
+    const std::string_view name = ::foundation::reflect::enumerator_name(s);
+    return name.empty() ? std::string_view{"<unknown Severity>"} : name;
 }
 
 template <typename Tag>
@@ -85,47 +81,34 @@ struct insight_provider {
 
 // This pins a severity while the prose is still missing. The result is a
 // registered tag with nothing to say, which the predicates below still
-// report as uninsighted.
-#define CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(TagType, Sev)           \
-    namespace foundation::diag {                                  \
-    template <>                                                   \
-    struct insight_provider<TagType> {                            \
-        static constexpr Severity severity = (Sev);               \
-        static constexpr std::string_view why_this_matters = {};  \
-        static constexpr std::string_view symptom_pattern = {};   \
-        static constexpr std::string_view correct_example = {};   \
-        static constexpr std::string_view violating_example = {}; \
-    };                                                            \
-    }                                                             \
-    static_assert(true, "force trailing semicolon at call site")
+// report as uninsighted.  It is the full registration with every prose
+// field empty.
+#define CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(TagType, Sev)                                                      \
+    CRUCIBLE_DEFINE_INSIGHTS(TagType, Sev, ::std::string_view{}, ::std::string_view{}, ::std::string_view{}, \
+                             ::std::string_view{})
 
 // The same registration with a floor under each field, so a placeholder
 // left in one of them fails the build instead of reaching a reader.
-#define CRUCIBLE_DEFINE_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)           \
-    namespace foundation::diag {                                                              \
-    template <>                                                                               \
-    struct insight_provider<TagType> {                                                        \
-        static constexpr Severity severity = (Sev);                                           \
-        static constexpr std::string_view why_this_matters = (Why);                           \
-        static constexpr std::string_view symptom_pattern = (Symptom);                        \
-        static constexpr std::string_view correct_example = (Correct);                        \
-        static constexpr std::string_view violating_example = (Violating);                    \
-        using thresholds = ::foundation::diag::insights_quality_thresholds<TagType>;          \
-        static_assert(why_this_matters.size() >= thresholds::min_why_chars,                   \
-                      "Insight 'why_this_matters' is too short — be substantive. "            \
-                      "Override via insights_quality_thresholds<Tag>::min_why_chars.");       \
-        static_assert(symptom_pattern.size() >= thresholds::min_symptom_chars,                \
-                      "Insight 'symptom_pattern' is too short — be substantive. "             \
-                      "Override via insights_quality_thresholds<Tag>::min_symptom_chars.");   \
-        static_assert(correct_example.size() >= thresholds::min_correct_chars,                \
-                      "Insight 'correct_example' is too short — show real C++. "              \
-                      "Override via insights_quality_thresholds<Tag>::min_correct_chars.");   \
-        static_assert(violating_example.size() >= thresholds::min_violating_chars,            \
-                      "Insight 'violating_example' is too short — show the anti-pattern. "    \
-                      "Override via insights_quality_thresholds<Tag>::min_violating_chars."); \
-    };                                                                                        \
-    }                                                                                         \
-    static_assert(true, "force trailing semicolon at call site")
+// The floors are the ones has_substantive_insights_v reads, stated one
+// field at a time so the failing field is named.
+#define CRUCIBLE_DEFINE_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)                     \
+    CRUCIBLE_DEFINE_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating);                           \
+    static_assert(::foundation::diag::insight_provider<TagType>::why_this_matters.size()                \
+                      >= ::foundation::diag::insights_quality_thresholds<TagType>::min_why_chars,       \
+                  "Insight 'why_this_matters' is too short — be substantive. "                          \
+                  "Override via insights_quality_thresholds<Tag>::min_why_chars.");                     \
+    static_assert(::foundation::diag::insight_provider<TagType>::symptom_pattern.size()                 \
+                      >= ::foundation::diag::insights_quality_thresholds<TagType>::min_symptom_chars,   \
+                  "Insight 'symptom_pattern' is too short — be substantive. "                           \
+                  "Override via insights_quality_thresholds<Tag>::min_symptom_chars.");                 \
+    static_assert(::foundation::diag::insight_provider<TagType>::correct_example.size()                 \
+                      >= ::foundation::diag::insights_quality_thresholds<TagType>::min_correct_chars,   \
+                  "Insight 'correct_example' is too short — show real C++. "                            \
+                  "Override via insights_quality_thresholds<Tag>::min_correct_chars.");                 \
+    static_assert(::foundation::diag::insight_provider<TagType>::violating_example.size()               \
+                      >= ::foundation::diag::insights_quality_thresholds<TagType>::min_violating_chars, \
+                  "Insight 'violating_example' is too short — show the anti-pattern. "                  \
+                  "Override via insights_quality_thresholds<Tag>::min_violating_chars.")
 
 // Specialize this per tag for a stricter or looser bar.
 template <typename Tag>
@@ -1029,36 +1012,31 @@ concept HasSubstantiveInsights = is_diagnostic_class_v<Tag> && has_substantive_i
 
 namespace detail::insights_self_test {
 
-static_assert(severity_name(Severity::Hint) == "Hint");
-static_assert(severity_name(Severity::Warning) == "Warning");
-static_assert(severity_name(Severity::Error) == "Error");
+// Every enumerator has a name, and the name is its own; the sentinel is
+// reserved for a value that no enumerator carries.
+[[nodiscard]] consteval bool every_severity_has_its_name() noexcept {
+    bool all_named = true;
+    ::foundation::reflect::for_each_enumerator<Severity>(
+        [&](Severity value, std::string_view name) noexcept { all_named = all_named && severity_name(value) == name; });
+    return all_named;
+}
+static_assert(every_severity_has_its_name());
 static_assert(severity_name(Severity::Fatal) == "Fatal");
+static_assert(severity_name(static_cast<Severity>(9)) == "<unknown Severity>");
 
 static_assert(insight_provider<EpochMismatch>::severity == Severity::Error,
               "an unspecialized tag must default to Error severity");
 
-static_assert(has_insights_v<EffectRowMismatch>);
-static_assert(has_insights_v<UnknownParameterShape>);
-static_assert(has_insights_v<GradedWrapperViolation>);
-static_assert(has_insights_v<LinearityViolation>);
-static_assert(has_insights_v<RefinementViolation>);
-static_assert(has_insights_v<HotPathViolation>);
-static_assert(has_insights_v<DetSafeLeak>);
-static_assert(has_insights_v<NumericalTierMismatch>);
-static_assert(has_insights_v<MemOrderViolation>);
-static_assert(has_insights_v<AllocClassViolation>);
-static_assert(has_insights_v<VendorBackendMismatch>);
-static_assert(has_insights_v<CrashClassMismatch>);
-static_assert(has_insights_v<ConsistencyMismatch>);
-static_assert(has_insights_v<LifetimeViolation>);
-static_assert(has_insights_v<WaitStrategyViolation>);
-static_assert(has_insights_v<ProgressClassViolation>);
-static_assert(has_insights_v<CipherTierViolation>);
-static_assert(has_insights_v<ResidencyHeatViolation>);
-static_assert(has_insights_v<EpochMismatch>);
-static_assert(has_insights_v<BudgetExceeded>);
-static_assert(has_insights_v<NumaPlacementMismatch>);
-static_assert(has_insights_v<RecipeSpecMismatch>);
+// Every tag in the catalog is insighted, and substantively so: the
+// walk is over the catalog tuple, so a tag appended without prose
+// fails here rather than joining a hand list nobody extends.
+template <std::size_t... Is>
+[[nodiscard]] consteval bool every_catalog_tag_has_substantive_insights(std::index_sequence<Is...>) noexcept {
+    return (HasSubstantiveInsights<std::tuple_element_t<Is, Catalog>> && ...);
+}
+static_assert(every_catalog_tag_has_substantive_insights(std::make_index_sequence<catalog_size>{}),
+              "a catalog tag has no insight_provider specialization, or one of its prose fields is "
+              "below the insights_quality_thresholds floor");
 
 static_assert(insight_provider<DetSafeLeak>::severity == Severity::Fatal);
 
@@ -1075,19 +1053,11 @@ struct user_tag : tag_base {
 static_assert(!has_insights_v<user_tag>);
 static_assert(insight_provider<user_tag>::severity == Severity::Error);
 
+// The catalog walk above covers every admitting case of both concepts.
 // The rejection cases use the tag above, which carries the empty
 // defaults, and a type that is not a tag at all.
-static_assert(WellInsightedTag<EffectRowMismatch>);
-static_assert(WellInsightedTag<DetSafeLeak>);
-static_assert(WellInsightedTag<EpochMismatch>);
 static_assert(!WellInsightedTag<user_tag>);
 static_assert(!WellInsightedTag<int>);
-
-static_assert(HasSubstantiveInsights<EffectRowMismatch>);
-static_assert(HasSubstantiveInsights<HotPathViolation>);
-static_assert(HasSubstantiveInsights<DetSafeLeak>);
-static_assert(HasSubstantiveInsights<EpochMismatch>);
-static_assert(HasSubstantiveInsights<RecipeSpecMismatch>);
 static_assert(!HasSubstantiveInsights<user_tag>);
 
 }  // namespace detail::insights_self_test

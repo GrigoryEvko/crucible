@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <meta>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -108,7 +109,7 @@ static_assert(enumerate_count == diag::catalog_size, "enumerate_categories did n
 
 // The header's own checks are all constant-evaluated.  This one runs
 // the same accessors with non-constant arguments, which is where an
-// inline-body defect in a switch would surface.
+// inline-body defect in an accessor would surface.
 void test_runtime_smoke() { diag::runtime_smoke_test(); }
 
 // The bound is a floor, not an equality.  The catalog is append-only, so
@@ -134,7 +135,7 @@ void test_accessor_runtime_coverage() {
         EXPECT(r != sentinel);
     }
 
-    // A value outside the enumeration reaches the default arm and comes
+    // A value outside the enumeration fails the range check and comes
     // back as the sentinel.  Only a cast can produce such a value, which
     // is why the test has to make one by hand.
     diag::Category const bogus = static_cast<diag::Category>(255);
@@ -168,16 +169,42 @@ void test_enumerate_categories_order() {
     EXPECT(visited.back() == TrailingTag::name);
 }
 
-// The accessors are switches written by hand alongside the tags.  These
-// comparisons are what catch an arm that answers for the wrong tag.
+// The accessors index arrays derived from the tuple.  Every category is
+// walked rather than three named ones, so an array built in the wrong
+// order, or a tag whose fields drifted from its accessors, is named by
+// the category it fails at.
 void test_accessor_strings_match_tag_fields() {
-    EXPECT(diag::name_of(diag::Category::EffectRowMismatch) == diag::EffectRowMismatch::name);
-    EXPECT(diag::name_of(diag::Category::DetSafeLeak) == diag::DetSafeLeak::name);
-    EXPECT(diag::name_of(diag::Category::RecipeSpecMismatch) == diag::RecipeSpecMismatch::name);
-    EXPECT(diag::description_of(diag::Category::DetSafeLeak) == diag::DetSafeLeak::description);
-    EXPECT(diag::remediation_of(diag::Category::DetSafeLeak) == diag::DetSafeLeak::remediation);
+    diag::enumerate_categories([]<diag::Category C>() noexcept {
+        using tag = diag::tag_of_t<C>;
+        EXPECT(diag::name_of(C) == tag::name);
+        EXPECT(diag::description_of(C) == tag::description);
+        EXPECT(diag::remediation_of(C) == tag::remediation);
+    });
     EXPECT(diag::name_of(diag::categories_v.back()) == TrailingTag::name);
 }
+
+// The tuple is derived from the enum by identifier: the tag at every
+// index spells the enumerator at that index.
+[[nodiscard]] consteval bool catalog_spells_the_enum() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^diag::Category));
+    std::size_t position = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr diag::Category c = [:en:];
+        if (std::meta::identifier_of(en) != diag::tag_of_t<c>::name) return false;
+        // tag_of_t is an alias, and an alias has no identifier of its own.
+        if (std::meta::identifier_of(en) != std::meta::identifier_of(std::meta::dealias(^^diag::tag_of_t<c>))) {
+            return false;
+        }
+        if (static_cast<std::size_t>(std::to_underlying(c)) != position) return false;
+        ++position;
+    }
+#pragma GCC diagnostic pop
+    return position == diag::catalog_size;
+}
+
+static_assert(catalog_spells_the_enum());
 
 }  // namespace
 
@@ -297,9 +324,13 @@ void test_insights_runtime() {
     EXPECT(diag::severity_name(sev_full) == "Error");
     EXPECT(diag::severity_name(sev_qv) == "Fatal");
 
-    volatile std::size_t const cap = 4;
+    // The bound is the enumerator count read off the enum, so a new
+    // severity is covered without an edit here; the enumerators are
+    // consecutive from zero, which the loop's cast relies on.
+    volatile std::size_t const cap = std::meta::enumerators_of(^^diag::Severity).size();
     for (std::size_t i = 0; i < cap; ++i) {
         EXPECT(!diag::severity_name(static_cast<diag::Severity>(i)).empty());
+        EXPECT(diag::severity_name(static_cast<diag::Severity>(i)) != "<unknown Severity>");
     }
     EXPECT(diag::severity_name(static_cast<diag::Severity>(9)) == "<unknown Severity>");
 }

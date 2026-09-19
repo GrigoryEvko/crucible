@@ -41,8 +41,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <meta>
 #include <random>
 #include <span>
+#include <tuple>
 #include <type_traits>
 
 namespace {
@@ -99,16 +101,49 @@ volatile int g_sink = 0;
     std::exit(1);
 }
 
-// The narrow signed widths are the point of the sweep.  A hand-rolled
-// check that widened one operand and not the other would agree with
-// the compiler's on the wide types and disagree here.
-
+// The same, for a procedure swept over a width: the width is named by
+// its sign and its bit count, as `no_overflow_mul<i16>`.
 template <typename T>
-bool fuzz_pair_mul(std::uint32_t a32, std::uint32_t b32) {
+[[noreturn]] void fail_width(const char* proc, int iter) {
+    char labelled[64];
+    std::snprintf(labelled, sizeof(labelled), "%s<%c%zu>", proc, std::is_signed_v<T> ? 'i' : 'u', sizeof(T) * 8);
+    fail(labelled, iter, "see preceding line");
+}
+
+// The widths a pair procedure is swept over.  The narrow signed widths
+// are the point of the sweep: a hand-rolled check that widened one
+// operand and not the other would agree with the compiler's on the wide
+// types and disagree here.  The roster is a tuple so the walk below can
+// read it by reflection, and it is the only place the widths are listed.
+using PairWidths = std::tuple<std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t, std::int8_t, std::int16_t,
+                              std::int32_t, std::int64_t>;
+
+// The coprime sweep multiplies both operands by a shared factor through
+// a 64-bit product, so it covers the two widths that product fits.
+using CoprimeWidths = std::tuple<std::uint32_t, std::uint64_t, std::int32_t, std::int64_t>;
+
+// Calls check.operator()<T>() for each T in the roster, in order.
+template <typename Roster, typename Check>
+void for_each_width(Check&& check) {
+    static constexpr auto widths = std::define_static_array(std::meta::template_arguments_of(^^Roster));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto width : widths) {
+        using T = [:width:];
+        check.template operator()<T>();
+    }
+#pragma GCC diagnostic pop
+}
+
+// One production predicate against its oracle on one pair of operands
+// cast to T.  The two are spelled as callables so the mul and the sum
+// sweep share this body.
+template <typename T, auto Production, auto Oracle>
+bool fuzz_pair(std::uint32_t a32, std::uint32_t b32) {
     auto const a = static_cast<T>(a32);
     auto const b = static_cast<T>(b32);
-    bool const fast = dc::no_overflow_mul<T>(a, b);
-    bool const orcl = dco::no_overflow_mul_oracle<T>(a, b);
+    bool const fast = Production(a, b);
+    bool const orcl = Oracle(a, b);
     if (fast != orcl) {
         std::fprintf(stderr, "  T=%s a=%lld b=%lld fast=%d oracle=%d\n", std::is_signed_v<T> ? "signed" : "unsigned",
                      static_cast<long long>(a), static_cast<long long>(b), fast, orcl);
@@ -116,47 +151,28 @@ bool fuzz_pair_mul(std::uint32_t a32, std::uint32_t b32) {
     }
     return true;
 }
+
+constexpr auto production_mul = [](auto a, auto b) { return dc::no_overflow_mul(a, b); };
+constexpr auto oracle_mul = [](auto a, auto b) { return dco::no_overflow_mul_oracle(a, b); };
+constexpr auto production_sum = [](auto a, auto b) { return dc::no_overflow_sum(a, b); };
+constexpr auto oracle_sum = [](auto a, auto b) { return dco::no_overflow_sum_oracle(a, b); };
 
 void fuzz_no_overflow_mul() {
     for (int i = 0; i < kIterations; ++i) {
         auto const ctr = generate(static_cast<std::uint64_t>(i), kKeyMul);
-        if (!fuzz_pair_mul<std::uint8_t>(ctr[0], ctr[1])) fail("no_overflow_mul<u8>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::uint16_t>(ctr[0], ctr[1])) fail("no_overflow_mul<u16>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::uint32_t>(ctr[0], ctr[1])) fail("no_overflow_mul<u32>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::uint64_t>(ctr[0], ctr[1])) fail("no_overflow_mul<u64>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::int8_t>(ctr[0], ctr[1])) fail("no_overflow_mul<i8>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::int16_t>(ctr[0], ctr[1])) fail("no_overflow_mul<i16>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::int32_t>(ctr[0], ctr[1])) fail("no_overflow_mul<i32>", i, "see preceding line");
-        if (!fuzz_pair_mul<std::int64_t>(ctr[0], ctr[1])) fail("no_overflow_mul<i64>", i, "see preceding line");
+        for_each_width<PairWidths>([&]<typename T>() {
+            if (!fuzz_pair<T, production_mul, oracle_mul>(ctr[0], ctr[1])) fail_width<T>("no_overflow_mul", i);
+        });
         g_sink ^= static_cast<int>(ctr[0] ^ ctr[1]);
     }
-}
-
-template <typename T>
-bool fuzz_pair_sum(std::uint32_t a32, std::uint32_t b32) {
-    auto const a = static_cast<T>(a32);
-    auto const b = static_cast<T>(b32);
-    bool const fast = dc::no_overflow_sum<T>(a, b);
-    bool const orcl = dco::no_overflow_sum_oracle<T>(a, b);
-    if (fast != orcl) {
-        std::fprintf(stderr, "  T=%s a=%lld b=%lld fast=%d oracle=%d\n", std::is_signed_v<T> ? "signed" : "unsigned",
-                     static_cast<long long>(a), static_cast<long long>(b), fast, orcl);
-        return false;
-    }
-    return true;
 }
 
 void fuzz_no_overflow_sum() {
     for (int i = 0; i < kIterations; ++i) {
         auto const ctr = generate(static_cast<std::uint64_t>(i), kKeySum);
-        if (!fuzz_pair_sum<std::uint8_t>(ctr[0], ctr[1])) fail("no_overflow_sum<u8>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::uint16_t>(ctr[0], ctr[1])) fail("no_overflow_sum<u16>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::uint32_t>(ctr[0], ctr[1])) fail("no_overflow_sum<u32>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::uint64_t>(ctr[0], ctr[1])) fail("no_overflow_sum<u64>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::int8_t>(ctr[0], ctr[1])) fail("no_overflow_sum<i8>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::int16_t>(ctr[0], ctr[1])) fail("no_overflow_sum<i16>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::int32_t>(ctr[0], ctr[1])) fail("no_overflow_sum<i32>", i, "see preceding line");
-        if (!fuzz_pair_sum<std::int64_t>(ctr[0], ctr[1])) fail("no_overflow_sum<i64>", i, "see preceding line");
+        for_each_width<PairWidths>([&]<typename T>() {
+            if (!fuzz_pair<T, production_sum, oracle_sum>(ctr[0], ctr[1])) fail_width<T>("no_overflow_sum", i);
+        });
         g_sink ^= static_cast<int>(ctr[2] ^ ctr[3]);
     }
 }
@@ -366,10 +382,9 @@ bool fuzz_pair_coprime(std::uint32_t a32, std::uint32_t b32, std::uint32_t bias)
 void fuzz_coprime() {
     for (int i = 0; i < kIterations; ++i) {
         auto const ctr = generate(static_cast<std::uint64_t>(i), kKeyCoprime);
-        if (!fuzz_pair_coprime<std::uint32_t>(ctr[0], ctr[1], ctr[2])) fail("coprime<u32>", i, "see preceding line");
-        if (!fuzz_pair_coprime<std::uint64_t>(ctr[0], ctr[1], ctr[2])) fail("coprime<u64>", i, "see preceding line");
-        if (!fuzz_pair_coprime<std::int32_t>(ctr[0], ctr[1], ctr[2])) fail("coprime<i32>", i, "see preceding line");
-        if (!fuzz_pair_coprime<std::int64_t>(ctr[0], ctr[1], ctr[2])) fail("coprime<i64>", i, "see preceding line");
+        for_each_width<CoprimeWidths>([&]<typename T>() {
+            if (!fuzz_pair_coprime<T>(ctr[0], ctr[1], ctr[2])) fail_width<T>("coprime", i);
+        });
         g_sink ^= static_cast<int>(ctr[3]);
     }
 }

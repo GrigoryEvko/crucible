@@ -55,31 +55,19 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 
 }  // namespace foundation::detail
 
-#ifdef NDEBUG
+#if defined(NDEBUG) || defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
 
 // The release arm keeps the consteval check rather than collapsing to
 // the hint alone, so a negative-compile fixture behaves the same in
 // release as in debug.
-#define CRUCIBLE_PRE(cond)              \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
-    } while (0)
-
-#elif defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
-
-// This arm drops the runtime path without defining NDEBUG.  A static
-// library whose archive does not carry the reporting function still
-// references it through any inline header use of these macros, and a
-// left-to-right archive scan can discard the defining object before it
-// sees that reference.  Defining this macro on the inner target removes
-// the reference and closes the link gap, at the cost of runtime
-// enforcement inside that one library.
+//
+// CRUCIBLE_CONTRACT_RUNTIME_OFF selects the same arm without defining
+// NDEBUG.  A static library whose archive does not carry the reporting
+// function still references it through any inline header use of these
+// macros, and a left-to-right archive scan can discard the defining
+// object before it sees that reference.  Defining this macro on the
+// inner target removes the reference and closes the link gap, at the
+// cost of runtime enforcement inside that one library.
 //
 // Only the build system defines this, per target.  Defining it in a
 // header would silently disarm every consumer.
@@ -115,18 +103,14 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // falls back to the core dump.  That is the whole point of the variant.
 // Reach for it only where the cost of formatting and flushing the
 // diagnostic has been measured and found to matter.
+//
+// Under NDEBUG the two forms are the same consteval check and hint, so
+// this one is that one.  It keeps its runtime trap when only
+// CRUCIBLE_CONTRACT_RUNTIME_OFF is defined, because the trap references
+// no reporting function and so opens no link gap.
 #ifdef NDEBUG
 
-#define CRUCIBLE_PRE_FAST(cond)         \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
-    } while (0)
+#define CRUCIBLE_PRE_FAST(cond) CRUCIBLE_PRE(cond)
 
 #else
 
@@ -142,19 +126,14 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 #endif
 
 // The message reaches the runtime report only.  A trap during constant
-// evaluation carries no extra text either way.
+// evaluation carries no extra text either way, so without the report
+// this is the plain form with the message evaluated and discarded.
 #if defined(NDEBUG) || defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
 
-#define CRUCIBLE_PRE_MSG(cond, msg)     \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        (void)(msg);                    \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
+#define CRUCIBLE_PRE_MSG(cond, msg) \
+    do {                            \
+        (void)(msg);                \
+        CRUCIBLE_PRE(cond);         \
     } while (0)
 
 #else

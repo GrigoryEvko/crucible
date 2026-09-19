@@ -89,6 +89,152 @@ template <class From, class To>
     return true;
 }
 
+// ── Properties of a whole relation ──────────────────────────────────
+
+// is_edge answers for the member kind and the variable's type, and
+// nothing else: an int, a value of another type, a function, a nested
+// type, an enumeration, an alias, a variable template and a nested
+// namespace are all not edges.
+static_assert(ffc::is_edge(^^ingest::raw_to_checked));
+static_assert(ffc::is_edge(^^spelled::via_alias));
+static_assert(ffc::is_edge(^^spelled::via_const));
+static_assert(!ffc::is_edge(^^crowded::width));
+static_assert(!ffc::is_edge(^^crowded::a_value_of_another_type));
+static_assert(!ffc::is_edge(^^crowded::count));
+static_assert(!ffc::is_edge(^^crowded::Nested));
+static_assert(!ffc::is_edge(^^crowded::Mode));
+static_assert(!ffc::is_edge(^^crowded::Alias));
+static_assert(!ffc::is_edge(^^crowded::inner));
+
+// ends_of reads the two ends through their aliases.
+static_assert(ffc::ends_of(^^ingest::raw_to_checked).from == ^^Raw);
+static_assert(ffc::ends_of(^^ingest::raw_to_checked).to == ^^Checked);
+static_assert(ffc::ends_of(^^spelled::via_alias).from == ^^Raw);
+static_assert(ffc::ends_of(^^spelled::via_alias).to == ^^Checked);
+
+// edge_count counts edges and skips every other member kind; a nested
+// namespace is not opened.
+static_assert(ffc::edge_count<^^ingest>() == 2);
+static_assert(ffc::edge_count<^^crowded>() == 1);
+static_assert(ffc::edge_count<^^crowded::inner>() == 1);
+static_assert(ffc::edge_count<^^vacant>() == 0);
+static_assert(ffc::edge_count<^^spelled>() == 2);
+
+// every_edge_is_admitted: the enumeration and admits agree.
+static_assert(ffc::every_edge_is_admitted<^^ingest>());
+static_assert(ffc::every_edge_is_admitted<^^crowded>());
+static_assert(ffc::every_edge_is_admitted<^^spelled>());
+static_assert(ffc::every_edge_is_admitted<^^vacant>());
+
+// is_antisymmetric: an inverse pair is refused, an identity edge is
+// not an inverse of itself, and a relation with no edges holds.
+namespace symmetric {
+inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
+inline constexpr ffc::edge<Checked, Raw> checked_to_raw{};
+}  // namespace symmetric
+
+namespace reflexive {
+inline constexpr ffc::edge<Raw, Raw> raw_to_raw{};
+inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
+}  // namespace reflexive
+
+static_assert(ffc::is_antisymmetric<^^ingest>());
+static_assert(!ffc::is_antisymmetric<^^symmetric>());
+static_assert(ffc::is_antisymmetric<^^reflexive>());
+static_assert(ffc::is_antisymmetric<^^vacant>());
+
+// The inverse is looked for through aliases too.
+namespace symmetric_through_alias {
+using Raw2 = Raw;
+inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
+inline constexpr ffc::edge<Checked, Raw2> checked_to_raw{};
+}  // namespace symmetric_through_alias
+
+static_assert(!ffc::is_antisymmetric<^^symmetric_through_alias>());
+
+// is_intra_namespace: a family is the namespace that declares the
+// type, and a specialization belongs to its template's family.
+namespace family_a {
+struct Left {};
+struct Right {};
+template <int N>
+struct Pinned {};
+using PinnedOne = Pinned<1>;
+}  // namespace family_a
+
+namespace family_b {
+struct Other {};
+}  // namespace family_b
+
+namespace within_family {
+inline constexpr ffc::edge<family_a::Left, family_a::Right> left_to_right{};
+inline constexpr ffc::edge<family_a::PinnedOne, family_a::Pinned<2>> one_to_two{};
+inline constexpr ffc::edge<family_a::Left, family_a::Pinned<2>> left_to_two{};
+}  // namespace within_family
+
+namespace across_families {
+inline constexpr ffc::edge<family_a::Left, family_a::Right> left_to_right{};
+inline constexpr ffc::edge<family_a::Left, family_b::Other> left_to_other{};
+}  // namespace across_families
+
+static_assert(ffc::family_of(^^family_a::Left) == ^^family_a);
+static_assert(ffc::family_of(^^family_a::PinnedOne) == ^^family_a);
+static_assert(ffc::family_of(^^family_a::Pinned<3>) == ^^family_a);
+static_assert(ffc::family_of(^^family_b::Other) == ^^family_b);
+static_assert(ffc::is_intra_namespace<^^within_family>());
+static_assert(!ffc::is_intra_namespace<^^across_families>());
+static_assert(ffc::is_intra_namespace<^^vacant>());
+
+// has_edge_from and has_edge_to ask for one end and any other.
+static_assert(ffc::has_edge_from<^^ingest, Raw>());
+static_assert(ffc::has_edge_from<^^ingest, Checked>());
+static_assert(!ffc::has_edge_from<^^ingest, Stored>());
+static_assert(ffc::has_edge_to<^^ingest, Checked>());
+static_assert(ffc::has_edge_to<^^ingest, Stored>());
+static_assert(!ffc::has_edge_to<^^ingest, Raw>());
+static_assert(ffc::has_edge_to<^^within_family, family_a::Pinned<2>>());
+static_assert(ffc::has_edge_from<^^within_family, family_a::Pinned<1>>());
+static_assert(!ffc::has_edge_from<^^vacant, Raw>());
+
+// every_class_in_has_edge: each class declared directly in the tag
+// namespace must sit at the named end of some edge, the excluded ones
+// aside; templates, enumerations and aliases are skipped.
+namespace tag_family {
+struct Base {};
+struct Alpha : Base {};
+struct Beta : Base {};
+struct Gamma : Base {};
+template <class T>
+struct Boxed {};
+enum class Mode : unsigned char {
+    on
+};
+using AlphaAlias = Alpha;
+}  // namespace tag_family
+
+namespace exits_from_base {
+inline constexpr ffc::edge<tag_family::Base, tag_family::Alpha> to_alpha{};
+inline constexpr ffc::edge<tag_family::Base, tag_family::Beta> to_beta{};
+inline constexpr ffc::edge<tag_family::Base, tag_family::Gamma> to_gamma{};
+}  // namespace exits_from_base
+
+namespace exits_missing_gamma {
+inline constexpr ffc::edge<tag_family::Base, tag_family::Alpha> to_alpha{};
+inline constexpr ffc::edge<tag_family::Base, tag_family::Beta> to_beta{};
+}  // namespace exits_missing_gamma
+
+static_assert(ffc::every_class_in_has_edge<^^exits_from_base, ^^tag_family, ffc::EdgeEnd::To, tag_family::Base>());
+static_assert(!ffc::every_class_in_has_edge<^^exits_from_base, ^^tag_family, ffc::EdgeEnd::To>());
+static_assert(ffc::every_class_in_has_edge<^^exits_from_base, ^^tag_family, ffc::EdgeEnd::Either>());
+static_assert(!ffc::every_class_in_has_edge<^^exits_from_base, ^^tag_family, ffc::EdgeEnd::From, tag_family::Base>());
+static_assert(!ffc::every_class_in_has_edge<^^exits_missing_gamma, ^^tag_family, ffc::EdgeEnd::To, tag_family::Base>());
+static_assert(ffc::every_class_in_has_edge<^^exits_missing_gamma, ^^tag_family, ffc::EdgeEnd::To, tag_family::Base,
+                                           tag_family::Gamma>());
+// A relation with no edges covers a namespace with no classes and
+// nothing else.
+static_assert(ffc::every_class_in_has_edge<^^vacant, ^^vacant, ffc::EdgeEnd::Either>());
+static_assert(!ffc::every_class_in_has_edge<^^vacant, ^^tag_family, ffc::EdgeEnd::Either>());
+
 // Keeps a compile-time answer from folding into the caller.
 [[gnu::noipa]] bool as_runtime(bool value) noexcept { return value; }
 
