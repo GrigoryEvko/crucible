@@ -1809,7 +1809,8 @@ set(CRUCIBLE_NEG_TWO_REGEX_FLOORED
   dataplane_neg
   warden_neg
   perf_neg
-  topology_neg)
+  topology_neg
+  bridges_neg)
 
 # Called by each sister harness with the registration's regex list in
 # ARGN.  Silent for a directory that has not been swept yet.
@@ -14245,29 +14246,41 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_crash_assert_per_offer_missing
 # levels but specific enough to fail when the underlying gate goes
 # missing.  Driver: scripts/neg_compile_driver.py.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_non_handle
-    "no matching function for call to|could not match")
+    "no matching function for call to|could not match"
+    "mint_recording_session")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_wrong_log_type
-    "no matching function for call to|cannot bind|could not convert")
+    "could not convert|no matching function for call to|cannot bind"
+    "mint_recording_session")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_crash_watched_non_handle
-    "no matching function for call to|could not match")
+    "no matching function for call to|could not match"
+    "mint_recording_session")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_crash_watched_wrong_log_type
-    "no matching function for call to|could not match|could not convert")
+    "could not convert|no matching function for call to|could not match"
+    "mint_recording_session")
 crucible_neg_compile_bridges_test(neg_mint_recording_endpoint_non_endpoint
-    "no matching function for call to|could not match|cannot bind rvalue")
+    "no matching function for call to|could not match|cannot bind rvalue"
+    "mint_recording_endpoint")
 crucible_neg_compile_bridges_test(neg_mint_recording_endpoint_wrong_log_type
-    "no matching function for call to|could not match|template argument deduction")
+    "no matching function for call to|could not match|template argument deduction"
+    "mint_recording_endpoint")
 crucible_neg_compile_bridges_test(neg_mint_crash_watched_endpoint_non_endpoint
-    "no matching function for call to|could not match|cannot bind rvalue")
+    "no matching function for call to|could not match|cannot bind rvalue"
+    "mint_crash_watched_endpoint")
 crucible_neg_compile_bridges_test(neg_mint_crash_watched_endpoint_missing_peer_tag
-    "no matching function for call to|couldn't infer|could not deduce|PeerTag")
+    "no matching function for call to|couldn't infer|could not deduce"
+    "mint_crash_watched_endpoint|PeerTag")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_required
-    "PersistedSession_CtxRequired|use of deleted function")
+    "use of deleted function"
+    "PersistedSession_CtxRequired")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_row_insufficient
-    "constraints not satisfied|CtxAdmits|no matching function")
+    "constraints not satisfied|no matching function"
+    "CtxAdmits")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_open_view_required
-    "PersistedSession_OpenViewRequired|use of deleted function")
+    "use of deleted function"
+    "PersistedSession_OpenViewRequired")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insufficient
-    "constraints not satisfied|CtxAdmits|no matching function")
+    "constraints not satisfied|no matching function"
+    "CtxAdmits")
 
 # fixy-A2-006b — HS14 floor for the Delegate<DelegatedSession<P, IPS>, K>
 # specialization on RecordingPermissionedSessionHandle.  The class spec
@@ -14284,9 +14297,11 @@ crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insu
 # Distinct layers: #1 = signature shape, #2 = requires-clause body.
 # Mirrors the bare-handle Delegate spec at RecordingSessionHandle.h:916.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_wrong_inner_proto
-    "no matching function|cannot convert|PermissionedSessionHandle|delegate")
+    "no matching function|cannot convert"
+    "PermissionedSessionHandle")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_transport_not_invocable
-    "constraints not satisfied|is_invocable|no matching function|delegate")
+    "constraints not satisfied|no matching function"
+    "is_invocable")
 
 # fixy-A2-006c — HS14 floor for the Accept<DelegatedSession<P, IPS>, K>
 # specialization on RecordingPermissionedSessionHandle.  The class spec
@@ -14304,9 +14319,11 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_transp
 # Distinct layers: #1 = requires-clause body, #2 = body instantiation.
 # Mirrors the bare-handle Accept spec at RecordingSessionHandle.h:994.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_not_invocable
-    "constraints not satisfied|is_invocable|no matching function|accept")
+    "constraints not satisfied|no matching function"
+    "is_invocable")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_returns_void
-    "incomplete type|void|cannot declare|no matching function|accept")
+    "incomplete type|no matching function|cannot declare"
+    "accept")
 
 # fixy-A2-006d — HS14 floor for the EpochedDelegate<DelegatedSession<P, IPS>,
 # K, MinEpoch, MinGeneration> specialization on RecordingPSH.  Mirror of the
@@ -14319,9 +14336,11 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transpor
 #   epoched_transport_not_invocable — requires-clause (is_invocable_v=false)
 # Distinct layers: #1 = signature shape, #2 = requires-clause body.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegate_wrong_inner_proto
-    "no matching function|cannot convert|PermissionedSessionHandle|delegate")
+    "no matching function|cannot convert"
+    "PermissionedSessionHandle")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegate_transport_not_invocable
-    "constraints not satisfied|is_invocable|no matching function|delegate")
+    "constraints not satisfied|no matching function"
+    "is_invocable")
 
 # fixy-A2-006e — HS14 floor for the EpochedAccept<DelegatedSession<P, IPS>,
 # K, MinEpoch, MinGeneration> specialization on RecordingPSH.  Closes the
@@ -14335,21 +14354,26 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegat
 #   epoched_transport_returns_void  — body-instantiation (void delegated_res)
 # Distinct layers: #1 = requires-clause body, #2 = body instantiation.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_accept_transport_not_invocable
-    "constraints not satisfied|is_invocable|no matching function|accept")
+    "constraints not satisfied|no matching function"
+    "is_invocable")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_accept_transport_returns_void
-    "incomplete type|void|cannot declare|no matching function|accept")
+    "incomplete type|no matching function|cannot declare"
+    "accept")
 
 # fixy-A2-019 — HS14 floor for the renamed mint_atomic_session<Proto>(cell).
 # Two fixtures witness the two-conjunct requires-clause:
 #   AtomicMachineCell<Cell>          — non-cell argument fails the concept
 #   safety::proto::is_well_formed_v<Proto>  — free Continue at top level fails
 crucible_neg_compile_bridges_test(neg_mint_atomic_session_non_atomic_machine_cell
-    "no matching function for call to|constraints not satisfied|AtomicMachineCell")
+    "constraints not satisfied|no matching function for call to"
+    "AtomicMachineCell")
 crucible_neg_compile_bridges_test(neg_mint_atomic_session_malformed_proto
-    "no matching function for call to|constraints not satisfied|is_well_formed")
+    "constraints not satisfied|no matching function for call to"
+    "is_well_formed")
 # FIXY-V-020: CanMintVigilModeBridge<Cell> rejects non-ModeCell types.
 crucible_neg_compile_bridges_test(neg_vigil_mode_bridge_wrong_cell
-    "constraints not satisfied|CanMintVigilModeBridge|same_as|ModeCell|uint64_t")
+    "constraints not satisfied"
+    "CanMintVigilModeBridge")
 
 # fixy-A2-021 — HS14 floor for the WrapCrashReturnKey pass-key idiom.
 # Two fixtures witness that external code cannot mint or use the key:
@@ -14358,9 +14382,11 @@ crucible_neg_compile_bridges_test(neg_vigil_mode_bridge_wrong_cell
 # The non-template `detail::WrapCrashReturnAuthorizer` friend is immune to
 # parameter-pack drift on `wrap_crash_return` (template-friend brittleness).
 crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_external_construction
-    "is private within this context|private|WrapCrashReturnKey")
+    "is private within this context"
+    "WrapCrashReturnKey")
 crucible_neg_compile_bridges_test(neg_crash_event_external_construction
-    "is private within this context|private|WrapCrashReturnKey")
+    "is private within this context"
+    "WrapCrashReturnKey")
 
 # FIXY-V-013 — HS14 fixture for §XXI Universal Mint Pattern compliance.
 # Closes a different bypass class than the two above: a caller who
@@ -14372,7 +14398,8 @@ crucible_neg_compile_bridges_test(neg_crash_event_external_construction
 # access check fires here, leaving `mint_event_<>` as the sole
 # grep-discoverable construction site for CrashEvent in the tree.
 crucible_neg_compile_bridges_test(neg_crash_event_ctor_public_bypass
-    "is private within this context|private")
+    "use of deleted function|is private within this context"
+    "CrashEvent|WrapCrashReturnKey")
 
 # fixy-A2-032 — HS14 floor for the WrapCrashReturnKey non-fungibility
 # property.  Two fixtures witness that the passkey cannot be duplicated
@@ -14381,16 +14408,20 @@ crucible_neg_compile_bridges_test(neg_crash_event_ctor_public_bypass
 # the production path (mint() prvalue → CrashEvent value parameter)
 # intact, so the deletion is defense-in-depth at zero call-site cost.
 crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_copy_construct
-    "use of deleted function|passkey cannot be copied|fixy-A2-032|deleted")
+    "use of deleted function"
+    "passkey cannot be copied|fixy-A2-032")
 crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_move_construct
-    "use of deleted function|passkey cannot be moved|fixy-A2-032|deleted")
+    "use of deleted function"
+    "passkey cannot be moved|fixy-A2-032")
 
 # fix-15 — RecordingPermissionedSessionHandle passkey closure: direct
 # brace-construction of any specialization is rejected (the ctor's leading
 # recording_session_construct_key is unconstructable outside mint_recording_session).
 crucible_neg_compile_bridges_test(neg_recording_psh_ctor_public_bypass
+    "no matching function"
     "recording_session_construct_key")
 crucible_neg_compile_bridges_test(neg_recording_psh_offer_ctor_public_bypass
+    "no matching function"
     "recording_session_construct_key")
 
 # ── FIXY-V-071 — fixy::concurrent::SpinLock<Tag> HS14 floor (#1949)
