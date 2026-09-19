@@ -132,8 +132,9 @@ fixy_neg_compile_test(neg_refined_implication_not_admitted
 # No public constructor takes a bare value; the candidates the compiler
 # lists are the copy, the move and the two private doors.
 fixy_neg_compile_test(neg_refined_direct_construction
-  "no matching function for call to .fixy::Refined<.*>::Refined\\(<brace-enclosed initializer list>\\)."
-  "candidate .*: .constexpr fixy::Refined<Pred, T>::Refined\\(checked_door_, T\\) requires  PredicateInvocableOn<Pred, T>.")
+  "no matching function for call to .fixy::Refinement<.*>::Refinement\\(<brace-enclosed initializer list>\\)."
+  "candidate .*: .constexpr fixy::Refinement<Pred, T, Sealed>::Refinement\\(checked_door_, T\\) requires  PredicateInvocableOn<Pred, T>."
+  "candidate .*: .constexpr fixy::Refinement<Pred, T, Sealed>::Refinement\\(trusted_door_, T\\).")
 
 # The checked mint's gate names the concept at the call site instead of
 # failing somewhere inside the contract clause.
@@ -148,10 +149,13 @@ fixy_neg_compile_test(neg_refined_sealed_mint_predicate_fails_at_consteval
   "in .constexpr. expansion of .fixy::mint_sealed_refined<.*, int>\\(0\\)."
   "fixy/Refined\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
-# SealedRefined has no into(): name lookup fails on the sealed class.
-fixy_neg_compile_test(neg_refined_sealed_into_absent
-  "has no member named .into."
-  "class fixy::SealedRefined<.*>")
+# into() is declared once and constrained to the unsealed half, so the
+# sealed refinement refuses it on the constraint rather than on name
+# lookup.  The name is unreachable either way.
+fixy_neg_compile_test(neg_refined_sealed_into_unreachable
+  "no matching function for call to .fixy::Refinement<.*, true>::into\\(\\)."
+  "constraints not satisfied"
+  "the expression .!Sealed \\[with Sealed = true\\]. evaluated to .false.")
 
 # DivisibleBy<0> and Bounded<10, 5, int> are refused where the type is
 # named, before any value is minted.

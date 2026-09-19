@@ -260,11 +260,37 @@ concept PredicateInvocableOn = requires(T const& v) {
     { Pred(v) } -> std::convertible_to<bool>;
 };
 
-template <auto Pred, typename T>
-class Refined;
+// One template carries both refinements.  They differed in exactly one
+// place — the sealed one has no extractor — and everything else was the
+// same text written twice.  The Sealed argument is that one difference.
+//
+// The two names stay distinct types, because Refinement<Pred, T, false>
+// and Refinement<Pred, T, true> are distinct types.  Nothing that held
+// a Refined can be handed a SealedRefined, and the hidden-friend
+// comparisons still refuse to compare across the two.
+template <auto Pred, typename T, bool Sealed>
+class Refinement;
 
 template <auto Pred, typename T>
-class SealedRefined;
+using Refined = Refinement<Pred, T, false>;
+
+// A refinement with no way to extract the value back out.  Every
+// change to a sealed value therefore goes through a fresh mint, which
+// re-runs the predicate.  That closes the pattern of extracting a
+// value, mutating it behind the predicate's back and quietly
+// re-wrapping it.
+//
+// Reach for it when the predicate is an invariant downstream code
+// relies on continuously rather than only at construction, and
+// especially when the wrapped type has a mutation surface of its own.
+//
+// A const-qualified ordinary refinement is not the same discipline.
+// Const on a parameter does not propagate to the caller's own value,
+// and the extractor is rvalue-qualified, so any caller can still move
+// from it and pull the value out.  Removing the extractor from the
+// type is what makes the discipline unavoidable.
+template <auto Pred, typename T>
+using SealedRefined = Refinement<Pred, T, true>;
 
 // Every factory that mints an authoritative value is named mint_, so
 // that one search finds every authorization point.  The constructors
@@ -293,8 +319,8 @@ template <auto Pred, typename T>
 [[nodiscard]] constexpr SealedRefined<Pred, T>
 mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
 
-template <auto Pred, typename T>
-class [[nodiscard]] Refined {
+template <auto Pred, typename T, bool Sealed>
+class [[nodiscard]] Refinement {
 public:
     using value_type = T;
     using predicate_type = decltype(Pred);
@@ -307,11 +333,15 @@ public:
 
     using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, T>;
 
+    // The one difference between the two refinements, readable off the
+    // type.  refined_is_sealed_v is a view of this.
+    static constexpr bool is_sealed = Sealed;
+
 private:
     graded_type impl_;
 
-    // The two doors.  Each is reachable only through the friend mint
-    // that names it.
+    // The two doors.  Each is reachable only through the friend mints
+    // that name it.
     struct checked_door_ {};
     struct trusted_door_ {};
 
@@ -326,11 +356,11 @@ private:
         return v;
     }
 
-    constexpr Refined(checked_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr Refinement(checked_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires PredicateInvocableOn<Pred, T>
         : impl_{admit_(std::move(v)), typename lattice_type::element_type{}} {}
 
-    constexpr Refined(trusted_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr Refinement(trusted_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     template <auto P, typename U>
@@ -341,32 +371,56 @@ private:
         requires std::move_constructible<U>
     friend constexpr Refined<P, U> mint_refined_trusted(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
 
-public:
-    // The refinement is a property of the value, so copying or moving
-    // preserves it and neither needs to re-check.
-    Refined(const Refined&) = default;
-    Refined(Refined&&) = default;
-    Refined& operator=(const Refined&) = default;
-    Refined& operator=(Refined&&) = default;
+    template <auto P, typename U>
+        requires PredicateInvocableOn<P, U>
+    friend constexpr SealedRefined<P, U> mint_sealed_refined(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
 
+    template <auto P, typename U>
+        requires std::move_constructible<U>
+    friend constexpr SealedRefined<P, U>
+    mint_sealed_refined_trusted(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+public:
+    // Sealing an ordinary refinement needs no check: the source's own
+    // invariant is the proof, so this is a transfer between two doors
+    // and not a door of its own.
+    constexpr explicit Refinement(Refinement<Pred, T, false>&& r) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires Sealed
+        : impl_{std::move(r).into(), typename lattice_type::element_type{}} {}
+
+    // The refinement is a property of the value, so copying or moving
+    // preserves it and neither needs to re-check.  What a sealed
+    // refinement forbids is extraction, not movement.
+    Refinement(const Refinement&) = default;
+    Refinement(Refinement&&) = default;
+    Refinement& operator=(const Refinement&) = default;
+    Refinement& operator=(Refinement&&) = default;
+
+    // For a sealed refinement this is the only way to observe the
+    // value.  There is deliberately no mutable accessor on either.
     [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T into() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+    [[nodiscard]] constexpr T into() && noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(!Sealed)
+    {
         return std::move(impl_).consume();
     }
 
-    friend constexpr bool operator==(const Refined& a,
-                                     const Refined& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
+    friend constexpr bool operator==(const Refinement& a,
+                                     const Refinement& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
         return a.impl_.peek() == b.impl_.peek();
     }
 
-    friend constexpr auto operator<=>(const Refined& a,
-                                      const Refined& b) noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
+    friend constexpr auto operator<=>(const Refinement& a,
+                                      const Refinement& b) noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
         requires std::three_way_comparable<T>
     {
         return a.impl_.peek() <=> b.impl_.peek();
     }
 
+    // The lattice name is shared by the two refinements, since the
+    // substrate is the same.  What tells them apart is the wrapper's
+    // own identity.
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
@@ -385,100 +439,6 @@ template <auto Pred, typename T>
 mint_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return Refined<Pred, T>{typename Refined<Pred, T>::trusted_door_{}, std::move(value)};
 }
-
-// A refinement with no way to extract the value back out.  Every
-// change to a sealed value therefore goes through a fresh mint, which
-// re-runs the predicate.  That closes the pattern of extracting a
-// value, mutating it behind the predicate's back and quietly
-// re-wrapping it.
-//
-// Reach for it when the predicate is an invariant downstream code
-// relies on continuously rather than only at construction, and
-// especially when the wrapped type has a mutation surface of its own.
-//
-// A const-qualified ordinary refinement is not the same discipline.
-// Const on a parameter does not propagate to the caller's own value,
-// and the extractor is rvalue-qualified, so any caller can still move
-// from it and pull the value out.  Removing the extractor from the
-// type is what makes the discipline unavoidable.
-
-template <auto Pred, typename T>
-class [[nodiscard]] SealedRefined {
-public:
-    using value_type = T;
-    using predicate_type = decltype(Pred);
-    using lattice_type = ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>;
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-    using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, T>;
-
-private:
-    graded_type impl_;
-
-    struct checked_door_ {};
-    struct trusted_door_ {};
-
-    [[nodiscard]] static constexpr T admit_(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires PredicateInvocableOn<Pred, T>
-    {
-        CRUCIBLE_PRE(Pred(v));
-        return v;
-    }
-
-    constexpr SealedRefined(checked_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires PredicateInvocableOn<Pred, T>
-        : impl_{admit_(std::move(v)), typename lattice_type::element_type{}} {}
-
-    constexpr SealedRefined(trusted_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(v), typename lattice_type::element_type{}} {}
-
-    template <auto P, typename U>
-        requires PredicateInvocableOn<P, U>
-    friend constexpr SealedRefined<P, U> mint_sealed_refined(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
-
-    template <auto P, typename U>
-        requires std::move_constructible<U>
-    friend constexpr SealedRefined<P, U>
-    mint_sealed_refined_trusted(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
-
-public:
-    // No check is needed here: the source's own invariant is the proof,
-    // so this is a transfer between two doors and not a door of its
-    // own.
-    constexpr explicit SealedRefined(Refined<Pred, T>&& r) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(r).into(), typename lattice_type::element_type{}} {}
-
-    // Moving is allowed.  The destination carries the same bytes, and
-    // they still satisfy the predicate.  What is forbidden is
-    // extraction, not movement.
-    SealedRefined(const SealedRefined&) = default;
-    SealedRefined(SealedRefined&&) = default;
-    SealedRefined& operator=(const SealedRefined&) = default;
-    SealedRefined& operator=(SealedRefined&&) = default;
-
-    // The only way to observe the value.  There is deliberately no
-    // extractor and no mutable accessor.
-    [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
-
-    friend constexpr bool operator==(const SealedRefined& a,
-                                     const SealedRefined& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
-        return a.impl_.peek() == b.impl_.peek();
-    }
-
-    friend constexpr auto operator<=>(const SealedRefined& a,
-                                      const SealedRefined& b) noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
-        requires std::three_way_comparable<T>
-    {
-        return a.impl_.peek() <=> b.impl_.peek();
-    }
-
-    // The lattice name is shared with the unsealed refinement, since
-    // the substrate is the same.  What tells the two apart is the
-    // wrapper's own identity.
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
-};
 
 template <auto Pred, typename T>
     requires PredicateInvocableOn<Pred, T>
@@ -596,13 +556,15 @@ template <auto Pred, typename T>
 using RefinedLinear = Refined<Pred, Linear<T>>;
 
 // The traits that other layers use to take a refinement apart without
-// naming the wrapper.  Both wrappers answer through the one reflection
-// query in foundation/reflect/Instance.h, and the cv-ref strip is that
-// query's.
+// naming the wrapper.  Both refinements are one template now, so one
+// reflection query in foundation/reflect/Instance.h answers for both,
+// and the cv-ref strip is that query's.  Refined and SealedRefined are
+// alias templates, which a reflection query cannot name: the query
+// dealiases to the class template either way, so ^^Refinement is the
+// only spelling that works and the only one needed.
 
 template <typename T>
-inline constexpr bool is_refined_v = ::foundation::reflect::is_instance_of_v<T, ^^Refined>
-                                  || ::foundation::reflect::is_instance_of_v<T, ^^SealedRefined>;
+inline constexpr bool is_refined_v = ::foundation::reflect::is_instance_of_v<T, ^^Refinement>;
 
 template <typename T>
 concept IsRefined = is_refined_v<T>;
@@ -615,9 +577,13 @@ template <typename T>
     requires is_refined_v<T>
 using refined_predicate_type_t = typename std::remove_cvref_t<T>::predicate_type;
 
+// The sealed-ness is a template argument now rather than a separate
+// class template, so this reads the member the class publishes instead
+// of asking reflection which of two templates the type came from.  The
+// other traits beside it already read members this way.
 template <typename T>
     requires is_refined_v<T>
-inline constexpr bool refined_is_sealed_v = ::foundation::reflect::is_instance_of_v<T, ^^SealedRefined>;
+inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 
 // implies_v<P, Q> reads: every value satisfying P also satisfies Q.
 // P is therefore at least as strong as Q, and P's truth set is

@@ -101,6 +101,36 @@ static_assert(ExtractsRvalue<Refined<fixy::positive, int>>);
 static_assert(!ExtractsLvalue<SealedRefined<fixy::positive, int>>);
 static_assert(!ExtractsRvalue<SealedRefined<fixy::positive, int>>);
 
+// The two refinements are one template with the seal as an argument,
+// and the names stay distinct types over it. A parameter that asks for
+// one still refuses the other, and neither wrapper grew a byte.
+static_assert(std::is_same_v<Refined<fixy::positive, int>, fixy::Refinement<fixy::positive, int, false>>);
+static_assert(std::is_same_v<SealedRefined<fixy::positive, int>, fixy::Refinement<fixy::positive, int, true>>);
+static_assert(!std::is_same_v<Refined<fixy::positive, int>, SealedRefined<fixy::positive, int>>);
+static_assert(!std::is_convertible_v<Refined<fixy::positive, int>, SealedRefined<fixy::positive, int>>);
+static_assert(!std::is_convertible_v<SealedRefined<fixy::positive, int>, Refined<fixy::positive, int>>);
+static_assert(sizeof(Refined<fixy::positive, int>) == sizeof(int));
+static_assert(sizeof(SealedRefined<fixy::positive, int>) == sizeof(int));
+
+// The seal is readable off the type, and the trait is a view of it.
+static_assert(!Refined<fixy::positive, int>::is_sealed);
+static_assert(SealedRefined<fixy::positive, int>::is_sealed);
+static_assert(fixy::refined_is_sealed_v<SealedRefined<fixy::positive, int>>);
+static_assert(!fixy::refined_is_sealed_v<Refined<fixy::positive, int>>);
+
+// One reflection query answers for both, through either alias and
+// through a reference to one.
+static_assert(fixy::is_refined_v<Refined<fixy::positive, int>>);
+static_assert(fixy::is_refined_v<SealedRefined<fixy::positive, int>>);
+static_assert(fixy::is_refined_v<const SealedRefined<fixy::positive, int>&>);
+static_assert(!fixy::is_refined_v<int>);
+
+// Sealing an ordinary refinement is explicit and one-way. There is no
+// constructor back.
+static_assert(std::is_constructible_v<SealedRefined<fixy::positive, int>, Refined<fixy::positive, int>&&>);
+static_assert(!std::is_constructible_v<Refined<fixy::positive, int>, SealedRefined<fixy::positive, int>&&>);
+static_assert(!std::is_constructible_v<SealedRefined<fixy::positive, int>, Refined<fixy::positive, int>&>);
+
 // ── The mints in a constant expression ───────────────────────────────
 
 constexpr Refined<fixy::positive, int> minted = fixy::mint_refined<fixy::positive>(7);
