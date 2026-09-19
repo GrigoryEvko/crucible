@@ -62,6 +62,37 @@ static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -f
 #define CRUCIBLE_SPIN_PAUSE ((void)0)
 #endif
 
+#if defined(__clang__)
+#define CRUCIBLE_CAPABILITY(name) __attribute__((capability(name)))
+
+#define CRUCIBLE_GUARDED_BY(cap) __attribute__((guarded_by(cap)))
+#define CRUCIBLE_PT_GUARDED_BY(cap) __attribute__((pt_guarded_by(cap)))
+
+#define CRUCIBLE_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))
+#define CRUCIBLE_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))
+#define CRUCIBLE_EXCLUDES(...) __attribute__((locks_excluded(__VA_ARGS__)))
+
+#define CRUCIBLE_ACQUIRE(...) __attribute__((acquire_capability(__VA_ARGS__)))
+#define CRUCIBLE_RELEASE(...) __attribute__((release_capability(__VA_ARGS__)))
+#define CRUCIBLE_TRY_ACQUIRE(...) __attribute__((try_acquire_capability(__VA_ARGS__)))
+
+#define CRUCIBLE_NO_THREAD_SAFETY __attribute__((no_thread_safety_analysis))
+
+#define CRUCIBLE_ASSERT_CAPABILITY(cap) __attribute__((assert_capability(cap)))
+#else
+#define CRUCIBLE_CAPABILITY(name)
+#define CRUCIBLE_GUARDED_BY(cap)
+#define CRUCIBLE_PT_GUARDED_BY(cap)
+#define CRUCIBLE_REQUIRES(...)
+#define CRUCIBLE_REQUIRES_SHARED(...)
+#define CRUCIBLE_EXCLUDES(...)
+#define CRUCIBLE_ACQUIRE(...)
+#define CRUCIBLE_RELEASE(...)
+#define CRUCIBLE_TRY_ACQUIRE(...)
+#define CRUCIBLE_NO_THREAD_SAFETY
+#define CRUCIBLE_ASSERT_CAPABILITY(cap)
+#endif
+
 // The guard is mandatory, not cosmetic. GCC does not merely ignore an unknown
 // [[clang::...]] or [[gsl::...]] attribute, it warns on it.
 
@@ -127,11 +158,21 @@ namespace foundation::detail {
 
 // The failure arm shared by the two assertion macros below.
 //
-// Outlined behind a cold call, a use site keeps the compare and a
-// five-instruction call stub, and the rest moves to .text.unlikely.  noreturn
-// is what lets the caller drop everything after the call.  The tracer is read
-// once: written out, the check ran twice, once for the message and once inside
-// breakpoint_if_debugging.
+// Written inline, that arm is a tracer probe, three address loads, a format
+// call and a trap, which the compiler lays down next to the code being
+// guarded. The guard itself is one compare, so the diagnostic outweighs it
+// by an order of magnitude and shares the instruction line with a hot body
+// that never executes it. Outlined behind a cold call, a use site keeps the
+// compare and a five-instruction call stub, and the rest moves to
+// .text.unlikely. That is the shape the code guide asks for.
+//
+// noreturn is what lets the caller drop everything after the call. It is the
+// same promise std::abort already carries, so the failure arm was terminal
+// before this and stays terminal now: a SIGABRT handler that jumps out, as
+// the test probe does, leaves through the jump rather than returning here.
+//
+// The tracer is read once. Written out, the check ran twice, once for the
+// message and once inside breakpoint_if_debugging.
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void fail_invariant(const char* what, const char* predicate,
                                                                      const char* file, int line) noexcept {
     const bool traced = is_debugger_present();
