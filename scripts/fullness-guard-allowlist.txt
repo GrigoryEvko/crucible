@@ -39,6 +39,44 @@
 # the search returns exactly the bound on a miss, and the guard bails
 # before any indexed access.  `>=` would be equally correct but says
 # something weaker than the code means.
+#
+# ── HOW THESE SIX RETIRE ─────────────────────────────────────────────
+#
+# Not with a refined index type.  A refinement bounded at N-1 cannot
+# represent the miss at all, and one bounded at N cannot tell the miss
+# apart from a real index N any better than the raw std::size_t does.
+# The sentinel is not a range problem — it is an optionality problem
+# wearing a range's clothes.
+#
+# The shape that retires them is the one the tree already uses for this
+# job: a strong index with a none() state, the CRUCIBLE_STRONG_ID
+# pattern from the Code Guide (`.raw()`, `.is_none()`, `none()`).  A
+# search returns that type instead of std::size_t, the caller writes
+# `slot.is_none()` instead of `index == bound`, and the comparison the
+# guard scans for stops existing.  Where the index then feeds an
+# indexed access, the caller converts once after the guard, which is
+# also where a `bounded_above` refinement becomes useful — but the
+# refinement is the second step, not the first.
+#
+# Per site:
+#   topology/Pingmesh.h        find_peer() -> PeerSlot.  Note that the
+#                              same idiom also appears at :256 and :280
+#                              spelled `!= MaxPeers`, which this guard
+#                              does not scan at all, so the `==` half
+#                              being allowlisted understates how much of
+#                              this sentinel is unaudited.
+#   observe/SdcDetect.h        the cogs_ linear search -> CogSlot.
+#   observe/SyntheticProbe.h   find_peer() -> PeerSlot; retires :278,
+#                              :291 and :327 together.
+#   safety/diag/RowMismatch.h  `start` is a scan cursor, not a lookup
+#                              result.  A none()-carrying index is the
+#                              wrong shape for a cursor; this one wants
+#                              the scan to return an explicit
+#                              found/exhausted result instead.
+#
+# All six live under include/crucible/, so the edit does not belong to
+# whoever owns this file.  It is recorded here so the next reader does
+# not reach for a refinement and find it does not fit.
 
 include/crucible/topology/Pingmesh.h:221 — not-found sentinel. find_peer() returns MaxPeers on a miss; both operands are checked before peers_ is indexed.
 include/crucible/observe/SdcDetect.h:294 — not-found sentinel. `index` comes from a linear search over cogs_ and equals cogs_.size() only on a miss.

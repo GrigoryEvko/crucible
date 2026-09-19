@@ -120,6 +120,44 @@ case "${1:-}" in
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include/planted" "$tmp_root/scripts"
+
+        # Arm zero, the clean control.  Every arm that follows runs
+        # against a tree that DOES hold a violation, so without this one
+        # a guard that had degenerated into always-fire would satisfy
+        # all of them: each "must stay clean" check below names a
+        # specific line, and a guard flagging every line would still be
+        # caught, but a guard flagging every FILE would not.  This arm
+        # runs first, on a tree that holds only correct shapes, and is
+        # deleted before the real fixture is planted.
+        cat >"$tmp_root/include/planted/planted_clean.h" <<'CLEAN'
+// Correct-shape fixture for the --self-test clean control.
+#pragma once
+#include <array>
+#include <cstddef>
+namespace crucible::planted_clean {
+template <std::size_t Capacity>
+struct Correct {
+    std::array<int, Capacity> entries{};
+    std::size_t count = 0;
+    [[nodiscard]] bool is_full() const noexcept { return count >= Capacity; }
+};
+}  // namespace crucible::planted_clean
+CLEAN
+        : >"$tmp_root/scripts/fullness-guard-allowlist.txt"
+        clean_file="$(mktemp)"
+        clean_rc=0
+        CRUCIBLE_FULLNESS_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$clean_file" || clean_rc=$?
+        if [[ "$clean_rc" -ne 0 ]]; then
+            printf 'check-fullness-guard: SELF-TEST FAILED — a tree of correct `>=` shapes reported %s, want 0.\n' \
+                "$clean_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$clean_file")" >&2
+            rm -f "$clean_file"
+            exit 2
+        fi
+        rm -f "$clean_file" "$tmp_root/include/planted/planted_clean.h"
+
         cat >"$tmp_root/include/planted/planted_fullness.h" <<'PLANTED'
 // Synthetic fullness-guard fixture for --self-test.
 #pragma once
@@ -262,6 +300,17 @@ ALLOW
                 fi
             done
         done
+
+        # Exactly three sites were planted to fail.  The arms above name
+        # the three and clear the six shapes that must stay quiet, which
+        # still lets a fourth report through on a line none of them
+        # probes — the boundary arms only look at a seven-line window
+        # after each marker.  Pin the total so one planted shape means
+        # one diagnostic.
+        fullness_count="$(grep -c '^FULLNESS violation:' "$result_file" || true)"
+        if [[ "$fullness_count" -ne 3 ]]; then
+            fg_fail "expected exactly 3 violations, got ${fullness_count}."
+        fi
 
         # Stale-entry detection must fire on an allowlist line that no
         # longer names a candidate.
