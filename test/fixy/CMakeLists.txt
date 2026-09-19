@@ -267,6 +267,13 @@ fixy_neg_compile_test(neg_bands_satisfies_foreign_tier
   "satisfaction of .same_as<decltype \\(Required\\), fixy::band_tier_t<B> >."
   ".enum class foundation::algebra::lattices::HotPathTier. is not the same as .enum class foundation::algebra::lattices::DetSafeTier.")
 
+# The seven coverage assertions in Bands.h all pass, so none of them
+# shows what the walk does when a tier has no alias.  This namespace
+# mirrors fixy::hot_path and leaves one of the three tiers out.
+fixy_neg_compile_test(neg_bands_tier_without_an_alias
+  "static assertion failed: a namespace missing one tier alias covers its enum"
+  "the comparison reduces to .\\(0 == 1\\).")
+
 # ── Task #105 (A10.5): the eight value wrappers ──────────────────────
 #
 # The checked test keeps the file name of the test it is ported from and

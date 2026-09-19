@@ -43,6 +43,7 @@
 #include <foundation/algebra/lattices/WaitLattice.h>
 
 #include <concepts>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -291,6 +292,59 @@ template <typename T>
 using PerFleet = OpaqueLifetime<Lifetime_v::PER_FLEET, T>;
 }  // namespace opaque_lifetime
 
+// Nothing checked that the seven alias namespaces above cover their
+// enums.  An enumerator added to a lattice enum and not given an alias
+// here is simply unreachable by the short spelling, silently, and the
+// aliases cannot be generated because GCC 16 has no code injection.
+// What can be done is to notice, so the walk below does.
+//
+// It reads each namespace for alias templates, instantiates each one at
+// a probe type, and reads the tier back off the band.  That is the only
+// route: an alias template is not a type until it is substituted, so
+// the tier it names cannot be read from the declaration alone.
+namespace detail {
+
+// Any complete type does.  The walk reads the tier off the band and
+// never the payload.
+struct alias_probe {};
+
+// True when some alias template declared in Ns names Tier.
+template <std::meta::info Ns, auto Tier>
+[[nodiscard]] consteval bool some_alias_names_tier() noexcept {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_template(member) && std::meta::can_substitute(member, {^^alias_probe})) {
+            using B = [:std::meta::substitute(member, {^^alias_probe}):];
+            if constexpr (IsBand<B> && std::same_as<band_tier_t<B>, decltype(Tier)>) {
+                if constexpr (band_tier_v<B> == Tier) return true;
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+// Every enumerator of the enum reflected by EnumInfo has an alias in
+// Ns.  EnumInfo is dealiased by the caller, because the enum spellings
+// this header exports are using-declarations and a reflection of one
+// is not a reflection of the enum.
+template <std::meta::info Ns, std::meta::info EnumInfo>
+[[nodiscard]] consteval bool every_tier_has_an_alias() noexcept {
+    static constexpr auto tiers = std::define_static_array(std::meta::enumerators_of(EnumInfo));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : tiers) {
+        if constexpr (!some_alias_names_tier<Ns, ([:en:])>()) return false;
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+}  // namespace detail
+
 // ── RecipeSpec ──────────────────────────────────────────────────────
 //
 // A value paired with the numerical strategy it was produced under: a
@@ -397,6 +451,36 @@ static_assert(admits(spec, Tolerance::ULP_FP8, RecipeFamily::Kahan));
 static_assert(admits(spec, Tolerance::ULP_FP16, RecipeFamily::None));
 static_assert(!admits(spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
 static_assert(!admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
+
+// Every enumerator of each lattice enum has a short spelling in the
+// namespace that mirrors it.  An enumerator added to one of these enums
+// and left without an alias is reachable only through the long
+// Band<Tier, T> form, which is the gap these seven lines close.
+static_assert(every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^DetSafeTier_v)>(),
+              "fixy/Bands.h: a DetSafeTier enumerator has no alias in fixy::det_safe.");
+static_assert(every_tier_has_an_alias<^^::fixy::alloc_class, std::meta::dealias(^^AllocClassTag_v)>(),
+              "fixy/Bands.h: an AllocClassTag enumerator has no alias in fixy::alloc_class.");
+static_assert(every_tier_has_an_alias<^^::fixy::hot_path, std::meta::dealias(^^HotPathTier_v)>(),
+              "fixy/Bands.h: a HotPathTier enumerator has no alias in fixy::hot_path.");
+static_assert(every_tier_has_an_alias<^^::fixy::cipher_tier, std::meta::dealias(^^CipherTierTag_v)>(),
+              "fixy/Bands.h: a CipherTierTag enumerator has no alias in fixy::cipher_tier.");
+static_assert(every_tier_has_an_alias<^^::fixy::wait, std::meta::dealias(^^WaitStrategy_v)>(),
+              "fixy/Bands.h: a WaitStrategy enumerator has no alias in fixy::wait.");
+// Tolerance arrives here through a using-declaration rather than an
+// alias declaration, and `^^` cannot be applied to one, so this names
+// the enum where it is defined.
+static_assert(every_tier_has_an_alias<^^::fixy::numerical_tier, ^^::foundation::algebra::lattices::Tolerance>(),
+              "fixy/Bands.h: a Tolerance enumerator has no alias in fixy::numerical_tier.");
+static_assert(every_tier_has_an_alias<^^::fixy::opaque_lifetime, std::meta::dealias(^^Lifetime_v)>(),
+              "fixy/Bands.h: a Lifetime enumerator has no alias in fixy::opaque_lifetime.");
+
+// The walk answers no when an enumerator has no alias, which is what
+// keeps the seven assertions above from passing vacuously.  det_safe
+// holds no HotPathTier alias, so asking it about one is the shape of
+// the failure without planting a defect in the table.
+static_assert(!some_alias_names_tier<^^::fixy::det_safe, HotPathTier_v::Hot>(),
+              "fixy/Bands.h: the alias walk must answer no for a tier the namespace does not name, or "
+              "every_tier_has_an_alias proves nothing.");
 
 }  // namespace detail::bands_self_test
 
