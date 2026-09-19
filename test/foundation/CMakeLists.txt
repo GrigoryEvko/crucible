@@ -138,3 +138,8 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
   "foundation/contracts/Post\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "in expansion of macro .CRUCIBLE_POST.")
 
+# The reflect test keeps the file name of the crucible test it stands
+# beside.  The target carries a suffix because test/CMakeLists.txt still
+# registers test_reflect for test/test_reflect.cpp, and a CMake target
+# name is global.
+foundation_test(test_reflect_foundation test_reflect.cpp)

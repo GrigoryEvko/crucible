@@ -4,9 +4,9 @@
 # Crucible's row_hash machinery (RowHashFold.h + every wrapper-specific
 # row_hash_contribution<W> specialization) folds via a SINGLE function:
 #
-#   include/crucible/safety/diag/StableName.h
-#     [[nodiscard]] constexpr std::uint64_t combine_ids(
-#         std::uint64_t a, std::uint64_t b) noexcept
+#   include/foundation/reflect/Hash.h
+#     [[nodiscard]] constexpr uint64_t combine_ids(
+#         uint64_t a, uint64_t b) noexcept
 #
 # Cited by SYMBOL, not by line.  This guard shipped citing ":166" and
 # the definition has since moved to :73 — prose keyed to a line number
@@ -15,9 +15,16 @@
 # never ran.  Both halves of that are fixed: the citation is now
 # line-free, and the guard is wired into ctest + CI.
 #
+# Two copies of the same body sit in the frozen old tree until the
+# sibling-tree extraction retires them: include/crucible/Expr.h, which
+# Stage C flips to include Hash.h, and include/crucible/safety/diag/
+# StableName.h, which Stage D deletes.  The scan below exempts both by
+# path so that the guard stays green while they coexist.  Each exemption
+# goes with its file.
+#
 # A runtime-only or test-only copy of this body is a DRIFT SURFACE:
 # any change to the salt (0x9e3779b97f4a7c15), the bit-mix shape, or
-# the fmix64 finalizer in StableName.h would leave a parallel body
+# the fmix64 finalizer in Hash.h would leave a parallel body
 # stale, and silently break the wire-format witness without tripping
 # the ceremony anchor static_assert.
 #
@@ -37,7 +44,7 @@
 #   - `combine_ids_v2`, `combine_ids_test`, etc.
 #
 # It does NOT flag:
-#   - `detail::combine_ids` references (the canonical call form)
+#   - `reflect::combine_ids` references (the canonical call form)
 #   - `combine_ids` in comments or doc-strings
 #
 # Exit status:
@@ -60,7 +67,9 @@ Usage:
   check-no-combine-ids-duplicate.sh -h | --help  # usage
 
 Exemptions:
-  include/crucible/safety/diag/StableName.h   the canonical definition
+  include/foundation/reflect/Hash.h           the canonical definition
+  include/crucible/Expr.h                     frozen chain duplicate, gone at Stage C
+  include/crucible/safety/diag/StableName.h   frozen chain duplicate, gone at Stage D
   test/safety_neg/**                          negative-compile fixtures
   a match inside a `//` or `*` comment        prose, not a definition
 
@@ -79,6 +88,7 @@ case "${1:-}" in
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/src/planted" \
+                 "$tmp_root/include/foundation/reflect" \
                  "$tmp_root/include/crucible/safety/diag" \
                  "$tmp_root/test/safety_neg"
         cat >"$tmp_root/src/planted/planted_combine.cpp" <<'PLANTED'
@@ -95,17 +105,28 @@ constexpr std::uint64_t runtime_combine_ids(std::uint64_t a, std::uint64_t b) no
 }
 // CLEAN — the canonical call form carries no prefix or suffix.
 constexpr std::uint64_t planted_caller(std::uint64_t a, std::uint64_t b) noexcept {
-    return ::crucible::safety::diag::detail::combine_ids(a, b);
+    return ::foundation::reflect::combine_ids(a, b);
 }
 // CLEAN — combine_ids_in_comment named only in prose, not an identifier.
 }  // namespace crucible::planted
 PLANTED
         # Exemption axis: the canonical definition site.
-        cat >"$tmp_root/include/crucible/safety/diag/StableName.h" <<'CANON'
+        cat >"$tmp_root/include/foundation/reflect/Hash.h" <<'CANON'
 #pragma once
 // Canonical site — exempt even when it names combine_ids_runtime in prose.
 constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
 CANON
+        # Exemption axis: the two frozen chain duplicates of the body.
+        cat >"$tmp_root/include/crucible/Expr.h" <<'FROZEN_C'
+#pragma once
+// Frozen duplicate until Stage C — exempt by path.
+constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
+FROZEN_C
+        cat >"$tmp_root/include/crucible/safety/diag/StableName.h" <<'FROZEN_D'
+#pragma once
+// Frozen duplicate until Stage D — exempt by path.
+constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
+FROZEN_D
         # Exemption axis: negative-compile fixtures may name the ban.
         cat >"$tmp_root/test/safety_neg/planted_neg.cpp" <<'NEG'
 // Exempt — safety_neg fixtures document what they reject.
@@ -138,18 +159,24 @@ NEG
         planted_hits="$(grep -cE 'planted_combine\.cpp:[0-9]+' "$result_file" || true)"
         [[ "$planted_hits" -eq 2 ]] || \
             ci_fail "expected 2 planted hits, saw ${planted_hits} — the canonical call form or a comment leaked through."
-        # Neither exemption axis may leak.  Match the `path:line`
+        # No exemption axis may leak.  Match the `path:line`
         # diagnostic form, NOT the bare filename: the guard's own hint
-        # text names StableName.h, so a substring grep would report a
+        # text names Hash.h, so a substring grep would report a
         # leak that never happened.
-        if grep -qE 'StableName\.h:[0-9]+' "$result_file"; then
+        if grep -qE 'Hash\.h:[0-9]+' "$result_file"; then
             ci_fail "canonical-definition exemption leaked."
+        fi
+        if grep -qE 'Expr\.h:[0-9]+' "$result_file"; then
+            ci_fail "frozen-duplicate exemption for Expr.h leaked."
+        fi
+        if grep -qE 'StableName\.h:[0-9]+' "$result_file"; then
+            ci_fail "frozen-duplicate exemption for StableName.h leaked."
         fi
         if grep -qE 'planted_neg\.cpp:[0-9]+' "$result_file"; then
             ci_fail "test/safety_neg exemption leaked."
         fi
         rm -f "$result_file"
-        printf 'check-no-combine-ids-duplicate: self-test passed — prefix + suffix duplicates caught; canonical call form, StableName.h and test/safety_neg all exempt.\n' >&2
+        printf 'check-no-combine-ids-duplicate: self-test passed — prefix + suffix duplicates caught; canonical call form, Hash.h, the two frozen duplicates and test/safety_neg all exempt.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -162,7 +189,7 @@ scan_root="${CRUCIBLE_COMBINE_IDS_TEST_ROOT:-$project_root}"
 
 # Pattern: `combine_ids` immediately followed or preceded by a
 # non-`::` non-word character, AND the immediate context is NOT
-# `detail::combine_ids` or `safety::diag::detail::combine_ids` (the
+# `reflect::combine_ids` or `::foundation::reflect::combine_ids` (the
 # canonical call form).
 #
 # We anchor on identifier shapes: `\w*combine_ids\w*\b` where the
@@ -184,7 +211,17 @@ while IFS= read -r match; do
     # Skip the canonical site (belt-and-braces — its identifier is
     # exactly `combine_ids` with no prefix/suffix so the pattern
     # can't match it anyway).
-    if [[ "$file" == "include/crucible/safety/diag/StableName.h" ]]; then
+    if [[ "$file" == "include/foundation/reflect/Hash.h" ]]; then
+        continue
+    fi
+
+    # Skip the two frozen chain duplicates of the canonical body.  The
+    # identifier in each is exactly `combine_ids`, as at the canonical
+    # site, so the exemption is by path and not by a renamed identifier.
+    # Stage C flips Expr.h to include Hash.h and Stage D deletes
+    # StableName.h.  Each exemption goes with its file.
+    if [[ "$file" == "include/crucible/Expr.h" || \
+          "$file" == "include/crucible/safety/diag/StableName.h" ]]; then
         continue
     fi
 
@@ -237,9 +274,9 @@ The canonical definition is constexpr and callable at BOTH compile
 time AND runtime — do not re-introduce a parallel body under any
 alternative name.  Route the call through:
 
-  ::crucible::safety::diag::detail::combine_ids(a, b)
+  ::foundation::reflect::combine_ids(a, b)
 
-(see combine_ids in include/crucible/safety/diag/StableName.h).
+(see combine_ids in include/foundation/reflect/Hash.h).
 HINT
     exit 1
 fi
