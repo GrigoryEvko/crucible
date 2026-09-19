@@ -28,7 +28,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 #include <crucible/safety/diag/RowMismatch.h>
 
 #include <array>

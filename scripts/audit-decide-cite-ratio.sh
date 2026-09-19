@@ -181,7 +181,7 @@ ANCHOR
             # Decide.h carries its tokens on comment-only lines: the sibling's
             # counter rejects lines opening with a comment, so this file
             # contributes ZERO cites, while `git log -S` still sees the bytes.
-            selftest_decide_h="$tmp_root/include/crucible/safety/Decide.h"
+            selftest_decide_h="$tmp_root/include/crucible/safety/_Decide.h"
             {
                 printf '#pragma once\n'
                 printf '// Synthetic Decide.h for --self-test.\n'
@@ -315,7 +315,10 @@ if [[ ! -x "$audit_script" ]]; then
     exit 2
 fi
 
-decide_h="$scan_root/include/crucible/safety/Decide.h"
+# The old catalog is marked superseded (_Decide.h) until Stage D deletes
+# it; the pickaxe below names both spellings so the introduction dates
+# survive the rename.
+decide_h="$scan_root/include/crucible/safety/_Decide.h"
 if [[ ! -f "$decide_h" ]]; then
     printf 'audit-decide-cite-ratio: missing %s\n' "$decide_h" >&2
     exit 2
@@ -350,7 +353,7 @@ intro_date_for() {
     local proc="$1" all
     all="$(git -C "$scan_root" log --reverse --format=%ad --date=short \
         -S "decide::${proc}" \
-        -- "include/crucible/safety/Decide.h" 2>/dev/null || true)"
+        -- "include/crucible/safety/_Decide.h" "include/crucible/safety/Decide.h" 2>/dev/null || true)"
     printf '%s' "${all%%$'\n'*}"
 }
 

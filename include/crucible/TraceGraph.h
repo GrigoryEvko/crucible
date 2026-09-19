@@ -8,9 +8,9 @@
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Post.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Post.h>
+#include <crucible/safety/_Pre.h>
 
 namespace crucible {
 

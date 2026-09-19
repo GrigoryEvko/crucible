@@ -15,7 +15,7 @@
 
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/_Lattice.h>
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 
 #include <array>
 #include <compare>

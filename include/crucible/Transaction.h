@@ -12,8 +12,8 @@
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/ClockSource.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Post.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Post.h>
 
 #include <cassert>
 #include <chrono>

@@ -24,7 +24,7 @@
 // every few milliseconds. Nothing here sits on a hot path, so the fold
 // bought nothing worth that.
 
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 #include <crucible/fixy/Handle.h>
 
 #include <algorithm>

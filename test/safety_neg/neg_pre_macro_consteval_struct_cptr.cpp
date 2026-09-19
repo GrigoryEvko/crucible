@@ -23,7 +23,7 @@
 //
 // Expected diagnostic: "non-constant condition for static assertion".
 
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 #include <cstdint>
 

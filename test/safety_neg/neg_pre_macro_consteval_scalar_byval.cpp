@@ -18,7 +18,7 @@
 // — GCC's consteval evaluator hitting `if consteval { __builtin_trap(); }`
 // in the CRUCIBLE_PRE expansion.
 
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 namespace {
 

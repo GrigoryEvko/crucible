@@ -11,8 +11,8 @@
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Pre.h>
 
 #include <cstddef>
 #include <cstdint>

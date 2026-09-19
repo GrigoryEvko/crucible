@@ -47,7 +47,7 @@
 #include <cstdio>
 #include <span>
 
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 
 #include "bench_harness.h"
 

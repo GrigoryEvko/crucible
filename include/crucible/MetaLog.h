@@ -21,11 +21,11 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/warden/Registry.h>
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/HugePageBuffer.h>
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/Post.h>
+#include <crucible/safety/_Post.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Stale.h>
 

@@ -34,7 +34,7 @@
 // the non-constexpr trap planted by the if-consteval branch in
 // CRUCIBLE_PRE (which CRUCIBLE_POST delegates to).
 
-#include <crucible/safety/Post.h>
+#include <crucible/safety/_Post.h>
 
 #include <cstdint>
 

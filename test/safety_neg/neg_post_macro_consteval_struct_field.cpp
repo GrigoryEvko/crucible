@@ -18,7 +18,7 @@
 //
 // Expected diagnostic: "non-constant condition for static assertion".
 
-#include <crucible/safety/Post.h>
+#include <crucible/safety/_Post.h>
 
 namespace {
 

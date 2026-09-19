@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Linear.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>

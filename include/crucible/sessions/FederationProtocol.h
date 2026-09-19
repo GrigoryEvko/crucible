@@ -13,7 +13,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/FederationPermission.h>
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 #include <crucible/safety/diag/RowMismatch.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionGlobal.h>

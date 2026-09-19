@@ -36,7 +36,7 @@
 // expression" / "__builtin_trap" — GCC's consteval evaluator hitting
 // the non-constexpr trap planted by the if-consteval branch.
 
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 #include <cstdint>
 

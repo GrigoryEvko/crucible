@@ -7,7 +7,7 @@
 
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/CpuPinned.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 #include <crucible/effects/_ExecCtx.h>
 

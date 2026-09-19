@@ -394,7 +394,7 @@ HEADER
         local n=0
         n=$(
             rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
-               --glob '!include/crucible/safety/Decide.h' \
+               --glob '!include/crucible/safety/_Decide.h' \
                "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
         )
         printf '  %-30s %s\n' "decide::$proc" "$n"
@@ -459,7 +459,7 @@ print_json() {
         local n=0
         n=$(
             rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
-               --glob '!include/crucible/safety/Decide.h' \
+               --glob '!include/crucible/safety/_Decide.h' \
                "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
         )
         if [[ $first -eq 0 ]]; then printf ','; fi

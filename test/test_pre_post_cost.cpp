@@ -15,7 +15,7 @@
 // undefined, which makes the hardening fence expand to nothing.  This
 // translation unit does not define it.
 
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 #include <cstddef>
 #include <cstdio>

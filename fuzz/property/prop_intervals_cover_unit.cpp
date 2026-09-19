@@ -48,7 +48,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 
 #include <array>
 #include <cstdint>

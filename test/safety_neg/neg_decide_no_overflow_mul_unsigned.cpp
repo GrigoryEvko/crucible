@@ -18,8 +18,8 @@
 // predicate first; all four spellings are valid GCC 16.1.1 diagnostic
 // outputs from CRUCIBLE_PRE's if-consteval-trap pattern.
 
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Pre.h>
 
 #include <cstdint>
 #include <limits>

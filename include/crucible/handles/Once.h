@@ -2,8 +2,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Pinned.h>
-#include <crucible/safety/Post.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Post.h>
+#include <crucible/safety/_Pre.h>
 
 #include <atomic>
 #include <cstdlib>

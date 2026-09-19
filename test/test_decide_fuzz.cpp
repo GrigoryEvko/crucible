@@ -34,8 +34,8 @@
 // witness.
 
 #include <crucible/Philox.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/DecideOracle.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_DecideOracle.h>
 
 #include <array>
 #include <cstdint>

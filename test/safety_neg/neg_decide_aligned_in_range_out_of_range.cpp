@@ -109,8 +109,8 @@
 //   "non-constant condition" / "not a constant expression" /
 //   "__builtin_trap" / "call to non-constexpr function".
 
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Pre.h>
 
 #include <cstdint>
 

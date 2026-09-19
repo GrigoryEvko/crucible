@@ -85,8 +85,8 @@
 //   "__builtin_trap" / "call to non-constexpr function".
 
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Pre.h>
 
 namespace {
 

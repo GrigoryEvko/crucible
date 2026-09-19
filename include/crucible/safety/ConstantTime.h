@@ -14,7 +14,7 @@
 // and costs cycles.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 
 #include <concepts>
 #include <cstddef>

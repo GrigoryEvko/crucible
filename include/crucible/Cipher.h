@@ -31,9 +31,9 @@
 // rather than through the fixy umbrella.  The umbrella header that
 // re-exports the contract macros includes this header, so reaching the
 // macros through it would be a circular include.
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Post.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Post.h>
+#include <crucible/safety/_Pre.h>
 
 #include <fcntl.h>
 #include <unistd.h>

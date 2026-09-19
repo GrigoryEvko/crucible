@@ -5,7 +5,7 @@
 // and assigning over the first, whose destructor frees it.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 
 #include <cstddef>
 #include <cstdint>

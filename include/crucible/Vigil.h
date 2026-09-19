@@ -36,7 +36,7 @@
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/Post.h>
+#include <crucible/safety/_Post.h>
 #include <crucible/safety/Refined.h>
 
 #include <atomic>

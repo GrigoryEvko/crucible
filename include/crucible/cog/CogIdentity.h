@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_Pre.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstddef>

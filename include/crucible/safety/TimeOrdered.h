@@ -19,7 +19,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
-#include <crucible/safety/Decide.h>
+#include <crucible/safety/_Decide.h>
 
 #include <cstddef>
 #include <cstdint>

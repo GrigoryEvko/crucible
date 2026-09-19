@@ -11,10 +11,10 @@
 // from two using declarations in one namespace is not a redeclaration, so the
 // umbrella's own declarations stay compatible.
 #include "safety/AllocClass.h"
-#include "safety/Decide.h"
+#include "safety/_Decide.h"
 #include "safety/Mutation.h"
-#include "safety/Post.h"
-#include "safety/Pre.h"
+#include "safety/_Post.h"
+#include "safety/_Pre.h"
 #include "safety/Refined.h"
 
 namespace crucible::fixy::wrap {

@@ -6,7 +6,7 @@
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/safety/_Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/sessions/AsyncPipelineSession.h>
 

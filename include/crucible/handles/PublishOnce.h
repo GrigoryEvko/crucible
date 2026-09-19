@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>
-#include <crucible/safety/Post.h>
+#include <crucible/safety/_Post.h>
 
 #include <atomic>
 #include <cstdio>

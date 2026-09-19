@@ -3,8 +3,8 @@
 // These names live in crucible::decide.  The re-export lets a caller that
 // pulls in only the fixy surface reach them without naming that namespace.
 
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/DecideOracle.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/_DecideOracle.h>
 
 namespace crucible::fixy::decide {
 
