@@ -43,6 +43,16 @@ static_assert(fr::enumerator_name(Lamp::Red) == "Red");
 static_assert(fr::enumerator_name(Lamp::Magenta) == "Magenta");
 static_assert(fr::enumerator_name(static_cast<Lamp>(0x06)).empty());
 
+// enum_count derives from the enumerator list, and enum_name answers the
+// sentinel where enumerator_name answers empty.  The sentinel spells the
+// unqualified enum name.
+static_assert(fr::enum_count<Lamp> == 5);
+static_assert(fr::unknown_enum_sentinel<Lamp> == "<unknown Lamp>");
+static_assert(fr::enum_name(Lamp::Off) == "Off");
+static_assert(fr::enum_name(Lamp::Magenta) == "Magenta");
+static_assert(fr::enum_name(static_cast<Lamp>(0x06)) == "<unknown Lamp>");
+static_assert(fr::enum_name(static_cast<Lamp>(0x06)) == fr::unknown_enum_sentinel<Lamp>);
+
 [[nodiscard]] consteval int count_lamp_enumerators() noexcept {
     int n = 0;
     fr::for_each_enumerator<Lamp>([&](Lamp, std::string_view) noexcept { ++n; });
@@ -127,6 +137,15 @@ int main() {
         Lamp volatile lamp_v = Lamp::Green;
         if (fr::enumerator_name(static_cast<Lamp>(lamp_v)) != "Green") {
             std::fprintf(stderr, "test_reflect: enumerator_name(Green) is wrong\n");
+            return 1;
+        }
+        if (fr::enum_name(static_cast<Lamp>(lamp_v)) != "Green") {
+            std::fprintf(stderr, "test_reflect: enum_name(Green) is wrong\n");
+            return 1;
+        }
+        Lamp volatile bad_v = static_cast<Lamp>(0x06);
+        if (fr::enum_name(static_cast<Lamp>(bad_v)) != "<unknown Lamp>") {
+            std::fprintf(stderr, "test_reflect: enum_name(0x06) is not the sentinel\n");
             return 1;
         }
         int counter = 0;

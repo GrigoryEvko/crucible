@@ -16,6 +16,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -34,25 +35,12 @@ enum class AllocClassTag : std::uint8_t {
     Stack = 5,  // no allocator call at all
 };
 
-inline constexpr std::size_t alloc_class_tag_count = std::meta::enumerators_of(^^AllocClassTag).size();
+inline constexpr std::size_t alloc_class_tag_count = ::foundation::reflect::enum_count<AllocClassTag>;
 
+// The identifier of t, or "<unknown AllocClassTag>" for a value outside
+// the enum.
 [[nodiscard]] consteval std::string_view alloc_class_tag_name(AllocClassTag t) noexcept {
-    switch (t) {
-        case AllocClassTag::HugePage:
-            return "HugePage";
-        case AllocClassTag::Mmap:
-            return "Mmap";
-        case AllocClassTag::Heap:
-            return "Heap";
-        case AllocClassTag::Arena:
-            return "Arena";
-        case AllocClassTag::Pool:
-            return "Pool";
-        case AllocClassTag::Stack:
-            return "Stack";
-        default:
-            return std::string_view{"<unknown AllocClassTag>"};
-    }
+    return ::foundation::reflect::enum_name(t);
 }
 
 struct AllocClassLattice : ChainLatticeOps<AllocClassTag> {
@@ -62,39 +50,13 @@ struct AllocClassLattice : ChainLatticeOps<AllocClassTag> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "AllocClassLattice"; }
 
     template <AllocClassTag T>
-    struct At {
-        struct element_type {
-            using alloc_class_tag_value_type = AllocClassTag;
-            [[nodiscard]] constexpr operator alloc_class_tag_value_type() const noexcept { return T; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<T> {
+        using alloc_class_tag_value_type = AllocClassTag;
+    };
 
+    template <AllocClassTag T>
+    struct At : PinnedAt<AllocClassLattice, T, AtElement<T>> {
         static constexpr AllocClassTag tag = T;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (T) {
-                case AllocClassTag::HugePage:
-                    return "AllocClassLattice::At<HugePage>";
-                case AllocClassTag::Mmap:
-                    return "AllocClassLattice::At<Mmap>";
-                case AllocClassTag::Heap:
-                    return "AllocClassLattice::At<Heap>";
-                case AllocClassTag::Arena:
-                    return "AllocClassLattice::At<Arena>";
-                case AllocClassTag::Pool:
-                    return "AllocClassLattice::At<Pool>";
-                case AllocClassTag::Stack:
-                    return "AllocClassLattice::At<Stack>";
-                default:
-                    return "AllocClassLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -113,90 +75,25 @@ static_assert(alloc_class_tag_count == 6, "AllocClassTag catalog diverged from {
                                           "Arena, Pool, Stack}.  Confirm intent and update the hot-path "
                                           "admission gates.");
 
-[[nodiscard]] consteval bool every_alloc_class_tag_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^AllocClassTag));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (alloc_class_tag_name([:en:]) == std::string_view{"<unknown AllocClassTag>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_alloc_class_tag_has_name(), "alloc_class_tag_name() switch missing an arm for at least one "
-                                                "tag.");
-
-static_assert(Lattice<AllocClassLattice>);
-static_assert(BoundedLattice<AllocClassLattice>);
-static_assert(Lattice<alloc_class_tag::HugePageAlloc>);
-static_assert(Lattice<alloc_class_tag::MmapAlloc>);
-static_assert(Lattice<alloc_class_tag::HeapAlloc>);
-static_assert(Lattice<alloc_class_tag::ArenaAlloc>);
-static_assert(Lattice<alloc_class_tag::PoolAlloc>);
-static_assert(Lattice<alloc_class_tag::StackAlloc>);
-static_assert(BoundedLattice<alloc_class_tag::StackAlloc>);
+static_assert(verify_chain_lattice<AllocClassLattice>(),
+              "AllocClassLattice: the chain order, the pinned grades or the "
+              "reflected names diverged from the AllocClassTag enumerator list.");
 
 static_assert(!UnboundedLattice<AllocClassLattice>);
 static_assert(!Semiring<AllocClassLattice>);
 
-static_assert(std::is_empty_v<alloc_class_tag::StackAlloc::element_type>);
-static_assert(std::is_empty_v<alloc_class_tag::HeapAlloc::element_type>);
-static_assert(std::is_empty_v<alloc_class_tag::HugePageAlloc::element_type>);
-
-static_assert(verify_chain_lattice_exhaustive<AllocClassLattice>(),
-              "AllocClassLattice chain-order lattice axioms fail at some triple.");
-static_assert(verify_chain_lattice_distributive_exhaustive<AllocClassLattice>(),
-              "AllocClassLattice chain fails distributivity at some triple.");
-
-static_assert(AllocClassLattice::leq(AllocClassTag::HugePage, AllocClassTag::Mmap));
-static_assert(AllocClassLattice::leq(AllocClassTag::Mmap, AllocClassTag::Heap));
-static_assert(AllocClassLattice::leq(AllocClassTag::Heap, AllocClassTag::Arena));
-static_assert(AllocClassLattice::leq(AllocClassTag::Arena, AllocClassTag::Pool));
-static_assert(AllocClassLattice::leq(AllocClassTag::Pool, AllocClassTag::Stack));
-static_assert(AllocClassLattice::leq(AllocClassTag::HugePage, AllocClassTag::Stack));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Stack, AllocClassTag::HugePage));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Stack, AllocClassTag::Pool));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Pool, AllocClassTag::Arena));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Heap, AllocClassTag::HugePage));
-
 static_assert(AllocClassLattice::bottom() == AllocClassTag::HugePage);
 static_assert(AllocClassLattice::top() == AllocClassTag::Stack);
 
-static_assert(AllocClassLattice::join(AllocClassTag::HugePage, AllocClassTag::Stack) == AllocClassTag::Stack);
-static_assert(AllocClassLattice::join(AllocClassTag::Heap, AllocClassTag::Arena) == AllocClassTag::Arena);
-static_assert(AllocClassLattice::meet(AllocClassTag::HugePage, AllocClassTag::Stack) == AllocClassTag::HugePage);
-static_assert(AllocClassLattice::meet(AllocClassTag::Pool, AllocClassTag::Stack) == AllocClassTag::Pool);
-
 static_assert(AllocClassLattice::name() == "AllocClassLattice");
 static_assert(alloc_class_tag::HugePageAlloc::name() == "AllocClassLattice::At<HugePage>");
-static_assert(alloc_class_tag::MmapAlloc::name() == "AllocClassLattice::At<Mmap>");
-static_assert(alloc_class_tag::HeapAlloc::name() == "AllocClassLattice::At<Heap>");
-static_assert(alloc_class_tag::ArenaAlloc::name() == "AllocClassLattice::At<Arena>");
-static_assert(alloc_class_tag::PoolAlloc::name() == "AllocClassLattice::At<Pool>");
 static_assert(alloc_class_tag::StackAlloc::name() == "AllocClassLattice::At<Stack>");
+static_assert(AllocClassLattice::At<static_cast<AllocClassTag>(255)>::name() == "AllocClassLattice::At<?>");
 
-[[nodiscard]] consteval bool every_at_alloc_class_tag_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^AllocClassTag));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (AllocClassLattice::At<([:en:])>::name() == std::string_view{"AllocClassLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_alloc_class_tag_has_name(), "AllocClassLattice::At<T>::name() switch missing an arm for at "
-                                                   "least one tag.");
+static_assert(alloc_class_tag_name(AllocClassTag::Arena) == "Arena");
+static_assert(alloc_class_tag_name(static_cast<AllocClassTag>(255)) == "<unknown AllocClassTag>");
 
 static_assert(alloc_class_tag::HugePageAlloc::tag == AllocClassTag::HugePage);
-static_assert(alloc_class_tag::MmapAlloc::tag == AllocClassTag::Mmap);
-static_assert(alloc_class_tag::HeapAlloc::tag == AllocClassTag::Heap);
-static_assert(alloc_class_tag::ArenaAlloc::tag == AllocClassTag::Arena);
-static_assert(alloc_class_tag::PoolAlloc::tag == AllocClassTag::Pool);
 static_assert(alloc_class_tag::StackAlloc::tag == AllocClassTag::Stack);
 
 struct OneByteValue {

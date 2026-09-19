@@ -13,11 +13,13 @@
 #include <foundation/contracts/Decide.h>
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 #include <meta>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -83,6 +85,43 @@ template <ScopedEnum E>
         }
     });
     return result;
+}
+
+// The number of enumerators of E.  A count constant that a lattice
+// header publishes derives from this, so the count and the enum cannot
+// drift apart.
+
+template <ScopedEnum E>
+inline constexpr std::size_t enum_count = std::meta::enumerators_of(^^E).size();
+
+namespace detail {
+
+// The text is "<unknown E>" with the unqualified name of E.  It lives
+// in static storage, so the view stays valid for the whole program.
+
+template <ScopedEnum E>
+[[nodiscard]] consteval std::string_view make_unknown_enum_sentinel() {
+    std::string text{"<unknown "};
+    text += std::meta::identifier_of(^^E);
+    text += '>';
+    return std::define_static_string(text);
+}
+
+}  // namespace detail
+
+template <ScopedEnum E>
+inline constexpr std::string_view unknown_enum_sentinel = detail::make_unknown_enum_sentinel<E>();
+
+// The identifier of the enumerator that holds `value`, or the sentinel
+// when no enumerator holds it.  This is enumerator_name with the empty
+// result replaced, so a diagnostic never prints an empty name.  It is
+// constexpr rather than consteval so that a runtime diagnostic can call
+// it.
+
+template <ScopedEnum E>
+[[nodiscard]] constexpr std::string_view enum_name(E value) noexcept {
+    const std::string_view found = enumerator_name(value);
+    return found.empty() ? unknown_enum_sentinel<E> : found;
 }
 
 // The return value follows the snprintf convention: it counts the
@@ -166,6 +205,15 @@ static_assert(name_none == "None");
 static_assert(enumerator_name(static_cast<TF>(0x03)) == "AlphaBeta");
 
 static_assert(enumerator_name(static_cast<TF>(0xFF)).empty());
+
+static_assert(enum_count<TF> == 6);
+
+static_assert(unknown_enum_sentinel<TF> == "<unknown TestFlags>");
+static_assert(enum_name(TF::Alpha) == "Alpha");
+static_assert(enum_name(TF::AlphaBeta) == "AlphaBeta");
+static_assert(enum_name(TF::None) == "None");
+static_assert(enum_name(static_cast<TF>(0xFF)) == "<unknown TestFlags>");
+static_assert(enum_name(static_cast<TF>(0xFF)) == unknown_enum_sentinel<TF>);
 
 [[nodiscard]] consteval bool empty_bits_writes_empty_string() noexcept {
     char buf[16] = {};
@@ -360,6 +408,12 @@ inline void runtime_smoke_test() {
 
     auto fancy = static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha) | static_cast<std::uint8_t>(TF::Delta));
     if (!enumerator_name(fancy).empty()) std::abort();
+
+    // enum_name runs under runtime semantics here, with the sentinel
+    // read from static storage.
+    if (enum_name(fancy) != "<unknown TestFlags>") std::abort();
+    if (enum_name(TF::Gamma) != "Gamma") std::abort();
+    if (enum_count<TF> != 6) std::abort();
 
     int counter = 0;
     for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++counter; });

@@ -17,6 +17,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -33,21 +34,12 @@ enum class PinningRequirement : std::uint8_t {
     CrossSocketSafe = 3,  // coherent across every socket
 };
 
-inline constexpr std::size_t pinning_requirement_count = std::meta::enumerators_of(^^PinningRequirement).size();
+inline constexpr std::size_t pinning_requirement_count = ::foundation::reflect::enum_count<PinningRequirement>;
 
+// The identifier of p, or "<unknown PinningRequirement>" for a value
+// outside the enum.
 [[nodiscard]] consteval std::string_view pinning_requirement_name(PinningRequirement p) noexcept {
-    switch (p) {
-        case PinningRequirement::NotRequired:
-            return "NotRequired";
-        case PinningRequirement::PerCore:
-            return "PerCore";
-        case PinningRequirement::PerSocket:
-            return "PerSocket";
-        case PinningRequirement::CrossSocketSafe:
-            return "CrossSocketSafe";
-        default:
-            return std::string_view{"<unknown PinningRequirement>"};
-    }
+    return ::foundation::reflect::enum_name(p);
 }
 
 struct PinningRequirementLattice : ChainLatticeOps<PinningRequirement> {
@@ -57,35 +49,13 @@ struct PinningRequirementLattice : ChainLatticeOps<PinningRequirement> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "PinningRequirementLattice"; }
 
     template <PinningRequirement P>
-    struct At {
-        struct element_type {
-            using pinning_requirement_value_type = PinningRequirement;
-            [[nodiscard]] constexpr operator pinning_requirement_value_type() const noexcept { return P; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<P> {
+        using pinning_requirement_value_type = PinningRequirement;
+    };
 
+    template <PinningRequirement P>
+    struct At : PinnedAt<PinningRequirementLattice, P, AtElement<P>> {
         static constexpr PinningRequirement requirement = P;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (P) {
-                case PinningRequirement::NotRequired:
-                    return "PinningRequirementLattice::At<NotRequired>";
-                case PinningRequirement::PerCore:
-                    return "PinningRequirementLattice::At<PerCore>";
-                case PinningRequirement::PerSocket:
-                    return "PinningRequirementLattice::At<PerSocket>";
-                case PinningRequirement::CrossSocketSafe:
-                    return "PinningRequirementLattice::At<CrossSocketSafe>";
-                default:
-                    return "PinningRequirementLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -99,52 +69,20 @@ using CrossSocketSafePin = PinningRequirementLattice::At<PinningRequirement::Cro
 namespace detail::pinning_requirement_lattice_self_test {
 
 static_assert(pinning_requirement_count == 4, "PinningRequirement catalog diverged from {NotRequired, PerCore, "
-                                              "PerSocket, CrossSocketSafe}.  A new level needs both name "
-                                              "switches extended and every composite that names a level "
-                                              "rechecked.");
+                                              "PerSocket, CrossSocketSafe}.  A new level needs every composite "
+                                              "that names a level rechecked.");
 
-[[nodiscard]] consteval bool every_pinning_requirement_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^PinningRequirement));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (pinning_requirement_name([:en:]) == std::string_view{"<unknown PinningRequirement>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_pinning_requirement_has_name(), "pinning_requirement_name() switch missing an arm for at least one "
-                                                    "level.  Add the arm or the new level leaks the "
-                                                    "'<unknown PinningRequirement>' sentinel into diagnostic output.");
-
-static_assert(Lattice<PinningRequirementLattice>);
-static_assert(BoundedLattice<PinningRequirementLattice>);
-static_assert(Lattice<pinning_requirement::NotRequiredPin>);
-static_assert(Lattice<pinning_requirement::CrossSocketSafePin>);
-static_assert(BoundedLattice<pinning_requirement::CrossSocketSafePin>);
+static_assert(verify_chain_lattice<PinningRequirementLattice>(),
+              "PinningRequirementLattice: the chain order, the pinned grades or "
+              "the reflected names diverged from the PinningRequirement "
+              "enumerator list.");
 
 static_assert(!UnboundedLattice<PinningRequirementLattice>);
 static_assert(!Semiring<PinningRequirementLattice>);
 
-static_assert(std::is_empty_v<pinning_requirement::NotRequiredPin::element_type>);
-static_assert(std::is_empty_v<pinning_requirement::PerCorePin::element_type>);
-static_assert(std::is_empty_v<pinning_requirement::PerSocketPin::element_type>);
-static_assert(std::is_empty_v<pinning_requirement::CrossSocketSafePin::element_type>);
+static_assert(PinningRequirementLattice::bottom() == PinningRequirement::NotRequired);
+static_assert(PinningRequirementLattice::top() == PinningRequirement::CrossSocketSafe);
 
-static_assert(verify_chain_lattice_exhaustive<PinningRequirementLattice>(),
-              "PinningRequirementLattice chain-order lattice axioms fail at some "
-              "triple.  The defect is in leq, join, meet or the enum encoding.");
-static_assert(verify_chain_lattice_distributive_exhaustive<PinningRequirementLattice>(),
-              "PinningRequirementLattice chain fails distributivity at some "
-              "triple.  A chain order always satisfies it, so the defect is in "
-              "join or meet.");
-
-static_assert(PinningRequirementLattice::leq(PinningRequirement::NotRequired, PinningRequirement::PerCore));
-static_assert(PinningRequirementLattice::leq(PinningRequirement::PerCore, PinningRequirement::PerSocket));
-static_assert(PinningRequirementLattice::leq(PinningRequirement::PerSocket, PinningRequirement::CrossSocketSafe));
-static_assert(PinningRequirementLattice::leq(PinningRequirement::NotRequired, PinningRequirement::CrossSocketSafe));
 static_assert(PinningRequirementLattice::leq(PinningRequirement::PerCore, PinningRequirement::PerSocket),
               "A socket-coherent source serves a per-core consumer, because socket "
               "coherence contains core coherence.");
@@ -152,46 +90,17 @@ static_assert(!PinningRequirementLattice::leq(PinningRequirement::PerSocket, Pin
               "A merely core-coherent source does not serve a consumer that migrates "
               "across the socket.  That pairing is the backwards-delta read this "
               "axis forbids.");
-static_assert(!PinningRequirementLattice::leq(PinningRequirement::CrossSocketSafe, PinningRequirement::NotRequired));
-
-static_assert(PinningRequirementLattice::bottom() == PinningRequirement::NotRequired);
-static_assert(PinningRequirementLattice::top() == PinningRequirement::CrossSocketSafe);
-
-static_assert(PinningRequirementLattice::join(PinningRequirement::NotRequired, PinningRequirement::CrossSocketSafe)
-              == PinningRequirement::CrossSocketSafe);
-static_assert(PinningRequirementLattice::join(PinningRequirement::PerCore, PinningRequirement::PerSocket)
-              == PinningRequirement::PerSocket);
-static_assert(PinningRequirementLattice::meet(PinningRequirement::NotRequired, PinningRequirement::CrossSocketSafe)
-              == PinningRequirement::NotRequired);
-static_assert(PinningRequirementLattice::meet(PinningRequirement::PerCore, PinningRequirement::PerSocket)
-              == PinningRequirement::PerCore);
 
 static_assert(PinningRequirementLattice::name() == "PinningRequirementLattice");
 static_assert(pinning_requirement::NotRequiredPin::name() == "PinningRequirementLattice::At<NotRequired>");
-static_assert(pinning_requirement::PerCorePin::name() == "PinningRequirementLattice::At<PerCore>");
-static_assert(pinning_requirement::PerSocketPin::name() == "PinningRequirementLattice::At<PerSocket>");
 static_assert(pinning_requirement::CrossSocketSafePin::name() == "PinningRequirementLattice::At<CrossSocketSafe>");
+static_assert(PinningRequirementLattice::At<static_cast<PinningRequirement>(255)>::name()
+              == "PinningRequirementLattice::At<?>");
 
-[[nodiscard]] consteval bool every_at_pinning_requirement_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^PinningRequirement));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (PinningRequirementLattice::At<([:en:])>::name() == std::string_view{"PinningRequirementLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_pinning_requirement_has_name(),
-              "PinningRequirementLattice::At<P>::name() switch missing an arm for at "
-              "least one level.  Add the arm or the new level leaks the "
-              "'PinningRequirementLattice::At<?>' sentinel.");
+static_assert(pinning_requirement_name(PinningRequirement::PerSocket) == "PerSocket");
+static_assert(pinning_requirement_name(static_cast<PinningRequirement>(255)) == "<unknown PinningRequirement>");
 
 static_assert(pinning_requirement::NotRequiredPin::requirement == PinningRequirement::NotRequired);
-static_assert(pinning_requirement::PerCorePin::requirement == PinningRequirement::PerCore);
-static_assert(pinning_requirement::PerSocketPin::requirement == PinningRequirement::PerSocket);
 static_assert(pinning_requirement::CrossSocketSafePin::requirement == PinningRequirement::CrossSocketSafe);
 
 struct OneByteValue {

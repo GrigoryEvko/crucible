@@ -14,6 +14,8 @@
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -28,18 +30,10 @@ enum class Conf : std::int8_t {
     Secret = 1,
 };
 
-inline constexpr std::size_t conf_count = std::meta::enumerators_of(^^Conf).size();
+inline constexpr std::size_t conf_count = ::foundation::reflect::enum_count<Conf>;
 
-[[nodiscard]] consteval std::string_view conf_name(Conf c) noexcept {
-    switch (c) {
-        case Conf::Public:
-            return "Public";
-        case Conf::Secret:
-            return "Secret";
-        default:
-            return std::string_view{"<unknown Conf>"};
-    }
-}
+// The identifier of c, or "<unknown Conf>" for a value outside the enum.
+[[nodiscard]] consteval std::string_view conf_name(Conf c) noexcept { return ::foundation::reflect::enum_name(c); }
 
 struct ConfLattice {
     using element_type = Conf;
@@ -59,31 +53,13 @@ struct ConfLattice {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "ConfLattice"; }
 
     template <Conf C>
-    struct At {
-        struct element_type {
-            using conf_value_type = Conf;
-            [[nodiscard]] constexpr operator conf_value_type() const noexcept { return C; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<C> {
+        using conf_value_type = Conf;
+    };
 
+    template <Conf C>
+    struct At : PinnedAt<ConfLattice, C, AtElement<C>> {
         static constexpr Conf classification = C;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (C) {
-                case Conf::Public:
-                    return "ConfLattice::At<Public>";
-                case Conf::Secret:
-                    return "ConfLattice::At<Secret>";
-                default:
-                    return "ConfLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -96,51 +72,8 @@ namespace detail::conf_lattice_self_test {
 
 static_assert(conf_count == 2, "Conf must hold exactly the two levels Public and Secret.");
 
-[[nodiscard]] consteval bool every_conf_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Conf));
-    // `template for` unrolls into successive scopes that each declare the
-    // induction variable, so -Wshadow fires on the body.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (conf_name([:en:]) == std::string_view{"<unknown Conf>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_conf_has_name(), "conf_name() has no arm for at least one level, so that level reports "
-                                     "the '<unknown Conf>' sentinel.");
-
-static_assert(Lattice<ConfLattice>);
-static_assert(BoundedLattice<ConfLattice>);
-static_assert(Lattice<ConfLattice::At<Conf::Public>>);
-static_assert(Lattice<ConfLattice::At<Conf::Secret>>);
-static_assert(BoundedLattice<ConfLattice::At<Conf::Secret>>);
-
-// Emptiness is the precondition for the grade to collapse under EBO.
-static_assert(std::is_empty_v<ConfLattice::At<Conf::Public>::element_type>);
-static_assert(std::is_empty_v<ConfLattice::At<Conf::Secret>::element_type>);
-
-[[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Conf));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto ea : enumerators) {
-        template for (constexpr auto eb : enumerators) {
-            template for (constexpr auto ec : enumerators) {
-                if (!verify_bounded_lattice_axioms_at<ConfLattice>([:ea:], [:eb:], [:ec:])) {
-                    return false;
-                }
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(exhaustive_lattice_check(), "ConfLattice's chain-order lattice axioms must hold at every "
-                                          "(Conf)³ triple.");
+static_assert(verify_chain_lattice<ConfLattice>(), "ConfLattice: the chain order, the pinned grades or the reflected "
+                                                   "names diverged from the Conf enumerator list.");
 
 static_assert(ConfLattice::leq(Conf::Public, Conf::Secret), "Public ⊑ Secret in the confidentiality chain.");
 static_assert(!ConfLattice::leq(Conf::Secret, Conf::Public),
@@ -154,23 +87,10 @@ static_assert(ConfLattice::meet(Conf::Public, Conf::Secret) == Conf::Public,
 static_assert(ConfLattice::name() == "ConfLattice");
 static_assert(ConfLattice::At<Conf::Public>::name() == "ConfLattice::At<Public>");
 static_assert(ConfLattice::At<Conf::Secret>::name() == "ConfLattice::At<Secret>");
+static_assert(ConfLattice::At<static_cast<Conf>(9)>::name() == "ConfLattice::At<?>");
 static_assert(conf_name(Conf::Public) == "Public");
 static_assert(conf_name(Conf::Secret) == "Secret");
-
-[[nodiscard]] consteval bool every_at_conf_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Conf));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (ConfLattice::At<([:en:])>::name() == std::string_view{"ConfLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_conf_has_name(), "ConfLattice::At<C>::name() has no arm for at least one level, so "
-                                        "that level reports the 'ConfLattice::At<?>' sentinel.");
+static_assert(conf_name(static_cast<Conf>(9)) == "<unknown Conf>");
 
 static_assert(conf::PublicTier::classification == Conf::Public);
 static_assert(conf::SecretTier::classification == Conf::Secret);

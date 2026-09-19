@@ -16,6 +16,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -31,19 +32,12 @@ enum class SuspendBehavior : std::uint8_t {
     KeepsTicking = 2,  // CLOCK_BOOTTIME — advances through suspend
 };
 
-inline constexpr std::size_t suspend_behavior_count = std::meta::enumerators_of(^^SuspendBehavior).size();
+inline constexpr std::size_t suspend_behavior_count = ::foundation::reflect::enum_count<SuspendBehavior>;
 
+// The identifier of b, or "<unknown SuspendBehavior>" for a value
+// outside the enum.
 [[nodiscard]] consteval std::string_view suspend_behavior_name(SuspendBehavior b) noexcept {
-    switch (b) {
-        case SuspendBehavior::Unknown:
-            return "Unknown";
-        case SuspendBehavior::PausesOnSuspend:
-            return "PausesOnSuspend";
-        case SuspendBehavior::KeepsTicking:
-            return "KeepsTicking";
-        default:
-            return std::string_view{"<unknown SuspendBehavior>"};
-    }
+    return ::foundation::reflect::enum_name(b);
 }
 
 struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
@@ -53,33 +47,13 @@ struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "SuspendBehaviorLattice"; }
 
     template <SuspendBehavior B>
-    struct At {
-        struct element_type {
-            using suspend_behavior_value_type = SuspendBehavior;
-            [[nodiscard]] constexpr operator suspend_behavior_value_type() const noexcept { return B; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<B> {
+        using suspend_behavior_value_type = SuspendBehavior;
+    };
 
+    template <SuspendBehavior B>
+    struct At : PinnedAt<SuspendBehaviorLattice, B, AtElement<B>> {
         static constexpr SuspendBehavior behavior = B;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (B) {
-                case SuspendBehavior::Unknown:
-                    return "SuspendBehaviorLattice::At<Unknown>";
-                case SuspendBehavior::PausesOnSuspend:
-                    return "SuspendBehaviorLattice::At<PausesOnSuspend>";
-                case SuspendBehavior::KeepsTicking:
-                    return "SuspendBehaviorLattice::At<KeepsTicking>";
-                default:
-                    return "SuspendBehaviorLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -92,93 +66,35 @@ using KeepsTickingClock = SuspendBehaviorLattice::At<SuspendBehavior::KeepsTicki
 namespace detail::suspend_behavior_lattice_self_test {
 
 static_assert(suspend_behavior_count == 3, "SuspendBehavior catalog diverged from {Unknown, PausesOnSuspend, "
-                                           "KeepsTicking}.  A new behavior needs both name switches extended "
-                                           "and every composite that names a behavior rechecked.");
+                                           "KeepsTicking}.  A new behavior needs every composite that names "
+                                           "a behavior rechecked.");
 
-[[nodiscard]] consteval bool every_suspend_behavior_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SuspendBehavior));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (suspend_behavior_name([:en:]) == std::string_view{"<unknown SuspendBehavior>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_suspend_behavior_has_name(), "suspend_behavior_name() switch missing an arm for at least one "
-                                                 "behavior.  Add the arm or the new behavior leaks the "
-                                                 "'<unknown SuspendBehavior>' sentinel into diagnostic output.");
-
-static_assert(Lattice<SuspendBehaviorLattice>);
-static_assert(BoundedLattice<SuspendBehaviorLattice>);
-static_assert(Lattice<suspend_behavior::UnknownBehavior>);
-static_assert(Lattice<suspend_behavior::KeepsTickingClock>);
-static_assert(BoundedLattice<suspend_behavior::KeepsTickingClock>);
+static_assert(verify_chain_lattice<SuspendBehaviorLattice>(),
+              "SuspendBehaviorLattice: the chain order, the pinned grades or the "
+              "reflected names diverged from the SuspendBehavior enumerator list.");
 
 static_assert(!UnboundedLattice<SuspendBehaviorLattice>);
 static_assert(!Semiring<SuspendBehaviorLattice>);
 
-static_assert(std::is_empty_v<suspend_behavior::UnknownBehavior::element_type>);
-static_assert(std::is_empty_v<suspend_behavior::PausesOnSuspendClock::element_type>);
-static_assert(std::is_empty_v<suspend_behavior::KeepsTickingClock::element_type>);
+static_assert(SuspendBehaviorLattice::bottom() == SuspendBehavior::Unknown);
+static_assert(SuspendBehaviorLattice::top() == SuspendBehavior::KeepsTicking);
 
-static_assert(verify_chain_lattice_exhaustive<SuspendBehaviorLattice>(),
-              "SuspendBehaviorLattice chain-order lattice axioms fail at some "
-              "triple.  The defect is in leq, join, meet or the enum encoding.");
-static_assert(verify_chain_lattice_distributive_exhaustive<SuspendBehaviorLattice>(),
-              "SuspendBehaviorLattice chain fails distributivity at some triple.  "
-              "A chain order always satisfies it, so the defect is in join or "
-              "meet.");
-
-static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::Unknown, SuspendBehavior::PausesOnSuspend));
-static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking));
-static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::Unknown, SuspendBehavior::KeepsTicking));
 static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking),
               "A boot-clock provider serves a monotonic-clock requirement.");
 static_assert(!SuspendBehaviorLattice::leq(SuspendBehavior::KeepsTicking, SuspendBehavior::PausesOnSuspend),
               "A monotonic clock does not satisfy a suspend-inclusive "
               "requirement.  That pairing is the false-healthy deadline reading "
               "this axis forbids.");
-static_assert(!SuspendBehaviorLattice::leq(SuspendBehavior::KeepsTicking, SuspendBehavior::Unknown));
-
-static_assert(SuspendBehaviorLattice::bottom() == SuspendBehavior::Unknown);
-static_assert(SuspendBehaviorLattice::top() == SuspendBehavior::KeepsTicking);
-
-static_assert(SuspendBehaviorLattice::join(SuspendBehavior::Unknown, SuspendBehavior::KeepsTicking)
-              == SuspendBehavior::KeepsTicking);
-static_assert(SuspendBehaviorLattice::join(SuspendBehavior::PausesOnSuspend, SuspendBehavior::Unknown)
-              == SuspendBehavior::PausesOnSuspend);
-static_assert(SuspendBehaviorLattice::meet(SuspendBehavior::Unknown, SuspendBehavior::KeepsTicking)
-              == SuspendBehavior::Unknown);
-static_assert(SuspendBehaviorLattice::meet(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking)
-              == SuspendBehavior::PausesOnSuspend);
 
 static_assert(SuspendBehaviorLattice::name() == "SuspendBehaviorLattice");
 static_assert(suspend_behavior::UnknownBehavior::name() == "SuspendBehaviorLattice::At<Unknown>");
-static_assert(suspend_behavior::PausesOnSuspendClock::name() == "SuspendBehaviorLattice::At<PausesOnSuspend>");
 static_assert(suspend_behavior::KeepsTickingClock::name() == "SuspendBehaviorLattice::At<KeepsTicking>");
+static_assert(SuspendBehaviorLattice::At<static_cast<SuspendBehavior>(255)>::name() == "SuspendBehaviorLattice::At<?>");
 
-[[nodiscard]] consteval bool every_at_suspend_behavior_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SuspendBehavior));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (SuspendBehaviorLattice::At<([:en:])>::name() == std::string_view{"SuspendBehaviorLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_suspend_behavior_has_name(),
-              "SuspendBehaviorLattice::At<B>::name() switch missing an arm for at "
-              "least one behavior.  Add the arm or the new behavior leaks the "
-              "'SuspendBehaviorLattice::At<?>' sentinel.");
+static_assert(suspend_behavior_name(SuspendBehavior::PausesOnSuspend) == "PausesOnSuspend");
+static_assert(suspend_behavior_name(static_cast<SuspendBehavior>(255)) == "<unknown SuspendBehavior>");
 
 static_assert(suspend_behavior::UnknownBehavior::behavior == SuspendBehavior::Unknown);
-static_assert(suspend_behavior::PausesOnSuspendClock::behavior == SuspendBehavior::PausesOnSuspend);
 static_assert(suspend_behavior::KeepsTickingClock::behavior == SuspendBehavior::KeepsTicking);
 
 struct OneByteValue {

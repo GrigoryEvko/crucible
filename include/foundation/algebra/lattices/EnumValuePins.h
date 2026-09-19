@@ -24,6 +24,7 @@
 #include <foundation/algebra/lattices/ClockSourceLattice.h>
 #include <foundation/algebra/lattices/DetSafeLattice.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
+#include <foundation/algebra/lattices/LifetimeLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
@@ -156,5 +157,14 @@ static_assert(static_cast<std::uint8_t>(ClockSource::TscRaw) == 6, "ClockSource:
 static_assert(static_cast<std::uint8_t>(ClockSource::TscSerialized) == 7, "ClockSource::TscSerialized drifted.");
 static_assert(static_cast<std::uint8_t>(ClockSource::PmuCounter) == 8, "ClockSource::PmuCounter drifted.");
 static_assert(static_cast<std::uint8_t>(ClockSource::PtpHwClock) == 9, "ClockSource::PtpHwClock drifted.");
+
+// Lifetime reached foundation with the OpaqueLifetime band (A10.6).  The
+// old tree carried no pins for it; these pin the values it arrived with.
+static_assert(std::is_same_v<std::underlying_type_t<Lifetime>, std::uint8_t>,
+              "Lifetime underlying type drifted from uint8_t.");
+static_assert(lifetime_count == 3, "Lifetime cardinality drifted from 3.");
+static_assert(static_cast<std::uint8_t>(Lifetime::PER_REQUEST) == 0, "Lifetime::PER_REQUEST drifted.");
+static_assert(static_cast<std::uint8_t>(Lifetime::PER_PROGRAM) == 1, "Lifetime::PER_PROGRAM drifted.");
+static_assert(static_cast<std::uint8_t>(Lifetime::PER_FLEET) == 2, "Lifetime::PER_FLEET drifted.");
 
 }  // namespace foundation::algebra::lattices::detail::found_046_enum_value_pins

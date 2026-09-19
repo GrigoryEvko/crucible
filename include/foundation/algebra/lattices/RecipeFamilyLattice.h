@@ -16,6 +16,8 @@
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <cstdlib>
@@ -35,29 +37,15 @@ enum class RecipeFamily : std::uint8_t {
     Any = 255,  // top: wildcard
 };
 
-inline constexpr std::size_t recipe_family_count = std::meta::enumerators_of(^^RecipeFamily).size();
+inline constexpr std::size_t recipe_family_count = ::foundation::reflect::enum_count<RecipeFamily>;
 
 static_assert(recipe_family_count == 6, "RecipeFamily must hold exactly six enumerators. A new family needs "
-                                        "an arm in recipe_family_name, a place in leq, join and meet, and an "
-                                        "update to this count.");
+                                        "a place in leq, join and meet, and an update to this count.");
 
+// The identifier of f, or "<unknown RecipeFamily>" for a value outside
+// the enum.
 [[nodiscard]] consteval std::string_view recipe_family_name(RecipeFamily f) noexcept {
-    switch (f) {
-        case RecipeFamily::Linear:
-            return "Linear";
-        case RecipeFamily::Pairwise:
-            return "Pairwise";
-        case RecipeFamily::Kahan:
-            return "Kahan";
-        case RecipeFamily::BlockStable:
-            return "BlockStable";
-        case RecipeFamily::None:
-            return "None";
-        case RecipeFamily::Any:
-            return "Any";
-        default:
-            return std::string_view{"<unknown RecipeFamily>"};
-    }
+    return ::foundation::reflect::enum_name(f);
 }
 
 struct RecipeFamilyLattice {
@@ -98,92 +86,43 @@ static_assert(!Semiring<RecipeFamilyLattice>);
 static_assert(sizeof(RecipeFamily) == 1);
 static_assert(std::is_trivially_copyable_v<RecipeFamily>);
 
-[[nodiscard]] consteval bool every_recipe_family_has_name() noexcept {
+static_assert(RecipeFamilyLattice::bottom() == RecipeFamily::None);
+static_assert(RecipeFamilyLattice::top() == RecipeFamily::Any);
+
+// The bounded-lattice axioms at every triple of the six families, and
+// leq, join and meet in agreement at every pair, walked by reflection.
+static_assert(verify_enum_lattice_exhaustive<RecipeFamilyLattice>(),
+              "The M3 axioms must hold at every triple of the six families.  A "
+              "failure means leq, join or meet is wrong for some pair, or the "
+              "routing for None, Any, or two distinct named families is wrong.");
+
+// Every pair of distinct named families is a sibling pair: incomparable,
+// joined at Any and met at None.
+[[nodiscard]] consteval bool named_families_are_siblings() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^RecipeFamily));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (recipe_family_name([:en:]) == std::string_view{"<unknown RecipeFamily>"}) {
-            return false;
+    template for (constexpr auto ea : enumerators) {
+        template for (constexpr auto eb : enumerators) {
+            constexpr RecipeFamily a = [:ea:];
+            constexpr RecipeFamily b = [:eb:];
+            constexpr bool a_named = a != RecipeFamily::None && a != RecipeFamily::Any;
+            constexpr bool b_named = b != RecipeFamily::None && b != RecipeFamily::Any;
+            if constexpr (a_named && b_named && a != b) {
+                if (RecipeFamilyLattice::leq(a, b)) return false;
+                if (RecipeFamilyLattice::join(a, b) != RecipeFamily::Any) return false;
+                if (RecipeFamilyLattice::meet(a, b) != RecipeFamily::None) return false;
+            }
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_recipe_family_has_name(), "recipe_family_name() has no arm for at least one family, so "
-                                              "that family reports the '<unknown RecipeFamily>' sentinel.");
+static_assert(named_families_are_siblings(), "Two distinct named families must stay incomparable, with Any as "
+                                             "their join and None as their meet.");
 
-static_assert(RecipeFamilyLattice::bottom() == RecipeFamily::None);
-static_assert(RecipeFamilyLattice::top() == RecipeFamily::Any);
-
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::Linear, RecipeFamily::Linear));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::BlockStable, RecipeFamily::BlockStable));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::None, RecipeFamily::None));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::Any, RecipeFamily::Any));
-
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::None, RecipeFamily::Linear));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::None, RecipeFamily::Kahan));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::None, RecipeFamily::Any));
-
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::Linear, RecipeFamily::Any));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::Pairwise, RecipeFamily::Any));
-static_assert(RecipeFamilyLattice::leq(RecipeFamily::BlockStable, RecipeFamily::Any));
-
-static_assert(!RecipeFamilyLattice::leq(RecipeFamily::Linear, RecipeFamily::Pairwise));
-static_assert(!RecipeFamilyLattice::leq(RecipeFamily::Pairwise, RecipeFamily::Linear));
-static_assert(!RecipeFamilyLattice::leq(RecipeFamily::Kahan, RecipeFamily::BlockStable));
-static_assert(!RecipeFamilyLattice::leq(RecipeFamily::Linear, RecipeFamily::Kahan));
-
-static_assert(RecipeFamilyLattice::join(RecipeFamily::Kahan, RecipeFamily::Kahan) == RecipeFamily::Kahan);
 static_assert(RecipeFamilyLattice::join(RecipeFamily::Kahan, RecipeFamily::None) == RecipeFamily::Kahan);
-static_assert(RecipeFamilyLattice::join(RecipeFamily::Kahan, RecipeFamily::Any) == RecipeFamily::Any);
-static_assert(RecipeFamilyLattice::join(RecipeFamily::Linear, RecipeFamily::Pairwise) == RecipeFamily::Any);
-static_assert(RecipeFamilyLattice::join(RecipeFamily::Kahan, RecipeFamily::BlockStable) == RecipeFamily::Any);
-
-static_assert(RecipeFamilyLattice::meet(RecipeFamily::Kahan, RecipeFamily::Kahan) == RecipeFamily::Kahan);
 static_assert(RecipeFamilyLattice::meet(RecipeFamily::Kahan, RecipeFamily::Any) == RecipeFamily::Kahan);
-static_assert(RecipeFamilyLattice::meet(RecipeFamily::Kahan, RecipeFamily::None) == RecipeFamily::None);
-static_assert(RecipeFamilyLattice::meet(RecipeFamily::Linear, RecipeFamily::Pairwise) == RecipeFamily::None);
-
-static_assert(RecipeFamilyLattice::join(RecipeFamily::Kahan, RecipeFamily::Kahan) == RecipeFamily::Kahan);
-static_assert(RecipeFamilyLattice::meet(RecipeFamily::Kahan, RecipeFamily::Kahan) == RecipeFamily::Kahan);
-
-static_assert(RecipeFamilyLattice::join(RecipeFamily::Kahan, RecipeFamilyLattice::bottom()) == RecipeFamily::Kahan);
-static_assert(RecipeFamilyLattice::meet(RecipeFamily::Kahan, RecipeFamilyLattice::top()) == RecipeFamily::Kahan);
-
-static_assert(!RecipeFamilyLattice::leq(RecipeFamily::Linear, RecipeFamily::Pairwise)
-              && !RecipeFamilyLattice::leq(RecipeFamily::Pairwise, RecipeFamily::Linear));
-
-[[nodiscard]] consteval bool transitivity_witness() noexcept {
-    return RecipeFamilyLattice::leq(RecipeFamily::None, RecipeFamily::Kahan)
-        && RecipeFamilyLattice::leq(RecipeFamily::Kahan, RecipeFamily::Any)
-        && RecipeFamilyLattice::leq(RecipeFamily::None, RecipeFamily::Any);
-}
-static_assert(transitivity_witness());
-
-[[nodiscard]] consteval bool associativity_witness() noexcept {
-    auto check = [](RecipeFamily a, RecipeFamily b, RecipeFamily c) {
-        auto lhs_join = RecipeFamilyLattice::join(RecipeFamilyLattice::join(a, b), c);
-        auto rhs_join = RecipeFamilyLattice::join(a, RecipeFamilyLattice::join(b, c));
-        auto lhs_meet = RecipeFamilyLattice::meet(RecipeFamilyLattice::meet(a, b), c);
-        auto rhs_meet = RecipeFamilyLattice::meet(a, RecipeFamilyLattice::meet(b, c));
-        return lhs_join == rhs_join && lhs_meet == rhs_meet;
-    };
-    return check(RecipeFamily::Linear, RecipeFamily::Pairwise, RecipeFamily::Kahan)
-        && check(RecipeFamily::None, RecipeFamily::Kahan, RecipeFamily::Any)
-        && check(RecipeFamily::Kahan, RecipeFamily::Any, RecipeFamily::None);
-}
-static_assert(associativity_witness());
-
-[[nodiscard]] consteval bool absorption_witness() noexcept {
-    auto check = [](RecipeFamily a, RecipeFamily b) {
-        return RecipeFamilyLattice::join(a, RecipeFamilyLattice::meet(a, b)) == a
-            && RecipeFamilyLattice::meet(a, RecipeFamilyLattice::join(a, b)) == a;
-    };
-    return check(RecipeFamily::Linear, RecipeFamily::Pairwise) && check(RecipeFamily::None, RecipeFamily::Any)
-        && check(RecipeFamily::Kahan, RecipeFamily::BlockStable);
-}
-static_assert(absorption_witness());
 
 [[nodiscard]] consteval bool non_distributive_witness() noexcept {
     RecipeFamily a = RecipeFamily::Linear;
@@ -197,14 +136,9 @@ static_assert(non_distributive_witness(), "RecipeFamilyLattice must keep its M3 
                                           "meet changed and the partial order is no longer a set of siblings "
                                           "between one bottom and one top.");
 
-static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(RecipeFamily::None, RecipeFamily::Kahan,
-                                                                    RecipeFamily::Any));
-static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(RecipeFamily::Linear, RecipeFamily::Pairwise,
-                                                                    RecipeFamily::Kahan));
-static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(RecipeFamily::Kahan, RecipeFamily::BlockStable,
-                                                                    RecipeFamily::Any));
-static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(RecipeFamily::None, RecipeFamily::None,
-                                                                    RecipeFamily::Any));
+static_assert(RecipeFamilyLattice::name() == "RecipeFamilyLattice");
+static_assert(recipe_family_name(RecipeFamily::BlockStable) == "BlockStable");
+static_assert(recipe_family_name(static_cast<RecipeFamily>(7)) == "<unknown RecipeFamily>");
 
 inline void runtime_smoke_test() {
     RecipeFamily bot = RecipeFamilyLattice::bottom();

@@ -13,9 +13,15 @@
 // At<Grade> pins a grade in the type and carries no runtime state, so
 // its ops are all trivially identity: a one-element lattice has nothing
 // to compare.
+//
+// The grade names are the QTT symbols 0, 1 and ω, not the enumerator
+// identifiers, so the two name switches here stay hand-written where
+// every other lattice reads its names by reflection.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -31,7 +37,7 @@ enum class QttGrade : std::int8_t {
     Omega = 2,
 };
 
-inline constexpr std::size_t qtt_grade_count = std::meta::enumerators_of(^^QttGrade).size();
+inline constexpr std::size_t qtt_grade_count = ::foundation::reflect::enum_count<QttGrade>;
 
 [[nodiscard]] consteval std::string_view qtt_grade_name(QttGrade g) noexcept {
     switch (g) {
@@ -85,20 +91,15 @@ struct QttSemiring {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "QttSemiring"; }
 
     template <QttGrade Grade>
-    struct At {
-        struct element_type {
-            using grade_value_type = QttGrade;
-            [[nodiscard]] constexpr operator grade_value_type() const noexcept { return Grade; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<Grade> {
+        using grade_value_type = QttGrade;
+    };
 
+    // name() hides the reflected one of PinnedAt because the grade
+    // names are symbols, not identifiers.
+    template <QttGrade Grade>
+    struct At : PinnedAt<QttSemiring, Grade, AtElement<Grade>> {
         static constexpr QttGrade grade = Grade;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (Grade) {
@@ -127,6 +128,8 @@ namespace detail::qtt_self_test {
 
 static_assert(qtt_grade_count == 3, "QttGrade must hold exactly the three grades 0, 1 and ω.");
 
+// The two hand-written switches are the one place a new grade can be
+// missed, so both are walked.
 [[nodiscard]] consteval bool every_qtt_grade_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
@@ -142,38 +145,31 @@ static_assert(qtt_grade_count == 3, "QttGrade must hold exactly the three grades
 static_assert(every_qtt_grade_has_name(), "qtt_grade_name() has no arm for at least one grade, so that grade "
                                           "reports the '<unknown QttGrade>' sentinel.");
 
-static_assert(Lattice<QttSemiring>);
-static_assert(BoundedLattice<QttSemiring>);
-static_assert(Semiring<QttSemiring>);
-
-static_assert(Lattice<QttSemiring::At<QttGrade::Zero>>);
-static_assert(Lattice<QttSemiring::At<QttGrade::One>>);
-static_assert(Lattice<QttSemiring::At<QttGrade::Omega>>);
-static_assert(BoundedLattice<QttSemiring::At<QttGrade::One>>);
-
-// Emptiness is the precondition for the grade to collapse under EBO.
-static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Zero>::element_type>);
-static_assert(std::is_empty_v<QttSemiring::At<QttGrade::One>::element_type>);
-static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Omega>::element_type>);
-
-[[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
+[[nodiscard]] consteval bool every_at_grade_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto ea : enumerators) {
-        template for (constexpr auto eb : enumerators) {
-            template for (constexpr auto ec : enumerators) {
-                if (!verify_bounded_lattice_axioms_at<QttSemiring>([:ea:], [:eb:], [:ec:])) {
-                    return false;
-                }
-            }
+    template for (constexpr auto en : enumerators) {
+        // A splice in template-argument position needs the parentheses
+        // to keep `<:` from lexing as a digraph.
+        if (QttSemiring::At<([:en:])>::name() == std::string_view{"QttSemiring::At<?>"}) {
+            return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(exhaustive_lattice_check(), "QttSemiring's chain-order lattice axioms must hold at every "
-                                          "(QttGrade)³ triple.");
+static_assert(every_at_grade_has_name(), "QttSemiring::At<Grade>::name() has no arm for at least one grade, "
+                                         "so that grade reports the 'QttSemiring::At<?>' sentinel.");
+
+// The chain order, the exhaustive lattice axioms and the shape of every
+// At<grade>.  The At name check inside accepts the hand-written symbols
+// because it asks only for a non-empty name that is not the sentinel.
+static_assert(verify_chain_lattice<QttSemiring>(),
+              "QttSemiring: the chain order or the pinned grades diverged from the "
+              "QttGrade enumerator list.");
+
+static_assert(Semiring<QttSemiring>);
 
 [[nodiscard]] consteval bool exhaustive_semiring_check() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
@@ -209,23 +205,6 @@ static_assert(QttSemiring::name() == "QttSemiring");
 static_assert(QttSemiring::At<QttGrade::One>::name() == "QttSemiring::At<1>");
 static_assert(qtt_grade_name(QttGrade::Zero) == "0");
 static_assert(qtt_grade_name(QttGrade::One) == "1");
-
-[[nodiscard]] consteval bool every_at_grade_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        // A splice in template-argument position needs the parentheses
-        // to keep `<:` from lexing as a digraph.
-        if (QttSemiring::At<([:en:])>::name() == std::string_view{"QttSemiring::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_grade_has_name(), "QttSemiring::At<Grade>::name() has no arm for at least one grade, "
-                                         "so that grade reports the 'QttSemiring::At<?>' sentinel.");
 
 static_assert(qtt::Erased::grade == QttGrade::Zero);
 static_assert(qtt::LinearGrade::grade == QttGrade::One);

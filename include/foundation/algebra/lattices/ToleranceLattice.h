@@ -15,6 +15,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -34,27 +35,12 @@ enum class Tolerance : std::uint8_t {
     BITEXACT = 6,  // 0           (bit-identical across replicas and replays)
 };
 
-inline constexpr std::size_t tolerance_count = std::meta::enumerators_of(^^Tolerance).size();
+inline constexpr std::size_t tolerance_count = ::foundation::reflect::enum_count<Tolerance>;
 
+// The identifier of t, or "<unknown Tolerance>" for a value outside the
+// enum.
 [[nodiscard]] consteval std::string_view tolerance_name(Tolerance t) noexcept {
-    switch (t) {
-        case Tolerance::RELAXED:
-            return "RELAXED";
-        case Tolerance::ULP_INT8:
-            return "ULP_INT8";
-        case Tolerance::ULP_FP8:
-            return "ULP_FP8";
-        case Tolerance::ULP_FP16:
-            return "ULP_FP16";
-        case Tolerance::ULP_FP32:
-            return "ULP_FP32";
-        case Tolerance::ULP_FP64:
-            return "ULP_FP64";
-        case Tolerance::BITEXACT:
-            return "BITEXACT";
-        default:
-            return std::string_view{"<unknown Tolerance>"};
-    }
+    return ::foundation::reflect::enum_name(t);
 }
 
 struct ToleranceLattice : ChainLatticeOps<Tolerance> {
@@ -64,41 +50,13 @@ struct ToleranceLattice : ChainLatticeOps<Tolerance> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "ToleranceLattice"; }
 
     template <Tolerance T>
-    struct At {
-        struct element_type {
-            using tolerance_value_type = Tolerance;
-            [[nodiscard]] constexpr operator tolerance_value_type() const noexcept { return T; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<T> {
+        using tolerance_value_type = Tolerance;
+    };
 
+    template <Tolerance T>
+    struct At : PinnedAt<ToleranceLattice, T, AtElement<T>> {
         static constexpr Tolerance tier = T;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (T) {
-                case Tolerance::RELAXED:
-                    return "ToleranceLattice::At<RELAXED>";
-                case Tolerance::ULP_INT8:
-                    return "ToleranceLattice::At<ULP_INT8>";
-                case Tolerance::ULP_FP8:
-                    return "ToleranceLattice::At<ULP_FP8>";
-                case Tolerance::ULP_FP16:
-                    return "ToleranceLattice::At<ULP_FP16>";
-                case Tolerance::ULP_FP32:
-                    return "ToleranceLattice::At<ULP_FP32>";
-                case Tolerance::ULP_FP64:
-                    return "ToleranceLattice::At<ULP_FP64>";
-                case Tolerance::BITEXACT:
-                    return "ToleranceLattice::At<BITEXACT>";
-                default:
-                    return "ToleranceLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -118,69 +76,14 @@ static_assert(tolerance_count == 7, "Tolerance catalog diverged from {RELAXED, U
                                     "ULP_FP16, ULP_FP32, ULP_FP64, BITEXACT}.  Confirm intent and "
                                     "update the precision-budget callers.");
 
-[[nodiscard]] consteval bool every_tolerance_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Tolerance));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (tolerance_name([:en:]) == std::string_view{"<unknown Tolerance>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_tolerance_has_name(), "tolerance_name() switch missing an arm for at least one tier.  "
-                                          "Add the arm or the new tier leaks the '<unknown Tolerance>' "
-                                          "sentinel into diagnostic output.");
-
-static_assert(Lattice<ToleranceLattice>);
-static_assert(BoundedLattice<ToleranceLattice>);
-static_assert(Lattice<tolerance::RelaxedTier>);
-static_assert(Lattice<tolerance::Int8Tier>);
-static_assert(Lattice<tolerance::Fp8Tier>);
-static_assert(Lattice<tolerance::Fp16Tier>);
-static_assert(Lattice<tolerance::Fp32Tier>);
-static_assert(Lattice<tolerance::Fp64Tier>);
-static_assert(Lattice<tolerance::BitexactTier>);
-static_assert(BoundedLattice<tolerance::BitexactTier>);
+static_assert(verify_chain_lattice<ToleranceLattice>(), "ToleranceLattice: the chain order, the pinned grades or the "
+                                                        "reflected names diverged from the Tolerance enumerator list.");
 
 static_assert(!UnboundedLattice<ToleranceLattice>);
 static_assert(!Semiring<ToleranceLattice>);
 
-static_assert(std::is_empty_v<tolerance::RelaxedTier::element_type>);
-static_assert(std::is_empty_v<tolerance::Int8Tier::element_type>);
-static_assert(std::is_empty_v<tolerance::Fp8Tier::element_type>);
-static_assert(std::is_empty_v<tolerance::Fp16Tier::element_type>);
-static_assert(std::is_empty_v<tolerance::Fp32Tier::element_type>);
-static_assert(std::is_empty_v<tolerance::Fp64Tier::element_type>);
-static_assert(std::is_empty_v<tolerance::BitexactTier::element_type>);
-
-static_assert(verify_chain_lattice_exhaustive<ToleranceLattice>(),
-              "ToleranceLattice chain-order lattice axioms fail at some triple.  "
-              "The defect is in leq, join, meet or the enum encoding.");
-static_assert(verify_chain_lattice_distributive_exhaustive<ToleranceLattice>(),
-              "ToleranceLattice chain fails distributivity at some triple.  A "
-              "chain order always satisfies it, so the defect is in join or "
-              "meet.");
-
-static_assert(ToleranceLattice::leq(Tolerance::RELAXED, Tolerance::ULP_INT8));
-static_assert(ToleranceLattice::leq(Tolerance::ULP_INT8, Tolerance::ULP_FP8));
-static_assert(ToleranceLattice::leq(Tolerance::ULP_FP8, Tolerance::ULP_FP16));
-static_assert(ToleranceLattice::leq(Tolerance::ULP_FP16, Tolerance::ULP_FP32));
-static_assert(ToleranceLattice::leq(Tolerance::ULP_FP32, Tolerance::ULP_FP64));
-static_assert(ToleranceLattice::leq(Tolerance::ULP_FP64, Tolerance::BITEXACT));
-static_assert(ToleranceLattice::leq(Tolerance::RELAXED, Tolerance::BITEXACT));
-static_assert(!ToleranceLattice::leq(Tolerance::BITEXACT, Tolerance::RELAXED));
-static_assert(!ToleranceLattice::leq(Tolerance::ULP_FP32, Tolerance::ULP_FP16));
-
 static_assert(ToleranceLattice::bottom() == Tolerance::RELAXED);
 static_assert(ToleranceLattice::top() == Tolerance::BITEXACT);
-
-static_assert(ToleranceLattice::join(Tolerance::RELAXED, Tolerance::BITEXACT) == Tolerance::BITEXACT);
-static_assert(ToleranceLattice::join(Tolerance::ULP_FP8, Tolerance::ULP_FP16) == Tolerance::ULP_FP16);
-static_assert(ToleranceLattice::meet(Tolerance::RELAXED, Tolerance::BITEXACT) == Tolerance::RELAXED);
-static_assert(ToleranceLattice::meet(Tolerance::ULP_FP32, Tolerance::ULP_FP16) == Tolerance::ULP_FP16);
 
 static_assert(ToleranceLattice::join(Tolerance::RELAXED, Tolerance::BITEXACT) == Tolerance::BITEXACT,
               "join gives the strictest-wins reading on this chain, because the "
@@ -192,35 +95,13 @@ static_assert(ToleranceLattice::meet(Tolerance::RELAXED, Tolerance::BITEXACT) ==
 
 static_assert(ToleranceLattice::name() == "ToleranceLattice");
 static_assert(tolerance::RelaxedTier::name() == "ToleranceLattice::At<RELAXED>");
-static_assert(tolerance::Int8Tier::name() == "ToleranceLattice::At<ULP_INT8>");
-static_assert(tolerance::Fp8Tier::name() == "ToleranceLattice::At<ULP_FP8>");
-static_assert(tolerance::Fp16Tier::name() == "ToleranceLattice::At<ULP_FP16>");
-static_assert(tolerance::Fp32Tier::name() == "ToleranceLattice::At<ULP_FP32>");
-static_assert(tolerance::Fp64Tier::name() == "ToleranceLattice::At<ULP_FP64>");
 static_assert(tolerance::BitexactTier::name() == "ToleranceLattice::At<BITEXACT>");
+static_assert(ToleranceLattice::At<static_cast<Tolerance>(255)>::name() == "ToleranceLattice::At<?>");
 
-[[nodiscard]] consteval bool every_at_tolerance_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Tolerance));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (ToleranceLattice::At<([:en:])>::name() == std::string_view{"ToleranceLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_tolerance_has_name(), "ToleranceLattice::At<T>::name() switch missing an arm for at "
-                                             "least one tier.  Add the arm or the new tier leaks the "
-                                             "'ToleranceLattice::At<?>' sentinel.");
+static_assert(tolerance_name(Tolerance::ULP_FP16) == "ULP_FP16");
+static_assert(tolerance_name(static_cast<Tolerance>(255)) == "<unknown Tolerance>");
 
 static_assert(tolerance::RelaxedTier::tier == Tolerance::RELAXED);
-static_assert(tolerance::Int8Tier::tier == Tolerance::ULP_INT8);
-static_assert(tolerance::Fp8Tier::tier == Tolerance::ULP_FP8);
-static_assert(tolerance::Fp16Tier::tier == Tolerance::ULP_FP16);
-static_assert(tolerance::Fp32Tier::tier == Tolerance::ULP_FP32);
-static_assert(tolerance::Fp64Tier::tier == Tolerance::ULP_FP64);
 static_assert(tolerance::BitexactTier::tier == Tolerance::BITEXACT);
 
 struct OneByteValue {

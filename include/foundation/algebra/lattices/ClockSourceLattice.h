@@ -8,10 +8,12 @@
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/algebra/lattices/DetSafeLattice.h>
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -38,33 +40,12 @@ enum class ClockSource : std::uint8_t {
     PtpHwClock = 9,  // the /dev/ptpN hardware clock on a NIC
 };
 
-inline constexpr std::size_t clock_source_count = std::meta::enumerators_of(^^ClockSource).size();
+inline constexpr std::size_t clock_source_count = ::foundation::reflect::enum_count<ClockSource>;
 
+// The identifier of s, or "<unknown ClockSource>" for a value outside
+// the enum.
 [[nodiscard]] consteval std::string_view clock_source_name(ClockSource s) noexcept {
-    switch (s) {
-        case ClockSource::Realtime:
-            return "Realtime";
-        case ClockSource::Monotonic:
-            return "Monotonic";
-        case ClockSource::MonotonicRaw:
-            return "MonotonicRaw";
-        case ClockSource::Boot:
-            return "Boot";
-        case ClockSource::ThreadCpu:
-            return "ThreadCpu";
-        case ClockSource::ProcessCpu:
-            return "ProcessCpu";
-        case ClockSource::TscRaw:
-            return "TscRaw";
-        case ClockSource::TscSerialized:
-            return "TscSerialized";
-        case ClockSource::PmuCounter:
-            return "PmuCounter";
-        case ClockSource::PtpHwClock:
-            return "PtpHwClock";
-        default:
-            return std::string_view{"<unknown ClockSource>"};
-    }
+    return ::foundation::reflect::enum_name(s);
 }
 
 struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattice, PinningRequirementLattice> {
@@ -88,47 +69,13 @@ struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattic
     // and referring to it here would be a forward reference.  A holder that
     // wants the point calls that function with the pinned source.
     template <ClockSource Source>
-    struct At {
-        struct element_type {
-            using clock_source_value_type = ClockSource;
-            [[nodiscard]] constexpr operator clock_source_value_type() const noexcept { return Source; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<Source> {
+        using clock_source_value_type = ClockSource;
+    };
 
+    template <ClockSource Source>
+    struct At : PinnedAt<ClockSourceLattice, Source, AtElement<Source>> {
         static constexpr ClockSource source = Source;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (Source) {
-                case ClockSource::Realtime:
-                    return "ClockSourceLattice::At<Realtime>";
-                case ClockSource::Monotonic:
-                    return "ClockSourceLattice::At<Monotonic>";
-                case ClockSource::MonotonicRaw:
-                    return "ClockSourceLattice::At<MonotonicRaw>";
-                case ClockSource::Boot:
-                    return "ClockSourceLattice::At<Boot>";
-                case ClockSource::ThreadCpu:
-                    return "ClockSourceLattice::At<ThreadCpu>";
-                case ClockSource::ProcessCpu:
-                    return "ClockSourceLattice::At<ProcessCpu>";
-                case ClockSource::TscRaw:
-                    return "ClockSourceLattice::At<TscRaw>";
-                case ClockSource::TscSerialized:
-                    return "ClockSourceLattice::At<TscSerialized>";
-                case ClockSource::PmuCounter:
-                    return "ClockSourceLattice::At<PmuCounter>";
-                case ClockSource::PtpHwClock:
-                    return "ClockSourceLattice::At<PtpHwClock>";
-                default:
-                    return "ClockSourceLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -176,24 +123,10 @@ struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattic
 namespace detail::clock_source_lattice_self_test {
 
 static_assert(clock_source_count == 10, "The ClockSource catalog changed size.  A new source needs an arm in "
-                                        "clock_source_name(), an arm in clock_source_project(), and this "
-                                        "count bumped; existing ordinals never renumber.");
+                                        "clock_source_project() and this count bumped; existing ordinals "
+                                        "never renumber.");
 
-[[nodiscard]] consteval bool every_clock_source_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ClockSource));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (clock_source_name([:en:]) == std::string_view{"<unknown ClockSource>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_clock_source_has_name(), "clock_source_name() switch missing an arm for at least one source — "
-                                             "add the arm or the new source leaks the '<unknown ClockSource>' "
-                                             "sentinel into observer debug output.");
+static_assert(clock_source_name(static_cast<ClockSource>(200)) == "<unknown ClockSource>");
 
 static_assert(Lattice<ClockSourceLattice>, "ClockSourceLattice must satisfy the Lattice concept "
                                            "(element_type + leq + join + meet) — inherited from the 3-ary "
@@ -346,32 +279,17 @@ static_assert(sizeof(ClockGraded<EightByteValue>) <= sizeof(EightByteValue) + 8,
               "trailing bytes.");
 
 // At<Source> carries the source as a template argument and holds nothing, so a
-// carrier graded on it costs exactly the payload.
-static_assert(foundation::algebra::Lattice<ClockSourceLattice::At<ClockSource::Boot>>);
-static_assert(foundation::algebra::BoundedLattice<ClockSourceLattice::At<ClockSource::TscRaw>>);
-static_assert(std::is_empty_v<ClockSourceLattice::At<ClockSource::Boot>::element_type>,
-              "At<Source>::element_type must be empty so a carrier graded on it "
-              "collapses to the size of its payload.");
+// carrier graded on it costs exactly the payload.  The walk pins the shape of
+// every At<Source>: a bounded lattice with an empty element that converts
+// back to its source and carries a reflected name.
+static_assert(verify_pinned_at<ClockSourceLattice, ClockSource>(),
+              "ClockSourceLattice::At<Source>: a pinned grade lost its emptiness, "
+              "its conversion back to Source, or its reflected name.");
 static_assert(ClockSourceLattice::At<ClockSource::Boot>::source == ClockSource::Boot);
 static_assert(ClockSourceLattice::At<ClockSource::Realtime>::source == ClockSource::Realtime);
 static_assert(ClockSourceLattice::At<ClockSource::TscRaw>::name()
               == std::string_view{"ClockSourceLattice::At<TscRaw>"});
-
-[[nodiscard]] consteval bool every_at_clock_source_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ClockSource));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (ClockSourceLattice::At<([:en:])>::name() == std::string_view{"ClockSourceLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_clock_source_has_name(), "ClockSourceLattice::At<Source>::name() switch missing an arm for at "
-                                                "least one source — add the arm or the new source leaks the "
-                                                "'ClockSourceLattice::At<?>' sentinel.");
+static_assert(ClockSourceLattice::At<static_cast<ClockSource>(200)>::name() == "ClockSourceLattice::At<?>");
 
 static_assert(sizeof(foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute,
                                                  ClockSourceLattice::At<ClockSource::Boot>, EightByteValue>)

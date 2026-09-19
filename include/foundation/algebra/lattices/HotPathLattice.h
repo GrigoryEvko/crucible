@@ -16,6 +16,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include <cstdint>
 #include <meta>
@@ -31,19 +32,12 @@ enum class HotPathTier : std::uint8_t {
     Hot = 2,  // top: foreground hot path; no alloc / syscall / block
 };
 
-inline constexpr std::size_t hot_path_tier_count = std::meta::enumerators_of(^^HotPathTier).size();
+inline constexpr std::size_t hot_path_tier_count = ::foundation::reflect::enum_count<HotPathTier>;
 
+// The identifier of t, or "<unknown HotPathTier>" for a value outside
+// the enum.
 [[nodiscard]] consteval std::string_view hot_path_tier_name(HotPathTier t) noexcept {
-    switch (t) {
-        case HotPathTier::Cold:
-            return "Cold";
-        case HotPathTier::Warm:
-            return "Warm";
-        case HotPathTier::Hot:
-            return "Hot";
-        default:
-            return std::string_view{"<unknown HotPathTier>"};
-    }
+    return ::foundation::reflect::enum_name(t);
 }
 
 struct HotPathLattice : ChainLatticeOps<HotPathTier> {
@@ -53,33 +47,13 @@ struct HotPathLattice : ChainLatticeOps<HotPathTier> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "HotPathLattice"; }
 
     template <HotPathTier T>
-    struct At {
-        struct element_type {
-            using hot_path_tier_value_type = HotPathTier;
-            [[nodiscard]] constexpr operator hot_path_tier_value_type() const noexcept { return T; }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
-        };
+    struct AtElement : PinnedElement<T> {
+        using hot_path_tier_value_type = HotPathTier;
+    };
 
+    template <HotPathTier T>
+    struct At : PinnedAt<HotPathLattice, T, AtElement<T>> {
         static constexpr HotPathTier tier = T;
-
-        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
-        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
-
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (T) {
-                case HotPathTier::Cold:
-                    return "HotPathLattice::At<Cold>";
-                case HotPathTier::Warm:
-                    return "HotPathLattice::At<Warm>";
-                case HotPathTier::Hot:
-                    return "HotPathLattice::At<Hot>";
-                default:
-                    return "HotPathLattice::At<?>";
-            }
-        }
     };
 };
 
@@ -93,81 +67,24 @@ namespace detail::hot_path_lattice_self_test {
 
 static_assert(hot_path_tier_count == 3, "HotPathTier must hold exactly the three tiers Cold, Warm and Hot.");
 
-[[nodiscard]] consteval bool every_hot_path_tier_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^HotPathTier));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (hot_path_tier_name([:en:]) == std::string_view{"<unknown HotPathTier>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_hot_path_tier_has_name(), "hot_path_tier_name() has no arm for at least one tier, so that "
-                                              "tier reports the '<unknown HotPathTier>' sentinel.");
-
-static_assert(Lattice<HotPathLattice>);
-static_assert(BoundedLattice<HotPathLattice>);
-static_assert(Lattice<hot_path_tier::ColdTier>);
-static_assert(Lattice<hot_path_tier::WarmTier>);
-static_assert(Lattice<hot_path_tier::HotTier>);
-static_assert(BoundedLattice<hot_path_tier::HotTier>);
+static_assert(verify_chain_lattice<HotPathLattice>(), "HotPathLattice: the chain order, the pinned grades or the "
+                                                      "reflected names diverged from the HotPathTier enumerator list.");
 
 static_assert(!UnboundedLattice<HotPathLattice>);
 static_assert(!Semiring<HotPathLattice>);
 
-// Emptiness is the precondition for the grade to collapse under EBO.
-static_assert(std::is_empty_v<hot_path_tier::ColdTier::element_type>);
-static_assert(std::is_empty_v<hot_path_tier::WarmTier::element_type>);
-static_assert(std::is_empty_v<hot_path_tier::HotTier::element_type>);
-
-static_assert(verify_chain_lattice_exhaustive<HotPathLattice>(),
-              "HotPathLattice's chain-order lattice axioms must hold at every "
-              "(HotPathTier)³ triple.");
-static_assert(verify_chain_lattice_distributive_exhaustive<HotPathLattice>(),
-              "HotPathLattice's chain order must satisfy distributivity at every "
-              "(HotPathTier)³ triple.");
-
-static_assert(HotPathLattice::leq(HotPathTier::Cold, HotPathTier::Warm));
-static_assert(HotPathLattice::leq(HotPathTier::Warm, HotPathTier::Hot));
-static_assert(HotPathLattice::leq(HotPathTier::Cold, HotPathTier::Hot));
-static_assert(!HotPathLattice::leq(HotPathTier::Hot, HotPathTier::Cold));
-static_assert(!HotPathLattice::leq(HotPathTier::Hot, HotPathTier::Warm));
-static_assert(!HotPathLattice::leq(HotPathTier::Warm, HotPathTier::Cold));
-
 static_assert(HotPathLattice::bottom() == HotPathTier::Cold);
 static_assert(HotPathLattice::top() == HotPathTier::Hot);
 
-static_assert(HotPathLattice::join(HotPathTier::Cold, HotPathTier::Hot) == HotPathTier::Hot);
-static_assert(HotPathLattice::join(HotPathTier::Warm, HotPathTier::Cold) == HotPathTier::Warm);
-static_assert(HotPathLattice::meet(HotPathTier::Cold, HotPathTier::Hot) == HotPathTier::Cold);
-static_assert(HotPathLattice::meet(HotPathTier::Warm, HotPathTier::Hot) == HotPathTier::Warm);
-
 static_assert(HotPathLattice::name() == "HotPathLattice");
 static_assert(hot_path_tier::ColdTier::name() == "HotPathLattice::At<Cold>");
-static_assert(hot_path_tier::WarmTier::name() == "HotPathLattice::At<Warm>");
 static_assert(hot_path_tier::HotTier::name() == "HotPathLattice::At<Hot>");
+static_assert(HotPathLattice::At<static_cast<HotPathTier>(255)>::name() == "HotPathLattice::At<?>");
 
-[[nodiscard]] consteval bool every_at_hot_path_tier_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^HotPathTier));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (HotPathLattice::At<([:en:])>::name() == std::string_view{"HotPathLattice::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_hot_path_tier_has_name(), "HotPathLattice::At<T>::name() has no arm for at least one "
-                                                 "tier, so that tier reports the 'HotPathLattice::At<?>' "
-                                                 "sentinel.");
+static_assert(hot_path_tier_name(HotPathTier::Warm) == "Warm");
+static_assert(hot_path_tier_name(static_cast<HotPathTier>(255)) == "<unknown HotPathTier>");
 
 static_assert(hot_path_tier::ColdTier::tier == HotPathTier::Cold);
-static_assert(hot_path_tier::WarmTier::tier == HotPathTier::Warm);
 static_assert(hot_path_tier::HotTier::tier == HotPathTier::Hot);
 
 struct OneByteValue {
