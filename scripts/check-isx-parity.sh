@@ -30,6 +30,27 @@
 # when downstream code references `fixy::is::IsX`.  The trait + alias
 # tiers (b)+(c) are the ones this script audits.
 #
+# Why this stays a text scan and not a reflection walk
+# ----------------------------------------------------
+# The obvious C++26 rewrite is a `std::meta::members_of` walk over
+# `^^crucible::safety::extract` and `^^crucible::fixy::is`, comparing
+# the two identifier sets.  It cannot work, for one reason that lands
+# on both sides of the comparison: members_of does not report names
+# introduced by a using-declaration.
+#
+#   * The whole fixy side IS using-declarations.  A walk over
+#     `^^crucible::fixy::is` reports only the locally declared concept
+#     aliases and none of the 97 `using ::crucible::safety::extract::X;`
+#     rows this guard exists to audit.
+#   * The substrate side uses them too.  `extract::is_owned_mmap_v` is
+#     a using-declaration over `safety::is_owned_mmap_v`
+#     (safety/IsOwnedMmap.h), so a walk over `^^crucible::safety::extract`
+#     drops it from the demand set.
+#
+# So a reflection walk would trade this scan's blind spots for a
+# different, quieter set.  Reach through `fixy::is::` is instead
+# asserted in-language, per symbol, in test/test_fixy_umbrella_reach.cpp.
+#
 # Exit status:
 #   0 — parity verified (every public alias re-exported)
 #   1 — one or more aliases missing from fixy/Is.h
@@ -64,12 +85,22 @@ DETAIL_EXCLUSIONS=(
 )
 
 extract_substrate_aliases() {
+    # The glob is `*Is*.h`, not `Is*.h`.  A header that has been ported
+    # to the new tree is marked superseded by a leading underscore
+    # (`IsRefined.h` becomes `_IsRefined.h`), and it keeps shipping its
+    # aliases through fixy/Is.h until the old substrate is deleted.  A
+    # `Is*.h` glob stops matching the moment a header is marked, which
+    # silently drops that header's aliases out of the demand set — the
+    # guard keeps passing while it audits less and less.  When this was
+    # found, 35 of 96 aliases (36% of the surface) had fallen out that
+    # way.  The --self-test plants a superseded header for this reason.
+    #
     # Type aliases: `using NAME =` at column 0 (namespace level only —
     # indented `using` declarations are member-type aliases inside
     # structs/classes and not part of the public surface).
     # Trait variables: `inline constexpr bool NAME` at column 0.
     grep -hE '^using[[:space:]]+[a-z_]+_t[[:space:]]*=|^inline[[:space:]]+constexpr[[:space:]]+bool[[:space:]]+[a-z_]+_v[[:space:]]' \
-        "$root"/include/crucible/safety/Is*.h 2>/dev/null \
+        "$root"/include/crucible/safety/*Is*.h 2>/dev/null \
         | sed -E 's/^using[[:space:]]+([a-z_]+_t)[[:space:]]*=.*/\1/;
                   s/^inline[[:space:]]+constexpr[[:space:]]+bool[[:space:]]+([a-z_]+_v)[[:space:]].*/\1/' \
         | sort -u
@@ -205,8 +236,32 @@ EOF
         return 1
     fi
 
+    # Arm four, the superseded header.  A ported header keeps its aliases
+    # and gains a leading underscore, so it must stay in the demand set.
+    # This arm is what a `Is*.h` glob fails: the alias below simply stops
+    # being asked for and the drift goes unreported.
+    cat > "$tmp/include/crucible/safety/_IsSuperseded.h" <<'EOF'
+#pragma once
+namespace crucible::safety::extract {
+template <typename T>
+inline constexpr bool is_superseded_drift_v = true;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 1 ]]; then
+        fail "an alias in a superseded _Is header reported $rc, want 1"
+        return 1
+    fi
+    grep -qE '^  is_superseded_drift_v$' "$out" \
+        || { fail "the alias of the superseded header was not demanded"; return 1; }
+    missing_count=$(grep -cE '^  [a-z_]+_[tv]$' "$out" || true)
+    if [[ "$missing_count" -ne 1 ]]; then
+        fail "expected exactly 1 missing alias, got $missing_count"
+        return 1
+    fi
+
     root="$saved_root"
-    printf 'check-isx-parity: self-test passed — a mirrored tree passes, planted drift names both aliases and exits 1, a detail probe is excluded.\n' >&2
+    printf 'check-isx-parity: self-test passed — a mirrored tree passes, planted drift names both aliases and exits 1, a detail probe is excluded, a superseded _Is header is still demanded.\n' >&2
 }
 
 case "${1:-}" in
