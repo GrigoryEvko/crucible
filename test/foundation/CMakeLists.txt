@@ -104,6 +104,14 @@ foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
   "constraints not satisfied"
   "CanMintCap")
 
+# The passkey constructor is the only one Permission declares, so a
+# translation unit that cannot make a key cannot make a token.  The
+# second regex proves the rejection is on Permission's own constructor
+# and not on the fixture's tag type.
+foundation_neg_compile_test(neg_permission_forged_without_key
+  "no matching function for call to"
+  "Permission<.*ForgedTag>::Permission")
+
 # A thread atom has no value-level tag, so the one extract_bare template
 # leaves the overload set by substitution failure on HasBareTag.  The
 # first regex proves the call found no candidate, and the second proves

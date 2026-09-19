@@ -7,6 +7,7 @@
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 
+#include <array>
 #include <charconv>
 #include <concepts>
 #include <cstddef>
@@ -14,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <meta>
 #include <string_view>
 #include <system_error>
 
@@ -41,6 +43,87 @@ struct JsonDiagnosticRecord {
 };
 
 namespace detail {
+
+// The writer further down names each field it emits.  A field added to
+// either record above would be silently absent from the output, and a
+// consumer would read a record that claims the current format version
+// and is missing data.  These two rosters are what make that addition a
+// build failure.
+//
+// Each roster is hand-written and never derived, because a derived one
+// would agree with any addition and say nothing.  Extending it is the
+// moment to decide how the new field is emitted, and whether
+// CRUCIBLE_DIAG_FORMAT_VERSION has to rise for a consumer to notice.
+//
+// The names here are the members, not the JSON keys.  Two differ on
+// purpose: `source` is emitted as the nested object "source_position",
+// and `related_snippet` as the array "related_snippets".  `category` is
+// emitted through no key of its own: it supplies the fallback text for
+// error_code, goal and suggestion when those are empty.
+inline constexpr std::array<std::string_view, 4> source_position_fields{"file", "line", "column", "function"};
+
+inline constexpr std::array<std::string_view, 8> json_record_fields{
+    "category", "source", "error_code", "goal", "have", "gap", "suggestion", "related_snippet"};
+
+// The members of Record, in declaration order, are exactly `expected`.
+template <typename Record, std::size_t N>
+[[nodiscard]] consteval bool record_fields_are(std::array<std::string_view, N> const& expected) noexcept {
+    static constexpr auto members =
+        std::define_static_array(std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current()));
+    if (members.size() != N) return false;
+    std::size_t index = 0;
+    bool matched = true;
+// An expansion statement unrolls into successive scopes that each
+// declare the same induction variable, so -Wshadow fires once per
+// iteration.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        matched = matched && std::meta::identifier_of(member) == expected[index];
+        ++index;
+    }
+#pragma GCC diagnostic pop
+    return matched;
+}
+
+static_assert(record_fields_are<SourcePosition>(source_position_fields),
+              "SourcePosition gained, lost or renamed a field.  The nested source_position object in "
+              "emit_json_record writes each field by name, so a new one is absent from the output until "
+              "it is written there and added to source_position_fields.");
+
+static_assert(record_fields_are<JsonDiagnosticRecord>(json_record_fields),
+              "JsonDiagnosticRecord gained, lost or renamed a field.  emit_json_record writes each field "
+              "by name, so a new one is absent from the output until it is written there and added to "
+              "json_record_fields.  Renaming or removing one changes an external contract and needs a "
+              "format version.");
+
+// The roster answers no for each way it and its record can disagree.
+// Without these, a record_fields_are that answered yes to everything
+// would leave both assertions above green and pin nothing.
+namespace record_roster_self_test {
+
+struct Probe {
+    int first = 0;
+    int second = 0;
+};
+
+inline constexpr std::array<std::string_view, 2> correct{"first", "second"};
+static_assert(record_fields_are<Probe>(correct));
+
+inline constexpr std::array<std::string_view, 2> renamed{"first", "deuxieme"};
+static_assert(!record_fields_are<Probe>(renamed), "A renamed field must be caught.");
+
+inline constexpr std::array<std::string_view, 2> reordered{"second", "first"};
+static_assert(!record_fields_are<Probe>(reordered), "A reordered roster must be caught, because the writer "
+                                                    "emits in declaration order.");
+
+inline constexpr std::array<std::string_view, 1> too_short{"first"};
+static_assert(!record_fields_are<Probe>(too_short), "A field the roster does not name must be caught.");
+
+inline constexpr std::array<std::string_view, 3> too_long{"first", "second", "third"};
+static_assert(!record_fields_are<Probe>(too_long), "A roster entry no field answers to must be caught.");
+
+}  // namespace record_roster_self_test
 
 [[nodiscard]] inline bool write_all(FILE* out, std::string_view s) noexcept {
     if (out == nullptr) return false;

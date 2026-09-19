@@ -382,29 +382,37 @@ template <typename Parent, typename... Args>
     requires PermissionCombineNArgs<Parent, Args...>
 [[nodiscard]] constexpr Permission<Parent> mint_permission_combine_n(Args&&...) noexcept;
 
-// The tag constraint is a class-body static_assert rather than a
-// requires-clause on the primary template.  A requires-clause would
-// force every forward declaration of Permission to repeat it, which
-// defeats forward-declare-and-specialize as a way of avoiding this
-// header.
+// The friendship that gates construction lives on this key rather than
+// inside Permission, for the reason Capability.h gives for cap_mint_key.
+// A friend declaration of a constrained function template must repeat
+// the constraint exactly.  An edit to a mint's requires-clause that is
+// not mirrored resolves the friendship to a different overload, and
+// every minting site then fails with a private-member error far from
+// the cause.  Five mints make that hazard five times over.
+//
+// The repetition does not go away, because the language requires the
+// constraint on a friend declaration to match.  What changes is where
+// the five declarations sit: in one class whose only purpose is to hold
+// them, in front of whoever edits a requires-clause, rather than in the
+// middle of Permission's class body.  Permission also stops handing the
+// mints access to everything else it declares.
+//
+// The key must not move into a nested namespace.  A templated friend
+// declaration introduces a new declaration into the innermost enclosing
+// namespace of the befriending class when no matching declaration is
+// already visible there, so a key inside a detail namespace would
+// befriend a fresh detail-scope mint and silently open the gate.
+class perm_mint_key {
+    constexpr perm_mint_key() noexcept = default;
 
-template <typename Tag>
-class [[nodiscard]] Permission {
-    static_assert(PermissionTag<Tag>, "Permission<Tag>: Tag must be an empty non-union class type "
-                                      "(see PermissionTag concept above).  Pointers, references, "
-                                      "primitives, enums, unions, and stateful classes are rejected. "
-                                      "Per CSL convention, Tag is a phantom-type marker — typically "
-                                      "an empty struct in a `tag::` namespace.");
-    constexpr Permission() noexcept = default;
+    // Every entry below is another way to forge authority over a
+    // region.  Additions need review.  Each mint is one template, so
+    // each is one entry, whether it is called with a context or
+    // without.
 
-    // Every entry in the friend list below is another way to forge
-    // authority over a region.  Additions need review.  Each mint is
-    // one template, so each is one entry, whether it is called with a
-    // context or without.
-
-    template <typename T, typename... Args>
-        requires PermissionRootArgs<T, Args...>
-    friend constexpr Permission<T> mint_permission_root(Args const&...) noexcept;
+    template <typename Tag, typename... Args>
+        requires PermissionRootArgs<Tag, Args...>
+    friend constexpr Permission<Tag> mint_permission_root(Args const&...) noexcept;
 
     template <typename L, typename R, typename... Args>
         requires PermissionSplitArgs<L, R, Args...>
@@ -422,19 +430,32 @@ class [[nodiscard]] Permission {
         requires PermissionCombineNArgs<Parent, Args...>
     friend constexpr Permission<Parent> mint_permission_combine_n(Args&&...) noexcept;
 
-    // The soundness gate on the post-join rebuild is the passkey, not
-    // this friendship, which only reaches the private constructor.
+    // The soundness gate on the post-join rebuild is its own passkey,
+    // not this friendship, which only reaches the key.
     friend struct ::foundation::permissions::detail::ForkRebuildAccess;
+};
 
-    // The pool re-emits its parked permission once the count of
-    // outstanding shares reaches zero.  Issuing it is sound because the
-    // state-machine compare-exchange that authorises the issue proves no
-    // other holder exists at that moment.
-    template <typename T>
-    friend class SharedPermissionPool;
+// The tag constraint is a class-body static_assert rather than a
+// requires-clause on the primary template.  A requires-clause would
+// force every forward declaration of Permission to repeat it, which
+// defeats forward-declare-and-specialize as a way of avoiding this
+// header.
+
+template <typename Tag>
+class [[nodiscard]] Permission {
+    static_assert(PermissionTag<Tag>, "Permission<Tag>: Tag must be an empty non-union class type "
+                                      "(see PermissionTag concept above).  Pointers, references, "
+                                      "primitives, enums, unions, and stateful classes are rejected. "
+                                      "Per CSL convention, Tag is a phantom-type marker — typically "
+                                      "an empty struct in a `tag::` namespace.");
 
 public:
     using tag_type = Tag;
+
+    // Holding the key is the proof of authority, and only the five
+    // mints and the post-join rebuild can make one, so this is the sole
+    // route to a Permission.  Permission itself befriends nobody.
+    explicit constexpr Permission(perm_mint_key) noexcept {}
 
     Permission(const Permission&) = delete(
         "Permission<Tag>: linear — duplicating creates two simultaneous owners of the same region, breaking CSL's frame rule.  Use std::move to transfer.");
@@ -464,7 +485,7 @@ template <typename Tag, typename... Args>
                   "mint_permission_root<Tag>() without an ExecCtx is only valid for "
                   "permission_row<Tag> == Row<>.  Effectful permission tags must be "
                   "minted with mint_permission_root<Tag>(ctx) so Ctx admits the tag's row.");
-    return Permission<Tag>{};
+    return Permission<Tag>{perm_mint_key{}};
 }
 
 template <typename Tag, ::foundation::effects::IsExecCtx Ctx>
@@ -503,7 +524,7 @@ template <typename L, typename R, typename... Args>
                                              "splits_into<In, A, A> would mint two Permission<A> from one "
                                              "parent — two linear tokens for the SAME region, aliasing "
                                              "the very disjointness the CSL frame rule proves.");
-    return std::pair<Permission<L>, Permission<R>>{Permission<L>{}, Permission<R>{}};
+    return std::pair<Permission<L>, Permission<R>>{Permission<L>{perm_mint_key{}}, Permission<R>{perm_mint_key{}}};
 }
 
 template <typename In, typename... Args>
@@ -520,7 +541,7 @@ template <typename In, typename... Args>
     static_assert(splits_into_authoring_witness_v<In, L, R>, "splits_into_authoring_witness<In, L, R> missing for "
                                                              "combine; declare it next to the splits_into "
                                                              "specialization.");
-    return Permission<In>{};
+    return Permission<In>{perm_mint_key{}};
 }
 
 template <typename... Children, typename... Args>
@@ -543,7 +564,7 @@ template <typename... Children, typename... Args>
                                                     "splits_into_pack<In, A, A, ...> would mint two Permission<A> "
                                                     "from one parent — aliasing the same region across the "
                                                     "disjoint children the CSL frame rule promises.");
-    return std::tuple<Permission<Children>...>{Permission<Children>{}...};
+    return std::tuple<Permission<Children>...>{Permission<Children>{perm_mint_key{}}...};
 }
 
 namespace detail {
@@ -580,7 +601,7 @@ template <typename Parent, typename... Args>
                                       "requires the child tags to be PAIRWISE DISTINCT — folding "
                                       "two Permission<A> back into one parent would require two "
                                       "aliasing tokens to have existed.");
-    return Permission<Parent>{};
+    return Permission<Parent>{perm_mint_key{}};
 }
 
 // Reissuing the parent after a structured join is sound because every
@@ -606,7 +627,7 @@ private:
 struct ForkRebuildAccess {
     template <typename T>
     [[nodiscard]] static constexpr Permission<T> rebuild(ForkRebuildKey) noexcept {
-        return Permission<T>{};
+        return Permission<T>{perm_mint_key{}};
     }
 };
 
@@ -985,10 +1006,26 @@ namespace detail::seplog_roster {
 
 template <typename Tag>
 [[nodiscard]] consteval bool token_is_sound() noexcept {
-    return sizeof(Permission<Tag>) == 1 && std::is_trivially_destructible_v<Permission<Tag>>
-        && !std::is_copy_constructible_v<Permission<Tag>> && !std::is_copy_assignable_v<Permission<Tag>>
-        && std::is_move_constructible_v<Permission<Tag>> && std::is_nothrow_move_constructible_v<Permission<Tag>>;
+    return sizeof(Permission<Tag>) == 1
+        && std::is_trivially_destructible_v<Permission<Tag>> && !std::is_copy_constructible_v<Permission<Tag>>
+        && !std::is_copy_assignable_v<Permission<Tag>> && std::is_move_constructible_v<Permission<Tag>>
+        && std::is_nothrow_move_constructible_v<Permission<Tag>>
+        // The key is the sole route in.  Both halves are load-bearing:
+        // drop the first and a token is default-constructible by
+        // anyone, drop the second and the mints cannot build one.
+        && !std::is_default_constructible_v<Permission<Tag>>
+        && std::is_constructible_v<Permission<Tag>, perm_mint_key>
+        // Explicit, so that a copy of the key cannot convert itself
+        // into a token without the construction being written out.
+        && !std::is_convertible_v<perm_mint_key, Permission<Tag>>;
 }
+
+// A translation unit that holds no friendship cannot make a key, so it
+// cannot reach the constructor above however it spells the call.
+static_assert(!std::is_default_constructible_v<perm_mint_key>,
+              "The default constructor of perm_mint_key must not be public.  Only the five mints and the "
+              "post-join rebuild are friended to build one.");
+static_assert(std::is_empty_v<perm_mint_key>, "perm_mint_key must stay empty, so that passing it costs nothing.");
 
 [[nodiscard]] consteval bool every_canonical_tag_is_sound() noexcept {
     static constexpr auto members = std::define_static_array(
