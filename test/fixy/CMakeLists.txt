@@ -154,3 +154,38 @@ fixy_neg_compile_test(neg_refined_bounded_inverted
   "static assertion failed: Bounded<Lo, Hi, T>: range is empty \\(Lo > Hi\\)"
   "In instantiation of .struct fixy::detail::bounded_alias<10, 5, int>.")
 
+# ── Task #102 (A10.2): fixy/Tagged.h and fixy/Secret.h ────────────────
+
+fixy_test(test_tagged)
+fixy_test(test_secret)
+
+# Verified -> Unverified has no edge in admitted_retags; the member
+# retag fails its constraint and the note names RetagAllowed with the
+# two tags.
+fixy_neg_compile_test(neg_tagged_retag_not_admitted
+  "constraints not satisfied"
+  "satisfaction of .RetagAllowed<Tag, NewTag>."
+  "Tag = fixy::tags::trust::Verified; NewTag = fixy::tags::trust::Unverified")
+
+# The value constructor is private, so a Sanitized tag cannot be forged
+# around a raw value; the compiler names the constructor.
+fixy_neg_compile_test(neg_tagged_forge_by_constructor
+  "is private within this context"
+  "fixy::Tagged<T, Tag>::Tagged\\(T\\)"
+  "Tag = fixy::tags::source::Sanitized")
+
+# A policy derived from the marker base with no edge in
+# admitted_policies fails AdmittedDeclassification, and the note shows
+# the fail-closed admission evaluating to false.
+fixy_neg_compile_test(neg_secret_declassify_unlisted_policy
+  "constraints not satisfied"
+  "satisfaction of .AdmittedDeclassification<Policy>."
+  "the expression .\\(admits<Ns, From, To>\\)\\(\\).*evaluated to .false.")
+
+# The copy constructor of Secret is deleted with a reason; the compiler
+# names the constructor and repeats the reason.
+fixy_neg_compile_test(neg_secret_copy
+  "use of deleted function"
+  "fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\)"
+  "cannot be silently duplicated")
+
