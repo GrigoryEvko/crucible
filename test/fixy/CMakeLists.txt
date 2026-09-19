@@ -102,3 +102,55 @@ fixy_neg_compile_test(neg_atom_without_axis_rejected
   "required for the satisfaction of .IsAtom<G>."
   "the required expression .G::axis. is invalid")
 
+# ── Task #101 (A10.1): fixy/Refined.h ─────────────────────────────────
+
+fixy_test(test_refined)
+
+# The checked mint carries CRUCIBLE_PRE(Pred(v)); a refused value in a
+# constant expression reaches the macro's consteval trap through the
+# mint, and the expansion note names the macro inside Refined.h.
+fixy_neg_compile_test(neg_refined_predicate_fails_at_consteval_mint
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::mint_refined<.*, int>\\(-1\\)."
+  "fixy/Refined\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# non_negative ⇒ positive is not a member of admitted_implications, and
+# the edge the fixture declares elsewhere is inert, so the constrained
+# weakening fails its constraint and the note shows implies_v false.
+fixy_neg_compile_test(neg_refined_implication_not_admitted
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = .*; Q = .*\\]. evaluated to .false.")
+
+# No public constructor takes a bare value; the candidates the compiler
+# lists are the copy, the move and the two private doors.
+fixy_neg_compile_test(neg_refined_direct_construction
+  "no matching function for call to .fixy::Refined<.*>::Refined\\(<brace-enclosed initializer list>\\)."
+  "candidate .*: .constexpr fixy::Refined<Pred, T>::Refined\\(checked_door_, T\\) requires  PredicateInvocableOn<Pred, T>.")
+
+# The checked mint's gate names the concept at the call site instead of
+# failing somewhere inside the contract clause.
+fixy_neg_compile_test(neg_refined_mint_predicate_not_invocable
+  "constraints not satisfied"
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = .*; T = int\\]")
+
+# The sealed checked mint reaches the same consteval trap through its
+# own door.
+fixy_neg_compile_test(neg_refined_sealed_mint_predicate_fails_at_consteval
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::mint_sealed_refined<.*, int>\\(0\\)."
+  "fixy/Refined\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# SealedRefined has no into(): name lookup fails on the sealed class.
+fixy_neg_compile_test(neg_refined_sealed_into_absent
+  "has no member named .into."
+  "class fixy::SealedRefined<.*>")
+
+# DivisibleBy<0> and Bounded<10, 5, int> are refused where the type is
+# named, before any value is minted.
+fixy_neg_compile_test(neg_refined_divisible_by_zero
+  "static assertion failed: DivisibleBy<0> is undefined \\(modulo by zero\\)"
+  "In instantiation of .struct fixy::DivisibleBy<0>.")
+fixy_neg_compile_test(neg_refined_bounded_inverted
+  "static assertion failed: Bounded<Lo, Hi, T>: range is empty \\(Lo > Hi\\)"
+  "In instantiation of .struct fixy::detail::bounded_alias<10, 5, int>.")
+
