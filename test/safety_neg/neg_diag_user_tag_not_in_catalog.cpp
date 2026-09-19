@@ -11,7 +11,7 @@
 // The routed `static_assert` in `detail::category_of_impl<UserTag>`
 // fires with the message documenting the closed-catalog discipline.
 
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 namespace {
 

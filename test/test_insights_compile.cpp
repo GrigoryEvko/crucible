@@ -2,7 +2,7 @@
 // project's warning flags when some translation unit compiles them. This one
 // does that, and exercises all three registration forms while it is at it.
 
-#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/diag/_Insights.h>
 
 namespace user_proj::diag_tags {
 

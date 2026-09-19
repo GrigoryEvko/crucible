@@ -10,7 +10,7 @@
 // array.  The members are private now, so the bad value is refused at
 // the assignment rather than one call later at the use.
 
-#include <crucible/safety/diag/JsonEmitter.h>
+#include <crucible/safety/diag/_JsonEmitter.h>
 
 #include <cstddef>
 

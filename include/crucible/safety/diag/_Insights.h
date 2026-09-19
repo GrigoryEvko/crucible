@@ -17,7 +17,7 @@
 // they differ only in the thing the diagnostic is about.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 #include <cstddef>
 #include <cstdint>

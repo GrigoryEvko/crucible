@@ -37,7 +37,7 @@
 // pointing at `HotPathViolation`.
 
 #include <crucible/fixy/Reject.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 int main() {
     // Substrate tag — MUST NOT register as a fixy diagnostic.  The

@@ -6,7 +6,7 @@
 // `[DiagnosticAccessor_NonTag]` diagnostic, pointing at
 // `safety::diag::tag_base`'s catalog.
 
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 // Force instantiation.
 constexpr auto bogus_name = ::crucible::safety::diag::diagnostic_name_v<int>;

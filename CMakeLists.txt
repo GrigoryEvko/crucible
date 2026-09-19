@@ -55,7 +55,7 @@ add_library(crucible_dialect INTERFACE)
 # production binaries override with a stronger one that calls crucible_abort.
 add_library(crucible STATIC
   src/ContractHandler.cpp
-  src/DiagRuntime.cpp
+  src/_DiagRuntime.cpp
   src/fixy/Fs.cpp
   src/canopy/HyParView.cpp
   src/canopy/Lifeguard.cpp

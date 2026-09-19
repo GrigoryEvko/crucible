@@ -7,7 +7,7 @@
 // build instead of passing silently.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 #include <type_traits>
 

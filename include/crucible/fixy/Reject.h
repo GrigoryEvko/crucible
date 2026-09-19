@@ -4,7 +4,7 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Theory.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 #include <charconv>
 #include <concepts>

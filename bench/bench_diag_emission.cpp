@@ -1,4 +1,4 @@
-#include <crucible/safety/diag/JsonEmitter.h>
+#include <crucible/safety/diag/_JsonEmitter.h>
 
 #include "bench_harness.h"
 

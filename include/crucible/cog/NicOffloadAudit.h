@@ -7,7 +7,7 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/safety/Bits.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/Refined.h>
 
 #include <cstdint>

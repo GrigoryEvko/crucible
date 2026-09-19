@@ -1,4 +1,4 @@
-#include <crucible/safety/diag/JsonEmitter.h>
+#include <crucible/safety/diag/_JsonEmitter.h>
 
 #include "../tools/lsp_code_action_plugin/CodeAction.h"
 

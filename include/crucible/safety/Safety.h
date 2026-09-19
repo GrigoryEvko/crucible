@@ -30,7 +30,7 @@
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/Affine.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Linear.h>

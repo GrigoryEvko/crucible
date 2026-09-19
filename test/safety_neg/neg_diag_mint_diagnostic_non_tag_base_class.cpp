@@ -19,7 +19,7 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "is_diagnostic_class_v" / "no matching function" / "mint_diagnostic".
 
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 namespace {
 // A plausible-looking but unrelated class — the kind of copy-paste

@@ -18,7 +18,7 @@
 #include <crucible/algebra/lattices/_WaitLattice.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Borrowed.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/FpMode.h>
 #include <crucible/safety/IsHotPath.h>
 #include <crucible/safety/source/Arch.h>

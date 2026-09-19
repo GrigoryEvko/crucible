@@ -11,7 +11,7 @@
 // before the process starts.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 #include <source_location>
 #include <string_view>

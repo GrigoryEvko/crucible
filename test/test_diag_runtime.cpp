@@ -1,5 +1,5 @@
-#include <crucible/safety/diag/Runtime.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/diag/_Runtime.h>
+#include <crucible/safety/_Diagnostic.h>
 
 #include <atomic>
 #include <cstdio>

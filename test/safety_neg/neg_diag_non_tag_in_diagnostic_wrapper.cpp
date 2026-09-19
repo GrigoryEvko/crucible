@@ -6,7 +6,7 @@
 // on Diagnostic<> rejects the instantiation; this fixture pins the
 // behavior so a future relaxation of the constraint surfaces here.
 
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 using crucible::safety::diag::Diagnostic;
 

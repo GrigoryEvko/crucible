@@ -20,8 +20,8 @@
 // the builder knowing that algebra.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>
-#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/_Diagnostic.h>
+#include <crucible/safety/diag/_Insights.h>
 #include <crucible/safety/diag/_StableName.h>
 
 #include <array>

@@ -2,7 +2,7 @@
 
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Theory.h>
-#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/diag/_Insights.h>
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(::crucible::fixy::diag::FixyNotEngaged_Type, ::crucible::safety::diag::Severity::Error,
                             "The Type axis names the function/callable's principal type and is the "

@@ -1,5 +1,5 @@
-#include <crucible/safety/diag/Runtime.h>
-#include <crucible/safety/diag/JsonEmitter.h>
+#include <crucible/safety/diag/_Runtime.h>
+#include <crucible/safety/diag/_JsonEmitter.h>
 
 #include <atomic>
 #include <cstdio>

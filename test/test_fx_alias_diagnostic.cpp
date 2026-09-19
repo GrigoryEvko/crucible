@@ -1,4 +1,4 @@
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 
 #include <cstdio>
 #include <cstdlib>

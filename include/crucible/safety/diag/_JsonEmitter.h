@@ -5,7 +5,7 @@
 // a field is safe. Renaming or removing one is not.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/diag/RowMismatch.h>
 
 #include <charconv>

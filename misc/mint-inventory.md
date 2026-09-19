@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-19T18:46:34Z`.
+Snapshot generated: `2026-09-19T20:05:10Z`.
 
 ## bridges/
 
@@ -211,7 +211,6 @@ Snapshot generated: `2026-09-19T18:46:34Z`.
 | `mint_clock_source` | `include/crucible/safety/ClockSource.h:104` | Y | Y | Y | Y | token | `include/crucible/fixy/Time.h:31` | HS14: 3 |
 | `mint_control_flow` | `include/crucible/safety/ControlFlow.h:109` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:279` | HS14: 2 |
 | `mint_cpu_pinned` | `include/crucible/safety/CpuPinned.h:82` | Y | Y | Y | Y | token | `include/crucible/fixy/Sched.h:187` | HS14: 3 |
-| `mint_diagnostic` | `include/crucible/safety/Diagnostic.h:1123` | Y | Y | Y | Y | token | `include/crucible/fixy/Diag.h:115` | HS14: 2 |
 | `mint_fn` | `include/crucible/safety/Fn.h:292` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1151` | HS14: 35 |
 | `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h:243` | Y | Y | Y | Y | token | `include/crucible/fixy/Fp.h:200` | HS14: 2 |
 | `mint_global_state` | `include/crucible/safety/GlobalState.h:109` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:284` | HS14: 2 |
@@ -385,7 +384,7 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 187
+- Total substrate mints: 186
 - Missing fixy re-export: 65
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)

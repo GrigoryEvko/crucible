@@ -1,5 +1,5 @@
-#include <crucible/safety/Diagnostic.h>
-#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/_Diagnostic.h>
+#include <crucible/safety/diag/_Insights.h>
 
 namespace {
 

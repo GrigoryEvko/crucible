@@ -5,8 +5,8 @@
 // tag classes that define them. This header stays on the substrate re-exports
 // and does not pull the engagement-gate machinery in.
 
-#include <crucible/safety/Diagnostic.h>
-#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/_Diagnostic.h>
+#include <crucible/safety/diag/_Insights.h>
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/safety/diag/_StableName.h>
 

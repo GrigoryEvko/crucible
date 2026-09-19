@@ -4,7 +4,7 @@
 // umbrella, so a header that fell out of the umbrella would show up as
 // an unresolved name here.
 
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/Safety.h>
 
 #include <cstdio>

@@ -9,7 +9,7 @@
 // must not claim, so forwarding the positive detection is the right
 // polarity.
 
-#include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/diag/CheatProbe.h>
 
 #include <crucible/safety/IsBudgeted.h>
