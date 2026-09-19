@@ -392,6 +392,55 @@ struct roster_cat<std::tuple<As...>, std::tuple<Bs...>, Rest...> {
 template <class... Rosters>
 using roster_cat_t = typename roster_cat<Rosters...>::type;
 
+// Every atom class declared directly in Ns appears in the roster.  A
+// roster is a hand list, and a check that walks the list cannot see
+// what the list omits, so this reads the family namespace instead: an
+// atom added there and forgotten in the roster is caught here rather
+// than going unchecked.
+//
+// A class in the namespace that is not an atom is skipped.  The family
+// namespaces hold policy tags beside their atoms, and a tag is an
+// argument to an atom rather than an atom itself.
+//
+// Only the plain atom classes are checked.  A parametric atom reaches
+// the roster as an instantiation, and deciding whether a class template
+// is an atom template would mean instantiating it: there is no way to
+// ask from the declaration alone.  That probe is not safe here.
+// can_substitute on a template whose body holds a static_assert hard
+// errors the translation unit rather than answering false, so a family
+// that later grew such an atom would break every build instead of
+// failing one check.  A parametric atom left out of a roster therefore
+// stays uncaught, and the count pin beside each roster is what narrows
+// that.
+template <std::meta::info Ns, class Roster>
+[[nodiscard]] consteval bool every_atom_in_is_rostered_() noexcept {
+    static_assert(std::meta::is_namespace(Ns), "fixy/Atom.h: every_atom_in_is_rostered_<Ns, Roster> takes a "
+                                               "reflection of a namespace, written ^^name.");
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
+                      && std::meta::is_class_type(member)) {
+            using A = [:member:];
+            if constexpr (IsAtom<A>) {
+                bool is_rostered = false;
+                template for (constexpr auto listed : roster_members_v<Roster>) {
+                    // The splice is named before the comparison: one in
+                    // a template-argument position needs a
+                    // disambiguator, and an alias sidesteps that.
+                    using Listed = [:listed:];
+                    if constexpr (std::is_same_v<A, Listed>) is_rostered = true;
+                }
+                if (!is_rostered) return false;
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
 // Protocol, Lifetime and Provenance atoms are parameterized by a caller tag
 // type, and their concepts require a COMPLETE empty class — an elaborated
 // `struct X` written inline forward-declares instead, which the concept

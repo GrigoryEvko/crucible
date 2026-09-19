@@ -41,6 +41,13 @@ using global_atom_roster = std::tuple<global::singleton<global_sample_tag>, glob
 
 namespace fixy::atom::detail::global_atom_self_test {
 
+// The roster is a hand list, so this reads the family namespace and
+// asks the list about each plain atom it finds.  A parametric atom is
+// not covered; fixy/Atom.h says why beside the walk.
+static_assert(every_atom_in_is_rostered_<^^::fixy::atom::global, global_atom_roster>(),
+              "fixy/atoms/Global.h: an atom declared in fixy::atom::global is missing from "
+              "global_atom_roster.");
+
 static_assert(every_roster_member_is_atom_<global_atom_roster>(),
               "fixy/atoms/Global.h: a member of global_atom_roster is not an atom.");
 static_assert(every_roster_member_on_axis_<global_atom_roster, Axis::GlobalState>(),

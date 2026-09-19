@@ -103,6 +103,13 @@ fixy_neg_compile_test(neg_atom_cv_qualified_rejected
   "required for the satisfaction of .IsAtom<G>. \\[with G = const fixy::atom::affine\\]"
   ".const struct fixy::atom::affine. is not the same as .struct fixy::atom::affine.")
 
+# Each family roster is a hand list, and the walk beside it reads the
+# family namespace to catch an atom the list omits.  The fixture plants
+# one in two families, so the refusal is shown to be per-namespace.
+fixy_neg_compile_test(neg_atom_family_namespace_unrostered
+  "static assertion failed: fixy/atoms/Ctrl\\.h: an atom declared in fixy::atom::ctrl is missing from ctrl_atom_roster"
+  "static assertion failed: fixy/atoms/Stack\\.h: an atom declared in fixy::atom::stack is missing from stack_atom_roster")
+
 # A final type that derives atom_base but names no axis fails the
 # requires-expression of IsAtom on `G::axis`.
 fixy_neg_compile_test(neg_atom_without_axis_rejected

@@ -89,6 +89,13 @@ using ctrl_atom_roster =
 
 namespace fixy::atom::detail::ctrl_atom_self_test {
 
+// The roster is a hand list, so this reads the family namespace and
+// asks the list about each plain atom it finds.  A parametric atom is
+// not covered; fixy/Atom.h says why beside the walk.
+static_assert(every_atom_in_is_rostered_<^^::fixy::atom::ctrl, ctrl_atom_roster>(),
+              "fixy/atoms/Ctrl.h: an atom declared in fixy::atom::ctrl is missing from "
+              "ctrl_atom_roster.");
+
 static_assert(every_roster_member_is_atom_<ctrl_atom_roster>(),
               "fixy/atoms/Ctrl.h: a member of ctrl_atom_roster is not an atom.");
 static_assert(every_roster_member_on_axis_<ctrl_atom_roster, Axis::ControlFlow>(),
