@@ -94,6 +94,7 @@ Usage:
 
 Exemptions:
   include/crucible/permissions/*.h                  — authoring set
+  include/foundation/permissions/*.h                — authoring set (ported)
   include/crucible/concurrent/*.h                   — per-channel substrate
   include/crucible/safety/Permission{Tree,Grid}Generator.h
   test/*                                            — test-local tag trees
@@ -211,6 +212,7 @@ while IFS=: read -r file line text; do
 
     case "$rel" in
         include/crucible/permissions/*.h | \
+        include/foundation/permissions/*.h | \
         include/crucible/concurrent/*.h | \
         include/crucible/safety/PermissionTreeGenerator.h | \
         include/crucible/safety/PermissionGridGenerator.h | \
@@ -236,7 +238,7 @@ done < <(
 )
 
 if [[ "$status" -ne 0 ]]; then
-    printf 'splits_into_orphan: specializations belong only in include/crucible/{permissions,concurrent}/ or include/crucible/safety/Permission{Tree,Grid}Generator.h or test/**.\n' >&2
+    printf 'splits_into_orphan: specializations belong only in include/crucible/{permissions,concurrent}/, include/foundation/permissions/, include/crucible/safety/Permission{Tree,Grid}Generator.h or test/**.\n' >&2
     printf 'splits_into_orphan: per CLAUDE.md §IX, the manifest must live in the same TU as the parent tag declaration; otherwise any foreign TU can forge cross-region authority.\n' >&2
 fi
 

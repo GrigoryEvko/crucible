@@ -236,7 +236,8 @@ while IFS= read -r match; do
     # member declarations and the doc-block already lists the
     # antipattern.
     case "$rel" in
-        include/crucible/permissions/Permission.h) continue ;;
+        include/crucible/permissions/Permission.h | \
+        include/foundation/permissions/Permission.h) continue ;;
     esac
 
     # Skip comment-only lines (pure prose mentions of the spelling).

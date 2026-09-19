@@ -162,3 +162,33 @@ foundation_neg_compile_test(neg_fail_closed_edge_outside_the_namespace
 foundation_neg_compile_test(neg_fail_closed_foreign_edge_type
   "constraints not satisfied"
   "admits<Ns, From, To>.*\\[with Ns = \\^\\^ namespace .*ingest.*From = .*Raw; To = .*Checked\\].*evaluated to .false.")
+
+# The permission tests keep the file names of the tests they are ported
+# from and carry a suffix, because test/CMakeLists.txt still registers
+# the plain names and a CMake target name is global.
+foundation_test(test_permissions_compile_foundation test_permissions_compile.cpp)
+foundation_test(test_permission_shared_foundation test_permission_shared.cpp)
+foundation_test(test_permission_shared_xor_exclusive_foundation test_permission_shared_xor_exclusive.cpp)
+foundation_test(test_read_view_foundation test_read_view.cpp)
+
+# A token split into subregions that no splits_into manifest declares.
+# The location regex proves the rejection came from the split's own
+# static_assert in Permission.h.
+foundation_neg_compile_test(neg_permission_split_undeclared_subregion
+  "static assertion failed"
+  "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: error: static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) requires splits_into<In, L, R>::value")
+
+# A fork whose child pack is not a declared partition of the parent.
+# The satisfaction notes name the fork's fit concept and the pack trait
+# that evaluated false.
+foundation_neg_compile_test(neg_permission_fork_pack_does_not_partition
+  "constraints not satisfied"
+  "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
+  "splits_into_pack_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
+
+# The spawning arm in a context whose row has no Bg effect.  The
+# partition is declared, so the only atom that fails is the capability.
+foundation_neg_compile_test(neg_permission_fork_without_bg
+  "constraints not satisfied"
+  "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
+  "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")

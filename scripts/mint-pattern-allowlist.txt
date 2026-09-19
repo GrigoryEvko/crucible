@@ -202,6 +202,19 @@ include/crucible/permissions/Permission.h:mint_permission_split_n:requires-ok
 include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
 include/crucible/permissions/ReadView.h:mint_read_view:requires-ok
 
+# ── foundation/permissions/ — the ported copies of the entries above ──
+# The token mints derive authority from a parent token, so they carry no
+# concept gate.  The spawning fork arm starts threads, so it is not
+# constexpr; the inline arm is.
+include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
+include/foundation/permissions/Permission.h:mint_permission_combine:requires-ok
+include/foundation/permissions/Permission.h:mint_permission_combine_n:requires-ok
+include/foundation/permissions/Permission.h:mint_permission_root:requires-ok
+include/foundation/permissions/Permission.h:mint_permission_share:requires-ok
+include/foundation/permissions/Permission.h:mint_permission_split:requires-ok
+include/foundation/permissions/Permission.h:mint_permission_split_n:requires-ok
+include/foundation/permissions/ReadView.h:mint_read_view:requires-ok
+
 # ── safety/ concept-constrained view + syscall mints ─────────────────
 include/crucible/safety/ScopedView.h:mint_linear_view:requires-ok
 include/crucible/safety/ScopedView.h:mint_view:requires-ok
