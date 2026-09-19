@@ -19,6 +19,11 @@
 // header made the choice itself from the context's workload budget,
 // which foundation's ExecCtx does not carry.
 //
+// The two arms share one body and one set of checks; the arm is a bool
+// parameter of both, and the checks' diagnostics name the arm they
+// fire for.  The old header repeated the four static_asserts and the
+// split-pack-run-rebuild sequence once per arm.
+//
 // One thread per child, spawned and joined inside the call.  That suits
 // a few children with long bodies.  It is the wrong shape for many short
 // tasks, which want a work-stealing pool instead.
@@ -38,6 +43,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdlib>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -79,6 +85,48 @@ template <typename Ctx, typename ChildrenTuple, typename CallablesTuple>
 inline constexpr bool permission_fork_ctx_callables_v =
     permission_fork_ctx_callables<Ctx, ChildrenTuple, CallablesTuple>::value();
 
+// A static_assert message assembled at compile time, so one check can
+// name the arm it fires for.  The buffer is sized for the longest
+// message below; the text past the terminator is never read.
+struct fork_diagnostic {
+    std::array<char, 256> text{};
+    std::size_t length = 0;
+
+    consteval fork_diagnostic(bool spawn, std::string_view rest) noexcept {
+        append(spawn ? "mint_permission_fork" : "mint_permission_fork_inline");
+        append(rest);
+    }
+    consteval void append(std::string_view part) noexcept {
+        for (char c : part) {
+            if (length < text.size()) text[length++] = c;
+        }
+    }
+    [[nodiscard]] consteval std::size_t size() const noexcept { return length; }
+    [[nodiscard]] consteval char const* data() const noexcept { return text.data(); }
+};
+
+// The four checks both arms make.  The split this delegates to asserts
+// the pairwise-distinct one again; asserting it here makes the
+// diagnostic name the fork.
+template <bool Spawn, typename Ctx, typename ChildrenTuple, typename CallablesTuple>
+consteval void permission_fork_check_() noexcept {
+    []<typename... Children, typename... Callables>(std::tuple<Children...>*, std::tuple<Callables...>*) {
+        static_assert(sizeof...(Children) == sizeof...(Callables),
+                      fork_diagnostic(Spawn, ": number of Child tags must match number of callables."));
+        static_assert(all_distinct_tags_v<Children...>,
+                      fork_diagnostic(Spawn, Spawn ? ": Child region tags must be PAIRWISE DISTINCT — "
+                                                     "forking two threads with Permission<A> each would alias "
+                                                     "region A and produce a data race."
+                                                   : ": Child region tags must be PAIRWISE DISTINCT — "
+                                                     "two bodies with Permission<A> each would alias region A."));
+        static_assert((std::is_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
+                      fork_diagnostic(Spawn, ": each callable must be invocable as "
+                                             "Callable_i(Permission<Child_i>&&, Ctx const&)."));
+        static_assert((std::is_nothrow_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
+                      fork_diagnostic(Spawn, ": callables must be noexcept."));
+    }(static_cast<ChildrenTuple*>(nullptr), static_cast<CallablesTuple*>(nullptr));
+}
+
 template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
 void permission_fork_spawn_(Ctx const& ctx, Children&& children, Callables&& callables,
                             std::index_sequence<Is...>) noexcept {
@@ -112,6 +160,29 @@ constexpr void permission_fork_inline_(Ctx const& ctx, Children&& children, Call
      ...);
 }
 
+// The one body: split the parent, pack the callables, run them on the
+// arm the caller chose, and rebuild the parent once every body has
+// finished.
+template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename... Callables>
+constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>&& parent,
+                                              Callables&&... callables) noexcept {
+    permission_fork_check_<Spawn, Ctx, std::tuple<Children...>, std::tuple<Callables...>>();
+
+    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
+
+    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
+
+    if constexpr (Spawn) {
+        permission_fork_spawn_(ctx, std::move(child_perms), std::move(callable_pack),
+                               std::index_sequence_for<Children...>{});
+    } else {
+        permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
+                                std::index_sequence_for<Children...>{});
+    }
+
+    return rebuild_parent_after_fork_<Parent>();
+}
+
 }  // namespace detail
 
 template <typename... Children, typename Ctx, typename Parent, typename... Callables>
@@ -119,28 +190,7 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
           && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
 [[nodiscard]] Permission<Parent> mint_permission_fork(Ctx const& ctx, Permission<Parent>&& parent,
                                                       Callables&&... callables) noexcept {
-    static_assert(sizeof...(Children) == sizeof...(Callables),
-                  "mint_permission_fork: number of Child tags must match number of callables.");
-    // The split this delegates to asserts the same thing.  Asserting it
-    // again here makes the diagnostic name the fork.
-    static_assert(all_distinct_tags_v<Children...>,
-                  "mint_permission_fork: Child region tags must be PAIRWISE DISTINCT — "
-                  "forking two threads with Permission<A> each would alias region A and "
-                  "produce a data race.");
-    static_assert((std::is_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
-                  "mint_permission_fork: each callable must be invocable as "
-                  "Callable_i(Permission<Child_i>&&, Ctx const&).");
-    static_assert((std::is_nothrow_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
-                  "mint_permission_fork: callables must be noexcept.");
-
-    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
-
-    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
-
-    detail::permission_fork_spawn_(ctx, std::move(child_perms), std::move(callable_pack),
-                                   std::index_sequence_for<Children...>{});
-
-    return detail::rebuild_parent_after_fork_<Parent>();
+    return detail::permission_fork_<true, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
 // The bodies run one after another on the calling thread, in child
@@ -151,25 +201,7 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
           && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
 [[nodiscard]] constexpr Permission<Parent> mint_permission_fork_inline(Ctx const& ctx, Permission<Parent>&& parent,
                                                                        Callables&&... callables) noexcept {
-    static_assert(sizeof...(Children) == sizeof...(Callables),
-                  "mint_permission_fork_inline: number of Child tags must match number of callables.");
-    static_assert(all_distinct_tags_v<Children...>,
-                  "mint_permission_fork_inline: Child region tags must be PAIRWISE DISTINCT — "
-                  "two bodies with Permission<A> each would alias region A.");
-    static_assert((std::is_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
-                  "mint_permission_fork_inline: each callable must be invocable as "
-                  "Callable_i(Permission<Child_i>&&, Ctx const&).");
-    static_assert((std::is_nothrow_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
-                  "mint_permission_fork_inline: callables must be noexcept.");
-
-    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
-
-    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
-
-    detail::permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
-                                    std::index_sequence_for<Children...>{});
-
-    return detail::rebuild_parent_after_fork_<Parent>();
+    return detail::permission_fork_<false, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
 }  // namespace foundation::permissions

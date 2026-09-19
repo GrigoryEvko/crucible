@@ -192,3 +192,21 @@ foundation_neg_compile_test(neg_permission_fork_without_bg
   "constraints not satisfied"
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
+
+# ── Task #104 (A10.4) part 2: the folded permission mints ────────────
+#
+# Each permission mint is one template gated by the shape of its
+# argument list.  A token passed as an lvalue is not consumed, so it is
+# not a split argument; the notes name the split's fit concept and the
+# shape check that answered false.
+foundation_neg_compile_test(neg_permission_split_lvalue_token
+  "constraints not satisfied"
+  "satisfaction of .PermissionSplitArgs<L, R, Args \\.\\.\\.>."
+  "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>.*evaluated to .false.")
+
+# The ctx-bound root mint in a context whose row does not cover the
+# tag's row: the one root template's fit concept names the tag and the
+# context it refused.
+foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
+  "constraints not satisfied"
+  "satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = .*NeedsIo.*ctx_cap::Fg")

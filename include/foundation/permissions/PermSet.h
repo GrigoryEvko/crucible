@@ -10,20 +10,16 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace foundation::permissions {
 
 namespace detail {
 
+// The same question the split manifests ask of a child pack, so the
+// same answer: Permission.h's pairwise-distinct fold.
 template <typename... Tags>
-struct perm_tags_unique_impl : std::true_type {};
-
-template <typename Head, typename... Tail>
-struct perm_tags_unique_impl<Head, Tail...>
-    : std::bool_constant<((!std::is_same_v<Head, Tail>) && ...) && perm_tags_unique_impl<Tail...>::value> {};
-
-template <typename... Tags>
-inline constexpr bool perm_tags_unique_v = perm_tags_unique_impl<Tags...>::value;
+inline constexpr bool perm_tags_unique_v = all_distinct_tags_v<Tags...>;
 
 }  // namespace detail
 
@@ -77,35 +73,41 @@ struct perm_set_insert : detail::perm_set_insert_branch<PS, Q, perm_set_contains
 template <typename PS, typename Q>
 using perm_set_insert_t = typename perm_set_insert<PS, Q>::type;
 
+// remove and difference are one filter: the tags of a set that pass a
+// predicate, rebuilt as a PermSet.  The old header wrote each as its own
+// head-and-tail recursion with a prepend helper; reflection walks the
+// template arguments as a list and substitutes the survivors back in.
+
 namespace detail {
 
-template <typename PS, typename Q>
-struct perm_set_remove_impl;
+// True when set, the reflection of a PermSet, names tag.  The two are
+// read through their aliases, so a tag written against
+// `using Alias = Concrete;` is the tag Concrete.
+[[nodiscard]] consteval bool perm_set_names_(std::meta::info set, std::meta::info tag) noexcept {
+    for (std::meta::info member : std::meta::template_arguments_of(set)) {
+        if (std::meta::dealias(member) == std::meta::dealias(tag)) return true;
+    }
+    return false;
+}
 
-template <typename Q>
-struct perm_set_remove_impl<PermSet<>, Q> {
-    using type = PermSet<>;
-};
-
-template <typename Head, typename... Tail, typename Q>
-struct perm_set_remove_impl<PermSet<Head, Tail...>, Q> {
-    using rec_type = typename perm_set_remove_impl<PermSet<Tail...>, Q>::type;
-
-    template <typename S>
-    struct prepend_head;
-
-    template <typename... Xs>
-    struct prepend_head<PermSet<Xs...>> {
-        using type = PermSet<Head, Xs...>;
-    };
-
-    using type = std::conditional_t<std::is_same_v<Head, Q>, rec_type, typename prepend_head<rec_type>::type>;
-};
+// The reflection of PermSet<kept...>, where kept is every tag of PS that
+// keep admits, in the order PS lists them.
+template <typename PS, typename Keep>
+[[nodiscard]] consteval std::meta::info perm_set_filter_(Keep keep) {
+    std::vector<std::meta::info> kept;
+    for (std::meta::info tag : std::meta::template_arguments_of(^^PS)) {
+        if (keep(tag)) kept.push_back(tag);
+    }
+    return std::meta::substitute(^^PermSet, kept);
+}
 
 }  // namespace detail
 
 template <typename PS, typename Q>
-struct perm_set_remove : detail::perm_set_remove_impl<PS, Q> {};
+struct perm_set_remove {
+    using type = [:detail::perm_set_filter_<PS>(
+                       [](std::meta::info tag) { return std::meta::dealias(tag) != std::meta::dealias(^^Q); }):];
+};
 
 template <typename PS, typename Q>
 using perm_set_remove_t = typename perm_set_remove<PS, Q>::type;
@@ -177,35 +179,11 @@ struct perm_set_union : detail::perm_set_union_impl<PS1, PS2> {};
 template <typename PS1, typename PS2>
 using perm_set_union_t = typename perm_set_union<PS1, PS2>::type;
 
-namespace detail {
-
 template <typename PS1, typename PS2>
-struct perm_set_difference_impl;
-
-template <typename PS2>
-struct perm_set_difference_impl<PermSet<>, PS2> {
-    using type = PermSet<>;
+struct perm_set_difference {
+    using type = [:detail::perm_set_filter_<PS1>(
+                       [](std::meta::info tag) { return !detail::perm_set_names_(^^PS2, tag); }):];
 };
-
-template <typename Head, typename... Tail, typename PS2>
-struct perm_set_difference_impl<PermSet<Head, Tail...>, PS2> {
-    using rec_type = typename perm_set_difference_impl<PermSet<Tail...>, PS2>::type;
-
-    template <typename S>
-    struct prepend_head;
-
-    template <typename... Xs>
-    struct prepend_head<PermSet<Xs...>> {
-        using type = PermSet<Head, Xs...>;
-    };
-
-    using type = std::conditional_t<perm_set_contains_v<PS2, Head>, rec_type, typename prepend_head<rec_type>::type>;
-};
-
-}  // namespace detail
-
-template <typename PS1, typename PS2>
-struct perm_set_difference : detail::perm_set_difference_impl<PS1, PS2> {};
 
 template <typename PS1, typename PS2>
 using perm_set_difference_t = typename perm_set_difference<PS1, PS2>::type;
