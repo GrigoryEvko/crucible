@@ -274,7 +274,7 @@ struct InitOwner;
 // An execution context default-initializes its capability member, so
 // it needs access to that member's private default constructor.  The
 // contexts below friend this template to grant exactly that.
-template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+template <class Cap, class Row>
 class ExecCtx;
 
 namespace detail::ctx_mint {
@@ -343,7 +343,7 @@ private:
     // qualified friend name with the wrong arity is accepted in
     // silence, so nothing here would report a drift; only unqualifying
     // the name turns it into a diagnostic.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+    template <class Cap, class Row>
     friend class ::foundation::effects::ExecCtx;
 
 public:
@@ -364,7 +364,7 @@ private:
     // qualified friend name with the wrong arity is accepted in
     // silence, so nothing here would report a drift; only unqualifying
     // the name turns it into a diagnostic.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+    template <class Cap, class Row>
     friend class ::foundation::effects::ExecCtx;
 
 public:
@@ -384,7 +384,7 @@ private:
     // qualified friend name with the wrong arity is accepted in
     // silence, so nothing here would report a drift; only unqualifying
     // the name turns it into a diagnostic.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+    template <class Cap, class Row>
     friend class ::foundation::effects::ExecCtx;
 
 public:

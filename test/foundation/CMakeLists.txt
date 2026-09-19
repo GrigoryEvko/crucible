@@ -34,6 +34,9 @@ foundation_test(test_algebra_core)
 foundation_test(test_lattices_core)
 foundation_test(test_lattices_bands)
 foundation_test(test_effects_core)
+foundation_test(test_ctx)
+foundation_test(test_capability)
+foundation_test(test_computation)
 
 # Negative-compile fixtures for the foundation layer.
 #
@@ -85,3 +88,13 @@ foundation_neg_compile_test(neg_constraint_failure_names_the_concept
 foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
   "contract predicate is false in constant expression"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: error")
+
+# A capability source authorizes only its permitted row.
+foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
+  "constraints not satisfied"
+  "CanMintCap")
+
+# The witnessed lift reads the context's row, not the caller's word.
+foundation_neg_compile_test(neg_lift_in_ctx_without_the_effect
+  "constraints not satisfied"
+  "row_contains_v")
