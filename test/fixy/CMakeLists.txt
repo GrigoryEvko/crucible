@@ -254,3 +254,45 @@ fixy_neg_compile_test(neg_bands_satisfies_foreign_tier
   "use of invalid variable template .satisfies_v<"
   "satisfaction of .same_as<decltype \\(Required\\), fixy::band_tier_t<B> >."
   ".enum class foundation::algebra::lattices::HotPathTier. is not the same as .enum class foundation::algebra::lattices::DetSafeTier.")
+
+# ── Task #105 (A10.5): the eight value wrappers ──────────────────────
+#
+# The checked test keeps the file name of the test it is ported from and
+# carries a suffix, because test/CMakeLists.txt still registers
+# test_checked and a CMake target name is global.
+fixy_test(test_owned_file)
+fixy_test(test_owned_mmap)
+fixy_test(test_constant_time)
+fixy_test(test_cyclic)
+fixy_test(test_saturated)
+fixy_test(test_checked_fixy test_checked.cpp)
+fixy_test(test_bits)
+fixy_test(test_fixed_array)
+
+# The leak witness is one reflection query over the atom catalog, so no
+# translation unit can mint an authorization out of a type of its own.
+fixy_neg_compile_test(neg_owned_mmap_release_without_leak_atom
+  "no matching function for call to .fixy::OwnedMmap<.*>::release\\("
+  "constraints not satisfied"
+  "required for the satisfaction of .IsLeakAtom<LeakAtom>."
+  "the expression .is_leak_atom_v<G> \\[with G = <unnamed>::NotALeakAtom\\]. evaluated to .false.")
+
+# The compile-time accessor carries its bound in a requires clause.
+fixy_neg_compile_test(neg_fixed_array_at_out_of_range_index
+  "no matching function for call to .fixy::FixedArray<int, 4>::at<4>\\(\\)."
+  "constraints not satisfied"
+  "the expression .I < N \\[with I = 4; N = 4\\]. evaluated to .false.")
+
+# The bit operators are hidden friends, so two Bits over different enums
+# share none of them.
+fixy_neg_compile_test(neg_bits_cross_enum_operand
+  "no match for .operator\\|."
+  "operand types are .const fixy::Bits<.*Perm>. and .const fixy::Bits<.*Colour>."
+  "no known conversion for argument 2 from .const fixy::Bits<.*Colour>. to .*Perm.")
+
+# The carrier admits a float; the three checked operations do not,
+# because the clamp they report is the end of an integer range.
+fixy_neg_compile_test(neg_saturated_checked_op_on_float
+  "no matching function for call to .add_sat_checked\\(float, float\\)."
+  "constraints not satisfied"
+  "required for the satisfaction of .integral<T>. \\[with T = float\\]")

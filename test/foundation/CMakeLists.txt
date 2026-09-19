@@ -96,6 +96,14 @@ foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
   "constraints not satisfied"
   "CanMintCap")
 
+# A thread atom has no value-level tag, so the one extract_bare template
+# leaves the overload set by substitution failure on HasBareTag.  The
+# first regex proves the call found no candidate, and the second proves
+# the reason was the constraint rather than a hard error in the body.
+foundation_neg_compile_test(neg_extract_bare_thread_atom
+  "no matching function for call to .extract_bare"
+  "satisfaction of .HasBareTag<E>.")
+
 # The witnessed lift reads the context's row, not the caller's word.
 foundation_neg_compile_test(neg_lift_in_ctx_without_the_effect
   "constraints not satisfied"

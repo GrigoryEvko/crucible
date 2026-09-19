@@ -18,7 +18,11 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/Instance.h>
 
+#include <cstddef>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -87,46 +91,65 @@ template <Effect E, class Source>
     return Capability<E, Source>{cap_mint_key{}};
 }
 
+// The first template parameter of a Capability is a non-type, which the
+// `template <class...> class` form of a hand-written detector cannot
+// name.  The reflection query answers for it directly.  That query also
+// strips cv and reference, so a reference to a Capability answers as the
+// Capability does, and the three helpers below inherit the same strip.
 template <class T>
-struct is_capability : std::false_type {};
-template <Effect E, class S>
-struct is_capability<Capability<E, S>> : std::true_type {};
-template <class T>
-inline constexpr bool is_capability_v = is_capability<T>::value;
+inline constexpr bool is_capability_v = ::foundation::reflect::is_instance_of_v<T, ^^Capability>;
 template <class T>
 concept IsCapability = is_capability_v<T>;
 
-// cap_matches ignores the source.  HasCapAndSource pins both, for a
-// function that needs a capability from one specific source.
+namespace detail {
+
+// The template argument of T at `index`, read off the Capability.  The
+// assertion is what keeps cap_of_v and source_of_t a hard error for
+// anything else, in place of the undefined primary templates they
+// replace.  It also names the reason, which an incomplete type could
+// not.
+template <class T>
+[[nodiscard]] consteval std::meta::info cap_argument_(std::size_t index) noexcept {
+    static_assert(is_capability_v<T>,
+                  "cap_of_v and source_of_t answer for a Capability specialization only.  Asking either "
+                  "about another type is a compile error on purpose, so that a missing capability cannot "
+                  "read as a default effect or as a default source.");
+    return std::meta::template_arguments_of(std::meta::dealias(^^std::remove_cvref_t<T>))[index];
+}
+
+}  // namespace detail
+
+template <class T>
+inline constexpr Effect cap_of_v = std::meta::extract<Effect>(detail::cap_argument_<T>(0));
+
+template <class T>
+using source_of_t = [:detail::cap_argument_<T>(1):];
+
+namespace detail {
+
+// The guard is what keeps cap_of_v out of the reach of a type that is
+// not a Capability.  Naming it there would be the hard error above, and
+// a trait that answers a question must not abort the translation.
 template <class T, Effect E>
-struct cap_matches : std::false_type {};
-template <Effect E, class S>
-struct cap_matches<Capability<E, S>, E> : std::true_type {};
+[[nodiscard]] consteval bool cap_matches_() noexcept {
+    if constexpr (is_capability_v<T>) {
+        return cap_of_v<T> == E;
+    } else {
+        return false;
+    }
+}
+
+}  // namespace detail
+
+// cap_matches_v ignores the source.  HasCapAndSource pins both, for a
+// function that needs a capability from one specific source.  That
+// concept keeps the exact-type test: it is the one place that means the
+// type itself and not a reference to it.
 template <class T, Effect E>
-inline constexpr bool cap_matches_v = cap_matches<T, E>::value;
+inline constexpr bool cap_matches_v = detail::cap_matches_<T, E>();
 
 template <class T, Effect E, class S>
 concept HasCapAndSource = std::is_same_v<T, Capability<E, S>>;
-
-// Both are left undefined for a type that is not a Capability, so
-// asking for the effect or source of something else is a hard error.
-template <class T>
-struct cap_of;
-template <Effect E, class S>
-struct cap_of<Capability<E, S>> {
-    static constexpr Effect value = E;
-};
-template <class T>
-inline constexpr Effect cap_of_v = cap_of<T>::value;
-
-template <class T>
-struct source_of;
-template <Effect E, class S>
-struct source_of<Capability<E, S>> {
-    using type = S;
-};
-template <class T>
-using source_of_t = typename source_of<T>::type;
 
 template <Effect E, IsExecCtx Ctx>
     requires CtxCanMint<Ctx, E>
@@ -143,31 +166,51 @@ template <Effect E, IsExecCtx Ctx>
 template <class Cap, class Ctx>
 concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains_v<row_type_of_t<Ctx>, cap_of_v<Cap>>;
 
+// The bare tag of an atom is the type in namespace cap whose identifier
+// is the enumerator's own, which is how Alloc, IO and Block each reach
+// theirs without an arm written here.  The identifier is load-bearing:
+// a new value atom gets a bare tag by declaring a type of the same name
+// in cap, and a type in cap whose name matches no atom is reached by
+// nothing.  The three thread atoms declare no such type, and the
+// reflection is then not a type.
+namespace detail {
+
+template <Effect E>
+[[nodiscard]] consteval std::meta::info bare_tag_info_() noexcept {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^cap, std::meta::access_context::current()));
+// An expansion statement unrolls into successive scopes that each
+// declare the same induction variable, so -Wshadow fires once per
+// iteration.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_type(member)) {
+            if (std::meta::identifier_of(member) == ::foundation::reflect::enum_name(E)) return member;
+        }
+    }
+#pragma GCC diagnostic pop
+    return std::meta::info{};
+}
+
+}  // namespace detail
+
+template <Effect E>
+concept HasBareTag = std::meta::is_type(detail::bare_tag_info_<E>());
+
+template <Effect E>
+    requires HasBareTag<E>
+using bare_tag_t = [:detail::bare_tag_info_<E>():];
+
 // The bridge for a function that takes a bare tag by value: the caller
-// mints a Capability, and trades it here for the tag.  There is no
-// overload for the thread atoms, which have no value-level tag.
+// mints a Capability, and trades it here for the tag.  A thread atom
+// leaves HasBareTag unsatisfied, so this drops out of the overload set
+// by substitution failure rather than by a hard error in the body.
 template <Effect E, class S>
-[[nodiscard]] constexpr cap::Alloc extract_bare(Capability<E, S>&& c) noexcept
-    requires(E == Effect::Alloc)
-{
+    requires HasBareTag<E>
+[[nodiscard]] constexpr bare_tag_t<E> extract_bare(Capability<E, S>&& c) noexcept {
     std::move(c).consume();
-    return cap::Alloc{};
-}
-
-template <Effect E, class S>
-[[nodiscard]] constexpr cap::IO extract_bare(Capability<E, S>&& c) noexcept
-    requires(E == Effect::IO)
-{
-    std::move(c).consume();
-    return cap::IO{};
-}
-
-template <Effect E, class S>
-[[nodiscard]] constexpr cap::Block extract_bare(Capability<E, S>&& c) noexcept
-    requires(E == Effect::Block)
-{
-    std::move(c).consume();
-    return cap::Block{};
+    return bare_tag_t<E>{};
 }
 
 namespace detail::capability_self_test {
@@ -288,6 +331,68 @@ static_assert(cap_matches_v<Capability<Effect::Alloc, Bg>, Effect::Alloc>);
 static_assert(!cap_matches_v<Capability<Effect::Alloc, Bg>, Effect::IO>);
 static_assert(cap_matches_v<Capability<Effect::Alloc, Init>, Effect::Alloc>);
 static_assert(!cap_matches_v<int, Effect::Alloc>);
+
+// The reflection query strips cv and reference, which the partial
+// specializations it replaces did not.  A function template that
+// deduces its parameter as Cap&& can now ask these three about the
+// deduced type without spelling the strip itself.  Nothing is admitted
+// that was rejected on its merits: a type that is not a Capability
+// still answers no, and the mint passkey is the gate on authority.
+static_assert(is_capability_v<Capability<Effect::Alloc, Bg> const&>);
+static_assert(is_capability_v<Capability<Effect::Alloc, Bg>&&>);
+static_assert(cap_of_v<Capability<Effect::IO, Init> const&> == Effect::IO);
+static_assert(std::is_same_v<source_of_t<Capability<Effect::IO, Init>&&>, Init>);
+static_assert(cap_matches_v<Capability<Effect::Alloc, Bg> const&, Effect::Alloc>);
+
+// Exactly the three value atoms carry a bare tag.  The three thread
+// atoms leave the constraint unsatisfied, which is what keeps
+// extract_bare out of the overload set for them.
+static_assert(HasBareTag<Effect::Alloc>);
+static_assert(HasBareTag<Effect::IO>);
+static_assert(HasBareTag<Effect::Block>);
+static_assert(!HasBareTag<Effect::Bg>, "A thread atom has no value-level tag.  Giving Effect::Bg one would "
+                                       "let a context stand in for the capability it grants.");
+static_assert(!HasBareTag<Effect::Init>);
+static_assert(!HasBareTag<Effect::Test>);
+
+static_assert(std::is_same_v<bare_tag_t<Effect::Alloc>, cap::Alloc>);
+static_assert(std::is_same_v<bare_tag_t<Effect::IO>, cap::IO>);
+static_assert(std::is_same_v<bare_tag_t<Effect::Block>, cap::Block>);
+
+// The mapping reads namespace cap by identifier, so the membership of
+// that namespace decides which atoms have a bridge.  A pin on the count
+// makes a new member a two-place edit that a reviewer sees, and it
+// fails if the namespace is reopened somewhere this header cannot see.
+[[nodiscard]] consteval std::size_t cap_tag_count_() noexcept {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^cap, std::meta::access_context::current()));
+    std::size_t count = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_type(member)) ++count;
+    }
+#pragma GCC diagnostic pop
+    return count;
+}
+static_assert(cap_tag_count_() == 3, "Namespace cap holds one type for each of Alloc, IO and Block.  A "
+                                     "fourth means either a new value atom, whose name must match its "
+                                     "enumerator for extract_bare to reach it, or a type that no atom "
+                                     "names and that the bridge therefore ignores.");
+
+// The rejection for a thread atom must be substitution failure.  A
+// requires-expression answers false for that and fails to compile for a
+// hard error, so this pins the mechanism and not only the outcome.
+template <Effect E, class S>
+concept can_extract_bare_ = requires(Capability<E, S>&& c) { extract_bare(std::move(c)); };
+
+static_assert(can_extract_bare_<Effect::Alloc, Bg>);
+static_assert(can_extract_bare_<Effect::IO, Init>);
+static_assert(can_extract_bare_<Effect::Block, Test>);
+static_assert(!can_extract_bare_<Effect::Bg, Bg>, "extract_bare must drop out of the overload set for a "
+                                                  "thread atom, and must not reject from inside its body.");
+static_assert(!can_extract_bare_<Effect::Init, Init>);
+static_assert(!can_extract_bare_<Effect::Test, Test>);
 
 static_assert(HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Bg>);
 static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Init>);
