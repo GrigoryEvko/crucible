@@ -60,6 +60,7 @@ fixy_neg_compile_test(neg_fixy_harness_probe
 
 fixy_test(test_qtt)
 fixy_test(test_mutation)
+fixy_test(test_axis)
 
 # The copy constructor of Qtt is deleted with a reason; the compiler
 # names the constructor and repeats the reason.
