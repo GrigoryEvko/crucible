@@ -98,11 +98,60 @@ scan() {
 }
 
 self_test() {
-    local tmp
+    local tmp out rc saved_root violation_count
     tmp=$(mktemp -d)
-    trap "rm -rf '$tmp'" EXIT
+    out=$(mktemp)
+    trap "rm -rf '$tmp'; rm -f '$out'" EXIT
 
     mkdir -p "$tmp/include/crucible/test"
+
+    # The wrapper inverts roles: temporarily point $root at the tmp tree.
+    saved_root="$root"
+    root="$tmp"
+
+    fail() {
+        printf 'check-stub-discipline: SELF-TEST FAILED — %s\n' "$1" >&2
+        printf '── scanner stderr ───\n%s\n────────────────────\n' "$(cat "$out")" >&2
+        root="$saved_root"
+        return 1
+    }
+
+    # Arm one, the paired control.  The honesty marker sits beside a
+    # CRUCIBLE_STUB deprecation, which is the shape the discipline asks
+    # for, so the scan must stay silent.  Without this arm the
+    # suppression branch is never shown to suppress, and a guard that
+    # flagged every marker would pass its own self-test.
+    cat > "$tmp/include/crucible/test/Paired.h" <<'EOF'
+#pragma once
+namespace crucible::test_stub {
+inline constexpr bool data_plane_implemented = false;
+[[deprecated("CRUCIBLE_STUB: the data plane is not wired yet")]]
+void connect_paired() noexcept;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        fail "a marker paired with a CRUCIBLE_STUB deprecation reported $rc, want 0"
+        return 1
+    fi
+
+    # Arm two, a header with no honesty marker at all.  Nothing to pair,
+    # so nothing to report.
+    cat > "$tmp/include/crucible/test/NoMarker.h" <<'EOF'
+#pragma once
+namespace crucible::test_stub {
+inline constexpr bool unrelated_flag = true;
+void ordinary() noexcept;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        fail "a header without an honesty marker reported $rc, want 0"
+        return 1
+    fi
+
+    # Arm three, the violation: a marker with no deprecation anywhere in
+    # the header.  Exactly one header is unpaired, so the count pins it.
     cat > "$tmp/include/crucible/test/Stub.h" <<'EOF'
 #pragma once
 namespace crucible::test_stub {
@@ -110,18 +159,24 @@ inline constexpr bool data_plane_implemented = false;
 void connect_stub() noexcept;
 }
 EOF
-
-    # The wrapper inverts roles: temporarily point $root at the tmp tree.
-    local saved_root="$root"
-    root="$tmp"
-    if scan >/dev/null 2>&1; then
-        printf 'self-test FAIL: scan missed planted stub-without-deprecation\n' >&2
-        root="$saved_root"
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 1 ]]; then
+        fail "planted stub-without-deprecation reported $rc, want 1"
         return 1
     fi
-    root="$saved_root"
+    grep -qF 'include/crucible/test/Stub.h' "$out" || { fail "the unpaired header was not named"; return 1; }
+    if grep -qF 'include/crucible/test/Paired.h' "$out"; then
+        fail "a paired header was flagged"
+        return 1
+    fi
+    violation_count=$(grep -c 'pair-invariant violation' "$out" || true)
+    if [[ "$violation_count" -ne 1 ]]; then
+        fail "expected exactly 1 violation, got $violation_count"
+        return 1
+    fi
 
-    printf 'check-stub-discipline.sh: self-test PASS\n'
+    root="$saved_root"
+    printf 'check-stub-discipline: self-test passed — a paired marker and a header without one pass, exactly one unpaired marker is caught.\n' >&2
 }
 
 case "${1:-}" in

@@ -112,9 +112,10 @@ scan() {
 }
 
 self_test() {
-    local tmp
+    local tmp out rc saved_root missing_count
     tmp=$(mktemp -d)
-    trap "rm -rf '$tmp'" EXIT
+    out=$(mktemp)
+    trap "rm -rf '$tmp'; rm -f '$out'" EXIT
 
     mkdir -p "$tmp/include/crucible/safety" "$tmp/include/crucible/fixy"
     cat > "$tmp/include/crucible/safety/IsTest.h" <<'EOF'
@@ -126,6 +127,39 @@ template <typename T>
 using test_drift_value_t = int;
 }
 EOF
+
+    saved_root="$root"
+    root="$tmp"
+
+    fail() {
+        printf 'check-isx-parity: SELF-TEST FAILED — %s\n' "$1" >&2
+        printf '── scanner stderr ───\n%s\n────────────────────\n' "$(cat "$out")" >&2
+        root="$saved_root"
+        return 1
+    }
+
+    # Arm one, the clean control.  Both aliases are re-exported, so a
+    # guard that has degenerated into always-fire reports a violation
+    # here and the arm catches it.  Without this arm the self-test
+    # cannot tell a working guard from one that flags everything.
+    cat > "$tmp/include/crucible/fixy/Is.h" <<'EOF'
+#pragma once
+#include <crucible/safety/IsTest.h>
+namespace crucible::fixy::is {
+using ::crucible::safety::extract::is_test_drift_v;
+using ::crucible::safety::extract::test_drift_value_t;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        fail "a tree whose aliases are all re-exported reported $rc, want 0"
+        return 1
+    fi
+
+    # Arm two, the drift.  Neither alias is re-exported, so both must
+    # appear in the report and the count must be exactly two.  The count
+    # is what stops the arm from passing on a guard that reports one
+    # name and drops the other.
     cat > "$tmp/include/crucible/fixy/Is.h" <<'EOF'
 #pragma once
 #include <crucible/safety/IsTest.h>
@@ -134,17 +168,45 @@ namespace crucible::fixy::is {
 // Deliberately MISSING: using ::crucible::safety::extract::test_drift_value_t;
 }
 EOF
-
-    local saved_root="$root"
-    root="$tmp"
-    if scan >/dev/null 2>&1; then
-        printf 'self-test FAIL: scan missed planted parity drift\n' >&2
-        root="$saved_root"
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 1 ]]; then
+        fail "planted parity drift reported $rc, want 1"
         return 1
     fi
-    root="$saved_root"
+    grep -qE '^  is_test_drift_v$' "$out" || { fail "the missing trait was not named"; return 1; }
+    grep -qE '^  test_drift_value_t$' "$out" || { fail "the missing type alias was not named"; return 1; }
+    missing_count=$(grep -cE '^  [a-z_]+_[tv]$' "$out" || true)
+    if [[ "$missing_count" -ne 2 ]]; then
+        fail "expected exactly 2 missing aliases, got $missing_count"
+        return 1
+    fi
 
-    printf 'check-isx-parity.sh: self-test PASS\n'
+    # Arm three, the detail exclusion.  A detail-namespace probe matches
+    # the alias-shape regex but is not public surface, so it must not be
+    # demanded of fixy/Is.h.
+    cat > "$tmp/include/crucible/safety/IsProbe.h" <<'EOF'
+#pragma once
+namespace crucible::safety::extract::detail {
+template <typename T>
+using session_base_probe_t = int;
+}
+EOF
+    cat > "$tmp/include/crucible/fixy/Is.h" <<'EOF'
+#pragma once
+#include <crucible/safety/IsTest.h>
+namespace crucible::fixy::is {
+using ::crucible::safety::extract::is_test_drift_v;
+using ::crucible::safety::extract::test_drift_value_t;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        fail "an excluded detail probe was demanded of fixy/Is.h (got $rc)"
+        return 1
+    fi
+
+    root="$saved_root"
+    printf 'check-isx-parity: self-test passed — a mirrored tree passes, planted drift names both aliases and exits 1, a detail probe is excluded.\n' >&2
 }
 
 case "${1:-}" in

@@ -231,8 +231,14 @@ case "${1:-}" in
         if grep -qF '_Ported.h' "$out"; then fail "a superseded marking whose include followed was flagged"; fi
         if grep -qF 'Includer.h' "$out"; then fail "an include-only edit following a marking was flagged"; fi
         grep -qF '_Tampered.h' "$out" || fail "a marking that also edits content was not caught"
+        # Exactly five edits were planted to violate.  Naming each of the
+        # five and clearing each of the five permitted shapes still lets a
+        # sixth report through on a path the arms above never look at, so
+        # pin the total as well.
+        violation_count="$(grep -c 'FROZEN violation:' "$out" || true)"
+        [[ "$violation_count" -eq 5 ]] || fail "expected exactly 5 violations, got $violation_count"
         rm -f "$out"
-        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught; deletion, new-tree adds and superseded markings clean.\n' >&2
+        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean.\n' >&2
         exit 0
         ;;
     "") ;;
