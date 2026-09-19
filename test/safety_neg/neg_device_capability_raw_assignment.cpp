@@ -26,7 +26,7 @@
 // WRAP-CCtx-2 #904 active_region_ raw-assignment fixture (same Tagged
 // shape, different source tag / wrapped type).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <cstdint>
 
 int main() {

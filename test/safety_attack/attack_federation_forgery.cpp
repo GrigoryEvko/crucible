@@ -55,7 +55,7 @@
 
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/permissions/FederationPermission.h>
-#include <crucible/safety/IsTagged.h>
+#include <crucible/safety/_IsTagged.h>
 
 // fixy-CR-02 — mint_federation_admittance is [[deprecated]] in V1.
 // This file intentionally exercises the placeholder verifier

@@ -2,8 +2,8 @@
 
 // The provenance tag headers are pulled in so that a consumer of a typed path
 // gets the tags that name its provenance.
-#include <crucible/safety/Tagged.h>
-#include <crucible/safety/source/Path.h>
+#include <crucible/safety/_Tagged.h>
+#include <crucible/safety/source/_Path.h>
 
 #include <cstddef>
 #include <cstdint>

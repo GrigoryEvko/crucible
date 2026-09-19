@@ -38,7 +38,7 @@
 //
 // [GCC-WRAPPER-TEXT] — Tagged<T, ForgePhase<'A'>> ≠ Tagged<T, ForgePhase<'I'>>.
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 #include <utility>

@@ -6,7 +6,7 @@
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 #include <utility>

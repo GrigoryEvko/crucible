@@ -5,7 +5,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <bit>
 #include <compare>

@@ -28,7 +28,7 @@
 // shape, different source-tag axis: source::Arena vs source::Vigil →
 // here, source::Calibrated vs source::Meridian).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <cstdint>
 
 int main() {

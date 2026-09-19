@@ -10,7 +10,7 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 #include <array>
 #include <cstddef>

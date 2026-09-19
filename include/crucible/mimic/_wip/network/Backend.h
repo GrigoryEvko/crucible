@@ -4,7 +4,7 @@
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/mimic/CogMimic.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 #include <expected>

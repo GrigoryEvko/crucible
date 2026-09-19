@@ -23,7 +23,7 @@
 // of the WRAP-CCtx-2 #904 active_region_ raw-assignment fixture (same
 // Tagged shape, different source tag / pointee type).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace crucible {
 struct FakeTraceEntry {

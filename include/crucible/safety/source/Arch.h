@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <type_traits>
 

@@ -39,7 +39,7 @@
 #include <crucible/handles/FileHandle.h>
 #include <crucible/mimic/CogMimic.h>
 #include <crucible/safety/Bits.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #if defined(__aarch64__)
 #include <sys/auxv.h>

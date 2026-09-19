@@ -18,7 +18,7 @@
 // Both ValidTaggedTag<Tag> failure modes documented; both must
 // fire to demonstrate the gate is not accidentally permissive.
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     using crucible::safety::mint_tagged;

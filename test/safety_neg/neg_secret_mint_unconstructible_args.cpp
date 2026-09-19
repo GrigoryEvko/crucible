@@ -21,7 +21,7 @@
 // Expected diagnostic: constraints not satisfied /
 // no matching function / is_constructible_v / mint_secret.
 
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 int main() {
     // Should FAIL: int is not constructible from const char*.

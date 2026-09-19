@@ -25,7 +25,7 @@
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Time.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/safety/source/Path.h>
+#include <crucible/safety/source/_Path.h>
 #include <crucible/safety/ClockSource.h>
 // safety/Decide.h, safety/Post.h and safety/Pre.h are included directly
 // rather than through the fixy umbrella.  The umbrella header that

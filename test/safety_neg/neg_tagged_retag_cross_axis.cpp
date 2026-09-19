@@ -17,7 +17,7 @@
 // must reject the same transition; the consumer-level fixture
 // witnesses that the V-024 wire-up actually fires.
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace ns = crucible::safety;
 

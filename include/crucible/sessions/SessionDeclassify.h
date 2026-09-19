@@ -11,7 +11,7 @@
 // value again.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionSubtype.h>
 

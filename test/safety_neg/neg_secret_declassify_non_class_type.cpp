@@ -22,7 +22,7 @@
 // Expected diagnostic: "DeclassificationPolicy" or "SecretPolicy_NotInBase"
 // or "constraints not satisfied".
 
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 #include <cstdint>
 

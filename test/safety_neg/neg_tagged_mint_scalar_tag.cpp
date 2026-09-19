@@ -34,7 +34,7 @@
 // Tagged slice of backlog #146 A8-P2 alongside U-140's Machine and
 // U-141's ConstantTime coverage).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 // Anchor a legitimate call so the file is self-contained — empty-
 // struct tag satisfies std::is_class_v.  This call compiles.

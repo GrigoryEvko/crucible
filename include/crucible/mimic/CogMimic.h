@@ -8,7 +8,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pre.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 #include <type_traits>

@@ -23,9 +23,9 @@
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 #include <crucible/safety/Stale.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/effects/_Computation.h>

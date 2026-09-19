@@ -341,9 +341,9 @@ static_assert(cheat20_admits, "[CHEAT 20 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>
-#include <crucible/safety/IsSecret.h>
+#include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/IsStale.h>
-#include <crucible/safety/IsTagged.h>
+#include <crucible/safety/_IsTagged.h>
 #include <crucible/safety/IsVendor.h>
 #include <crucible/safety/IsWait.h>
 

@@ -7,7 +7,7 @@
 
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/OwnedRegion.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdio>
 #include <cstdlib>

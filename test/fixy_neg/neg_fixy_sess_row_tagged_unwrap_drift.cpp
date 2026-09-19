@@ -39,7 +39,7 @@
 
 #include <crucible/fixy/SessRowExtraction.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <type_traits>
 

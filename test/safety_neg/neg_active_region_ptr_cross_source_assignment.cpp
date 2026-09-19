@@ -28,7 +28,7 @@
 // WRAP-Transaction-6 #1065 cross-source fixture (same Tagged shape,
 // different source-tag axis: source::Arena vs source::Vigil).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace crucible {
 struct FakeRegionNode {

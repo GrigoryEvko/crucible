@@ -8,7 +8,7 @@
 
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/ScopedView.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 #include <type_traits>
 

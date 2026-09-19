@@ -21,7 +21,7 @@
 // Together they witness "Tagged::retag()'s requires-clause fires"
 // across both kinds of catalog miss.
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace ns = crucible::safety;
 

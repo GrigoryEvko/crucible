@@ -21,7 +21,7 @@
 // "two-distinct-mismatch-classes" discipline.
 
 #include <crucible/fixy/Source.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace ft = crucible::fixy::tags;
 

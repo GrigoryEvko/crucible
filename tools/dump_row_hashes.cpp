@@ -70,11 +70,11 @@
 #include <crucible/safety/SchedClass.h>
 #include <crucible/safety/ScopedFence.h>
 #include <crucible/safety/_SealedRefined.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 #include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/SuspendBehavior.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>

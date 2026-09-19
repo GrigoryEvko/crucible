@@ -7,7 +7,7 @@
 
 #include <crucible/DimHash.h>
 #include <crucible/safety/DetSafe.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 

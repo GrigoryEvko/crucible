@@ -16,7 +16,7 @@
 //     Tagged<T, Sanitized> is not Tagged<T, External>.
 
 #include <crucible/SchemaTable.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     crucible::SchemaTable table;

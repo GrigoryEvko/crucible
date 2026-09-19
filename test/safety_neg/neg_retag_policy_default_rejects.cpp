@@ -18,7 +18,7 @@
 // fires across the two consumer surfaces V-024 will pin onto
 // `Tagged::retag()`.
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace ns = crucible::safety;
 

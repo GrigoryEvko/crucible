@@ -5,9 +5,9 @@
 
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 #include <crucible/safety/Stale.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <crucible/safety/witness/Witness.h>
 
 #include <cstdint>

@@ -7,7 +7,7 @@
 // closure — both are silent declassifications bypassing the
 // declassify<Policy> audit trail.
 
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 #include <cstdint>
 

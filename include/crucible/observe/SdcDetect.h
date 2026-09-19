@@ -10,7 +10,7 @@
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <array>
 #include <cmath>

@@ -11,7 +11,7 @@
 // Expected diagnostic: "IsAccepted".
 
 #include <crucible/fixy/Fn.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 namespace stance = crucible::fixy::stance;
 namespace policy = crucible::safety::secret_policy;

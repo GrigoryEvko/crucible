@@ -24,7 +24,7 @@
 // failure messages emit the concept name in the "constraint
 // requires" line.
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     using crucible::safety::mint_tagged;

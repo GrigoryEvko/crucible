@@ -2,8 +2,8 @@
 
 #include <crucible/Types.h>
 #include <crucible/permissions/FederationPermission.h>
-#include <crucible/safety/Secret.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Secret.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace crucible::fixy::tags {
 

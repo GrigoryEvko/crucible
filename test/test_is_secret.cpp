@@ -1,4 +1,4 @@
-#include <crucible/safety/IsSecret.h>
+#include <crucible/safety/_IsSecret.h>
 
 #include <cstdio>
 #include <cstdlib>

@@ -8,7 +8,7 @@
 // belongs in declassify<Policy>() where an audit trail survives
 // review, not in transform().
 
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 #include <cstdint>
 #include <cstdio>

@@ -9,7 +9,7 @@
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <algorithm>
 #include <cstdint>

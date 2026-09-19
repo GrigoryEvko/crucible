@@ -19,8 +19,8 @@
 // Expected diagnostic: no match for 'operator=' / cannot convert /
 // no viable / conversion from.
 
-#include <crucible/safety/Tagged.h>
-#include <crucible/safety/source/Path.h>
+#include <crucible/safety/_Tagged.h>
+#include <crucible/safety/source/_Path.h>
 
 #include <string>
 

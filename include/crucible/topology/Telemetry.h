@@ -7,7 +7,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/Stale.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <crucible/topology/CongestionTelemetry.h>
 
 #include <algorithm>

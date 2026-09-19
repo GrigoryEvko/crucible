@@ -29,7 +29,7 @@
 // Two fixtures cover both directions of the new soundness gate per HS14.
 
 #include <crucible/CallSiteTable.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 #include <string>

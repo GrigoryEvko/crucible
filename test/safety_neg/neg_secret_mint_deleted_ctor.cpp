@@ -21,7 +21,7 @@
 // no matching function / use of deleted function /
 // is_constructible_v / mint_secret.
 
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 
 namespace neg_secret_deleted {
 // A class whose default ctor is `= delete`'d.  Constructibility

@@ -12,7 +12,7 @@
 //   * This fixture: Tagged<void*, Sanitized> is not ExternalDataPtr.
 
 #include <crucible/TensorMeta.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     using SanitizedPtr = crucible::safety::Tagged<void*, crucible::safety::source::Sanitized>;

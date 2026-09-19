@@ -25,7 +25,7 @@
 // WRAP-Transaction-6 #1065 raw-assignment fixture (same Tagged shape,
 // different source tag / pointee type).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace crucible {
 struct FakeRegionNode {

@@ -16,7 +16,7 @@
 // Uses the V-022 sentinel pair to stay decoupled from V-023's
 // catalog (see neg_retag_policy_default_rejects.cpp doc-block).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace ns = crucible::safety;
 

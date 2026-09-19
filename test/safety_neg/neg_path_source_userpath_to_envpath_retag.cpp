@@ -22,8 +22,8 @@
 // exercises wide→narrow back-filling (External → FromUserPath), a
 // structurally distinct mismatch class.
 
-#include <crucible/safety/source/Path.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/source/_Path.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace ns = crucible::safety;
 

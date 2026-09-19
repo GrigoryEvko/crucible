@@ -19,7 +19,7 @@
 // retag gate fixtures).
 
 #include <crucible/safety/source/Arch.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <utility>
 

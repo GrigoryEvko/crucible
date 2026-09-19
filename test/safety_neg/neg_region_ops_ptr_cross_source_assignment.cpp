@@ -23,7 +23,7 @@
 // of the WRAP-CCtx-2 #904 active_region_ cross-source fixture (same
 // Tagged shape, different source-tag axis: source::Arena vs source::RegionOps).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 namespace crucible {
 struct FakeTraceEntry {

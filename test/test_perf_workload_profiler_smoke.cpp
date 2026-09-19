@@ -3,7 +3,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/WorkloadProfiler.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdio>
 #include <cstdint>

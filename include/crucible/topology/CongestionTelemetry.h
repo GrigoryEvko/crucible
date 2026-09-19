@@ -4,7 +4,7 @@
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <array>
 #include <cstddef>

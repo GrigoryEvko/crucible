@@ -48,7 +48,7 @@
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/_SealedRefined.h>
-#include <crucible/safety/Secret.h>
+#include <crucible/safety/_Secret.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/SwissTableBuffer.h>
 #include <crucible/safety/SwmrReader.h>
@@ -66,7 +66,7 @@
 #include <crucible/safety/ThreadLocalRef.h>
 #include <crucible/safety/SuspendBehavior.h>
 #include <crucible/safety/SimdWidthPinned.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <crucible/safety/Path.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>

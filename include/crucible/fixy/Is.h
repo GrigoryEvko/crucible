@@ -43,13 +43,13 @@
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsSchedClass.h>
 #include <crucible/safety/IsScopedFence.h>
-#include <crucible/safety/IsSecret.h>
+#include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/IsSessionHandle.h>
 #include <crucible/safety/IsSimdWidthPinned.h>
 #include <crucible/safety/IsStale.h>
 #include <crucible/safety/IsSuspendBehavior.h>
 #include <crucible/safety/IsSwmrHandle.h>
-#include <crucible/safety/IsTagged.h>
+#include <crucible/safety/_IsTagged.h>
 #include <crucible/safety/IsVendor.h>
 #include <crucible/safety/IsWait.h>
 #include <crucible/safety/witness/IsWitness.h>

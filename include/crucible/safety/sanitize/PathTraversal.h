@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/safety/Path.h>
-#include <crucible/safety/source/Path.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/source/_Path.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstddef>
 #include <expected>

@@ -4,7 +4,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pre.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 #include <crucible/Types.h>
 
 #include <bit>

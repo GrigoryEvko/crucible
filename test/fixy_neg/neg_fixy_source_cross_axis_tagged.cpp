@@ -13,7 +13,7 @@
 // std::is_same_v claim with two distinct Tagged specializations.
 
 #include <crucible/fixy/Source.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <type_traits>
 

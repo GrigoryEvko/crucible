@@ -1,4 +1,4 @@
-#include <crucible/safety/IsTagged.h>
+#include <crucible/safety/_IsTagged.h>
 
 #include <cstdio>
 #include <cstdlib>

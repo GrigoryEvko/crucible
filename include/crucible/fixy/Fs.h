@@ -3,7 +3,7 @@
 #include <crucible/fixy/_Grant.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/Path.h>
-#include <crucible/safety/source/Path.h>
+#include <crucible/safety/source/_Path.h>
 
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/_Linear.h>

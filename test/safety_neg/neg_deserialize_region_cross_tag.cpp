@@ -13,7 +13,7 @@
 //   * This fixture: cross-tag assignment rejected.
 
 #include <crucible/Serialize.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     crucible::Arena arena{1024};

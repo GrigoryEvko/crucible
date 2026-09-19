@@ -12,7 +12,7 @@
 //   * This fixture: Tagged<uint64_t, FamilyA> is not GradFnHash.
 
 #include <crucible/TensorMeta.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     using FamilyAHash = crucible::safety::Tagged<uint64_t, crucible::hash_family::FamilyA>;

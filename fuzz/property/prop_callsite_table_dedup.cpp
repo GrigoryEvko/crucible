@@ -83,7 +83,7 @@
 
 #include <crucible/CallSiteTable.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <array>
 #include <cstdint>

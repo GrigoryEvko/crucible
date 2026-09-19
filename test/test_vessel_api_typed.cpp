@@ -3,7 +3,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <array>
 #include <bit>

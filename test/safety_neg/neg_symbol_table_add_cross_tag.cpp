@@ -15,7 +15,7 @@
 
 #include <crucible/SymbolTable.h>
 #include <crucible/Ops.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     crucible::SymbolTable table;

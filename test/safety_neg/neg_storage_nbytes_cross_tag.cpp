@@ -14,7 +14,7 @@
 //   * This fixture: cross-tag passback rejected at the read boundary.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 int main() {
     crucible::TensorMeta meta{};

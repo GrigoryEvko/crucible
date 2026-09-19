@@ -33,7 +33,7 @@
 //
 // U-142 — Class T fixture (closes Tagged slice of #146 A8-P2).
 
-#include <crucible/safety/Tagged.h>
+#include <crucible/safety/_Tagged.h>
 
 #include <cstdint>
 #include <utility>
