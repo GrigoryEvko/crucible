@@ -22,6 +22,8 @@
 //     through IO, Alloc or Block is a timing-observable side channel.
 //     An atom for it would imply such code may opt into those three.
 
+#include <foundation/reflect/EnumName.h>
+
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -84,26 +86,15 @@ static_assert(detail::every_effect_underlying_distinct_(),
               "Duplicates collapse two atoms into one row bit and make federation cache keys collide.  "
               "Give the new atom the next free underlying value explicitly in the enum.");
 
+// The name of an atom is the identifier its enumerator already
+// declares, read by reflection, so a new atom is named the moment it is
+// declared and no arm can go missing.  A value outside the enum yields
+// "<unknown Effect>", the same sentinel the hand-written switch
+// returned.
+//
 // constexpr rather than consteval so the runtime smoke test can call
 // this with a non-constant argument.  Consteval contexts still fold it.
-[[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept {
-    switch (e) {
-        case Effect::Alloc:
-            return "Alloc";
-        case Effect::IO:
-            return "IO";
-        case Effect::Block:
-            return "Block";
-        case Effect::Bg:
-            return "Bg";
-        case Effect::Init:
-            return "Init";
-        case Effect::Test:
-            return "Test";
-        default:
-            return std::string_view{"<unknown Effect>"};
-    }
-}
+[[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept { return ::foundation::reflect::enum_name(e); }
 
 // The gate reads the catalog through reflection so that a new atom
 // satisfies it without an edit here.  A hand-written disjunction would
@@ -451,22 +442,21 @@ static_assert(effect_count == 6, "The Effect catalog has grown or shrunk.  Confi
                                  "intended, and check that the name-coverage assertion below still "
                                  "reaches every atom.");
 
-[[nodiscard]] consteval bool every_effect_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
-    // -Wshadow fires spuriously on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (effect_name([:en:]) == std::string_view{"<unknown Effect>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_effect_has_name(), "The effect_name switch is missing an arm for at least one Effect "
-                                       "atom, so that atom reports the unknown-atom sentinel in "
-                                       "diagnostics.");
+// The walk that used to sit here asked whether any atom reported the
+// unknown sentinel.  It policed a hand-written switch.  effect_name now
+// reads the enumerator, so that walk answered true by construction and
+// is gone.  What replaces it is the stronger statement: each atom
+// renders as exactly the identifier it declares, and a value outside
+// the enum still reaches the sentinel.
+static_assert(effect_name(Effect::Alloc) == "Alloc");
+static_assert(effect_name(Effect::IO) == "IO");
+static_assert(effect_name(Effect::Block) == "Block");
+static_assert(effect_name(Effect::Bg) == "Bg");
+static_assert(effect_name(Effect::Init) == "Init");
+static_assert(effect_name(Effect::Test) == "Test");
+static_assert(effect_name(static_cast<Effect>(200)) == "<unknown Effect>",
+              "A value outside the catalog must reach the unknown-atom sentinel, so a corrupt byte "
+              "prints as one rather than as an empty name.");
 
 // A new atom takes the next free value and adds one pin below.
 static_assert(static_cast<std::uint8_t>(Effect::Alloc) == 0,

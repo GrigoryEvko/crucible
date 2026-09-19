@@ -5,12 +5,15 @@
 // the wrapper is declared, and it decides which operations the wrapper
 // is allowed to expose.
 //
-// A new enumerator has to reach the enum, the name switch, the concept
-// gates, the exclusivity predicates and the tag types together.  The
-// cardinality guard in the self-test fires if any of them is missed.
+// A new enumerator has to reach the enum, the concept gates, the
+// exclusivity predicates and the tag types together.  The cardinality
+// guard in the self-test fires if any of them is missed.  The name is
+// no longer one of them: it is read from the enumerator.
 //
 // Prefer the enum in a template parameter.  The tag types exist for the
 // cases where an overload set reads better than a non-type argument.
+
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -74,25 +77,17 @@ template <ModalityKind K>
 inline constexpr bool has_grade_only_v =
     (K == ModalityKind::Absolute) || (K == ModalityKind::Relative) || (K == ModalityKind::Stepping);
 
-// The switch is exhaustive, but the default arm is required by the
-// warning settings.  Its sentinel string is load-bearing: the
-// name-coverage self-test below detects a missing arm by looking for
-// exactly this text.
+// The name of a modality is the identifier its enumerator declares,
+// read by reflection, so a new enumerator is named the moment it is
+// declared.  A value outside the enum yields "<unknown ModalityKind>",
+// the same sentinel the hand-written switch returned.
+//
+// This stays consteval, although the helper it calls is constexpr.  The
+// three Graded forwarders declare themselves consteval and call it, and
+// widening the signature here would say something this header does not
+// mean to say.
 [[nodiscard]] consteval std::string_view modality_name(ModalityKind K) noexcept {
-    switch (K) {
-        case ModalityKind::Comonad:
-            return "Comonad";
-        case ModalityKind::RelativeMonad:
-            return "RelativeMonad";
-        case ModalityKind::Absolute:
-            return "Absolute";
-        case ModalityKind::Relative:
-            return "Relative";
-        case ModalityKind::Stepping:
-            return "Stepping";
-        default:
-            return std::string_view{"<unknown ModalityKind>"};
-    }
+    return ::foundation::reflect::enum_name(K);
 }
 
 namespace modality {
@@ -119,26 +114,8 @@ namespace detail::modality_self_test {
 
 static_assert(modality_kind_count == 5, "Modality count diverged from the five-member set "
                                         "(Comonad/RelativeMonad/Absolute/Relative/Stepping).  Confirm the "
-                                        "addition is intentional and that the name-coverage assertion below "
-                                        "still fires for the new enumerator.");
-
-// The expansion statement puts each iteration's induction variable in
-// its own scope, and the shadow warning fires on the second one.
-[[nodiscard]] consteval bool every_modality_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ModalityKind));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (modality_name([:en:]) == std::string_view{"<unknown ModalityKind>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_modality_has_name(), "modality_name() switch is missing an arm for at least one "
-                                         "ModalityKind enumerator — add the arm or the new enumerator "
-                                         "leaks the '<unknown ModalityKind>' sentinel into diagnostics.");
+                                        "addition is intentional and that the name pins below still cover "
+                                        "the new enumerator.");
 
 template <ModalityKind K>
 inline constexpr bool is_exactly_one_predicate =
@@ -174,16 +151,19 @@ static_assert(SteppingModality<ModalityKind::Stepping>);
 static_assert(!SteppingModality<ModalityKind::Absolute>);
 static_assert(!SteppingModality<ModalityKind::Relative>);
 
-static_assert(!modality_name(ModalityKind::Comonad).empty());
-static_assert(!modality_name(ModalityKind::RelativeMonad).empty());
-static_assert(!modality_name(ModalityKind::Absolute).empty());
-static_assert(!modality_name(ModalityKind::Relative).empty());
-static_assert(!modality_name(ModalityKind::Stepping).empty());
-static_assert(modality_name(ModalityKind::Comonad) != "<unknown ModalityKind>");
-static_assert(modality_name(ModalityKind::RelativeMonad) != "<unknown ModalityKind>");
-static_assert(modality_name(ModalityKind::Absolute) != "<unknown ModalityKind>");
-static_assert(modality_name(ModalityKind::Relative) != "<unknown ModalityKind>");
-static_assert(modality_name(ModalityKind::Stepping) != "<unknown ModalityKind>");
+// Each enumerator renders as exactly the identifier it declares, and a
+// value outside the enum still reaches the sentinel.  These pins
+// replace the coverage walk that used to police the switch: with the
+// name read from the enumerator, that walk answered true by
+// construction.
+static_assert(modality_name(ModalityKind::Comonad) == "Comonad");
+static_assert(modality_name(ModalityKind::RelativeMonad) == "RelativeMonad");
+static_assert(modality_name(ModalityKind::Absolute) == "Absolute");
+static_assert(modality_name(ModalityKind::Relative) == "Relative");
+static_assert(modality_name(ModalityKind::Stepping) == "Stepping");
+static_assert(modality_name(static_cast<ModalityKind>(200)) == "<unknown ModalityKind>",
+              "A value outside the enum must reach the unknown-kind sentinel, so a corrupt byte prints "
+              "as one rather than as an empty name.");
 
 // A tag type must stay empty so that it costs nothing as a
 // [[no_unique_address]] member.
