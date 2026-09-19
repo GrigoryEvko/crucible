@@ -117,6 +117,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # that links the new tree without `crucible`.  `fixy` is header-only.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
+  src/foundation/DiagRuntime.cpp
 )
 target_include_directories(foundation PUBLIC include/)
 target_link_libraries(foundation PUBLIC crucible_dialect)
