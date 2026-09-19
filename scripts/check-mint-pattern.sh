@@ -57,6 +57,34 @@
 # Exempt directories: test/, bench/, examples/ — fixtures
 # deliberately violate the pattern to demonstrate rejection.
 #
+# Why the four axes stay a text scan and not reflection
+# -----------------------------------------------------
+# Two of the four axes have no reflection API at all in libstdc++ 16:
+# `is_constexpr` and `has_attribute` are both absent, so `constexpr`
+# and `[[nodiscard]]` cannot be read from a reflection.  The other two
+# have an API that does not reach these declarations:
+#
+#   * noexcept.  `std::meta::is_noexcept` takes a function, and a
+#     function TEMPLATE reflects with `is_function() == false` — a
+#     template has no exception specification until it is instantiated.
+#     140 of the 204 mints in misc/mint-inventory.md are templated, so
+#     the reflection form would audit 64 of them, 31%.
+#
+#   * requires.  `std::meta::constraints_of` is absent, so the clause
+#     cannot be read either.  `can_substitute` can test the clause's
+#     BEHAVIOR, which is strictly better than a presence check — it
+#     rejects a tautological clause that this scan accepts.  But it
+#     needs a per-mint argument that the gate must refuse, which is
+#     exactly what the HS14 negative-compile fixtures already supply,
+#     per mint and out of TU.  And it cannot be run as a blanket walk:
+#     substituting into a mint whose gate is a body static_assert
+#     rather than a requires clause raises a hard error instead of
+#     returning false.  `can_substitute(^^permissions::mint_permission_inherit,
+#     {^^int})` fails the translation unit on PermissionInherit.h:131.
+#
+# So the in-language form of this guard would cover less on one axis,
+# duplicate HS14 on another, and take the TU down on a third.
+#
 # Exit status:
 #   0  — no §XXI drift detected, no stale allowlist entries
 #   1  — at least one violation outside the allowlist (takes precedence)
@@ -210,6 +238,20 @@ PLANTED
                 exit 2
             fi
         done
+        # Exactly four axes were planted to fail, one each.  The arms
+        # above name the four and clear the three shapes that must stay
+        # quiet, which still lets a fifth report through on a shape none
+        # of them mentions — a second axis firing on one fixture, say.
+        # Pin the total so one planted drift means one diagnostic.
+        violation_count="$(grep -c '^MINT-PATTERN violation:' "$result_file" || true)"
+        if [[ "$violation_count" -ne 4 ]]; then
+            printf 'check-mint-pattern: SELF-TEST FAILED — expected exactly 4 violations, got %s.\n' \
+                "$violation_count" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
         rm -f "$result_file"
 
         # ── Phase 2: stale-allowlist-entry detection ─────────────────
