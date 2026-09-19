@@ -50,6 +50,7 @@ include/crucible/handles/FileHandle.h:const ssize_t n = ::read(h.get(), buf.data
 include/crucible/handles/FileHandle.h:const ssize_t n = ::write(h.get(), buf.data() + total, buf.size() - total);  — effects::IO via write_full (write until the caller's span is drained)
 include/crucible/handles/FileHandle.h:if (::fstat(h.get(), &st) < 0) {  — effects::IO via file_size (fstat)
 include/crucible/safety/OwnedMmap.h:::munmap(addr_, len_);  — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
+include/fixy/OwnedMmap.h:::munmap(addr_, len_);  — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign, ported copy of the entry above)
 include/crucible/warden/CpuTopology.h:if (::sched_getaffinity(0, sizeof(set), &set) == 0) {  — effects::Init via allowed_cpus_fallback (sched_getaffinity, the fallback taken when procfs is unreadable)
 include/crucible/warden/CpuTopology.h:if (::access(path, F_OK) == 0) return n;  — effects::Init via numa_node_of (access on /sys/devices/system/cpu/cpuN/nodeM to find which node link exists)
 include/crucible/warden/DeadlineWatchdog.h:if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {  — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)

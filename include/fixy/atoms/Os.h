@@ -26,6 +26,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstdint>
 #include <meta>
@@ -231,14 +232,13 @@ struct resource final : detail::leak_atom_of {};
 // atom satisfies it, so a region that takes an IsLeakAtom witness cannot
 // be talked out of its unmap by any other type.  The region type that
 // consumes this lives in the os/ port and reads the concept by name.
+//
+// One reflection query answers it.  The primary-plus-specialization
+// form the old tree used was itself a door: a foreign translation unit
+// could specialize the primary and mint an authorization out of any
+// type it liked.
 template <typename G>
-struct is_leak_atom : std::false_type {};
-
-template <typename RationaleTag>
-struct is_leak_atom<leak::resource<RationaleTag>> : std::true_type {};
-
-template <typename G>
-inline constexpr bool is_leak_atom_v = is_leak_atom<std::remove_cvref_t<G>>::value;
+inline constexpr bool is_leak_atom_v = ::foundation::reflect::is_instance_of_v<G, ^^leak::resource>;
 
 template <typename G>
 concept IsLeakAtom = is_leak_atom_v<G>;
