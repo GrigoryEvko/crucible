@@ -229,3 +229,28 @@ fixy_neg_compile_test(neg_stale_weakened_downwards
   "in .constexpr. expansion of .eight_behind\\.fixy::Stale<int>::weaken\\("
   "fixy/Stale\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
+# ── Task #106 (A10.6): the consumed bands and the F* aliases ─────────
+fixy_test(test_bands)
+fixy_test(test_aliases)
+
+# relax moves down the chain only.  Both relax overloads are rejected
+# because the leq gate in their requires clause evaluates to false for
+# the pair (PhiloxRng, Pure).
+fixy_neg_compile_test(neg_bands_relax_up_the_chain
+  "no matching function for call to .relax<foundation::algebra::lattices::DetSafeTier::Pure>"
+  "band_lattice_t<B>::leq\\)\\(WeakerTier, band_tier_v<B>\\).*evaluated to .false.")
+
+# relax on a const lvalue copies, so a move-only payload fails the
+# copy_constructible clause of the lvalue overload, and the rvalue
+# overload is not viable for an lvalue.
+fixy_neg_compile_test(neg_bands_relax_lvalue_move_only
+  "no matching function for call to .relax<foundation::algebra::lattices::DetSafeTier::PhiloxRng>"
+  "required for the satisfaction of .copy_constructible<fixy::band_value_t<B> >."
+  "!\\(is_lvalue_reference_v<B>\\).*evaluated to .false.")
+
+# satisfies_v takes a tier of the band's own chain; a tier from another
+# enum fails the same_as clause on the required tier's type.
+fixy_neg_compile_test(neg_bands_satisfies_foreign_tier
+  "use of invalid variable template .satisfies_v<"
+  "satisfaction of .same_as<decltype \\(Required\\), fixy::band_tier_t<B> >."
+  ".enum class foundation::algebra::lattices::HotPathTier. is not the same as .enum class foundation::algebra::lattices::DetSafeTier.")
