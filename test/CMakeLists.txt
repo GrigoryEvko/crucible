@@ -1779,12 +1779,62 @@ function(crucible_neg_compile_multi_test name)
     LABELS "safety_neg")
 endfunction()
 
+# ── The two-regex floor ──────────────────────────────────────────────
+#
+# The driver requires EVERY regex it is handed, so two regexes are an
+# AND: the first says a rejection happened, the second says it happened
+# to the thing under test.  One regex cannot say both, because a regex
+# is satisfied by its weakest alternative, and the weakest alternative
+# of `SomeConcept|constraints not satisfied` is boilerplate that ANY
+# failing concept check emits.
+#
+# Measured across the eleven sister harnesses at the time this landed:
+# 962 registrations, every one of them passing exactly one regex; 748
+# of those carry at least one generic alternative, so they are satisfied
+# by boilerplate; and 33 carry nothing but generic alternatives, so they
+# witness only that the translation unit failed to compile.  A fixture
+# gated on `is private within this context` alone passes when any member
+# of any class in the TU is touched from outside.
+#
+# The floor is staged per directory rather than switched on at once,
+# because closing a directory means reading each of its fixtures and
+# finding the token its compile output actually carries.  A directory
+# named in CRUCIBLE_NEG_TWO_REGEX_FLOORED has been swept; every
+# registration in it must pass two or more regexes from then on, so a
+# fixture added later cannot quietly re-enter the single-regex form.  A
+# directory not yet named keeps the single-regex form until its sweep
+# lands.  Directories only ever move into this list.
+set(CRUCIBLE_NEG_TWO_REGEX_FLOORED
+  ledger_neg
+  dataplane_neg)
+
+# Called by each sister harness with the registration's regex list in
+# ARGN.  Silent for a directory that has not been swept yet.
+function(crucible_neg_require_two_regexes dir name)
+  if(NOT "${dir}" IN_LIST CRUCIBLE_NEG_TWO_REGEX_FLOORED)
+    return()
+  endif()
+  list(LENGTH ARGN regex_count)
+  if(regex_count LESS 2)
+    message(FATAL_ERROR
+      "${name}: ${dir} is under the two-regex floor, so its registration must "
+      "pass at least two regexes and this one passes ${regex_count}.  Split the "
+      "single regex into the generic half that witnesses the rejection and the "
+      "project-specific half that witnesses WHICH gate rejected — the driver "
+      "requires both.  If the fixture has no honest second token, say so rather "
+      "than inventing one: a fixture that cannot name what it proves is the "
+      "defect the floor exists to surface.")
+  endif()
+endfunction()
+
 # Sister harness for sessions_neg/.  Mirrors crucible_neg_compile_test
 # pattern exactly — only the source directory and label differ.
 # Sessions-side neg-compile tests (FOUND-C Phase 7, task #618) live
 # in test/sessions_neg/ rather than test/safety_neg/ to keep the
 # permission-flow witnesses adjacent to the PSH header they probe.
-function(crucible_neg_compile_session_test name expected_diag)
+function(crucible_neg_compile_session_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(sessions_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/sessions_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1793,7 +1843,7 @@ function(crucible_neg_compile_session_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/sessions_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "sessions_neg")
 endfunction()
@@ -1803,7 +1853,9 @@ endfunction()
 # neg-compile tests (FOUND-B13, task #602) probe the Subrow concept's
 # substitution-principle gates on Computation.h: extract on non-empty
 # row, weaken to disjoint row, lift with non-Effect template arg.
-function(crucible_neg_compile_effects_test name expected_diag)
+function(crucible_neg_compile_effects_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(effects_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1812,7 +1864,7 @@ function(crucible_neg_compile_effects_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "effects_neg")
 endfunction()
@@ -1824,7 +1876,9 @@ endfunction()
 # (content_hash precondition, IsComputeKind concept, FOUND-I04 frozen
 # positions on CogLevel/CogKind, future TargetCaps fits) sit
 # adjacent to the cog/ headers they probe.
-function(crucible_neg_compile_cog_test name expected_diag)
+function(crucible_neg_compile_cog_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(cog_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1833,7 +1887,7 @@ function(crucible_neg_compile_cog_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "cog_neg")
 endfunction()
@@ -1842,7 +1896,9 @@ endfunction()
 # reads a cached measurement verdict from disk, so its mint has to refuse
 # a context that cannot block on a file and a context that must not.
 # These fixtures witness the CtxFitsLedgerStore clause firing on both.
-function(crucible_neg_compile_ledger_test name expected_diag)
+function(crucible_neg_compile_ledger_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(ledger_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1860,14 +1916,16 @@ function(crucible_neg_compile_ledger_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "ledger_neg")
 endfunction()
 
 # Sister harness for warden_neg/. Warden-policy negative tests live here
 # when they are not primarily probing the generic effects substrate.
-function(crucible_neg_compile_warden_test name expected_diag)
+function(crucible_neg_compile_warden_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(warden_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1876,7 +1934,7 @@ function(crucible_neg_compile_warden_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "warden_neg")
 endfunction()
@@ -1885,7 +1943,9 @@ endfunction()
 # (FIXY-U-083) live here — mint_<hub> rejects BgDrainCtx / HotFgCtx
 # because the BPF program load + perf_event_open + mmap path is an
 # Init-row-only startup operation.
-function(crucible_neg_compile_perf_test name expected_diag)
+function(crucible_neg_compile_perf_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(perf_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/perf_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1894,14 +1954,16 @@ function(crucible_neg_compile_perf_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/perf_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "perf_neg")
 endfunction()
 
 # Sister harness for dataplane_neg/. XDP/TC negative tests live beside the
 # CNT-P dataplane ownership boundary instead of Warden.
-function(crucible_neg_compile_dataplane_test name expected_diag)
+function(crucible_neg_compile_dataplane_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(dataplane_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1910,7 +1972,7 @@ function(crucible_neg_compile_dataplane_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "dataplane_neg")
 endfunction()
@@ -1921,7 +1983,9 @@ endfunction()
 # (CtxFitsTopologyGraph IsExecCtx conjunct, row-contains-Init conjunct,
 # future link-layer partition assertions) sit adjacent to the topology/
 # headers they probe.
-function(crucible_neg_compile_topology_test name expected_diag)
+function(crucible_neg_compile_topology_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(topology_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1930,7 +1994,7 @@ function(crucible_neg_compile_topology_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "topology_neg")
 endfunction()
@@ -1947,7 +2011,9 @@ endfunction()
 # by ≥2 fixtures probing distinct mismatch classes (non-handle input,
 # wrong companion-type, missing template arg, deleted overload via
 # `= delete("reason")`, ctx-row admission failure).
-function(crucible_neg_compile_bridges_test name expected_diag)
+function(crucible_neg_compile_bridges_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(bridges_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/bridges_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1956,7 +2022,7 @@ function(crucible_neg_compile_bridges_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/bridges_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "bridges_neg")
 endfunction()
@@ -1968,7 +2034,9 @@ endfunction()
 # that omits exactly one axis; the named diagnostic
 # `FixyNotEngaged_<Axis>` must appear in the compile output.
 
-function(crucible_neg_compile_fixy_test name expected_diag)
+function(crucible_neg_compile_fixy_test name)
+  set(expected_diags ${ARGN})
+  crucible_neg_require_two_regexes(fixy_neg ${name} ${expected_diags})
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -1977,7 +2045,7 @@ function(crucible_neg_compile_fixy_test name expected_diag)
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp
             ${name}
-            "${expected_diag}")
+            ${expected_diags})
   set_tests_properties(${name} PROPERTIES
     LABELS "fixy_neg")
 endfunction()
@@ -4356,9 +4424,11 @@ crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
 #   Block, because cap_permitted_row<Init> deliberately omits it:
 #   initialization is not permitted to park on a disk.
 crucible_neg_compile_ledger_test(neg_ledger_view_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsLedgerStore|no matching function")
+    "constraint|constraints not satisfied|no matching function"
+    "CtxFitsLedgerStore")
 crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
-    "constraint|constraints not satisfied|CtxFitsLedgerStore|no matching function")
+    "constraint|constraints not satisfied|no matching function"
+    "CtxFitsLedgerStore")
 
 # ─── #67 ledger/RefreshDaemon.h HS14 fixtures ─────────────────────
 #
@@ -4377,11 +4447,14 @@ crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
 # fixture fails on its own premise assert instead of on the mint, and a
 # looser pattern would read that as a pass.
 crucible_neg_compile_ledger_test(neg_refresh_daemon_test_ctx_lacks_bg
-    "constraint|constraints not satisfied|CtxFitsRefreshDaemon|no matching function")
+    "constraint|constraints not satisfied|no matching function"
+    "CtxFitsRefreshDaemon")
 crucible_neg_compile_ledger_test(neg_refresh_daemon_compile_ctx_cannot_block
-    "constraint|constraints not satisfied|CtxFitsRefreshDaemon|no matching function")
+    "constraint|constraints not satisfied|no matching function"
+    "CtxFitsRefreshDaemon")
 crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsRefreshDaemon|no matching function")
+    "constraint|constraints not satisfied|no matching function"
+    "CtxFitsRefreshDaemon")
 
 # ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
 #
@@ -4552,13 +4625,17 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
 #   * neg_xdp_map_key_without_equality — in-process map images require typed
 #     key equality, not bytewise accidental comparison.
 crucible_neg_compile_dataplane_test(neg_xdp_raw_program_spec
-    "cannot convert|could not convert|DeclaredXdpProgram|Tagged")
+    "cannot convert|could not convert"
+    "DeclaredXdpProgram")
 crucible_neg_compile_dataplane_test(neg_xdp_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsXdpMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsXdpMint")
 crucible_neg_compile_dataplane_test(neg_xdp_map_non_pod_value
-    "constraint|constraints not satisfied|BpfScalar|string")
+    "constraint|constraints not satisfied"
+    "BpfScalar")
 crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
-    "constraint|constraints not satisfied|BpfKey|operator==")
+    "constraint|constraints not satisfied"
+    "BpfKey")
 
 # ─── GAPS-193 cntp/dataplane/TcEbpf.h soundness gates ─────────────
 #
@@ -4567,13 +4644,17 @@ crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
 #   * neg_tc_ebpf_raw_flow_class — map values carry tagged flow classes.
 #   * neg_tc_ebpf_zero_flow_map — zero-capacity maps are rejected.
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_program_spec
-    "cannot convert|could not convert|DeclaredTcProgram|Tagged")
+    "cannot convert|could not convert"
+    "DeclaredTcProgram")
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsTcMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsTcMint")
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_flow_class
-    "cannot convert|could not convert|DeclaredTcFlowClass|Tagged")
+    "cannot convert|could not convert"
+    "DeclaredTcFlowClass")
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
-    "constraint|constraints not satisfied|MaxFlows")
+    "constraint|constraints not satisfied"
+    "MaxFlows")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
 #
