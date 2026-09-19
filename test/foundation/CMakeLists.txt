@@ -38,6 +38,7 @@ foundation_test(test_ctx)
 foundation_test(test_capability)
 foundation_test(test_computation)
 foundation_test(test_diag)
+foundation_test(test_pinned)
 
 # Negative-compile fixtures for the foundation layer.
 #

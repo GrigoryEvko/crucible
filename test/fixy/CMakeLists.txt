@@ -57,3 +57,29 @@ endfunction()
 fixy_neg_compile_test(neg_fixy_harness_probe
   "constraints not satisfied"
   "satisfaction of .HalvesEvenly<T>.")
+
+fixy_test(test_qtt)
+fixy_test(test_mutation)
+
+# The copy constructor of Qtt is deleted with a reason; the compiler
+# names the constructor and repeats the reason.
+fixy_neg_compile_test(neg_qtt_copy_a_linear
+  "use of deleted function"
+  "fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\)"
+  "move-only")
+
+# consume is rvalue-qualified and non-const; a const borrow cannot call it.
+fixy_neg_compile_test(neg_qtt_consume_through_const_ref
+  "discards qualifiers"
+  "fixy::Qtt<Grade, T>::consume\\(\\) &&")
+
+# A body CRUCIBLE_PRE reaches its consteval trap when a constant
+# expression steps a Monotonic backward or sets a WriteOnce twice.
+fixy_neg_compile_test(neg_mutation_monotonic_step_backward
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .counter\\.fixy::Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)."
+  "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_mutation_write_once_twice
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set\\(2\\)."
+  "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
