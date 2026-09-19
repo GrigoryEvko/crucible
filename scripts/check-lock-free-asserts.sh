@@ -50,6 +50,31 @@
 # Exempt directories: test/, bench/, examples/ — fixtures may
 # deliberately plant the pattern to demonstrate rejection.
 #
+# Why this stays a text scan and not a reflection walk
+# ----------------------------------------------------
+# The obvious C++26 rewrite walks `nonstatic_data_members_of` over the
+# types in these four namespaces and asserts `is_always_lock_free` for
+# every member whose type is a `std::atomic` specialization.  That walk
+# would read real types rather than source text, so it would also see an
+# atomic hidden behind an alias.  It reaches 15 of the 36 atomic member
+# declarations here, and the 21 it misses are missed structurally:
+#
+#   * 5 sit in class templates (canopy::VectorClock, cntp::PathSwapper).
+#     Reflection enumerates a namespace's members but not a template's
+#     specializations, so an uninstantiated class template has no
+#     members to walk.
+#   * 16 sit in classes nested inside another class (Hlc::LockFreeCell,
+#     Hlc::SpinlockCell, and the Slot / FlowSlot / LimitSlot families).
+#     `members_of` on a namespace does not descend into class scope, and
+#     recursing through `members_of` on each class forces instantiations
+#     that do not compile in a walking context.
+#
+# So the walk would audit 42% of what this scan audits.  It is also
+# aimed at a different property: the 36 sibling asserts already in these
+# headers enforce lock-freedom themselves at compile time, and the only
+# job left for a guard is to notice a NEW atomic that arrives without
+# one.  A walk that sees 15 of 36 declaration sites does that job worse.
+#
 # Exit status:
 #   0 — clean (every atomic-T has a sibling assert)
 #   1 — at least one missing assert outside the allowlist
@@ -101,6 +126,40 @@ case "${1:-}" in
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include/crucible/canopy" "$tmp_root/scripts"
+
+        # Arm zero, the clean control.  Every atomic here carries its
+        # sibling assert, so the scan must stay silent and exit 0.  Every
+        # other arm below runs against a tree that DOES hold a violation,
+        # so without this arm a guard that had degenerated into
+        # always-fire would satisfy all of them.  The arm runs first, on
+        # a tree that holds nothing else, and is deleted afterwards.
+        cat >"$tmp_root/include/crucible/canopy/clean.h" <<'CLEAN'
+#pragma once
+#include <atomic>
+#include <cstdint>
+namespace crucible::planted_clean {
+struct Bar {
+    std::atomic<std::uint64_t> head_{0};
+    std::atomic<std::uint32_t> tail_{0};
+};
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free, "head_");
+static_assert(std::atomic<std::uint32_t>::is_always_lock_free, "tail_");
+}  // namespace crucible::planted_clean
+CLEAN
+        : >"$tmp_root/scripts/no-lock-free-asserts-allowlist.txt"
+        result_file="$(mktemp)"
+        clean_rc=0
+        CRUCIBLE_LOCK_FREE_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$result_file" || clean_rc=$?
+        if [[ "$clean_rc" -ne 0 ]]; then
+            printf 'check-lock-free-asserts: SELF-TEST FAILED — a tree whose atomics all carry their assert reported %s, want 0.\n' \
+                "$clean_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        rm -f "$result_file" "$tmp_root/include/crucible/canopy/clean.h"
 
         # File A: declares atomic<MissingAssertT> with NO sibling assert
         # for that type.  Must be flagged.  Also declares atomic<uint64_t>
@@ -168,8 +227,21 @@ ALLOW
             rm -f "$result_file"
             exit 2
         fi
+        # Exactly one of the four atomics in the fixture is dead: the
+        # three grep arms above clear the three permitted shapes one by
+        # one, which still lets a fourth report through on something
+        # none of them names, so pin the total too.
+        violation_count="$(grep -c 'LOCK-FREE-MISSING:' "$result_file" || true)"
+        if [[ "$violation_count" -ne 1 ]]; then
+            printf 'check-lock-free-asserts: SELF-TEST FAILED — expected exactly 1 violation, got %s.\n' \
+                "$violation_count" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
         rm -f "$result_file"
-        printf 'check-lock-free-asserts: self-test passed — missing-assert caught, allowlist + inline marker + coverage all honoured.\n' >&2
+        printf 'check-lock-free-asserts: self-test passed — a fully covered tree stays clean, one missing assert is caught, and allowlist + inline marker + coverage are all honoured.\n' >&2
         exit 0
         ;;
     "") ;;
