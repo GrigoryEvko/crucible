@@ -1,9 +1,12 @@
 #pragma once
 
 // Saturating integer arithmetic: the exact result clamped into the
-// type's range.  The standard names these but the standard library in
-// use does not ship them, so they are implemented here with the same
-// semantics.
+// type's range.  The library ships these, and each helper here is one
+// call to it.  The names are kept because the call sites read better
+// unqualified, and because the library spells them saturating_add
+// rather than the add_sat of the paper: libstdc++ 16 declares
+// saturating_add, saturating_sub, saturating_mul, saturating_div and
+// saturating_cast in <numeric>, and defines no add_sat at all.
 //
 // Only the three bare helpers live here.  The wrapped forms that return
 // a Saturated<T> or a DetSafe<Pure, Saturated<T>> belong to the fixy
@@ -12,55 +15,23 @@
 #include <foundation/Platform.h>
 
 #include <concepts>
-#include <limits>
-#include <type_traits>
+#include <numeric>
 
 namespace foundation::sat {
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr T add_sat(T a, T b) noexcept {
-    T r{};
-    if (__builtin_add_overflow(a, b, &r)) [[unlikely]] {
-        if constexpr (std::is_signed_v<T>) {
-            // Which end it ran off is decided by the sign of the left
-            // operand: a negative one can only have gone below the minimum.
-            return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
-        } else {
-            return std::numeric_limits<T>::max();
-        }
-    }
-    return r;
+    return std::saturating_add(a, b);
 }
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr T sub_sat(T a, T b) noexcept {
-    T r{};
-    if (__builtin_sub_overflow(a, b, &r)) [[unlikely]] {
-        if constexpr (std::is_signed_v<T>) {
-            // As with addition, the sign of the left operand says which end
-            // the result ran off.
-            return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
-        } else {
-            // An unsigned difference can only run off the bottom.
-            return std::numeric_limits<T>::min();
-        }
-    }
-    return r;
+    return std::saturating_sub(a, b);
 }
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr T mul_sat(T a, T b) noexcept {
-    T r{};
-    if (__builtin_mul_overflow(a, b, &r)) [[unlikely]] {
-        if constexpr (std::is_signed_v<T>) {
-            // The exact product is negative exactly when one operand is.
-            const bool neg = (a < T{0}) != (b < T{0});
-            return neg ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
-        } else {
-            return std::numeric_limits<T>::max();
-        }
-    }
-    return r;
+    return std::saturating_mul(a, b);
 }
 
 namespace detail::saturate_self_test {
