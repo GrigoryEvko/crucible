@@ -296,3 +296,22 @@ fixy_neg_compile_test(neg_saturated_checked_op_on_float
   "no matching function for call to .add_sat_checked\\(float, float\\)."
   "constraints not satisfied"
   "required for the satisfaction of .integral<T>. \\[with T = float\\]")
+
+# The ninth header of A10.5.  The old spelling was a pair that included
+# each other; here the sanitizer follows the declarations it reads.
+fixy_test(test_path)
+
+# CipherPath has no edge into Sanitized, so its lane never reaches the
+# sanitizer.
+fixy_neg_compile_test(neg_path_sanitize_unadmitted_source
+  "no matching function for call to .sanitize_path_no_dotdot\\("
+  "constraints not satisfied"
+  "required for the satisfaction of .RetagAllowed<From, fixy::tags::source::Sanitized>. \\[with From = fixy::tags::source::CipherPath\\]"
+  "no operand of the disjunction is satisfied")
+
+# A Sanitized tag is the proof a predicate ran, so it cannot be minted
+# around a raw path.
+fixy_neg_compile_test(neg_path_forge_sanitized_tag
+  "is private within this context"
+  "fixy::Tagged<T, Tag>::Tagged\\(T\\)"
+  "Tag = fixy::tags::source::Sanitized")
