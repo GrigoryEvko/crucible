@@ -144,3 +144,20 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
 # registers test_reflect for test/test_reflect.cpp, and a CMake target
 # name is global.
 foundation_test(test_reflect_foundation test_reflect.cpp)
+
+# The namespace-member relation of foundation/diag/FailClosed.h.
+foundation_test(test_fail_closed)
+
+# The only Raw -> Checked edge is declared outside the relation's
+# namespace, so the pair is not admitted.  The satisfaction note names
+# the concept and the namespace the check was given.
+foundation_neg_compile_test(neg_fail_closed_edge_outside_the_namespace
+  "constraints not satisfied"
+  "satisfaction of .Admitted<\\^\\^.*ingest, From, To>. \\[with From = .*Raw; To = .*Checked\\]")
+
+# A struct named edge declared inside the relation's namespace is not
+# foundation::fail_closed::edge, so a variable of that type is skipped.
+# The evaluation note shows admits<> answering false for the pair.
+foundation_neg_compile_test(neg_fail_closed_foreign_edge_type
+  "constraints not satisfied"
+  "admits<Ns, From, To>.*\\[with Ns = \\^\\^ namespace .*ingest.*From = .*Raw; To = .*Checked\\].*evaluated to .false.")
