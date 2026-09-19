@@ -26,7 +26,7 @@
 // <Tag>> is redundant: ...".
 
 #include <crucible/safety/_Linear.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace {
 struct MyTag {};

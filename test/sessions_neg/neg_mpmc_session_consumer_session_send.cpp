@@ -8,7 +8,7 @@
 // for the fractional × fractional cell of the channel-permission family.
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 
 #include <utility>

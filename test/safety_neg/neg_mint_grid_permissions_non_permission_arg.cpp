@@ -16,7 +16,7 @@
 //   "no match" / "no matching function" / "could not convert" /
 //   "candidate expects" / "cannot bind"
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 namespace {

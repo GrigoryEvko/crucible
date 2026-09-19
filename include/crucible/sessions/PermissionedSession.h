@@ -24,9 +24,9 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/handles/OneShotFlag.h>
-#include <crucible/permissions/PermissionFork.h>
-#include <crucible/permissions/PermSet.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_PermissionFork.h>
+#include <crucible/permissions/_PermSet.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>

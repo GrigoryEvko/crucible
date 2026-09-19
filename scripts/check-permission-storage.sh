@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-permission-storage.sh — Permission<Tag> long-lived-struct
-# antipattern guard (fixy-L-03 #1519,
-# include/crucible/permissions/Permission.h:144-148 doc-block).
+# antipattern guard (fixy-L-03 #1519, the header comment of
+# include/foundation/permissions/Permission.h).
 #
 # ─── Background ──────────────────────────────────────────────────────
 #
@@ -68,7 +68,7 @@ Suppression:
 Rule:
   Every `Permission<*>` declared as a class/struct member MUST be on
   a line containing `[[no_unique_address]]`.  See script docstring or
-  include/crucible/permissions/Permission.h:144-148.
+  the header comment of include/foundation/permissions/Permission.h.
 USAGE
 }
 
@@ -236,7 +236,7 @@ while IFS= read -r match; do
     # member declarations and the doc-block already lists the
     # antipattern.
     case "$rel" in
-        include/crucible/permissions/Permission.h | \
+        include/crucible/permissions/_Permission.h | \
         include/foundation/permissions/Permission.h) continue ;;
     esac
 
@@ -332,8 +332,8 @@ if [[ "$violation_count" -ne 0 ]]; then
 check-permission-storage detected ${violation_count} long-lived-struct
 storage site(s).  Each site declares a Permission<*> as a class/struct
 member without the [[no_unique_address]] discipline marker.  This is
-the CSL frame-rule antipattern documented at
-include/crucible/permissions/Permission.h:144-148: holders of a bare
+the CSL frame-rule antipattern documented in the header comment of
+include/foundation/permissions/Permission.h: holders of a bare
 Permission<Tag> member may be aliased across threads without the type
 system catching it (Permission is move-only at the value level, but
 the type system can't see pointer-based escape through struct

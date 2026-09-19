@@ -15,7 +15,7 @@
 // diagnostic and know which contract they violated.
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 
 #include <optional>

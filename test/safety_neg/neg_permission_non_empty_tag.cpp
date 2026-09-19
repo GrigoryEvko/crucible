@@ -28,7 +28,7 @@
 // Expected diagnostic: "static assertion failed", "Tag must be an
 // empty non-union class type", "PermissionTag", or equivalent.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace neg_permission_non_empty_tag {
 

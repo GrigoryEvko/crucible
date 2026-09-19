@@ -24,7 +24,7 @@
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/ctrl/Throws.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <array>
 #include <cstddef>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/MetaLog.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <algorithm>
 #include <cstdint>

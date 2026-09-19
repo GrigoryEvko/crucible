@@ -22,7 +22,7 @@
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fchase = ::crucible::fixy::substr::chaselev;
 

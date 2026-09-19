@@ -4,7 +4,7 @@
 // through an empty pop result.
 
 #include <crucible/concurrent/SubstrateSessionBridge.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/sessions/ShardedCalendarGridSession.h>
 

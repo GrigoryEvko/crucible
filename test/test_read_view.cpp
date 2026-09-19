@@ -1,6 +1,6 @@
-#include <crucible/permissions/Permission.h>
-#include <crucible/permissions/PermissionFork.h>
-#include <crucible/permissions/ReadView.h>
+#include <crucible/permissions/_Permission.h>
+#include <crucible/permissions/_PermissionFork.h>
+#include <crucible/permissions/_ReadView.h>
 
 #include <atomic>
 #include <cstdint>

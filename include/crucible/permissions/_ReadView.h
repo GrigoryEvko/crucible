@@ -9,7 +9,7 @@
 // share instead.
 
 #include <crucible/Platform.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <concepts>
 #include <cstddef>

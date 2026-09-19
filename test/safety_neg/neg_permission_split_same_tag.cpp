@@ -16,7 +16,7 @@
 // are themselves well-formed (C++ has no orphan rule); the guard fires
 // at the MINT boundary, exactly where authority would be forged.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <utility>
 

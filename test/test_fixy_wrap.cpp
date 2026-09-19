@@ -3,7 +3,7 @@
 // materialised here so that both claims are checked in one place.
 
 #include <crucible/fixy/Wrap.h>
-#include <crucible/permissions/Permission.h>  // the pool behind the share mint
+#include <crucible/permissions/_Permission.h>  // the pool behind the share mint
 
 #include <cstdint>
 #include <type_traits>

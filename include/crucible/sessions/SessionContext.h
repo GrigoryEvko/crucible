@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/permissions/PermSet.h>
+#include <crucible/permissions/_PermSet.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionPermPayloads.h>

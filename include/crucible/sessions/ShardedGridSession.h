@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>

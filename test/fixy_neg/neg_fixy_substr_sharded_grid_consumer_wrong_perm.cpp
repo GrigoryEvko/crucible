@@ -24,7 +24,7 @@
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fsg = ::crucible::fixy::substr::sharded_grid;
 namespace conc = ::crucible::concurrent;

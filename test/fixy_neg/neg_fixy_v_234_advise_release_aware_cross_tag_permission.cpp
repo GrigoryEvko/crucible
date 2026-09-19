@@ -32,7 +32,7 @@
 
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 struct RegionA {};
 struct RegionB {};

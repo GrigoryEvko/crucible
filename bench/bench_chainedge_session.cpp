@@ -11,7 +11,7 @@
 #include <utility>
 
 #include <crucible/concurrent/PermissionedChainEdge.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 
 #include "bench_harness.h"

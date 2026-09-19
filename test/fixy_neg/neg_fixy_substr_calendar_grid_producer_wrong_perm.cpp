@@ -23,7 +23,7 @@
 
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fcal = ::crucible::fixy::substr::calendar_grid;
 namespace conc = ::crucible::concurrent;

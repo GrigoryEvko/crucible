@@ -17,7 +17,7 @@
 // gone, so survivors cannot be minted underneath a peer that is still
 // alive.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cstddef>
 #include <tuple>

@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-19T20:09:18Z`.
+Snapshot generated: `2026-09-19T20:35:00Z`.
 
 ## bridges/
 
@@ -190,15 +190,7 @@ Snapshot generated: `2026-09-19T20:09:18Z`.
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:305` | Y | Y | Y | - | token | `include/crucible/fixy/Source.h:68` | HS14: 22 |
-| `mint_permission_combine` | `include/crucible/permissions/Permission.h:392` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:26` | HS14: 2 |
-| `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:459` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:28` | HS14: 2 |
-| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:122` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 8 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:152` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:34` | HS14: 2 |
-| `mint_permission_root` | `include/crucible/permissions/Permission.h:309` | Y | Y | Y | - | token | `include/crucible/fixy/Hw.h:403` | HS14: 175 |
-| `mint_permission_share` | `include/crucible/permissions/Permission.h:744` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:30` | HS14: 4 |
-| `mint_permission_split` | `include/crucible/permissions/Permission.h:337` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:25` | HS14: 27 |
-| `mint_permission_split_n` | `include/crucible/permissions/Permission.h:421` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:27` | HS14: 4 |
-| `mint_read_view` | `include/crucible/permissions/ReadView.h:23` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:172` | HS14: 4 |
 | `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h:260` | Y | Y | Y | Y | token | `include/crucible/fixy/Source.h:67` | HS14: 4 |
 
 ## safety/
@@ -382,7 +374,7 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 184
+- Total substrate mints: 176
 - Missing fixy re-export: 65
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)

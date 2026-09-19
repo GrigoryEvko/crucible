@@ -3,7 +3,7 @@
 // is then run for real to check the token it yields.
 
 #include <crucible/fixy/Source.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 // The admittance mint is deprecated while its verifier is a placeholder.
 // This file exercises it deliberately, so the diagnostic is suppressed for

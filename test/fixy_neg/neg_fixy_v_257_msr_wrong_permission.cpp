@@ -17,7 +17,7 @@
 
 #include <crucible/fixy/Hw.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace {
 struct other_region {};

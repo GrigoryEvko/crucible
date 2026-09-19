@@ -19,7 +19,7 @@
 // "mint_chainedge_signaler".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fchain = ::crucible::fixy::substr::chainedge;
 namespace saf = ::crucible::safety;

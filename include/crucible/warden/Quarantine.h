@@ -13,7 +13,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/SyntheticProbe.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/_Mutation.h>

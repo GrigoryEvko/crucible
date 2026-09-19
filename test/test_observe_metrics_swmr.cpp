@@ -1,6 +1,6 @@
 #include <crucible/observe/Metrics.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cstdio>
 #include <cstdlib>

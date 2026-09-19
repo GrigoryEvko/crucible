@@ -11,7 +11,7 @@
 #include <crucible/Arena.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/Platform.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
 
 #include <array>

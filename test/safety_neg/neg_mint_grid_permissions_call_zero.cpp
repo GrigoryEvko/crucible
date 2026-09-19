@@ -10,7 +10,7 @@
 // Expected diagnostic substring:
 //   "can_split_grid_v" / "constraints not satisfied"
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 namespace {

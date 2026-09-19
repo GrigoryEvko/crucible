@@ -25,7 +25,7 @@
 #include <utility>
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fsubstr = ::crucible::fixy::substr;
 namespace saf = ::crucible::safety;

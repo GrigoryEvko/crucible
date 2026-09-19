@@ -22,7 +22,7 @@
 // "mint_mpsc_consumer_endpoint".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <utility>
 

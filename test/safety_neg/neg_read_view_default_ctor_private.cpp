@@ -19,7 +19,7 @@
 //
 // Expected diagnostic: "is private within this context".
 
-#include <crucible/permissions/ReadView.h>
+#include <crucible/permissions/_ReadView.h>
 
 namespace {
 struct SecretRegionTag {};

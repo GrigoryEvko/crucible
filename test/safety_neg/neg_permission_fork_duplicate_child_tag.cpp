@@ -14,7 +14,7 @@
 // split_n it delegates to) fires.  The diagnostic carries "PAIRWISE
 // DISTINCT" / "data race" / "fix-07".
 
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_PermissionFork.h>
 
 #include <utility>
 

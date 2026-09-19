@@ -18,7 +18,7 @@
 
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>

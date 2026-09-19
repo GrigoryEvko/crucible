@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/concurrent/ChainEdge.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
 
 #include <type_traits>

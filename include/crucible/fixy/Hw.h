@@ -7,7 +7,7 @@
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/safety/Vendor.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <crucible/effects/_ExecCtx.h>
 

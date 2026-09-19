@@ -31,7 +31,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/PermissionGridGenerator.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/Workload.h>
 
 #include <algorithm>

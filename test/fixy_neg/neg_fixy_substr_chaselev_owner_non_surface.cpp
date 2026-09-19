@@ -23,7 +23,7 @@
 // not satisfied" / "no matching function" / "mint_chaselev_owner".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fchase = ::crucible::fixy::substr::chaselev;
 namespace saf = ::crucible::safety;

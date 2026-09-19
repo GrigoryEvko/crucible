@@ -192,15 +192,15 @@ include/crucible/perf/SyscallTpBtf.h:mint_syscall_tp_btf:constexpr-ok
 include/crucible/perf/WorkloadProfiler.h:mint_workload_profiler:constexpr-ok
 
 # ── permissions/ token + structured-concurrency mints ────────────────
-include/crucible/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
-include/crucible/permissions/Permission.h:mint_permission_combine:requires-ok
-include/crucible/permissions/Permission.h:mint_permission_combine_n:requires-ok
-include/crucible/permissions/Permission.h:mint_permission_root:requires-ok
-include/crucible/permissions/Permission.h:mint_permission_share:requires-ok
-include/crucible/permissions/Permission.h:mint_permission_split:requires-ok
-include/crucible/permissions/Permission.h:mint_permission_split_n:requires-ok
+include/crucible/permissions/_PermissionFork.h:mint_permission_fork:constexpr-ok
+include/crucible/permissions/_Permission.h:mint_permission_combine:requires-ok
+include/crucible/permissions/_Permission.h:mint_permission_combine_n:requires-ok
+include/crucible/permissions/_Permission.h:mint_permission_root:requires-ok
+include/crucible/permissions/_Permission.h:mint_permission_share:requires-ok
+include/crucible/permissions/_Permission.h:mint_permission_split:requires-ok
+include/crucible/permissions/_Permission.h:mint_permission_split_n:requires-ok
 include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
-include/crucible/permissions/ReadView.h:mint_read_view:requires-ok
+include/crucible/permissions/_ReadView.h:mint_read_view:requires-ok
 
 # ── foundation/permissions/ — the ported copies of the entries above ──
 # The token mints derive authority from a parent token, so they carry no

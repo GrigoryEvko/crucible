@@ -13,7 +13,7 @@
 // plus N disjoint sub-regions, told apart by which side they came
 // from, and no new specialization is needed to describe them.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
 
 #include <cstddef>

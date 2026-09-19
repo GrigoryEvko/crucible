@@ -1,6 +1,6 @@
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/permissions/Permission.h>
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_Permission.h>
+#include <crucible/permissions/_PermissionFork.h>
 
 #include <atomic>
 #include <cstdint>

@@ -24,7 +24,7 @@
 
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
 namespace conc = ::crucible::concurrent;

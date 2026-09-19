@@ -32,7 +32,7 @@
 // signal that `ForkRebuildKey{}` is unreachable from outside the
 // friend list.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace neg_fork_rebuild_key_private_ctor {
 

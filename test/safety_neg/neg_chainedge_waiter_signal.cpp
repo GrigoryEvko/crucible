@@ -3,7 +3,7 @@
 // GAPS-062 fixture #2 — ChainEdge waiter endpoints wait only.
 
 #include <crucible/concurrent/PermissionedChainEdge.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <utility>
 

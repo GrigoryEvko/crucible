@@ -5,7 +5,7 @@
 // and reader() factories.  A lookalike type with only nested aliases
 // is not a SwmrSessionSurface.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SwmrSession.h>
 
 #include <utility>

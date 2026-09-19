@@ -4,7 +4,7 @@
 
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cassert>
 #include <cstdio>

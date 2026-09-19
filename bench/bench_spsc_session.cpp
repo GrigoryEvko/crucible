@@ -87,7 +87,7 @@
 #include <memory>
 
 #include <crucible/concurrent/PermissionedSpscChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SpscSession.h>
 
 #include "bench_harness.h"

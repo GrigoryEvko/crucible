@@ -7,7 +7,7 @@
 // role-discrimination claim at the typed-session layer.
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 
 #include <utility>

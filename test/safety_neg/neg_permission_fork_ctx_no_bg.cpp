@@ -9,7 +9,7 @@
 // Expected diagnostic: CtxFitsPermissionFork / row_contains_v constraint
 // is not satisfied.
 
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_PermissionFork.h>
 
 namespace neg_permission_fork_ctx_no_bg {
 

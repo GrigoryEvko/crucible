@@ -25,7 +25,7 @@
 //   where the operands aren't disjoint — this fixture exercises
 //   the trait directly.
 
-#include <crucible/permissions/PermSet.h>
+#include <crucible/permissions/_PermSet.h>
 
 using namespace crucible::safety::proto;
 

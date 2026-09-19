@@ -21,7 +21,7 @@
 // "mint_sharded_grid_consumer".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fsg = ::crucible::fixy::substr::sharded_grid;
 namespace saf = ::crucible::safety;

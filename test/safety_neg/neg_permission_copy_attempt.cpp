@@ -24,7 +24,7 @@
 // Task #146 (A8-P2 Neg-compile coverage); see
 // include/crucible/permissions/Permission.h.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 struct MyTag {};
 

@@ -10,7 +10,7 @@
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/safety/OwnedRegion.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <array>
 #include <cstddef>

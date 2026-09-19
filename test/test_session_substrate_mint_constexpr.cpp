@@ -18,7 +18,7 @@
 #include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>

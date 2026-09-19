@@ -33,7 +33,7 @@
 
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <utility>
 

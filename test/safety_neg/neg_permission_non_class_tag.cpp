@@ -28,7 +28,7 @@
 // empty non-union class type", "PermissionTag", or equivalent — any
 // signal that the in-body static_assert rejects the instantiation.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 int main() {
     namespace safe = ::crucible::safety;

@@ -23,7 +23,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fmeta = ::crucible::fixy::substr::metalog;
 

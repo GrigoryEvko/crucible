@@ -7,7 +7,7 @@
 // confused intent).
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace {
 

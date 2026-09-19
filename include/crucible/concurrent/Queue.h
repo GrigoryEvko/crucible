@@ -19,7 +19,7 @@
 #include <crucible/concurrent/MpscRing.h>
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/SpscRing.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
 
 #include <concepts>

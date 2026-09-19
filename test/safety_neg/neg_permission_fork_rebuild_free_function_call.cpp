@@ -24,7 +24,7 @@
 // 'permission_fork_rebuild_'", "was not declared in this scope", or
 // equivalent — anything that proves the user-callable symbol is gone.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace neg_fork_rebuild_free_function {
 

@@ -10,7 +10,7 @@
 #include <crucible/fixy/Substr.h>
 
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 #include <cstdint>

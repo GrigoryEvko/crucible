@@ -14,7 +14,7 @@
 
 #include <crucible/MetaLog.h>
 #include <crucible/concurrent/PermissionedMetaLog.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/MetaLogSession.h>
 
 #include "bench_harness.h"

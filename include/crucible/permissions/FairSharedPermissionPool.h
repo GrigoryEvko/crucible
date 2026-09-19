@@ -19,7 +19,7 @@
 // until the writer deposits.
 
 #include <crucible/Platform.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
 
 #include <atomic>

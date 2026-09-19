@@ -14,7 +14,7 @@
 #include <crucible/safety/IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 
-#include <crucible/permissions/PermSet.h>
+#include <crucible/permissions/_PermSet.h>
 
 #include <type_traits>
 

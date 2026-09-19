@@ -19,7 +19,7 @@
 // Expected diagnostic: "unused-result".
 
 #include <crucible/fixy/Source.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 // `mint_federation_admittance` is [[deprecated]] in V1 (fixy-CR-02
 // placeholder verifier).  Suppress to isolate the [[nodiscard]] axis.

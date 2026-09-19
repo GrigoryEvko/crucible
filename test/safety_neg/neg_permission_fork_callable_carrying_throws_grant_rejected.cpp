@@ -27,7 +27,7 @@
 // Expected diagnostic: "static assertion failed|FIXY-V-087|
 // type_tree_contains_throws|crucible::fixy::ctrl::throws".
 
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_PermissionFork.h>
 #include <crucible/fixy/ctrl/Throws.h>
 
 namespace neg_permission_fork_callable_carrying_throws_grant_rejected {

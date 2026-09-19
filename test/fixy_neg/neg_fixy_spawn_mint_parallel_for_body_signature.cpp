@@ -28,7 +28,7 @@
 // OwnedRegion<.*, Slice<.*>> / constraint is not satisfied.
 
 #include <crucible/fixy/spawn/Spawn.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace neg_fixy_spawn_mint_parallel_for_body_signature {
 

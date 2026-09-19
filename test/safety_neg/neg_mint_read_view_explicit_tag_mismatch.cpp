@@ -15,8 +15,8 @@
 //   * This fixture: TAG-IDENTITY gate (Permission<TagA> can't bind
 //                   to Permission<TagB> const& parameter).
 
-#include <crucible/permissions/Permission.h>
-#include <crucible/permissions/ReadView.h>
+#include <crucible/permissions/_Permission.h>
+#include <crucible/permissions/_ReadView.h>
 
 namespace {
 struct TagA {};

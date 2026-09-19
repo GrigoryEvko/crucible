@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <type_traits>
 

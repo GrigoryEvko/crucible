@@ -1,4 +1,4 @@
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/observe/Metrics.h>
 
 #include "bench_harness.h"

@@ -15,7 +15,7 @@
 //   "no member named .try_pop."
 
 #include <crucible/concurrent/PermissionedMpscChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace {
 

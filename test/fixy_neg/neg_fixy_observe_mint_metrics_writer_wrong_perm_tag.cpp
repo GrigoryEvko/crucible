@@ -1,5 +1,5 @@
 #include <crucible/fixy/Observe.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 // FIXY-V-214 fixture #1: the fixy::observe::mint_metrics_writer
 // re-export MUST preserve the substrate's Permission<WriterTag>

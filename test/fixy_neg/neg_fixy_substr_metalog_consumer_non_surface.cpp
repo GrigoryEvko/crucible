@@ -18,7 +18,7 @@
 // not satisfied" / "no matching function" / "mint_metalog_consumer".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fmeta = ::crucible::fixy::substr::metalog;
 namespace saf = ::crucible::safety;

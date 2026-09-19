@@ -22,7 +22,7 @@
 #include <crucible/concurrent/ChainEdge.h>
 #include <crucible/concurrent/PermissionedChainEdge.h>
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fchain = ::crucible::fixy::substr::chainedge;
 namespace conc = ::crucible::concurrent;

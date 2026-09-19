@@ -9,7 +9,7 @@
 //
 // Expected diagnostic: CtxAdmitsPermission / constraints not satisfied.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <utility>
 

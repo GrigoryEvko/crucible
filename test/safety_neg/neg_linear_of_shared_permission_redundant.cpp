@@ -28,7 +28,7 @@
 // static_assert message as the companion.
 
 #include <crucible/safety/_Linear.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace {
 struct MyShareTag {};

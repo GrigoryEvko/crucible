@@ -1,5 +1,5 @@
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 #include <atomic>

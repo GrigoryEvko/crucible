@@ -8,7 +8,7 @@
 //
 // Expected diagnostic: no matching mint_permission_fork overload.
 
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_PermissionFork.h>
 
 namespace neg_permission_fork_no_ctx {
 

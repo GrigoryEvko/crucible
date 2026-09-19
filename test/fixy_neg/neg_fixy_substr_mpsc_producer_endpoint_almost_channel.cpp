@@ -18,7 +18,7 @@
 // / "no member named" / "mint_mpsc_producer_endpoint".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <optional>
 

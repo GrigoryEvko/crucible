@@ -5,7 +5,7 @@
 // with a live Permission<WorkItem> would otherwise defer the bug until
 // close(); the ctx-bound mint catches it at construction.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

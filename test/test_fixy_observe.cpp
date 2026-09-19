@@ -4,7 +4,7 @@
 // at runtime.
 
 #include <crucible/fixy/Observe.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <bit>
 #include <cstdint>

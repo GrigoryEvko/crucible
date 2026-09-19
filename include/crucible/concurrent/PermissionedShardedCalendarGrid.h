@@ -24,7 +24,7 @@
 // producers have to be spread over the shards evenly.
 
 #include <crucible/concurrent/SpscRing.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/safety/_Pinned.h>

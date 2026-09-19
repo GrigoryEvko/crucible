@@ -26,9 +26,9 @@
 // payload without either needing to know about the other.
 
 #include <crucible/Platform.h>
-#include <crucible/permissions/PermSet.h>
-#include <crucible/permissions/Permission.h>
-#include <crucible/permissions/ReadView.h>
+#include <crucible/permissions/_PermSet.h>
+#include <crucible/permissions/_Permission.h>
+#include <crucible/permissions/_ReadView.h>
 
 #include <type_traits>
 #include <utility>

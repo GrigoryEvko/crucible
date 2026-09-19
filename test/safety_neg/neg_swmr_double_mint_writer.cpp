@@ -2,7 +2,7 @@
 //
 // GAPS-021: mint_swmr_writer consumes a linear writer Permission.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SwmrSession.h>
 
 namespace ses = crucible::safety::proto::swmr_session;

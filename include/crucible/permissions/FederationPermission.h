@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/diag/_StableName.h>
 

@@ -34,7 +34,7 @@
 // message contains "Affine<Permission<Tag>> / Affine<SharedPermission
 // <Tag>> is unsound: ...".
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Affine.h>
 
 namespace {

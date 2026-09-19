@@ -10,7 +10,7 @@
 //   "ConsumerHandle owns the Consumer Permission"
 
 #include <crucible/concurrent/PermissionedMpscChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace {
 

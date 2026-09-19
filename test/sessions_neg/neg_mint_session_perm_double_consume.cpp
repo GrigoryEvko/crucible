@@ -4,7 +4,7 @@
 // a ctx-bound mint twice would duplicate CSL authority.  PermSet now
 // rejects duplicate tags structurally at the mint boundary.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

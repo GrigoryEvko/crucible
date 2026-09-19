@@ -6,10 +6,10 @@
 
 #include <crucible/permissions/FairSharedPermissionPool.h>
 #include <crucible/permissions/FederationPermission.h>
-#include <crucible/permissions/Permission.h>
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_Permission.h>
+#include <crucible/permissions/_PermissionFork.h>
 #include <crucible/permissions/PermissionInherit.h>
-#include <crucible/permissions/ReadView.h>
+#include <crucible/permissions/_ReadView.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
 

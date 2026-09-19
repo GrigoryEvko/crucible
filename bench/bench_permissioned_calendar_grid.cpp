@@ -23,7 +23,7 @@
 
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/SpscRing.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 #include "bench_harness.h"

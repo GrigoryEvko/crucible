@@ -1,5 +1,5 @@
 #include <crucible/canopy/Hlc.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <algorithm>
 #include <array>

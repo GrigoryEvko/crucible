@@ -3,7 +3,7 @@
 // holds a share and steals from the top.
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <atomic>
 #include <cstdio>

@@ -20,7 +20,7 @@
 // "mint_calendar_grid_consumer".
 
 #include <crucible/fixy/Substr.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 namespace fcal = ::crucible::fixy::substr::calendar_grid;
 namespace saf = ::crucible::safety;

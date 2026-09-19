@@ -6,7 +6,7 @@
 #include <crucible/fixy/Substr.h>
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cstdio>
 #include <cstdlib>

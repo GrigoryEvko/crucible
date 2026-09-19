@@ -11,7 +11,7 @@
 // mint_permission_split_n's own static_assert message):
 //   "mint_permission_split_n<Children...>"
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
 
 namespace {

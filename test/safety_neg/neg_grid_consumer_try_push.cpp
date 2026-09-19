@@ -4,7 +4,7 @@
 // only try_recv.  Calling try_push must be a hard compile error.
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 namespace {

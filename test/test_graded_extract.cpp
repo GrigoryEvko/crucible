@@ -10,7 +10,7 @@
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Budgeted.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cstdio>
 #include <cstdlib>

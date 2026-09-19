@@ -13,7 +13,7 @@
 
 #include <crucible/concurrent/ChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cstdio>
 #include <cstdlib>

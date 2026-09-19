@@ -10,7 +10,7 @@
 // Expected diagnostic: permission_fork_ctx_callables / constraints not
 // satisfied for the child callable signature.
 
-#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/_PermissionFork.h>
 
 namespace neg_permission_fork_child_ctx_mismatch {
 

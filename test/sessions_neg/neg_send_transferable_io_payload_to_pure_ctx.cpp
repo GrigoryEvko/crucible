@@ -5,7 +5,7 @@
 // still require an IO-admitting execution context; HotFgCtx has Row<>.
 
 #include <crucible/effects/_Computation.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

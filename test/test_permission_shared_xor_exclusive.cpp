@@ -8,7 +8,7 @@
 // are the access carriers: a guard is live exactly while the count is
 // above zero, and the upgrade fails exactly then. These tests pin that.
 
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 
 #include <cstdio>
 #include <optional>

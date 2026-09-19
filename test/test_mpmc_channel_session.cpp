@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 
 namespace {

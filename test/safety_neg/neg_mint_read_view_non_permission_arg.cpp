@@ -16,7 +16,7 @@
 //   * Companion:    TAG-IDENTITY gate (explicit Tag clashes with the
 //                   Tag deduced from the argument's Permission).
 
-#include <crucible/permissions/ReadView.h>
+#include <crucible/permissions/_ReadView.h>
 
 int main() {
     // 42 is not a Permission<Tag>; template arg deduction fails.
