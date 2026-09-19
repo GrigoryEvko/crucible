@@ -31,6 +31,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace foundation::effects {
 
@@ -226,6 +227,35 @@ inline constexpr bool is_subrow_v = is_subrow<R1, R2>::value;
 template <typename R1, typename R2>
 concept Subrow = is_subrow_v<R1, R2>;
 
+namespace detail {
+
+// The complete atom list, substituted into whichever template asks for
+// it.  Row and EffectRowLattice::At both take a pack of Effect
+// non-type arguments, so one walk serves both.
+//
+// The atoms arrive in declaration order, which for this enum is also
+// sorted underlying-value order, and that is the canonical row order
+// this header defines.
+[[nodiscard]] consteval std::meta::info every_effect_of_(std::meta::info tmpl) {
+    std::vector<std::meta::info> atoms;
+    for (const auto enumerator : std::meta::enumerators_of(^^Effect)) {
+        atoms.push_back(std::meta::constant_of(enumerator));
+    }
+    return std::meta::substitute(tmpl, atoms);
+}
+
+}  // namespace detail
+
+// The row of every atom the catalog declares.  Nine places used to
+// spell the six atoms out, and each of those was a copy that a new atom
+// would silently leave behind at five atoms.
+using every_effect_row = [:detail::every_effect_of_(^^Row):];
+
+static_assert(row_size_v<every_effect_row> == effect_count,
+              "every_effect_row must hold one atom for each Effect enumerator.  It is substituted from "
+              "enumerators_of, so a mismatch means a duplicate enumerator value collapsed two atoms into "
+              "one row bit.");
+
 namespace detail::effect_row_self_test {
 
 using R_empty = Row<>;
@@ -305,7 +335,7 @@ static_assert(row_size_v<R_inter> == 2);
 using R_inter_disjoint = row_intersection_t<R_alloc, R_io>;
 static_assert(row_size_v<R_inter_disjoint> == 0);
 
-using R_universe = Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>;
+using R_universe = every_effect_row;
 static_assert(row_size_v<R_universe> == effect_count);
 static_assert(is_subrow_v<R_alloc_io, R_universe>);
 static_assert(is_subrow_v<R_alloc_io_bg, R_universe>);
@@ -544,9 +574,11 @@ static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Alloc>>, EffectRowLa
 static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Bg>>, EffectRowLattice::At<Effect::Bg>>);
 static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>,
                              EffectRowLattice::At<Effect::Alloc, Effect::IO>>);
-static_assert(std::is_same_v<
-              effect_row_to_at_t<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>,
-              EffectRowLattice::At<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>);
+// Both sides come from the same walk over the enum, so what this pins
+// is that the conversion carries every atom across rather than that two
+// hand-written lists agree.
+static_assert(
+    std::is_same_v<effect_row_to_at_t<every_effect_row>, typename[:detail::every_effect_of_(^^EffectRowLattice::At):]>);
 
 static_assert(effect_row_to_at_t<Row<>>::bits() == row_descriptor_v<Row<>>);
 static_assert(effect_row_to_at_t<Row<Effect::Alloc>>::bits() == row_descriptor_v<Row<Effect::Alloc>>);
@@ -619,8 +651,7 @@ static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>> == row_descriptor
 
 static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::Alloc>> == row_descriptor_v<Row<Effect::Alloc>>);
 
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>
-              == e_top);
+static_assert(row_descriptor_v<every_effect_row> == e_top);
 
 static_assert(row_descriptor_v<int> == 0);
 static_assert(row_descriptor_v<double> == 0);

@@ -53,9 +53,7 @@ static_assert(ComputationGraded<Row<Effect::Bg>, double>::modality == ::foundati
 
 static_assert(std::is_empty_v<typename ComputationGraded<Row<>, int>::grade_type>);
 static_assert(std::is_empty_v<typename ComputationGraded<Row<Effect::Bg>, int>::grade_type>);
-static_assert(
-    std::is_empty_v<typename ComputationGraded<
-        Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, int>::grade_type>);
+static_assert(std::is_empty_v<typename ComputationGraded<every_effect_row, int>::grade_type>);
 
 // The modality and lattice names are stable spellings and can be
 // compared.  The value-type name is not: it is reflection-derived and
@@ -84,10 +82,7 @@ static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, EmptyValue>) == 1);
 static_assert(sizeof(ComputationGraded<Row<>, int>) == sizeof(int));
 static_assert(sizeof(ComputationGraded<Row<Effect::Alloc>, int>) == sizeof(int));
 static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, int>) == sizeof(int));
-static_assert(
-    sizeof(
-        ComputationGraded<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, int>)
-    == sizeof(int));
+static_assert(sizeof(ComputationGraded<every_effect_row, int>) == sizeof(int));
 
 static_assert(sizeof(ComputationGraded<Row<>, OneByteValue>) == sizeof(OneByteValue));
 static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, OneByteValue>) == sizeof(OneByteValue));
@@ -111,8 +106,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverBg, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverBg, EightByteValue);
 
 template <typename T>
-using CompOverAll =
-    ComputationGraded<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, T>;
+using CompOverAll = ComputationGraded<every_effect_row, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverAll, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverAll, EightByteValue);
 
@@ -136,9 +130,7 @@ concept HasAtBottom = requires(typename G::value_type v) { G::at_bottom(v); };
 
 static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<>, int>>);
 static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<Effect::Bg>, int>>);
-static_assert(
-    detail::computation_graded_caps::HasAtBottom<
-        ComputationGraded<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, int>>);
+static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<every_effect_row, int>>);
 
 static_assert(std::is_default_constructible_v<ComputationGraded<Row<>, int>>);
 static_assert(std::is_copy_constructible_v<ComputationGraded<Row<>, int>>);
