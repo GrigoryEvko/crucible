@@ -93,8 +93,8 @@ Usage:
 Scanned traits and their authoring sets:
 
   is_graded_specialization  include/crucible/{algebra,safety,permissions,handles}/
-  value_type_decoupled      + test/test_concept_cheat_probe.cpp
-  graded_modality
+  value_type_decoupled      + include/foundation/algebra/
+  graded_modality           + test/test_concept_cheat_probe.cpp
   is_numerical_tier_impl
 
   retag_policy              include/crucible/safety/Tagged.h
@@ -119,9 +119,11 @@ USAGE
 # path globs>".  Globs are matched with bash [[ == ]], where * spans
 # directory separators.
 #
-# Family A keeps its original single authoring set verbatim, so this
-# rewrite does not relax any trait that was already guarded.
-substrate_paths='include/crucible/algebra/* include/crucible/safety/* include/crucible/permissions/* include/crucible/handles/* test/test_concept_cheat_probe.cpp'
+# Family A keeps its original single authoring set, widened once for
+# the sibling substrate: include/foundation/algebra/ carries the same
+# Graded trait specializations as include/crucible/algebra/ until Stage
+# D of the canonical-fixy refactor deletes the latter.
+substrate_paths='include/crucible/algebra/* include/foundation/algebra/* include/crucible/safety/* include/crucible/permissions/* include/crucible/handles/* test/test_concept_cheat_probe.cpp'
 
 scan_table=(
     "substrate|(struct|class)\s+(is_graded_specialization|value_type_decoupled|graded_modality|is_numerical_tier_impl)\s*<|${substrate_paths}"

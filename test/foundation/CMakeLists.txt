@@ -30,6 +30,7 @@ function(foundation_test name)
 endfunction()
 
 foundation_test(test_platform)
+foundation_test(test_algebra_core)
 
 # Negative-compile fixtures for the foundation layer.
 #
@@ -74,3 +75,10 @@ endfunction()
 foundation_neg_compile_test(neg_constraint_failure_names_the_concept
   "constraints not satisfied"
   "satisfaction of .HalvesEvenly<T>.")
+
+# A stored grade outside the lattice's order is rejected by the primary
+# Graded constructor's contract_assert.  The location regex proves the
+# rejection came from inside Graded.h and not from the fixture's own line.
+foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
+  "contract predicate is false in constant expression"
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: error")
