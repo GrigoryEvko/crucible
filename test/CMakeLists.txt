@@ -1754,7 +1754,7 @@ endfunction()
 # takes ONE regex, and a regex is satisfied by its weakest alternative,
 # so a gate written as `A|B|C` proves only that the weakest of A, B, C
 # appeared.  When the weakest alternative is boilerplate that ANY failing
-# concept check emits — `constraints not satisfied`, `template constraint
+# concept check emits — `constraints.*not satisfied`, `template constraint
 # failure`, `associated constraints` — the fixture proves that SOMETHING
 # in the TU failed a constraint, not that the invariant under test fired.
 #
@@ -1785,7 +1785,7 @@ endfunction()
 # AND: the first says a rejection happened, the second says it happened
 # to the thing under test.  One regex cannot say both, because a regex
 # is satisfied by its weakest alternative, and the weakest alternative
-# of `SomeConcept|constraints not satisfied` is boilerplate that ANY
+# of `SomeConcept|constraints.*not satisfied` is boilerplate that ANY
 # failing concept check emits.
 #
 # Measured across the eleven sister harnesses at the time this landed:
@@ -1811,7 +1811,8 @@ set(CRUCIBLE_NEG_TWO_REGEX_FLOORED
   perf_neg
   topology_neg
   bridges_neg
-  sessions_neg)
+  sessions_neg
+  effects_neg)
 
 # Called by each sister harness with the registration's regex list in
 # ARGN.  Silent for a directory that has not been swept yet.
@@ -2245,7 +2246,7 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_reference          "AllGrantsWellF
 # fixy-M-09 — structural-validation concepts for parametric grant
 # tags.  Each fixture demonstrates the requires-clause fires on its
 # OWN gate's distinct rejection class.  Regex matches the named
-# concept OR "constraints not satisfied" (GCC's surface for a
+# concept OR "constraints.*not satisfied" (GCC's surface for a
 # requires-clause failure on the class template).
 crucible_neg_compile_fixy_test(neg_fixy_grant_protocol_non_class
     "constraints not satisfied|IsSessionProtocol|is_class")
@@ -3904,49 +3905,49 @@ crucible_neg_compile_fixy_test(neg_fixy_is_session_handle_rejects_plain
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_unrecovered
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "static assertion failed.*CrashBranch_Missing_In_Tree")
 
 # GAPS-049: exact-name delegated-crash rejection fixtures.  These pin
 # the public consteval assertion boundary so custom call sites do not
 # have to infer the failure from the broader crash-walker diagnostic.
 crucible_neg_compile_session_test(neg_delegate_to_unreliable_no_crash_branch
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "DelegatedCrashPropagation_MissingRecovery|recipient is unreliable but carrier K has no crash-recovery branch")
 
 # GAPS-048: Delegate<Stop, K> has no K continuation at the handle
 # surface; the operation is explicitly deleted with a framework-owned
 # diagnostic.
 crucible_neg_compile_session_test(neg_delegate_stop_continuation
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "DelegateStop_NoContinuation")
 
 crucible_neg_compile_session_test(neg_delegate_stop_without_continuation_capability
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "DelegateStop_NoContinuation")
 
 crucible_neg_compile_session_test(neg_delegate_compose_incompatible_crash_classes
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CrashLattice_Composition_Incompatible")
 
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_no_propagation_metafunction
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "DelegatedCrashPropagation_PrimaryTemplate|primary template fires")
 
 # GAPS-064: CrashWatchedHandle consumes Stop_g<CrashClass C>.
 # These fixtures pin the NoThrow rejection and the exact Stop_g grade
 # match at the watched crash boundary.
 crucible_neg_compile_session_test(neg_crashwatched_noThrow_with_unreliable_peer
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CrashWatched_NoThrow_Rejected")
 crucible_neg_compile_session_test(neg_crashwatched_strong_class_recovery_path_missing
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 crucible_neg_compile_session_test(neg_crashwatched_class_lattice_violation
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 
 # fixy-A2-020: HS14 floor for the new `!is_terminal_state<B>` conjunct
@@ -3956,10 +3957,10 @@ crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
 # semantically equivalent to their terminal body, neither containing
 # a reachable Continue.
 crucible_neg_compile_session_test(neg_loop_body_terminal_end
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "Protocol_Ill_Formed|is_well_formed")
 crucible_neg_compile_session_test(neg_loop_body_terminal_stop
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "Protocol_Ill_Formed|is_well_formed")
 
 # GAPS-066: NumericalTier Send covariance / Recv contravariance and
@@ -3968,22 +3969,22 @@ crucible_neg_compile_session_test(neg_loop_body_terminal_stop
 # receivers, bare payloads cannot regain tier evidence, and loop
 # composition cannot hide a downgrade.
 crucible_neg_compile_session_test(neg_send_weaker_tier_to_recv_stronger
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "NumericalTier_ChannelBoundary_ProducerTierTooWeak")
 crucible_neg_compile_session_test(neg_recv_promotes_unauthorized
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "NumericalTier_RecvPromotion_RequiresTightening")
 crucible_neg_compile_session_test(neg_session_subtype_tier_mismatch
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "NumericalTier_SendSubtype_ProducerTierTooWeak")
 crucible_neg_compile_session_test(neg_payload_unwrap_loses_tier
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "NumericalTier_BarePayload_CannotGainTier")
 crucible_neg_compile_session_test(neg_default_recipe_to_strict_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "NumericalTier_DefaultRecipe_CannotSatisfyStrictRecv")
 crucible_neg_compile_session_test(neg_tier_compose_in_loop
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "NumericalTier_LoopBody_TierDowngrade")
 
 # GAPS-067: VendorCtx pins PermissionedSessionHandle chains to a
@@ -3991,37 +3992,37 @@ crucible_neg_compile_session_test(neg_tier_compose_in_loop
 # framework-owned composition assertion rejects an NV provider for an
 # AMD consumer.
 crucible_neg_compile_session_test(neg_vendor_ctx_nv_to_amd
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_vendor_ctx_none_to_nv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 
 # GAPS-068: VendorCtx/VendorPinned admission at session mint,
 # substrate bridge, Delegate_seq, subtype, and payload boundaries.
 crucible_neg_compile_session_test(neg_mint_substrate_nv_to_amd
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_cntp_layer_vendor_mismatch
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_collective_session_vendor_unspecified
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_session_subtype_vendor_violation
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "SessionSubtype\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_session_compose_cross_vendor_no_portable
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_session_promote_to_portable_unauthorized
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_send_payload_vendor_in_pure_session
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_recv_payload_unauthorized_vendor
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 
 # GAPS-070: ProductLattice protocol-grade filter on synchronous
@@ -4029,70 +4030,75 @@ crucible_neg_compile_session_test(neg_recv_payload_unauthorized_vendor
 # local is_subsort axiom; the structural Gay-Hole relation would pass,
 # but the orthogonal grade filter must still reject.
 crucible_neg_compile_session_test(neg_session_grade_vendor_axis
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_numerical_axis
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_cipher_axis
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_epoch_axis
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_numa_axis
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_vendor_numerical_axes
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_vendor_cipher_axes
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_numerical_cipher_axes
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_evolution_weakens_numerical
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_evolution_changes_vendor
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 
 # GAPS-072: EpochedDelegate ctx-bound minting pins cross-Relay reshard
 # handoffs to the current sender epoch/generation while EpochedAccept
 # rejects stale recipients.
 crucible_neg_compile_session_test(neg_epoched_delegate_stale_epoch_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
 crucible_neg_compile_session_test(neg_epoched_delegate_recipient_stale_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleRecipient")
 crucible_neg_compile_session_test(neg_epoched_delegate_generation_decrease
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
 crucible_neg_compile_session_test(neg_epoched_delegate_compose_stale_chain
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
 
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.
 crucible_neg_compile_effects_test(neg_extract_nonempty_row
-    "associated constraints are not satisfied|row_size_v.*== 0")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "row_size_v.*== 0")
 crucible_neg_compile_effects_test(neg_weaken_to_disjoint_row
-    "associated constraints are not satisfied|Subrow")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "Subrow")
 crucible_neg_compile_effects_test(neg_lift_unknown_capability
-    "associated constraints are not satisfied|IsEffect")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsEffect")
 
 # WRAP-Bits-Integration-2 (#1087): Row → Bits<Effect> projection
 # bridge.  IsEffectRow concept gate rejects non-Row inputs at the
 # call site — neither bits_from_row<int>() nor row_subsumes_bits<int>
 # are admissible.
 crucible_neg_compile_effects_test(neg_bits_from_row_non_row
-    "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
+    "constraints.*not satisfied"
+    "no matching|IsEffectRow")
 crucible_neg_compile_effects_test(neg_row_subsumes_bits_non_row
-    "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
+    "constraints.*not satisfied"
+    "no matching|IsEffectRow")
 
 # fixy-A3-027 (#1634): ExecCtx Progress axis (8th axis).
 # Termination / liveness claim per F* Pure/Tot/Div vocabulary.
@@ -4105,13 +4111,17 @@ crucible_neg_compile_effects_test(neg_row_subsumes_bits_non_row
 # — .with_heat<Hot>() without first setting Progress fires the
 # class-body static_assert on the intermediate return type.
 crucible_neg_compile_effects_test(neg_exec_ctx_hot_maydiverge
-    "static assertion failed|heat_progress_coherent|Heat × Progress|fixy-A3-027")
+    "static assertion failed"
+    "heat_progress_coherent|Heat × Progress|fixy-A3-027")
 crucible_neg_compile_effects_test(neg_exec_ctx_progress_non_class
-    "constraints not satisfied|WellFormedExecCtxAxes|IsProgressClass|fixy-A3-027")
+    "constraints.*not satisfied"
+    "WellFormedExecCtxAxes|IsProgressClass|fixy-A3-027")
 crucible_neg_compile_effects_test(neg_exec_ctx_with_progress_int
-    "associated constraints are not satisfied|IsProgressClass|with_progress|fixy-A3-027")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsProgressClass|with_progress|fixy-A3-027")
 crucible_neg_compile_effects_test(neg_exec_ctx_builder_hot_default_progress
-    "static assertion failed|heat_progress_coherent|Heat × Progress|fixy-A3-027")
+    "static assertion failed"
+    "heat_progress_coherent|Heat × Progress|fixy-A3-027")
 
 # fixy-A3-026 (#1633): signalling-channel workload-hint shapes.
 # ProducerOnlyChannel<Bytes, Producers, LatestOnly> and
@@ -4123,13 +4133,17 @@ crucible_neg_compile_effects_test(neg_exec_ctx_builder_hot_default_progress
 # Consumers=0 shapes.  ChannelBudget already pins the bidirectional
 # fan case; these complete the signalling-channel family.
 crucible_neg_compile_effects_test(neg_producer_only_channel_zero_bytes
-    "static assertion failed|Bytes > 0|ProducerOnlyChannel")
+    "static assertion failed"
+    "Bytes > 0|ProducerOnlyChannel")
 crucible_neg_compile_effects_test(neg_producer_only_channel_zero_producers
-    "static assertion failed|Producers > 0|ProducerOnlyChannel")
+    "static assertion failed"
+    "Producers > 0|ProducerOnlyChannel")
 crucible_neg_compile_effects_test(neg_consumer_only_channel_zero_bytes
-    "static assertion failed|Bytes > 0|ConsumerOnlyChannel")
+    "static assertion failed"
+    "Bytes > 0|ConsumerOnlyChannel")
 crucible_neg_compile_effects_test(neg_consumer_only_channel_zero_consumers
-    "static assertion failed|Consumers > 0|ConsumerOnlyChannel")
+    "static assertion failed"
+    "Consumers > 0|ConsumerOnlyChannel")
 
 # fixy-A3-022 (#1629): EffectMask::from_raw rejects unknown bits.
 # The runtime dual of Row<Es...> is now hardened against wire-
@@ -4140,16 +4154,19 @@ crucible_neg_compile_effects_test(neg_consumer_only_channel_zero_consumers
 # (0x80) catches mask-on-read impls; multi-bit poison (0xC0)
 # catches half-broken / parity-based fence impls.
 crucible_neg_compile_effects_test(neg_effect_mask_from_raw_single_high_bit
-    "non-constant condition|not a constant expression|__builtin_trap|call to non-constexpr function|non-constexpr")
+    "not a constant expression"
+    "non-constant condition|__builtin_trap|call to non-constexpr function|non-constexpr")
 crucible_neg_compile_effects_test(neg_effect_mask_from_raw_high_bits
-    "non-constant condition|not a constant expression|__builtin_trap|call to non-constexpr function|non-constexpr")
+    "not a constant expression"
+    "non-constant condition|__builtin_trap|call to non-constexpr function|non-constexpr")
 
 # FOUND-H03-AUDIT-2 (#838): non-Row R rejection in ComputationGraded.
 # Witnesses that effect_row_to_at_t<NotARow> hard-errors at the alias
 # instantiation point — the helper's primary template is undefined on
 # purpose, so non-Row arguments produce an incomplete-type diagnostic.
 crucible_neg_compile_effects_test(neg_computation_graded_non_row
-    "incomplete type|incomplete and cannot be|has no member named .type|invalid use of incomplete type")
+    "incomplete type|invalid use of incomplete type"
+    "effect_row_to_at")
 
 # FOUND-H04-AUDIT-1: encapsulation witness for the H04 façade migration.
 # Proves the cross-specialization friendship is bounded — external
@@ -4158,7 +4175,8 @@ crucible_neg_compile_effects_test(neg_computation_graded_non_row
 # public), this fixture starts compiling and CI catches the
 # regression.
 crucible_neg_compile_effects_test(neg_computation_impl_private
-    "is private within this context|private member|non-public member|is private")
+    "is private within this context"
+    "private member|non-public member|is private")
 
 # ─── P1-AUDIT (#852): ExecCtx soundness invariants ─────────────────
 #
@@ -4166,15 +4184,20 @@ crucible_neg_compile_effects_test(neg_computation_impl_private
 # per-axis concept gates on builder methods, the Heat × Resid
 # cross-axis rule, and the ctx_numa::Pinned<N> non-negative-N guard.
 crucible_neg_compile_effects_test(neg_exec_ctx_with_cap_non_axis
-    "associated constraints are not satisfied|IsCapType")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsCapType")
 crucible_neg_compile_effects_test(neg_exec_ctx_in_row_non_row
-    "associated constraints are not satisfied|IsEffectRow")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsEffectRow")
 crucible_neg_compile_effects_test(neg_exec_ctx_cap_row_incoherent
-    "associated constraints are not satisfied|WellFormedExecCtxAxes|static assertion failed|cap_permitted_row|Subrow")
+    "constraints.*not satisfied|static assertion failed"
+    "WellFormedExecCtxAxes|cap_permitted_row|Subrow")
 crucible_neg_compile_effects_test(neg_exec_ctx_heat_resid_incoherent
-    "static assertion failed|heat_resid_coherent|Heat × Resid")
+    "static assertion failed"
+    "heat_resid_coherent|Heat × Resid")
 crucible_neg_compile_effects_test(neg_exec_ctx_pinned_negative_node
-    "static assertion failed|Pinned.*requires N >= 0|Node >= 0")
+    "static assertion failed"
+    "Pinned.*requires N >= 0|Node >= 0")
 
 # ─── fixy-A3-020 (#1627): WellFormedExecCtxAxes concept hoist ──────
 #
@@ -4187,9 +4210,11 @@ crucible_neg_compile_effects_test(neg_exec_ctx_pinned_negative_node
 # leading axis (short-circuits at IsCapType) and typo at the
 # trailing axis (must still fire after every upstream atom passes).
 crucible_neg_compile_effects_test(neg_exec_ctx_int_typo_clean_diag
-    "constraints not satisfied|WellFormedExecCtxAxes|IsCapType|fixy-A3-020")
+    "constraints.*not satisfied"
+    "WellFormedExecCtxAxes|IsCapType|fixy-A3-020")
 crucible_neg_compile_effects_test(neg_exec_ctx_well_formed_axes_workload_typo
-    "constraints not satisfied|WellFormedExecCtxAxes|IsWorkloadHint|fixy-A3-020")
+    "constraints.*not satisfied"
+    "WellFormedExecCtxAxes|IsWorkloadHint|fixy-A3-020")
 
 # ─── fixy-A3-004 (#1611): IsExecCtx / IsEffectRow strip cv-ref ─────
 #
@@ -4199,9 +4224,11 @@ crucible_neg_compile_effects_test(neg_exec_ctx_well_formed_axes_workload_typo
 # just because they carry cv-ref qualifiers.  Two fixtures pin both
 # directions of the asymmetry: `int const&` and `int&&` still reject.
 crucible_neg_compile_effects_test(neg_is_exec_ctx_non_ctx_cvref_rejected
-    "static assertion failed|fixy-A3-004|IsExecCtx|is_exec_ctx")
+    "static assertion failed"
+    "fixy-A3-004|IsExecCtx|is_exec_ctx")
 crucible_neg_compile_effects_test(neg_is_effect_row_non_row_cvref_rejected
-    "static assertion failed|fixy-A3-004|IsEffectRow|is_effect_row")
+    "static assertion failed"
+    "fixy-A3-004|IsEffectRow|is_effect_row")
 
 # ─── fixy-A3-005 (#1612): cap-tag default ctors are private ─────────
 #
@@ -4214,8 +4241,10 @@ crucible_neg_compile_effects_test(neg_is_effect_row_non_row_cvref_rejected
 # i{};` must fail to compile.  Mirrors the H-25 passkey-via-passkey
 # pattern from permissions/PermissionInherit.h.
 crucible_neg_compile_effects_test(neg_effects_bg_default_ctor_private
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "private within this context|fixy-A3-005|is private|explicitly marked as private")
 crucible_neg_compile_effects_test(neg_effects_init_default_ctor_private
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "private within this context|fixy-A3-005|is private|explicitly marked as private")
 
 # ─── FIXY-U-109: context-mint passkey-gate witnesses ──────────────
@@ -4230,28 +4259,37 @@ crucible_neg_compile_effects_test(neg_effects_init_default_ctor_private
 # neg_effects_*_default_ctor_private fixtures (which construct the
 # CONTEXT directly), these genuinely CALL the mint factory.
 crucible_neg_compile_effects_test(neg_effects_mint_bg_context_forge_key
-    "is private within this context|private member|bg_key")
+    "is private within this context"
+    "private member|bg_key")
 crucible_neg_compile_effects_test(neg_effects_mint_bg_context_keyless
-    "too few arguments|no matching function|mint_bg_context")
+    "too few arguments|no matching function"
+    "mint_bg_context")
 # FIXY-V-017: exercises the CanMintBgContext concept's same_as<Key, bg_key>
 # clause — pass init_key (the wrong context's passkey).  Distinct from
 # forge_key (key-private-ctor) and keyless (missing argument).
 crucible_neg_compile_effects_test(neg_effects_mint_bg_context_wrong_key
-    "constraints not satisfied|CanMintBgContext|same_as|init_key|bg_key|is private")
+    "constraints.*not satisfied"
+    "CanMintBgContext|same_as|init_key|bg_key|is private")
 crucible_neg_compile_effects_test(neg_effects_mint_init_context_forge_key
-    "is private within this context|private member|init_key")
+    "is private within this context"
+    "private member|init_key")
 crucible_neg_compile_effects_test(neg_effects_mint_init_context_keyless
-    "too few arguments|no matching function|mint_init_context")
+    "too few arguments|no matching function"
+    "mint_init_context")
 # FIXY-V-018: exercises CanMintInitContext<Key> with the wrong passkey.
 crucible_neg_compile_effects_test(neg_effects_mint_init_context_wrong_key
-    "constraints not satisfied|CanMintInitContext|same_as|bg_key|init_key|is private")
+    "constraints.*not satisfied"
+    "CanMintInitContext|same_as|bg_key|init_key|is private")
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_forge_key
-    "is private within this context|private member|test_key")
+    "is private within this context"
+    "private member|test_key")
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_keyless
-    "too few arguments|no matching function|mint_test_context")
+    "too few arguments|no matching function"
+    "mint_test_context")
 # FIXY-V-019: exercises CanMintTestContext<Key> with the wrong passkey.
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_wrong_key
-    "constraints not satisfied|CanMintTestContext|same_as|bg_key|test_key|is private")
+    "constraints.*not satisfied"
+    "CanMintTestContext|same_as|bg_key|test_key|is private")
 
 # ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
 #
@@ -4260,13 +4298,17 @@ crucible_neg_compile_effects_test(neg_effects_mint_test_context_wrong_key
 # per-atom check, and the deliberate hole in to_alloc_class_tag_v for
 # ctx_alloc::Unbound (no analogue in the lattice enum).
 crucible_neg_compile_effects_test(neg_exec_ctx_admits_unfit_row
-    "associated constraints are not satisfied|CtxAdmits|Subrow")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxAdmits|Subrow")
 crucible_neg_compile_effects_test(neg_exec_ctx_subctx_violation
-    "associated constraints are not satisfied|IsSubCtx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsSubCtx")
 crucible_neg_compile_effects_test(neg_exec_ctx_ctx_owns_capability
-    "associated constraints are not satisfied|CtxOwnsCapability|row_contains")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxOwnsCapability|row_contains")
 crucible_neg_compile_effects_test(neg_exec_ctx_alloc_unbound_no_bridge
-    "incomplete type|incomplete and cannot be|has no member named|invalid use of incomplete type")
+    "incomplete type|invalid use of incomplete type"
+    "to_alloc_class_tag")
 
 # ─── P1-AUDIT-3 (#854): Capability linearity + mint authorization ──
 #
@@ -4274,13 +4316,17 @@ crucible_neg_compile_effects_test(neg_exec_ctx_alloc_unbound_no_bridge
 # CanMintCap rejects Fg, Init→Block, copy is deleted (linearity),
 # default ctor is private.
 crucible_neg_compile_effects_test(neg_capability_mint_from_fg
-    "associated constraints are not satisfied|CanMintCap")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CanMintCap")
 crucible_neg_compile_effects_test(neg_capability_init_mint_block
-    "associated constraints are not satisfied|CanMintCap")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CanMintCap")
 crucible_neg_compile_effects_test(neg_capability_copy_attempt
-    "use of deleted function|deleted copy|copy constructor.*deleted")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "Capability")
 crucible_neg_compile_effects_test(neg_capability_default_construct
-    "no matching function|matching function for call to|cap_mint_key|candidate expects 1 argument|is private")
+    "no matching function"
+    "matching function for call to|cap_mint_key|candidate expects 1 argument|is private")
 
 # ─── P1-AUDIT-4 (#855): ExecCtx-driven Capability composition ──────
 #
@@ -4289,7 +4335,8 @@ crucible_neg_compile_effects_test(neg_capability_default_construct
 # whose effect isn't in the consumer's row; extract_bare rejects
 # thread-effect atoms (no value-level cap::* analogue).
 crucible_neg_compile_effects_test(neg_capability_mint_from_fg_ctx
-    "associated constraints are not satisfied|CtxCanMint")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxCanMint")
 
 # ─── FIXY-FOUND-077: §XXI Universal Mint Pattern → Computation ─────
 #
@@ -4303,15 +4350,20 @@ crucible_neg_compile_effects_test(neg_capability_mint_from_fg_ctx
 # requires-clauses are identical and inherited.  These fixtures prove
 # the §XXI surface inherits the gate at substitution.
 crucible_neg_compile_effects_test(neg_mint_computation_non_pure_row
-    "associated constraints are not satisfied|row_size_v|mint_computation")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "row_size_v|mint_computation")
 crucible_neg_compile_effects_test(neg_mint_computation_io_row
-    "associated constraints are not satisfied|row_size_v|mint_computation")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "row_size_v|mint_computation")
 crucible_neg_compile_effects_test(neg_mint_computation_in_ctx_unfit_row
-    "associated constraints are not satisfied|row_contains_v|mint_computation_in_ctx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "row_contains_v|mint_computation_in_ctx")
 crucible_neg_compile_effects_test(neg_capability_cap_matches_ctx
-    "associated constraints are not satisfied|CapMatchesCtx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CapMatchesCtx")
 crucible_neg_compile_effects_test(neg_capability_extract_bare_thread_atom
-    "no matching function for call|constraints not satisfied|extract_bare")
+    "constraints.*not satisfied"
+    "no matching function for call|extract_bare")
 
 # ─── fixy-A3-012 (#1619): Capability::consume() rvalue-only pin ────
 #
@@ -4320,8 +4372,10 @@ crucible_neg_compile_effects_test(neg_capability_extract_bare_thread_atom
 # the `&&` (lvalue path) or sneak in a `const &&` overload (const-
 # rvalue path) without the static_asserts in Capability.h firing.
 crucible_neg_compile_effects_test(neg_capability_consume_lvalue
-    "discards qualifiers|ref-qualified|cannot bind|rvalue|no matching")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "discards qualifiers|ref-qualified|rvalue|no matching")
 crucible_neg_compile_effects_test(neg_capability_consume_const_rvalue
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
     "discards qualifiers|ref-qualified|no matching|binding reference")
 
 # ─── fixy-A3-013 (#1620): cap_mint_key passkey-via-passkey pin ─────
@@ -4335,9 +4389,11 @@ crucible_neg_compile_effects_test(neg_capability_consume_const_rvalue
 # is private.  Together these foreclose every user-side path to a
 # fresh Capability that bypasses mint_cap's CanMintCap authorization.
 crucible_neg_compile_effects_test(neg_capability_forge_default_ctor
-    "no matching function for call|no default constructor|deleted|no matching")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "no matching function for call|no default constructor|no matching")
 crucible_neg_compile_effects_test(neg_capability_forge_via_passkey
-    "is private within this context|private member|private|cap_mint_key")
+    "is private within this context|private"
+    "private member|cap_mint_key")
 
 # ─── fixy-A3-015 (#1622): NSDMI noexcept defense-in-depth pin ──────
 #
@@ -4352,9 +4408,11 @@ crucible_neg_compile_effects_test(neg_capability_forge_via_passkey
 # either standard path silently weakens, only ONE fixture admits and
 # the other still fires, surfacing the broken path immediately.
 crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_noexcept_pin
-    "static assertion failed|static_assert|fixy-A3-015")
+    "static assertion failed"
+    "static_assert|fixy-A3-015")
 crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_trait_pin
-    "static assertion failed|static_assert|fixy-A3-015")
+    "static assertion failed"
+    "static_assert|fixy-A3-015")
 
 # ─── fixy-A3-018 (#1625): OsUniverse carrier-width pins ────────────
 #
@@ -4366,9 +4424,11 @@ crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_trait_pin
 # cardinality = 65 trips (1); a synthetic Universe with uint16_t
 # underlying trips (2).  Sister pin to A3-011 (Capabilities.h side).
 crucible_neg_compile_effects_test(neg_os_universe_cardinality_overflow
-    "static assertion failed|static_assert|OsUniverse_Overflow|fixy-A3-018")
+    "static assertion failed"
+    "static_assert|OsUniverse_Overflow|fixy-A3-018")
 crucible_neg_compile_effects_test(neg_os_universe_atom_underlying_widened
-    "static assertion failed|static_assert|OsUniverse_Underlying|fixy-A3-018")
+    "static assertion failed"
+    "static_assert|OsUniverse_Underlying|fixy-A3-018")
 
 # ─── fixy-A3-019: F*-style value-carrying aliases (FxAliases.h) ────
 #
@@ -4381,18 +4441,22 @@ crucible_neg_compile_effects_test(neg_os_universe_atom_underlying_widened
 # All) can be inverted at call sites — exactly the bug class the
 # value-carrying aliases are designed to close.
 crucible_neg_compile_effects_test(neg_fxalias_pure_collapses_div_terminating
-    "static assertion failed|static_assert|fixy-A3-019")
+    "static assertion failed"
+    "static_assert|fixy-A3-019")
 crucible_neg_compile_effects_test(neg_fxalias_tot_collapses_pure_on_io_row
-    "static assertion failed|static_assert|fixy-A3-019")
+    "static assertion failed"
+    "static_assert|fixy-A3-019")
 
 # ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
 #
 # Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper
 # analogue); IsL1ResidentCtx rejects non-L1 contexts.
 crucible_neg_compile_effects_test(neg_alloc_class_from_unbound_ctx
-    "static assertion failed|AllocClassFromCtx|Unbound")
+    "static assertion failed"
+    "AllocClassFromCtx|Unbound")
 crucible_neg_compile_effects_test(neg_ctx_dispatch_wrong_tier
-    "associated constraints are not satisfied|IsL1ResidentCtx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsL1ResidentCtx")
 
 # ─── GAPS-189 (#1214): effects/Resources.h ResourceTag concept ─────
 #
@@ -4401,9 +4465,11 @@ crucible_neg_compile_effects_test(neg_ctx_dispatch_wrong_tier
 # bogus-kind rejection (canonical triple but kind escapes the
 # IsResourceKind 0..22 atom range — the FOUND-I04 forgery defense).
 crucible_neg_compile_effects_test(neg_resources_concept_rejects_bare_scalar
-    "static assertion failed|ResourceTag|constraint|GAPS-189")
+    "static assertion failed|constraint"
+    "ResourceTag|GAPS-189")
 crucible_neg_compile_effects_test(neg_resources_concept_rejects_bogus_kind
-    "static assertion failed|ResourceTag|IsResourceKind|GAPS-189")
+    "static assertion failed"
+    "ResourceTag|IsResourceKind|GAPS-189")
 
 # ─── GAPS-190 (#1215): effects/Concurrent.h ConcurrentlySchedulable ─
 #
@@ -4417,9 +4483,11 @@ crucible_neg_compile_effects_test(neg_resources_concept_rejects_bogus_kind
 #   (`template <ResourceTag... Tags>`).  Witnesses that the
 #   carrier concept gate rejects up front.
 crucible_neg_compile_effects_test(neg_concurrent_row_overflow_rejected
-    "static assertion failed|ConcurrentlySchedulable|constraint|GAPS-190")
+    "static assertion failed|constraint"
+    "ConcurrentlySchedulable|GAPS-190")
 crucible_neg_compile_effects_test(neg_concurrent_row_non_resource_tag
-    "constraint|constraints not satisfied|ResourceTag|ConcurrentRow|GAPS-190")
+    "constraint|constraints.*not satisfied"
+    "ResourceTag|ConcurrentRow|GAPS-190")
 
 # ─── GAPS-185 (#1210): cog/CogIdentity.h soundness gates ───────────
 #
@@ -4438,7 +4506,7 @@ crucible_neg_compile_cog_test(neg_cog_identity_content_hash_zero_uuid
     "static assertion|contract|precondition|non-constant"
     "content_hash|is_zero")
 crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "IsComputeKind|kernel_count_for|GAPS-185")
 
 # ─── GAPS-186 cog/TargetCaps.h soundness gates (HS14) ──────────────
@@ -4455,7 +4523,7 @@ crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
 #   GpuTargetCaps::warp_size = 33 from corrupting downstream occupancy
 #   / wave-efficiency math.
 crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "HasCaps|lookup_caps|PsuRail|GAPS-186")
 crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
     "static assertion|contract|precondition|non-constant"
@@ -4475,10 +4543,10 @@ crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
 #   Block, because cap_permitted_row<Init> deliberately omits it:
 #   initialization is not permitted to park on a disk.
 crucible_neg_compile_ledger_test(neg_ledger_view_hot_fg_ctx
-    "constraint|constraints not satisfied|no matching function"
+    "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsLedgerStore")
 crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
-    "constraint|constraints not satisfied|no matching function"
+    "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsLedgerStore")
 
 # ─── #67 ledger/RefreshDaemon.h HS14 fixtures ─────────────────────
@@ -4498,13 +4566,13 @@ crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
 # fixture fails on its own premise assert instead of on the mint, and a
 # looser pattern would read that as a pass.
 crucible_neg_compile_ledger_test(neg_refresh_daemon_test_ctx_lacks_bg
-    "constraint|constraints not satisfied|no matching function"
+    "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsRefreshDaemon")
 crucible_neg_compile_ledger_test(neg_refresh_daemon_compile_ctx_cannot_block
-    "constraint|constraints not satisfied|no matching function"
+    "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsRefreshDaemon")
 crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
-    "constraint|constraints not satisfied|no matching function"
+    "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsRefreshDaemon")
 
 # ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
@@ -4520,7 +4588,7 @@ crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
 #     throughput envelope) from disk-corrupted / federation-mismatched
 #     / hostile-preset percentile measurements.
 crucible_neg_compile_cog_test(neg_opcode_latency_rejects_psu_rail
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
 crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
     "static assertion|contract|precondition|non-constant"
@@ -4544,10 +4612,10 @@ crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
 #   would silently bind to PsuRail and produce no-op stubs that
 #   drop scheduled work.
 crucible_neg_compile_cog_test(neg_fits_cog_oversubscribed
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
 crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
 
 # ─── GAPS-140 cog/NicOffloadAudit.h soundness gates (HS14) ─────────
@@ -4560,7 +4628,7 @@ crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
 #   required_offloads is Bits<NicFeature>, not a raw integer mask, so
 #   wrong-universe feature masks cannot silently cross the policy API.
 crucible_neg_compile_cog_test(neg_nic_offload_audit_rejects_gpu
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "NicOffloadAuditableCog|audit_gate|GAPS-140")
 crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
     "cannot convert|could not convert"
@@ -4574,7 +4642,7 @@ crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
 # * neg_numa_nic_raw_node — TYPE gate.
 #   NUMA nodes are NumaNodeId, not raw integers.
 crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "NumaNicAuditableCog|audit_gate|GAPS-194")
 crucible_neg_compile_cog_test(neg_numa_nic_raw_node
     "cannot convert|could not convert"
@@ -4590,10 +4658,10 @@ crucible_neg_compile_cog_test(neg_numa_nic_raw_node
 #     requires the explicit OperatorOverride Permission token.
 #   * neg_quarantine_zero_slots — policy state must have bounded slots.
 crucible_neg_compile_warden_test(neg_quarantine_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsQuarantineMint")
 crucible_neg_compile_warden_test(neg_quarantine_record_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsQuarantineRecord")
 crucible_neg_compile_warden_test(neg_quarantine_override_missing_permission
     "no matching function"
@@ -4607,22 +4675,22 @@ crucible_neg_compile_warden_test(neg_quarantine_zero_slots
 # mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
 # proving the CtxFits* concept gates fire on missing Init.
 crucible_neg_compile_warden_test(neg_hardening_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHardeningMint")
 crucible_neg_compile_warden_test(neg_hardening_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHardeningMint")
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsDeadlineWatchdogMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsDeadlineWatchdogMint")
 
 # ─── FIXY-U-083 §XXI Universal Mint Pattern for perf/ hubs ────────
@@ -4632,16 +4700,16 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
 # of 2: SenseHub + SenseHubV2 (the two ABI-stable hubs; BPF facade
 # hubs ship in batch 2).
 crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubMint")
 crucible_neg_compile_perf_test(neg_sense_hub_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubMint")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubV2Mint")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubV2Mint")
 
 # FIXY-U-083 batch 2: 7 remaining perf/ hubs.  Six load-based BPF
@@ -4650,46 +4718,46 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
 # WorkloadProfiler is ctor-based but rides the same Init-row Ctx-fit
 # concept.  Two fixtures per hub (BgDrainCtx + HotFgCtx) = 14 total.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsLockContentionMint")
 crucible_neg_compile_perf_test(neg_lock_contention_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsLockContentionMint")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPmuSampleMint")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPmuSampleMint")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSchedSwitchMint")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSchedSwitchMint")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSchedTpBtfMint")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSchedTpBtfMint")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSyscallLatencyMint")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSyscallLatencyMint")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSyscallTpBtfMint")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsSyscallTpBtfMint")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsWorkloadProfilerMint")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsWorkloadProfilerMint")
 
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
@@ -4697,13 +4765,13 @@ crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
 # above exercise the row half (different Init-less ExecCtx shapes);
 # fixtures below exercise the IsExecCtx half via raw struct rejection.
 crucible_neg_compile_warden_test(neg_hardening_mint_not_exec_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHardeningMint")
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_not_exec_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsDeadlineWatchdogMint")
 
 # ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
@@ -4718,13 +4786,13 @@ crucible_neg_compile_dataplane_test(neg_xdp_raw_program_spec
     "cannot convert|could not convert"
     "DeclaredXdpProgram")
 crucible_neg_compile_dataplane_test(neg_xdp_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsXdpMint")
 crucible_neg_compile_dataplane_test(neg_xdp_map_non_pod_value
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "BpfScalar")
 crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "BpfKey")
 
 # ─── GAPS-193 cntp/dataplane/TcEbpf.h soundness gates ─────────────
@@ -4737,13 +4805,13 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_program_spec
     "cannot convert|could not convert"
     "DeclaredTcProgram")
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsTcMint")
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_flow_class
     "cannot convert|could not convert"
     "DeclaredTcFlowClass")
 crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "MaxFlows")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
@@ -4767,10 +4835,10 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
 #     a transient arena, producing a dangling identity pointer at
 #     teardown.
 crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
 crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CogMimic|CtxFitsCogMimic|row_subset|GAPS-188")
 
 # ─── HS14 fixtures #1 + #2 for topology::TopologyGraph (GAPS-110 #1209) ──
@@ -4791,10 +4859,10 @@ crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
 #     mock could mint a TopologyGraph with a Test-tagged row, polluting
 #     any cross-test federation cache slot.
 crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsTopologyGraph|GAPS-110")
 crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsTopologyGraph|row_contains|GAPS-110")
 
 # ─── HS14 fixtures for topology::Discovery (GAPS-111 #1217) ─────────
@@ -4806,13 +4874,13 @@ crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
 #   * neg_topology_discovery_zero_nodes — snapshot shape requires at least
 #     one node and one edge slot.
 crucible_neg_compile_topology_test(neg_topology_discovery_mint_test_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsDiscoveryInit|GAPS-111")
 crucible_neg_compile_topology_test(neg_topology_discovery_raw_lspci_text
     "could not convert|no matching function"
     "ExternalDiscoveryText")
 crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "DiscoveryShape|GAPS-111")
 
 # ─── HS14 fixtures for topology::Health (GAPS-113 #1219) ───────────
@@ -4825,10 +4893,10 @@ crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
 #   * neg_topology_health_raw_score — quarantine thresholds consume the
 #     HealthScore strong type, not raw integers.
 crucible_neg_compile_topology_test(neg_topology_health_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHealthMint")
 crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsHealthUpdate")
 crucible_neg_compile_topology_test(neg_topology_health_raw_score
     "could not convert"
@@ -4843,13 +4911,13 @@ crucible_neg_compile_topology_test(neg_topology_health_raw_score
 #   * neg_topology_telemetry_window_overflow — bounded history indices cannot
 #     silently wrap their uint16_t carrier.
 crucible_neg_compile_topology_test(neg_topology_telemetry_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsNicTelemetryMint|GAPS-112")
 crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
     "could not convert|no matching function"
     "ExternalTelemetryText")
 crucible_neg_compile_topology_test(neg_topology_telemetry_record_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsNicTelemetryRecord|GAPS-112")
 crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
     "static assertion failed"
@@ -4864,10 +4932,10 @@ crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
 #   * neg_asymmetric_failure_zero_window — a detector must carry a
 #     non-empty bounded probe window.
 crucible_neg_compile_topology_test(neg_asymmetric_failure_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsAsymmetricFailureMint")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_record_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsAsymmetricFailureRecord")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
     "static assertion failed"
@@ -4884,10 +4952,10 @@ crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
 #   * neg_pingmesh_zero_peer_capacity — all-pairs storage must have at
 #     least two peers.
 crucible_neg_compile_topology_test(neg_pingmesh_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPingmeshMint")
 crucible_neg_compile_topology_test(neg_pingmesh_record_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPingmeshRecord")
 crucible_neg_compile_topology_test(neg_pingmesh_raw_measurement
     "cannot convert|no matching function|could not convert"
@@ -4910,10 +4978,10 @@ crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
 #   * neg_ptp_daemon_report_fg_ctx — foreground contexts cannot admit
 #     external daemon reports.
 crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPtpMint")
 crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPtpRecord")
 crucible_neg_compile_topology_test(neg_ptp_raw_fd
     "cannot convert|no matching function|could not convert"
@@ -4931,7 +4999,7 @@ crucible_neg_compile_topology_test(neg_ptp_raw_daemon_report_status
     "cannot convert|no matching function|could not convert"
     "DeclaredPtpDaemonReport")
 crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
-    "constraint|constraints not satisfied"
+    "constraint|constraints.*not satisfied"
     "CtxFitsPtpRecord")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
@@ -4939,9 +5007,11 @@ crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
 # Two fixtures: IsSubstrate rejects non-Permissioned* types;
 # IsOneToOneSubstrate selective dispatch rejects non-SPSC substrates.
 crucible_neg_compile_effects_test(neg_substrate_unrecognized
-    "associated constraints are not satisfied|IsSubstrate")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsSubstrate")
 crucible_neg_compile_effects_test(neg_substrate_topology_dispatch
-    "associated constraints are not satisfied|IsOneToOneSubstrate")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsOneToOneSubstrate")
 
 # ─── Tier 1 cross-tree audit (#858): Substrate ↔ Ctx fit gates ────
 #
@@ -4949,9 +5019,11 @@ crucible_neg_compile_effects_test(neg_substrate_topology_dispatch
 # with 4 MB substrate; same for L2-claiming ctx.  Bound shifts
 # detected by either fixture.
 crucible_neg_compile_effects_test(neg_substrate_does_not_fit_l1
-    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_substrate_required_tier_unfit_ctx
-    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "SubstrateFitsCtxResidency|fits_in_tier")
 
 # ─── Session integration B (#860): SessionMint walker fit-checks ───
 #
@@ -4960,13 +5032,17 @@ crucible_neg_compile_effects_test(neg_substrate_required_tier_unfit_ctx
 # non-IsExecCtx parameter, CheckpointedSession with unfit rollback
 # branch.
 crucible_neg_compile_effects_test(neg_session_mint_too_narrow_ctx
-    "associated constraints are not satisfied|CtxFitsProtocol")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsProtocol")
 crucible_neg_compile_effects_test(neg_session_mint_unfit_recv
-    "associated constraints are not satisfied|CtxFitsProtocol")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsProtocol")
 crucible_neg_compile_effects_test(neg_session_mint_non_exec_ctx
-    "associated constraints are not satisfied|IsExecCtx|CtxFitsProtocol")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "IsExecCtx|CtxFitsProtocol")
 crucible_neg_compile_effects_test(neg_session_mint_checkpointed_unfit_rollback
-    "associated constraints are not satisfied|CtxFitsProtocol")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsProtocol")
 
 # AUDIT-2 closure (CLAUDE.md §XXI HS14): payload_row transparent-
 # unwrap for HotPath<Tier, T> sees through to the inner Computation's
@@ -4974,7 +5050,8 @@ crucible_neg_compile_effects_test(neg_session_mint_checkpointed_unfit_rollback
 # payloads on HotFgCtx — soundness false-negative.  This fixture
 # pins the soundness fix.
 crucible_neg_compile_effects_test(neg_session_mint_hotpath_hides_bg
-    "associated constraints are not satisfied|CtxFitsProtocol")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsProtocol")
 
 # AUDIT-3 closure (CLAUDE.md §XXI HS14): Tier 2 keystone gate
 # fixtures.  Endpoint and SubstrateSessionBridge mints are required
@@ -4982,17 +5059,23 @@ crucible_neg_compile_effects_test(neg_session_mint_hotpath_hides_bg
 # (Substrate, Direction) pair, (c) non-IsExecCtx ctx parameter.
 # 5 fixtures pin all three failure classes across both factories.
 crucible_neg_compile_effects_test(neg_endpoint_unfit_residency
-    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_endpoint_non_bridgeable_direction
-    "associated constraints are not satisfied|IsBridgeableDirection|CtxFitsEndpointMint|handle_for|incomplete type")
+    "constraints.*not satisfied|incomplete type"
+    "IsBridgeableDirection|CtxFitsEndpointMint|handle_for")
 crucible_neg_compile_effects_test(neg_endpoint_non_exec_ctx
-    "associated constraints are not satisfied|SubstrateFitsCtxResidency|IsExecCtx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "SubstrateFitsCtxResidency|IsExecCtx")
 crucible_neg_compile_effects_test(neg_endpoint_topology_recommendation_mismatch
-    "associated constraints are not satisfied|SubstrateMatchesEndpointRecommendation|recommend_topology_for_workload|ChannelTopology")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "SubstrateMatchesEndpointRecommendation|recommend_topology_for_workload|ChannelTopology")
 crucible_neg_compile_effects_test(neg_substrate_session_unfit_residency
-    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
-    "associated constraints are not satisfied|IsBridgeableDirection|CtxFitsSubstrateSessionMint|CtxFitsShardSubstrateSessionMint|handle_for|incomplete type")
+    "constraints.*not satisfied|incomplete type"
+    "IsBridgeableDirection|CtxFitsSubstrateSessionMint|CtxFitsShardSubstrateSessionMint|handle_for")
 
 # ─── Tier 3 commit 1 (#863, HS14): mint_stage gate fixtures ──────────
 #
@@ -5006,16 +5089,22 @@ crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
 #       Capability<E, S> payload propagation, prove the row_subset
 #       admission gate fires for both stage boundaries.
 crucible_neg_compile_effects_test(neg_mint_stage_non_pipeline_stage
-    "associated constraints are not satisfied|CtxFitsStage|PipelineStage")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStage|PipelineStage")
 crucible_neg_compile_effects_test(neg_mint_stage_non_exec_ctx
-    "associated constraints are not satisfied|CtxFitsStage|IsExecCtx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStage|IsExecCtx")
 crucible_neg_compile_effects_test(neg_mint_stage_input_row_mismatch
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|StageInputRowAdmitted|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_stage_output_row_mismatch
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|StageOutputRowAdmitted|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_stage_both_rows_mismatch
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|StageInputRowAdmitted|StageOutputRowAdmitted|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_stage_capability_payload_no_admit
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|StageInputRowAdmitted|row_subset|Subrow")
 
 # Audit round 2 (#864): three additional fixtures hardening Stage's
@@ -5026,11 +5115,14 @@ crucible_neg_compile_effects_test(neg_mint_stage_capability_payload_no_admit
 #       via the consumer/producer handles") fires
 #   (e) .run() on lvalue Stage — && ref-qualifier fires
 crucible_neg_compile_effects_test(neg_mint_stage_handle_type_mismatch
-    "invalid initialization of reference|no matching function for call|cannot convert|cannot bind")
+    "cannot convert|cannot bind"
+    "invalid initialization of reference|no matching function for call")
 crucible_neg_compile_effects_test(neg_stage_copy_attempt
-    "use of deleted function|deleted with|holds linear Permission tokens")
+    "use of deleted function"
+    "deleted with|holds linear Permission tokens")
 crucible_neg_compile_effects_test(neg_stage_run_on_lvalue
-    "no matching function for call|cannot bind|passing.*as.*'this'|discards qualifiers")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "no matching function for call|passing.*as.*'this'|discards qualifiers")
 
 # ─── Tier 3 commit 2 (#865, HS14): mint_pipeline gate fixtures ───────
 #
@@ -5045,16 +5137,22 @@ crucible_neg_compile_effects_test(neg_stage_run_on_lvalue
 #       pipeline_row_union_t<Stages...> is checked even when the
 #       payload chain itself is well-formed.
 crucible_neg_compile_effects_test(neg_mint_pipeline_chain_mismatch
-    "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsPipeline|pipeline_chain")
 crucible_neg_compile_effects_test(neg_mint_pipeline_non_stage
-    "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain|IsStage")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsPipeline|pipeline_chain|IsStage")
 crucible_neg_compile_effects_test(neg_mint_pipeline_non_exec_ctx
-    "associated constraints are not satisfied|CtxFitsPipeline|IsExecCtx")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsPipeline|IsExecCtx")
 crucible_neg_compile_effects_test(neg_mint_pipeline_row_union_exceeds_ctx
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|pipeline_row_union_t|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_pipeline_chain_payload_compat_ok_row_mismatch
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|pipeline_row_union_t|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_pipeline_capability_propagation
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "EffectRowMismatch|pipeline_row_union_t|row_subset|Subrow")
 
 # Pipeline.h audit round 2 (#866): three additional fixtures hardening
@@ -5064,12 +5162,16 @@ crucible_neg_compile_effects_test(neg_mint_pipeline_capability_propagation
 #   (e) .run() on lvalue Pipeline — && ref-qualifier fires
 #   (f) empty stages pack — pipeline_chain rejects sizeof...(Stages) == 0
 crucible_neg_compile_effects_test(neg_pipeline_copy_attempt
-    "use of deleted function|deleted with|holds move-only Stages")
+    "use of deleted function"
+    "deleted with|holds move-only Stages")
 crucible_neg_compile_effects_test(neg_pipeline_run_on_lvalue
-    "no matching function for call|cannot bind|passing.*as.*'this'|discards qualifiers")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "no matching function for call|passing.*as.*'this'|discards qualifiers")
 crucible_neg_compile_effects_test(neg_mint_pipeline_empty_pack
-    "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsPipeline|pipeline_chain")
 crucible_neg_compile_effects_test(neg_pipeline_inline_opt_in_missing_ws
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "Pipeline inline opt-in requires")
 
 # FIXY-V-009 HS14 companion — Pipeline's previously-public ctor is now
@@ -5078,7 +5180,8 @@ crucible_neg_compile_effects_test(neg_pipeline_inline_opt_in_missing_ws
 # admission and is rejected at the access-control check.  Diagnostic
 # regex is the stable GCC "is private within this context" form.
 crucible_neg_compile_effects_test(neg_pipeline_ctor_public_bypass
-    "is private within this context")
+    "is private within this context"
+    "concurrent::Pipeline<")
 
 # FIXY-V-010 HS14 companion — Stage's previously-public ctor is now
 # private, with mint_stage friended.  A direct
@@ -5086,7 +5189,8 @@ crucible_neg_compile_effects_test(neg_pipeline_ctor_public_bypass
 # input + output row admission and is rejected at the access-control
 # check.
 crucible_neg_compile_effects_test(neg_stage_ctor_public_bypass
-    "is private within this context")
+    "is private within this context"
+    "concurrent::Stage<")
 
 # FIXY-V-011 HS14 companion — MpmcStage's previously-public ctor is now
 # private, with detail::make_mpmc_stage_from_endpoint_tuple (the helper
@@ -5095,7 +5199,8 @@ crucible_neg_compile_effects_test(neg_stage_ctor_public_bypass
 # site bypasses the variadic row admission check and is rejected at the
 # access-control check.
 crucible_neg_compile_effects_test(neg_mpmc_stage_ctor_public_bypass
-    "is private within this context")
+    "is private within this context"
+    "MpmcStage")
 
 # fix-03 HS14 companion — SwmrStage's previously-public ctor is now
 # private, with detail::make_swmr_stage (the helper mint_swmr_stage
@@ -5103,7 +5208,8 @@ crucible_neg_compile_effects_test(neg_mpmc_stage_ctor_public_bypass
 # friended.  A direct `SwmrStage<&body, Ctx>{ctx, in, writer}` call site
 # bypasses that admission and is rejected at the access-control check.
 crucible_neg_compile_effects_test(neg_swmr_stage_ctor_public_bypass
-    "is private within this context")
+    "is private within this context"
+    "SwmrStage")
 
 # FIXY-V-012 HS14 companion — PipelineDag's previously-public ctor is
 # now private, with mint_pipeline_dag friended.  A direct
@@ -5111,7 +5217,8 @@ crucible_neg_compile_effects_test(neg_swmr_stage_ctor_public_bypass
 # CtxFitsPipelineDagMint's row admission and is rejected at the
 # access-control check.
 crucible_neg_compile_effects_test(neg_pipeline_dag_ctor_public_bypass
-    "is private within this context")
+    "is private within this context"
+    "PipelineDag")
 
 # ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
 #
@@ -5122,9 +5229,11 @@ crucible_neg_compile_effects_test(neg_pipeline_dag_ctor_public_bypass
 #   (h) direction-swapped endpoints — Producer endpoint passed where
 #       Consumer expected (and vice versa).
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_handle_mismatch
-    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|StageHandlesMatchEndpoints")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStageFromEndpoints|StageHandlesMatchEndpoints")
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_swapped_direction
-    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
 
 # AUDIT-ROUND-2 (#868): three additional operational fixtures that
 # exercise real-world misuse patterns beyond the HS14 minimum two.
@@ -5140,19 +5249,25 @@ crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_swapped_directio
 #        prevents users from accidentally bypassing mint_endpoint's
 #        substrate-fit validation by routing raw handles through.
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_fnptr_wrong_arity
-    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|CtxFitsStage|PipelineStage")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStageFromEndpoints|CtxFitsStage|PipelineStage")
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_both_consumers
-    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsProducerEndpoint")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStageFromEndpoints|IsProducerEndpoint")
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_raw_handle
-    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
 
 # GAPS-086: variadic stage mint + PipelineDag graph-shape fixtures.
 crucible_neg_compile_effects_test(neg_mpmc_stage_arity_mismatch
-    "associated constraints are not satisfied|CtxFitsMpmcStageFromEndpoints|StageHandlesMatchEndpointsExtended")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsMpmcStageFromEndpoints|StageHandlesMatchEndpointsExtended")
 crucible_neg_compile_effects_test(neg_pipeline_dag_cycle
-    "template constraint failure|constraints not satisfied|StageGraphWellFormed")
+    "template constraint failure|constraints.*not satisfied"
+    "StageGraphWellFormed")
 crucible_neg_compile_effects_test(neg_pipeline_dag_unreachable
-    "template constraint failure|constraints not satisfied|StageGraphWellFormed")
+    "template constraint failure|constraints.*not satisfied"
+    "StageGraphWellFormed")
 
 # GAPS-004a-AUDIT (#1288): SenseHub::load() takes effects::Init by
 # value as its sole parameter.  The cap-typing gate is structural —
@@ -5162,67 +5277,85 @@ crucible_neg_compile_effects_test(neg_pipeline_dag_unreachable
 # compile time as the regression-witness for the SenseHub.h docblock
 # claim at lines 234-240.
 crucible_neg_compile_effects_test(neg_perf_sense_hub_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_sense_hub_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004b-AUDIT (#1289): SchedSwitch::load() cap-tag gate.  Same
 # discipline as SenseHub::load — Init-by-value parameter, no implicit
 # conversion from Bg/Test contexts, mandatory argument.
 crucible_neg_compile_effects_test(neg_perf_sched_switch_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_sched_switch_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004c (#1279): PmuSample::load() cap-tag gate.  Same Init-by-value
 # discipline as SenseHub/SchedSwitch.
 crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004d-AUDIT (#1280): LockContention::load() cap-tag gate.  Same
 # Init-by-value discipline as SenseHub/SchedSwitch/PmuSample.
 crucible_neg_compile_effects_test(neg_perf_lock_contention_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_lock_contention_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004e (#1281): SyscallLatency::load() cap-tag gate.  Same
 # Init-by-value discipline as SenseHub/SchedSwitch/PmuSample/LockContention.
 crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004y (#1287): Senses::load_all() cap-tag gate.  Same
 # Init-by-value discipline as the underlying per-program facades.
 crucible_neg_compile_effects_test(neg_perf_senses_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_senses_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004f (#1282): SchedTpBtf::load() + SyscallTpBtf::load() cap-tag
 # gates.  Same Init-by-value discipline as the raw tracepoint facades
 # they parallel — hot-path frames hold no Init token, so structurally
 # can't reach the BTF loaders either.
 crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "effects::Bg.*effects::Init")
 crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
-    "too few arguments|no matching function|candidate expects 1 argument")
+    "too few arguments|no matching function"
+    "candidate expects 1 argument")
 
 # GAPS-004g (#1283): warden::DeadlineWatchdog cap-tag gate.  Construction
 # takes effects::Init by value as the third parameter — wrong-cap and
 # no-cap fixtures pin the gate against silent default-arg regressions.
 # Init-by-value discipline matches the Senses-touching facades upstream.
 crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "DeadlineWatchdog")
 crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_no_cap
-    "too few arguments|no matching function|candidate expects 3 arguments")
+    "too few arguments|no matching function"
+    "candidate expects 3 arguments")
 
 # GAPS-004h (#1284): perf::WorkloadProfiler cap-tag gate.  Construction
 # takes effects::Init by value as the second parameter (third is the
@@ -5230,9 +5363,11 @@ crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_no_cap
 # silent default-arg regressions.  Hot-path frames hold no Init token,
 # so structurally can't construct a profiler from a hot call site.
 crucible_neg_compile_effects_test(neg_perf_workload_profiler_wrong_cap
-    "could not convert|no matching function|cannot convert|expected.*Init")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "WorkloadProfiler")
 crucible_neg_compile_effects_test(neg_perf_workload_profiler_no_cap
-    "too few arguments|no matching function|candidate expects 2-3 arguments")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "WorkloadProfiler")
 
 # FIXY-V-075: WorkloadBudgetCoherent<Ctx, Pipeline> static check.
 # Two HS14 fixtures pin the concept's distinct mismatch classes:
@@ -5245,16 +5380,19 @@ crucible_neg_compile_effects_test(neg_perf_workload_profiler_no_cap
 # <ColdInitCtx, SmallPipeline>) — it doesn't need a neg-compile
 # fixture because the concept is opt-in, not a mint gate.
 crucible_neg_compile_effects_test(neg_workload_budget_coherent_byte_budget_exceeded
-    "static assertion failed|WorkloadBudgetCoherent|coherence|constraints not satisfied")
+    "static assertion failed|constraints.*not satisfied"
+    "WorkloadBudgetCoherent|coherence")
 crucible_neg_compile_effects_test(neg_workload_budget_coherent_stack_overflow
-    "static assertion failed|WorkloadBudgetCoherent|coherence|constraints not satisfied")
+    "static assertion failed|constraints.*not satisfied"
+    "WorkloadBudgetCoherent|coherence")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload
 # row still counts.
 crucible_neg_compile_effects_test(neg_session_mint_stop_terminator_unfit
-    "associated constraints are not satisfied|CtxFitsProtocol")
+    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
+    "CtxFitsProtocol")
 
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
@@ -5329,21 +5467,21 @@ crucible_neg_compile_test(neg_read_view_default_init_private
   "is private within this context")
 crucible_neg_compile_test(neg_sealed_refined_into_call
   "has no member named")
-# `constraints not satisfied` alone is emitted by EVERY failing concept
+# `constraints.*not satisfied` alone is emitted by EVERY failing concept
 # check in the TU, so these three gates were satisfied by any constraint
 # failure whatsoever — `static_assert(std::integral<double>)` in place of
 # the body passes them.  Each now also requires the concept under test by
 # name, plus the specific requirement that fixture claims to break.
 crucible_neg_compile_multi_test(neg_graded_concept_void_substrate
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "concept crucible::algebra::GradedWrapper"
   "nested requirement .is_graded_specialization_v<typename W::graded_type>. is not satisfied")
 crucible_neg_compile_multi_test(neg_graded_concept_no_lattice_type
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "concept crucible::algebra::GradedWrapper"
   "the required type .typename W::lattice_type. is invalid")
 crucible_neg_compile_multi_test(neg_graded_concept_bare_int
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "concept crucible::algebra::GradedWrapper"
   "the required type .typename W::value_type. is invalid")
 
@@ -5387,36 +5525,36 @@ crucible_neg_compile_test(neg_lattice_name_sentinel_admits
 #                     transition_type — typestate ≠ lattice)
 #   FoundationalGrade — rejects void (is_object_v<void> is false)
 #
-# All five diagnostics surface as "constraints not satisfied"
+# All five diagnostics surface as "constraints.*not satisfied"
 # pointing at the per-concept evaluation site.  Together they
 # complete per-concept-family coverage of DimensionTraits's gate
 # surface; a maintainer adding a sixth concept family must ship a
 # matching neg-compile fixture or the per-concept rejection
 # behavior is unwitnessed.
 #
-# "constraints not satisfied" on its own does NOT distinguish the five,
+# "constraints.*not satisfied" on its own does NOT distinguish the five,
 # and does not distinguish any of them from an unrelated concept failure
 # elsewhere in the TU.  Each gate therefore also requires the overload
 # resolution failure that names its own probe helper and the rejected
 # type, which is the evidence that THIS concept refused THIS argument.
 crucible_neg_compile_multi_test(neg_dimension_traits_semiring_rejects_lattice_only
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "no matching function for call to .consumes_semiring<LatticeOnly>"
   "requires  SemiringGrade<G>")
 crucible_neg_compile_multi_test(neg_dimension_traits_versioned_rejects_bare_int
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "no matching function for call to .consumes_versioned<int>"
   "requires  VersionedGrade<G>")
 crucible_neg_compile_multi_test(neg_dimension_traits_lattice_rejects_int
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "no matching function for call to .consumes_lattice<int>"
   "requires  LatticeGrade<G>")
 crucible_neg_compile_multi_test(neg_dimension_traits_typestate_rejects_lattice
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "no matching function for call to .consumes_typestate<TestLattice>"
   "requires  TypestateGrade<G>")
 crucible_neg_compile_multi_test(neg_dimension_traits_foundational_rejects_void
-  "constraints not satisfied"
+  "constraints.*not satisfied"
   "no matching function for call to .consumes_foundational<void>"
   "requires  FoundationalGrade<G>")
 crucible_neg_compile_test(neg_dimension_traits_quadruple_tier_mismatch
@@ -6355,9 +6493,11 @@ crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
 #   * neg_sdc_detect_sampling_rate_above_max — ppm rates above 100% cannot
 #     cross the SdcConfig boundary.
 crucible_neg_compile_effects_test(neg_sdc_detect_mint_bg_ctx
-  "constraint|constraints not satisfied|CtxFitsSdcMint|Init|Bg")
+  "constraint|constraints.*not satisfied"
+    "CtxFitsSdcMint|Init|Bg")
 crucible_neg_compile_effects_test(neg_sdc_detect_run_hot_ctx
-  "constraint|constraints not satisfied|CtxFitsSdcRun|HotFgCtx|Bg")
+  "constraint|constraints.*not satisfied"
+    "CtxFitsSdcRun|HotFgCtx|Bg")
 crucible_neg_compile_test(neg_sdc_detect_raw_result_as_verified
   "cannot convert|no matching function|could not convert|Tagged|SdcVerified")
 crucible_neg_compile_test(neg_sdc_detect_cross_tag_result
@@ -6376,7 +6516,8 @@ crucible_neg_compile_test(neg_hlc_raw_timestamp_to_tagged
 crucible_neg_compile_test(neg_hlc_cross_source_timestamp
   "cannot convert|no matching function|could not convert|Tagged|External|Hlc")
 crucible_neg_compile_effects_test(neg_hlc_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 
 # GAPS-215 — canopy/VectorClock.h operational vector clock.
 #   * neg_vector_clock_zero_nodes: MaxNodes=0 is rejected at the
@@ -6388,7 +6529,8 @@ crucible_neg_compile_effects_test(neg_hlc_mint_test_context
 crucible_neg_compile_test(neg_vector_clock_zero_nodes
   "constraints not satisfied|VectorClockNodeBound|no matching function|MaxNodes")
 crucible_neg_compile_effects_test(neg_vector_clock_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
   "cannot convert|no matching function|could not convert|VectorClockSnapshot")
 
@@ -6425,7 +6567,8 @@ crucible_neg_compile_test(neg_swim_raw_peer_add
 crucible_neg_compile_test(neg_swim_external_peer_add
   "cannot convert|no matching function|could not convert|External|SwimMember")
 crucible_neg_compile_effects_test(neg_swim_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 
 # GAPS-211 — canopy/HyParView.h bounded active/passive overlay substrate.
 #   * neg_hyparview_zero_active: MaxActive=0 is rejected structurally.
@@ -6442,7 +6585,8 @@ crucible_neg_compile_test(neg_hyparview_cross_tag_peer
 crucible_neg_compile_test(neg_hyparview_raw_shuffle
   "cannot convert|no matching function|could not convert|GossipedHyParViewShuffle|Tagged")
 crucible_neg_compile_effects_test(neg_hyparview_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 
 # GAPS-212 — canopy/Plumtree.h eager/lazy broadcast substrate.
 #   * neg_plumtree_zero_peers: MaxPeers=0 is rejected structurally.
@@ -6459,7 +6603,8 @@ crucible_neg_compile_test(neg_plumtree_raw_message
 crucible_neg_compile_test(neg_plumtree_raw_ihave
   "cannot convert|no matching function|could not convert|GossipedPlumtreeIHave|Tagged")
 crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 
 # GAPS-213 — canopy/Lifeguard.h SWIM false-positive reduction substrate.
 #   * neg_lifeguard_zero_peers: MaxPeers=0 is rejected structurally.
@@ -6470,7 +6615,8 @@ crucible_neg_compile_test(neg_lifeguard_zero_peers
 crucible_neg_compile_test(neg_lifeguard_raw_local_peer
   "cannot convert|no matching function|could not convert|SwimPeer|Tagged")
 crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 
 # GAPS-115 — canopy/Scuttlebutt.h bounded anti-entropy substrate.
 #   * neg_scuttlebutt_zero_max_peers: MaxPeers=0 is rejected structurally.
@@ -6489,7 +6635,8 @@ crucible_neg_compile_test(neg_scuttlebutt_raw_delta_apply
 crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
   "constraints not satisfied|ScuttlebuttCrdt|state_type|merge")
 crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 
 # oob-62 — the three counters whose `== Capacity` guard let a count already
 # past the bound through, so the next push wrote out of bounds.  All three
@@ -6527,7 +6674,7 @@ crucible_neg_compile_test(neg_congestion_control_custom_missing_name
 #   * neg_calibrate_zero_latency_quantile: measured latency must be positive.
 #   * neg_calibrate_hot_fg_ctx: calibration is Init/Bg work, never hot Fg.
 crucible_neg_compile_cog_test(neg_calibrate_psu_rail
-  "constraints not satisfied"
+  "constraints.*not satisfied"
     "CalibratableCogKind|HasOpcodeTable|HasCaps")
 # These three fixtures cannot carry a second regex, and cog_neg is
 # therefore not under the two-regex floor.  Each witnesses a Refined
@@ -6544,7 +6691,8 @@ crucible_neg_compile_cog_test(neg_calibrate_psu_rail
 crucible_neg_compile_cog_test(neg_calibrate_zero_latency_quantile
     "contract|precondition|calibration_quantiles_valid|Refined|CalibrationLatencyQuantiles")
 crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
-  "constraints not satisfied|CtxFitsCalibration|CtxAdmits|Init|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsCalibration|CtxAdmits|Init|Bg")
 
 # GAPS-192 — cog/NicConfig.h ethtool/sysctl/tc-qdisc config substrate.
 #   * neg_nic_config_raw_apply: privileged apply requires tagged config.
@@ -6558,7 +6706,8 @@ crucible_neg_compile_cog_test(neg_nic_config_ring_not_power_of_two
   "static assertion|contract|precondition|non-constant"
     "NicRingSize|power_of_two")
 crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
-  "constraints not satisfied|CtxFitsNicConfigMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsNicConfigMint|Init")
 
 # GAPS-147 — cog/SrIov.h SR-IOV / VF management substrate.
 #   * neg_sriov_raw_plan_enable: privileged enable requires tagged intent.
@@ -6573,7 +6722,8 @@ crucible_neg_compile_cog_test(neg_sriov_zero_vfs
 crucible_neg_compile_cog_test(neg_sriov_multicast_mac
     "contract|precondition|vf_mac_valid|Refined|VfMacAddress")
 crucible_neg_compile_effects_test(neg_sriov_mint_bg_ctx
-  "constraints not satisfied|CtxFitsSrIovMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsSrIovMint|Init")
 
 # GAPS-121 — cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
 #   * neg_pacing_bbr_pfifo_config: BBR pacing config admits only fq/fq_codel.
@@ -6594,7 +6744,8 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 crucible_neg_compile_test(neg_path_swap_raw_plan_begin
   "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
 crucible_neg_compile_effects_test(neg_path_swap_commit_fg_ctx
-  "constraints not satisfied|CtxFitsPathSwapTransition|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsPathSwapTransition|Bg")
 crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
   "constraints not satisfied|SessionResource|PathSwapSessionResource")
 
@@ -6610,7 +6761,8 @@ crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest
 crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
   "could not convert|no matching function|TcpInfoSnapshot|Tagged")
 crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_fg_record
-  "constraints not satisfied|CtxFitsCongestionTelemetryHarvest|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsCongestionTelemetryHarvest|Bg")
 
 # GAPS-124 — cntp/IncastControl.h incast mitigation substrate.
 #   * neg_incast_raw_fd_configure: socket tuning requires admitted SocketFd.
@@ -6621,7 +6773,8 @@ crucible_neg_compile_test(neg_incast_raw_fd_configure
 crucible_neg_compile_test(neg_incast_raw_config_configure
   "could not convert|no matching function|DeclaredIncastConfig|Tagged")
 crucible_neg_compile_effects_test(neg_incast_credit_fg_ctx
-  "constraints not satisfied|CtxFitsIncastCredit|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsIncastCredit|Bg")
 
 # GAPS-125 — cntp/RoceConfig.h RoCEv2 PFC/ECN/DCQCN config substrate.
 #   * neg_roce_zero_pfc_mask: PFC priority mask cannot be empty.
@@ -6646,7 +6799,8 @@ crucible_neg_compile_test(neg_gpu_direct_zero_bytes
 crucible_neg_compile_test(neg_gpu_direct_raw_plan_register
   "could not convert|no matching function|DeclaredGpuDirectMrPlan|Tagged")
 crucible_neg_compile_effects_test(neg_gpu_direct_mint_bg_ctx
-  "constraints not satisfied|CtxFitsGpuDirectMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsGpuDirectMint|Init")
 
 # GAPS-133 — cntp/_wip/Sharp.h in-network reduction substrate.
 #   * neg_sharp_zero_participants: SHARP fabric participants are positive.
@@ -6661,9 +6815,11 @@ crucible_neg_compile_test(neg_sharp_raw_plan_dispatch
 crucible_neg_compile_test(neg_sharp_strict_recipe_concept
   "constraints not satisfied|SharpEligibleRecipe|BITEXACT_STRICT|determinism")
 crucible_neg_compile_effects_test(neg_sharp_mint_bg_ctx
-  "constraints not satisfied|CtxFitsSharpMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsSharpMint|Init")
 crucible_neg_compile_effects_test(neg_sharp_dispatch_init_ctx
-  "constraints not satisfied|CtxFitsSharpDispatch|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsSharpDispatch|Bg")
 
 # GAPS-144 — cntp/_wip/Doca.h DPU / SmartNIC offload substrate.
 #   * neg_doca_zero_program_id: DOCA program IDs reserve zero.
@@ -6681,9 +6837,11 @@ crucible_neg_compile_test(neg_doca_zero_queue_depth
 crucible_neg_compile_test(neg_doca_raw_plan_deploy
   "could not convert|no matching function|DeclaredDocaDeployPlan|Tagged")
 crucible_neg_compile_effects_test(neg_doca_mint_bg_ctx
-  "constraints not satisfied|CtxFitsDocaMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsDocaMint|Init")
 crucible_neg_compile_effects_test(neg_doca_send_init_ctx
-  "constraints not satisfied|CtxFitsDocaComm|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsDocaComm|Bg")
 
 # GAPS-145 — cntp/_wip/P4.h programmable switch dataplane substrate.
 #   * neg_p4_zero_program_id: P4 program IDs reserve zero.
@@ -6700,7 +6858,8 @@ crucible_neg_compile_test(neg_p4_zero_tcam_entries
 crucible_neg_compile_test(neg_p4_raw_program_deploy
   "could not convert|no matching function|DeclaredP4Program|Tagged")
 crucible_neg_compile_effects_test(neg_p4_mint_bg_ctx
-  "constraints not satisfied|CtxFitsP4Mint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsP4Mint|Init")
 
 # GAPS-148 — cntp/Tcam.h hardware ACL / flow-rule substrate.
 #   * neg_tcam_zero_entry_count: TCAM table capacities are positive.
@@ -6717,7 +6876,8 @@ crucible_neg_compile_test(neg_tcam_raw_rule_add
 crucible_neg_compile_test(neg_tcam_rule_handle_copy
   "Linear<T> is move-only|use of deleted|deleted function")
 crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
-  "constraints not satisfied|CtxFitsTcamMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsTcamMint|Init")
 
 # GAPS-160 — cntp/_wip/Wireguard.h site-to-site VPN substrate.
 #   * neg_wireguard_zero_allowed_ips: peers must own at least one allowed CIDR.
@@ -6731,7 +6891,8 @@ crucible_neg_compile_test(neg_wireguard_raw_public_key_peer
 crucible_neg_compile_test(neg_wireguard_private_key_copy
   "Secret<T> cannot be silently duplicated|use of deleted|deleted function")
 crucible_neg_compile_effects_test(neg_wireguard_mint_bg_ctx
-  "constraints not satisfied|CtxFitsWireguardMint|Init")
+  "constraints.*not satisfied"
+    "CtxFitsWireguardMint|Init")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
@@ -6754,7 +6915,8 @@ crucible_neg_compile_test(neg_quic_raw_config_connect
 crucible_neg_compile_test(neg_quic_raw_cc_config
   "could not convert|no matching function|DeclaredCcChoice|Tagged")
 crucible_neg_compile_effects_test(neg_quic_open_stream_fg_ctx
-  "constraints not satisfied|CtxFitsQuicRuntime|Bg")
+  "constraints.*not satisfied"
+    "CtxFitsQuicRuntime|Bg")
 crucible_neg_compile_test(neg_quic_raw_migration_plan
   "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
 
@@ -6875,7 +7037,8 @@ crucible_neg_compile_test(neg_fec_zero_m
 crucible_neg_compile_test(neg_fec_shape_over_256
   "constraints not satisfied|ReedSolomonShape|256")
 crucible_neg_compile_effects_test(neg_fec_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
   "constraints not satisfied|ByteContiguousBuffer|no matching function")
 
@@ -6891,7 +7054,8 @@ crucible_neg_compile_test(neg_fountain_zero_symbols
 crucible_neg_compile_test(neg_fountain_zero_symbol_bytes
   "constraints not satisfied|FountainShape|SymbolBytes")
 crucible_neg_compile_effects_test(neg_fountain_mint_test_context
-  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+  "could not convert|no matching function|cannot convert"
+    "effects::Test|effects::Init")
 crucible_neg_compile_test(neg_fountain_raw_seed
   "cannot convert|no matching function|DetSafe|FountainSeed")
 crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
@@ -11083,7 +11247,7 @@ crucible_neg_compile_test(neg_channel_runnable_empty_offer_sender
     "ProtocolPermissionedRunnable|CtxFitsChannel|constraints not satisfied|no matching function")
 
 # pick<I> / select<I> out-of-range index (#432, #433) — replaces the
-# generic GCC "constraints not satisfied" message with a framework-
+# generic GCC "constraints.*not satisfied" message with a framework-
 # named [Branch_Index_Out_Of_Range] diagnostic carrying the protocol
 # context.  Covers BOTH Select::select<I> (internal choice) and
 # Offer::pick<I> (peer-driven branch dispatch) in one file.
@@ -11908,10 +12072,10 @@ crucible_neg_compile_test(neg_chainedge_raw_reset
 # safety/diag/RowMismatch.h.  Every regex is FRAMEWORK-CONTROLLED —
 # matches a literal substring of a `static_assert` message we own.
 # Also require the trait that does the rejecting, and the type it
-# rejected.  Bare "constraints not satisfied" is emitted by every failing
+# rejected.  Bare "constraints.*not satisfied" is emitted by every failing
 # concept check in the TU and witnesses nothing about Diagnostic<>.
 crucible_neg_compile_multi_test(neg_diag_non_tag_in_diagnostic_wrapper
-    "constraints not satisfied"
+    "constraints.*not satisfied"
     "requires  is_diagnostic_class_v<DiagnosticClass> struct crucible::safety::diag::Diagnostic"
     "the expression .is_diagnostic_class_v<DiagnosticClass> .with DiagnosticClass = int.. evaluated to .false.")
 crucible_neg_compile_test(neg_diag_non_tag_in_row_mismatch
@@ -12017,79 +12181,79 @@ crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
 # (1) close at End with leftover Permission.  Establish with a Permission;
 #     close() before any surrender step.
 crucible_neg_compile_session_test(neg_psh_close_with_leftover_perm
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (2) Send Transferable<T, X> from a handle whose PS does not contain X.
 crucible_neg_compile_session_test(neg_psh_send_transferable_without_holding
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*payload type T requires")
 
 # (3) Send Returned<T, X> from a handle whose PS does not contain X.
 crucible_neg_compile_session_test(neg_psh_send_returned_without_holding
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*payload type T requires")
 
 # (4) Loop body that DRAINS a permission per iteration without surrender.
 #     Continue's balance assert fires.
 crucible_neg_compile_session_test(neg_psh_loop_drains_perm_per_iteration
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (5) Loop body that GAINS a permission per iteration without surrender
 #     (the symmetric inverse of #4).
 crucible_neg_compile_session_test(neg_psh_loop_gains_perm_per_iteration
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (6) Recv Transferable then close at End without surrender.
 crucible_neg_compile_session_test(neg_psh_recv_imbalance_at_end
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (7) Select with branch that closes without surrendering — Decision D4
 #     STRUCTURAL convergence: close on the imbalanced branch fires.
 crucible_neg_compile_session_test(neg_psh_select_diverging_branch
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (8) Nested Loop where the OUTER body balances but the INNER body does
 #     not — exercises Decision D3's loop-context shadowing.
 crucible_neg_compile_session_test(neg_psh_nested_loop_inner_imbalance
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (9) Multi-step body where MOST operations balance but the LAST step
 #     leaves PS imbalanced.  Subtle: balanced sub-chains hide a trailing
 #     half-pair that the type system catches via Continue's balance assert.
 crucible_neg_compile_session_test(neg_psh_subtle_chain_imbalance
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (10) perm_set_union_t with overlapping operands — disjoint-union assert
 #      fires.  CSL frame rule violation: a permission cannot be held by
 #      two participants simultaneously.
 crucible_neg_compile_session_test(neg_perm_set_union_overlap
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermSet\\.h.*static assertion failed.*PermissionImbalance.*disjoint operands")
 
 # GAPS-058: PermissionedSessionHandle × Delegate/Accept bridge.  These
 # pin the DelegatedSession<P, InnerPS> handoff boundary so higher-order
 # session transfer cannot fabricate, duplicate, or leak InnerPS.
 crucible_neg_compile_session_test(neg_psh_delegate_inner_ps_not_in_sender
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*PermSet does not contain inner_ps tokens")
 
 crucible_neg_compile_session_test(neg_psh_accept_inner_ps_already_owned
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*inner_ps already owned")
 
 crucible_neg_compile_session_test(neg_psh_delegate_inner_proto_unbalanced
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*is_permission_balanced_v<InnerProto> against InnerPS rejects")
 
 crucible_neg_compile_session_test(neg_psh_delegate_to_self
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ProtocolViolation_Self_Loop|self-loop")
 
 # GAPS-059: ctx-bound permissioned session mint.  These fixtures pin the
@@ -12097,35 +12261,35 @@ crucible_neg_compile_session_test(neg_psh_delegate_to_self
 # permission payload wrappers, initial PermSet must locally close, and a
 # Permission<Tag> cannot be consumed twice.
 crucible_neg_compile_session_test(neg_mint_session_no_ctx
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "mint_session<Proto>\\(resource\\) is removed")
 
 crucible_neg_compile_session_test(neg_mint_permissioned_session_no_ctx
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "no matching function for call to.*mint_permissioned_session|candidate expects at least 2 arguments")
 
 crucible_neg_compile_session_test(neg_psh_direct_construct
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "no matching function for call to.*PermissionedSessionHandle")
 
 crucible_neg_compile_session_test(neg_psh_fabricate_permset
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "no matching function for call to.*PermissionedSessionHandle")
 
 crucible_neg_compile_session_test(neg_mint_session_ctx_no_admit_proto
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_send_transferable_io_payload_to_pure_ctx
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_send_borrowed_io_payload_to_pure_ctx
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_send_returned_io_payload_to_pure_ctx
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 # GAPS-076: paired channel minting validates both local protocols.  Endpoint A
@@ -12133,27 +12297,27 @@ crucible_neg_compile_session_test(neg_send_returned_io_payload_to_pure_ctx
 # admission, receiver-side row admission, continuation drift, and Capability
 # payload rows.
 crucible_neg_compile_session_test(neg_mint_channel_receiver_no_admit
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_sender_no_admit
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_recv_row_drift
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_capability_unauthorized_receiver
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_requires_ctx
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "mint_channel<Proto>\\(resource_a, resource_b\\) is removed")
 
 crucible_neg_compile_session_test(neg_persisted_session_hot_ctx
-    "constraints not satisfied|template constraint failure|associated constraints"
+    "constraints.*not satisfied|template constraint failure|associated constraints"
     "CtxAdmits")
 
 crucible_neg_compile_session_test(neg_persisted_session_no_ctx
@@ -12166,7 +12330,7 @@ crucible_neg_compile_session_test(neg_persisted_session_no_ctx
 # fixy-A2-025 fixtures below.
 
 crucible_neg_compile_session_test(neg_psh_detach_bare_no_reason
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "DetachReason_Required|matching function")
 
 crucible_neg_compile_session_test(neg_psh_detach_untyped_reason
@@ -12186,7 +12350,7 @@ crucible_neg_compile_session_test(neg_persisted_session_no_open_view
 # lives in the RecordingPermissionedSessionHandle.h sentinel block.)
 
 crucible_neg_compile_session_test(neg_persisted_session_psh_hot_ctx
-    "constraints not satisfied|template constraint failure|associated constraints"
+    "constraints.*not satisfied|template constraint failure|associated constraints"
     "CtxAdmits")
 
 crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
@@ -12199,95 +12363,95 @@ crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
 # (BogusPositionTag).  Both fire mint_session_view's
 # `requires HandleIsAt<Handle, Tag>` clause.
 crucible_neg_compile_session_test(neg_mint_session_view_wrong_position
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "HandleIsAt|handle_is_at|mint_session_view")
 crucible_neg_compile_session_test(neg_mint_session_view_invalid_tag
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "HandleIsAt|handle_is_at|mint_session_view")
 
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "CtxFitsPermissionedProtocol|permission_flow_closes")
 
 crucible_neg_compile_session_test(neg_mint_session_perm_double_consume
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "PermSet\\.h.*static assertion failed.*PermissionImbalance.*unique Tags")
 
 # GAPS-060: Chase-Lev owner/thief typed-session facade.  The thief
 # protocol is Recv-only; the owner Recv branch is pop_bottom, not the
 # thief borrowed-steal transport.
 crucible_neg_compile_session_test(neg_chaselev_thief_session_push
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_chaselev_owner_session_steal
-    "no matching function|constraints not satisfied"
+    "no matching function|constraints.*not satisfied"
     "try_steal")
 
 # GAPS-081: generic SubstrateSessionBridge and Endpoint preserve the
 # Chase-Lev owner/thief protocol split.  The thief direction remains
 # Recv-only through both factories.
 crucible_neg_compile_session_test(neg_chaselev_substrate_thief_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_chaselev_endpoint_thief_try_send
-    "constraints not satisfied"
+    "constraints.*not satisfied"
     "no matching function for call|candidate")
 
 # GAPS-082: indexed ShardedGrid substrate sessions.  ShardId<I>
 # selects the statically-indexed producer/consumer handle, and role
 # misuse remains rejected through the generic bridge.
 crucible_neg_compile_session_test(neg_sharded_grid_substrate_consumer_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_sharded_grid_substrate_producer_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_sharded_grid_bridge_producer_shard_oob
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ShardedGridBridge_ProducerShardOutOfRange|producer shard I")
 
 # GAPS-083: indexed CalendarGrid substrate sessions.  CalendarProducerId<P>
 # selects a producer row; CalendarConsumerId selects the single drain
 # consumer.  Role misuse remains rejected through the generic bridge.
 crucible_neg_compile_session_test(neg_calendar_grid_substrate_consumer_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_calendar_grid_substrate_producer_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_calendar_grid_bridge_producer_row_oob
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CalendarGridBridge_ProducerRowOutOfRange|producer row P")
 
 # GAPS-084: indexed ShardedCalendarGrid substrate sessions.  ShardId<S>
 # selects the shard-local producer/consumer calendar handle; role misuse
 # and out-of-range shard IDs remain compile-time failures.
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_consumer_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_producer_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_bridge_shard_oob
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ShardedCalendarGridBridge_ShardOutOfRange|shard S")
 
 # GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
 # Send-only; WaiterProto is Recv-only.
 crucible_neg_compile_session_test(neg_chainedge_waiter_session_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 # SEPLOG-H2: MpmcChannelSession typed-session facade for the fractional
@@ -12302,19 +12466,19 @@ crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
 # Together these satisfy HS14 (≥ 2 fixtures per new mint factory) for
 # both mint_mpmc_producer_session and mint_mpmc_consumer_session.
 crucible_neg_compile_session_test(neg_mpmc_session_consumer_session_send
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_mpmc_session_producer_session_recv
-    "static assertion failed|constraints not satisfied|no matching function|has no member named"
+    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_mpmc_session_surface_rejects_non_channel
-    "constraints not satisfied|no type named"
+    "constraints.*not satisfied|no type named"
     "MpmcChannelSessionSurface|the required expression")
 
 crucible_neg_compile_session_test(neg_mpmc_session_handle_copy
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "ProducerHandle owns a producer-pool refcount share")
 
 # ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
@@ -13205,7 +13369,7 @@ crucible_neg_compile_test(neg_reset_in_quiescent_context_braced_init
 # which these fixtures continue to verify against the negative case.
 #
 # The diagnostic family is intentionally broad — GCC 16 reports
-# the unsatisfied constraint via "constraints not satisfied" with
+# the unsatisfied constraint via "constraints.*not satisfied" with
 # slightly different wording across template-instantiation depths.
 crucible_neg_compile_test(neg_retag_policy_default_rejects
     "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
@@ -13536,10 +13700,10 @@ crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_recovery_empt
 #   #2 SessionCrash.h Stop_g<C> crash-stop specialization (cross-header
 #      friend reach — the factory is forward-declared in Session.h).
 crucible_neg_compile_session_test(neg_session_handle_ctor_public_bypass
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "is private")
 crucible_neg_compile_session_test(neg_session_crash_handle_ctor_public_bypass
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "is private")
 
 # ─────────────────────────────────────────────────────────────────
@@ -14387,13 +14551,13 @@ crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_required
     "use of deleted function"
     "PersistedSession_CtxRequired")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_row_insufficient
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "CtxAdmits")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_open_view_required
     "use of deleted function"
     "PersistedSession_OpenViewRequired")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insufficient
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "CtxAdmits")
 
 # fixy-A2-006b — HS14 floor for the Delegate<DelegatedSession<P, IPS>, K>
@@ -14414,7 +14578,7 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_wrong_
     "no matching function|cannot convert"
     "PermissionedSessionHandle")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_transport_not_invocable
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "is_invocable")
 
 # fixy-A2-006c — HS14 floor for the Accept<DelegatedSession<P, IPS>, K>
@@ -14433,7 +14597,7 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_transp
 # Distinct layers: #1 = requires-clause body, #2 = body instantiation.
 # Mirrors the bare-handle Accept spec at RecordingSessionHandle.h:994.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_not_invocable
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "is_invocable")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_returns_void
     "incomplete type|no matching function|cannot declare"
@@ -14453,7 +14617,7 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegat
     "no matching function|cannot convert"
     "PermissionedSessionHandle")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegate_transport_not_invocable
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "is_invocable")
 
 # fixy-A2-006e — HS14 floor for the EpochedAccept<DelegatedSession<P, IPS>,
@@ -14468,7 +14632,7 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegat
 #   epoched_transport_returns_void  — body-instantiation (void delegated_res)
 # Distinct layers: #1 = requires-clause body, #2 = body instantiation.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_accept_transport_not_invocable
-    "constraints not satisfied|no matching function"
+    "constraints.*not satisfied|no matching function"
     "is_invocable")
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_accept_transport_returns_void
     "incomplete type|no matching function|cannot declare"
@@ -14479,14 +14643,14 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_accept_
 #   AtomicMachineCell<Cell>          — non-cell argument fails the concept
 #   safety::proto::is_well_formed_v<Proto>  — free Continue at top level fails
 crucible_neg_compile_bridges_test(neg_mint_atomic_session_non_atomic_machine_cell
-    "constraints not satisfied|no matching function for call to"
+    "constraints.*not satisfied|no matching function for call to"
     "AtomicMachineCell")
 crucible_neg_compile_bridges_test(neg_mint_atomic_session_malformed_proto
-    "constraints not satisfied|no matching function for call to"
+    "constraints.*not satisfied|no matching function for call to"
     "is_well_formed")
 # FIXY-V-020: CanMintVigilModeBridge<Cell> rejects non-ModeCell types.
 crucible_neg_compile_bridges_test(neg_vigil_mode_bridge_wrong_cell
-    "constraints not satisfied"
+    "constraints.*not satisfied"
     "CanMintVigilModeBridge")
 
 # fixy-A2-021 — HS14 floor for the WrapCrashReturnKey pass-key idiom.
