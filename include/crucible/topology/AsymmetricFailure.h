@@ -9,7 +9,7 @@
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/topology/Health.h>
 
 #include <algorithm>

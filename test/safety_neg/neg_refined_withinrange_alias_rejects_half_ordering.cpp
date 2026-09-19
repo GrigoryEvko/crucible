@@ -34,7 +34,7 @@
 // half is satisfied but operator>= is missing, so the failure pins
 // to the specific missing-half-of-interface diagnostic.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 namespace {
 

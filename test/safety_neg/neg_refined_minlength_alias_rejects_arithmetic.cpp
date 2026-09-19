@@ -43,7 +43,7 @@
 // witness the parameterised-alias surface's concept gate fires across
 // four distinct mismatch classes (Class C / L / M / B).
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 int main() {
     using crucible::safety::MinLength;

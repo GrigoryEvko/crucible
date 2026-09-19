@@ -5,7 +5,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 

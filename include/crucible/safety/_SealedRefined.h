@@ -19,7 +19,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/_BoolLattice.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <compare>
 #include <cstdlib>

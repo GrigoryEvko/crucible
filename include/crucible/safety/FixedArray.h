@@ -24,7 +24,7 @@
 // are deliberately not graded.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <algorithm>
 #include <array>

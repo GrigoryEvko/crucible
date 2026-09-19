@@ -45,14 +45,14 @@
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/_Reflected.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Safety.h>
 #include <crucible/safety/ScopedView.h>
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Stale.h>

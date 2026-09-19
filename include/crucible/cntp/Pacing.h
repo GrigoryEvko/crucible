@@ -9,7 +9,7 @@
 // comes back, and the fq parameters are declared values that nothing applies.
 
 #include <crucible/cntp/CongestionControl.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Tagged.h>
 
 #include <array>

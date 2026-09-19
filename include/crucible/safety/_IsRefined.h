@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 
 #include <type_traits>
 

@@ -42,10 +42,10 @@
 #include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/IsRefined.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/ScopedView.h>
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/IsSecret.h>
 #include <crucible/safety/Simd.h>

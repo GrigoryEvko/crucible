@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/cntp/Pacing.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstdint>

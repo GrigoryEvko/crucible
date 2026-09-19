@@ -19,7 +19,7 @@
 //
 // Substring "PredicateInvocableOn" pins the diagnostic.
 
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 
 namespace {
 // Same shape as the mint_refined arg-mismatch fixture: a type

@@ -8,7 +8,7 @@
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <array>
 #include <atomic>

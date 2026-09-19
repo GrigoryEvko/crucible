@@ -4,8 +4,8 @@
 // safety wrapper, and one of them transitively drags in the arena and its
 // lattice, which a near-universal header must not carry.
 
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 
 #include <type_traits>
 

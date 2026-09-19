@@ -25,7 +25,7 @@
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/Progress.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>

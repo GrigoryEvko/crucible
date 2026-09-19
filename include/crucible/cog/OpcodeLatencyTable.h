@@ -2,7 +2,7 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 

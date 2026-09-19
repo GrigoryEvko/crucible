@@ -18,7 +18,7 @@
 // Refined<positive, std::string> kinds of bugs at the use site
 // rather than via cryptic <contracts> errors).
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 using namespace crucible::safety;
 

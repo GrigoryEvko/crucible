@@ -41,7 +41,7 @@
 // predicate body's structural requirement on T does fire as a compile
 // error at the construction site, by whichever route GCC reaches it.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 namespace {
 

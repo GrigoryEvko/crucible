@@ -7,7 +7,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pre.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/sessions/AsyncPipelineSession.h>
 
 #include <array>

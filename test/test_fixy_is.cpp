@@ -4,7 +4,7 @@
 #include <crucible/fixy/Is.h>
 
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>

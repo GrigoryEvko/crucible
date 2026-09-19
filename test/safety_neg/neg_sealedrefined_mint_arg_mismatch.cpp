@@ -38,7 +38,7 @@
 //
 // U-143 — Class U fixture (closes SealedRefined slice of #146 A8-P2).
 
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 
 #include <cstdint>
 

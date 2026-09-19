@@ -11,7 +11,7 @@
 // Expected diagnostic: `static_assert(Lo <= Hi)` inside
 // detail::bounded_alias fires when (10, 5) is substituted.
 
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 
 using crucible::safety::Bounded;
 

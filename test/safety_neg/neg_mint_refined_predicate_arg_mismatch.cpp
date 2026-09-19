@@ -24,7 +24,7 @@
 // Substring "PredicateInvocableOn" pins the diagnostic — GCC 16
 // emits the concept name in the "constraint requires" line.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 namespace {
 // A type with no operator> defined and no implicit conversion to

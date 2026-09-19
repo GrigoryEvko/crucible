@@ -39,7 +39,7 @@
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/IsRecipeSpec.h>
 #include <crucible/safety/IsReduceInto.h>
-#include <crucible/safety/IsRefined.h>
+#include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsSchedClass.h>
 #include <crucible/safety/IsScopedFence.h>

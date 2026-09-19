@@ -41,7 +41,7 @@
 // rather than at concept-gate time).  Both routes legitimately abort
 // the build with the predicate body's T-requirement as the cause.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <string>
 

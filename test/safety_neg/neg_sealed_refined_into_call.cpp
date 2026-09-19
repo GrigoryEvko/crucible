@@ -13,7 +13,7 @@
 // migration's load-bearing semantic distinction collapses.  The
 // test catches that regression at compile time.
 
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 
 #include <utility>
 

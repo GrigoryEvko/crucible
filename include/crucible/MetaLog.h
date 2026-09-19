@@ -26,7 +26,7 @@
 #include <crucible/safety/HugePageBuffer.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Stale.h>
 
 namespace crucible::fixy::wrap {

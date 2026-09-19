@@ -20,10 +20,10 @@
 #include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/ScopedFence.h>
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/Stale.h>

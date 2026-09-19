@@ -6,7 +6,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/HdrHistogram.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Tagged.h>
 
 #include <array>

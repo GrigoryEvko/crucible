@@ -12,8 +12,8 @@
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/OwnedRegion.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/WeakRef.h>

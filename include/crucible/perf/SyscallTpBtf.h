@@ -8,7 +8,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/syscall/Per.h>
 #include <crucible/safety/Borrowed.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <cstddef>
 #include <cstdint>

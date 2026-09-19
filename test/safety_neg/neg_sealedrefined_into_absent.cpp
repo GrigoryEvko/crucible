@@ -46,7 +46,7 @@
 // (closes the SealedRefined slice of backlog #146 A8-P2 alongside
 // U-140's Machine, U-141's ConstantTime, U-142's Tagged coverage).
 
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 
 #include <utility>
 

@@ -42,7 +42,7 @@
 // the concept name in the "constraint requires" line of the
 // `MinLength<5, Refined<positive, ...>>{...}` construction site.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <vector>
 

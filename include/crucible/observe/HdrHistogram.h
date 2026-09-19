@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/ThreadLocalRef.h>
 
 #include <array>

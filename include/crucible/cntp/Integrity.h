@@ -6,7 +6,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Tagged.h>
 

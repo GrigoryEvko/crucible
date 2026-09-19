@@ -11,7 +11,7 @@
 // tagged as validated.
 
 #include <crucible/sessions/SessionPayloadSubsort.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 
 #include <cstdio>
 #include <expected>

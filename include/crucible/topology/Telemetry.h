@@ -5,7 +5,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/topology/CongestionTelemetry.h>

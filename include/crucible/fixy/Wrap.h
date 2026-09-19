@@ -42,12 +42,12 @@
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/fixy/wrap/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/ScopedView.h>
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/SwissTableBuffer.h>

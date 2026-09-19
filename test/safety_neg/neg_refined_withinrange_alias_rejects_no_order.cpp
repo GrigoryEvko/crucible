@@ -28,7 +28,7 @@
 // failure on operator>=/<= surfaces at constexpr expansion (similar
 // to MaxBounded's bounded_above pattern).
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 namespace {
 

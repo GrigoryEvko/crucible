@@ -12,7 +12,7 @@
 // Distinct mismatch class from the companion: argument side vs
 // return side of the concept's two-clause requirement.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 namespace {
 // Stateless lambda that compiles on any T (no arg constraints)

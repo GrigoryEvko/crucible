@@ -6,7 +6,7 @@
 
 #include <crucible/cntp/dataplane/Xdp.h>
 #include <crucible/safety/Bits.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstdint>

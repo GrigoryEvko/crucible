@@ -37,7 +37,7 @@
 #include <crucible/warden/Policy.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <atomic>
 #include <chrono>

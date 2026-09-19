@@ -5,7 +5,7 @@
 #include <crucible/canopy/VectorClock.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Tagged.h>
 
 #include <bit>

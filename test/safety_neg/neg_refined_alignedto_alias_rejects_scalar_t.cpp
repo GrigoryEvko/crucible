@@ -33,7 +33,7 @@
 // the concept name in the "constraint requires" line of the
 // `AlignedTo<64, int>{...}` construction site.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 int main() {
     using crucible::safety::AlignedTo;

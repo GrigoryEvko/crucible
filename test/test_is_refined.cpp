@@ -1,4 +1,4 @@
-#include <crucible/safety/IsRefined.h>
+#include <crucible/safety/_IsRefined.h>
 
 #include <cstdio>
 #include <cstdlib>

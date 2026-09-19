@@ -10,7 +10,7 @@
 // Expected diagnostic: `static_assert(Divisor != 0)` inside
 // safety::DivisibleBy fires when 0 is substituted.
 
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/safety/_RefinedAlgebra.h>
 
 using crucible::safety::Refined;
 using crucible::safety::divisible_by;

@@ -41,7 +41,7 @@
 // FIXY-U-159 first HS14 fixture closing the §XVI alias discipline
 // gap (alongside the new NonEmpty / NonEmptySpan aliases).
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 namespace {
 

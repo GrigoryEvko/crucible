@@ -15,7 +15,7 @@
 #include "safety/_Mutation.h"
 #include "safety/_Post.h"
 #include "safety/_Pre.h"
-#include "safety/Refined.h"
+#include "safety/_Refined.h"
 
 namespace crucible::fixy::wrap {
 using ::crucible::safety::AllocClass;

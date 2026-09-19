@@ -10,7 +10,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_GradedTrait.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <array>
 #include <cstddef>

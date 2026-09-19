@@ -34,7 +34,7 @@
 //
 // Substring "PredicateInvocableOn" pins the diagnostic.
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 int main() {
     using crucible::safety::AlignedTo;

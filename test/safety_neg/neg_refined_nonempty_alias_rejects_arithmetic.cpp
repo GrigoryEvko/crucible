@@ -47,7 +47,7 @@
 // FIXY-U-159 second HS14 fixture closing the §XVI alias
 // discipline gap (alongside NonZero / NonEmptySpan).
 
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 int main() {
     using crucible::safety::NonEmpty;

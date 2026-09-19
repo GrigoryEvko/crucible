@@ -12,7 +12,7 @@
 // name because the rejected SYMBOL differs (mint_sealed_refined
 // vs mint_refined).
 
-#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/_SealedRefined.h>
 
 namespace {
 // Captureless stateless lambda returning void — fails the

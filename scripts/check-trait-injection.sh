@@ -134,7 +134,7 @@ Scanned traits and their authoring sets:
                             include/crucible/safety/source/*.h      + test/**
   machine_transition        include/crucible/safety/Machine.h
                             include/fixy/Machine.h                 + test/**
-  predicate_implies         include/crucible/safety/Refined{,Algebra}.h
+  predicate_implies         include/crucible/safety/_Refined{,Algebra}.h
                                                                     + test/**
   survivor_registry         include/crucible/permissions/PermissionInherit.h
                             include/crucible/fixy/Bridge.h          + test/**
@@ -170,7 +170,7 @@ scan_table=(
     "substrate|(struct|class)\s+(is_graded_specialization|value_type_decoupled|graded_modality|is_numerical_tier_impl)\s*<|${substrate_paths}"
     "retag_policy|(struct|class)\s+retag_policy\s*<|include/crucible/safety/Tagged.h include/crucible/safety/source/*.h test/*"
     "machine_transition|((struct|class)\s+machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/Machine.h include/fixy/Machine.h test/*"
-    "predicate_implies|(struct|class)\s+predicate_implies\s*<|include/crucible/safety/Refined.h include/crucible/safety/RefinedAlgebra.h test/*"
+    "predicate_implies|(struct|class)\s+predicate_implies\s*<|include/crucible/safety/_Refined.h include/crucible/safety/_RefinedAlgebra.h test/*"
     "survivor_registry|(struct|class)\s+survivor_registry\s*<|include/crucible/permissions/PermissionInherit.h include/crucible/fixy/Bridge.h test/*"
     "is_subsort|(struct|class)\s+is_subsort\s*<|include/crucible/sessions/*.h test/*"
     "admitted_retags|namespace\s+(fixy::tags::)?admitted_retags\b|include/fixy/Tagged.h test/*"
@@ -373,7 +373,7 @@ struct machine_transition<PlantedFrom, PlantedTo> : std::true_type {};
 }  // namespace crucible::safety
 EXEMPT
 
-        exempt_implies='include/crucible/safety/Refined.h'
+        exempt_implies='include/crucible/safety/_Refined.h'
         cat >"$tmp_root/$exempt_implies" <<'EXEMPT'
 // Synthetic implies authoring-location fixture for --self-test.
 namespace crucible::safety {

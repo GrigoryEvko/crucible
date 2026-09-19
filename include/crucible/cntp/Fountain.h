@@ -5,7 +5,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 
 #include <algorithm>
 #include <array>

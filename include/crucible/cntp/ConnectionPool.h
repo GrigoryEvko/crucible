@@ -7,7 +7,7 @@
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstdint>
