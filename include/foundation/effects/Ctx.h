@@ -65,17 +65,8 @@ inline constexpr bool is_cap_type_v = is_cap_type<T>::value;
 template <class T>
 concept IsCapType = is_cap_type_v<T>;
 
-// Top-level cv and reference are stripped before matching, so that a
-// concept fed a forwarding-reference deduction still recognizes the
-// row.  Every recognition trait in the project behaves this way.
-template <class T>
-struct is_effect_row : std::false_type {};
-template <Effect... Es>
-struct is_effect_row<Row<Es...>> : std::true_type {};
-template <class T>
-inline constexpr bool is_effect_row_v = is_effect_row<std::remove_cvref_t<T>>::value;
-template <class T>
-concept IsEffectRow = is_effect_row_v<T>;
+// The row recognition trait, is_effect_row, lives in Row.h beside the
+// row it recognizes.
 
 // The largest row each capability source can authorize.  A context's
 // own row must stay inside it, which is what stops a foreground

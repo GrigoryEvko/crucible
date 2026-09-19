@@ -41,6 +41,18 @@ struct Row {
 
 using EmptyRow = Row<>;
 
+// Top-level cv and reference are stripped before matching, so that a
+// concept fed a forwarding-reference deduction still recognizes the
+// row.  Every recognition trait in the project behaves this way.
+template <class T>
+struct is_effect_row : std::false_type {};
+template <Effect... Es>
+struct is_effect_row<Row<Es...>> : std::true_type {};
+template <class T>
+inline constexpr bool is_effect_row_v = is_effect_row<std::remove_cvref_t<T>>::value;
+template <class T>
+concept IsEffectRow = is_effect_row_v<T>;
+
 // The sort key is the Effect underlying value.  The row hash that keys
 // the federation cache is permutation-invariant and set-semantic, so
 // sorting on anything else would let two rows share a hash while
