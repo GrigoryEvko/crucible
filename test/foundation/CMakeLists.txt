@@ -91,6 +91,14 @@ foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
   "contract predicate is false in constant expression"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: error")
 
+# Weakening down the lattice is rejected during constant evaluation by
+# the in-body CRUCIBLE_PRE.  The first regex is the trap the shim uses to
+# poison the evaluation, and the second proves the trap came from the
+# guard in weaken rather than from anywhere else.
+foundation_neg_compile_test(neg_graded_weaken_below_current_grade
+  "is not a constant expression"
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro")
+
 # A capability source authorizes only its permitted row.
 foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
   "constraints not satisfied"

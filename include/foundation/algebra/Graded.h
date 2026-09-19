@@ -19,6 +19,7 @@
 
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/contracts/Pre.h>
 
 #include <contracts>
 #include <meta>
@@ -189,6 +190,17 @@ public:
         return result;
     }
 
+    // Weakening moves up the lattice and never down.  That is the whole
+    // of what Graded promises, so the guard below is the promise.
+    //
+    // It is an in-body CRUCIBLE_PRE rather than a pre() clause for the
+    // reason the constructor of the value-is-grade specialization gives
+    // at length: a foldable body makes the compiler skip a pre() clause
+    // during constant evaluation, and the predicate here reaches a
+    // member, which is one of the shapes that go unchecked.  Every use
+    // of weaken in this tree is a constant expression, so the clause
+    // checked nothing at all.
+    //
     // The const& overload is gated on copy_constructible<T> so that a
     // move-only T falls through to the && overload instead of emitting
     // a copy-deleted error cascade.
@@ -196,15 +208,18 @@ public:
     weaken(grade_type new_grade) const& noexcept(std::is_nothrow_copy_constructible_v<T>
                                                  && std::is_nothrow_copy_constructible_v<grade_type>)
         requires std::copy_constructible<T>
-    pre(L::leq(grade_, new_grade)) {
+    {
+        CRUCIBLE_PRE(L::leq(grade_, new_grade));
         Graded result{inner_, new_grade};
         contract_assert(L::leq(result.grade(), new_grade) && L::leq(new_grade, result.grade()));
         return result;
     }
 
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) && noexcept(
-        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_copy_constructible_v<grade_type>
-        && std::is_nothrow_move_constructible_v<grade_type>) pre(L::leq(grade_, new_grade)) {
+    [[nodiscard]] constexpr Graded
+    weaken(grade_type new_grade) && noexcept(std::is_nothrow_move_constructible_v<T>
+                                             && std::is_nothrow_copy_constructible_v<grade_type>
+                                             && std::is_nothrow_move_constructible_v<grade_type>) {
+        CRUCIBLE_PRE(L::leq(grade_, new_grade));
         grade_type expected = new_grade;
         Graded result{std::move(inner_), std::move(new_grade)};
         contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
@@ -344,18 +359,21 @@ public:
         return result;
     }
 
+    // In-body CRUCIBLE_PRE rather than a pre() clause, for the reason
+    // the constructor above gives.
     [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-    pre(L::leq(value_, new_grade)) {
+    {
+        CRUCIBLE_PRE(L::leq(value_, new_grade));
         T expected = new_grade;
         Graded result{std::move(new_grade)};
         contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) && noexcept(std::is_nothrow_move_constructible_v<T>
-                                                                            && std::is_nothrow_copy_constructible_v<T>)
-        pre(L::leq(value_, new_grade)) {
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) && noexcept(
+        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_copy_constructible_v<T>) {
+        CRUCIBLE_PRE(L::leq(value_, new_grade));
         T expected = new_grade;
         Graded result{std::move(new_grade)};
         contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
