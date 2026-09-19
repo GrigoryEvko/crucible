@@ -20,7 +20,7 @@
 //
 // Expected diagnostic: a GCC template-argument-count error.
 
-#include <crucible/fixy/grant/Dispatch.h>
+#include <crucible/fixy/grant/_Dispatch.h>
 
 namespace disp = crucible::fixy::grant::dispatch;
 

@@ -6,7 +6,7 @@
 // so every mint here returns the errno and lets the caller decide.
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
 
 #include <crucible/safety/CpuPinned.h>

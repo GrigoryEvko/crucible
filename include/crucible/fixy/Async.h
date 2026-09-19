@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/effects/_ExecCtx.h>

@@ -16,7 +16,7 @@
 // domain.  It declares which sub-axis the binding speaks to, not that the
 // binding is strict.
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/safety/FpMode.h>
 #include <crucible/safety/DimensionTraits.h>
 

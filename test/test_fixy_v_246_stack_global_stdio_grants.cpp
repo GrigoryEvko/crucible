@@ -1,9 +1,9 @@
 // Sentinel TU: compiles the three grant headers under the project warning flags
 // so their self-test blocks run.
 
-#include <crucible/fixy/grant/Stack.h>
-#include <crucible/fixy/grant/Global.h>
-#include <crucible/fixy/grant/Stdio.h>
+#include <crucible/fixy/grant/_Stack.h>
+#include <crucible/fixy/grant/_Global.h>
+#include <crucible/fixy/grant/_Stdio.h>
 
 #include <type_traits>
 

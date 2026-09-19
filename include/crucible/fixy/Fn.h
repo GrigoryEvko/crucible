@@ -5,7 +5,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Hw.h>
 #include <crucible/fixy/Profile.h>
 #include <crucible/fixy/Reject.h>

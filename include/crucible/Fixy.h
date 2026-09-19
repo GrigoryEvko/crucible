@@ -9,7 +9,7 @@
 
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 // Reject.h precedes Profile.h rather than following it alphabetically,
 // because Profile.h instantiates a concept Reject.h declares.
 #include <crucible/fixy/Reject.h>

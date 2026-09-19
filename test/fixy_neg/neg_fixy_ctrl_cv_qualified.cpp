@@ -16,7 +16,7 @@
 //
 // Expected diagnostic: the static_assert message below (IsGrantTag).
 
-#include <crucible/fixy/grant/Ctrl.h>
+#include <crucible/fixy/grant/_Ctrl.h>
 
 namespace gr = crucible::fixy::grant;
 namespace ctrl = crucible::fixy::grant::ctrl;

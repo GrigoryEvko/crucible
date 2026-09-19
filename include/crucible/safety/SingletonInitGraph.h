@@ -15,7 +15,7 @@
 // that hold those singletons, one of which is hot and widely included.  Here the
 // dependency stays in one cold header and the whole graph is visible at once.
 
-#include <crucible/fixy/grant/Global.h>
+#include <crucible/fixy/grant/_Global.h>
 #include <crucible/safety/CollisionCatalog.h>
 
 #include <array>

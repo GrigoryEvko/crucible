@@ -19,7 +19,7 @@
 // Expected diagnostic: a GCC "expected a type" / "type/value mismatch"
 // / "invalid" template-argument error.
 
-#include <crucible/fixy/grant/Dispatch.h>
+#include <crucible/fixy/grant/_Dispatch.h>
 
 namespace disp = crucible::fixy::grant::dispatch;
 

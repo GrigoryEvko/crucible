@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/_Linear.h>
 

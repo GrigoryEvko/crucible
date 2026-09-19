@@ -12,13 +12,14 @@
 # thread that type through the IsAcceptedGrants engagement check.
 #
 # This script enforces the discipline at build time: ONLY
-# `include/crucible/fixy/Grant.h` may open the namespace.  Any other
+# `include/crucible/fixy/_Grant.h` may open the namespace.  Any other
 # file doing so fails the build with a diagnostic naming the offending
 # location.
 #
 # Approved exceptions (specialization-only):
 #
-#   * include/crucible/fixy/Grant.h               — the canonical authoring site.
+#   * include/crucible/fixy/_Grant.h              — the canonical authoring site
+#                                                    (superseded by fixy/Atom.h).
 #   * include/crucible/fixy/Fp.h                  — V-092 FpMode axis-specialized catalog
 #                                                    (12 with_fp_* parametric grants + fp_strict_ieee).
 #   * include/crucible/fixy/Fs.h                  — V-224 SyscallSurface axis-specialized
@@ -78,7 +79,7 @@ Exemption axes:
   test/fixy_neg/neg_fixy_project_per_domain_*.cpp     "// fixy-CR-09: known residual gap"
   **/*.md, build/**, third_party/**, misc/** ...    — rg glob exclusions
 
-fixy-CR-09 — only include/crucible/fixy/Grant.h and the per-axis catalogs
+fixy-CR-09 — only include/crucible/fixy/_Grant.h and the per-axis catalogs
 beside it may open namespace crucible::fixy::grant.
 USAGE
 }
@@ -116,7 +117,7 @@ struct planted_foreign_tag final {};
 PLANTED
 
         # EXEMPT (path allowlist) — the canonical authoring site.
-        cat >"$tmp_root/include/crucible/fixy/Grant.h" <<'CANON'
+        cat >"$tmp_root/include/crucible/fixy/_Grant.h" <<'CANON'
 // Synthetic canonical authoring site for --self-test.
 namespace crucible::fixy::grant {
 struct planted_canonical final {};
@@ -181,8 +182,8 @@ DOC
             || self_test_fail 'un-acknowledged attack fixture was not flagged.'
 
         # The canonical authoring site must NOT be flagged.
-        if grep -qF 'reopen at include/crucible/fixy/Grant.h:' "$result_file"; then
-            self_test_fail 'path allowlist leaked — Grant.h was flagged.'
+        if grep -qF 'reopen at include/crucible/fixy/_Grant.h:' "$result_file"; then
+            self_test_fail 'path allowlist leaked — _Grant.h was flagged.'
         fi
 
         # The per-axis catalog must NOT be flagged.
@@ -218,10 +219,10 @@ while IFS=: read -r file line text; do
     rel="${file#"$scan_root"/}"
 
     case "$rel" in
-        include/crucible/fixy/Grant.h)
+        include/crucible/fixy/_Grant.h)
             continue
             ;;
-        include/crucible/fixy/grant/Ctrl.h)
+        include/crucible/fixy/grant/_Ctrl.h)
             # V-244 ControlFlow axis-specialized catalog (6 grant::ctrl::*
             # grants: throws<>/abort<Rationale>/longjmp_unsafe<Rationale>/
             # exit<CleanupPolicy>/coroutine<SuspensionPolicy> + builtin_trap_ok
@@ -230,7 +231,7 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/grant/Dispatch.h)
+        include/crucible/fixy/grant/_Dispatch.h)
             # V-245 CallShape axis-specialized catalog (4 grant::dispatch::*
             # grants: indirect_call<FnPtrFamily>/virtual_call<BaseClass>/
             # recurses<MaxDepth>/tail_call + accept_default_strict_for_CallShape).
@@ -238,20 +239,20 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/grant/Stack.h)
+        include/crucible/fixy/grant/_Stack.h)
             # V-246 StackUse axis-specialized catalog (grant::stack::alloc
             # <MaxBytes>/vla_ok/alloca_ok + accept_default_strict_for_StackUse).
             # Specializes which_dim<> only.
             continue
             ;;
-        include/crucible/fixy/grant/Global.h)
+        include/crucible/fixy/grant/_Global.h)
             # V-246 GlobalState axis-specialized catalog (grant::global::
             # singleton<Tag>/thread_local_<Tag>/namespace_static<Tag>/
             # atexit_handler + accept_default_strict_for_GlobalState).
             # Specializes which_dim<> only.
             continue
             ;;
-        include/crucible/fixy/grant/Stdio.h)
+        include/crucible/fixy/grant/_Stdio.h)
             # V-246 Stdio axis-specialized catalog (grant::stdio::write<Stream>
             # + streams::* policy tags + accept_default_strict_for_Stdio).
             # Specializes which_dim<> only.
@@ -428,7 +429,7 @@ done < <(
 )
 
 if [[ "$status" -ne 0 ]]; then
-    printf 'fixy_grant_purity: only include/crucible/fixy/Grant.h may open namespace crucible::fixy::grant.\n' >&2
+    printf 'fixy_grant_purity: only include/crucible/fixy/_Grant.h may open namespace crucible::fixy::grant.\n' >&2
     printf 'fixy_grant_purity: attack regression fixtures (test/safety_attack/attack_fixy_grant_*.cpp) must carry an explicit "// fixy-CR-09: known residual gap" acknowledgement comment.\n' >&2
 fi
 

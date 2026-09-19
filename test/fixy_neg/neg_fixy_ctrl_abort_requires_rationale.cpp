@@ -20,7 +20,7 @@
 //
 // Expected diagnostic: a GCC template-argument-count error.
 
-#include <crucible/fixy/grant/Ctrl.h>
+#include <crucible/fixy/grant/_Ctrl.h>
 
 namespace ctrl = crucible::fixy::grant::ctrl;
 

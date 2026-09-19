@@ -13,8 +13,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Grant.h>
-#include <crucible/fixy/grant/Ctrl.h>
+#include <crucible/fixy/_Grant.h>
+#include <crucible/fixy/grant/_Ctrl.h>
 #include <crucible/fixy/spawn/JoinPolicy.h>
 
 #include <cstddef>

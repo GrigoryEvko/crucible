@@ -3,7 +3,7 @@
 // under the project warning flags, and adds the cross-header assertions
 // neither header can make about itself.
 
-#include <crucible/fixy/grant/Ctrl.h>
+#include <crucible/fixy/grant/_Ctrl.h>
 #include <crucible/fixy/ctrl/Throws.h>
 
 #include <type_traits>

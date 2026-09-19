@@ -19,7 +19,7 @@
 // Expected diagnostic: constraints not satisfied /
 // DeclassificationPolicy / secret_policy_base / no matching function.
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 
 namespace gr = crucible::fixy::grant;
 

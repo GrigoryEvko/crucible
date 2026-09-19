@@ -16,7 +16,7 @@
 //
 // Expected diagnostic: the static_assert message below (IsGrantTag).
 
-#include <crucible/fixy/grant/Dispatch.h>
+#include <crucible/fixy/grant/_Dispatch.h>
 
 namespace gr = crucible::fixy::grant;
 namespace disp = crucible::fixy::grant::dispatch;

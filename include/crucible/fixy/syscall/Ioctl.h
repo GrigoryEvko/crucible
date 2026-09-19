@@ -15,7 +15,7 @@
 // nothing diagnoses it.
 
 #include <crucible/fixy/syscall/Family.h>
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 

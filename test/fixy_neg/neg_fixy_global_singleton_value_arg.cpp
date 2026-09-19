@@ -13,7 +13,7 @@
 // Expected diagnostic: a GCC "expected a type" / "type/value mismatch"
 // / "invalid" template-argument error.
 
-#include <crucible/fixy/grant/Global.h>
+#include <crucible/fixy/grant/_Global.h>
 
 namespace glb = crucible::fixy::grant::global;
 

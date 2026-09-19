@@ -4,7 +4,7 @@
 // with -Wframe-larger-than=4096. A binding needs a grant here only once it
 // exceeds that budget.
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
 
 #include <cstddef>

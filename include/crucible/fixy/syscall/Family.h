@@ -8,7 +8,7 @@
 // header or a per-syscall identity. Declaring both is a duplicate engagement
 // on the one axis and is rejected.
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 

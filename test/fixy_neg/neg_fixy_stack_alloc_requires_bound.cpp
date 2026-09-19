@@ -12,7 +12,7 @@
 //
 // Expected diagnostic: a GCC template-argument-count error.
 
-#include <crucible/fixy/grant/Stack.h>
+#include <crucible/fixy/grant/_Stack.h>
 
 namespace stk = crucible::fixy::grant::stack;
 

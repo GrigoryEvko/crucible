@@ -12,7 +12,7 @@
 // Expected diagnostic: a GCC "expected a type" / "type/value mismatch"
 // / "invalid" template-argument error.
 
-#include <crucible/fixy/grant/Stdio.h>
+#include <crucible/fixy/grant/_Stdio.h>
 
 namespace sio = crucible::fixy::grant::stdio;
 

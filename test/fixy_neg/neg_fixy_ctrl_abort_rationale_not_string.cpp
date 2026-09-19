@@ -20,7 +20,7 @@
 // Expected diagnostic: a GCC class-template-argument-deduction /
 // conversion error naming the rationale type or an int→class conversion.
 
-#include <crucible/fixy/grant/Ctrl.h>
+#include <crucible/fixy/grant/_Ctrl.h>
 
 namespace ctrl = crucible::fixy::grant::ctrl;
 

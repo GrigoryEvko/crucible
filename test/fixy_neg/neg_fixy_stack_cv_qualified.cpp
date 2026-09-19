@@ -11,7 +11,7 @@
 //
 // Expected diagnostic: the static_assert message below (IsGrantTag).
 
-#include <crucible/fixy/grant/Stack.h>
+#include <crucible/fixy/grant/_Stack.h>
 
 namespace gr = crucible::fixy::grant;
 namespace stk = crucible::fixy::grant::stack;

@@ -3,7 +3,7 @@
 #include <crucible/fixy/syscall/Family.h>
 #include <crucible/fixy/syscall/Per.h>
 #include <crucible/fixy/syscall/Ioctl.h>
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Fp.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>

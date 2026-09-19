@@ -8,8 +8,8 @@
 // reject it by searching the type tree rather than trusting the
 // declaration.
 
-#include <crucible/fixy/Grant.h>
-#include <crucible/fixy/grant/Ctrl.h>
+#include <crucible/fixy/_Grant.h>
+#include <crucible/fixy/grant/_Ctrl.h>
 
 #include <tuple>
 #include <type_traits>

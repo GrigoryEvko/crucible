@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/Path.h>
 #include <crucible/safety/source/Path.h>

@@ -8,7 +8,7 @@
 
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Secret.h>
 

@@ -1,7 +1,7 @@
 // Sentinel TU: compiles the header under the project warning flags so its
 // self-test block runs.
 
-#include <crucible/fixy/grant/Dispatch.h>
+#include <crucible/fixy/grant/_Dispatch.h>
 
 #include <type_traits>
 

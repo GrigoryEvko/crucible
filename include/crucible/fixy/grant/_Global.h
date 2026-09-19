@@ -4,7 +4,7 @@
 // tag collapse to a single grant and become indistinguishable to any
 // consumer that walks the grants of a binding.
 
-#include <crucible/fixy/Grant.h>
+#include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
 
 #include <type_traits>
