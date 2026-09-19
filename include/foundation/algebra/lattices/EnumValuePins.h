@@ -10,13 +10,18 @@
 //
 // So a new enumerator takes the next free value, or for the enums that pack a
 // group into the high nibble the next free value within its group, and extends
-// the pins here in the same change.  A deliberate renumber is a format
+// the table for its enum in the same change.  A deliberate renumber is a format
 // migration, and these assertions are what force that conversation before it
 // ships.
 //
+// Each enum is one hand-written table and one call.  The table is the format:
+// it is written here, by hand, and never derived from the enum, because a
+// derived table would agree with any renumber and pin nothing.  The call is
+// what compares the two.
+//
 // Only enums whose lattice was extracted to foundation are pinned here.
 // The roster is the set of pinned enums itself; a new lattice enum whose
-// value reaches a cache key adds its own pins below.
+// value reaches a cache key adds its own table and call below.
 
 #include <foundation/algebra/lattices/AllocClassLattice.h>
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
@@ -31,140 +36,188 @@
 #include <foundation/algebra/lattices/VendorLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <meta>
+#include <span>
+#include <string_view>
 #include <type_traits>
 
 namespace foundation::algebra::lattices::detail::found_046_enum_value_pins {
 
-static_assert(std::is_same_v<std::underlying_type_t<HotPathTier>, std::uint8_t>,
-              "HotPathTier underlying type drifted from uint8_t.");
-static_assert(hot_path_tier_count == 3, "HotPathTier cardinality drifted from 3.");
-static_assert(static_cast<std::uint8_t>(HotPathTier::Cold) == 0,
-              "HotPathTier::Cold drifted, which invalidates every cache slot keyed on it.");
-static_assert(static_cast<std::uint8_t>(HotPathTier::Warm) == 1, "HotPathTier::Warm drifted.");
-static_assert(static_cast<std::uint8_t>(HotPathTier::Hot) == 2, "HotPathTier::Hot drifted.");
+// One expected enumerator: the identifier as it is written, and the value
+// the persisted format pins it to.
+struct enum_pin {
+    std::string_view name;
+    std::uint8_t value;
+};
 
-static_assert(std::is_same_v<std::underlying_type_t<DetSafeTier>, std::uint8_t>,
-              "DetSafeTier underlying type drifted from uint8_t.");
-static_assert(det_safe_tier_count == 7, "DetSafeTier cardinality drifted from 7.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::NonDeterministicSyscall) == 0,
-              "DetSafeTier::NonDeterministicSyscall drifted.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::FilesystemMtime) == 1, "DetSafeTier::FilesystemMtime drifted.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::EntropyRead) == 2, "DetSafeTier::EntropyRead drifted.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::WallClockRead) == 3, "DetSafeTier::WallClockRead drifted.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::MonotonicClockRead) == 4,
-              "DetSafeTier::MonotonicClockRead drifted.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::PhiloxRng) == 5, "DetSafeTier::PhiloxRng drifted.");
-static_assert(static_cast<std::uint8_t>(DetSafeTier::Pure) == 6, "DetSafeTier::Pure drifted.");
+// True when the enumerators of E are exactly the entries of `expected`.
+//
+// The walk runs over the enum and looks each enumerator up by identifier,
+// so a renamed enumerator and a moved value are both caught.  The size
+// comparison catches the other direction, an entry that no enumerator
+// answers to, which the walk alone cannot see.  The distinctness pass
+// catches a table that names one enumerator twice, which would leave a
+// second entry unread while the sizes still agreed.
+//
+// A failure says which enum drifted and not which enumerator, where the
+// twelve hand-written assertion blocks this replaces said both.  The
+// table sits next to the call, so the comparison the reader has to make
+// is on one screen.
+template <class E>
+[[nodiscard]] consteval bool pin_enum(std::span<const enum_pin> expected) noexcept {
+    static_assert(std::is_same_v<std::underlying_type_t<E>, std::uint8_t>,
+                  "A pinned enum must have uint8_t as its underlying type.  The pinned values reach a "
+                  "cache key one byte at a time, so a wider enum would key on a value this table cannot "
+                  "express.");
 
-static_assert(std::is_same_v<std::underlying_type_t<Tolerance>, std::uint8_t>,
-              "Tolerance underlying type drifted from uint8_t.");
-static_assert(tolerance_count == 7, "Tolerance cardinality drifted from 7.");
-static_assert(static_cast<std::uint8_t>(Tolerance::RELAXED) == 0, "Tolerance::RELAXED drifted.");
-static_assert(static_cast<std::uint8_t>(Tolerance::ULP_INT8) == 1, "Tolerance::ULP_INT8 drifted.");
-static_assert(static_cast<std::uint8_t>(Tolerance::ULP_FP8) == 2, "Tolerance::ULP_FP8 drifted.");
-static_assert(static_cast<std::uint8_t>(Tolerance::ULP_FP16) == 3, "Tolerance::ULP_FP16 drifted.");
-static_assert(static_cast<std::uint8_t>(Tolerance::ULP_FP32) == 4, "Tolerance::ULP_FP32 drifted.");
-static_assert(static_cast<std::uint8_t>(Tolerance::ULP_FP64) == 5, "Tolerance::ULP_FP64 drifted.");
-static_assert(static_cast<std::uint8_t>(Tolerance::BITEXACT) == 6, "Tolerance::BITEXACT drifted.");
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    if (enumerators.size() != expected.size()) return false;
 
-static_assert(std::is_same_v<std::underlying_type_t<VendorBackend>, std::uint8_t>,
-              "VendorBackend underlying type drifted from uint8_t.");
-static_assert(vendor_backend_count == 8, "VendorBackend cardinality drifted from 8.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::None) == 0, "VendorBackend::None drifted (⊥ sentinel).");
-static_assert(static_cast<std::uint8_t>(VendorBackend::CPU) == 1, "VendorBackend::CPU drifted.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::NV) == 2, "VendorBackend::NV drifted.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::AMD) == 3, "VendorBackend::AMD drifted.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::TPU) == 4, "VendorBackend::TPU drifted.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::TRN) == 5, "VendorBackend::TRN drifted.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::CER) == 6, "VendorBackend::CER drifted.");
-static_assert(static_cast<std::uint8_t>(VendorBackend::Portable) == 255,
-              "VendorBackend::Portable drifted (⊤ sentinel).");
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        for (std::size_t j = i + 1; j < expected.size(); ++j) {
+            if (expected[i].name == expected[j].name) return false;
+        }
+    }
 
-static_assert(std::is_same_v<std::underlying_type_t<BarrierStrength>, std::uint8_t>,
-              "BarrierStrength underlying type drifted from uint8_t.");
-static_assert(::foundation::algebra::lattices::detail::barrier_strength_lattice_self_test::barrier_strength_count == 7,
-              "BarrierStrength cardinality drifted from 7.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::None) == 0, "BarrierStrength::None drifted.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::CompilerBarrier) == 1,
-              "BarrierStrength::CompilerBarrier drifted.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::AcquireLoad) == 2, "BarrierStrength::AcquireLoad drifted.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::ReleaseStore) == 3, "BarrierStrength::ReleaseStore drifted.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::AcqRel) == 4, "BarrierStrength::AcqRel drifted.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::SeqCst) == 5, "BarrierStrength::SeqCst drifted.");
-static_assert(static_cast<std::uint8_t>(BarrierStrength::FullFence) == 6, "BarrierStrength::FullFence drifted.");
+    bool pinned = true;
+// An expansion statement unrolls into successive scopes that each
+// declare the same induction variable, so -Wshadow fires once per
+// iteration.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr std::string_view name = std::meta::identifier_of(en);
+        constexpr auto value = static_cast<std::uint8_t>([:en:]);
+        bool matched = false;
+        for (const enum_pin& pin : expected) {
+            if (pin.name == name) {
+                matched = pin.value == value;
+                break;
+            }
+        }
+        pinned = pinned && matched;
+    }
+#pragma GCC diagnostic pop
+    return pinned;
+}
 
-static_assert(std::is_same_v<std::underlying_type_t<MemoryScope>, std::uint8_t>,
-              "MemoryScope underlying type drifted from uint8_t.");
-static_assert(memory_scope_count == 8, "MemoryScope cardinality drifted from 8.");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Thread) == 0x00,
-              "MemoryScope::Thread drifted from 0x00 (⊥ sentinel).");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Warp) == 0x10, "MemoryScope::Warp drifted from 0x10 (GPU trunk).");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Cta) == 0x11, "MemoryScope::Cta drifted from 0x11.");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Cluster) == 0x12, "MemoryScope::Cluster drifted from 0x12.");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Gpu) == 0x13, "MemoryScope::Gpu drifted from 0x13.");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Inner) == 0x20,
-              "MemoryScope::Inner drifted from 0x20 (ARM-host trunk).");
-static_assert(static_cast<std::uint8_t>(MemoryScope::Outer) == 0x21, "MemoryScope::Outer drifted from 0x21.");
-static_assert(static_cast<std::uint8_t>(MemoryScope::System) == 0xFF,
-              "MemoryScope::System drifted from 0xFF (⊤ sentinel).");
+inline constexpr std::array<enum_pin, 3> hot_path_tier_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
+static_assert(pin_enum<HotPathTier>(hot_path_tier_pins), "HotPathTier drifted from hot_path_tier_pins.");
 
-static_assert(std::is_same_v<std::underlying_type_t<CipherTierTag>, std::uint8_t>,
-              "CipherTierTag underlying type drifted from uint8_t.");
-static_assert(cipher_tier_tag_count == 3, "CipherTierTag cardinality drifted from 3.");
-static_assert(static_cast<std::uint8_t>(CipherTierTag::Cold) == 0, "CipherTierTag::Cold drifted.");
-static_assert(static_cast<std::uint8_t>(CipherTierTag::Warm) == 1, "CipherTierTag::Warm drifted.");
-static_assert(static_cast<std::uint8_t>(CipherTierTag::Hot) == 2, "CipherTierTag::Hot drifted.");
+inline constexpr std::array<enum_pin, 7> det_safe_tier_pins{{{"NonDeterministicSyscall", 0},
+                                                             {"FilesystemMtime", 1},
+                                                             {"EntropyRead", 2},
+                                                             {"WallClockRead", 3},
+                                                             {"MonotonicClockRead", 4},
+                                                             {"PhiloxRng", 5},
+                                                             {"Pure", 6}}};
+static_assert(pin_enum<DetSafeTier>(det_safe_tier_pins), "DetSafeTier drifted from det_safe_tier_pins.");
 
-static_assert(std::is_same_v<std::underlying_type_t<AllocClassTag>, std::uint8_t>,
-              "AllocClassTag underlying type drifted from uint8_t.");
-static_assert(alloc_class_tag_count == 6, "AllocClassTag cardinality drifted from 6.");
-static_assert(static_cast<std::uint8_t>(AllocClassTag::HugePage) == 0, "AllocClassTag::HugePage drifted.");
-static_assert(static_cast<std::uint8_t>(AllocClassTag::Mmap) == 1, "AllocClassTag::Mmap drifted.");
-static_assert(static_cast<std::uint8_t>(AllocClassTag::Heap) == 2, "AllocClassTag::Heap drifted.");
-static_assert(static_cast<std::uint8_t>(AllocClassTag::Arena) == 3, "AllocClassTag::Arena drifted.");
-static_assert(static_cast<std::uint8_t>(AllocClassTag::Pool) == 4, "AllocClassTag::Pool drifted.");
-static_assert(static_cast<std::uint8_t>(AllocClassTag::Stack) == 5, "AllocClassTag::Stack drifted.");
+inline constexpr std::array<enum_pin, 7> tolerance_pins{{{"RELAXED", 0},
+                                                         {"ULP_INT8", 1},
+                                                         {"ULP_FP8", 2},
+                                                         {"ULP_FP16", 3},
+                                                         {"ULP_FP32", 4},
+                                                         {"ULP_FP64", 5},
+                                                         {"BITEXACT", 6}}};
+static_assert(pin_enum<Tolerance>(tolerance_pins), "Tolerance drifted from tolerance_pins.");
 
-static_assert(std::is_same_v<std::underlying_type_t<WaitStrategy>, std::uint8_t>,
-              "WaitStrategy underlying type drifted from uint8_t.");
-static_assert(wait_strategy_count == 6, "WaitStrategy cardinality drifted from 6.");
-static_assert(static_cast<std::uint8_t>(WaitStrategy::Block) == 0, "WaitStrategy::Block drifted.");
-static_assert(static_cast<std::uint8_t>(WaitStrategy::Park) == 1, "WaitStrategy::Park drifted.");
-static_assert(static_cast<std::uint8_t>(WaitStrategy::AcquireWait) == 2, "WaitStrategy::AcquireWait drifted.");
-static_assert(static_cast<std::uint8_t>(WaitStrategy::UmwaitC01) == 3, "WaitStrategy::UmwaitC01 drifted.");
-static_assert(static_cast<std::uint8_t>(WaitStrategy::BoundedSpin) == 4, "WaitStrategy::BoundedSpin drifted.");
-static_assert(static_cast<std::uint8_t>(WaitStrategy::SpinPause) == 5, "WaitStrategy::SpinPause drifted.");
+// None is the bottom sentinel and Portable the top one, which is why the
+// last value is 255 rather than 7.
+inline constexpr std::array<enum_pin, 8> vendor_backend_pins{
+    {{"None", 0}, {"CPU", 1}, {"NV", 2}, {"AMD", 3}, {"TPU", 4}, {"TRN", 5}, {"CER", 6}, {"Portable", 255}}};
+static_assert(pin_enum<VendorBackend>(vendor_backend_pins), "VendorBackend drifted from vendor_backend_pins.");
 
-static_assert(std::is_same_v<std::underlying_type_t<SuspendBehavior>, std::uint8_t>,
-              "SuspendBehavior underlying type drifted from uint8_t.");
-static_assert(suspend_behavior_count == 3, "SuspendBehavior cardinality drifted from 3.");
-static_assert(static_cast<std::uint8_t>(SuspendBehavior::Unknown) == 0, "SuspendBehavior::Unknown drifted.");
-static_assert(static_cast<std::uint8_t>(SuspendBehavior::PausesOnSuspend) == 1,
-              "SuspendBehavior::PausesOnSuspend drifted.");
-static_assert(static_cast<std::uint8_t>(SuspendBehavior::KeepsTicking) == 2, "SuspendBehavior::KeepsTicking drifted.");
+inline constexpr std::array<enum_pin, 7> barrier_strength_pins{{{"None", 0},
+                                                                {"CompilerBarrier", 1},
+                                                                {"AcquireLoad", 2},
+                                                                {"ReleaseStore", 3},
+                                                                {"AcqRel", 4},
+                                                                {"SeqCst", 5},
+                                                                {"FullFence", 6}}};
+static_assert(pin_enum<BarrierStrength>(barrier_strength_pins), "BarrierStrength drifted from "
+                                                                "barrier_strength_pins.");
 
-static_assert(std::is_same_v<std::underlying_type_t<ClockSource>, std::uint8_t>,
-              "ClockSource underlying type drifted from uint8_t.");
-static_assert(clock_source_count == 10, "ClockSource cardinality drifted from 10.");
-static_assert(static_cast<std::uint8_t>(ClockSource::Realtime) == 0, "ClockSource::Realtime drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::Monotonic) == 1, "ClockSource::Monotonic drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::MonotonicRaw) == 2, "ClockSource::MonotonicRaw drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::Boot) == 3, "ClockSource::Boot drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::ThreadCpu) == 4, "ClockSource::ThreadCpu drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::ProcessCpu) == 5, "ClockSource::ProcessCpu drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::TscRaw) == 6, "ClockSource::TscRaw drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::TscSerialized) == 7, "ClockSource::TscSerialized drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::PmuCounter) == 8, "ClockSource::PmuCounter drifted.");
-static_assert(static_cast<std::uint8_t>(ClockSource::PtpHwClock) == 9, "ClockSource::PtpHwClock drifted.");
+// Thread is the bottom sentinel and System the top one.  The middle
+// values pack a trunk into the high nibble: 0x1n is the GPU trunk and
+// 0x2n the ARM-host trunk, so a new scope takes the next free value
+// inside its own trunk.
+inline constexpr std::array<enum_pin, 8> memory_scope_pins{{{"Thread", 0x00},
+                                                            {"Warp", 0x10},
+                                                            {"Cta", 0x11},
+                                                            {"Cluster", 0x12},
+                                                            {"Gpu", 0x13},
+                                                            {"Inner", 0x20},
+                                                            {"Outer", 0x21},
+                                                            {"System", 0xFF}}};
+static_assert(pin_enum<MemoryScope>(memory_scope_pins), "MemoryScope drifted from memory_scope_pins.");
+
+inline constexpr std::array<enum_pin, 3> cipher_tier_tag_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
+static_assert(pin_enum<CipherTierTag>(cipher_tier_tag_pins), "CipherTierTag drifted from cipher_tier_tag_pins.");
+
+inline constexpr std::array<enum_pin, 6> alloc_class_tag_pins{
+    {{"HugePage", 0}, {"Mmap", 1}, {"Heap", 2}, {"Arena", 3}, {"Pool", 4}, {"Stack", 5}}};
+static_assert(pin_enum<AllocClassTag>(alloc_class_tag_pins), "AllocClassTag drifted from alloc_class_tag_pins.");
+
+inline constexpr std::array<enum_pin, 6> wait_strategy_pins{
+    {{"Block", 0}, {"Park", 1}, {"AcquireWait", 2}, {"UmwaitC01", 3}, {"BoundedSpin", 4}, {"SpinPause", 5}}};
+static_assert(pin_enum<WaitStrategy>(wait_strategy_pins), "WaitStrategy drifted from wait_strategy_pins.");
+
+inline constexpr std::array<enum_pin, 3> suspend_behavior_pins{
+    {{"Unknown", 0}, {"PausesOnSuspend", 1}, {"KeepsTicking", 2}}};
+static_assert(pin_enum<SuspendBehavior>(suspend_behavior_pins), "SuspendBehavior drifted from "
+                                                                "suspend_behavior_pins.");
+
+inline constexpr std::array<enum_pin, 10> clock_source_pins{{{"Realtime", 0},
+                                                             {"Monotonic", 1},
+                                                             {"MonotonicRaw", 2},
+                                                             {"Boot", 3},
+                                                             {"ThreadCpu", 4},
+                                                             {"ProcessCpu", 5},
+                                                             {"TscRaw", 6},
+                                                             {"TscSerialized", 7},
+                                                             {"PmuCounter", 8},
+                                                             {"PtpHwClock", 9}}};
+static_assert(pin_enum<ClockSource>(clock_source_pins), "ClockSource drifted from clock_source_pins.");
 
 // Lifetime reached foundation with the OpaqueLifetime band (A10.6).  The
 // old tree carried no pins for it; these pin the values it arrived with.
-static_assert(std::is_same_v<std::underlying_type_t<Lifetime>, std::uint8_t>,
-              "Lifetime underlying type drifted from uint8_t.");
-static_assert(lifetime_count == 3, "Lifetime cardinality drifted from 3.");
-static_assert(static_cast<std::uint8_t>(Lifetime::PER_REQUEST) == 0, "Lifetime::PER_REQUEST drifted.");
-static_assert(static_cast<std::uint8_t>(Lifetime::PER_PROGRAM) == 1, "Lifetime::PER_PROGRAM drifted.");
-static_assert(static_cast<std::uint8_t>(Lifetime::PER_FLEET) == 2, "Lifetime::PER_FLEET drifted.");
+inline constexpr std::array<enum_pin, 3> lifetime_pins{{{"PER_REQUEST", 0}, {"PER_PROGRAM", 1}, {"PER_FLEET", 2}}};
+static_assert(pin_enum<Lifetime>(lifetime_pins), "Lifetime drifted from lifetime_pins.");
+
+// The walk answers no for each way a table and its enum can disagree.
+// Without these, a pin_enum that answered yes for everything would leave
+// all twelve assertions above green and pin nothing.
+namespace pin_enum_self_test {
+
+enum class Probe : std::uint8_t {
+    First = 0,
+    Second = 1,
+    Third = 2
+};
+
+inline constexpr std::array<enum_pin, 3> correct{{{"First", 0}, {"Second", 1}, {"Third", 2}}};
+static_assert(pin_enum<Probe>(correct));
+
+inline constexpr std::array<enum_pin, 3> value_moved{{{"First", 0}, {"Second", 9}, {"Third", 2}}};
+static_assert(!pin_enum<Probe>(value_moved), "A moved value must be caught.");
+
+inline constexpr std::array<enum_pin, 3> renamed{{{"First", 0}, {"Deuxieme", 1}, {"Third", 2}}};
+static_assert(!pin_enum<Probe>(renamed), "A renamed enumerator must be caught.");
+
+inline constexpr std::array<enum_pin, 2> entry_missing{{{"First", 0}, {"Second", 1}}};
+static_assert(!pin_enum<Probe>(entry_missing), "An enumerator the table does not name must be caught.");
+
+inline constexpr std::array<enum_pin, 4> entry_extra{{{"First", 0}, {"Second", 1}, {"Third", 2}, {"Fourth", 3}}};
+static_assert(!pin_enum<Probe>(entry_extra), "An entry no enumerator answers to must be caught.");
+
+inline constexpr std::array<enum_pin, 3> duplicated{{{"First", 0}, {"First", 0}, {"Third", 2}}};
+static_assert(!pin_enum<Probe>(duplicated), "A table that names one enumerator twice must be caught, because "
+                                            "the sizes still agree and one entry goes unread.");
+
+}  // namespace pin_enum_self_test
 
 }  // namespace foundation::algebra::lattices::detail::found_046_enum_value_pins
