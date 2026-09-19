@@ -33,6 +33,7 @@
 #include <foundation/algebra/lattices/ConfLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Enumerate.h>
 #include <fixy/Tags.h>
 
 #include <cstddef>
@@ -137,77 +138,13 @@ enum class Axis : std::uint8_t {
 
 inline constexpr std::size_t axis_count = std::meta::enumerators_of(^^Axis).size();
 
+// The name of an axis is its enumerator identifier, read by reflection,
+// so a new axis is named the moment it is declared.  A value outside
+// the enum yields the sentinel "<unknown Axis>" rather than an empty
+// view, so a caller that prints a corrupt byte sees that it was one.
+// Constexpr rather than consteval so a runtime diagnostic can call it.
 [[nodiscard]] constexpr std::string_view axis_name(Axis axis) noexcept {
-    switch (axis) {
-        case Axis::Type:
-            return "Type";
-        case Axis::Refinement:
-            return "Refinement";
-        case Axis::Usage:
-            return "Usage";
-        case Axis::Effect:
-            return "Effect";
-        case Axis::Security:
-            return "Security";
-        case Axis::Protocol:
-            return "Protocol";
-        case Axis::Lifetime:
-            return "Lifetime";
-        case Axis::Provenance:
-            return "Provenance";
-        case Axis::Trust:
-            return "Trust";
-        case Axis::Representation:
-            return "Representation";
-        case Axis::Observability:
-            return "Observability";
-        case Axis::Complexity:
-            return "Complexity";
-        case Axis::Precision:
-            return "Precision";
-        case Axis::Space:
-            return "Space";
-        case Axis::Overflow:
-            return "Overflow";
-        case Axis::Mutation:
-            return "Mutation";
-        case Axis::Reentrancy:
-            return "Reentrancy";
-        case Axis::Size:
-            return "Size";
-        case Axis::Version:
-            return "Version";
-        case Axis::Staleness:
-            return "Staleness";
-        case Axis::Synchronization:
-            return "Synchronization";
-        case Axis::Regime:
-            return "Regime";
-        case Axis::FpMode:
-            return "FpMode";
-        case Axis::SyscallSurface:
-            return "SyscallSurface";
-        case Axis::ControlFlow:
-            return "ControlFlow";
-        case Axis::CallShape:
-            return "CallShape";
-        case Axis::StackUse:
-            return "StackUse";
-        case Axis::GlobalState:
-            return "GlobalState";
-        case Axis::Stdio:
-            return "Stdio";
-        case Axis::HwInstruction:
-            return "HwInstruction";
-        case Axis::BarrierStrength:
-            return "BarrierStrength";
-        case Axis::SimdIsa:
-            return "SimdIsa";
-        case Axis::MemoryScope:
-            return "MemoryScope";
-        default:
-            return std::string_view{"<unknown Axis>"};
-    }
+    return ::foundation::reflect::enum_name(axis);
 }
 
 // The strict poles that are not a point of a foundation lattice.  Each
@@ -690,19 +627,6 @@ concept IsCallerSupplied = requires {
     return true;
 }
 
-[[nodiscard]] consteval bool every_axis_has_name() noexcept {
-    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : axes) {
-        const auto name = axis_name([:en:]);
-        if (name == std::string_view{"<unknown Axis>"}) return false;
-        if (name.empty()) return false;
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
 [[nodiscard]] consteval std::size_t count_axes_of_shape(Shape shape) noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
     std::size_t count = 0;
@@ -719,9 +643,6 @@ concept IsCallerSupplied = requires {
 static_assert(every_axis_has_traits(), "fixy::Axis: an axis has no axis_traits specialisation, or one that "
                                        "does not classify as exactly one of caller-supplied, strict or "
                                        "derived.  Add the specialisation next to the others above.");
-
-static_assert(every_axis_has_name(), "fixy::axis_name is missing an arm for at least one Axis; add the arm "
-                                     "or the new axis leaks the '<unknown Axis>' sentinel.");
 
 static_assert(std::is_same_v<axis_traits<Axis::Observability>::strict, axis_traits<Axis::Effect>::strict>,
               "Observability's derived pole must round-trip to Effect's strict pole.");

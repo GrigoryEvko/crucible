@@ -84,3 +84,21 @@ fixy_neg_compile_test(neg_mutation_write_once_twice
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set\\(2\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# ── Task #100 (A9): the atom catalog ─────────────────────────────────
+fixy_test(test_atom)
+
+# A cv-qualified atom fails the same-as clause of IsAtom; the compiler
+# names the clause and the two types it compared.
+fixy_neg_compile_test(neg_atom_cv_qualified_rejected
+  "constraints not satisfied"
+  "required for the satisfaction of .IsAtom<G>. \\[with G = const fixy::atom::affine\\]"
+  ".const struct fixy::atom::affine. is not the same as .struct fixy::atom::affine.")
+
+# A final type that derives atom_base but names no axis fails the
+# requires-expression of IsAtom on `G::axis`.
+fixy_neg_compile_test(neg_atom_without_axis_rejected
+  "constraints not satisfied"
+  "required for the satisfaction of .IsAtom<G>."
+  "the required expression .G::axis. is invalid")
+

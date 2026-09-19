@@ -23,7 +23,21 @@ using ::fixy::Shape;
 using ::fixy::Wrapper;
 
 static_assert(::fixy::every_axis_has_traits());
-static_assert(::fixy::every_axis_has_name());
+
+// The name of every axis is the identifier reflection reads off its
+// enumerator, and a value outside the enum yields the sentinel.
+[[nodiscard]] consteval bool every_axis_name_is_its_identifier() noexcept {
+    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : axes) {
+        if (::fixy::axis_name([:en:]) != std::meta::identifier_of(en)) return false;
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_axis_name_is_its_identifier());
+static_assert(::fixy::axis_name(static_cast<Axis>(::fixy::axis_count)) == "<unknown Axis>");
 
 // The pin: the count reflection reads off the enum is the thirty-three
 // the design names.
@@ -113,10 +127,13 @@ static_assert(::fixy::tags::source::X86Pinned::arch == ::fixy::tags::source::Arc
 }  // namespace
 
 int main() {
-    // The name switch is constexpr but not consteval, so one runtime
-    // call keeps it covered by the sanitizers.
+    // The name walk is constexpr but not consteval, so one runtime
+    // call keeps it covered by the sanitizers, and one runtime call
+    // with a value outside the enum covers the sentinel arm.
     volatile auto axis = Axis::Regime;
     const std::string_view name = ::fixy::axis_name(axis);
     if (name != "Regime") return 1;
+    volatile auto outside = static_cast<Axis>(::fixy::axis_count);
+    if (::fixy::axis_name(outside) != "<unknown Axis>") return 2;
     return 0;
 }

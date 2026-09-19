@@ -193,6 +193,9 @@ foundation_neg_compile_test(neg_permission_fork_without_bg
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
 
+# ── Task #100 (A9): the lift from a marker to its effect row ─────────
+foundation_test(test_lift)
+
 # ── Task #104 (A10.4) part 2: the folded permission mints ────────────
 #
 # Each permission mint is one template gated by the shape of its
