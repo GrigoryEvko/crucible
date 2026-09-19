@@ -675,46 +675,45 @@ inline constexpr bool is_diagnostic_class_v = std::is_base_of_v<tag_base, T> && 
 
 namespace detail {
 
+// One selector per text field.  Each reads its member directly, so a tag
+// that declares no such member is a compile error at the read.  These
+// three are the whole of what the accessors below and the catalog arrays
+// further down vary over, and each of those walks is written once.
+inline constexpr auto select_name = []<typename Tag>() consteval { return std::string_view{Tag::name}; };
+inline constexpr auto select_description = []<typename Tag>() consteval { return std::string_view{Tag::description}; };
+inline constexpr auto select_remediation = []<typename Tag>() consteval { return std::string_view{Tag::remediation}; };
+
 // The direct form constrains the variable template itself with
 // `requires is_diagnostic_class_v<T>`. A requires-clause failure on a variable
 // template reports in compiler-chosen wording, which drifts between releases.
-// Routing through a helper struct puts the wording under our control.
-template <typename T, bool IsTag>
-struct accessor_check;
-
-template <typename T>
-struct accessor_check<T, true> {
-    static constexpr std::string_view name = T::name;
-    static constexpr std::string_view description = T::description;
-    static constexpr std::string_view remediation = T::remediation;
-};
-
-template <typename T>
-struct accessor_check<T, false> {
+// Routing through this function puts the wording under our control.  The
+// if constexpr keeps the read away from a type that declares no such
+// member, which is the work the false arm of the two-arm struct did.
+template <typename T, auto Select>
+[[nodiscard]] consteval std::string_view accessor_field_() noexcept {
     static_assert(is_diagnostic_class_v<T>, "foundation::diag [DiagnosticAccessor_NonTag]: "
                                             "diagnostic_name_v / diagnostic_description_v / "
                                             "diagnostic_remediation_v requires T to be derived from "
                                             "foundation::diag::tag_base.  See foundation/diag/Catalog.h's catalog "
                                             "for the shipped tag classes; user-extensions inherit "
                                             "tag_base and provide constexpr name/description/remediation.");
-
-    static constexpr std::string_view name = "";
-    static constexpr std::string_view description = "";
-    static constexpr std::string_view remediation = "";
-};
+    if constexpr (is_diagnostic_class_v<T>) {
+        return Select.template operator()<T>();
+    } else {
+        return {};
+    }
+}
 
 }  // namespace detail
 
 template <typename T>
-inline constexpr std::string_view diagnostic_name_v = detail::accessor_check<T, is_diagnostic_class_v<T>>::name;
+inline constexpr std::string_view diagnostic_name_v = detail::accessor_field_<T, detail::select_name>();
 
 template <typename T>
-inline constexpr std::string_view diagnostic_description_v =
-    detail::accessor_check<T, is_diagnostic_class_v<T>>::description;
+inline constexpr std::string_view diagnostic_description_v = detail::accessor_field_<T, detail::select_description>();
 
 template <typename T>
-inline constexpr std::string_view diagnostic_remediation_v =
-    detail::accessor_check<T, is_diagnostic_class_v<T>>::remediation;
+inline constexpr std::string_view diagnostic_remediation_v = detail::accessor_field_<T, detail::select_remediation>();
 
 template <typename DiagnosticClass, typename... Context>
     requires is_diagnostic_class_v<DiagnosticClass>
@@ -816,6 +815,41 @@ static_assert(every_category_names_a_tag(), "A Category enumerator names no tag:
                                             "Declare the tag struct above the enum, spelled exactly as the "
                                             "enumerator, or remove the enumerator.");
 
+// True when some Category enumerator spells `identifier`.
+[[nodiscard]] consteval bool category_names_(std::string_view identifier) noexcept {
+    for (const auto en : std::meta::enumerators_of(^^Category)) {
+        if (std::meta::identifier_of(en) == identifier) return true;
+    }
+    return false;
+}
+
+// The walk above runs from the enum to the tags. This one runs the other
+// way, over the tag classes declared directly in foundation::diag. A tag
+// written above the enum and then forgotten in it reaches no Category,
+// so tag_of_t and category_of_v never name it and the three accessors
+// never answer with its text. Nothing said so before this check.
+//
+// The walk reads the namespace at this point in the header, which is
+// after every shipped tag and after the enum. A user extension declared
+// in a later header is a different thing: the Category enum is closed,
+// and such a tag is meant to have no enumerator.
+[[nodiscard]] consteval bool every_tag_names_a_category() noexcept {
+    for (const auto m : std::meta::members_of(^^::foundation::diag, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
+        if (m == ^^tag_base || !std::meta::is_base_of_type(^^tag_base, m)) continue;
+        if (!std::meta::has_identifier(m)) continue;
+        if (!category_names_(std::meta::identifier_of(m))) return false;
+    }
+    return true;
+}
+
+static_assert(every_tag_names_a_category(), "A tag class declared in foundation::diag has no Category "
+                                            "enumerator. The tag is then unreachable through tag_of_t, "
+                                            "category_of_v, name_of, description_of and remediation_of. "
+                                            "Append an enumerator spelled exactly as the class, at the next "
+                                            "free value, or move the class out of foundation::diag if it is "
+                                            "meant to stay outside the catalog.");
+
 }  // namespace detail
 
 // The tuple of tag types at the enumerators' positions, derived from the
@@ -884,31 +918,22 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
 
 namespace detail {
 
-// The three text fields of every tag, at the tag's Category index, derived
-// from the tuple. An accessor indexes one of these with a range check, so
-// a value cast in from an out-of-range integer answers with the sentinel
-// rather than reading past the array.
-template <std::size_t... Is>
-[[nodiscard]] consteval auto catalog_names_impl(std::index_sequence<Is...>) noexcept
+// One text field of every tag, at the tag's Category index, derived from
+// the tuple. Select says which field, so the three arrays share one walk
+// rather than repeating it once per field. An accessor indexes one of
+// these with a range check, so a value cast in from an out-of-range
+// integer answers with the sentinel rather than reading past the array.
+template <auto Select, std::size_t... Is>
+[[nodiscard]] consteval auto catalog_fields_impl(std::index_sequence<Is...>) noexcept
     -> std::array<std::string_view, sizeof...(Is)> {
-    return {std::tuple_element_t<Is, Catalog>::name...};
+    return {Select.template operator()<std::tuple_element_t<Is, Catalog>>()...};
 }
 
-template <std::size_t... Is>
-[[nodiscard]] consteval auto catalog_descriptions_impl(std::index_sequence<Is...>) noexcept
-    -> std::array<std::string_view, sizeof...(Is)> {
-    return {std::tuple_element_t<Is, Catalog>::description...};
-}
-
-template <std::size_t... Is>
-[[nodiscard]] consteval auto catalog_remediations_impl(std::index_sequence<Is...>) noexcept
-    -> std::array<std::string_view, sizeof...(Is)> {
-    return {std::tuple_element_t<Is, Catalog>::remediation...};
-}
-
-inline constexpr auto catalog_names_v = catalog_names_impl(std::make_index_sequence<catalog_size>{});
-inline constexpr auto catalog_descriptions_v = catalog_descriptions_impl(std::make_index_sequence<catalog_size>{});
-inline constexpr auto catalog_remediations_v = catalog_remediations_impl(std::make_index_sequence<catalog_size>{});
+inline constexpr auto catalog_names_v = catalog_fields_impl<select_name>(std::make_index_sequence<catalog_size>{});
+inline constexpr auto catalog_descriptions_v =
+    catalog_fields_impl<select_description>(std::make_index_sequence<catalog_size>{});
+inline constexpr auto catalog_remediations_v =
+    catalog_fields_impl<select_remediation>(std::make_index_sequence<catalog_size>{});
 
 inline constexpr std::string_view unknown_category_sentinel{"<unknown Category>"};
 
