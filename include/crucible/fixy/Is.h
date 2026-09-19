@@ -10,34 +10,34 @@
 // delegates to the substrate concept, while the matching traits and slot
 // extractors come across as plain using-declarations.
 
-#include <crucible/safety/IsAllocClass.h>
+#include <crucible/safety/_IsAllocClass.h>
 #include <crucible/safety/IsBarrierGuarded.h>
 #include <crucible/safety/IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
 #include <crucible/safety/IsBudgeted.h>
-#include <crucible/safety/IsCipherTier.h>
+#include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsClockSource.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/IsConsumerHandle.h>
 #include <crucible/safety/IsCpuPinned.h>
 #include <crucible/safety/IsCrash.h>
-#include <crucible/safety/IsDetSafe.h>
+#include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
-#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/IsHw.h>
 #include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/IsLinear.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsNumaPlacement.h>
-#include <crucible/safety/IsNumericalTier.h>
-#include <crucible/safety/IsOpaqueLifetime.h>
+#include <crucible/safety/_IsNumericalTier.h>
+#include <crucible/safety/_IsOpaqueLifetime.h>
 #include <crucible/safety/IsOwnedMmap.h>
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 #include <crucible/safety/IsProducerHandle.h>
 #include <crucible/safety/IsProgress.h>
-#include <crucible/safety/IsRecipeSpec.h>
+#include <crucible/safety/_IsRecipeSpec.h>
 #include <crucible/safety/IsReduceInto.h>
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>

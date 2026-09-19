@@ -12,7 +12,7 @@
 //
 // [GCC-WRAPPER-TEXT] — constructor parameter-type mismatch.
 
-#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/_RecipeSpec.h>
 
 using namespace crucible::safety;
 

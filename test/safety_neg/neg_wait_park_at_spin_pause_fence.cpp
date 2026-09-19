@@ -31,7 +31,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-tier flow.
 
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 
 #include <utility>
 

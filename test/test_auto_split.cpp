@@ -1,10 +1,10 @@
 #include <crucible/concurrent/AutoSplit.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/HotPath.h>
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_HotPath.h>
+#include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 
 #include <algorithm>
 #include <atomic>

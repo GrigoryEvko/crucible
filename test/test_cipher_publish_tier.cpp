@@ -10,7 +10,7 @@
 
 #include <crucible/Cipher.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 #include "test_assert.h"
 
 #include <cstdio>

@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 #include <utility>
 
 using namespace crucible::safety;

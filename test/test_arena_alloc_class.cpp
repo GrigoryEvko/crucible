@@ -12,7 +12,7 @@
 // than it is.
 
 #include <crucible/Arena.h>
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 
 #include "test_assert.h"
 

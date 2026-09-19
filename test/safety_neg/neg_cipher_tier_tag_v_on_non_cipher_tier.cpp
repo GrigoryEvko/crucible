@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsCipherTier.h>
+#include <crucible/safety/_IsCipherTier.h>
 
 int main() {
     auto t = crucible::safety::extract::cipher_tier_tag_v<int>;

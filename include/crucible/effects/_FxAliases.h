@@ -12,7 +12,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/Progress.h>
 
 #include <type_traits>

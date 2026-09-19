@@ -6,7 +6,7 @@
 #include <crucible/Vigil.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include "test_abort_probe.h"

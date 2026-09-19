@@ -21,7 +21,7 @@
 //
 // [GCC-WRAPPER-TEXT] — assignment-operator type-mismatch rejection.
 
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 
 using namespace crucible::safety;
 

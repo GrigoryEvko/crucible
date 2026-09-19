@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsRecipeSpec.h>
+#include <crucible/safety/_IsRecipeSpec.h>
 
 int main() {
     using V = crucible::safety::extract::recipe_spec_value_t<int>;

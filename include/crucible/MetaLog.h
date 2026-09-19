@@ -19,10 +19,10 @@
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 #include <crucible/warden/Registry.h>
 #include <crucible/safety/_Decide.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 #include <crucible/safety/HugePageBuffer.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>

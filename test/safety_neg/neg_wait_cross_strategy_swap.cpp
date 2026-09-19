@@ -14,7 +14,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 #include <utility>
 
 using namespace crucible::safety;

@@ -9,8 +9,8 @@
 // opts in here instead.
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/AllocClass.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_AllocClass.h>
+#include <crucible/safety/_HotPath.h>
 #include <crucible/safety/ResidencyHeat.h>
 
 namespace crucible::effects {

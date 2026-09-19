@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 
 using namespace crucible::safety;
 

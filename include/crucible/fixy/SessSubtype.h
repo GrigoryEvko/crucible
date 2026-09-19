@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 // Ships is_subsort specialisations and no names. Without it the primary
 // template answers false for every payload pair.
 #include <crucible/sessions/SessionPayloadSubsort.h>

@@ -10,7 +10,7 @@
 // namespace below with the using declarations Arena needs. Naming one entity
 // from two using declarations in one namespace is not a redeclaration, so the
 // umbrella's own declarations stay compatible.
-#include "safety/AllocClass.h"
+#include "safety/_AllocClass.h"
 #include "safety/_Decide.h"
 #include "safety/_Mutation.h"
 #include "safety/_Post.h"

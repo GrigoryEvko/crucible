@@ -19,7 +19,7 @@
 // SOUNDNESS REGRESSION.  Investigate immediately.
 
 #include <crucible/effects/_Computation.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = crucible::effects;

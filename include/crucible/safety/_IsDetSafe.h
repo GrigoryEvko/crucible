@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/_DetSafe.h>
 
 #include <type_traits>
 

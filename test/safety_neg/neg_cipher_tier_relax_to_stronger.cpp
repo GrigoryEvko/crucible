@@ -25,7 +25,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 
 using namespace crucible::safety;
 

@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsDetSafe.h>
+#include <crucible/safety/_IsDetSafe.h>
 
 int main() {
     using V = crucible::safety::extract::det_safe_value_t<int>;

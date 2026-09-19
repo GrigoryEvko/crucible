@@ -28,7 +28,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-tier flow.
 
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 
 #include <utility>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 
 #include <type_traits>
 

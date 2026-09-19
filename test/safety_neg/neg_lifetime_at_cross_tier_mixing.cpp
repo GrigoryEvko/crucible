@@ -24,7 +24,7 @@
 // identity, which is a structural C++ property rather than a
 // framework invariant.
 
-#include <crucible/algebra/lattices/LifetimeLattice.h>
+#include <crucible/algebra/lattices/_LifetimeLattice.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -14,7 +14,7 @@
 #include <crucible/effects/EffectRowProjection.h>
 #include <crucible/effects/Effects.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 #include <crucible/effects/OsUniverse.h>
 #include <crucible/effects/Resources.h>
 

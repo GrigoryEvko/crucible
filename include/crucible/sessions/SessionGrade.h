@@ -5,11 +5,11 @@
 #include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/NumaPlacement.h>
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/sessions/Session.h>
 

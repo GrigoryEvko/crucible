@@ -18,7 +18,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/_DetSafe.h>
 #include <utility>
 
 using namespace crucible::safety;

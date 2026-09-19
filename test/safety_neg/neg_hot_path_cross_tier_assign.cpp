@@ -18,7 +18,7 @@
 //
 // [GCC-WRAPPER-TEXT] — assignment-operator type-mismatch rejection.
 
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 
 using namespace crucible::safety;
 

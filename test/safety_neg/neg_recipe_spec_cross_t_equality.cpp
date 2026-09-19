@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/_RecipeSpec.h>
 
 using namespace crucible::safety;
 

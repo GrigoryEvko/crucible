@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 
 #include <type_traits>
 

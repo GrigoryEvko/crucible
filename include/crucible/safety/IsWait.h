@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 
 #include <type_traits>
 

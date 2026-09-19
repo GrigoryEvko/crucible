@@ -6,9 +6,9 @@
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Stale.h>
-#include <crucible/safety/HotPath.h>
-#include <crucible/safety/DetSafe.h>
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_HotPath.h>
+#include <crucible/safety/_DetSafe.h>
+#include <crucible/safety/_AllocClass.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/permissions/_Permission.h>
 

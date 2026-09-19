@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 #include <utility>
 
 using namespace crucible::safety;

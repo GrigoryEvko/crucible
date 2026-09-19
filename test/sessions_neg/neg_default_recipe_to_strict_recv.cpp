@@ -5,7 +5,7 @@
 // strict receiver must see a type-pinned producer certificate before
 // cross-vendor numerics CI ever runs.
 
-#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/_RecipeSpec.h>
 #include <crucible/sessions/SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;

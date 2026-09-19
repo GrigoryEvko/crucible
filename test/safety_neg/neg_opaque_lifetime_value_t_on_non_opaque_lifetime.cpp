@@ -6,7 +6,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsOpaqueLifetime.h>
+#include <crucible/safety/_IsOpaqueLifetime.h>
 
 int main() {
     using V = crucible::safety::extract::opaque_lifetime_value_t<int>;

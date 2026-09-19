@@ -2,7 +2,7 @@
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/diag/RowHashFold.h>
 #include "test_assert.h"

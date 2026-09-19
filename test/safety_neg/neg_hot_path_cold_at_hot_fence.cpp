@@ -50,7 +50,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-tier flow.
 
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 
 #include <utility>
 

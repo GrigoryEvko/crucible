@@ -8,7 +8,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsNumericalTier.h>
+#include <crucible/safety/_IsNumericalTier.h>
 
 int main() {
     // bare int is not a NumericalTier specialisation.

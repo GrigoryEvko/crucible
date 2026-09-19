@@ -13,15 +13,15 @@
 #include <crucible/safety/diag/CheatProbe.h>
 
 #include <crucible/safety/IsBudgeted.h>
-#include <crucible/safety/IsCipherTier.h>
+#include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/IsCrash.h>
-#include <crucible/safety/IsDetSafe.h>
+#include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/IsNumaPlacement.h>
-#include <crucible/safety/IsNumericalTier.h>
-#include <crucible/safety/IsOpaqueLifetime.h>
-#include <crucible/safety/IsRecipeSpec.h>
+#include <crucible/safety/_IsNumericalTier.h>
+#include <crucible/safety/_IsOpaqueLifetime.h>
+#include <crucible/safety/_IsRecipeSpec.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsVendor.h>
 

@@ -34,7 +34,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-tier flow.
 
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 
 #include <utility>
 

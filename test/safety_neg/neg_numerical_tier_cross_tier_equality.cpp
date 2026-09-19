@@ -20,7 +20,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 
 using namespace crucible::safety;
 

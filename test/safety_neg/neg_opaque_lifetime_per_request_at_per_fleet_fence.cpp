@@ -51,7 +51,7 @@
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
-#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/_OpaqueLifetime.h>
 
 #include <utility>
 

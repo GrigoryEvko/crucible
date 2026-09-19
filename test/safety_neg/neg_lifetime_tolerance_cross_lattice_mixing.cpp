@@ -19,7 +19,7 @@
 // [GCC-WRAPPER-TEXT] — strong-enum type-mismatch rejection.  Same
 // rationale as the other two cross-mixing tests.
 
-#include <crucible/algebra/lattices/LifetimeLattice.h>
+#include <crucible/algebra/lattices/_LifetimeLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 using namespace crucible::algebra::lattices;

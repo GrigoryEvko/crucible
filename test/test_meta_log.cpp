@@ -2,7 +2,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/Platform.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 
 #include "test_assert.h"
 

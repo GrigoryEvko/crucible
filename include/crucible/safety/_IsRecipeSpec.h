@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/_RecipeSpec.h>
 
 #include <type_traits>
 

@@ -29,7 +29,7 @@
 // explicit without subverting `enum class`.
 
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
-#include <crucible/algebra/lattices/LifetimeLattice.h>
+#include <crucible/algebra/lattices/_LifetimeLattice.h>
 
 using namespace crucible::algebra::lattices;
 

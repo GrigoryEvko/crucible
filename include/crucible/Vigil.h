@@ -30,7 +30,7 @@
 #include <crucible/bridges/MachineSessionBridge.h>
 #include <crucible/bridges/VigilModeHandle.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>

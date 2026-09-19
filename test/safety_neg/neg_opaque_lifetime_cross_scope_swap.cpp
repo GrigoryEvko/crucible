@@ -15,7 +15,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/_OpaqueLifetime.h>
 #include <utility>
 
 using namespace crucible::safety;

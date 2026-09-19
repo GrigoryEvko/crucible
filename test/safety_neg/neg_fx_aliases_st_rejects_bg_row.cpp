@@ -8,7 +8,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 
 template <typename R>
     requires ::crucible::effects::IsST<R>

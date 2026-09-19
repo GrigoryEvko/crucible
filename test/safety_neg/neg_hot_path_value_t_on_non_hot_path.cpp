@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/_IsHotPath.h>
 
 int main() {
     using V = crucible::safety::extract::hot_path_value_t<int>;

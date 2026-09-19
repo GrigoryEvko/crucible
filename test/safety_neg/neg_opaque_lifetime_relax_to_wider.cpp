@@ -22,7 +22,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/_OpaqueLifetime.h>
 
 using namespace crucible::safety;
 

@@ -22,7 +22,7 @@
 #include <crucible/concurrent/SpinLock.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Source.h>

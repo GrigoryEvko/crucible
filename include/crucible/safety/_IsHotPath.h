@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 
 #include <type_traits>
 

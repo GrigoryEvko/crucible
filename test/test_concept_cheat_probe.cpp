@@ -263,7 +263,7 @@ static constexpr bool cheat18_admits = GradedWrapper<Cheat18_FunctionTemplateFor
 //     which is ADMITTED.  That is the documented limit described at the
 //     top of this file.
 
-#include <crucible/safety/IsNumericalTier.h>
+#include <crucible/safety/_IsNumericalTier.h>
 
 struct Cheat19_DerivedFromNumericalTier : crucible::safety::NumericalTier<crucible::safety::Tolerance::BITEXACT, int> {
 };
@@ -331,12 +331,12 @@ static_assert(cheat20_admits, "[CHEAT 20 STATUS CHANGED] trait-spec injection on
 // Linear already has its derived-from cheat above.  Cheat 21 completes
 // the pair for it, and every wrapper after that gets both.
 
-#include <crucible/safety/IsAllocClass.h>
-#include <crucible/safety/IsCipherTier.h>
+#include <crucible/safety/_IsAllocClass.h>
+#include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/IsCrash.h>
-#include <crucible/safety/IsDetSafe.h>
-#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/_IsDetSafe.h>
+#include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/_IsRefined.h>
@@ -660,9 +660,9 @@ static_assert(cheat51_admits, "[CHEAT 51 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/IsNumaPlacement.h>
-#include <crucible/safety/IsOpaqueLifetime.h>
+#include <crucible/safety/_IsOpaqueLifetime.h>
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/IsRecipeSpec.h>
+#include <crucible/safety/_IsRecipeSpec.h>
 
 struct Cheat52_DerivedFromBudgeted : crucible::safety::Budgeted<int> {};
 static constexpr bool cheat52_admits = crucible::safety::extract::IsBudgeted<Cheat52_DerivedFromBudgeted>;

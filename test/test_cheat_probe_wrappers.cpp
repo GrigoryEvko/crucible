@@ -7,18 +7,18 @@
 // register at least one cheat for that category here.  Without the first,
 // every probe for the category is silently vacuous.
 
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>
-#include <crucible/safety/DetSafe.h>
-#include <crucible/safety/NumericalTier.h>
-#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/_DetSafe.h>
+#include <crucible/safety/_NumericalTier.h>
+#include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/NumaPlacement.h>
-#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/_RecipeSpec.h>
 #include <crucible/safety/diag/CheatProbeGates.h>
 
 #include <cstdint>

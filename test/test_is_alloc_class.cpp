@@ -1,4 +1,4 @@
-#include <crucible/safety/IsAllocClass.h>
+#include <crucible/safety/_IsAllocClass.h>
 
 #include <cstdio>
 #include <cstdlib>

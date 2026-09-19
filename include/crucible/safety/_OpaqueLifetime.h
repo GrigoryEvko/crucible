@@ -29,7 +29,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/LifetimeLattice.h>
+#include <crucible/algebra/lattices/_LifetimeLattice.h>
 
 #include <cstdlib>
 #include <string_view>

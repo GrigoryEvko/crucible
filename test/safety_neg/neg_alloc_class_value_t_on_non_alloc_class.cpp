@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsAllocClass.h>
+#include <crucible/safety/_IsAllocClass.h>
 
 int main() {
     using V = crucible::safety::extract::alloc_class_value_t<int>;

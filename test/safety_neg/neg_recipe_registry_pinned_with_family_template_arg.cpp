@@ -43,7 +43,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/_RecipeSpec.h>
 
 using namespace crucible;
 

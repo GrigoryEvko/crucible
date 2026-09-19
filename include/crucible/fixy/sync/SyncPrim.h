@@ -6,7 +6,7 @@
 // routed grant tags.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 
 #include <cstddef>
 #include <tuple>

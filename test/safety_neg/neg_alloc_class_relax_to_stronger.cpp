@@ -24,7 +24,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 
 using namespace crucible::safety;
 

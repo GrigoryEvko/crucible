@@ -6,7 +6,7 @@
 #include <crucible/effects/Resources.h>
 #include <crucible/effects/Concurrent.h>
 #include <crucible/effects/CtxWrapperLift.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 
 #include <type_traits>
 

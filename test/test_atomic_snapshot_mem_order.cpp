@@ -6,7 +6,7 @@
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/MemOrder.h>
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 #include "test_assert.h"
 
 #include <cstdio>

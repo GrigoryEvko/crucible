@@ -43,7 +43,7 @@
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 
 #include <atomic>
 #include <concepts>

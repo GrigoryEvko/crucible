@@ -34,7 +34,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-tier flow.
 
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 
 #include <utility>
 

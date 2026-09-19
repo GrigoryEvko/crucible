@@ -42,7 +42,7 @@
 
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 
 namespace fn = crucible::safety::fn;
 namespace fx = crucible::effects;

@@ -1,5 +1,5 @@
 #include <crucible/Philox.h>
-#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/_DetSafe.h>
 
 #include "test_assert.h"
 

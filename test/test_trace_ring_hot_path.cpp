@@ -6,7 +6,7 @@
 
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 #include "test_assert.h"
 
 #include <cstdio>

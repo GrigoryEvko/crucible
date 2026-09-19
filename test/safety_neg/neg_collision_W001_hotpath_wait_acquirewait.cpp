@@ -36,7 +36,7 @@
 // Expected diagnostic substring: "W001:"
 
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 
 namespace fn = crucible::safety::fn;
 namespace fx = crucible::effects;

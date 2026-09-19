@@ -5,7 +5,7 @@
 // is that the wrapper changes the type and nothing else.
 
 #include <crucible/PoolAllocator.h>
-#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/_AllocClass.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/warden/Registry.h>
 #include "test_assert.h"

@@ -5,7 +5,7 @@
 
 #include <crucible/Cipher.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 #include "test_assert.h"
 
 #include <cstdio>

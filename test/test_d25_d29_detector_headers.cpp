@@ -1,8 +1,8 @@
 // Sentinel TU: compiles the five detector headers under the project warning
 // flags so their static_asserts run, and calls each runtime smoke test.
 
-#include <crucible/safety/IsAllocClass.h>
-#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/_IsAllocClass.h>
+#include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/IsWait.h>

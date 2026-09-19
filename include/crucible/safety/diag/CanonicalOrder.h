@@ -13,13 +13,13 @@
 // surface later as a cache miss. A site that wants a deliberately
 // different slot simply does not constrain.
 
-#include <crucible/safety/AllocClass.h>
-#include <crucible/safety/CipherTier.h>
-#include <crucible/safety/DetSafe.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_AllocClass.h>
+#include <crucible/safety/_CipherTier.h>
+#include <crucible/safety/_DetSafe.h>
+#include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/MemOrder.h>
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
@@ -27,7 +27,7 @@
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/Vendor.h>
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 #include <crucible/effects/_Computation.h>
 
 #include <concepts>

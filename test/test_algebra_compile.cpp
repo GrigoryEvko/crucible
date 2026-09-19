@@ -28,7 +28,7 @@
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
-#include <crucible/algebra/lattices/LifetimeLattice.h>
+#include <crucible/algebra/lattices/_LifetimeLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
 #include <crucible/algebra/lattices/NumaNodeLattice.h>

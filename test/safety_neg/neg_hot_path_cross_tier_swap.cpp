@@ -18,7 +18,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 #include <utility>
 
 using namespace crucible::safety;

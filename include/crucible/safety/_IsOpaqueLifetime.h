@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/_OpaqueLifetime.h>
 
 #include <type_traits>
 

@@ -1,4 +1,4 @@
-#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/_IsHotPath.h>
 
 #include <cstdio>
 #include <cstdlib>

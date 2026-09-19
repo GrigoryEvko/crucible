@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 
 #include <type_traits>
 

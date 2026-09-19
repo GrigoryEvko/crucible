@@ -21,7 +21,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 
 namespace eff = ::crucible::effects;
 

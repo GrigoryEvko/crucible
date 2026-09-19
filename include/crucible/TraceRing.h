@@ -33,11 +33,11 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 #include <crucible/warden/Registry.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/FixedArray.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>

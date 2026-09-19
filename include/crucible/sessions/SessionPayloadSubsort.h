@@ -46,7 +46,7 @@
 // was made.
 
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/safety/_Tagged.h>
 

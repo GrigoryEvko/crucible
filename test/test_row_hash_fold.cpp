@@ -11,7 +11,7 @@
 #include <crucible/safety/diag/RowHashGrade.h>
 #include <crucible/Types.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 
 #include "test_assert.h"
 

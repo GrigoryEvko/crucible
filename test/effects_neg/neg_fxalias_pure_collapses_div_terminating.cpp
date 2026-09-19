@@ -23,8 +23,8 @@
 // / "fixy-A3-019" / "value-carrying F* aliases must remain
 // structurally distinct"
 
-#include <crucible/effects/FxAliases.h>
-#include <crucible/safety/DetSafe.h>
+#include <crucible/effects/_FxAliases.h>
+#include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/Progress.h>
 
 #include <type_traits>

@@ -18,7 +18,7 @@
 //
 // [GCC-WRAPPER-TEXT] — assignment-operator type-mismatch rejection.
 
-#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/_OpaqueLifetime.h>
 
 using namespace crucible::safety;
 

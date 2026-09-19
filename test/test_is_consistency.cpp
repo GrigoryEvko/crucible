@@ -3,9 +3,9 @@
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/GradedExtract.h>
-#include <crucible/safety/IsNumericalTier.h>
+#include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/SignatureTraits.h>
 

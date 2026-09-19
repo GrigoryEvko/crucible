@@ -5,7 +5,7 @@
 // tiers goes through one of the factories below.
 
 #include <crucible/Types.h>
-#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/sessions/SessionDelegate.h>
 

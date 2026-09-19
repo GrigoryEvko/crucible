@@ -6,8 +6,8 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <crucible/safety/IsNumericalTier.h>
-#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/_IsNumericalTier.h>
+#include <crucible/safety/_NumericalTier.h>
 
 #include "test_assert.h"
 #include <cassert>

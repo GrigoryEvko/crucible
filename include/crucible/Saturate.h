@@ -11,7 +11,7 @@
 // the using declarations this file needs. Naming one entity from two using
 // declarations in one namespace is not a redeclaration, so the umbrella's own
 // declarations stay compatible.
-#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/Saturated.h>
 #include <version>
 

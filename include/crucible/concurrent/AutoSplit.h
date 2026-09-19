@@ -5,9 +5,9 @@
 #include <crucible/concurrent/Topology.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/IsAllocClass.h>
-#include <crucible/safety/IsHotPath.h>
-#include <crucible/safety/IsNumericalTier.h>
+#include <crucible/safety/_IsAllocClass.h>
+#include <crucible/safety/_IsHotPath.h>
+#include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsWait.h>
 

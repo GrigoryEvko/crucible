@@ -16,7 +16,7 @@
 //
 // [GCC-WRAPPER-TEXT] — assignment-operator type-mismatch rejection.
 
-#include <crucible/safety/Wait.h>
+#include <crucible/safety/_Wait.h>
 
 using namespace crucible::safety;
 

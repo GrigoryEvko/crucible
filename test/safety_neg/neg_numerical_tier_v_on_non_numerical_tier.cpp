@@ -7,7 +7,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsNumericalTier.h>
+#include <crucible/safety/_IsNumericalTier.h>
 
 int main() {
     auto t = crucible::safety::extract::numerical_tier_v<int>;

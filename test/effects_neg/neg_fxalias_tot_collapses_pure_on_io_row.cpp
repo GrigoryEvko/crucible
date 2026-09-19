@@ -24,7 +24,7 @@
 
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/FxAliases.h>
+#include <crucible/effects/_FxAliases.h>
 
 #include <type_traits>
 

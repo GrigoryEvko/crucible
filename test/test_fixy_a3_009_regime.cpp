@@ -1,5 +1,5 @@
 #include <crucible/safety/DimensionTraits.h>
-#include <crucible/safety/HotPath.h>
+#include <crucible/safety/_HotPath.h>
 #include <crucible/safety/Progress.h>
 
 namespace cs = ::crucible::safety;
