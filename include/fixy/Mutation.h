@@ -9,6 +9,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/reflect/Instance.h>
 
 #include <atomic>
 #include <concepts>
@@ -30,17 +31,16 @@ class WriteOnce;
 template <typename Ptr>
 class WriteOnceNonNull;
 
+// Both traits are the one reflection query of foundation/reflect/Instance.h
+// asked of a different template.  The struct forms stay, because callers
+// read `::value` off them.
 template <typename T>
-struct is_writeonce : std::false_type {};
-template <typename U>
-struct is_writeonce<WriteOnce<U>> : std::true_type {};
+struct is_writeonce : std::bool_constant<::foundation::reflect::is_instance_of_v<T, ^^WriteOnce>> {};
 template <typename T>
 inline constexpr bool is_writeonce_v = is_writeonce<std::remove_cvref_t<T>>::value;
 
 template <typename T>
-struct is_writeoncenonnull : std::false_type {};
-template <typename Ptr>
-struct is_writeoncenonnull<WriteOnceNonNull<Ptr>> : std::true_type {};
+struct is_writeoncenonnull : std::bool_constant<::foundation::reflect::is_instance_of_v<T, ^^WriteOnceNonNull>> {};
 template <typename T>
 inline constexpr bool is_writeoncenonnull_v = is_writeoncenonnull<std::remove_cvref_t<T>>::value;
 

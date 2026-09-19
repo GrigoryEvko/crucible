@@ -28,10 +28,12 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstdlib>
 #include <memory>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -205,6 +207,18 @@ static_assert(Linear<int>::modality == ::foundation::algebra::ModalityKind::Abso
 static_assert(Affine<int>::modality == ::foundation::algebra::ModalityKind::Absolute);
 static_assert(std::is_same_v<Linear<int>::lattice_type, ::foundation::algebra::lattices::qtt::LinearGrade>);
 static_assert(std::is_same_v<Affine<int>::lattice_type, ::foundation::algebra::lattices::qtt::Erased>);
+
+// Qtt carries a non-type parameter, which is the case the reflection
+// form in foundation/reflect/Instance.h exists for.  The cv-ref strip
+// and the non-template rejection are pinned beside it.
+static_assert(::foundation::reflect::is_instance_of_v<Linear<int>, ^^Qtt>);
+static_assert(::foundation::reflect::is_instance_of_v<Affine<int>, ^^Qtt>);
+static_assert(::foundation::reflect::is_instance_of_v<Linear<int> const&, ^^Qtt>);
+static_assert(::foundation::reflect::is_instance_of_v<Linear<int>&&, ^^Qtt>);
+static_assert(!::foundation::reflect::is_instance_of_v<int, ^^Qtt>);
+static_assert(!::foundation::reflect::is_instance_of_v<void, ^^Qtt>);
+static_assert(!::foundation::reflect::is_instance_of_v<std::unique_ptr<int>, ^^Qtt>);
+static_assert(!::foundation::reflect::is_instance_of_v<Linear<int>, ^^std::unique_ptr>);
 
 namespace detail::qtt_self_test {
 
