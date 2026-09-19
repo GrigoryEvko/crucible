@@ -1,0 +1,611 @@
+#pragma once
+
+// What each atom covers:
+//
+//   Alloc  heap allocation and arena allocation
+//   IO     file and socket traffic
+//   Block  mutex, sleep, futex, spin-wait
+//   Bg     the background-thread context, which holds the three above
+//   Init   the initialization context
+//   Test   the test-driver context
+//
+// The catalog is closed at these six.  Three further atoms were
+// considered and rejected:
+//
+//   Async — coroutine reentrancy is a property of how a function
+//     suspends, not a capability it exercises.  It is tracked on the
+//     reentrancy axis instead.
+//   Network — the IO atom already covers socket traffic.  Splitting it
+//     would cost per-call bookkeeping to distinguish two atoms that the
+//     row algebra treats identically.
+//   CT — constant-time code must hold the EMPTY row, because any trip
+//     through IO, Alloc or Block is a timing-observable side channel.
+//     An atom for it would imply such code may opt into those three.
+
+#include <cstdint>
+#include <meta>
+#include <string_view>
+#include <type_traits>
+
+namespace foundation::effects {
+
+// The underlying values are frozen.  Each one is a bit position in the
+// row masks that key the federation cache, so renumbering an atom
+// silently re-keys every cache entry already published by every fleet
+// that consumed the affected rows.  A new atom takes the next free
+// value and leaves the existing ones alone, which confines cache
+// invalidation to entries that mention the new atom.
+enum class Effect : std::uint8_t {
+    Alloc = 0,
+    IO = 1,
+    Block = 2,
+    Bg = 3,
+    Init = 4,
+    Test = 5,
+};
+
+inline constexpr std::size_t effect_count = std::meta::enumerators_of(^^Effect).size();
+
+// `effect_count` counts enumerator NAMES.  Two names can still share
+// one underlying value, which would raise the count while leaving the
+// atoms indistinguishable as bit positions: rows claiming one atom
+// would silently satisfy a gate that demands the other, and two
+// federation cache keys would collide.  This witness tracks each
+// observed value in a bitmask and refuses a repeat.
+namespace detail {
+
+[[nodiscard]] consteval bool every_effect_underlying_distinct_() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    using U = std::underlying_type_t<Effect>;
+    std::uint64_t seen = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr auto u = static_cast<U>([:en:]);
+        if constexpr (static_cast<unsigned>(u) >= 64u) {
+            return false;
+        } else {
+            const std::uint64_t bit = std::uint64_t{1} << static_cast<unsigned>(u);
+            if (seen & bit) {
+                return false;
+            }
+            seen |= bit;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+}  // namespace detail
+
+static_assert(detail::every_effect_underlying_distinct_(),
+              "Two Effect enumerators share an underlying value, or one is >= 64 and so exceeds the "
+              "uint64_t row-mask carrier.  Each atom must occupy a distinct bit position below 64.  "
+              "Duplicates collapse two atoms into one row bit and make federation cache keys collide.  "
+              "Give the new atom the next free underlying value explicitly in the enum.");
+
+// constexpr rather than consteval so the runtime smoke test can call
+// this with a non-constant argument.  Consteval contexts still fold it.
+[[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept {
+    switch (e) {
+        case Effect::Alloc:
+            return "Alloc";
+        case Effect::IO:
+            return "IO";
+        case Effect::Block:
+            return "Block";
+        case Effect::Bg:
+            return "Bg";
+        case Effect::Init:
+            return "Init";
+        case Effect::Test:
+            return "Test";
+        default:
+            return std::string_view{"<unknown Effect>"};
+    }
+}
+
+// The gate reads the catalog through reflection so that a new atom
+// satisfies it without an edit here.  A hand-written disjunction would
+// reject every future atom until someone remembered to extend it.
+namespace detail {
+
+template <Effect E>
+[[nodiscard]] consteval bool is_effect_atom_() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (E == [:en:]) return true;
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+}  // namespace detail
+
+template <Effect E>
+concept IsEffect = detail::is_effect_atom_<E>();
+
+// An atom is observable when ghost-code elision may not silently drop
+// a binding tagged with it.  Alloc, IO, Block and Bg reach the outside
+// world; Init and Test are scoped to compile time and to the test
+// harness.
+namespace detail {
+
+// The build requires a default arm on every switch, so the switch
+// below cannot itself trap an unclassified new atom: it would quietly
+// answer "not observable".  This cardinality pin is the trap instead.
+static_assert(effect_count == 6, "A new Effect enumerator needs a deliberate observable-or-not decision in "
+                                 "is_observable_effect_atom_ below, and this count raised to match.");
+
+template <Effect E>
+[[nodiscard]] consteval bool is_observable_effect_atom_() noexcept {
+    switch (E) {
+        case Effect::Alloc:
+        case Effect::IO:
+        case Effect::Block:
+        case Effect::Bg:
+            return true;
+        case Effect::Init:
+        case Effect::Test:
+            return false;
+        default:
+            return false;
+    }
+}
+
+// Instantiating the classifier for every atom catches a contributor
+// who adds case arms whose default semantics disagree with the rest.
+// It does not catch an unclassified atom on its own; the cardinality
+// pin above does that.
+consteval bool every_effect_observability_classified_() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) { (void)is_observable_effect_atom_<([:en:])>(); }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_effect_observability_classified_(),
+              "Every Effect atom must reach a case arm of is_observable_effect_atom_.");
+
+}  // namespace detail
+
+template <Effect E>
+[[nodiscard]] consteval bool is_observable() noexcept {
+    return detail::is_observable_effect_atom_<E>();
+}
+
+// The Effect enum is the atom catalog for the row algebra.  These
+// types are the value-level markers that route the same distinction
+// through function parameters, as in
+//
+//   void* alloc(cap::Alloc, size_t n);
+//
+// The explicit noexcept on each special member turns a future throwing
+// body into a compile error rather than a silent change of contract.
+namespace cap {
+
+struct Alloc {
+    constexpr Alloc() noexcept = default;
+    constexpr Alloc(const Alloc&) noexcept = default;
+    constexpr Alloc(Alloc&&) noexcept = default;
+    constexpr Alloc& operator=(const Alloc&) noexcept = default;
+    constexpr Alloc& operator=(Alloc&&) noexcept = default;
+    ~Alloc() = default;
+};
+
+struct IO {
+    constexpr IO() noexcept = default;
+    constexpr IO(const IO&) noexcept = default;
+    constexpr IO(IO&&) noexcept = default;
+    constexpr IO& operator=(const IO&) noexcept = default;
+    constexpr IO& operator=(IO&&) noexcept = default;
+    ~IO() = default;
+};
+
+struct Block {
+    constexpr Block() noexcept = default;
+    constexpr Block(const Block&) noexcept = default;
+    constexpr Block(Block&&) noexcept = default;
+    constexpr Block& operator=(const Block&) noexcept = default;
+    constexpr Block& operator=(Block&&) noexcept = default;
+    ~Block() = default;
+};
+
+}  // namespace cap
+
+// Bg, Init and Test hold these atoms as public fields, so a caller can
+// write `arena.alloc(bg.alloc, ...)` instead of minting a tag at each
+// call.  That is sound only while the atoms are stateless: a copy out
+// of `bg.alloc` is then indistinguishable from `cap::Alloc{}`, which
+// anyone can already write, so the public field grants nothing.  Give
+// an atom state and the copy becomes an escape from the context's
+// intended scope.
+static_assert(std::is_empty_v<cap::Alloc>,
+              "cap::Alloc must remain a stateless empty struct.  Bg, Init and Test expose public fields of "
+              "this type, and a caller can copy one out.  Either privatize those fields behind a friended "
+              "accessor, or carry the state on the linear capability token instead.");
+static_assert(std::is_empty_v<cap::IO>, "cap::IO must remain stateless.  Bg, Init and Test expose a public "
+                                        "field of this type.");
+static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain stateless.  Bg and Test expose a public "
+                                           "field of this type.  Init omits it because an init context must "
+                                           "not block.");
+
+using Alloc = cap::Alloc;
+using IO = cap::IO;
+using Block = cap::Block;
+
+// A context names the atoms a thread or scope may exercise.  Init
+// omits Block because an initialization scope must never wait on a
+// synchronization primitive.  Test is not a superset of Bg or Init: a
+// fixture that must drive a background or initialization path
+// constructs that context explicitly rather than passing a Test one.
+//
+// Each context has a private default constructor and a mint factory
+// that takes a passkey.  The passkey's own default constructor is
+// private too, friended only to the entry points allowed to start a
+// context and to the test scaffolding.  A translation unit that holds
+// neither cannot forge a context.  Adding a privileged entry point is
+// one friend declaration on the relevant passkey.
+//
+// The factories are constexpr so a friended caller can build a context
+// during constant evaluation.
+
+namespace testing {
+struct TestWitness;
+}  // namespace testing
+
+// The production entry points that may start a context belong to the
+// layer that stands up the thread or the phase, and this layer cannot
+// name them.  Each host type below is declared here and defined by the
+// owner of the corresponding entry point (the background-thread header
+// defines BackgroundOwner, the initialization owner defines InitOwner).
+// That definition is the one place a production key is built, and it
+// decides who may call it.  The forgery surface is the one a friend
+// naming the host class directly already had: a second definition of
+// the host type is an ODR violation, as a fake host class would be.
+namespace host {
+struct BackgroundOwner;
+struct InitOwner;
+}  // namespace host
+
+// An execution context default-initializes its capability member, so
+// it needs access to that member's private default constructor.  The
+// contexts below friend this template to grant exactly that.
+template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+class ExecCtx;
+
+namespace detail::ctx_mint {
+
+class bg_key {
+private:
+    constexpr bg_key() noexcept = default;
+
+    friend struct ::foundation::effects::host::BackgroundOwner;
+    friend struct ::foundation::effects::testing::TestWitness;
+};
+
+class init_key {
+private:
+    constexpr init_key() noexcept = default;
+
+    friend struct ::foundation::effects::host::InitOwner;
+    friend struct ::foundation::effects::host::BackgroundOwner;
+    friend struct ::foundation::effects::testing::TestWitness;
+};
+
+class test_key {
+private:
+    constexpr test_key() noexcept = default;
+
+    friend struct ::foundation::effects::testing::TestWitness;
+};
+
+}  // namespace detail::ctx_mint
+
+class Bg;
+class Init;
+class Test;
+
+// Each concept pins one passkey to one context, so handing the wrong
+// key to a factory is a concept violation rather than a deeper
+// instantiation error.
+//
+// The concepts deliberately check nothing else.  A nothrow-constructible
+// check would be evaluated at concept-substitution scope, which has no
+// friend access to the private default constructor and would report
+// false whatever the constructor says.  The factory bodies carry that
+// check instead, because they run inside the friended scope.
+template <class Key>
+concept CanMintBgContext = std::same_as<Key, detail::ctx_mint::bg_key>;
+
+template <class Key>
+concept CanMintInitContext = std::same_as<Key, detail::ctx_mint::init_key>;
+
+template <class Key>
+concept CanMintTestContext = std::same_as<Key, detail::ctx_mint::test_key>;
+
+class Bg {
+private:
+    constexpr Bg() noexcept = default;
+
+    template <class Key>
+        requires CanMintBgContext<Key>
+    friend constexpr Bg mint_bg_context(Key) noexcept;
+
+    // Access to a default member initializer is checked in the context
+    // of the class that contains the member, so this friendship is what
+    // lets an execution context default-initialize a Bg member while
+    // every other translation unit stays locked out.
+    // The parameter list must match the declaration above exactly.  A
+    // qualified friend name with the wrong arity is accepted in
+    // silence, so nothing here would report a drift; only unqualifying
+    // the name turns it into a diagnostic.
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+    friend class ::foundation::effects::ExecCtx;
+
+public:
+    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] cap::IO io{};
+    [[no_unique_address]] cap::Block block{};
+};
+
+class Init {
+private:
+    constexpr Init() noexcept = default;
+
+    template <class Key>
+        requires CanMintInitContext<Key>
+    friend constexpr Init mint_init_context(Key) noexcept;
+
+    // The parameter list must match the declaration above exactly.  A
+    // qualified friend name with the wrong arity is accepted in
+    // silence, so nothing here would report a drift; only unqualifying
+    // the name turns it into a diagnostic.
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+    friend class ::foundation::effects::ExecCtx;
+
+public:
+    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] cap::IO io{};
+};
+
+class Test {
+private:
+    constexpr Test() noexcept = default;
+
+    template <class Key>
+        requires CanMintTestContext<Key>
+    friend constexpr Test mint_test_context(Key) noexcept;
+
+    // The parameter list must match the declaration above exactly.  A
+    // qualified friend name with the wrong arity is accepted in
+    // silence, so nothing here would report a drift; only unqualifying
+    // the name turns it into a diagnostic.
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+    friend class ::foundation::effects::ExecCtx;
+
+public:
+    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] cap::IO io{};
+    [[no_unique_address]] cap::Block block{};
+};
+
+// A factory body is one of the few scopes where the private default
+// constructor is a valid expression, so it is where the noexcept
+// property can be pinned at all.
+template <class Key>
+    requires CanMintBgContext<Key>
+[[nodiscard]] inline constexpr Bg mint_bg_context(Key) noexcept {
+    static_assert(noexcept(Bg{}), "The Bg default constructor must be noexcept.  A capability tag's "
+                                  "default member initializer must never throw.");
+    return Bg{};
+}
+
+template <class Key>
+    requires CanMintInitContext<Key>
+[[nodiscard]] inline constexpr Init mint_init_context(Key) noexcept {
+    static_assert(noexcept(Init{}), "The Init default constructor must be noexcept.  A capability tag's "
+                                    "default member initializer must never throw.");
+    return Init{};
+}
+
+template <class Key>
+    requires CanMintTestContext<Key>
+[[nodiscard]] inline constexpr Test mint_test_context(Key) noexcept {
+    static_assert(noexcept(Test{}), "The Test default constructor must be noexcept.  A capability tag's "
+                                    "default member initializer must never throw.");
+    return Test{};
+}
+
+// Naming this namespace outside test and bench code is a review
+// rejection.  Its whole purpose is that a grep for it finds every
+// translation unit taking the test path.
+namespace testing {
+
+struct TestWitness {
+    [[nodiscard]] static constexpr Bg bg() noexcept { return mint_bg_context(detail::ctx_mint::bg_key{}); }
+    [[nodiscard]] static constexpr Init init() noexcept { return mint_init_context(detail::ctx_mint::init_key{}); }
+    [[nodiscard]] static constexpr Test test() noexcept { return mint_test_context(detail::ctx_mint::test_key{}); }
+};
+
+[[nodiscard]] inline constexpr Bg bg() noexcept { return TestWitness::bg(); }
+[[nodiscard]] inline constexpr Init init() noexcept { return TestWitness::init(); }
+[[nodiscard]] inline constexpr Test test() noexcept { return TestWitness::test(); }
+
+}  // namespace testing
+
+static_assert(sizeof(Bg) == 1, "The Bg context must be 1 byte.  Its capability members are empty and "
+                               "collapse into the object's own byte.");
+static_assert(sizeof(Init) == 1, "The Init context must be 1 byte");
+static_assert(sizeof(Test) == 1, "The Test context must be 1 byte");
+static_assert(sizeof(cap::Alloc) == 1);
+static_assert(sizeof(cap::IO) == 1);
+static_assert(sizeof(cap::Block) == 1);
+
+namespace detail::capabilities_self_test {
+
+static_assert(effect_count == 6, "The Effect catalog has grown or shrunk.  Confirm the change is "
+                                 "intended, and check that the name-coverage assertion below still "
+                                 "reaches every atom.");
+
+[[nodiscard]] consteval bool every_effect_has_name() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    // -Wshadow fires spuriously on the expansion-statement induction variable.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (effect_name([:en:]) == std::string_view{"<unknown Effect>"}) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_effect_has_name(), "The effect_name switch is missing an arm for at least one Effect "
+                                       "atom, so that atom reports the unknown-atom sentinel in "
+                                       "diagnostics.");
+
+// A new atom takes the next free value and adds one pin below.
+static_assert(static_cast<std::uint8_t>(Effect::Alloc) == 0,
+              "The value of Effect::Alloc changed, which invalidates every federation cache key that "
+              "mentions it.  Restore the value, or run the major-version migration.");
+static_assert(static_cast<std::uint8_t>(Effect::IO) == 1,
+              "The value of Effect::IO changed, which invalidates federation cache keys.");
+static_assert(static_cast<std::uint8_t>(Effect::Block) == 2,
+              "The value of Effect::Block changed, which invalidates federation cache keys.");
+static_assert(static_cast<std::uint8_t>(Effect::Bg) == 3,
+              "The value of Effect::Bg changed, which invalidates federation cache keys.");
+static_assert(static_cast<std::uint8_t>(Effect::Init) == 4,
+              "The value of Effect::Init changed, which invalidates federation cache keys.");
+static_assert(static_cast<std::uint8_t>(Effect::Test) == 5,
+              "The value of Effect::Test changed, which invalidates federation cache keys.");
+
+// Widening the underlying type is invisible to the row hash, which
+// reads only the value, but it changes the layout of every struct that
+// holds an Effect by value.
+static_assert(std::is_same_v<std::underlying_type_t<Effect>, std::uint8_t>,
+              "The Effect underlying type is no longer uint8_t, which changes the ABI.");
+
+static_assert(IsEffect<Effect::Alloc>);
+static_assert(IsEffect<Effect::IO>);
+static_assert(IsEffect<Effect::Block>);
+static_assert(IsEffect<Effect::Bg>);
+static_assert(IsEffect<Effect::Init>);
+static_assert(IsEffect<Effect::Test>);
+
+[[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
+    static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^Effect));
+    std::size_t n = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enums) {
+        constexpr Effect e = [:en:];
+        if (IsEffect<e>) ++n;
+    }
+#pragma GCC diagnostic pop
+    return n;
+}
+static_assert(count_accepted_effects_() == effect_count, "IsEffect rejects an atom that is in the Effect catalog.");
+
+// A cast from an unnamed value is a well-formed Effect, because the
+// underlying type admits 0 through 255.  The gate must still reject it.
+static_assert(!IsEffect<static_cast<Effect>(99)>);
+static_assert(!IsEffect<static_cast<Effect>(255)>);
+static_assert(!IsEffect<static_cast<Effect>(6)>);
+
+static_assert(!effect_name(Effect::Alloc).empty());
+static_assert(!effect_name(Effect::IO).empty());
+static_assert(!effect_name(Effect::Block).empty());
+static_assert(!effect_name(Effect::Bg).empty());
+static_assert(!effect_name(Effect::Init).empty());
+static_assert(!effect_name(Effect::Test).empty());
+
+static_assert(effect_name(Effect::Alloc) != "<unknown Effect>");
+static_assert(effect_name(Effect::IO) != "<unknown Effect>");
+static_assert(effect_name(Effect::Block) != "<unknown Effect>");
+static_assert(effect_name(Effect::Bg) != "<unknown Effect>");
+static_assert(effect_name(Effect::Init) != "<unknown Effect>");
+static_assert(effect_name(Effect::Test) != "<unknown Effect>");
+
+static_assert(effect_name(Effect::Alloc) != effect_name(Effect::IO));
+static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Block));
+static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Bg));
+static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Init));
+static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Test));
+static_assert(effect_name(Effect::IO) != effect_name(Effect::Block));
+static_assert(effect_name(Effect::Bg) != effect_name(Effect::Init));
+static_assert(effect_name(Effect::Init) != effect_name(Effect::Test));
+
+static_assert(std::is_default_constructible_v<cap::Alloc>);
+static_assert(std::is_default_constructible_v<cap::IO>);
+static_assert(std::is_default_constructible_v<cap::Block>);
+static_assert(std::is_trivially_copyable_v<cap::Alloc>);
+static_assert(std::is_trivially_copyable_v<cap::IO>);
+static_assert(std::is_trivially_copyable_v<cap::Block>);
+static_assert(std::is_trivially_destructible_v<cap::Alloc>);
+static_assert(std::is_trivially_destructible_v<cap::IO>);
+static_assert(std::is_trivially_destructible_v<cap::Block>);
+
+// A throwing default constructor on an atom would also break the
+// contexts that hold it and the factories that mint them.  Pinning it
+// here names the atom that caused it.
+static_assert(noexcept(cap::Alloc{}));
+static_assert(noexcept(cap::IO{}));
+static_assert(noexcept(cap::Block{}));
+static_assert(std::is_nothrow_default_constructible_v<cap::Alloc>);
+static_assert(std::is_nothrow_default_constructible_v<cap::IO>);
+static_assert(std::is_nothrow_default_constructible_v<cap::Block>);
+
+static_assert(std::is_same_v<Alloc, cap::Alloc>);
+static_assert(std::is_same_v<IO, cap::IO>);
+static_assert(std::is_same_v<Block, cap::Block>);
+
+// The contexts can only be built through a friended factory, so the
+// nothrow property is asserted through the witness that holds a key.
+static_assert(noexcept(::foundation::effects::testing::TestWitness::bg()));
+static_assert(noexcept(::foundation::effects::testing::TestWitness::init()));
+static_assert(noexcept(::foundation::effects::testing::TestWitness::test()));
+static_assert(noexcept(::foundation::effects::testing::bg()));
+static_assert(noexcept(::foundation::effects::testing::init()));
+static_assert(noexcept(::foundation::effects::testing::test()));
+
+static_assert(!std::is_default_constructible_v<Bg>,
+              "The Bg default constructor must stay private.  Build one through the friended "
+              "background-thread entry point, or through the test witness.");
+static_assert(!std::is_default_constructible_v<Init>,
+              "The Init default constructor must stay private.  Build one through a friended "
+              "production entry point, or through the test witness.");
+static_assert(!std::is_default_constructible_v<Test>,
+              "The Test default constructor must stay private.  Build one through the test witness.");
+
+// Every accessor is called here with a non-constant argument.  The
+// static_assert wall above only proves the constant-evaluated path.
+inline void runtime_smoke_test() {
+    Effect e = Effect::Alloc;
+    [[maybe_unused]] std::string_view n1 = effect_name(e);
+    e = Effect::IO;
+    [[maybe_unused]] std::string_view n2 = effect_name(e);
+    e = Effect::Block;
+    [[maybe_unused]] std::string_view n3 = effect_name(e);
+    e = Effect::Bg;
+    [[maybe_unused]] std::string_view n4 = effect_name(e);
+    e = Effect::Init;
+    [[maybe_unused]] std::string_view n5 = effect_name(e);
+    e = Effect::Test;
+    [[maybe_unused]] std::string_view n6 = effect_name(e);
+
+    [[maybe_unused]] cap::Alloc a_tag{};
+    [[maybe_unused]] cap::IO i_tag{};
+    [[maybe_unused]] cap::Block b_tag{};
+
+    [[maybe_unused]] auto bg_ctx = ::foundation::effects::testing::bg();
+    [[maybe_unused]] auto init_ctx = ::foundation::effects::testing::init();
+    [[maybe_unused]] auto test_ctx = ::foundation::effects::testing::test();
+}
+
+}  // namespace detail::capabilities_self_test
+
+}  // namespace foundation::effects
