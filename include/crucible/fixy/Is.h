@@ -13,8 +13,8 @@
 #include <crucible/safety/IsAllocClass.h>
 #include <crucible/safety/IsBarrierGuarded.h>
 #include <crucible/safety/IsBits.h>
-#include <crucible/safety/IsBorrowed.h>
-#include <crucible/safety/IsBorrowedRef.h>
+#include <crucible/safety/_IsBorrowed.h>
+#include <crucible/safety/_IsBorrowedRef.h>
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/IsCipherTier.h>
 #include <crucible/safety/IsClockSource.h>
@@ -33,7 +33,7 @@
 #include <crucible/safety/IsNumericalTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/IsOwnedMmap.h>
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 #include <crucible/safety/IsProducerHandle.h>
 #include <crucible/safety/IsProgress.h>
@@ -46,7 +46,7 @@
 #include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/IsSessionHandle.h>
 #include <crucible/safety/IsSimdWidthPinned.h>
-#include <crucible/safety/IsStale.h>
+#include <crucible/safety/_IsStale.h>
 #include <crucible/safety/IsSuspendBehavior.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/_IsTagged.h>

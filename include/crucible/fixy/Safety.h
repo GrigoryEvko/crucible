@@ -7,7 +7,7 @@
 // unqualified call becomes ambiguous.
 
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 #include <crucible/safety/_Secret.h>
 
 #include <type_traits>

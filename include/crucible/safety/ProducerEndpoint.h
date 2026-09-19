@@ -3,7 +3,7 @@
 // Recognizes a function that holds a producer-side channel handle and
 // pushes one region of payload into it.
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsProducerHandle.h>
 #include <crucible/safety/SignatureTraits.h>
 

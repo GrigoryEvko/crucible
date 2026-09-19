@@ -3,7 +3,7 @@
 // exists to be that translation unit, and to run the header's inline smoke
 // body.
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 
 #include <cstdio>
 #include <cstdlib>

@@ -5,7 +5,7 @@
 
 #include <crucible/safety/InferredPermissionTags.h>
 
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <cstdio>

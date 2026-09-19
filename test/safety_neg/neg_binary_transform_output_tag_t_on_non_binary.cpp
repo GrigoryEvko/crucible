@@ -20,7 +20,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
 #include <crucible/safety/BinaryTransform.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 
 namespace {
 struct lhs_neg_tag {};

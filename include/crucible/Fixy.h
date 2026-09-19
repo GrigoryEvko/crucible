@@ -23,7 +23,7 @@
 #include <crucible/fixy/Contract.h>
 #include <crucible/fixy/Decide.h>
 #include <crucible/fixy/Is.h>
-#include <crucible/fixy/Mach.h>
+#include <crucible/fixy/_Mach.h>
 #include <crucible/fixy/Perm.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Pipe.h>

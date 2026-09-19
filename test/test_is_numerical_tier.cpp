@@ -1,9 +1,9 @@
 #include <crucible/safety/IsNumericalTier.h>
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 #include <crucible/safety/NumericalTier.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/SignatureTraits.h>
 
 #include <cstdio>

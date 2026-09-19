@@ -7,7 +7,7 @@
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <cassert>

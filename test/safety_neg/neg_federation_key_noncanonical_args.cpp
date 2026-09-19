@@ -22,7 +22,7 @@
 
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
 
 namespace fed = crucible::cipher::federation;

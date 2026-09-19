@@ -25,7 +25,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection at the method
 // signature.
 
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 
 using namespace crucible::safety;
 

@@ -7,7 +7,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/syscall/Per.h>
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Refined.h>
 
 #include <cstddef>

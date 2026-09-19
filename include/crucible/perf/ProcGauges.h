@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Linear.h>
 
 #include <array>

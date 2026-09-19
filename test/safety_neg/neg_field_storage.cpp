@@ -4,7 +4,7 @@
 // audit catches this — the static_assert on no_scoped_view_field_check
 // fires with a diagnostic naming the offending type.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

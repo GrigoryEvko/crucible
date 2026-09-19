@@ -41,7 +41,7 @@
 // Companion to U-146 FinalBy (deleted-copy-of-protected) and U-146
 // NotInherited (concept-rejection).
 
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 
 namespace {
 // Production-shape Stale consumer.  Real call sites (Cipher /

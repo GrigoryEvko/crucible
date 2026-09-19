@@ -6,7 +6,7 @@
 // control rejects this call with a "private" diagnostic — distinct
 // from the "no default ctor" path covered by neg_default_construct.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

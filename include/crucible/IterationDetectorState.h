@@ -12,7 +12,7 @@
 // that wants the proof pays for that footprint. Everyone else does not.
 
 #include <crucible/IterationDetector.h>
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 #include <type_traits>
 

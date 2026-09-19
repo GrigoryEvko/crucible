@@ -8,7 +8,7 @@
 // handle-side predicate of the same name, which this file also uses,
 // takes a type where this one takes a function.
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/SignatureTraits.h>
 

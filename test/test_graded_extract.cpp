@@ -5,7 +5,7 @@
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Mutation.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/AllocClass.h>

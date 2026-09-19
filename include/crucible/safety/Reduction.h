@@ -3,7 +3,7 @@
 // Recognizes a function that consumes one region and folds its
 // elements into one borrowed accumulator.
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsReduceInto.h>
 #include <crucible/safety/SignatureTraits.h>
 

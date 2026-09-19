@@ -5,7 +5,7 @@
 #include <crucible/safety/BinaryTransform.h>
 
 #include <crucible/safety/InferredPermissionTags.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/UnaryTransform.h>
 
 #include <cstdio>

@@ -27,7 +27,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 
 namespace crucible::fixy::wrap {
 using ::crucible::safety::AtomicMonotonic;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 
 #include <type_traits>
 

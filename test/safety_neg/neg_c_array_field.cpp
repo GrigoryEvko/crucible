@@ -5,7 +5,7 @@
 // CKernelEntry entries[CAP], DyingInfo d_info[MAX_PER_OP]); the
 // audit must recurse into fixed-size C arrays via sv_unwrap_single<T[N]>.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

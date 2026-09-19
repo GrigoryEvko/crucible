@@ -6,7 +6,7 @@
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <algorithm>

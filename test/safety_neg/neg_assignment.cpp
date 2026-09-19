@@ -5,7 +5,7 @@
 // were allowed, a view minted at state-A could be overwritten with one
 // minted at state-B without a state-transition boundary in between.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

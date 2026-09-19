@@ -8,7 +8,7 @@
 #include <crucible/safety/CanonicalShape.h>  // umbrella + dispatch
 #include <crucible/safety/Fusion.h>  // composability
 #include <crucible/safety/IsReduceInto.h>  // substrate side of identity
-#include <crucible/safety/OwnedRegion.h>  // positive shape witnesses
+#include <crucible/safety/_OwnedRegion.h>  // positive shape witnesses
 #include <crucible/safety/Reduction.h>
 #include <crucible/safety/UnaryTransform.h>  // substrate side of identity
 #include <crucible/safety/reduce_into.h>

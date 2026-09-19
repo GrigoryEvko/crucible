@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 
 #include <type_traits>
 

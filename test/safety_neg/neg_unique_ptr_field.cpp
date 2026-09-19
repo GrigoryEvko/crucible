@@ -5,7 +5,7 @@
 // would otherwise escape the stack frame the mint_view call sits in.
 // Tier 2 audit must recurse into std::unique_ptr.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 #include <memory>
 

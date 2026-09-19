@@ -6,7 +6,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/syscall/Per.h>
 #include <crucible/fixy/wrap/Refined.h>
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 
 #include <cstddef>
 #include <cstdint>

@@ -1,4 +1,4 @@
-#include <crucible/safety/IsStale.h>
+#include <crucible/safety/_IsStale.h>
 
 #include <cstdio>
 #include <cstdlib>

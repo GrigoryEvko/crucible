@@ -342,7 +342,7 @@ static_assert(cheat20_admits, "[CHEAT 20 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/_IsSecret.h>
-#include <crucible/safety/IsStale.h>
+#include <crucible/safety/_IsStale.h>
 #include <crucible/safety/_IsTagged.h>
 #include <crucible/safety/IsVendor.h>
 #include <crucible/safety/IsWait.h>
@@ -656,12 +656,12 @@ static_assert(cheat51_admits, "[CHEAT 51 STATUS CHANGED] trait-spec injection on
 // here on the same pattern as the rest.
 
 #include <crucible/safety/IsBits.h>
-#include <crucible/safety/IsBorrowed.h>
+#include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/IsNumaPlacement.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsRecipeSpec.h>
 
 struct Cheat52_DerivedFromBudgeted : crucible::safety::Budgeted<int> {};

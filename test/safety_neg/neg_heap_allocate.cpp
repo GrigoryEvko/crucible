@@ -5,7 +5,7 @@
 // `operator new = delete` (Tier 1) blocks the allocation at the
 // point of the `new` expression.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

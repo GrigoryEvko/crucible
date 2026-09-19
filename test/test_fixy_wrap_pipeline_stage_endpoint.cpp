@@ -5,7 +5,7 @@
 #include <crucible/fixy/wrap/PipelineStageEndpoint.h>
 
 #include <crucible/safety/ConsumerEndpoint.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/PipelineStage.h>
 #include <crucible/safety/ProducerEndpoint.h>
 

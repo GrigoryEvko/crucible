@@ -7,7 +7,7 @@
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/sessions/SwmrSession.h>
 
 #include <array>

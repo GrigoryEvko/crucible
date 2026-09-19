@@ -6,7 +6,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/AlignedBuffer.h>
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Pre.h>

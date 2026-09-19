@@ -15,12 +15,12 @@
 #include <crucible/safety/IsDetSafe.h>
 #include <crucible/safety/IsNumericalTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsVendor.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/SignatureTraits.h>
 #include <crucible/safety/Vendor.h>

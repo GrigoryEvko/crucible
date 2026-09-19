@@ -38,7 +38,7 @@
 // Machine, U-141 ConstantTime, U-142 Tagged, U-143 SealedRefined,
 // U-144 Pinned/NonMovable).
 
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 
 #include <utility>
 

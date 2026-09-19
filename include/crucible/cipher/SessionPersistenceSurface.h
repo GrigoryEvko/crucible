@@ -2,7 +2,7 @@
 
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 namespace crucible {
 

@@ -26,7 +26,7 @@
 // on the factory catches a view returned from the function that made
 // it.  Anything further apart is the caller's to keep straight.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>

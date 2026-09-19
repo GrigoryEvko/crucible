@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 
 #include <cstdlib>
 #include <type_traits>

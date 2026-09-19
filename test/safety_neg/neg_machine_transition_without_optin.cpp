@@ -24,7 +24,7 @@
 //
 // This file is U-140's Class U fixture — the transition opt-in gate.
 
-#include <crucible/safety/Machine.h>
+#include <crucible/safety/_Machine.h>
 
 namespace {
 struct Disconnected {};

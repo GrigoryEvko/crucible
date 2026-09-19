@@ -27,7 +27,7 @@
 // type — distinct Source parameters yield distinct types and the
 // overload set is empty for the cross-source pair.
 
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 
 namespace saf = crucible::safety;
 

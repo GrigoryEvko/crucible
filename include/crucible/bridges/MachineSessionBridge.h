@@ -17,7 +17,7 @@
 // the intended use and is left to caller discipline.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Machine.h>
+#include <crucible/safety/_Machine.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/sessions/Session.h>
 

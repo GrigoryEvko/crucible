@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Machine.h>
+#include <crucible/safety/_Machine.h>
 
 #include <type_traits>
 #include <utility>

@@ -6,7 +6,7 @@
 // recursive class-field walk reaches Linear's `value_` member and
 // observes it is a ScopedView, firing the same diagnostic.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

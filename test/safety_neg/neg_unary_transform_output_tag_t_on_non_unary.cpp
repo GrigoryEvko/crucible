@@ -21,7 +21,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
 #include <crucible/safety/UnaryTransform.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 
 namespace {
 struct out_tag_neg_test {};

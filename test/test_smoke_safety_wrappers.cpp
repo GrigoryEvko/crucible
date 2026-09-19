@@ -5,18 +5,18 @@
 
 #include <crucible/handles/Once.h>
 #include <crucible/safety/_Affine.h>
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Cyclic.h>
 #include <crucible/safety/CyclicBuffer.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Mutation.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/WeakRef.h>
+#include <crucible/safety/_WeakRef.h>
 
 int main() {
     using namespace crucible::safety;

@@ -16,8 +16,8 @@
 #include <crucible/safety/_Affine.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Bits.h>
-#include <crucible/safety/Borrowed.h>
-#include <crucible/safety/IsBorrowedRef.h>
+#include <crucible/safety/_Borrowed.h>
+#include <crucible/safety/_IsBorrowedRef.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Saturated.h>
@@ -38,7 +38,7 @@
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
@@ -46,10 +46,10 @@
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/fixy/wrap/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/SwissTableBuffer.h>
 #include <crucible/safety/SwmrReader.h>
 #include <crucible/safety/SwmrWriter.h>
@@ -71,7 +71,7 @@
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
-#include <crucible/safety/WeakRef.h>
+#include <crucible/safety/_WeakRef.h>
 #include <crucible/safety/Witness.h>
 
 #include <cstdint>

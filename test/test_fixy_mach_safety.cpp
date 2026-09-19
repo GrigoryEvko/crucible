@@ -1,7 +1,7 @@
 // Sentinel TU: compiles the alias headers under the project warning flags so
 // their static_asserts run.
 
-#include <crucible/fixy/Mach.h>
+#include <crucible/fixy/_Mach.h>
 #include <crucible/fixy/Safety.h>
 
 #include <type_traits>

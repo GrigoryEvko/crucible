@@ -13,7 +13,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // / "MachineTransition<SessionEstablished, Authenticated>".
 
-#include <crucible/safety/Machine.h>
+#include <crucible/safety/_Machine.h>
 
 namespace saf = crucible::safety;
 

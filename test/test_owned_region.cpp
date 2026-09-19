@@ -11,7 +11,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/Workload.h>
 
 #include <atomic>

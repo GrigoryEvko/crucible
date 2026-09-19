@@ -18,7 +18,7 @@
 // constraints are not satisfied" / "no matching template" pointing at
 // the WeakRef<int&> instantiation.
 
-#include <crucible/safety/WeakRef.h>
+#include <crucible/safety/_WeakRef.h>
 
 namespace saf = crucible::safety;
 

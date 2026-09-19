@@ -5,7 +5,7 @@
 
 #include <crucible/IterationDetector.h>
 #include <crucible/IterationDetectorState.h>
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 #include "test_assert.h"
 #include <cstdint>

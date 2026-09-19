@@ -29,7 +29,7 @@
 #include <crucible/concurrent/scheduler/Policies.h>
 #include <crucible/Arena.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/Workload.h>

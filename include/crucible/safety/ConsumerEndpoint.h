@@ -4,7 +4,7 @@
 // drains it into one region.
 
 #include <crucible/safety/IsConsumerHandle.h>
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/SignatureTraits.h>
 
 #include <type_traits>

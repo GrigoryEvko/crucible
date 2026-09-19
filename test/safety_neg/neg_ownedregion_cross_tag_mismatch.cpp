@@ -40,7 +40,7 @@
 // U-145 — Class T-cross-tag fixture (closes OwnedRegion slice of
 // #146 A8-P2).
 
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 
 #include <utility>
 

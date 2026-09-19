@@ -3,7 +3,7 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <cstdint>

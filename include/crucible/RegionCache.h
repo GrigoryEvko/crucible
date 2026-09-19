@@ -14,7 +14,7 @@
 #include <crucible/safety/Cyclic.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/WeakRef.h>
+#include <crucible/safety/_WeakRef.h>
 
 #include <cassert>
 #include <cstdint>

@@ -2,7 +2,7 @@
 
 #include <crucible/safety/InferredPermissionTags.h>
 #include <crucible/safety/InferredRow.h>
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>

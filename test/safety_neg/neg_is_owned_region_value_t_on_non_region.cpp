@@ -15,7 +15,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 
 int main() {
     // int is not an OwnedRegion → alias is ill-formed.

@@ -11,7 +11,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at is_constructible.
 
-#include <crucible/fixy/Mach.h>
+#include <crucible/fixy/_Mach.h>
 
 namespace fmach = crucible::fixy::mach;
 

@@ -7,7 +7,7 @@
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/NotInherited.h>
-#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Workload.h>

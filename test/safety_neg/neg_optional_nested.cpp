@@ -4,7 +4,7 @@
 // field.  Tier 2 audit recurses into optional via sv_unwrap_single
 // and catches the violation even through one layer of indirection.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 #include <optional>
 

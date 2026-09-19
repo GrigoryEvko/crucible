@@ -4,7 +4,7 @@
 // mint_view.  Tier 1 enforcement: constructor is private + only
 // mint_view<> is friended.  No public default ctor exists.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 struct Carrier {
     int v = 0;

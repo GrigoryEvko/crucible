@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/_IsOwnedRegion.h>
 
 int main() {
     // void is not an OwnedRegion → tag-extractor alias is ill-formed.

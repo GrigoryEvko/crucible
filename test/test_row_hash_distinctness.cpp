@@ -47,7 +47,7 @@
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/SimdWidthPinned.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/SuspendBehavior.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/TimeOrdered.h>

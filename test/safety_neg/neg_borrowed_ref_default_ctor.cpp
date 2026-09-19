@@ -22,7 +22,7 @@
 // Expected diagnostic: "use of deleted function" / "deleted" /
 // "default constructor" pointing at the BorrowedRef<int>{} call site.
 
-#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/_Borrowed.h>
 
 namespace saf = crucible::safety;
 

@@ -42,7 +42,7 @@
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Mutation.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/diag/RowHashFold.h>
 

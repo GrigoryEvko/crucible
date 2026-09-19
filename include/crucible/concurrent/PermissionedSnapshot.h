@@ -15,7 +15,7 @@
 #include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Stale.h>
+#include <crucible/safety/_Stale.h>
 
 #include <cstddef>
 #include <cstdint>

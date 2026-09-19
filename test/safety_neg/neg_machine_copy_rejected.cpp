@@ -16,7 +16,7 @@
 // the "Machine: 0 fixtures" entry surfaced by the previous /loop
 // firing's neg-compile primitive-coverage audit.
 
-#include <crucible/safety/Machine.h>
+#include <crucible/safety/_Machine.h>
 
 namespace {
 struct ConnState {

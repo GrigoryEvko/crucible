@@ -17,7 +17,7 @@
 // Expected diagnostic: "cannot convert" / "no viable conversion" /
 // "invalid conversion" pointing at the `int* leaked = wr` initialization.
 
-#include <crucible/safety/WeakRef.h>
+#include <crucible/safety/_WeakRef.h>
 
 namespace saf = crucible::safety;
 

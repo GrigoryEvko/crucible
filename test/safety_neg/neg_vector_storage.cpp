@@ -5,7 +5,7 @@
 // that have transitioned out of state.  Tier 2 audit catches this via
 // the sv_unwrap_single<vector> recursion.
 
-#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/_ScopedView.h>
 
 #include <vector>
 

@@ -1,4 +1,4 @@
-#include <crucible/safety/IsBorrowedRef.h>
+#include <crucible/safety/_IsBorrowedRef.h>
 
 #include <cstdio>
 #include <cstdlib>

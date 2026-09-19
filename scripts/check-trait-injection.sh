@@ -132,7 +132,7 @@ Scanned traits and their authoring sets:
 
   retag_policy              include/crucible/safety/_Tagged.h
                             include/crucible/safety/source/*.h      + test/**
-  machine_transition        include/crucible/safety/Machine.h
+  machine_transition        include/crucible/safety/_Machine.h
                             include/fixy/Machine.h                 + test/**
   predicate_implies         include/crucible/safety/_Refined{,Algebra}.h
                                                                     + test/**
@@ -169,7 +169,7 @@ substrate_paths='include/crucible/algebra/* include/foundation/algebra/* include
 scan_table=(
     "substrate|(struct|class)\s+(is_graded_specialization|value_type_decoupled|graded_modality|is_numerical_tier_impl)\s*<|${substrate_paths}"
     "retag_policy|(struct|class)\s+retag_policy\s*<|include/crucible/safety/_Tagged.h include/crucible/safety/source/*.h test/*"
-    "machine_transition|((struct|class)\s+machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/Machine.h include/fixy/Machine.h test/*"
+    "machine_transition|((struct|class)\s+machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/_Machine.h include/fixy/Machine.h test/*"
     "predicate_implies|(struct|class)\s+predicate_implies\s*<|include/crucible/safety/_Refined.h include/crucible/safety/_RefinedAlgebra.h test/*"
     "survivor_registry|(struct|class)\s+survivor_registry\s*<|include/crucible/permissions/PermissionInherit.h include/crucible/fixy/Bridge.h test/*"
     "is_subsort|(struct|class)\s+is_subsort\s*<|include/crucible/sessions/*.h test/*"
@@ -363,7 +363,7 @@ struct survivor_registry<PlantedDeadTag> {
 }  // namespace crucible::safety
 EXEMPT
 
-        exempt_machine='include/crucible/safety/Machine.h'
+        exempt_machine='include/crucible/safety/_Machine.h'
         cat >"$tmp_root/$exempt_machine" <<'EXEMPT'
 // Synthetic machine authoring-location fixture for --self-test.
 CRUCIBLE_ALLOW_MACHINE_TRANSITION(PlantedFrom, PlantedTo)
