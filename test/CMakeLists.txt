@@ -1806,7 +1806,10 @@ endfunction()
 # lands.  Directories only ever move into this list.
 set(CRUCIBLE_NEG_TWO_REGEX_FLOORED
   ledger_neg
-  dataplane_neg)
+  dataplane_neg
+  warden_neg
+  perf_neg
+  topology_neg)
 
 # Called by each sister harness with the registration's regex list in
 # ARGN.  Silent for a directory that has not been swept yet.
@@ -4388,9 +4391,11 @@ crucible_neg_compile_effects_test(neg_concurrent_row_non_resource_tag
 #   future per-Cog Mimic factories from accepting non-compute Cogs
 #   as compute targets.
 crucible_neg_compile_cog_test(neg_cog_identity_content_hash_zero_uuid
-    "static assertion|contract|precondition|content_hash|is_zero|non-constant|GAPS-185")
+    "static assertion|contract|precondition|non-constant"
+    "content_hash|is_zero")
 crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
-    "constraint|constraints not satisfied|IsComputeKind|kernel_count_for|GAPS-185")
+    "constraint|constraints not satisfied"
+    "IsComputeKind|kernel_count_for|GAPS-185")
 
 # ─── GAPS-186 cog/TargetCaps.h soundness gates (HS14) ──────────────
 #
@@ -4406,9 +4411,11 @@ crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
 #   GpuTargetCaps::warp_size = 33 from corrupting downstream occupancy
 #   / wave-efficiency math.
 crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
-    "constraint|constraints not satisfied|HasCaps|lookup_caps|PsuRail|GAPS-186")
+    "constraint|constraints not satisfied"
+    "HasCaps|lookup_caps|PsuRail|GAPS-186")
 crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
-    "static assertion|contract|precondition|power_of_two|non-constant|Refined|PowerOfTwoLane|GAPS-186")
+    "static assertion|contract|precondition|non-constant"
+    "PowerOfTwoLane|power_of_two")
 
 # ─── #66 ledger/Ledger.h HS14 fixtures ────────────────────────────
 #
@@ -4469,9 +4476,11 @@ crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
 #     throughput envelope) from disk-corrupted / federation-mismatched
 #     / hostile-preset percentile measurements.
 crucible_neg_compile_cog_test(neg_opcode_latency_rejects_psu_rail
-    "constraint|constraints not satisfied|HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
+    "constraint|constraints not satisfied"
+    "HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
 crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
-    "static assertion|contract|precondition|quantile_ordered|non-constant|Refined|OrderedLatencyQuantiles|GAPS-187")
+    "static assertion|contract|precondition|non-constant"
+    "OrderedLatencyQuantiles|quantile_ordered")
 
 # ─── GAPS-191 cog/FitsCog.h soundness gates (HS14) ────────────────
 #
@@ -4491,9 +4500,11 @@ crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
 #   would silently bind to PsuRail and produce no-op stubs that
 #   drop scheduled work.
 crucible_neg_compile_cog_test(neg_fits_cog_oversubscribed
-    "constraint|constraints not satisfied|FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
+    "constraint|constraints not satisfied"
+    "FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
 crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
-    "constraint|constraints not satisfied|FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
+    "constraint|constraints not satisfied"
+    "FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
 
 # ─── GAPS-140 cog/NicOffloadAudit.h soundness gates (HS14) ─────────
 #
@@ -4505,9 +4516,11 @@ crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
 #   required_offloads is Bits<NicFeature>, not a raw integer mask, so
 #   wrong-universe feature masks cannot silently cross the policy API.
 crucible_neg_compile_cog_test(neg_nic_offload_audit_rejects_gpu
-    "constraint|constraints not satisfied|NicOffloadAuditableCog|audit_gate|GAPS-140")
+    "constraint|constraints not satisfied"
+    "NicOffloadAuditableCog|audit_gate|GAPS-140")
 crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
-    "cannot convert|could not convert|Bits|NicFeature|GAPS-140")
+    "cannot convert|could not convert"
+    "Bits|NicFeature|GAPS-140")
 
 # ─── GAPS-194 cog/NumaNic.h soundness gates (HS14) ─────────────────
 #
@@ -4517,9 +4530,11 @@ crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
 # * neg_numa_nic_raw_node — TYPE gate.
 #   NUMA nodes are NumaNodeId, not raw integers.
 crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
-    "constraint|constraints not satisfied|NumaNicAuditableCog|audit_gate|GAPS-194")
+    "constraint|constraints not satisfied"
+    "NumaNicAuditableCog|audit_gate|GAPS-194")
 crucible_neg_compile_cog_test(neg_numa_nic_raw_node
-    "cannot convert|could not convert|NumaNodeId|GAPS-194")
+    "cannot convert|could not convert"
+    "NumaNodeId|GAPS-194")
 
 # ─── HS14 fixtures for warden::Quarantine (GAPS-118 #1236) ────────
 #
@@ -4531,30 +4546,40 @@ crucible_neg_compile_cog_test(neg_numa_nic_raw_node
 #     requires the explicit OperatorOverride Permission token.
 #   * neg_quarantine_zero_slots — policy state must have bounded slots.
 crucible_neg_compile_warden_test(neg_quarantine_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsQuarantineMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsQuarantineMint")
 crucible_neg_compile_warden_test(neg_quarantine_record_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsQuarantineRecord|Bg|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsQuarantineRecord")
 crucible_neg_compile_warden_test(neg_quarantine_override_missing_permission
-    "no matching function|candidate|operator_override|Permission")
+    "no matching function"
+    "operator_override|Permission")
 crucible_neg_compile_warden_test(neg_quarantine_zero_slots
-    "static assertion failed|QuarantinePolicy requires Cog slots|MaxCogs > 0")
+    "static assertion failed"
+    "QuarantinePolicy requires Cog slots|MaxCogs > 0")
 
 # ─── FIXY-U-084 §XXI Universal Mint Pattern for warden/ hubs ──────
 # Three new mints (mint_hardening / mint_hot_region_registry_handle /
 # mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
 # proving the CtxFits* concept gates fire on missing Init.
 crucible_neg_compile_warden_test(neg_hardening_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsHardeningMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsHardeningMint")
 crucible_neg_compile_warden_test(neg_hardening_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsHardeningMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsHardeningMint")
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsHotRegionRegistryMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsHotRegionRegistryMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsDeadlineWatchdogMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsDeadlineWatchdogMint")
 
 # ─── FIXY-U-083 §XXI Universal Mint Pattern for perf/ hubs ────────
 # Per-perf-hub mint_<hub> (Init-row-gated startup factory) ships HS14
@@ -4563,13 +4588,17 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
 # of 2: SenseHub + SenseHubV2 (the two ABI-stable hubs; BPF facade
 # hubs ship in batch 2).
 crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsSenseHubMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsSenseHubMint")
 crucible_neg_compile_perf_test(neg_sense_hub_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsSenseHubMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsSenseHubMint")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsSenseHubV2Mint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsSenseHubV2Mint")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsSenseHubV2Mint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsSenseHubV2Mint")
 
 # FIXY-U-083 batch 2: 7 remaining perf/ hubs.  Six load-based BPF
 # facade hubs (LockContention / PmuSample / SchedSwitch / SchedTpBtf /
@@ -4577,44 +4606,61 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
 # WorkloadProfiler is ctor-based but rides the same Init-row Ctx-fit
 # concept.  Two fixtures per hub (BgDrainCtx + HotFgCtx) = 14 total.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsLockContentionMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsLockContentionMint")
 crucible_neg_compile_perf_test(neg_lock_contention_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsLockContentionMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsLockContentionMint")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsPmuSampleMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsPmuSampleMint")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsPmuSampleMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsPmuSampleMint")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsSchedSwitchMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsSchedSwitchMint")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsSchedSwitchMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsSchedSwitchMint")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsSchedTpBtfMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsSchedTpBtfMint")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsSchedTpBtfMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsSchedTpBtfMint")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsSyscallLatencyMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsSyscallLatencyMint")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsSyscallLatencyMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsSyscallLatencyMint")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsSyscallTpBtfMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsSyscallTpBtfMint")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsSyscallTpBtfMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsSyscallTpBtfMint")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsWorkloadProfilerMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsWorkloadProfilerMint")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsWorkloadProfilerMint|Init|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsWorkloadProfilerMint")
 
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures
 # above exercise the row half (different Init-less ExecCtx shapes);
 # fixtures below exercise the IsExecCtx half via raw struct rejection.
 crucible_neg_compile_warden_test(neg_hardening_mint_not_exec_ctx
-    "constraint|constraints not satisfied|CtxFitsHardeningMint|IsExecCtx|NotAnExecCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsHardeningMint")
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_not_exec_ctx
-    "constraint|constraints not satisfied|CtxFitsHotRegionRegistryMint|IsExecCtx|NotAnExecCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
-    "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|IsExecCtx|NotAnExecCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsDeadlineWatchdogMint")
 
 # ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
 #
@@ -4677,9 +4723,11 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
 #     a transient arena, producing a dangling identity pointer at
 #     teardown.
 crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
-    "constraint|constraints not satisfied|CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
+    "constraint|constraints not satisfied"
+    "CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
 crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
-    "constraint|constraints not satisfied|CogMimic|CtxFitsCogMimic|row_subset|Init|Bg|Test|GAPS-188")
+    "constraint|constraints not satisfied"
+    "CogMimic|CtxFitsCogMimic|row_subset|GAPS-188")
 
 # ─── HS14 fixtures #1 + #2 for topology::TopologyGraph (GAPS-110 #1209) ──
 #
@@ -4699,9 +4747,11 @@ crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
 #     mock could mint a TopologyGraph with a Test-tagged row, polluting
 #     any cross-test federation cache slot.
 crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
-    "constraint|constraints not satisfied|CtxFitsTopologyGraph|IsExecCtx|GAPS-110")
+    "constraint|constraints not satisfied"
+    "CtxFitsTopologyGraph|GAPS-110")
 crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
-    "constraint|constraints not satisfied|CtxFitsTopologyGraph|row_contains|Init|Test|GAPS-110")
+    "constraint|constraints not satisfied"
+    "CtxFitsTopologyGraph|row_contains|GAPS-110")
 
 # ─── HS14 fixtures for topology::Discovery (GAPS-111 #1217) ─────────
 #
@@ -4712,11 +4762,14 @@ crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
 #   * neg_topology_discovery_zero_nodes — snapshot shape requires at least
 #     one node and one edge slot.
 crucible_neg_compile_topology_test(neg_topology_discovery_mint_test_ctx
-    "constraint|constraints not satisfied|CtxFitsDiscoveryInit|Init|Test|GAPS-111")
+    "constraint|constraints not satisfied"
+    "CtxFitsDiscoveryInit|GAPS-111")
 crucible_neg_compile_topology_test(neg_topology_discovery_raw_lspci_text
-    "could not convert|no matching function|Tagged|External|GAPS-111")
+    "could not convert|no matching function"
+    "ExternalDiscoveryText")
 crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
-    "constraint|constraints not satisfied|DiscoveryShape|GAPS-111")
+    "constraint|constraints not satisfied"
+    "DiscoveryShape|GAPS-111")
 
 # ─── HS14 fixtures for topology::Health (GAPS-113 #1219) ───────────
 #
@@ -4728,11 +4781,14 @@ crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
 #   * neg_topology_health_raw_score — quarantine thresholds consume the
 #     HealthScore strong type, not raw integers.
 crucible_neg_compile_topology_test(neg_topology_health_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsHealthMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsHealthMint")
 crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsHealthUpdate|Bg|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsHealthUpdate")
 crucible_neg_compile_topology_test(neg_topology_health_raw_score
-    "could not convert|invalid conversion|HealthScore")
+    "could not convert"
+    "invalid conversion|HealthScore")
 
 # ─── HS14 fixtures for topology::Telemetry (GAPS-112 #1218) ────────
 #
@@ -4743,13 +4799,17 @@ crucible_neg_compile_topology_test(neg_topology_health_raw_score
 #   * neg_topology_telemetry_window_overflow — bounded history indices cannot
 #     silently wrap their uint16_t carrier.
 crucible_neg_compile_topology_test(neg_topology_telemetry_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsNicTelemetryMint|Init|Bg|GAPS-112")
+    "constraint|constraints not satisfied"
+    "CtxFitsNicTelemetryMint|GAPS-112")
 crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
-    "could not convert|no matching function|Tagged|External|GAPS-112")
+    "could not convert|no matching function"
+    "ExternalTelemetryText")
 crucible_neg_compile_topology_test(neg_topology_telemetry_record_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsNicTelemetryRecord|Bg|GAPS-112")
+    "constraint|constraints not satisfied"
+    "CtxFitsNicTelemetryRecord|GAPS-112")
 crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
-    "static assertion failed|uint16_t|bounded history|GAPS-112")
+    "static assertion failed"
+    "uint16_t|bounded history|GAPS-112")
 
 # ─── HS14 fixtures for topology::AsymmetricFailure (GAPS-127 #1220) ──
 #
@@ -4760,11 +4820,14 @@ crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
 #   * neg_asymmetric_failure_zero_window — a detector must carry a
 #     non-empty bounded probe window.
 crucible_neg_compile_topology_test(neg_asymmetric_failure_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsAsymmetricFailureMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsAsymmetricFailureMint")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_record_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsAsymmetricFailureRecord|Bg|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsAsymmetricFailureRecord")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
-    "static assertion failed|non-empty probe window|Window > 0")
+    "static assertion failed"
+    "non-empty probe window|Window > 0")
 
 # ─── HS14 fixtures for topology::Pingmesh (GAPS-134 #1237) ──────────
 #
@@ -4777,13 +4840,17 @@ crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
 #   * neg_pingmesh_zero_peer_capacity — all-pairs storage must have at
 #     least two peers.
 crucible_neg_compile_topology_test(neg_pingmesh_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsPingmeshMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsPingmeshMint")
 crucible_neg_compile_topology_test(neg_pingmesh_record_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsPingmeshRecord|Bg|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsPingmeshRecord")
 crucible_neg_compile_topology_test(neg_pingmesh_raw_measurement
-    "cannot convert|no matching function|could not convert|Tagged|PingmeshMeasurement|Pingmesh")
+    "cannot convert|no matching function|could not convert"
+    "PingmeshMeasurement|Pingmesh")
 crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
-    "static assertion failed|requires at least two peers")
+    "static assertion failed"
+    "requires at least two peers")
 
 # ─── HS14 fixtures for topology::Ptp (GAPS-129 #1221) ───────────────
 #
@@ -4799,21 +4866,29 @@ crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
 #   * neg_ptp_daemon_report_fg_ctx — foreground contexts cannot admit
 #     external daemon reports.
 crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
-    "constraint|constraints not satisfied|CtxFitsPtpMint|Init|Bg")
+    "constraint|constraints not satisfied"
+    "CtxFitsPtpMint")
 crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsPtpRecord|Bg|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsPtpRecord")
 crucible_neg_compile_topology_test(neg_ptp_raw_fd
-    "cannot convert|no matching function|could not convert|PtpClockFd|int")
+    "cannot convert|no matching function|could not convert"
+    "PtpClockFd")
 crucible_neg_compile_topology_test(neg_ptp_raw_timestamp
-    "cannot convert|no matching function|could not convert|PtpTimestampNs|Tagged")
+    "cannot convert|no matching function|could not convert"
+    "PtpTimestampNs")
 crucible_neg_compile_topology_test(neg_ptp_open_raw_device_index
-    "cannot convert|no matching function|could not convert|PtpDeviceIndex|int")
+    "cannot convert|no matching function|could not convert"
+    "PtpDeviceIndex")
 crucible_neg_compile_topology_test(neg_ptp_enable_raw_socket
-    "cannot convert|no matching function|could not convert|SocketFd|int")
+    "cannot convert|no matching function|could not convert"
+    "SocketFd")
 crucible_neg_compile_topology_test(neg_ptp_raw_daemon_report_status
-    "cannot convert|no matching function|could not convert|DeclaredPtpDaemonReport|Tagged")
+    "cannot convert|no matching function|could not convert"
+    "DeclaredPtpDaemonReport")
 crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
-    "constraint|constraints not satisfied|CtxFitsPtpRecord|Bg|HotFgCtx")
+    "constraint|constraints not satisfied"
+    "CtxFitsPtpRecord")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
@@ -6408,9 +6483,22 @@ crucible_neg_compile_test(neg_congestion_control_custom_missing_name
 #   * neg_calibrate_zero_latency_quantile: measured latency must be positive.
 #   * neg_calibrate_hot_fg_ctx: calibration is Init/Bg work, never hot Fg.
 crucible_neg_compile_cog_test(neg_calibrate_psu_rail
-  "constraints not satisfied|CalibratableCogKind|HasOpcodeTable|HasCaps")
+  "constraints not satisfied"
+    "CalibratableCogKind|HasOpcodeTable|HasCaps")
+# These three fixtures cannot carry a second regex, and cog_neg is
+# therefore not under the two-regex floor.  Each witnesses a Refined
+# construction whose predicate is false, and GCC reports that as
+# `_Refined.h:157: contract predicate is false in constant expression`
+# — the location of the shared `pre(Pred(v))` clause.  The diagnostic
+# names neither the predicate nor the refined type, so the only text
+# that distinguishes one of these fixtures from any other Refined
+# violation anywhere in the translation unit is the `In file included
+# from` chain, which names a header rather than a gate.  Adding a
+# second regex here would assert something the compiler never says.
+# Closing cog_neg needs the substrate to name the predicate in the
+# contract message first.
 crucible_neg_compile_cog_test(neg_calibrate_zero_latency_quantile
-  "contract|precondition|calibration_quantiles_valid|Refined|CalibrationLatencyQuantiles")
+    "contract|precondition|calibration_quantiles_valid|Refined|CalibrationLatencyQuantiles")
 crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
   "constraints not satisfied|CtxFitsCalibration|CtxAdmits|Init|Bg")
 
@@ -6420,9 +6508,11 @@ crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
 #     values in [256, 8192].
 #   * neg_nic_config_mint_bg_ctx: config minting is Init-row work.
 crucible_neg_compile_cog_test(neg_nic_config_raw_apply
-  "could not convert|no matching function|DeclaredNicConfig|Tagged")
+  "could not convert|no matching function"
+    "DeclaredNicConfig")
 crucible_neg_compile_cog_test(neg_nic_config_ring_not_power_of_two
-  "contract|precondition|power_of_two|Refined|NicRingSize")
+  "static assertion|contract|precondition|non-constant"
+    "NicRingSize|power_of_two")
 crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
   "constraints not satisfied|CtxFitsNicConfigMint|Init")
 
@@ -6432,11 +6522,12 @@ crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
 #   * neg_sriov_multicast_mac: VF MACs must be non-zero unicast addresses.
 #   * neg_sriov_mint_bg_ctx: SR-IOV plan minting is Init-row work.
 crucible_neg_compile_cog_test(neg_sriov_raw_plan_enable
-  "could not convert|no matching function|DeclaredSrIovPlan|Tagged")
+  "could not convert|no matching function"
+    "DeclaredSrIovPlan")
 crucible_neg_compile_cog_test(neg_sriov_zero_vfs
-  "contract|precondition|bounded|Bounded|VfCount|Refined")
+    "contract|precondition|bounded|Bounded|VfCount|Refined")
 crucible_neg_compile_cog_test(neg_sriov_multicast_mac
-  "contract|precondition|vf_mac_valid|Refined|VfMacAddress")
+    "contract|precondition|vf_mac_valid|Refined|VfMacAddress")
 crucible_neg_compile_effects_test(neg_sriov_mint_bg_ctx
   "constraints not satisfied|CtxFitsSrIovMint|Init")
 
