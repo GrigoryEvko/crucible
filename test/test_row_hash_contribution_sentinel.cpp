@@ -14,9 +14,9 @@
 // belong to are left out.  Their nesting position is not fixed, so an
 // ordered pair over them would assert nothing.
 
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/DetSafe.h>

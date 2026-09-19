@@ -21,7 +21,7 @@
 //   * "ArgsCanonicallyOrdered"  — the specific gate that rejected it
 
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 

@@ -1,7 +1,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Platform.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 
 #include "test_assert.h"

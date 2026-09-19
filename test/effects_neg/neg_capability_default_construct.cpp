@@ -26,7 +26,7 @@
 //   "no matching function" / "candidate expects 1 argument" /
 //   "cap_mint_key".
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

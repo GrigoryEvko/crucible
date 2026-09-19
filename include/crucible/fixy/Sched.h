@@ -13,7 +13,7 @@
 #include <crucible/safety/SchedClass.h>
 #include <crucible/safety/ThreadName.h>
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <sched.h>
 #include <sys/resource.h>

@@ -28,7 +28,7 @@
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 
 #include <concepts>
 #include <cstdint>

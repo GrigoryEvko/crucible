@@ -4,12 +4,12 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/grant/Ctrl.h>
 
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/permissions/Permission.h>
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <cstdint>
 #include <type_traits>

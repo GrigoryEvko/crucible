@@ -8,9 +8,9 @@
 // call site may name a parameter type directly.  It does not strip
 // pointers: a pointer to a wrapper is not a wrapper.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/Modality.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/_Modality.h>
 
 #include <type_traits>
 

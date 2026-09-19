@@ -12,8 +12,8 @@
 // from the bytes of T, so peek_mut and swap cannot violate it.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 #include <cstdlib>
 #include <memory>

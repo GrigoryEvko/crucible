@@ -25,8 +25,8 @@
 // the value is visible to observers the fence never reached.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 
 #include <concepts>
 #include <cstdlib>

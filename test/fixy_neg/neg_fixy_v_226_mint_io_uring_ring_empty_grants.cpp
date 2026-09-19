@@ -17,7 +17,7 @@
 //   "constraints not satisfied" / "has_engine_grant" /
 //   "has_sq_entries_grant".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {

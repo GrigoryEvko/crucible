@@ -5,7 +5,7 @@
 // ownership or leave the reader holding a borrow.
 
 #include <crucible/concurrent/AtomicSnapshot.h>
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/sessions/SwmrSession.h>

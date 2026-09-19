@@ -15,7 +15,7 @@
 // no matching function / mint_bounded_sleep.
 
 #include <crucible/fixy/Time.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     ::crucible::effects::ColdInitCtx init{};  // Init row carries no Block

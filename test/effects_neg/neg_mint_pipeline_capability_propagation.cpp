@@ -5,8 +5,8 @@
 // must still admit the staged row before running it.
 
 #include <crucible/concurrent/Pipeline.h>
-#include <crucible/effects/Capability.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capability.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
 #include <utility>

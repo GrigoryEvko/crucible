@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 
 #include <cstddef>
 #include <meta>

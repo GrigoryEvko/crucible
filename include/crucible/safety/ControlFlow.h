@@ -11,7 +11,7 @@
 // do, so mutable access needs no re-check.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/ControlFlowLattice.h>
 
 #include <concepts>

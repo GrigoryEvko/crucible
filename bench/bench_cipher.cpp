@@ -18,7 +18,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 

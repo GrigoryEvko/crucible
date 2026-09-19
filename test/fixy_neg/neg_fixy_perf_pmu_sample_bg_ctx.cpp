@@ -15,7 +15,7 @@
 // "CtxFitsPmuSampleMint" / "Init" / "row_contains".
 
 #include <crucible/fixy/Perf.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     auto hub =

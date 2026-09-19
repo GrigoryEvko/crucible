@@ -13,7 +13,7 @@
 // ExecCtx fires at instantiation, naming the cap-permitted-row
 // invariant.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

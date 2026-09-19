@@ -1,10 +1,10 @@
 #pragma once
 
-#include <crucible/algebra/lattices/CipherTierLattice.h>
+#include <crucible/algebra/lattices/_CipherTierLattice.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
-#include <crucible/algebra/lattices/ProductLattice.h>
-#include <crucible/algebra/lattices/ToleranceLattice.h>
-#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/EpochVersioned.h>

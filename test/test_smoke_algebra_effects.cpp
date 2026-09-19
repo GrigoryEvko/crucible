@@ -3,13 +3,13 @@
 // regression, an SFINAE path that never instantiates its inline body, or a
 // warning that fires only when the project flags run over the body tokens.
 
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/Modality.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/_Modality.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/Concurrent.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/Resources.h>
 
 int main() {

@@ -23,8 +23,8 @@
 //
 // Expected diagnostic: "constraints not satisfied" / "RelativeMonadModality".
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 using namespace crucible::algebra;
 using namespace crucible::algebra::lattices;

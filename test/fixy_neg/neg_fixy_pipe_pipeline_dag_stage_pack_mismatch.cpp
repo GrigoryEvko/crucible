@@ -14,7 +14,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at CtxFitsPipelineDagMint / pipeline_dag_mint_gate.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <optional>

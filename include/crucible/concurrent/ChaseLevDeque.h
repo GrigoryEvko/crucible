@@ -29,7 +29,7 @@
 #include <crucible/safety/Pinned.h>
 #include <crucible/fixy/Hw.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 
 #include <array>
 #include <atomic>

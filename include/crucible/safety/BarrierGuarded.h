@@ -16,8 +16,8 @@
 // was issued elsewhere.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 
 #include <concepts>
 #include <cstdlib>

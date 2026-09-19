@@ -2,8 +2,8 @@
 
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <cstdint>
 #include <type_traits>

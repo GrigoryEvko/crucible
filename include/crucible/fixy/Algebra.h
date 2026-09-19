@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/algebra/Algebra.h>
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/DimensionTraits.h>
 
 namespace crucible::fixy::algebra {

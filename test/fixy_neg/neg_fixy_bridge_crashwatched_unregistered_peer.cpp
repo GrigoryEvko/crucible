@@ -43,7 +43,7 @@
 // "static assertion failed" pointing at PermissionInherit.h or
 // CrashTransport.h:require_crash_survivors_declared_.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Bridge.h>
 #include <crucible/sessions/SessionMint.h>
 

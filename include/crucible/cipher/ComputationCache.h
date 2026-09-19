@@ -18,7 +18,7 @@
 
 #include <crucible/safety/diag/StableName.h>
 #include <crucible/safety/diag/RowHashFold.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <atomic>
 #include <bit>

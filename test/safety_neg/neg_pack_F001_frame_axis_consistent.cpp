@@ -20,7 +20,7 @@
 //
 // Expected diagnostic substring: "F001:".
 
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Rules.h>
 #include <crucible/safety/Fn.h>
 

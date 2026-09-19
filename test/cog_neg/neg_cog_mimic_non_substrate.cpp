@@ -61,9 +61,9 @@
 // "GAPS-188" pointing at the call site below.
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/mimic/CogMimic.h>
 
 namespace cog = crucible::cog;

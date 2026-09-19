@@ -23,7 +23,7 @@
 // Expected diagnostic: "static assertion failed" / "static_assert" /
 // "fixy-A3-017"
 
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <string_view>
 

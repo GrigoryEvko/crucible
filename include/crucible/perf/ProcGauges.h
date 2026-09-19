@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Linear.h>
 

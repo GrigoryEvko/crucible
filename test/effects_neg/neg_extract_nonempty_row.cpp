@@ -14,7 +14,7 @@
 // satisfied" with the requires-clause "row_size_v<R> == 0" in the
 // instantiation context.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 
 namespace eff = crucible::effects;
 

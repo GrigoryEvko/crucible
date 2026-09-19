@@ -16,7 +16,7 @@
 //   "no matching function" / "could not convert" / "cannot convert" /
 //   "conversion from".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 

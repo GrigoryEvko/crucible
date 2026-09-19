@@ -19,7 +19,7 @@
 // Expected diagnostic: constraint not satisfied (Bg context owns
 // Effect::Bg).
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/concurrent/SpinLock.h>
 #include <crucible/permissions/Permission.h>
 

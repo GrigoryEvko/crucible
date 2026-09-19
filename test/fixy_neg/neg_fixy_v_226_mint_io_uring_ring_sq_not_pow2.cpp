@@ -16,7 +16,7 @@
 //   "no matching function" / "CtxFitsIoUringMint" /
 //   "constraints not satisfied" / "sq_entries_is_pow2".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {

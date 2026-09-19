@@ -9,14 +9,14 @@
 // source-visible annotation. A later analysis pass can specialize the same
 // traits from analyzed bodies without changing any signature here.
 
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 #include <crucible/algebra/lattices/ControlFlowLattice.h>
 #include <crucible/algebra/lattices/HwInstructionLattice.h>
 #include <crucible/algebra/lattices/SimdIsaLattice.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/algebra/lattices/StdioLattice.h>
-#include <crucible/algebra/lattices/WaitLattice.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/algebra/lattices/_WaitLattice.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/FpMode.h>

@@ -34,7 +34,7 @@
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace proto = ::crucible::safety::proto;
 namespace eff = ::crucible::effects;

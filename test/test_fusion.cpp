@@ -7,7 +7,7 @@
 
 #include <crucible/safety/Fusion.h>
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <cstddef>
 #include <cstdio>

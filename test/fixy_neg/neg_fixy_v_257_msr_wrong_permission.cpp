@@ -16,7 +16,7 @@
 // "cannot bind" / "Permission".
 
 #include <crucible/fixy/Hw.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/Permission.h>
 
 namespace {

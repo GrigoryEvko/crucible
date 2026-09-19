@@ -25,7 +25,7 @@
 #include "random_input.h"
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/Refined.h>
 
 #include <array>

@@ -14,7 +14,7 @@
 // private — the user-side `cap_mint_key{}` call site fails because
 // it is NOT the befriended mint_cap function body.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

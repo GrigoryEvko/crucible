@@ -14,9 +14,9 @@
 // the no-stdio floor must call meet, because join hands back the most
 // permissive party's surface.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
 
 #include <cstdint>
 #include <meta>

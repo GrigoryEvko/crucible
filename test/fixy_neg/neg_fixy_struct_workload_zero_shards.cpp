@@ -9,7 +9,7 @@
 //
 // Expected diagnostic: substring "requires N > 0" / "static_assert".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/permissions/Permission.h>
 

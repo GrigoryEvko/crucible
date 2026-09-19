@@ -18,8 +18,8 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at the `requires (row_size_v<R> == 0)` clause.
 
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
 
 namespace eff = crucible::effects;
 

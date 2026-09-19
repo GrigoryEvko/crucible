@@ -38,7 +38,7 @@
 // IsCacheableFunction<42>.
 
 #include <crucible/cipher/ComputationCache.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 int main() {
     // `42` is the FnPtr template arg — bound to `auto FnPtr`.

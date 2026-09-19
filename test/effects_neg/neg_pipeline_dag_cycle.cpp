@@ -5,7 +5,7 @@
 // is a cycle witness and must be rejected by StageGraphWellFormed.
 
 #include <crucible/concurrent/Pipeline.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
 

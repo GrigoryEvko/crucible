@@ -2,9 +2,9 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cntp/Pacing.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Pre.h>

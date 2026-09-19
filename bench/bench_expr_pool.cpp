@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/ExprPool.h>
 
 #include "bench_harness.h"

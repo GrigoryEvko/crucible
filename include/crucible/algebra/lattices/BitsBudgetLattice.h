@@ -16,8 +16,8 @@
 // both readings into this one would break every existing consumer,
 // silently, since the numbers stay identical.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <compare>
 #include <cstdint>

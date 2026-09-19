@@ -84,7 +84,7 @@
 //   "non-constant condition" / "not a constant expression" /
 //   "__builtin_trap" / "call to non-constexpr function".
 
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 

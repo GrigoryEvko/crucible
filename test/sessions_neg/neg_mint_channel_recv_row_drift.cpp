@@ -4,7 +4,7 @@
 // its first action.  Endpoint A first sends a pure int, then later receives an
 // IO payload; HotFgCtx cannot admit that continuation Recv row.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = crucible::effects;

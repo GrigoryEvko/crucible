@@ -10,9 +10,9 @@
 // BOUNDED_STALENESS outranks CAUSAL_PREFIX because its bound is
 // real-time rather than causal, which is the stricter of the two.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
 
 #include <cstdint>
 #include <meta>

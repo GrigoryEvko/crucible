@@ -21,7 +21,7 @@
 //   "no matching function" / "CtxFitsAnonMmapMint" /
 //   "constraints not satisfied" / "pack_has_anonymous".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 struct AnonRegion {};

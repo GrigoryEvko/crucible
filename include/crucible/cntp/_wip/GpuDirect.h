@@ -6,8 +6,8 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>

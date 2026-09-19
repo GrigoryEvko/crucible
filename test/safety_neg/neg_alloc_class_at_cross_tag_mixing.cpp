@@ -14,7 +14,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection on the nested-
 // struct template identity at the LATTICE surface.
 
-#include <crucible/algebra/lattices/AllocClassLattice.h>
+#include <crucible/algebra/lattices/_AllocClassLattice.h>
 
 using namespace crucible::algebra::lattices;
 

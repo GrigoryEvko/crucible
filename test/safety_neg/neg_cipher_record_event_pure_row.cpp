@@ -19,8 +19,8 @@
 // Subrow<Row<IO, Block>, Row<>>.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;

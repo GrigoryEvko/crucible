@@ -16,7 +16,7 @@
 // Expected diagnostic: constraints not satisfied / CtxFitsMonotonicClock /
 // CtxOwnsAnyOf / no matching function / now_ns.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Mutation.h>
 
 int main() {

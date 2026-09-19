@@ -22,7 +22,7 @@
 //
 // Expected diagnostic: "static assertion failed" / "static_assert".
 
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 
 namespace alg = crucible::algebra;
 

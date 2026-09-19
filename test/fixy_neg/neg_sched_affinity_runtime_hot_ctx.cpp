@@ -16,7 +16,7 @@
 // Expected diagnostic: constraints not satisfied / CtxFitsRuntimeAffinity /
 // no matching function / apply_affinity_to_cpu.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Sched.h>
 
 int main() {

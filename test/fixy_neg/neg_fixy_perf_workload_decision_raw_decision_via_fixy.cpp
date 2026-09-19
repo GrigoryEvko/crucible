@@ -23,7 +23,7 @@
 // Expected diagnostic: "no matching function" /
 // "TaggedParallelismDecision" / "Tagged" / "cannot convert".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Perf.h>
 
 int main() {

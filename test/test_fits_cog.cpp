@@ -8,7 +8,7 @@
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/effects/Concurrent.h>
 #include <crucible/effects/Resources.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <cassert>
 #include <cstdint>

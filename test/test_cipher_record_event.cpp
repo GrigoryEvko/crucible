@@ -5,8 +5,8 @@
 // rejecting side lives in the negative-compile fixtures.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include "test_assert.h"
 
 #include <cstdio>

@@ -33,7 +33,7 @@
 // has not yet declared a budget.  A site that has declared one asserts
 // on the concept itself.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/concurrent/WorkingSet.h>
 
 #include <cstddef>

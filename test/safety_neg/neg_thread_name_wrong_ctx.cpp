@@ -17,7 +17,7 @@
 
 #include <crucible/safety/ThreadName.h>
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 int main() {
     auto bg = ::crucible::effects::testing::bg();

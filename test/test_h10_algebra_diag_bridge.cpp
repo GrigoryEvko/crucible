@@ -5,10 +5,10 @@
 // coupling surfaces here as a missing include, rather than silently
 // later as a broken federation cache key.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/Modality.h>
-#include <crucible/algebra/lattices/ProductLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/_Modality.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/safety/diag/StableName.h>
 
 #include <cstddef>

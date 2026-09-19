@@ -20,7 +20,7 @@
 // Expected diagnostic: CtxFitsPoolSubmit / CtxOwnsCapability /
 // row_contains_v constraint is not satisfied.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <utility>

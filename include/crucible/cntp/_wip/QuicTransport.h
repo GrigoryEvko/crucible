@@ -7,9 +7,9 @@
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/cntp/PathSwap.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>

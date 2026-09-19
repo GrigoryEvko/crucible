@@ -11,8 +11,8 @@
 // one property it actually depends on.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/ClockSourceLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_ClockSourceLattice.h>
 
 #include <concepts>
 #include <cstdlib>

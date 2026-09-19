@@ -17,9 +17,9 @@
 // There is no Consume tier.  Compilers promote consume to acquire, so a
 // caller that would reach for it declares Acquire.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
 
 #include <cstdint>
 #include <meta>

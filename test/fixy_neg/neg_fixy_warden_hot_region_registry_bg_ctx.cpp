@@ -16,7 +16,7 @@
 // satisfied" / "CtxFitsHotRegionRegistryMint" / "Init".
 
 #include <crucible/fixy/Warden.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     auto handle = crucible::fixy::warden::mint_hot_region_registry_handle(crucible::effects::BgDrainCtx{});

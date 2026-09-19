@@ -23,8 +23,8 @@
 // [GCC-text + framework] — concept-failure diagnostic text;
 // the requires clause itself is FRAMEWORK-CONTROLLED.
 
-#include <crucible/algebra/lattices/ProductLattice.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 using namespace crucible::algebra::lattices;
 

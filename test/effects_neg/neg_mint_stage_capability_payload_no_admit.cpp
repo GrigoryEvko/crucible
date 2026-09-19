@@ -4,8 +4,8 @@
 // omits E cannot host the stage.
 
 #include <crucible/concurrent/Stage.h>
-#include <crucible/effects/Capability.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capability.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
 #include <utility>

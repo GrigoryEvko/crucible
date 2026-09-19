@@ -28,8 +28,8 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection on the
 // per-instantiation element_type identity.
 
-#include <crucible/algebra/lattices/ProductLattice.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -36,7 +36,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/TraceGraph.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <algorithm>
 #include <array>

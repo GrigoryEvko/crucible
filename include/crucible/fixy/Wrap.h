@@ -11,7 +11,7 @@
 // than as two distinct types.  The self-test at the end of this file
 // pins the agreement.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Affine.h>
 #include <crucible/safety/AllocClass.h>

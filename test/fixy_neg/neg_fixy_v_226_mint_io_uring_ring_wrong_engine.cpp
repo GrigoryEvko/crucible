@@ -15,7 +15,7 @@
 //   "no matching function" / "CtxFitsIoUringMint" /
 //   "constraints not satisfied" / "engine_is_io_uring".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {

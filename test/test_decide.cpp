@@ -7,9 +7,9 @@
 // fixtures.
 
 #include <crucible/Expr.h>
-#include <crucible/algebra/lattices/CipherTierLattice.h>
-#include <crucible/algebra/lattices/DetSafeLattice.h>
-#include <crucible/algebra/lattices/HotPathLattice.h>
+#include <crucible/algebra/lattices/_CipherTierLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
+#include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>

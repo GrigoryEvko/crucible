@@ -5,7 +5,7 @@
 // distinct 1-byte structs with no implicit conversion.
 
 #include <crucible/perf/PmuSample.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <optional>
 

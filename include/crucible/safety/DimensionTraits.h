@@ -1,7 +1,7 @@
 #pragma once
 
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/_Lattice.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/Budgeted.h>

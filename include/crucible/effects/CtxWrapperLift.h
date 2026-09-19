@@ -8,7 +8,7 @@
 // that transitive weight on every consumer of a context, so a caller
 // opts in here instead.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/ResidencyHeat.h>

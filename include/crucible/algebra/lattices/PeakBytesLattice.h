@@ -13,8 +13,8 @@
 // of concurrent producers is a different calculation and belongs to
 // whatever plans the memory, not to this order.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <compare>
 #include <cstdint>

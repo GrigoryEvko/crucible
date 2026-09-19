@@ -3,7 +3,7 @@
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 

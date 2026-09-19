@@ -10,7 +10,7 @@
 // Expected diagnostic: GCC's "associated constraints are not
 // satisfied" pointing at the IsEffectRow clause on in_row<>().
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

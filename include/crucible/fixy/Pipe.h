@@ -11,8 +11,8 @@
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/concurrent/TopologyConstexpr.h>
 #include <crucible/concurrent/WorkingSet.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <concepts>
 #include <type_traits>
 #include <utility>

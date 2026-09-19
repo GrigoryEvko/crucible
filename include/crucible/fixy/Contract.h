@@ -8,7 +8,7 @@
 #include <crucible/cipher/ComputationCache.h>
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/cipher/FederationProtocol.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Contract.h>
 
 #include <chrono>  // drain_computation_cache takes a duration

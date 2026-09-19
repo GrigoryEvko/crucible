@@ -15,7 +15,7 @@
 // Expected diagnostic: "private within this context" /
 // "'Init' has been explicitly marked as private" / "fixy-A3-005".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 namespace eff = crucible::effects;
 

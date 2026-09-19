@@ -21,10 +21,10 @@
 // A cheat asserted as admitted is not automatically a hole.  Where the
 // admission is judged harmless the reason is stated at the fixture.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
-#include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
+#include <crucible/algebra/lattices/_BoolLattice.h>
 #include <crucible/safety/IsLinear.h>
 
 #include <string_view>

@@ -32,7 +32,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/warden/Registry.h>
 #include <crucible/safety/Decide.h>

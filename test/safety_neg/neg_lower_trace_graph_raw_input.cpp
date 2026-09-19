@@ -7,8 +7,8 @@
 // Expected diagnostic: no matching lower_trace_to_graph overload.
 
 #include <crucible/Lower.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 
 namespace eff = ::crucible::effects;
 

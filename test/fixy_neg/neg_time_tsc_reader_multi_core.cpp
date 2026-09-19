@@ -15,7 +15,7 @@
 // no matching function / mint_tsc_reader.
 
 #include <crucible/fixy/Time.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     ::crucible::effects::ColdInitCtx init{};

@@ -13,7 +13,7 @@
 // invalid use of incomplete type — the missing specialisation
 // surfaces as an undefined struct.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

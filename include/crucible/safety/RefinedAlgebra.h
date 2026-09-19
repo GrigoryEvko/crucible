@@ -9,7 +9,7 @@
 // still collapses inside the wrapper.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/Refined.h>
 
 #include <array>

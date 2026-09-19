@@ -1,4 +1,4 @@
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/Expr.h>
 #include <crucible/ExprPool.h>
 

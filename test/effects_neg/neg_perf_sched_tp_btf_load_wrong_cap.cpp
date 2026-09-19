@@ -11,7 +11,7 @@
 // cannot convert|expected.*Init".
 
 #include <crucible/perf/SchedTpBtf.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <optional>
 

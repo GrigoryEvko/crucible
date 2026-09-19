@@ -18,7 +18,7 @@
 //   "static assertion failed" / "Producers > 0" /
 //   "ProducerOnlyChannel".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

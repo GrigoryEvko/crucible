@@ -14,7 +14,7 @@
 // swmr_stage_from_endpoint_gate / IsConsumerEndpoint.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 #include <crucible/permissions/Permission.h>
 

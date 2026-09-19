@@ -3,7 +3,7 @@
 // every shared guard is gone, is the proof that no reader remains.  This
 // test walks that borrow discipline end to end.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/CollisionCatalog.h>

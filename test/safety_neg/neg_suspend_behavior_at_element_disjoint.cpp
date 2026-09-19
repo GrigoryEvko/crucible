@@ -22,8 +22,8 @@
 // Expected diagnostic: no match for / cannot convert / conversion from /
 // no viable.
 
-#include <crucible/algebra/lattices/DetSafeLattice.h>
-#include <crucible/algebra/lattices/SuspendBehaviorLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
+#include <crucible/algebra/lattices/_SuspendBehaviorLattice.h>
 
 using namespace crucible::algebra::lattices;
 

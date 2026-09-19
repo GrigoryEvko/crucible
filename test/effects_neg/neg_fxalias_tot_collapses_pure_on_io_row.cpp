@@ -22,8 +22,8 @@
 // Expected diagnostic: "static assertion failed" / "static_assert"
 // / "fixy-A3-019" / "Pure-vs-Tot row discrimination"
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 
 #include <type_traits>

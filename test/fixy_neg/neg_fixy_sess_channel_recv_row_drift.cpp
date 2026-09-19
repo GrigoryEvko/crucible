@@ -11,7 +11,7 @@
 // Expected diagnostic: CtxFitsChannel / CtxFitsPermissionedProtocol
 // constraints not satisfied.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/fixy/Sess.h>
 
 namespace eff = crucible::effects;

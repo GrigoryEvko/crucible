@@ -17,7 +17,7 @@
 // partial order takes the clock out and compares that.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/safety/Decide.h>
 

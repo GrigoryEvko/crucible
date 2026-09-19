@@ -4,7 +4,7 @@
 // paths name the same substrate symbols, so open one path per
 // translation unit rather than both.
 
-#include <crucible/algebra/Modality.h>
+#include <crucible/algebra/_Modality.h>
 
 #include <cstddef>
 #include <cstdint>

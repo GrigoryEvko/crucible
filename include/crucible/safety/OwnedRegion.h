@@ -9,7 +9,7 @@
 // and the distinct Slice tags are what prove the chunks are disjoint.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/Platform.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/PermissionTreeGenerator.h>

@@ -9,9 +9,9 @@
 // The vocabulary is borrowed at the effect level only.  There are no
 // refinement types, no decreases-clauses and no termination metric.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Progress.h>
 

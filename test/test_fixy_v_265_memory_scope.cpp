@@ -20,9 +20,9 @@
 // static_assert that lives only in a header is never evaluated under
 // the project warning flags until some translation unit includes it.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 
 #include <string_view>
 #include <type_traits>

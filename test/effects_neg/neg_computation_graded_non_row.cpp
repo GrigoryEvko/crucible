@@ -19,7 +19,7 @@
 // in 'detail::effect_row_to_at" / "is incomplete and cannot be
 // completed".
 
-#include <crucible/effects/ComputationGraded.h>
+#include <crucible/effects/_ComputationGraded.h>
 
 namespace eff = crucible::effects;
 

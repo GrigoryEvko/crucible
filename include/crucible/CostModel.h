@@ -7,7 +7,7 @@
 // every size is bytes.
 
 #include <crucible/Types.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Wrap.h>
 
 #include <algorithm>

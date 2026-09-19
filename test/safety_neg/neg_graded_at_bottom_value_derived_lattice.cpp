@@ -9,7 +9,7 @@
 // The checked form this replaces is Graded{value, L::bottom()}, whose
 // witness check asserts that the value already derives bottom.
 
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 
 #include <cstddef>
 #include <string_view>

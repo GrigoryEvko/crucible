@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/diag/RowMismatch.h>

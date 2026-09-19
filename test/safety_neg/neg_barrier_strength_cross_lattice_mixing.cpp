@@ -17,7 +17,7 @@
 // [GCC-WRAPPER-TEXT] — diagnostic comes from GCC's strong-enum
 // type-mismatch rejection.
 
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 #include <crucible/algebra/lattices/HwInstructionLattice.h>
 
 using namespace crucible::algebra::lattices;

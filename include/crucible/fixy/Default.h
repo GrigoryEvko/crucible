@@ -10,7 +10,7 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Tagged.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <concepts>
 #include <cstdint>

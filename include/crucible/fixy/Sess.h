@@ -3,7 +3,7 @@
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/permissions/PermSet.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Diagnostic.h>

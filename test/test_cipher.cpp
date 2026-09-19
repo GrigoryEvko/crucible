@@ -1,7 +1,7 @@
 #include <crucible/Cipher.h>
 
 #include <memory>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>

@@ -1,5 +1,5 @@
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/safety/DimensionTraits.h>
 
 #include <string_view>

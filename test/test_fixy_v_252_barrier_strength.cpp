@@ -10,9 +10,9 @@
 // gating.  The formal correctness of a given fence is carried by the
 // explicit barrier grant at the site, not derived from this order.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 
 #include <string_view>
 #include <type_traits>

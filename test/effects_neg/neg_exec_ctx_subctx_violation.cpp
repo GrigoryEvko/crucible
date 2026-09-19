@@ -11,7 +11,7 @@
 // Expected diagnostic: `associated constraints are not satisfied`
 // pointing at IsSubCtx.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

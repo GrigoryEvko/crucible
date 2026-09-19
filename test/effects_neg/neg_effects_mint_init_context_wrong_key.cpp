@@ -10,7 +10,7 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "CanMintInitContext" / "same_as" / "bg_key" / "init_key" / "is private".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 namespace eff = crucible::effects;
 

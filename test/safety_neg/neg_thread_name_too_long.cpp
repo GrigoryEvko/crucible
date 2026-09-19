@@ -16,7 +16,7 @@
 
 #include <crucible/safety/ThreadName.h>
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 int main() {
     auto init = ::crucible::effects::testing::init();

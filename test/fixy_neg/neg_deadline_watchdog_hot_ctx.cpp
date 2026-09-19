@@ -15,7 +15,7 @@
 // Expected diagnostic: constraints not satisfied / CtxFitsDeadlineWatchdog /
 // CtxOwnsAnyOf / no matching function / observe.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
 

@@ -12,7 +12,7 @@
 // similar.  GCC 16 typically prints "passing 'Capability<...>' as
 // 'this' argument discards qualifiers" or "ref-qualified".
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

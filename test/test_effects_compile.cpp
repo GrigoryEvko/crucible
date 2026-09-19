@@ -3,17 +3,17 @@
 // exists to be that translation unit for the whole effects tree, so a new
 // header there belongs in the include list below.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/ComputationGraded.h>
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_ComputationGraded.h>
+#include <crucible/effects/_Capability.h>
 #include <crucible/effects/Concurrent.h>
 #include <crucible/effects/CtxWrapperLift.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/EffectRowLattice.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_EffectRowLattice.h>
 #include <crucible/effects/EffectRowProjection.h>
 #include <crucible/effects/Effects.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/effects/OsUniverse.h>
 #include <crucible/effects/Resources.h>

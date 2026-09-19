@@ -15,7 +15,7 @@
 // this exercises the IsStageGraph well-formedness gate (Phase 1 of
 // the mint gate), not the stage-pack equality gate (Phase 2).
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <optional>

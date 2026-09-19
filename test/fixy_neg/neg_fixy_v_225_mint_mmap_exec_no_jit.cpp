@@ -17,7 +17,7 @@
 //   "no matching function" / "CtxFitsMmapMint" /
 //   "constraints not satisfied" / "has_exec_prot" / "has_trusted_jit".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 struct JitRegion {};  // dummy Tag

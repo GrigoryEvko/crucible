@@ -1,7 +1,7 @@
 #pragma once
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/safety/OwnedRegion.h>

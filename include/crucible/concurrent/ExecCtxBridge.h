@@ -10,7 +10,7 @@
 // adding the surface here costs no new edge.
 
 #include <crucible/concurrent/ParallelismRule.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <cstddef>
 #include <type_traits>

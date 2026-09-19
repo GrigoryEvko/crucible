@@ -3,8 +3,8 @@
 #include <crucible/concurrent/AdaptiveScheduler.h>
 #include <crucible/concurrent/AutoRouter.h>
 #include <crucible/concurrent/Topology.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/IsAllocClass.h>
 #include <crucible/safety/IsHotPath.h>
 #include <crucible/safety/IsNumericalTier.h>

@@ -28,8 +28,8 @@
 // it holds would defeat every gate built on this chain.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/AllocClassLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_AllocClassLattice.h>
 
 #include <cstdlib>
 #include <string_view>

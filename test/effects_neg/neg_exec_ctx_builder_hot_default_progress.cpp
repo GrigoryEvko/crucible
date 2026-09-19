@@ -20,7 +20,7 @@
 //   "static assertion failed" / "heat_progress_coherent" /
 //   "Heat × Progress" / "fixy-A3-027".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

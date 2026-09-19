@@ -10,7 +10,7 @@
 // graded wrappers do not pay for the graded-trait include.
 
 #include <crucible/safety/diag/CheatProbe.h>
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 
 namespace crucible::safety::diag {
 

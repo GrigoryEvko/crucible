@@ -20,8 +20,8 @@
 // [GCC-WRAPPER-TEXT] — diagnostic comes from GCC's strong-enum
 // type-mismatch rejection.
 
-#include <crucible/algebra/lattices/HotPathLattice.h>
-#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/_HotPathLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
 
 using namespace crucible::algebra::lattices;
 

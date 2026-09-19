@@ -20,7 +20,7 @@
 // / "no matching function" / "mint_mpsc_consumer_session" /
 // "ConsumerHandle".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 namespace fmpsc = ::crucible::fixy::substr::mpsc;

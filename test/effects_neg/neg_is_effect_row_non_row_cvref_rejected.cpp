@@ -13,7 +13,7 @@
 // failed IsEffectRow assertion, or "fixy-A3-004" / "IsEffectRow" /
 // "is_effect_row".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

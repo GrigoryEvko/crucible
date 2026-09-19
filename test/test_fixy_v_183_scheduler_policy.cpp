@@ -3,8 +3,8 @@
 // lattice's own devising, and an ordinal here is never the value of the
 // matching syscall constant.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
 
 #include <string_view>

@@ -23,7 +23,7 @@
 // "Lattice_Missing_Name" (the local fold-static_assert mirrors the
 // umbrella's, fires on the missing-name lattice).
 
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <string_view>
 

@@ -20,7 +20,7 @@
 //   "constraints not satisfied" / "no matching function" /
 //   "CtxFitsMmapMint" / "CtxAdmitsIoBlock" / "row_contains" / "Block".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 struct InitRegion {};

@@ -28,7 +28,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection on the nested-
 // struct template identity at the LATTICE surface.
 
-#include <crucible/algebra/lattices/HotPathLattice.h>
+#include <crucible/algebra/lattices/_HotPathLattice.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -20,7 +20,7 @@
 // rationale as the other two cross-mixing tests.
 
 #include <crucible/algebra/lattices/LifetimeLattice.h>
-#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 using namespace crucible::algebra::lattices;
 

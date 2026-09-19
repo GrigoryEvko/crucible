@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/cntp/CongestionControl.h>
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace crucible::fixy::cap {
 

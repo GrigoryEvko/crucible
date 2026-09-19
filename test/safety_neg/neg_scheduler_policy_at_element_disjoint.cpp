@@ -23,7 +23,7 @@
 // Expected diagnostic: no match for / cannot convert / conversion from /
 // no viable.
 
-#include <crucible/algebra/lattices/PinningRequirementLattice.h>
+#include <crucible/algebra/lattices/_PinningRequirementLattice.h>
 #include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
 
 using namespace crucible::algebra::lattices;

@@ -14,8 +14,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/WorkingSet.h>
-#include <crucible/effects/ExecCtx.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/PipelineStage.h>
 #include <crucible/safety/IsSwmrHandle.h>

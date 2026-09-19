@@ -22,7 +22,7 @@
 // / "mint_consumer_session".
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 namespace fsg = ::crucible::fixy::substr::sharded_grid;

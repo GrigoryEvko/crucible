@@ -19,7 +19,7 @@
 // which does move up, is deliberately not exposed here.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
 
 #include <cstdlib>

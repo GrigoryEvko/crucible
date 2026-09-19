@@ -13,7 +13,7 @@
 // "constraints not satisfied" — overload resolution exhausts the
 // three Alloc/IO/Block overloads and finds none matching.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

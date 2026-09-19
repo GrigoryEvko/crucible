@@ -17,7 +17,7 @@
 // test.
 
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
-#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 using namespace crucible::algebra::lattices;
 

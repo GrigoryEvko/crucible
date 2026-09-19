@@ -8,8 +8,8 @@
 // arena-owned, so nothing here is freed until the arena is.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/fixy/Wrap.h>

@@ -16,10 +16,10 @@
 // Expected: NON-zero exit with a contract/trap diagnostic.  A passing
 // (zero-exit) compile is the bug this fixture guards against.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/Modality.h>
-#include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/_Modality.h>
+#include <crucible/algebra/lattices/_MonotoneLattice.h>
 
 namespace {
 

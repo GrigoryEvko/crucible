@@ -20,7 +20,7 @@
 // "WaiterHandle" / "mint_chainedge_waiter_session".
 
 #include <crucible/concurrent/PermissionedChainEdge.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 namespace fchain = ::crucible::fixy::substr::chainedge;

@@ -39,9 +39,9 @@
 // scripts/check-detsafe-ledger.sh asserts no ledger symbol is reachable
 // from content_hash, merkle_hash or the memory plan.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/handles/FileHandle.h>
 #include <crucible/ledger/Competence.h>
 #include <crucible/ledger/HostFingerprint.h>

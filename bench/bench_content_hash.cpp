@@ -10,7 +10,7 @@
 #include <vector>
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 
 #include "bench_harness.h"

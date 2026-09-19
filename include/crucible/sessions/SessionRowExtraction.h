@@ -17,10 +17,10 @@
 // audit of the full payload contract uses payload_row_t and keeps
 // wrapper grades such as the numerical tolerance axis visible.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Capability.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_Capability.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>

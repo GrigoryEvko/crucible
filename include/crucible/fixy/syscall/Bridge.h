@@ -5,8 +5,8 @@
 #include <crucible/fixy/syscall/Ioctl.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Fp.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 

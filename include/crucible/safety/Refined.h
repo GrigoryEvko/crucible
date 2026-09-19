@@ -19,8 +19,8 @@
 // the invariant for the optimizer and for every later reader.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_BoolLattice.h>
 #include <crucible/safety/Linear.h>
 
 #include <bit>

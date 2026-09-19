@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/effects/Effects.h>
-#include <crucible/effects/Capability.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capability.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/Resources.h>
 #include <crucible/effects/Concurrent.h>
 #include <crucible/effects/CtxWrapperLift.h>

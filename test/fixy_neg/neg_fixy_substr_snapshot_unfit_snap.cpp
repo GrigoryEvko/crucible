@@ -26,7 +26,7 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "SnapshotSessionSurface" / "no matching function".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 #include <utility>

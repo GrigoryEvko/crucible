@@ -4,8 +4,8 @@
 // admitted by the stage Ctx.
 
 #include <crucible/concurrent/Stage.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
 #include <utility>

@@ -4,7 +4,7 @@
 // wait refuses the value at compile time instead of stalling on it.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/Wait.h>
 #include "test_assert.h"
 

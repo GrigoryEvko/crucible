@@ -8,10 +8,10 @@
 // from the measured topology rather than from arbitrary input.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/AffinityLattice.h>
 #include <crucible/algebra/lattices/NumaNodeLattice.h>
-#include <crucible/algebra/lattices/ProductLattice.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
 
 #include <cstdint>
 #include <cstdlib>

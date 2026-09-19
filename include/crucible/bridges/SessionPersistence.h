@@ -14,7 +14,7 @@
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Time.h>
 #include <crucible/safety/IsSessionHandle.h>
 

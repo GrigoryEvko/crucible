@@ -6,8 +6,8 @@
 // are the same event and copying one is replay rather than duplication.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/StalenessSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_StalenessSemiring.h>
 
 #include <cstdint>
 #include <type_traits>

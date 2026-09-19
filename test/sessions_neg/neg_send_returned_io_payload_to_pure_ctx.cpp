@@ -4,7 +4,7 @@
 // Returning a permission cannot launder a Computation<Row<IO>, T> into
 // a foreground pure context.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/SessionMint.h>
 

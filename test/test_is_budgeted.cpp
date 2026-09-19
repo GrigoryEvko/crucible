@@ -4,7 +4,7 @@
 
 #include <crucible/safety/IsBudgeted.h>
 
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>

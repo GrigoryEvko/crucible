@@ -25,7 +25,7 @@
 //
 // Expected diagnostic: "static assertion failed" / "static_assert".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 struct ThrowingCap {
     ThrowingCap() noexcept(false) {}  // structurally cap::*-shaped, but

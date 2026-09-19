@@ -23,7 +23,7 @@
 // contain "private".
 
 #include <crucible/concurrent/Stage.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
 #include <utility>

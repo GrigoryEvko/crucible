@@ -17,7 +17,7 @@
 // DeadlineNs.
 
 #include <crucible/fixy/Sched.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     ::crucible::effects::BgDrainCtx bg{};

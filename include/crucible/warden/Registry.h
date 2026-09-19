@@ -11,9 +11,9 @@
 // Registration is safe from any thread, and belongs to construction
 // and teardown rather than to a hot path.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Pinned.h>
 
 #include <array>

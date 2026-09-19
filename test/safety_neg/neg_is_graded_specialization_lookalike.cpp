@@ -22,8 +22,8 @@
 // Expected diagnostic: "static assertion failed" / "static_assert"
 // (the gate correctly returns false, fires the user-side assertion).
 
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <string_view>
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 
 #include <cstdint>
 #include <utility>

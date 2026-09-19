@@ -4,7 +4,7 @@
 // Borrowing authority cannot hide an IO Computation from HotFgCtx's
 // Row<> admission gate.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = crucible::effects;

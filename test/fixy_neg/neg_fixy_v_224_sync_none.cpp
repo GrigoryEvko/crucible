@@ -18,7 +18,7 @@
 //   "constraints not satisfied" / "no matching function" /
 //   "CtxFitsSync" / "sync_op::None".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 

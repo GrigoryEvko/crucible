@@ -3,7 +3,7 @@
 
 #include <crucible/fixy/Sched.h>
 #include <crucible/fixy/Time.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <expected>
 #include <type_traits>

@@ -10,7 +10,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at CtxFitsPipeline / pipeline_chain / IsStage.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <optional>

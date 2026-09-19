@@ -25,7 +25,7 @@
 // Expected diagnostic (GCC 16): "is private within this context" or
 // "is private member" or "non-public member".
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 
 namespace eff = crucible::effects;
 

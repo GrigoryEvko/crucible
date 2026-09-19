@@ -2,10 +2,10 @@
 // are mostly static.  The capability surface has no runtime behaviour to
 // observe.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include "test_assert.h"
 

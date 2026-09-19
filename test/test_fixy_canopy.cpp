@@ -2,7 +2,7 @@
 // in. Compiling this file runs the included header's own static_asserts
 // under the project warning flags, then drives the real clock at runtime.
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/fixy/Canopy.h>
 
 #include <cstdio>

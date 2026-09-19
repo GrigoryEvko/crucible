@@ -28,7 +28,7 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "WellFormedExecCtxAxes" / "IsCapType" / "fixy-A3-020"
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = ::crucible::effects;
 

@@ -30,7 +30,7 @@
 //   "cannot bind" / "no matching function" /
 //   "invalid initialization" / "deduced conflicting".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/permissions/Permission.h>
 

@@ -8,7 +8,7 @@
 // is there to catch.
 
 #include <crucible/cipher/ComputationCache.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include "test_assert.h"
 

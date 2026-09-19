@@ -9,9 +9,9 @@
 // a permission token.
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/SyntheticProbe.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Bits.h>

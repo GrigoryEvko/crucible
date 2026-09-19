@@ -1,7 +1,7 @@
 #include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/FpModeLattice.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/Modality.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/_Modality.h>
 
 #include <string_view>
 #include <type_traits>

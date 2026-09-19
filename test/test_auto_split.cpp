@@ -1,6 +1,6 @@
 #include <crucible/concurrent/AutoSplit.h>
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/ResidencyHeat.h>

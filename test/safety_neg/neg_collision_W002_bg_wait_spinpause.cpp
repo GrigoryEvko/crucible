@@ -35,8 +35,8 @@
 
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Wait.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 
 namespace fn = crucible::safety::fn;
 namespace fx = crucible::effects;

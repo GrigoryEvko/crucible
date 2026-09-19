@@ -14,7 +14,7 @@
 // are `Capability(cap_mint_key)` and the defaulted move ctor; an
 // empty initializer-list resolves to NEITHER.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

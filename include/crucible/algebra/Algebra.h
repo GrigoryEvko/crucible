@@ -14,7 +14,7 @@
 // See misc/25_04_2026.md §2.3 for the alias instantiations and
 // CLAUDE.md L0 for the wider safety-stack integration.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/Modality.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/_Modality.h>
 #include <crucible/algebra/lattices/AllLattices.h>

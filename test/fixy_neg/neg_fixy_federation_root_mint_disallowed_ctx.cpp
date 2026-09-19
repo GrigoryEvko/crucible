@@ -14,7 +14,7 @@
 // `mint_permission_root` (ctx variant) and citing the fixy-CR-06
 // reason string.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/FederationPermission.h>
 
 namespace eff = crucible::effects;

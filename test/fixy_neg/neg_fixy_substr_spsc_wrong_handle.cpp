@@ -13,7 +13,7 @@
 // pointing at ProducerHandle vs ConsumerHandle.
 
 #include <crucible/concurrent/PermissionedSpscChannel.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 #include <utility>

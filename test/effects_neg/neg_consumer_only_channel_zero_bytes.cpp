@@ -17,7 +17,7 @@
 // Expected diagnostic family (matched by CMakeLists regex):
 //   "static assertion failed" / "Bytes > 0" / "ConsumerOnlyChannel".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

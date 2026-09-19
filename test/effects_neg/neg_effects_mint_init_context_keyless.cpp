@@ -14,7 +14,7 @@
 // Expected diagnostic: "no matching function for call" /
 // "too few arguments" / "mint_init_context".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 namespace eff = crucible::effects;
 

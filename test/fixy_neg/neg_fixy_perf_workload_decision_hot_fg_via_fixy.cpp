@@ -22,7 +22,7 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "CtxFitsWorkloadDecisionDispatch" / "Bg" / "row_contains".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Perf.h>
 
 int main() {

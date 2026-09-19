@@ -13,6 +13,15 @@
 # Added or Modified path under a frozen prefix fails.  Renames count as an add
 # of the destination when it is under a frozen prefix.
 #
+# One change is not a change: the superseded marking.  When a task ports an
+# old header to the new tree, the old file is renamed in place with a leading
+# underscore (Graded.h becomes _Graded.h) so that its status is visible in
+# every include line and directory listing until Stage D deletes it.  A
+# rename of dir/Name to dir/_Name whose content is unchanged passes, and so
+# does an edit to a frozen file whose only difference is that its includes of
+# frozen headers gained the same underscore.  The comparison normalizes both
+# sides by stripping that underscore, so any other edit still fails.
+#
 # Exit status:
 #   0 — clean
 #   1 — an add or modify under a frozen path
@@ -54,6 +63,51 @@ Usage:
 USAGE
 }
 
+# Strips the superseded marking from include lines so that a file and its
+# marked twin compare equal.  Only includes of the frozen tree are touched.
+normalize_stream() {
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^([[:space:]]*#[[:space:]]*include[[:space:]]*\<crucible/.*/)_([^/>]+\>.*)$ ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+        else
+            printf '%s\n' "$line"
+        fi
+    done
+}
+
+# $1 = repo, $2 = base, $3 = path at base, $4 = path in the working tree.
+# True when $4 is $3 or its underscore-marked twin, and the two contents
+# differ only by the marking of frozen includes.
+is_superseded_marking() {
+    local repo="$1" base="$2" old="$3" new="$4"
+    local old_dir old_name new_dir new_name
+    old_dir="$(dirname "$old")"; old_name="$(basename "$old")"
+    new_dir="$(dirname "$new")"; new_name="$(basename "$new")"
+    [[ "$new_dir" == "$old_dir" ]] || return 1
+    [[ "$new_name" == "$old_name" || "$new_name" == "_$old_name" ]] || return 1
+    git -C "$repo" cat-file -e "${base}:${old}" 2>/dev/null || return 1
+    [[ -f "$repo/$new" ]] || return 1
+    diff -q <(git -C "$repo" show "${base}:${old}" | normalize_stream) \
+            <(normalize_stream <"$repo/$new") >/dev/null 2>&1
+}
+
+# $1 = repo, $2 = base, $3 = path in the working tree.  True when the path
+# is a superseded marking of a base file: either the same path with only
+# marked includes changed, or dir/_Name whose twin dir/Name is at the base.
+# Git reports a rename-plus-edit against the working tree as an add, so
+# the twin is derived from the name rather than read from the status.
+is_marking_of_base() {
+    local repo="$1" base="$2" path="$3" name twin
+    name="$(basename "$path")"
+    if is_superseded_marking "$repo" "$base" "$path" "$path"; then
+        return 0
+    fi
+    [[ "$name" == _* ]] || return 1
+    twin="$(dirname "$path")/${name#_}"
+    is_superseded_marking "$repo" "$base" "$twin" "$path"
+}
+
 is_frozen() {
     local path="$1" p
     for p in "${FROZEN_PATHS[@]}"; do
@@ -86,15 +140,15 @@ scan() {
         case "$status" in
             D) continue ;;
             R*|C*)
-                if is_frozen "$dest"; then
-                    printf 'FROZEN violation: %s — %s into a frozen path (from %s).  The old substrate only shrinks.\n' \
+                if is_frozen "$dest" && ! is_marking_of_base "$repo" "$base" "$dest"; then
+                    printf 'FROZEN violation: %s — %s into a frozen path (from %s).  The old substrate only shrinks, or a ported file is marked _Name with its content unchanged.\n' \
                         "$dest" "$status" "$path" >&2
                     rc=1
                 fi
                 ;;
             *)
-                if is_frozen "$path"; then
-                    printf 'FROZEN violation: %s — %s under a frozen path.  The old substrate only shrinks; put the change in the new tree.\n' \
+                if is_frozen "$path" && ! is_marking_of_base "$repo" "$base" "$path"; then
+                    printf 'FROZEN violation: %s — %s under a frozen path.  The old substrate only shrinks; put the change in the new tree.  The one permitted edit is an include of a frozen header gaining the _ marking.\n' \
                         "$path" "$status" >&2
                     rc=1
                 fi
@@ -104,7 +158,7 @@ scan() {
     # Untracked files are not in the diff; an untracked file under a frozen
     # path is an add that has not been staged yet.
     while IFS= read -r -d '' path; do
-        if is_frozen "$path"; then
+        if is_frozen "$path" && ! is_marking_of_base "$repo" "$base" "$path"; then
             printf 'FROZEN violation: %s — untracked file under a frozen path.\n' "$path" >&2
             rc=1
         fi
@@ -128,6 +182,10 @@ case "${1:-}" in
         printf '// renamed\n' >"$tmp_root/include/crucible/fixy/Renamed.h"
         printf '// fs\n' >"$tmp_root/src/fixy/Fs.cpp"
         printf '// keep\n' >"$tmp_root/examples/fn/keep.cpp"
+        printf '#pragma once\n#include <crucible/safety/Twin.h>\n// ported\n' >"$tmp_root/include/crucible/safety/Ported.h"
+        printf '#pragma once\n// twin\n' >"$tmp_root/include/crucible/safety/Twin.h"
+        printf '#pragma once\n#include <crucible/safety/Twin.h>\n// still frozen\n' >"$tmp_root/include/crucible/safety/Includer.h"
+        printf '#pragma once\n// tampered\n' >"$tmp_root/include/crucible/safety/Tampered.h"
         git -C "$tmp_root" add -A
         git -C "$tmp_root" -c user.name=selftest -c user.email=selftest@invalid commit -q -m base
         base="$(git -C "$tmp_root" rev-parse HEAD)"
@@ -151,6 +209,16 @@ case "${1:-}" in
         git -C "$tmp_root" mv "include/crucible/fixy/Renamed.h" "include/crucible/fixy/Moved.h"
         printf '// new layer\n' >"$tmp_root/include/foundation/Fine.h"
         printf '// edited\n' >"$tmp_root/src/fixy/Fs.cpp"
+        # The superseded marking: Twin.h is marked, Ported.h is marked and its
+        # include follows, Includer.h stays but its include follows.  All three
+        # pass.  Tampered.h is marked AND edited, which is not a marking.
+        git -C "$tmp_root" mv "include/crucible/safety/Twin.h" "include/crucible/safety/_Twin.h"
+        git -C "$tmp_root" mv "include/crucible/safety/Ported.h" "include/crucible/safety/_Ported.h"
+        printf '#pragma once\n#include <crucible/safety/_Twin.h>\n// ported\n' >"$tmp_root/include/crucible/safety/_Ported.h"
+        printf '#pragma once\n#include <crucible/safety/_Twin.h>\n// still frozen\n' >"$tmp_root/include/crucible/safety/Includer.h"
+        git -C "$tmp_root" mv "include/crucible/safety/Tampered.h" "include/crucible/safety/_Tampered.h"
+        printf '#pragma once\n// tampered, and edited\n' >"$tmp_root/include/crucible/safety/_Tampered.h"
+        git -C "$tmp_root" add -A
         rc=0; scan "$tmp_root" "$base" 2>"$out" || rc=$?
         [[ "$rc" -eq 1 ]] || fail "planted tree reported $rc, want 1"
         grep -qF 'include/crucible/safety/Old.h' "$out" || fail "modify under a frozen dir not caught"
@@ -159,8 +227,12 @@ case "${1:-}" in
         grep -qF 'src/fixy/Fs.cpp' "$out" || fail "modify of a frozen single file not caught"
         if grep -qF 'violation: include/crucible/fixy/Gone.h' "$out"; then fail "a deletion was flagged"; fi
         if grep -qF 'include/foundation/Fine.h' "$out"; then fail "an add in the new tree was flagged"; fi
+        if grep -qF '_Twin.h' "$out"; then fail "a plain superseded marking was flagged"; fi
+        if grep -qF '_Ported.h' "$out"; then fail "a superseded marking whose include followed was flagged"; fi
+        if grep -qF 'Includer.h' "$out"; then fail "an include-only edit following a marking was flagged"; fi
+        grep -qF '_Tampered.h' "$out" || fail "a marking that also edits content was not caught"
         rm -f "$out"
-        printf 'check-frozen-tree: self-test passed — modify, add, rename-into and single-file edits caught; deletion and new-tree adds clean.\n' >&2
+        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught; deletion, new-tree adds and superseded markings clean.\n' >&2
         exit 0
         ;;
     "") ;;

@@ -72,7 +72,7 @@
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
 #include <crucible/Types.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <algorithm>
 #include <array>

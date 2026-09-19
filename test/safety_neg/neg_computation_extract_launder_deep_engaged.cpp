@@ -21,9 +21,9 @@
 // Diagnostic carries "extract_admits_payload" — the recursive
 // constraint fails at the deepest level, GCC reports the trait.
 
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
 
 using namespace crucible::effects;
 

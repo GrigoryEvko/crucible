@@ -1,4 +1,4 @@
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/fixy/Canopy.h>
 
 // FIXY-V-213 fixture #1: the fixy::canopy::mint_hlc re-export MUST

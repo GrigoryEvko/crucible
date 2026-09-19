@@ -13,8 +13,8 @@
 // site that swapped the two would still compile and every later
 // comparison would silently read the wrong one.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <compare>
 #include <cstdint>

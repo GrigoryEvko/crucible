@@ -16,7 +16,7 @@
 // Expected diagnostic: "is private within this context" /
 // "private member" / "init_key".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 namespace eff = crucible::effects;
 

@@ -17,7 +17,7 @@
 // CtxFitsScopedFenceMint.
 
 #include <crucible/fixy/Hw.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace hw = crucible::fixy::hw;
 namespace eff = crucible::effects;

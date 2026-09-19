@@ -1,6 +1,6 @@
 #include <crucible/safety/IsCrash.h>
 
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>

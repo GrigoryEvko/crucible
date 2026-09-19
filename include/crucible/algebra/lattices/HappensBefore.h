@@ -3,7 +3,7 @@
 // The vector clock of Lamport 1978, Mattern 1988 and Fidge 1991, presented as
 // the lattice of N-tuples of naturals under the pointwise order.
 
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Lattice.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
 

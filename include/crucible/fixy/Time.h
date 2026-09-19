@@ -9,7 +9,7 @@
 #include <crucible/safety/CpuPinned.h>
 #include <crucible/safety/Pre.h>
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <ctime>
 #include <cstdint>

@@ -24,7 +24,7 @@
 // regardless of toolchain wording.
 
 #include <crucible/perf/SenseHub.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <optional>
 

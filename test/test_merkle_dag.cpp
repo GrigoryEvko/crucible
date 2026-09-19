@@ -1,5 +1,5 @@
 #include <crucible/MerkleDag.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include "test_assert.h"
 #include <sys/wait.h>

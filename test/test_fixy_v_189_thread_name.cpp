@@ -2,7 +2,7 @@
 // static_asserts run.
 
 #include <crucible/safety/ThreadName.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <string_view>
 #include <type_traits>

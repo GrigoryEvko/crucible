@@ -22,7 +22,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/EpochLattice.h>
 #include <crucible/algebra/lattices/GenerationLattice.h>
-#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/safety/Pinned.h>
 
 #include <concepts>

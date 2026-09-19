@@ -22,7 +22,7 @@
 // satisfied.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;

@@ -1,6 +1,6 @@
 #include <crucible/safety/IsDetSafe.h>
 
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/GradedExtract.h>

@@ -8,9 +8,9 @@
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/Linear.h>
 
-#include <crucible/effects/ExecCtx.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>

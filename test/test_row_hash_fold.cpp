@@ -10,7 +10,7 @@
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/safety/diag/RowHashGrade.h>
 #include <crucible/Types.h>
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/safety/HotPath.h>
 
 #include "test_assert.h"

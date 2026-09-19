@@ -6,8 +6,8 @@
 // vectorization, a benchmark additionally allows a non-deterministic
 // timestamp read, and only initialization allows a ring-zero register.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/lattices/HwInstructionLattice.h>
 
 #include <string_view>

@@ -3,8 +3,8 @@
 // A context tag contributes its own atom and is not expanded into the atoms it
 // implies.  A caller that needs the expanded form takes the union itself.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/SignatureTraits.h>
 
 #include <type_traits>

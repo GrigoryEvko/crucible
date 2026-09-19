@@ -4,7 +4,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>

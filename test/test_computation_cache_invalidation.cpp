@@ -8,8 +8,8 @@
 // distinct and non-zero.  A new atom can then only produce new keys.
 
 #include <crucible/cipher/ComputationCache.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include "test_assert.h"
 

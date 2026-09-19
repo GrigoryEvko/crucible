@@ -12,7 +12,7 @@
 // — all of which expose a value_type typedef but none of which
 // is a Graded wrapper.
 
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 
 int main() {
     // bare int is the canonical non-wrapper.

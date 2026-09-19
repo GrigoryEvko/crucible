@@ -14,7 +14,7 @@
 
 #include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = ::crucible::effects;

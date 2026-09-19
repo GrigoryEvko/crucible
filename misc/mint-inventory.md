@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-15T16:58:28Z`.
+Snapshot generated: `2026-09-19T18:46:34Z`.
 
 ## bridges/
 
@@ -147,16 +147,6 @@ Snapshot generated: `2026-09-15T16:58:28Z`.
 | `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:252` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:34` | HS14: 7 |
 | `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:397` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:240` | HS14: 12 |
 | `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:274` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:36` | HS14: 2 |
-
-## effects/
-
-| mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|
-| `mint_bg_context` | `include/crucible/effects/Capabilities.h:399` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:111` | HS14: 3 |
-| `mint_cap` | `include/crucible/effects/Capability.h:86` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:87` | HS14: 9 |
-| `mint_from_ctx` | `include/crucible/effects/Capability.h:133` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:101` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:407` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:115` | HS14: 3 |
-| `mint_test_context` | `include/crucible/effects/Capabilities.h:415` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:119` | HS14: 3 |
 
 ## ledger/
 
@@ -337,8 +327,6 @@ to distinguish this third authorization shape.
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:264` | Y | - | Y | - | member | HS14: 4 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:269` | Y | - | Y | - | member | HS14: 3 |
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h:203` | Y | - | Y | - | member | HS14: 15 |
-| `Computation::mint_computation` | `include/crucible/effects/Computation.h:90` | Y | Y | Y | Y | member | HS14: 2 |
-| `Computation::mint_computation_in_ctx` | `include/crucible/effects/Computation.h:141` | Y | Y | Y | Y | member | HS14: 1 ⚠ |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:213` | Y | - | Y | - | member | HS14: 2 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h:192` | Y | - | Y | - | member | HS14: 2 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h:227` | Y | - | Y | - | member | HS14: 2 |
@@ -397,8 +385,8 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 192
+- Total substrate mints: 187
 - Missing fixy re-export: 65
-- Member-function mints: 10 (separate §XXI grep-target — see above)
+- Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

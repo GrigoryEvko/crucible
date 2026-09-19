@@ -19,7 +19,7 @@
 // "no matching function" / "ProducerHandle" /
 // "mint_mpsc_producer_session".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
 namespace fmpsc = ::crucible::fixy::substr::mpsc;

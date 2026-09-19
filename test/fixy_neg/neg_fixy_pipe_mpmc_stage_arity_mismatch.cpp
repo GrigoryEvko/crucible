@@ -17,7 +17,7 @@
 // pointing at CtxFitsMpmcStageFromEndpoints /
 // mpmc_stage_from_endpoints_gate.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <optional>

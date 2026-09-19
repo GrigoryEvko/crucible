@@ -4,7 +4,7 @@
 // accounting.  A Transferable carrying Computation<Row<IO>, T> must
 // still require an IO-admitting execution context; HotFgCtx has Row<>.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/SessionMint.h>
 

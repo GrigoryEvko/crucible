@@ -22,7 +22,7 @@
 //   "no matching function" / "CtxFitsColdWriterMint" /
 //   "constraints not satisfied" / "extras_engage_durable".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 

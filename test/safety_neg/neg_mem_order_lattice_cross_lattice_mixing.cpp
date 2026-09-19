@@ -19,7 +19,7 @@
 // type-mismatch rejection.
 
 #include <crucible/algebra/lattices/MemOrderLattice.h>
-#include <crucible/algebra/lattices/WaitLattice.h>
+#include <crucible/algebra/lattices/_WaitLattice.h>
 
 using namespace crucible::algebra::lattices;
 

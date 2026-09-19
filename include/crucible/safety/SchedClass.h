@@ -18,7 +18,7 @@
 // Every other policy leaves the three budgets zero.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
 
 #include <concepts>

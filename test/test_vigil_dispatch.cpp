@@ -4,8 +4,8 @@
 // stage and the assertions say which one.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include "test_harness.h"
 #include "test_assert.h"

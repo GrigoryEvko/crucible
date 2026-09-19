@@ -10,7 +10,7 @@
 // exactly once, nothing skipped, nothing touched twice.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Workload.h>
 

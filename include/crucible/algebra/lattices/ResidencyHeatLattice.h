@@ -13,9 +13,9 @@
 // separate type.  The axes are independent, so the grades must never
 // collapse into one.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
 
 #include <cstdint>
 #include <meta>

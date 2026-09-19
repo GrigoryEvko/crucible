@@ -19,8 +19,8 @@
 //
 // Expected diagnostic: "constraints not satisfied" / "ComonadModality".
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 #include <utility>
 

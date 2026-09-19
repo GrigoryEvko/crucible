@@ -10,7 +10,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at CapMatchesCtx.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

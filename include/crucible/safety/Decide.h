@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <concepts>
 #include <cstddef>

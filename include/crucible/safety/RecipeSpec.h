@@ -11,10 +11,10 @@
 // and, for two different families, the wildcard.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/ProductLattice.h>
-#include <crucible/algebra/lattices/RecipeFamilyLattice.h>
-#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
+#include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 #include <cstdint>
 #include <cstdlib>

@@ -18,9 +18,9 @@
 // containing one throwing call may throw.  It is not a minimization.  A
 // gate that admits only the narrowest escape set takes the meet.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
 
 #include <cstdint>
 #include <meta>

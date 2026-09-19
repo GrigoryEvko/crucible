@@ -13,7 +13,7 @@
 // surface. A caller that needs a count reads it off the hub.
 
 #include <crucible/perf/SenseHubV2.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <type_traits>
 

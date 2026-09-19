@@ -14,8 +14,8 @@
 // different lattice and belongs in its own type rather than in a
 // rewrite of this one.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <cstdint>
 #include <cstdlib>

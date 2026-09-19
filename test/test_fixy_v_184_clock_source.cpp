@@ -11,9 +11,9 @@
 // anything about row hashing. That discrimination happens through the per-axis
 // wrappers instead.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ClockSourceLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ClockSourceLattice.h>
 
 #include <string_view>
 #include <type_traits>

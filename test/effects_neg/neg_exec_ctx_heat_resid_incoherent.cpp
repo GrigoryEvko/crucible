@@ -12,7 +12,7 @@
 // clause in ExecCtx fires at instantiation, citing the cross-axis
 // rule.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

@@ -13,7 +13,7 @@
 // failed IsExecCtx assertion, or "fixy-A3-004" / "IsExecCtx" /
 // "is_exec_ctx".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

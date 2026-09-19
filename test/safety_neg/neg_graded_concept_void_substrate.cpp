@@ -10,7 +10,7 @@
 // not that it pointed at an actual Graded specialization.  This
 // test guards against regressions to the looser form.
 
-#include <crucible/algebra/GradedTrait.h>
+#include <crucible/algebra/_GradedTrait.h>
 
 #include <string_view>
 

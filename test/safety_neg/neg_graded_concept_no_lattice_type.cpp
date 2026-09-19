@@ -10,9 +10,9 @@
 // MIGRATE-7 + GRADED-CONCEPT-C4 added the alias; this neg-compile
 // guards against regression where a future wrapper forgets it.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 #include <string_view>
 

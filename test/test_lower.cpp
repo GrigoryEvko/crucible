@@ -1,5 +1,5 @@
 #include <crucible/Lower.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include "test_assert.h"
 #include <cstdio>
 #include <memory>

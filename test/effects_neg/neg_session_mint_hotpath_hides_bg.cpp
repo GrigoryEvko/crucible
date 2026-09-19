@@ -18,7 +18,7 @@
 // the payload_row<HotPath<...>> transparent-unwrap was removed —
 // SOUNDNESS REGRESSION.  Investigate immediately.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/sessions/SessionMint.h>
 

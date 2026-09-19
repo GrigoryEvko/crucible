@@ -92,7 +92,7 @@
 //   "non-constant condition" / "not a constant expression" /
 //   "__builtin_trap" / "call to non-constexpr function".
 
-#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 

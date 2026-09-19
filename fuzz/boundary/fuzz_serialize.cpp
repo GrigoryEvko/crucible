@@ -15,7 +15,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/Serialize.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <cstdint>
 #include <span>

@@ -28,7 +28,7 @@
 #include <crucible/concurrent/SpscRing.h>
 #include <crucible/concurrent/scheduler/Policies.h>
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/permissions/Permission.h>

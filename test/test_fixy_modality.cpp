@@ -2,7 +2,7 @@
 // sentinels run under the project warning flags.
 
 #include <crucible/fixy/Modality.h>
-#include <crucible/algebra/Modality.h>
+#include <crucible/algebra/_Modality.h>
 
 #include <type_traits>
 

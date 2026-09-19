@@ -1,6 +1,6 @@
 #pragma once
 
-#include "effects/Capabilities.h"
+#include "effects/_Capabilities.h"
 #include "Platform.h"
 #include "Saturate.h"
 // The umbrella header that re-exports these wrappers pulls in a header that

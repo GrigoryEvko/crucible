@@ -21,7 +21,7 @@
 // "row_contains".
 
 #include <crucible/fixy/perf/V2.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     auto hub = crucible::fixy::perf::v2::mint_sense_hub_v2(crucible::effects::BgDrainCtx{},

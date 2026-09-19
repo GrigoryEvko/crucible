@@ -40,7 +40,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/algebra/lattices/FractionalLattice.h>
+#include <crucible/algebra/lattices/_FractionalLattice.h>
 
 #include <array>
 #include <cstdint>

@@ -9,7 +9,7 @@
 // Expected diagnostic: GCC's "associated constraints are not
 // satisfied" pointing at CanMintCap.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

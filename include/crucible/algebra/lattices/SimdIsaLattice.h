@@ -7,8 +7,8 @@
 // A richer instruction set sits higher, so a leq that holds reads as code built
 // for the lower level running on a processor that offers the higher one.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <cstdint>
 #include <meta>

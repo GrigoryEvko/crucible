@@ -6,8 +6,8 @@
 // per-category Universe publishes the same surface, so downstream code
 // reflects over any catalog through one shape.
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRowLattice.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRowLattice.h>
 
 #include <cstddef>
 #include <string_view>

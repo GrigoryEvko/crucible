@@ -38,7 +38,7 @@
 // discipline and this fixture pins it.
 
 #include <crucible/fixy/SessRowExtraction.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Tagged.h>
 
 #include <type_traits>

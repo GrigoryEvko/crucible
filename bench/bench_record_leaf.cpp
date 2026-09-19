@@ -41,7 +41,7 @@
 
 #include "bench_harness.h"
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/Vigil.h>
 
 #include <sched.h>

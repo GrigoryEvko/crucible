@@ -19,8 +19,8 @@
 // so the substrate's weaken() is deliberately not exposed here.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
 
 #include <cstdlib>
 #include <string_view>

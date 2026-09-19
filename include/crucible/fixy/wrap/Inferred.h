@@ -4,8 +4,8 @@
 #include <crucible/safety/InferredRow.h>
 #include <crucible/safety/IsOwnedRegion.h>
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <cstddef>
 #include <type_traits>

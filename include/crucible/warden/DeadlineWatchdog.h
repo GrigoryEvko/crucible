@@ -33,9 +33,9 @@
 // replay bit-exactly is a structural error.
 
 #include <crucible/Platform.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/safety/Checked.h>

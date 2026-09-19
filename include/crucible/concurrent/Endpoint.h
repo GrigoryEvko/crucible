@@ -10,7 +10,7 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/sessions/PermissionedSession.h>
 
 #include <optional>

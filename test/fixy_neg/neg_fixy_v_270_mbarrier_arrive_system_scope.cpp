@@ -14,7 +14,7 @@
 // Expected diagnostic: "constraints not satisfied" / CtxFitsMbarrierMint.
 
 #include <crucible/fixy/Async.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace as = crucible::fixy::async;
 namespace eff = crucible::effects;

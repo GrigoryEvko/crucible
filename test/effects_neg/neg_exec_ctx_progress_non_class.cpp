@@ -16,7 +16,7 @@
 //   "constraints not satisfied" / "WellFormedExecCtxAxes" /
 //   "IsProgressClass" / "fixy-A3-027".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

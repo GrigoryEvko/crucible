@@ -31,7 +31,7 @@
 //
 // Expected diagnostic substring: "L007:".
 
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/Fn.h>
 
 namespace fn = crucible::safety::fn;

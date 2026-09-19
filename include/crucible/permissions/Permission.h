@@ -16,9 +16,9 @@
 // to the type system.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/FractionalLattice.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_FractionalLattice.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Pinned.h>
 

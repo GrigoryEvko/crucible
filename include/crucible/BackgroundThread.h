@@ -20,8 +20,8 @@
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Pipeline.h>
 #include <crucible/concurrent/SpinLock.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/fixy/Handle.h>

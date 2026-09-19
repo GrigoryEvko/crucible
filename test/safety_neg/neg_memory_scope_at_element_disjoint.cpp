@@ -20,8 +20,8 @@
 // [GCC-WRAPPER-TEXT] — diagnostic comes from GCC's no-viable-conversion
 // rejection between two unrelated empty class types.
 
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 
 using namespace crucible::algebra::lattices;
 

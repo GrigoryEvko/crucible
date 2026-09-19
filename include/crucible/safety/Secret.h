@@ -6,8 +6,8 @@
 // whose policy tag is the audit trail.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/ConfLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_ConfLattice.h>
 
 #include <concepts>
 #include <cstdlib>

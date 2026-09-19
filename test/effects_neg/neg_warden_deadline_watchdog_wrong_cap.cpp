@@ -11,7 +11,7 @@
 // Expected diagnostic regex: "could not convert|no matching function|
 // cannot convert|expected.*Init".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
 

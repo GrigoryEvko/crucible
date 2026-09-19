@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/perf/LockContention.h>
 #include <crucible/perf/PmuSample.h>
 #include <crucible/perf/SchedSwitch.h>

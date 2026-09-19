@@ -22,7 +22,7 @@
 // wrapper instead of this one.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermSet.h>

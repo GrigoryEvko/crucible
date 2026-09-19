@@ -14,7 +14,7 @@
 // Expected diagnostic: "could not convert|no matching function|cannot
 // convert|expected.*Init" — toolchain-portable witness of the gate.
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/perf/WorkloadProfiler.h>
 
 int main() {

@@ -32,7 +32,7 @@
 // without subverting `enum class`.
 
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
-#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
 
 using namespace crucible::algebra::lattices;
 

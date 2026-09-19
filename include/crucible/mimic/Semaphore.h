@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
 
 #include <atomic>
 #include <cstdint>

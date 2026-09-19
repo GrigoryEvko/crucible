@@ -1,7 +1,7 @@
 // Pulls the pipe umbrella into a translation unit compiled under the
 // project warning flags, so the header's own static_asserts execute.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <atomic>

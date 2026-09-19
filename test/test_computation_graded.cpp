@@ -2,11 +2,11 @@
 // only ships embedded static_asserts is never checked under the test
 // target's warning matrix until some translation unit uses its surface.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Modality.h>
-#include <crucible/effects/ComputationGraded.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/EffectRowLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Modality.h>
+#include <crucible/effects/_ComputationGraded.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_EffectRowLattice.h>
 
 #include <cstdio>
 #include <cstdlib>

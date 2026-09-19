@@ -10,8 +10,8 @@
 // [GCC-WRAPPER-TEXT] — leq parameter-type mismatch on the strong
 // scoped enum carrier.
 
-#include <crucible/algebra/lattices/RecipeFamilyLattice.h>
-#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 using namespace crucible::algebra::lattices;
 

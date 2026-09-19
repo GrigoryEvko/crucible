@@ -11,7 +11,7 @@
 // pointing at CtxFitsProtocol.
 
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;

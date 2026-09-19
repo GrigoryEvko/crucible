@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/algebra/lattices/VendorLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/mimic/Semaphore.h>
 #include <crucible/safety/Pinned.h>
 

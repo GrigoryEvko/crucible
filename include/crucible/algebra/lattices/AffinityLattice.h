@@ -13,8 +13,8 @@
 // implementation is not guaranteed trivially relocatable, and this type
 // is the grade of a layout-critical carrier.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 #include <crucible/safety/Decide.h>
 
 #include <array>

@@ -22,7 +22,7 @@
 // invocable" diagnostic text.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Workload.h>

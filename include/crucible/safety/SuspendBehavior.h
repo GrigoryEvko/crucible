@@ -13,8 +13,8 @@
 // looks unbreached on the far side of the resume.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/SuspendBehaviorLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_SuspendBehaviorLattice.h>
 
 #include <concepts>
 #include <cstdlib>

@@ -23,7 +23,7 @@
 //   "CtxAdmitsIoBlock" / "constraints not satisfied" / "row_contains" /
 //   "Block".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 

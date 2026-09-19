@@ -71,7 +71,7 @@
 
 #include <unistd.h>  // ::getpid (workload-shaped demo syscall driver)
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
 

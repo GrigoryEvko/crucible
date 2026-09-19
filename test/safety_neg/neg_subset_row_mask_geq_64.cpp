@@ -26,7 +26,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
 // (Mask < 64u).
 
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 namespace {
 

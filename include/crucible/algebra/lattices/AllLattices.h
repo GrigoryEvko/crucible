@@ -15,61 +15,61 @@
 // length, staleness, consistency and tolerance stay, because those are
 // measurable at the granularity the grade claims.
 
-#include <crucible/algebra/Lattice.h>  // HasLatticeName
+#include <crucible/algebra/_Lattice.h>  // HasLatticeName
 
 #include <cstdint>  // LatticeNameProbeElement::v
 #include <functional>  // std::less, for the MonotoneLattice probe instantiation
 
 #include <crucible/algebra/lattices/AffinityLattice.h>
-#include <crucible/algebra/lattices/AllocClassLattice.h>
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h>
+#include <crucible/algebra/lattices/_AllocClassLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 #include <crucible/algebra/lattices/BitsBudgetLattice.h>
-#include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/algebra/lattices/_BoolLattice.h>
 #include <crucible/algebra/lattices/CallShapeLattice.h>
-#include <crucible/algebra/lattices/CipherTierLattice.h>
-#include <crucible/algebra/lattices/ClockSourceLattice.h>
-#include <crucible/algebra/lattices/ConfLattice.h>
+#include <crucible/algebra/lattices/_CipherTierLattice.h>
+#include <crucible/algebra/lattices/_ClockSourceLattice.h>
+#include <crucible/algebra/lattices/_ConfLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
 #include <crucible/algebra/lattices/ControlFlowLattice.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
-#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/algebra/lattices/EpochLattice.h>
 #include <crucible/algebra/lattices/FpModeLattice.h>
-#include <crucible/algebra/lattices/FractionalLattice.h>
+#include <crucible/algebra/lattices/_FractionalLattice.h>
 #include <crucible/algebra/lattices/GenerationLattice.h>
 #include <crucible/algebra/lattices/GlobalStateLattice.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
-#include <crucible/algebra/lattices/HotPathLattice.h>
+#include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/algebra/lattices/HwInstructionLattice.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
 #include <crucible/algebra/lattices/LifetimeLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
-#include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/lattices/_MonotoneLattice.h>
 #include <crucible/algebra/lattices/NumaNodeLattice.h>
 #include <crucible/algebra/lattices/PeakBytesLattice.h>
-#include <crucible/algebra/lattices/PinningRequirementLattice.h>
-#include <crucible/algebra/lattices/ProductLattice.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
-#include <crucible/algebra/lattices/RecipeFamilyLattice.h>
+#include <crucible/algebra/lattices/_PinningRequirementLattice.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
+#include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h>
 #include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
-#include <crucible/algebra/lattices/SeqPrefixLattice.h>
+#include <crucible/algebra/lattices/_SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/SimdIsaLattice.h>
 #include <crucible/algebra/lattices/StackUseLattice.h>
-#include <crucible/algebra/lattices/StalenessSemiring.h>
+#include <crucible/algebra/lattices/_StalenessSemiring.h>
 #include <crucible/algebra/lattices/StdioLattice.h>
-#include <crucible/algebra/lattices/SuspendBehaviorLattice.h>
+#include <crucible/algebra/lattices/_SuspendBehaviorLattice.h>
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>
-#include <crucible/algebra/lattices/ToleranceLattice.h>
-#include <crucible/algebra/lattices/TrustLattice.h>
-#include <crucible/algebra/lattices/VendorLattice.h>
-#include <crucible/algebra/lattices/WaitLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
+#include <crucible/algebra/lattices/_TrustLattice.h>
+#include <crucible/algebra/lattices/_VendorLattice.h>
+#include <crucible/algebra/lattices/_WaitLattice.h>
 #include <crucible/algebra/lattices/WitnessLattice.h>
 
 // The underlying-value pins ride the umbrella so that their assertions
 // fire in every translation unit that pulls any lattice at all.
-#include <crucible/algebra/lattices/EnumValuePins.h>
+#include <crucible/algebra/lattices/_EnumValuePins.h>
 
 namespace crucible::algebra::lattices {
 

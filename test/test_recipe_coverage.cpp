@@ -17,7 +17,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>

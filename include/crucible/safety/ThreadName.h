@@ -8,7 +8,7 @@
 // init-phase context.  Code that holds no context cannot name a thread.
 
 #include <crucible/Platform.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <pthread.h>
 

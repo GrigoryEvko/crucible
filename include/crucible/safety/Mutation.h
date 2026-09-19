@@ -1,11 +1,11 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/algebra/lattices/MonotoneLattice.h>
-#include <crucible/algebra/lattices/SeqPrefixLattice.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/algebra/lattices/_MonotoneLattice.h>
+#include <crucible/algebra/lattices/_SeqPrefixLattice.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pinned.h>

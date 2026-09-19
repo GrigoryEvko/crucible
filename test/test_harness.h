@@ -4,7 +4,7 @@
 // add sleep_for, yield, futex or condition_variable.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Sched.h>
 #include "test_assert.h"
 #include <cstdint>

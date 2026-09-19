@@ -16,7 +16,7 @@
 // The checked form this replaces is Graded{value, L::bottom()}, whose
 // witness check is exactly that assertion.
 
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 
 #include <string_view>
 

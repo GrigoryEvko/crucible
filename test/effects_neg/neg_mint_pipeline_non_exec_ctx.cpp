@@ -12,7 +12,7 @@
 // pointing at CtxFitsPipeline / IsExecCtx.
 
 #include <crucible/concurrent/Pipeline.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
 #include <utility>

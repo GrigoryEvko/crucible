@@ -31,7 +31,7 @@
 // Expected diagnostic: CtxFitsPoolSubmit / PermissionFreeJob /
 // std::is_copy_constructible_v constraint is not satisfied.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 #include <crucible/permissions/Permission.h>
 

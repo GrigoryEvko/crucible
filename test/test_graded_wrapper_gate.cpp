@@ -8,9 +8,9 @@
 // instantiates it, so its header comes first.
 #include <crucible/safety/diag/GradedWrapperGate.h>
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
-#include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
+#include <crucible/algebra/lattices/_BoolLattice.h>
 
 #include <string_view>
 #include <type_traits>

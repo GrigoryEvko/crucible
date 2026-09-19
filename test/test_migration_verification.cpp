@@ -16,8 +16,8 @@
 // contracts, belongs to the per-wrapper self-tests.  This file does
 // not repeat it.
 
-#include <crucible/algebra/GradedTrait.h>
-#include <crucible/effects/Computation.h>
+#include <crucible/algebra/_GradedTrait.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/CipherTier.h>

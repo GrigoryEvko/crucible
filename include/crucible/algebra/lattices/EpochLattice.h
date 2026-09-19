@@ -15,8 +15,8 @@
 // must derive it from the commit log rather than from an argument it was
 // handed.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
 
 #include <compare>
 #include <cstdint>

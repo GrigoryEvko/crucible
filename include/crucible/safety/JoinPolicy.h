@@ -24,7 +24,7 @@
 // reading the value out is sound at every tier.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
 
 #include <cstdlib>

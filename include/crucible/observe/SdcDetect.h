@@ -3,9 +3,9 @@
 // SDC is silent data corruption.
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/Observation.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Pinned.h>

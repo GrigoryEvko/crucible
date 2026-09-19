@@ -31,8 +31,8 @@
 // Task #146 (A8-P2 Neg-compile coverage); see
 // include/crucible/effects/Computation.h METX-1 #473 then.
 
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
 
 using namespace crucible::effects;
 

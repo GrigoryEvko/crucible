@@ -10,7 +10,7 @@
 // Expected diagnostic: the static_assert inside ctx_numa::Pinned<N>
 // fires when -1 is substituted.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = crucible::effects;
 

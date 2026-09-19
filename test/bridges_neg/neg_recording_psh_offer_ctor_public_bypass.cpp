@@ -32,7 +32,7 @@
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <utility>
 

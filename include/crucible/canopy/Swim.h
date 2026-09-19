@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/Pinned.h>

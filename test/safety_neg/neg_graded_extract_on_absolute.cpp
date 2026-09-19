@@ -13,8 +13,8 @@
 // erase the Secret<T>'s declassification discipline that
 // Graded<Comonad, ConfLattice, T> = Secret<T> rests on).
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_QttSemiring.h>
 
 #include <utility>
 

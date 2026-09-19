@@ -27,7 +27,7 @@
 
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 #include <utility>
 

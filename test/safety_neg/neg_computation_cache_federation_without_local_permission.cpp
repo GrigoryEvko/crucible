@@ -1,5 +1,5 @@
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <array>
 #include <cstdint>

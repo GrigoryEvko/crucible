@@ -20,7 +20,7 @@
 // Expected diagnostic: no match for / cannot convert / conversion from /
 // no viable / invalid conversion.
 
-#include <crucible/algebra/lattices/ClockSourceLattice.h>
+#include <crucible/algebra/lattices/_ClockSourceLattice.h>
 
 using namespace crucible::algebra::lattices;
 

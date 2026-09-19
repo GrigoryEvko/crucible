@@ -21,7 +21,7 @@
 //   "no matching function" / "CtxFitsZerocopyMint" /
 //   "constraints not satisfied" / "pack_zerocopy_is_none".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {

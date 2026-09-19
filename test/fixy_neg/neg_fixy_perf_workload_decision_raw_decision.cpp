@@ -23,7 +23,7 @@
 // Expected diagnostic: "no matching function" / "Tagged" /
 // "ParallelismDecision" / "WorkloadProfiler".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/WorkloadProfiler.h>
 
 int main() {

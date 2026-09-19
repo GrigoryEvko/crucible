@@ -1,9 +1,9 @@
 #pragma once
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
-#include <crucible/algebra/lattices/ProductLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
+#include <crucible/algebra/lattices/_ProductLattice.h>
 
 #include <cstdint>
 #include <meta>

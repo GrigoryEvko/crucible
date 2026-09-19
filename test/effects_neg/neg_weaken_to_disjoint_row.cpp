@@ -13,7 +13,7 @@
 // satisfied" with the requires-clause "Subrow<R, R2>" — the concept
 // rejects because Row<Bg> is not a subset of Row<IO>.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 
 namespace eff = crucible::effects;
 

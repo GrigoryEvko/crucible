@@ -13,7 +13,7 @@
 // '...consume() const &&'" / "binding reference of type
 // 'Capability<...>&&' to const expression" / similar.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 #include <utility>
 

@@ -14,8 +14,8 @@
 // classification discipline that Tagged<T, source::FromUser>'s
 // retag-only construction depends on).
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/ConfLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_ConfLattice.h>
 
 using namespace crucible::algebra;
 using namespace crucible::algebra::lattices;

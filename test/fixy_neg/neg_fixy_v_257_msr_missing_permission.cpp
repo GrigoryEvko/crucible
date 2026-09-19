@@ -15,7 +15,7 @@
 // "Permission".
 
 #include <crucible/fixy/Hw.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     ::crucible::effects::TestRunnerCtx ctx{};

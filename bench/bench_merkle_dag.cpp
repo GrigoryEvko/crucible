@@ -20,7 +20,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>

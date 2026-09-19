@@ -18,7 +18,7 @@
 // satisfied" / "CtxFitsQuarantineMint" / "Init".
 
 #include <crucible/fixy/Warden.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 
 int main() {
     auto policy = crucible::fixy::warden::mint_quarantine_policy<crucible::effects::BgDrainCtx, 2>(

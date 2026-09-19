@@ -8,7 +8,7 @@
 // Expected diagnostic: "use of deleted function" / "copy
 // constructor of 'Capability' is implicitly deleted" / similar.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 
 namespace eff = crucible::effects;
 

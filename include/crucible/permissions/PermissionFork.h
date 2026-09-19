@@ -22,7 +22,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ExecCtxBridge.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/ctrl/Throws.h>
 #include <crucible/permissions/Permission.h>
 

@@ -5,7 +5,7 @@
 // BgCompileCtx; endpoint B would receive that IO payload under HotFgCtx, which
 // has Row<> and must be rejected by CtxFitsChannel.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = crucible::effects;

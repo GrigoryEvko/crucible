@@ -16,7 +16,7 @@
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/OpaqueLifetime.h>

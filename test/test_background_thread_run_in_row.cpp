@@ -10,8 +10,8 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include "test_assert.h"
 

@@ -23,7 +23,7 @@
 // handle outlives the session it is bound to.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>
+#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/ScopedFence.h>

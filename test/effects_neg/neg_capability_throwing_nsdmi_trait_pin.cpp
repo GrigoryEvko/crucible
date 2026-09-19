@@ -20,7 +20,7 @@
 //
 // Expected diagnostic: "static assertion failed" / "static_assert".
 
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <type_traits>
 

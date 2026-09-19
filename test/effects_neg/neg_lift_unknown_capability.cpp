@@ -12,7 +12,7 @@
 // Expected diagnostic: GCC's "associated constraints are not
 // satisfied" pointing at the `requires IsEffect<Cap>` clause.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 
 namespace eff = crucible::effects;
 

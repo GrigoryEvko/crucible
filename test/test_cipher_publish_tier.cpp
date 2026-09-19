@@ -9,7 +9,7 @@
 // wherever the returned hash is read.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/CipherTier.h>
 #include "test_assert.h"
 

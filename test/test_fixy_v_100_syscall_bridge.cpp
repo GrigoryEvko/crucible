@@ -7,8 +7,8 @@
 #include <crucible/fixy/syscall/Per.h>
 #include <crucible/fixy/syscall/Ioctl.h>
 #include <crucible/fixy/syscall/Bridge.h>
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <type_traits>
 

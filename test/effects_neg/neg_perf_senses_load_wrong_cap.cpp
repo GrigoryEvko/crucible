@@ -13,7 +13,7 @@
 // cannot convert|expected.*Init".
 
 #include <crucible/perf/Senses.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 int main() {
     auto bg_cap = crucible::effects::testing::bg();

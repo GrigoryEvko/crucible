@@ -17,9 +17,9 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "WellFormedExecCtxAxes" / "IsWorkloadHint" / "fixy-A3-020"
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 
 namespace eff = ::crucible::effects;
 

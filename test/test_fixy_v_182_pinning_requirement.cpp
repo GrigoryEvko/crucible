@@ -1,6 +1,6 @@
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/PinningRequirementLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_PinningRequirementLattice.h>
 
 #include <string_view>
 #include <type_traits>

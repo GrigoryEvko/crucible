@@ -23,8 +23,8 @@
 // Diagnostic: GCC concept-failure ("constraints not satisfied")
 // pointing at `ComonadModality<M>`.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/lattices/TrustLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/lattices/_TrustLattice.h>
 
 #include <utility>
 

@@ -8,7 +8,7 @@
 // Subrow<Row<Init>, Row<Alloc>>.
 
 #include <crucible/RecipePool.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 #include <type_traits>
 

@@ -20,7 +20,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection on the nested-
 // struct template identity.
 
-#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 using namespace crucible::algebra::lattices;
 

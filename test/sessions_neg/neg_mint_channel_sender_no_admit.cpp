@@ -5,7 +5,7 @@
 // not IO; the receiver is deliberately wide enough so the failure is isolated
 // to endpoint A.
 
-#include <crucible/effects/Computation.h>
+#include <crucible/effects/_Computation.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = crucible::effects;

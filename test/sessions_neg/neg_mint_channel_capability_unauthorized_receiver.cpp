@@ -4,7 +4,7 @@
 // HotFgCtx must not receive Capability<IO, Bg>, even when the sender's
 // BgCompileCtx admits IO.
 
-#include <crucible/effects/Capability.h>
+#include <crucible/effects/_Capability.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace eff = crucible::effects;

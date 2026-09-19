@@ -1,8 +1,8 @@
 #pragma once
 
-#include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Capability.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_Capability.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>

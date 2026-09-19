@@ -18,7 +18,7 @@
 //   "no matching function" / "CtxFitsMmapMint" /
 //   "constraints not satisfied" / "has_duplicate_primary_share".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 struct DupShareRegion {};

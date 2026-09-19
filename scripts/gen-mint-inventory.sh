@@ -645,6 +645,10 @@ scan_substrate() {
         local rel="${file#"$scan_root"/}"
         printf '%s\t%s\t%s:%s\t%s\n' "$tree" "$name" "$rel" "$line" "$quals"
     done < <(
+        # A leading underscore marks an old-substrate header that has been
+        # ported to include/foundation or include/fixy and awaits Stage D
+        # deletion (scripts/check-frozen-tree.sh).  Its mints are no longer
+        # the surface; the ported copy is.
         rg -nP \
            --no-heading \
            --type=cpp \
@@ -862,6 +866,10 @@ scan_fixy_mints() {
         local rel="${file#"$scan_root"/}"
         printf '%s\t%s:%s\t%s\n' "$name" "$rel" "$line" "$quals"
     done < <(
+        # A leading underscore marks an old-substrate header that has been
+        # ported to include/foundation or include/fixy and awaits Stage D
+        # deletion (scripts/check-frozen-tree.sh).  Its mints are no longer
+        # the surface; the ported copy is.
         rg -nP \
            --no-heading \
            --type=cpp \

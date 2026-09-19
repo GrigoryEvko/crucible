@@ -91,4 +91,3 @@ mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
 # `mint_computation_in_ctx` read as HS14: 2 while one of the two mentions
 # lived in a `//` comment in neg_mint_computation_non_pure_row.cpp.  One
 # real fixture remains.
-Computation::mint_computation_in_ctx|include/crucible/effects/Computation.h

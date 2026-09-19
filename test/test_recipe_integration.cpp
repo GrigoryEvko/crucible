@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 #include <crucible/Arena.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>

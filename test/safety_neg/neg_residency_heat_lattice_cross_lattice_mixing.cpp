@@ -28,7 +28,7 @@
 // [GCC-WRAPPER-TEXT] — diagnostic comes from GCC's strong-enum
 // type-mismatch rejection.
 
-#include <crucible/algebra/lattices/CipherTierLattice.h>
+#include <crucible/algebra/lattices/_CipherTierLattice.h>
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h>
 
 using namespace crucible::algebra::lattices;

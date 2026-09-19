@@ -34,7 +34,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection on the nested-
 // struct template identity at the LATTICE surface.
 
-#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
 
 using namespace crucible::algebra::lattices;
 

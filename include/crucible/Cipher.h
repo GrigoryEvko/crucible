@@ -16,7 +16,7 @@
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Is.h>

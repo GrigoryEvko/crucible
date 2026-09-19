@@ -1,7 +1,7 @@
 // Sentinel TU: compiles the alias header under the project warning flags so its
 // static_asserts run.
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Cap.h>
 
 #include <type_traits>

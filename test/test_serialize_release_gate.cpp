@@ -12,7 +12,7 @@
 // bytes still round-trip.
 
 #include <crucible/Serialize.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <bit>
 #include <cstdint>

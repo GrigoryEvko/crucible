@@ -15,7 +15,7 @@
 // convert|expected.*Init" — toolchain-portable witness of the gate.
 
 #include <crucible/perf/SchedSwitch.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Capabilities.h>
 
 #include <optional>
 

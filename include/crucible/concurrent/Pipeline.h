@@ -25,8 +25,8 @@
 #include <crucible/concurrent/Stage.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/concurrent/WorkingSet.h>
-#include <crucible/effects/ExecCtx.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/diag/RowMismatch.h>

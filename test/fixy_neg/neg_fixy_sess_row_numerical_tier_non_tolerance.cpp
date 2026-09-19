@@ -25,7 +25,7 @@
 // later violated the cross-vendor pairwise-equivalence CI test.
 
 #include <crucible/fixy/SessRowExtraction.h>
-#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/_EffectRow.h>
 
 namespace fsrow = ::crucible::fixy::sess::row;
 namespace eff = ::crucible::effects;

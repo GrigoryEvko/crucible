@@ -22,7 +22,7 @@
 //   "no matching function" / "CtxFitsSafeAdvise" /
 //   "constraints not satisfied" / "is_dangerous_advice".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
 struct AdviseRegion {};

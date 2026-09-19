@@ -16,9 +16,9 @@
 // Demonstrates the gate's recursion through nested-Computation
 // callback returns — not just one level.
 
-#include <crucible/effects/Computation.h>
-#include <crucible/effects/EffectRow.h>
-#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_Capabilities.h>
 
 using namespace crucible::effects;
 

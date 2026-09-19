@@ -12,9 +12,9 @@
 // fleet-scoped value to a program-scoped view runs opposite to ⊑ and is
 // a separate operation on the wrapper, not a use of this order.
 
-#include <crucible/algebra/Graded.h>
-#include <crucible/algebra/Lattice.h>
-#include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/_Graded.h>
+#include <crucible/algebra/_Lattice.h>
+#include <crucible/algebra/lattices/_ChainLattice.h>
 
 #include <cstdint>
 #include <meta>

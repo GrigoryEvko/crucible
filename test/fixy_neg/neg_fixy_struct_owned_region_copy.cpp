@@ -11,7 +11,7 @@
 // Expected diagnostic: substring "deleted function" / "copy" /
 // "Permission".
 
-#include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/permissions/Permission.h>
 
