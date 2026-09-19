@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fixy/GradedFacade.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -88,7 +89,9 @@ template <typename T, template <typename...> class Storage = std::vector>
 mint_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>);
 
 template <typename T, template <typename...> class Storage>
-class [[nodiscard]] AppendOnly {
+class [[nodiscard]] AppendOnly
+    : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                           ::foundation::algebra::lattices::SeqPrefixLattice<T>, Storage<T>> {
     static_assert(!is_writeonce_v<T>, "AppendOnly<WriteOnce<T>> is redundant: AppendOnly already guarantees "
                                       "that emplaced elements are never mutated, reassigned, or removed. "
                                       "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
@@ -103,13 +106,20 @@ class [[nodiscard]] AppendOnly {
                   "(symmetric with the AppendOnly<WriteOnce<T>> rejection above)");
 
 public:
+    // The one wrapper whose value_type is not the substrate's: it wraps
+    // a container and grades the container, while what it holds is the
+    // element.  Declaring value_type here hides the base's, and
+    // value_type_decoupled in GradedTrait.h is what admits the
+    // mismatch.  modality and the two name forwarders still arrive from
+    // graded_facade.
     using value_type = T;
     using storage_type = Storage<T>;
     using const_iterator = typename Storage<T>::const_iterator;
-    using lattice_type = ::foundation::algebra::lattices::SeqPrefixLattice<T>;
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-    using graded_type =
-        ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
+
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                  ::foundation::algebra::lattices::SeqPrefixLattice<T>, Storage<T>>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
 
 private:
     graded_type impl_;
@@ -145,10 +155,6 @@ public:
 
     // value_type_name reports the storage type, not the element type.
     // The graded value here is the container.
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename T, template <typename...> class Storage>
@@ -279,13 +285,19 @@ template <typename T, typename Cmp = std::less<T>>
 [[nodiscard]] constexpr Monotonic<T, Cmp> mint_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>);
 
 template <typename T, typename Cmp>
-class [[nodiscard]] Monotonic {
+class [[nodiscard]] Monotonic : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                                     ::foundation::algebra::lattices::MonotoneLattice<T, Cmp>, T> {
 public:
-    using value_type = T;
     using comparator_type = Cmp;
-    using lattice_type = ::foundation::algebra::lattices::MonotoneLattice<T, Cmp>;
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-    using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, T>;
+
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                  ::foundation::algebra::lattices::MonotoneLattice<T, Cmp>, T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
 
 private:
     graded_type impl_;
@@ -337,11 +349,6 @@ public:
     constexpr void reset_under_quiescence(T value = T{}) noexcept(std::is_nothrow_move_constructible_v<T>) {
         impl_ = graded_type{std::move(value)};
     }
-
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename T, typename Cmp>

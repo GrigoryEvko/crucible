@@ -18,6 +18,7 @@
 // header are the fail-closed namespace below and the assertions
 // derived from it.
 
+#include <fixy/GradedFacade.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -85,13 +86,21 @@ template <typename T, typename... Args>
 [[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>);
 
 template <typename T>
-class [[nodiscard]] Secret {
+class [[nodiscard]] Secret
+    : public graded_facade<
+          ::foundation::algebra::ModalityKind::Comonad,
+          ::foundation::algebra::lattices::ConfLattice::At<::foundation::algebra::lattices::Conf::Secret>, T> {
 public:
-    using value_type = T;
-    using lattice_type =
-        ::foundation::algebra::lattices::ConfLattice::At<::foundation::algebra::lattices::Conf::Secret>;
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Comonad;
-    using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Comonad, lattice_type, T>;
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.
+    using facade_ =
+        graded_facade<::foundation::algebra::ModalityKind::Comonad,
+                      ::foundation::algebra::lattices::ConfLattice::At<::foundation::algebra::lattices::Conf::Secret>,
+                      T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
 
     static_assert(std::is_same_v<lattice_type, tags::secret_policy::admitted_policies::classified>,
                   "The From end of every admitted_policies edge must be the lattice position "
@@ -199,11 +208,6 @@ public:
         for (std::size_t i = 0; i < sizeof(T); ++i)
             p[i] = 0;
     }
-
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename T, typename... Args>

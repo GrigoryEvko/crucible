@@ -30,6 +30,7 @@
 // The implication relation those headers stated as an open trait is a
 // closed namespace here, so the three had to become one.
 
+#include <fixy/GradedFacade.h>
 #include <fixy/Qtt.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -320,18 +321,23 @@ template <auto Pred, typename T>
 mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
 
 template <auto Pred, typename T, bool Sealed>
-class [[nodiscard]] Refinement {
+class [[nodiscard]] Refinement
+    : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                           ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T> {
 public:
-    using value_type = T;
     using predicate_type = decltype(Pred);
-    // The lattice takes the predicate's type, and the const strip
-    // matters: an inline constexpr predicate variable is const at file
-    // scope while the template argument that binds it is not.
-    using lattice_type = ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>;
 
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-
-    using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, T>;
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.  The lattice takes the predicate's type, and the
+    // const strip matters: an inline constexpr predicate variable is
+    // const at file scope while the template argument that binds it is
+    // not.
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                  ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
 
     // The one difference between the two refinements, readable off the
     // type.  refined_is_sealed_v is a view of this.
@@ -417,14 +423,6 @@ public:
     {
         return a.impl_.peek() <=> b.impl_.peek();
     }
-
-    // The lattice name is shared by the two refinements, since the
-    // substrate is the same.  What tells them apart is the wrapper's
-    // own identity.
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <auto Pred, typename T>

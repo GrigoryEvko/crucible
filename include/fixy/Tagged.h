@@ -49,6 +49,7 @@
 // of include/crucible/safety/IsTagged.h.  The tag namespaces live in
 // fixy/Tags.h.
 
+#include <fixy/GradedFacade.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -204,14 +205,19 @@ template <typename To, typename T, typename From>
 [[nodiscard]] constexpr Tagged<T, To> retag(Tagged<T, From>&& tagged) noexcept(std::is_nothrow_move_constructible_v<T>);
 
 template <typename T, typename Tag>
-class [[nodiscard]] Tagged {
+class [[nodiscard]] Tagged : public graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
+                                                  ::foundation::algebra::lattices::TrustLattice<Tag>, T> {
 public:
-    using value_type = T;
     using tag_type = Tag;
-    using lattice_type = ::foundation::algebra::lattices::TrustLattice<Tag>;
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::RelativeMonad;
-    using graded_type =
-        ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::RelativeMonad, lattice_type, T>;
+
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
+                                  ::foundation::algebra::lattices::TrustLattice<Tag>, T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
 
 private:
     graded_type impl_;
@@ -259,11 +265,6 @@ public:
     [[nodiscard]] constexpr T into() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
-
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename Tag, typename T>

@@ -8,6 +8,7 @@
 // Old spelling: include/crucible/safety/Stale.h, and the detection
 // surface of include/crucible/safety/IsStale.h.
 
+#include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/StalenessSemiring.h>
@@ -25,18 +26,23 @@
 namespace fixy {
 
 template <typename T>
-class [[nodiscard]] Stale {
+class [[nodiscard]] Stale : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                                 ::foundation::algebra::lattices::StalenessSemiring, T> {
 public:
-    using value_type = T;
-    using semiring_type = ::foundation::algebra::lattices::StalenessSemiring;
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the names this class
+    // body uses unqualified are re-declared here rather than found by
+    // lookup.
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                  ::foundation::algebra::lattices::StalenessSemiring, T>;
+    using typename facade_::graded_type;
+    // The grade is both a semiring and a chain lattice.  `lattice_type`
+    // is what the family-wide introspection surface matches on, and the
+    // two spellings beside it are what this header's own readers use.
+    using typename facade_::lattice_type;
+    using semiring_type = lattice_type;
     using semiring_t = semiring_type;
-    // The grade is both a semiring and a chain lattice.  The second
-    // spelling exists because the family-wide introspection surface
-    // matches on the name `lattice_type`.
-    using lattice_type = semiring_type;
     using staleness_t = typename semiring_type::element_type;
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-    using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, semiring_type, T>;
 
 private:
     graded_type impl_;
@@ -80,11 +86,6 @@ public:
                Stale const& b) noexcept(noexcept(a.peek() == b.peek()) && noexcept(a.staleness() == b.staleness())) {
         return a.peek() == b.peek() && a.staleness() == b.staleness();
     }
-
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     constexpr void swap(Stale& other) noexcept(std::is_nothrow_swappable_v<T>
                                                && std::is_nothrow_swappable_v<staleness_t>) {

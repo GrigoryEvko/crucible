@@ -25,6 +25,7 @@
 // release preset links a library built with NDEBUG against tests built
 // without it.
 
+#include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
@@ -102,7 +103,8 @@ template <class T, class... Args>
 
 template <auto Grade, class T>
     requires detail::IsConsumeBound<Grade>
-class [[nodiscard]] Qtt {
+class [[nodiscard]] Qtt : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                               ::foundation::algebra::lattices::QttSemiring::At<Grade>, T> {
     // Placed in the class body so the diagnostic surfaces at the user's
     // instantiation site rather than inside the substrate.
     static_assert(Grade != ::foundation::algebra::lattices::QttGrade::One || !is_already_linear_v<T>,
@@ -116,12 +118,14 @@ class [[nodiscard]] Qtt {
                   "the consume OPTIONAL when it is REQUIRED.  Use the token directly.");
 
 public:
-    using value_type = T;
-    using lattice_type = ::foundation::algebra::lattices::QttSemiring::At<Grade>;
-
-    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
-
-    using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, T>;
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                  ::foundation::algebra::lattices::QttSemiring::At<Grade>, T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
 
 private:
     graded_type impl_;
@@ -176,11 +180,6 @@ public:
             (void)x;
         }
     }
-
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return graded_type::value_type_name();
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <class T, class... Args>
