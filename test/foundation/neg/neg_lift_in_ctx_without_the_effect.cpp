@@ -6,6 +6,6 @@
 int main() {
     ::foundation::effects::detail::exec_ctx_self_test::BgWitness bg{};  // Row<Bg, Alloc>: no IO
     using Pure = ::foundation::effects::Computation<::foundation::effects::Row<>, int>;
-    [[maybe_unused]] auto claimed = Pure::lift_in<::foundation::effects::Effect::IO>(bg, 1);
+    [[maybe_unused]] auto claimed = Pure::mint_computation_in_ctx<::foundation::effects::Effect::IO>(bg, 1);
     return 0;
 }

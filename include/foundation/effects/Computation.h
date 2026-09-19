@@ -283,16 +283,9 @@ public:
     explicit constexpr Computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
         : base{std::move(x), grade_type{}} {}
 
-    [[nodiscard]] static constexpr Computation mk(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires(row_size_v<R> == 0)
-    {
-        return Computation{std::move(x)};
-    }
-
-    // The same lift under the naming convention that makes every
-    // authorization point findable by one grep.  New call sites use
-    // this spelling.  It derives its authority from the empty-row
-    // constraint alone, so it takes no context.
+    // The lift of a pure value, named so that one grep over mint_ finds
+    // every authorization point.  It derives its authority from the
+    // empty-row constraint alone, so it takes no context.
     [[nodiscard]] static constexpr Computation mint_computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires(row_size_v<R> == 0)
     {
@@ -316,8 +309,9 @@ public:
     // This form takes the caller's word for it.  Nothing about a raw T
     // proves that producing it exercised Cap, and no type-level axis
     // could supply that proof, so the honesty of the claim is a matter
-    // of review.  Where the caller has a context in hand, lift_in below
-    // checks the claim against that context's row instead.
+    // of review.  Where the caller has a context in hand,
+    // mint_computation_in_ctx below checks the claim against that
+    // context's row instead.
     template <Effect Cap>
         requires IsEffect<Cap>
     [[nodiscard]] static constexpr auto lift(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
@@ -331,15 +325,6 @@ public:
     // row finds no candidate here, whatever effect it asks for.
     //
     // The context argument is read for its type alone.
-    template <Effect Cap, class Ctx>
-        requires IsEffect<Cap> && IsExecCtx<Ctx> && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
-    [[nodiscard]] static constexpr auto lift_in(Ctx const&, T x) noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> Computation<Row<Cap>, T> {
-        return Computation<Row<Cap>, T>{std::move(x)};
-    }
-
-    // The context-bound lift under the grep-able naming convention.
-    // New call sites use this spelling.
     template <Effect Cap, class Ctx>
         requires IsEffect<Cap> && IsExecCtx<Ctx> && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
     [[nodiscard]] static constexpr auto mint_computation_in_ctx(Ctx const&,
@@ -515,7 +500,7 @@ CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationOverEmptyRow, EightByteValue);
 
 static_assert(
     [] consteval {
-        auto pure = Computation<Row<>, int>::mk(42);
+        auto pure = Computation<Row<>, int>::mint_computation(42);
         return pure.extract() == 42;
     }(),
     "The round trip through mk and extract on an empty-row Computation<int> failed.");
@@ -614,14 +599,14 @@ static_assert(requires(Computation<Row<>, int> const& c) { c.extract(); }, "A pl
 
 namespace then_payload_gate {
 
-constexpr auto legit_callback = [](int x) { return Computation<Row<>, int>::mk(x + 1); };
+constexpr auto legit_callback = [](int x) { return Computation<Row<>, int>::mint_computation(x + 1); };
 static_assert(
     requires(Computation<Row<>, int> const& c) { c.then(legit_callback); },
     "A callback returning a plain payload must admit through then.");
 
 constexpr auto nested_pure_callback = [](int) {
     using Inner = Computation<Row<>, int>;
-    return Computation<Row<>, Inner>::mk(Inner::mk(42));
+    return Computation<Row<>, Inner>::mint_computation(Inner::mint_computation(42));
 };
 static_assert(
     requires(Computation<Row<>, int> const& c) { c.then(nested_pure_callback); },
@@ -630,7 +615,7 @@ static_assert(
 
 using LaunderingInner = Computation<Row<Effect::Bg>, int>;
 using LaunderingCallback = decltype([](int) {
-    return Computation<Row<>, LaunderingInner>::mk(Computation<Row<>, int>::lift<Effect::Bg>(42));
+    return Computation<Row<>, LaunderingInner>::mint_computation(Computation<Row<>, int>::lift<Effect::Bg>(42));
 });
 static_assert(!detail::extract_admits_payload_v<LaunderingInner>,
               "A callback whose returned value is itself an engaged Computation must not admit through "
@@ -671,13 +656,13 @@ static_assert(!row_contains_v<typename detail::exec_ctx_self_test::FgWitness::ro
               "The hot foreground context must not carry Effect::Bg in its row.  Foreground code must "
               "not be able to witness a Bg claim.");
 
-static_assert(std::is_same_v<decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
+static_assert(std::is_same_v<decltype(Computation<Row<>, int>::template mint_computation_in_ctx<Effect::Bg>(
                                  std::declval<detail::exec_ctx_self_test::BgWitness const&>(), 42)),
                              Computation<Row<Effect::Bg>, int>>,
               "The witnessed lift must admit when the context's row contains the requested effect, and "
               "must give the same result type as the unwitnessed form.");
 
-static_assert(decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
+static_assert(decltype(Computation<Row<>, int>::template mint_computation_in_ctx<Effect::Bg>(
                   std::declval<detail::exec_ctx_self_test::BgWitness const&>(), 0))::effect_count_in_row()
                   == 1u,
               "The witnessed lift preserves the type-level claim.  Only the construction path gained a "
@@ -697,7 +682,7 @@ static_assert(!IsComputation<Row<Effect::Bg>>);
 
 static_assert(
     [] consteval {
-        auto pure = Computation<Row<>, int>::mk(7);
+        auto pure = Computation<Row<>, int>::mint_computation(7);
         auto doubled = pure.map([](int x) { return x * 2; });
         using Doubled = decltype(doubled);
         return std::is_same_v<Doubled::row_type, Row<>> && std::is_same_v<Doubled::value_type, int>
@@ -707,7 +692,7 @@ static_assert(
 
 static_assert(
     [] consteval {
-        auto pure = Computation<Row<>, int>::mk(3);
+        auto pure = Computation<Row<>, int>::mint_computation(3);
         auto as_double = pure.map([](int x) -> double { return x + 0.5; });
         using D = decltype(as_double);
         return std::is_same_v<D::row_type, Row<>> && std::is_same_v<D::value_type, double>;
@@ -737,15 +722,15 @@ static_assert(
 
 static_assert(
     [] consteval {
-        auto pure = Computation<Row<>, int>::mk(5);
-        auto chained = pure.then([](int x) { return Computation<Row<>, int>::mk(x * 2); });
+        auto pure = Computation<Row<>, int>::mint_computation(5);
+        auto chained = pure.then([](int x) { return Computation<Row<>, int>::mint_computation(x * 2); });
         return chained.extract() == 10 && std::is_same_v<decltype(chained)::row_type, Row<>>;
     }(),
     "A bind over two empty rows must produce a result at the empty row.");
 
 static_assert(
     [] consteval {
-        auto pure = Computation<Row<>, int>::mk(99);
+        auto pure = Computation<Row<>, int>::mint_computation(99);
         auto const& g = pure.graded();
         using G = std::remove_cvref_t<decltype(g)>;
         return std::is_same_v<G, ComputationGraded<Row<>, int>> && g.peek() == 99;
@@ -767,7 +752,7 @@ static_assert(
 // static_assert wall above only proves the constant-evaluated path,
 // which does not exercise overload selection on real values.
 inline void runtime_smoke_test_computation() {
-    auto pure_lvalue = Computation<Row<>, int>::mk(100);
+    auto pure_lvalue = Computation<Row<>, int>::mint_computation(100);
     int read_lvalue = pure_lvalue.extract();
     int read_rvalue = std::move(pure_lvalue).extract();
     (void)read_lvalue;
@@ -781,13 +766,13 @@ inline void runtime_smoke_test_computation() {
     (void)bg_widened_lvalue;
     (void)bg_widened_rvalue;
 
-    auto map_pure = Computation<Row<>, int>::mk(7);
+    auto map_pure = Computation<Row<>, int>::mint_computation(7);
     auto map_lvalue = map_pure.map([](int x) { return x + 1; });
     auto map_rvalue = std::move(map_pure).map([](int x) { return x * 2; });
     (void)map_lvalue;
     (void)map_rvalue;
 
-    auto then_pure = Computation<Row<>, int>::mk(11);
+    auto then_pure = Computation<Row<>, int>::mint_computation(11);
     auto then_lvalue = then_pure.then([](int x) { return Computation<Row<>, int>::lift<Effect::Bg>(x + 100); });
     auto then_rvalue =
         std::move(then_pure).then([](int x) { return Computation<Row<>, int>::lift<Effect::IO>(x + 200); });
