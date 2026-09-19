@@ -98,3 +98,43 @@ foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
 foundation_neg_compile_test(neg_lift_in_ctx_without_the_effect
   "constraints not satisfied"
   "row_contains_v")
+
+# The contracts tests keep the file names of the tests they are ported
+# from.  The target names carry the contracts prefix because the old
+# tests still register the plain names in test/CMakeLists.txt, and a
+# CMake target name is global.
+foundation_test(test_contracts_decide test_decide.cpp)
+foundation_test(test_contracts_decide_fuzz test_decide_fuzz.cpp)
+foundation_test(test_contracts_pre_post test_pre_post.cpp)
+
+# CRUCIBLE_PRE under NDEBUG must compile to the same machine code as a
+# bare [[assume]].  This target is built with -O3 and NDEBUG defined
+# instead of the preset's debug flags, and the sanitizer flags are left
+# off because they change code generation.  Each function goes in its
+# own section so the __start_ and __stop_ symbols bound one probe each.
+# See test_pre_post_cost.cpp.
+add_executable(test_contracts_pre_post_cost test_pre_post_cost.cpp)
+target_link_libraries(test_contracts_pre_post_cost PRIVATE foundation)
+target_compile_options(test_contracts_pre_post_cost PRIVATE -O3 -ffunction-sections)
+target_compile_definitions(test_contracts_pre_post_cost PRIVATE NDEBUG)
+add_test(NAME test_contracts_pre_post_cost COMMAND test_contracts_pre_post_cost)
+set_tests_properties(test_contracts_pre_post_cost PROPERTIES LABELS "foundation")
+
+# CRUCIBLE_PRE on a struct by const reference, violated in a constant
+# expression: the shape a native pre() clause skips.  The location regex
+# proves the trap fired inside Pre.h, and the note regex that it was
+# reached through the macro.
+foundation_neg_compile_test(neg_pre_violated_at_consteval
+  "non-constant condition for static assertion"
+  "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
+  "in expansion of macro .CRUCIBLE_PRE.")
+
+# CRUCIBLE_POST on a field of a returned struct, violated in a constant
+# expression.  The two note regexes prove the trap was reached through
+# CRUCIBLE_POST in Post.h and not through a CRUCIBLE_PRE of the fixture.
+foundation_neg_compile_test(neg_post_violated_at_consteval
+  "non-constant condition for static assertion"
+  "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
+  "foundation/contracts/Post\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
+  "in expansion of macro .CRUCIBLE_POST.")
+
