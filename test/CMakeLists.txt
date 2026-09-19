@@ -1810,7 +1810,8 @@ set(CRUCIBLE_NEG_TWO_REGEX_FLOORED
   warden_neg
   perf_neg
   topology_neg
-  bridges_neg)
+  bridges_neg
+  sessions_neg)
 
 # Called by each sister harness with the registration's regex list in
 # ARGN.  Silent for a directory that has not been swept yet.
@@ -3903,39 +3904,49 @@ crucible_neg_compile_fixy_test(neg_fixy_is_session_handle_rejects_plain
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_unrecovered
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "static assertion failed.*CrashBranch_Missing_In_Tree")
 
 # GAPS-049: exact-name delegated-crash rejection fixtures.  These pin
 # the public consteval assertion boundary so custom call sites do not
 # have to infer the failure from the broader crash-walker diagnostic.
 crucible_neg_compile_session_test(neg_delegate_to_unreliable_no_crash_branch
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "DelegatedCrashPropagation_MissingRecovery|recipient is unreliable but carrier K has no crash-recovery branch")
 
 # GAPS-048: Delegate<Stop, K> has no K continuation at the handle
 # surface; the operation is explicitly deleted with a framework-owned
 # diagnostic.
 crucible_neg_compile_session_test(neg_delegate_stop_continuation
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "DelegateStop_NoContinuation")
 
 crucible_neg_compile_session_test(neg_delegate_stop_without_continuation_capability
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "DelegateStop_NoContinuation")
 
 crucible_neg_compile_session_test(neg_delegate_compose_incompatible_crash_classes
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "CrashLattice_Composition_Incompatible")
 
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_no_propagation_metafunction
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "DelegatedCrashPropagation_PrimaryTemplate|primary template fires")
 
 # GAPS-064: CrashWatchedHandle consumes Stop_g<CrashClass C>.
 # These fixtures pin the NoThrow rejection and the exact Stop_g grade
 # match at the watched crash boundary.
 crucible_neg_compile_session_test(neg_crashwatched_noThrow_with_unreliable_peer
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "CrashWatched_NoThrow_Rejected")
 crucible_neg_compile_session_test(neg_crashwatched_strong_class_recovery_path_missing
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 crucible_neg_compile_session_test(neg_crashwatched_class_lattice_violation
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 
 # fixy-A2-020: HS14 floor for the new `!is_terminal_state<B>` conjunct
@@ -3945,9 +3956,11 @@ crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
 # semantically equivalent to their terminal body, neither containing
 # a reachable Continue.
 crucible_neg_compile_session_test(neg_loop_body_terminal_end
-    "static assertion failed|Protocol_Ill_Formed|is_well_formed")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "Protocol_Ill_Formed|is_well_formed")
 crucible_neg_compile_session_test(neg_loop_body_terminal_stop
-    "static assertion failed|Protocol_Ill_Formed|is_well_formed")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "Protocol_Ill_Formed|is_well_formed")
 
 # GAPS-066: NumericalTier Send covariance / Recv contravariance and
 # channel-boundary fixtures.  These pin the compile-time recipe-tier
@@ -3955,16 +3968,22 @@ crucible_neg_compile_session_test(neg_loop_body_terminal_stop
 # receivers, bare payloads cannot regain tier evidence, and loop
 # composition cannot hide a downgrade.
 crucible_neg_compile_session_test(neg_send_weaker_tier_to_recv_stronger
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "NumericalTier_ChannelBoundary_ProducerTierTooWeak")
 crucible_neg_compile_session_test(neg_recv_promotes_unauthorized
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "NumericalTier_RecvPromotion_RequiresTightening")
 crucible_neg_compile_session_test(neg_session_subtype_tier_mismatch
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "NumericalTier_SendSubtype_ProducerTierTooWeak")
 crucible_neg_compile_session_test(neg_payload_unwrap_loses_tier
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "NumericalTier_BarePayload_CannotGainTier")
 crucible_neg_compile_session_test(neg_default_recipe_to_strict_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "NumericalTier_DefaultRecipe_CannotSatisfyStrictRecv")
 crucible_neg_compile_session_test(neg_tier_compose_in_loop
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "NumericalTier_LoopBody_TierDowngrade")
 
 # GAPS-067: VendorCtx pins PermissionedSessionHandle chains to a
@@ -3972,27 +3991,37 @@ crucible_neg_compile_session_test(neg_tier_compose_in_loop
 # framework-owned composition assertion rejects an NV provider for an
 # AMD consumer.
 crucible_neg_compile_session_test(neg_vendor_ctx_nv_to_amd
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_vendor_ctx_none_to_nv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 
 # GAPS-068: VendorCtx/VendorPinned admission at session mint,
 # substrate bridge, Delegate_seq, subtype, and payload boundaries.
 crucible_neg_compile_session_test(neg_mint_substrate_nv_to_amd
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_cntp_layer_vendor_mismatch
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_collective_session_vendor_unspecified
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_session_subtype_vendor_violation
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "SessionSubtype\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_session_compose_cross_vendor_no_portable
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_session_promote_to_portable_unauthorized
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 crucible_neg_compile_session_test(neg_send_payload_vendor_in_pure_session
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 crucible_neg_compile_session_test(neg_recv_payload_unauthorized_vendor
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolVendorAdmittedByLoopCtx")
 
 # GAPS-070: ProductLattice protocol-grade filter on synchronous
@@ -4000,36 +4029,50 @@ crucible_neg_compile_session_test(neg_recv_payload_unauthorized_vendor
 # local is_subsort axiom; the structural Gay-Hole relation would pass,
 # but the orthogonal grade filter must still reject.
 crucible_neg_compile_session_test(neg_session_grade_vendor_axis
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_numerical_axis
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_cipher_axis
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_epoch_axis
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_numa_axis
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_vendor_numerical_axes
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_vendor_cipher_axes
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_numerical_cipher_axes
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_evolution_weakens_numerical
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 crucible_neg_compile_session_test(neg_session_grade_evolution_changes_vendor
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolGradeMismatch")
 
 # GAPS-072: EpochedDelegate ctx-bound minting pins cross-Relay reshard
 # handoffs to the current sender epoch/generation while EpochedAccept
 # rejects stale recipients.
 crucible_neg_compile_session_test(neg_epoched_delegate_stale_epoch_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
 crucible_neg_compile_session_test(neg_epoched_delegate_recipient_stale_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleRecipient")
 crucible_neg_compile_session_test(neg_epoched_delegate_generation_decrease
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
 crucible_neg_compile_session_test(neg_epoched_delegate_compose_stale_chain
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
 
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
@@ -11974,65 +12017,79 @@ crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
 # (1) close at End with leftover Permission.  Establish with a Permission;
 #     close() before any surrender step.
 crucible_neg_compile_session_test(neg_psh_close_with_leftover_perm
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (2) Send Transferable<T, X> from a handle whose PS does not contain X.
 crucible_neg_compile_session_test(neg_psh_send_transferable_without_holding
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*payload type T requires")
 
 # (3) Send Returned<T, X> from a handle whose PS does not contain X.
 crucible_neg_compile_session_test(neg_psh_send_returned_without_holding
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*payload type T requires")
 
 # (4) Loop body that DRAINS a permission per iteration without surrender.
 #     Continue's balance assert fires.
 crucible_neg_compile_session_test(neg_psh_loop_drains_perm_per_iteration
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (5) Loop body that GAINS a permission per iteration without surrender
 #     (the symmetric inverse of #4).
 crucible_neg_compile_session_test(neg_psh_loop_gains_perm_per_iteration
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (6) Recv Transferable then close at End without surrender.
 crucible_neg_compile_session_test(neg_psh_recv_imbalance_at_end
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (7) Select with branch that closes without surrendering — Decision D4
 #     STRUCTURAL convergence: close on the imbalanced branch fires.
 crucible_neg_compile_session_test(neg_psh_select_diverging_branch
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (8) Nested Loop where the OUTER body balances but the INNER body does
 #     not — exercises Decision D3's loop-context shadowing.
 crucible_neg_compile_session_test(neg_psh_nested_loop_inner_imbalance
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (9) Multi-step body where MOST operations balance but the LAST step
 #     leaves PS imbalanced.  Subtle: balanced sub-chains hide a trailing
 #     half-pair that the type system catches via Continue's balance assert.
 crucible_neg_compile_session_test(neg_psh_subtle_chain_imbalance
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (10) perm_set_union_t with overlapping operands — disjoint-union assert
 #      fires.  CSL frame rule violation: a permission cannot be held by
 #      two participants simultaneously.
 crucible_neg_compile_session_test(neg_perm_set_union_overlap
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermSet\\.h.*static assertion failed.*PermissionImbalance.*disjoint operands")
 
 # GAPS-058: PermissionedSessionHandle × Delegate/Accept bridge.  These
 # pin the DelegatedSession<P, InnerPS> handoff boundary so higher-order
 # session transfer cannot fabricate, duplicate, or leak InnerPS.
 crucible_neg_compile_session_test(neg_psh_delegate_inner_ps_not_in_sender
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*PermSet does not contain inner_ps tokens")
 
 crucible_neg_compile_session_test(neg_psh_accept_inner_ps_already_owned
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*inner_ps already owned")
 
 crucible_neg_compile_session_test(neg_psh_delegate_inner_proto_unbalanced
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*is_permission_balanced_v<InnerProto> against InnerPS rejects")
 
 crucible_neg_compile_session_test(neg_psh_delegate_to_self
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ProtocolViolation_Self_Loop|self-loop")
 
 # GAPS-059: ctx-bound permissioned session mint.  These fixtures pin the
@@ -12040,53 +12097,68 @@ crucible_neg_compile_session_test(neg_psh_delegate_to_self
 # permission payload wrappers, initial PermSet must locally close, and a
 # Permission<Tag> cannot be consumed twice.
 crucible_neg_compile_session_test(neg_mint_session_no_ctx
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "mint_session<Proto>\\(resource\\) is removed")
 
 crucible_neg_compile_session_test(neg_mint_permissioned_session_no_ctx
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "no matching function for call to.*mint_permissioned_session|candidate expects at least 2 arguments")
 
 crucible_neg_compile_session_test(neg_psh_direct_construct
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "no matching function for call to.*PermissionedSessionHandle")
 
 crucible_neg_compile_session_test(neg_psh_fabricate_permset
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "no matching function for call to.*PermissionedSessionHandle")
 
 crucible_neg_compile_session_test(neg_mint_session_ctx_no_admit_proto
-    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_send_transferable_io_payload_to_pure_ctx
-    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_send_borrowed_io_payload_to_pure_ctx
-    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_send_returned_io_payload_to_pure_ctx
-    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 # GAPS-076: paired channel minting validates both local protocols.  Endpoint A
 # runs Proto; endpoint B runs dual(Proto).  These fixtures pin sender-side row
 # admission, receiver-side row admission, continuation drift, and Capability
 # payload rows.
 crucible_neg_compile_session_test(neg_mint_channel_receiver_no_admit
-    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_sender_no_admit
-    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_recv_row_drift
-    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_capability_unauthorized_receiver
-    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
 crucible_neg_compile_session_test(neg_mint_channel_requires_ctx
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "mint_channel<Proto>\\(resource_a, resource_b\\) is removed")
 
 crucible_neg_compile_session_test(neg_persisted_session_hot_ctx
-    "constraints not satisfied|template constraint failure|associated constraints|CtxAdmits")
+    "constraints not satisfied|template constraint failure|associated constraints"
+    "CtxAdmits")
 
 crucible_neg_compile_session_test(neg_persisted_session_no_ctx
-    "PersistedSession_CtxRequired|use of deleted function")
+    "use of deleted function"
+    "PersistedSession_CtxRequired")
 
 # fixy-A2-025: PSH detach is no longer deleted — it forwards to inner.detach,
 # records SessionEvent::detach, and flushes the audit log.  The surviving
@@ -12094,13 +12166,16 @@ crucible_neg_compile_session_test(neg_persisted_session_no_ctx
 # fixy-A2-025 fixtures below.
 
 crucible_neg_compile_session_test(neg_psh_detach_bare_no_reason
-    "DetachReason_Required|deleted|matching function")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "DetachReason_Required|matching function")
 
 crucible_neg_compile_session_test(neg_psh_detach_untyped_reason
-    "DetachReason|requires|constraint")
+    "constraint"
+    "DetachReason|requires")
 
 crucible_neg_compile_session_test(neg_persisted_session_no_open_view
-    "PersistedSession_OpenViewRequired|use of deleted function")
+    "use of deleted function"
+    "PersistedSession_OpenViewRequired")
 
 # fixy-A2-006 — PSH overloads of mint_recording_session / mint_persisted_session.
 # (Phase 1 deferral witnesses neg_recording_session_psh_delegate_unsupported +
@@ -12111,10 +12186,12 @@ crucible_neg_compile_session_test(neg_persisted_session_no_open_view
 # lives in the RecordingPermissionedSessionHandle.h sentinel block.)
 
 crucible_neg_compile_session_test(neg_persisted_session_psh_hot_ctx
-    "constraints not satisfied|template constraint failure|associated constraints|CtxAdmits")
+    "constraints not satisfied|template constraint failure|associated constraints"
+    "CtxAdmits")
 
 crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
-    "PersistedSession_OpenViewRequired|use of deleted function")
+    "use of deleted function"
+    "PersistedSession_OpenViewRequired")
 
 # fixy-M-17 — HS14 floor for mint_session_view<Tag>(handle).
 # Two fixtures × distinct mismatch classes: #1 wrong protocol position
@@ -12122,76 +12199,95 @@ crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
 # (BogusPositionTag).  Both fire mint_session_view's
 # `requires HandleIsAt<Handle, Tag>` clause.
 crucible_neg_compile_session_test(neg_mint_session_view_wrong_position
-    "constraints not satisfied|HandleIsAt|handle_is_at|no matching function|mint_session_view")
+    "constraints not satisfied|no matching function"
+    "HandleIsAt|handle_is_at|mint_session_view")
 crucible_neg_compile_session_test(neg_mint_session_view_invalid_tag
-    "constraints not satisfied|HandleIsAt|handle_is_at|no matching function|mint_session_view")
+    "constraints not satisfied|no matching function"
+    "HandleIsAt|handle_is_at|mint_session_view")
 
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
-    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
+    "CtxFitsPermissionedProtocol|permission_flow_closes")
 
 crucible_neg_compile_session_test(neg_mint_session_perm_double_consume
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "PermSet\\.h.*static assertion failed.*PermissionImbalance.*unique Tags")
 
 # GAPS-060: Chase-Lev owner/thief typed-session facade.  The thief
 # protocol is Recv-only; the owner Recv branch is pop_bottom, not the
 # thief borrowed-steal transport.
 crucible_neg_compile_session_test(neg_chaselev_thief_session_push
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_chaselev_owner_session_steal
-    "try_steal|no matching function|constraints not satisfied")
+    "no matching function|constraints not satisfied"
+    "try_steal")
 
 # GAPS-081: generic SubstrateSessionBridge and Endpoint preserve the
 # Chase-Lev owner/thief protocol split.  The thief direction remains
 # Recv-only through both factories.
 crucible_neg_compile_session_test(neg_chaselev_substrate_thief_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_chaselev_endpoint_thief_try_send
-    "no matching function for call|constraints not satisfied|candidate")
+    "constraints not satisfied"
+    "no matching function for call|candidate")
 
 # GAPS-082: indexed ShardedGrid substrate sessions.  ShardId<I>
 # selects the statically-indexed producer/consumer handle, and role
 # misuse remains rejected through the generic bridge.
 crucible_neg_compile_session_test(neg_sharded_grid_substrate_consumer_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_sharded_grid_substrate_producer_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_sharded_grid_bridge_producer_shard_oob
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ShardedGridBridge_ProducerShardOutOfRange|producer shard I")
 
 # GAPS-083: indexed CalendarGrid substrate sessions.  CalendarProducerId<P>
 # selects a producer row; CalendarConsumerId selects the single drain
 # consumer.  Role misuse remains rejected through the generic bridge.
 crucible_neg_compile_session_test(neg_calendar_grid_substrate_consumer_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_calendar_grid_substrate_producer_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_calendar_grid_bridge_producer_row_oob
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "CalendarGridBridge_ProducerRowOutOfRange|producer row P")
 
 # GAPS-084: indexed ShardedCalendarGrid substrate sessions.  ShardId<S>
 # selects the shard-local producer/consumer calendar handle; role misuse
 # and out-of-range shard IDs remain compile-time failures.
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_consumer_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_producer_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_bridge_shard_oob
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "ShardedCalendarGridBridge_ShardOutOfRange|shard S")
 
 # GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
 # Send-only; WaiterProto is Recv-only.
 crucible_neg_compile_session_test(neg_chainedge_waiter_session_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 # SEPLOG-H2: MpmcChannelSession typed-session facade for the fractional
@@ -12206,15 +12302,19 @@ crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
 # Together these satisfy HS14 (≥ 2 fixtures per new mint factory) for
 # both mint_mpmc_producer_session and mint_mpmc_consumer_session.
 crucible_neg_compile_session_test(neg_mpmc_session_consumer_session_send
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*send")
 
 crucible_neg_compile_session_test(neg_mpmc_session_producer_session_recv
+    "static assertion failed|constraints not satisfied|no matching function|has no member named"
     "has no member named.*recv")
 
 crucible_neg_compile_session_test(neg_mpmc_session_surface_rejects_non_channel
-    "MpmcChannelSessionSurface|constraints not satisfied|no type named|the required expression")
+    "constraints not satisfied|no type named"
+    "MpmcChannelSessionSurface|the required expression")
 
 crucible_neg_compile_session_test(neg_mpmc_session_handle_copy
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "ProducerHandle owns a producer-pool refcount share")
 
 # ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
@@ -13196,9 +13296,11 @@ crucible_neg_compile_test(neg_path_source_userpath_to_envpath_retag
 # family naming is broad to absorb GCC dialect drift in the
 # "static assertion failed" wording.
 crucible_neg_compile_session_test(neg_stop_g_crashclass_dropped_in_peer_projection
-    "static assertion failed|static assert|fixy-A2-001")
+    "static assertion failed"
+    "static assert|fixy-A2-001")
 crucible_neg_compile_session_test(neg_stop_g_crashclass_dropped_in_role_projection
-    "static assertion failed|static assert|fixy-A2-001")
+    "static assertion failed"
+    "static assert|fixy-A2-001")
 
 # ─────────────────────────────────────────────────────────────────
 # fixy-A2-002 — Accept-of-Stop_g<C> composition bottom-preservation
@@ -13250,9 +13352,11 @@ crucible_neg_compile_session_test(neg_stop_g_crashclass_dropped_in_role_projecti
 # duality identity end-to-end across the plain and Epoched paths.
 # Diagnostic family naming matches the fixy-A2-001 pattern.
 crucible_neg_compile_session_test(neg_compose_accept_stop_g_missing_bottom
-    "static assertion failed|static assert|fixy-A2-002")
+    "static assertion failed"
+    "static assert|fixy-A2-002")
 crucible_neg_compile_session_test(neg_compose_epoched_accept_stop_g_missing_bottom
-    "static assertion failed|static assert|fixy-A2-002")
+    "static assertion failed"
+    "static assert|fixy-A2-002")
 
 # ─────────────────────────────────────────────────────────────────
 # fixy-A2-028 — protocol_effect_row bottom-preservation
@@ -13283,9 +13387,11 @@ crucible_neg_compile_session_test(neg_compose_epoched_accept_stop_g_missing_bott
 # CrashClass (Abort vs Throw) on each fixture pins that the
 # bottom-preservation rule is CrashClass-agnostic.
 crucible_neg_compile_session_test(neg_protocol_effect_row_delegate_stop_g_narrows_k
-    "static assertion failed|static assert|fixy-A2-028")
+    "static assertion failed"
+    "static assert|fixy-A2-028")
 crucible_neg_compile_session_test(neg_protocol_effect_row_accept_stop_g_narrows_k
-    "static assertion failed|static assert|fixy-A2-028")
+    "static assertion failed"
+    "static assert|fixy-A2-028")
 
 # ─────────────────────────────────────────────────────────────────
 # fixy-A2-029 — is_terminal_state<CheckpointedSession<B, R>> AND-fold
@@ -13314,9 +13420,11 @@ crucible_neg_compile_session_test(neg_protocol_effect_row_accept_stop_g_narrows_
 # combinator on each fixture (Send vs Recv) to pin that the rejection
 # is direction-agnostic.
 crucible_neg_compile_session_test(neg_checkpointed_session_terminal_base_nonterminal
-    "static assertion failed|static assert|fixy-A2-029")
+    "static assertion failed"
+    "static assert|fixy-A2-029")
 crucible_neg_compile_session_test(neg_checkpointed_session_terminal_rollback_nonterminal
-    "static assertion failed|static assert|fixy-A2-029")
+    "static assertion failed"
+    "static assert|fixy-A2-029")
 
 # ─────────────────────────────────────────────────────────────────
 # fixy-A2-003 — is_dual_involutive specialization distribution
@@ -13381,9 +13489,11 @@ crucible_neg_compile_session_test(neg_checkpointed_session_terminal_rollback_non
 # EpochedDelegate / EpochedAccept share the same structural shape
 # (`<T, K, ...>` with T ∧ K conjunction) as Delegate.
 crucible_neg_compile_session_test(neg_is_dual_involutive_delegate_wraps_sender_offer
-    "static assertion failed|static assert|fixy-A2-003")
+    "static assertion failed"
+    "static assert|fixy-A2-003")
 crucible_neg_compile_session_test(neg_is_dual_involutive_checkpointed_wraps_sender_offer
-    "static assertion failed|static assert|fixy-A2-003")
+    "static assertion failed"
+    "static assert|fixy-A2-003")
 
 # ─────────────────────────────────────────────────────────────────
 # fixy-A2-004 — is_empty_choice<CheckpointedSession<B, R>> recursion
@@ -13407,9 +13517,11 @@ crucible_neg_compile_session_test(neg_is_dual_involutive_checkpointed_wraps_send
 # regression that re-introduced the silent admission on either side
 # would surface independently.
 crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_base_empty_select
-    "static assertion failed|static assert|fixy-A2-004")
+    "static assertion failed"
+    "static assert|fixy-A2-004")
 crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_recovery_empty_offer
-    "static assertion failed|static assert|fixy-A2-004")
+    "static assertion failed"
+    "static assert|fixy-A2-004")
 
 # ─────────────────────────────────────────────────────────────────
 # fix-04 — SessionHandle value-ctor §XXI authorization-bypass closure
@@ -13424,8 +13536,10 @@ crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_recovery_empt
 #   #2 SessionCrash.h Stop_g<C> crash-stop specialization (cross-header
 #      friend reach — the factory is forward-declared in Session.h).
 crucible_neg_compile_session_test(neg_session_handle_ctor_public_bypass
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "is private")
 crucible_neg_compile_session_test(neg_session_crash_handle_ctor_public_bypass
+    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints not satisfied|is private within this context|has no member named"
     "is private")
 
 # ─────────────────────────────────────────────────────────────────
