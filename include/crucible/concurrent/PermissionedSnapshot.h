@@ -14,7 +14,7 @@
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Stale.h>
 
 #include <cstddef>

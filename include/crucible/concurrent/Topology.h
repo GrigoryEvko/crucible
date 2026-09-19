@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <algorithm>
 #include <charconv>

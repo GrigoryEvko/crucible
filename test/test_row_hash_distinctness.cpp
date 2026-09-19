@@ -32,9 +32,9 @@
 #include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/HotPath.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/MemOrder.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>

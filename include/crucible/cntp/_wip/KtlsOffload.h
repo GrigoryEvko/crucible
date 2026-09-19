@@ -6,7 +6,7 @@
 
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Tagged.h>
 

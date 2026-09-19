@@ -5,7 +5,7 @@
 
 #include <crucible/safety/IsPermission.h>
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Tagged.h>
 

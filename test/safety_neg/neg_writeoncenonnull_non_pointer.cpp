@@ -8,7 +8,7 @@
 // instantiation site, redirecting callers to WriteOnce<T> (which
 // carries a std::optional tag and handles non-pointer single-set).
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 using crucible::safety::WriteOnceNonNull;
 

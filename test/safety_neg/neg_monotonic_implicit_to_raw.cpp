@@ -21,7 +21,7 @@
 //
 // Expected diagnostic: GCC 16 reports the implicit-conversion failure.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <cstdint>
 

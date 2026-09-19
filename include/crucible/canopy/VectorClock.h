@@ -4,7 +4,7 @@
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/FixedArray.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Refined.h>
 
 #include <atomic>

@@ -20,7 +20,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <atomic>
 #include <cstdint>

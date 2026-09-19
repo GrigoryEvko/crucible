@@ -20,7 +20,7 @@
 #include <crucible/algebra/lattices/_FractionalLattice.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <atomic>
 #include <concepts>

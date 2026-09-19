@@ -6,7 +6,7 @@
 // either path acquires a re-export the other does not have, an
 // unqualified call becomes ambiguous.
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Secret.h>
 

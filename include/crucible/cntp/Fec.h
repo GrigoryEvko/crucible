@@ -7,7 +7,7 @@
 #include <crucible/Platform.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/Concurrent.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/fixy/Vendor.h>

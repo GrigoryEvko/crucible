@@ -48,7 +48,7 @@
 // FIXY-U-155 — audit-remediation closing the strict-HS14 floor on
 // Pinned (paired with neg_nonmovable_copy_rejected for NonMovable).
 
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <utility>
 

@@ -15,7 +15,7 @@
 // no_scoped_view_field_check for its own type.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 
 #include <array>
 #include <cstddef>

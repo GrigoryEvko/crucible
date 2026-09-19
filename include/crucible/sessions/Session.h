@@ -23,7 +23,7 @@
 #include <crucible/algebra/lattices/EpochLattice.h>
 #include <crucible/algebra/lattices/GenerationLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <concepts>
 #include <cstddef>

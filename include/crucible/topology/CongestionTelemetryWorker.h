@@ -4,7 +4,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/topology/CongestionTelemetry.h>
 
 #include <array>

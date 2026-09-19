@@ -4,7 +4,7 @@
 #include <crucible/cntp/Fec.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/DetSafe.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/Refined.h>
 
 #include <algorithm>

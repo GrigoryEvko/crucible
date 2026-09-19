@@ -13,7 +13,7 @@
 // Expected diagnostic: "non-constant condition for static assertion"
 // / "__builtin_trap" — bump at compile-time Max trips the pre.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <cstdint>
 
 namespace {

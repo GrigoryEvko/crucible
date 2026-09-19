@@ -7,7 +7,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/concurrent/SpinLock.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <array>
 #include <cstddef>

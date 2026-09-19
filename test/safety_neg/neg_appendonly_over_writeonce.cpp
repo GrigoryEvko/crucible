@@ -7,7 +7,7 @@
 // is_writeonce trait + static_assert inside AppendOnly catches this
 // structural redundancy at the instantiation site.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 using crucible::safety::AppendOnly;
 using crucible::safety::WriteOnce;

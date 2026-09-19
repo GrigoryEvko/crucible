@@ -21,7 +21,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/_BoolLattice.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 
 #include <bit>
 #include <compare>

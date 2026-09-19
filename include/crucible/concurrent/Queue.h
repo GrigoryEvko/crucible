@@ -20,7 +20,7 @@
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/SpscRing.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <concepts>
 #include <cstddef>

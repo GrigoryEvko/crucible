@@ -27,7 +27,7 @@
 // Substring "redundant" pins the diagnostic — same Linear.h
 // static_assert message as the companion.
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/permissions/Permission.h>
 
 namespace {

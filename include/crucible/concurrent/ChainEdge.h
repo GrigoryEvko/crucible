@@ -2,7 +2,7 @@
 
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/mimic/Semaphore.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <atomic>
 #include <compare>

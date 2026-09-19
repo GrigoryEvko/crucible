@@ -3,7 +3,7 @@
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/Pacing.h>
 #include <crucible/safety/Bits.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Tagged.h>
 

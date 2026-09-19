@@ -22,7 +22,7 @@
 // Task #146 (A8-P2 Neg-compile coverage for non-ScopedView primitives);
 // see include/crucible/safety/Linear.h.
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 
 int main() {
     using crucible::safety::Linear;

@@ -55,7 +55,7 @@
 // (the two redundancy fixtures); the destructive-extraction
 // discipline at the drain() boundary had no fixture witness.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <cstdint>
 #include <utility>

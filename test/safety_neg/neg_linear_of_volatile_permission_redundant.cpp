@@ -25,7 +25,7 @@
 // message leads with "Linear<Permission<Tag>> / Linear<SharedPermission
 // <Tag>> is redundant: ...".
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/permissions/Permission.h>
 
 namespace {

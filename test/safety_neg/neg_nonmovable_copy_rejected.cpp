@@ -43,7 +43,7 @@
 // FIXY-U-155 — audit-remediation closing the strict-HS14 floor on
 // NonMovable (paired with neg_pinned_move_rejected for Pinned).
 
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 namespace {
 // Production-shape NonMovable consumer: a type whose IDENTITY

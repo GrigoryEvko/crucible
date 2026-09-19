@@ -23,7 +23,7 @@
 #include <crucible/concurrent/ChaseLevDeque.h>
 #include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <cstddef>
 #include <cstdint>

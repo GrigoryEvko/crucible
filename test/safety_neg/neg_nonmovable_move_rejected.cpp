@@ -35,7 +35,7 @@
 //
 // U-144 — Class T-move fixture (closes NonMovable slice of #146).
 
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <utility>
 

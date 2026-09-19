@@ -14,7 +14,7 @@
 // / "__builtin_trap" — CRUCIBLE_PRE planted trap fires when set() is
 // called on an already-set slot at consteval.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 namespace {
 

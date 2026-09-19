@@ -8,7 +8,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/_Decide.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Pre.h>
 

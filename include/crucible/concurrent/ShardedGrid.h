@@ -7,7 +7,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/SpscRing.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <array>
 #include <atomic>

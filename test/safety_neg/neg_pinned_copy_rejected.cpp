@@ -43,7 +43,7 @@
 // alongside U-140's Machine, U-141's ConstantTime, U-142's Tagged,
 // U-143's SealedRefined coverage).
 
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <atomic>
 

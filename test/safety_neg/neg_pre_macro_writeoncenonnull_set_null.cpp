@@ -47,7 +47,7 @@
 // (existing neg_writeoncenonnull_non_pointer was sole fixture;
 // HS14 floor demands ≥2 with distinct mismatch classes).
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <cstdint>
 

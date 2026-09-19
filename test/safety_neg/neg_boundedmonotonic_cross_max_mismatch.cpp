@@ -37,7 +37,7 @@
 // FIXY-U-148 — bumps BoundedMonotonic from 1 → 2 fixtures (HS14
 // floor met).  Closes the BoundedMonotonic slice of #146 A8-P2.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <cstdint>
 #include <utility>

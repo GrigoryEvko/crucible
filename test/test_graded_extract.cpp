@@ -1,10 +1,10 @@
 #include <crucible/safety/GradedExtract.h>
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Secret.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/DetSafe.h>

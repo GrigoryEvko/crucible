@@ -6,7 +6,7 @@
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/concurrent/scheduler/Policies.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <algorithm>
 #include <atomic>

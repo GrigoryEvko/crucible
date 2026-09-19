@@ -4,13 +4,13 @@
 // warning that fires only when the project flags run over the body tokens.
 
 #include <crucible/handles/Once.h>
-#include <crucible/safety/Affine.h>
+#include <crucible/safety/_Affine.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Cyclic.h>
 #include <crucible/safety/CyclicBuffer.h>
-#include <crucible/safety/Linear.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Linear.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/SealedRefined.h>

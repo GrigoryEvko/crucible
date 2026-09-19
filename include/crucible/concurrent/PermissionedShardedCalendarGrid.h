@@ -25,9 +25,9 @@
 
 #include <crucible/concurrent/SpscRing.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/PermissionGridGenerator.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <array>
 #include <cstddef>

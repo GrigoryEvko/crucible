@@ -15,7 +15,7 @@
 // / "__builtin_trap" — backward advance trips lattice_type::leq's
 // false return → CRUCIBLE_PRE fires at consteval.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 namespace {
 

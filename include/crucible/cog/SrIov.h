@@ -10,7 +10,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/Bits.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>

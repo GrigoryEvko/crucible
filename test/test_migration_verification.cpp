@@ -29,7 +29,7 @@
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/ResidencyHeat.h>
@@ -41,7 +41,7 @@
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Secret.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/diag/RowHashFold.h>

@@ -13,7 +13,7 @@
 
 #include <crucible/effects/_Computation.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Affine.h>
+#include <crucible/safety/_Affine.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Borrowed.h>
@@ -31,15 +31,15 @@
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/HotPath.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/MemOrder.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/OwnedRegion.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Refined.h>

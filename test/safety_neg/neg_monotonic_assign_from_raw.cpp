@@ -18,7 +18,7 @@
 // Expected diagnostic: GCC 16 reports the no-matching-assignment-
 // operator failure.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <cstdint>
 

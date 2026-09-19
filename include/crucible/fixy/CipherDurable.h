@@ -9,7 +9,7 @@
 #include <crucible/fixy/Cipher.h>
 #include <crucible/fixy/Fs.h>
 #include <crucible/handles/FileHandle.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/Path.h>
 
 namespace crucible::fixy::cipher::durable {

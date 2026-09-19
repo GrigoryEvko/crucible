@@ -4,7 +4,7 @@
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/IsSwmrHandle.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionContentAddressed.h>

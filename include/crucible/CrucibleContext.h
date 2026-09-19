@@ -5,7 +5,7 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
 #include <crucible/safety/_Decide.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 
 #include <type_traits>
 

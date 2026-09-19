@@ -25,8 +25,8 @@
 // instruction.  Anything larger is passed as a pointer.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Mutation.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/fixy/Hw.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>

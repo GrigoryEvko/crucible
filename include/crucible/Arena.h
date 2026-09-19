@@ -12,7 +12,7 @@
 // umbrella's own declarations stay compatible.
 #include "safety/AllocClass.h"
 #include "safety/_Decide.h"
-#include "safety/Mutation.h"
+#include "safety/_Mutation.h"
 #include "safety/_Post.h"
 #include "safety/_Pre.h"
 #include "safety/Refined.h"

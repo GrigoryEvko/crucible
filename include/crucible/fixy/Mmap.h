@@ -2,7 +2,7 @@
 
 #include <crucible/fixy/Grant.h>
 #include <crucible/safety/DimensionTraits.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 #include <crucible/safety/OwnedMmap.h>
 #include <crucible/permissions/Permission.h>
 

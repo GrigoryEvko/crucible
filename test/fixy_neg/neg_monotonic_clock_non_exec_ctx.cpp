@@ -14,7 +14,7 @@
 // Expected diagnostic: constraints not satisfied / IsExecCtx /
 // no matching function / now_ns.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 int main() {
     ::crucible::safety::MonotonicClock clock{};

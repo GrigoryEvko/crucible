@@ -12,7 +12,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Cyclic.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/WeakRef.h>
 

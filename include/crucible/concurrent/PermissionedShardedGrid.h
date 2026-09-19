@@ -24,7 +24,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <cstddef>
 #include <optional>

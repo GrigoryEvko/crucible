@@ -26,7 +26,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on mint_affine.
 
-#include <crucible/safety/Affine.h>
+#include <crucible/safety/_Affine.h>
 
 using namespace crucible::safety;
 

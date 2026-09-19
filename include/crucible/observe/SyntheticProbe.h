@@ -7,7 +7,7 @@
 #include <crucible/observe/Observation.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Refined.h>
 
 #include <array>

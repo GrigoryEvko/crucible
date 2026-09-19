@@ -7,8 +7,8 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/AlignedBuffer.h>
 #include <crucible/safety/Borrowed.h>
-#include <crucible/safety/Linear.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Linear.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>

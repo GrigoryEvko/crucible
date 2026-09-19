@@ -8,8 +8,8 @@
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Linear.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Linear.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 

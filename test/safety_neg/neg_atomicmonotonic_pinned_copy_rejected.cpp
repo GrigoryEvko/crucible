@@ -38,7 +38,7 @@
 // (closes the AtomicMonotonic slice of backlog #146 A8-P2 alongside
 // U-140..U-146).
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 namespace {
 using CounterT = ::crucible::safety::AtomicMonotonic<std::uint64_t>;

@@ -21,7 +21,7 @@
 //
 // Two fixtures cover both directions of the new soundness gate per HS14.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <cstdint>
 

@@ -13,7 +13,7 @@
 // Expected diagnostic: "non-constant condition for static assertion"
 // / "__builtin_trap" — CRUCIBLE_PRE in get() fires at consteval.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 namespace {
 

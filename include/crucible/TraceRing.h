@@ -38,7 +38,7 @@
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/HotPath.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Stale.h>

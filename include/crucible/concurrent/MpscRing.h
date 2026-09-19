@@ -18,8 +18,8 @@
 // order, each step a distinct atomic operation.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Mutation.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <algorithm>
 #include <array>

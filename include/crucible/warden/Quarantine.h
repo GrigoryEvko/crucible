@@ -16,8 +16,8 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Mutation.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/topology/AsymmetricFailure.h>
 #include <crucible/topology/Health.h>

@@ -14,8 +14,8 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Mutation.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <compare>
 #include <cstddef>

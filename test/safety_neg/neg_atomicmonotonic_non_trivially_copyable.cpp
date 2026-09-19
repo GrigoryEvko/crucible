@@ -36,7 +36,7 @@
 //
 // FIXY-U-147 — Class U fixture for safety::AtomicMonotonic.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 #include <string>
 

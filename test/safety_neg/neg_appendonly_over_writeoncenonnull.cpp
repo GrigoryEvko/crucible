@@ -10,7 +10,7 @@
 // Fires `[AppendOnly_Over_WriteOnceNonNull_Redundant]` at the
 // AppendOnly<> instantiation site.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 using crucible::safety::AppendOnly;
 using crucible::safety::WriteOnceNonNull;

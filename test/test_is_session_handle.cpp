@@ -10,7 +10,7 @@
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/handles/OneShotFlag.h>
-#include <crucible/safety/Pinned.h>
+#include <crucible/safety/_Pinned.h>
 
 #include <cstdio>
 #include <cstdlib>

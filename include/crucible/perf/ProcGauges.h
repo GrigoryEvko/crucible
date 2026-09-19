@@ -2,7 +2,7 @@
 
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/Borrowed.h>
-#include <crucible/safety/Linear.h>
+#include <crucible/safety/_Linear.h>
 
 #include <array>
 #include <cstddef>

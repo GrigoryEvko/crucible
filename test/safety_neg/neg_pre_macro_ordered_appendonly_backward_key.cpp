@@ -16,7 +16,7 @@
 // / "__builtin_trap" — backward-key append trips the disjunction's
 // right operand → CRUCIBLE_PRE fires at consteval.
 
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 #include <cstdint>
 
 namespace {

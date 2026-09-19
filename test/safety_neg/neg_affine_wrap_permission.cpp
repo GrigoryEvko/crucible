@@ -35,7 +35,7 @@
 // <Tag>> is unsound: ...".
 
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/Affine.h>
+#include <crucible/safety/_Affine.h>
 
 namespace {
 struct MyAffineTestTag {};

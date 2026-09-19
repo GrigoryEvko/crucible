@@ -17,7 +17,7 @@
 // CtxOwnsAnyOf / no matching function / now_ns.
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/safety/_Mutation.h>
 
 int main() {
     ::crucible::safety::MonotonicClock clock{};
