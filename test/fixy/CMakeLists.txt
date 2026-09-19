@@ -327,3 +327,15 @@ fixy_neg_compile_test(neg_path_forge_sanitized_tag
   "is private within this context"
   "fixy::Tagged<T, Tag>::Tagged\\(T\\)"
   "Tag = fixy::tags::source::Sanitized")
+
+# ── Task #153 (FIXY-6): the OS tag namespaces, walked ────────────────
+#
+# The check reads the nine namespaces rather than a hand roster, so the
+# witness that it works is a class it was never told about.  The
+# fixture plants one before the header, and both halves of the check
+# answer: the shape walk refuses it, and the count pin sees 36 where it
+# recorded 35.
+fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
+  "static assertion failed: fixy/atoms/Os\\.h: a class declared in one of the nine tag namespaces has state"
+  "static assertion failed: fixy/atoms/Os\\.h: the nine tag namespaces hold a different number of tags"
+  "the comparison reduces to .\\(36 == 35\\).")

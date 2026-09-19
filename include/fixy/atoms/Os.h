@@ -277,21 +277,31 @@ using leak_atom_roster = std::tuple<leak::resource<leak_sample_rationale>>;
 
 using os_atom_roster = roster_cat_t<io_atom_roster, fs_atom_roster, mmap_atom_roster, leak_atom_roster>;
 
-// The tags the atoms take: every one is an empty final type and none is
-// an atom.
-using os_tag_roster =
-    std::tuple<::fixy::io::engine::IoUring, ::fixy::io::zerocopy::Sendfile, ::fixy::io::zerocopy::CopyFileRange,
-               ::fixy::io::ring_flag::IoPoll, ::fixy::io::ring_flag::SqPoll, ::fixy::io::ring_flag::SingleIssuer,
-               ::fixy::io::ring_flag::CoopTaskrun, ::fixy::io::ring_flag::DeferTaskrun, ::fixy::fs::open_mode::ReadOnly,
-               ::fixy::fs::open_mode::WriteCreate, ::fixy::fs::open_mode::WriteAppend,
-               ::fixy::fs::open_mode::WriteTruncate, ::fixy::fs::open_mode::ReadWrite, ::fixy::fs::flag::CloseOnExec,
-               ::fixy::fs::flag::NoFollow, ::fixy::fs::flag::DataSync, ::fixy::fs::flag::FullSync,
-               ::fixy::fs::flag::Direct, ::fixy::fs::sync_op::None, ::fixy::fs::sync_op::Fdatasync,
-               ::fixy::fs::sync_op::Fsync, ::fixy::fs::sync_op::FsyncParentDir, ::fixy::fs::atomicity::None,
-               ::fixy::fs::atomicity::Rename, ::fixy::fs::atomicity::RenameAt2NoReplace, ::fixy::mmap::prot::ReadOnly,
-               ::fixy::mmap::prot::WriteCopy, ::fixy::mmap::prot::ReadWrite, ::fixy::mmap::prot::Exec,
-               ::fixy::mmap::share::Private, ::fixy::mmap::share::Shared, ::fixy::mmap::share::Anonymous,
-               ::fixy::mmap::share::Locked, ::fixy::mmap::share::Populate, ::fixy::mmap::share::HugeTLB>;
+// The nine namespaces the OS tags live in.  A hand-written roster of
+// the thirty-five tag types stood here, and a check that walks a hand
+// list cannot see what the list omits: a tag added to one of these
+// namespaces and forgotten in the roster was never checked at all.
+// The walk below reads each namespace instead, so a new tag is checked
+// the moment it is declared.
+//
+// The shape is the one fail_closed::every_class_in_has_edge uses at
+// foundation/diag/FailClosed.h: a member that is not a type, is a type
+// alias, or is not a class is not a tag declared here and is skipped.
+// A class template answers false to is_class_type, which is what keeps
+// the parametric atoms out.
+//
+// What the walk sees is fixed where it runs.  members_of answers about
+// the namespace as it stands at that point, and the walk below is a
+// template instantiated once, so a class added to one of these
+// namespaces after the self-test at the foot of this header is not
+// visible to it.  Every tag is declared above, which is the case that
+// matters, and neg_os_tag_namespace_holds_a_non_tag plants one ahead of
+// the header to witness that the walk reads members no roster listed.
+inline constexpr std::meta::info os_tag_namespaces[] = {
+    ^^::fixy::io::engine,    ^^::fixy::io::zerocopy, ^^::fixy::io::ring_flag,
+    ^^::fixy::fs::open_mode, ^^::fixy::fs::flag,     ^^::fixy::fs::sync_op,
+    ^^::fixy::fs::atomicity, ^^::fixy::mmap::prot,   ^^::fixy::mmap::share,
+};
 
 // Every member of the roster lifts to exactly the row given.
 template <class Roster, class ExpectedRow>
@@ -310,18 +320,58 @@ template <class Roster, class ExpectedRow>
     return true;
 }
 
-// Every member of the roster is an empty final type that is not an
-// atom: the shape of a tag.
-template <class Roster>
-[[nodiscard]] consteval bool every_roster_member_is_tag_() noexcept {
+// Every class declared directly in Ns is an empty final type that is
+// not an atom: the shape of a tag.
+template <std::meta::info Ns>
+[[nodiscard]] consteval bool every_class_in_is_tag_() noexcept {
+    static_assert(std::meta::is_namespace(Ns),
+                  "fixy/atoms/Os.h: every_class_in_is_tag_<Ns> takes a reflection of a namespace, "
+                  "written ^^name.");
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : roster_members_v<Roster>) {
-        using T = [:member:];
-        if constexpr (!std::is_empty_v<T> || !std::is_final_v<T> || IsAtom<T>) return false;
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
+                      && std::meta::is_class_type(member)) {
+            using T = [:member:];
+            if constexpr (!std::is_empty_v<T> || !std::is_final_v<T> || IsAtom<T>) return false;
+        }
     }
 #pragma GCC diagnostic pop
     return true;
+}
+
+// How many tags a namespace declares.  The walk above answers about
+// the tags that are there; this is what notices one going missing.
+// It never splices, so it takes the namespace as an argument rather
+// than as a template parameter.
+[[nodiscard]] consteval std::size_t tag_count_in_(std::meta::info ns) noexcept {
+    std::size_t count = 0;
+    for (const auto member : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_type(member) || std::meta::is_type_alias(member) || !std::meta::is_class_type(member))
+            continue;
+        ++count;
+    }
+    return count;
+}
+
+// Every one of the nine namespaces, walked.
+[[nodiscard]] consteval bool every_os_tag_namespace_holds_only_tags_() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto ns : os_tag_namespaces) {
+        if constexpr (!every_class_in_is_tag_<ns>()) return false;
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+[[nodiscard]] consteval std::size_t os_tag_count_() noexcept {
+    std::size_t total = 0;
+    for (const auto ns : os_tag_namespaces)
+        total += tag_count_in_(ns);
+    return total;
 }
 
 }  // namespace detail
@@ -339,8 +389,16 @@ static_assert(every_roster_member_lifts_to_<fs_atom_roster, fs_row>());
 static_assert(every_roster_member_lifts_to_<mmap_atom_roster, mmap_row>());
 static_assert(every_roster_member_lifts_to_<leak_atom_roster, leak_row>());
 
-static_assert(every_roster_member_is_tag_<os_tag_roster>(),
-              "fixy/atoms/Os.h: a tag has grown state, lost `final`, or became an atom.");
+static_assert(every_os_tag_namespace_holds_only_tags_(),
+              "fixy/atoms/Os.h: a class declared in one of the nine tag namespaces has state, is not "
+              "final, or is an atom.  A tag is an empty final type and nothing else.");
+
+// The walk sees whatever is declared, so it cannot notice a tag that
+// was deleted.  This count is what does.  Raise it when a namespace
+// gains a tag, and say which one in the commit.
+static_assert(os_tag_count_() == 35, "fixy/atoms/Os.h: the nine tag namespaces hold a different number of tags "
+                                     "than this pin records.  A new tag raises the count; a tag that "
+                                     "disappeared is a deletion somebody has to justify.");
 
 // The ring sizes are readable off the atom.
 static_assert(io::sq_entries<8>::value == 8);
