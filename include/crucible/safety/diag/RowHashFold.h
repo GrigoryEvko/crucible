@@ -43,7 +43,7 @@
 #include <crucible/Types.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include <array>
 #include <cstddef>

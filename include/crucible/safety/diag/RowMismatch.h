@@ -22,7 +22,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/diag/Insights.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include <array>
 #include <cstddef>

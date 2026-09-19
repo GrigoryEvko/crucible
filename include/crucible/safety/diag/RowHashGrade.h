@@ -10,7 +10,7 @@
 // a fleet. It is not a cache slot key and must not be used as one.
 
 #include <crucible/safety/diag/RowHashFold.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/EpochVersioned.h>

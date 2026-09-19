@@ -25,7 +25,7 @@
 // If this fixture starts compiling cleanly, the production V-008 gate
 // has been weakened — the federation cache key surface is unprotected.
 
-#include <crucible/safety/diag/StableName.h>  // detail::combine_ids
+#include <crucible/safety/diag/_StableName.h>  // detail::combine_ids
 #include <array>
 #include <cstdint>
 

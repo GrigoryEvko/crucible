@@ -3,7 +3,7 @@
 // exists to be that translation unit, and to run the header's inline smoke
 // body with non-constant arguments.
 
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include <cstdio>
 #include <cstdlib>

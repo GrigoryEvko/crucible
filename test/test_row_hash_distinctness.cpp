@@ -55,7 +55,7 @@
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/Witness.h>
 #include <crucible/safety/diag/RowHashFold.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include "test_assert.h"
 

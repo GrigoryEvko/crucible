@@ -26,7 +26,7 @@
 // arguments to function" at the f(value, name) call inside
 // for_each_enumerator's body.
 
-#include <crucible/safety/Reflected.h>
+#include <crucible/safety/_Reflected.h>
 
 namespace ref = crucible::safety::reflected;
 

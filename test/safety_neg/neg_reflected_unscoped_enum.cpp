@@ -29,7 +29,7 @@
 // instantiation, depending on which the compiler finishes diagnosing
 // first.
 
-#include <crucible/safety/Reflected.h>
+#include <crucible/safety/_Reflected.h>
 
 #include <cstdio>
 

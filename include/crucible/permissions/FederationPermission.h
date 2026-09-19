@@ -2,7 +2,7 @@
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include <cstdint>
 #include <concepts>

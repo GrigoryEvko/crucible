@@ -69,7 +69,7 @@ Usage:
 Exemptions:
   include/foundation/reflect/Hash.h           the canonical definition
   include/crucible/Expr.h                     frozen chain duplicate, gone at Stage C
-  include/crucible/safety/diag/StableName.h   frozen chain duplicate, gone at Stage D
+  include/crucible/safety/diag/_StableName.h   frozen chain duplicate, gone at Stage D
   test/safety_neg/**                          negative-compile fixtures
   a match inside a `//` or `*` comment        prose, not a definition
 
@@ -122,7 +122,7 @@ CANON
 // Frozen duplicate until Stage C — exempt by path.
 constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
 FROZEN_C
-        cat >"$tmp_root/include/crucible/safety/diag/StableName.h" <<'FROZEN_D'
+        cat >"$tmp_root/include/crucible/safety/diag/_StableName.h" <<'FROZEN_D'
 #pragma once
 // Frozen duplicate until Stage D — exempt by path.
 constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
@@ -221,7 +221,7 @@ while IFS= read -r match; do
     # Stage C flips Expr.h to include Hash.h and Stage D deletes
     # StableName.h.  Each exemption goes with its file.
     if [[ "$file" == "include/crucible/Expr.h" || \
-          "$file" == "include/crucible/safety/diag/StableName.h" ]]; then
+          "$file" == "include/crucible/safety/diag/_StableName.h" ]]; then
         continue
     fi
 

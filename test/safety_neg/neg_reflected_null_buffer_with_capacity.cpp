@@ -35,7 +35,7 @@
 // is false" pointing at the bits_to_string signature line where the
 // `pre (cap == 0 || out != nullptr)` clause lives.
 
-#include <crucible/safety/Reflected.h>
+#include <crucible/safety/_Reflected.h>
 
 namespace ref = crucible::safety::reflected;
 

@@ -44,7 +44,7 @@
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
-#include <crucible/safety/Reflected.h>
+#include <crucible/safety/_Reflected.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/ResidencyHeat.h>

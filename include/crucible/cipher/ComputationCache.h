@@ -16,7 +16,7 @@
 // same computation. Two peers that exchange keys must either share a
 // toolchain or fold a discriminator for it into the key.
 
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/effects/_EffectRow.h>
 

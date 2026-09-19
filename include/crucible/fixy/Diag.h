@@ -8,7 +8,7 @@
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/diag/Insights.h>
 #include <crucible/safety/diag/RowHashFold.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 namespace crucible::fixy::diag {
 

@@ -9,7 +9,7 @@
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/_Modality.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
-#include <crucible/safety/diag/StableName.h>
+#include <crucible/safety/diag/_StableName.h>
 
 #include <cstddef>
 #include <cstdint>

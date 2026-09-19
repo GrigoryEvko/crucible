@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Reflect.h>
-#include <crucible/safety/Reflected.h>
+#include <crucible/safety/_Reflected.h>
 
 #include <cstdint>
 #include <string_view>

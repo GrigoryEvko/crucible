@@ -1,6 +1,6 @@
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
-#include <crucible/safety/Reflected.h>
+#include <crucible/safety/_Reflected.h>
 
 #include "test_assert.h"
 
