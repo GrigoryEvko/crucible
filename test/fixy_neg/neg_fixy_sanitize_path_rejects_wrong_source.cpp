@@ -14,8 +14,19 @@
 // is the External-only entry point; this fixture pins that contract.
 //
 // Expected diagnostic family (matched by CMakeLists regex):
-//   "no matching function" / "could not convert" / "cannot convert".
+//   "invalid initialization".  sanitize_path takes its argument by
+//   rvalue reference, so GCC words the refusal as an invalid
+//   initialization of `Path<source::External>&&` from a
+//   `Path<source::FromUser>` rather than as a conversion failure.  The
+//   registration also admits the "could not convert" / "cannot convert"
+//   / "no matching function" wordings, which is what the overload set
+//   would emit if sanitize_path ever took its argument by value.
 
+// Wrap.h re-exports the wrappers but not the tag namespaces, so the
+// source tags need their own header.  Without it `fixy::tags` is
+// undeclared and this fixture rejects on a name error instead of on
+// sanitize_path's admission domain.
+#include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {
