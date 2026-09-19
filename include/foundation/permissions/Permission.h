@@ -625,18 +625,59 @@ private:
 };
 
 struct ForkRebuildAccess {
+    // rebuild carries no constraint on T, and that is deliberate: the
+    // key is the gate, and only rebuild_parent_after_fork_ can build
+    // one, so the reachable set of T is whatever that function is
+    // instantiated with.  Constraining T here would restate a proof the
+    // fork already made, at a point that cannot see the children the
+    // parent was split into.
+    //
+    // READ THE NOTE BELOW BEFORE RELYING ON THAT SENTENCE.  It is true
+    // of this function and false of the chain it sits in.
     template <typename T>
     [[nodiscard]] static constexpr Permission<T> rebuild(ForkRebuildKey) noexcept {
         return Permission<T>{perm_mint_key{}};
     }
 };
 
+// This function is callable from any translation unit, for any tag, and
+// mints a Permission for it.  Nothing gates it: it is not constrained,
+// and the passkey it passes is one it is itself friended to build.  So
+// the key confines ForkRebuildAccess::rebuild and confines nothing else,
+// and `rebuild_parent_after_fork_<AnyTag>()` is a mint that needs no
+// manifest, no context and no token.
+//
+// It is reached that way on purpose today: fixy/OwnedRegion.h calls it
+// the public door and rebuilds a joined region through it, because the
+// structured-parallel helpers that used to do the rebuild are not
+// ported.  Closing it is therefore not a change to this header alone.
+//
+// Whoever closes it needs a predicate that admits a genuine post-join
+// parent and refuses a stranger.  `splits_into_pack_v<Parent,
+// Children...>` is that predicate, and it needs the children, which
+// this signature does not carry.
 template <typename Parent>
 [[nodiscard]] constexpr Permission<Parent> rebuild_parent_after_fork_() noexcept {
     return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
 }
 
 }  // namespace detail
+
+// The access check here is genuine because this scope is befriended by
+// neither key.  Both assertions fail if the constructor they name
+// becomes public, and both are the only thing that would report it.
+//
+// ForkRebuildKey is the higher-stakes of the two: ForkRebuildAccess is a
+// public struct whose rebuild<T> is public and unconstrained, so this
+// private constructor is the whole of what stands between a caller and
+// a Permission for an arbitrary tag.  It had no assertion at all until
+// this one.
+static_assert(!std::is_default_constructible_v<detail::ForkRebuildKey>,
+              "The default constructor of ForkRebuildKey must not be public.  Only "
+              "rebuild_parent_after_fork_ is friended to build one, and that friendship is the whole "
+              "gate on ForkRebuildAccess::rebuild.");
+static_assert(std::is_empty_v<detail::ForkRebuildKey>, "ForkRebuildKey must stay empty, so that passing it "
+                                                       "costs nothing.");
 
 // Fractional permissions generalize the binary own-or-not of plain
 // separation logic to a share `e ↦_p v` for 0 < p ≤ 1.  A share of 1 is
