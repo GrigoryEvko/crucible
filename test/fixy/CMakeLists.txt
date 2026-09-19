@@ -189,3 +189,43 @@ fixy_neg_compile_test(neg_secret_copy
   "fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\)"
   "cannot be silently duplicated")
 
+# ── Task #104 (A10.4): Stale, OwnedRegion, Borrowed, ScopedView, Machine ──
+#
+# The region test keeps the file name of the test it is ported from and
+# carries a suffix, because test/CMakeLists.txt still registers
+# test_owned_region and a CMake target name is global.
+fixy_test(test_stale)
+fixy_test(test_owned_region_fixy test_owned_region.cpp)
+fixy_test(test_borrowed)
+fixy_test(test_scoped_view)
+fixy_test(test_machine)
+
+# The escape audit reads private members: a carrier holding a view in a
+# private field fails no_scoped_view_field_check with the audit's own
+# message, and the note shows contains_scoped_view answering true.
+fixy_neg_compile_test(neg_scoped_view_escapes_through_private_member
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "fixy/ScopedView\\.h:[0-9]+:[0-9]+: error"
+  "fixy::contains_scoped_view<Holder>\\(\\). evaluates to false")
+
+# A transition whose edge is not declared in the namespace the machine
+# names fails the MachineTransition constraint on transition_to.
+fixy_neg_compile_test(neg_machine_transition_not_admitted
+  "constraints not satisfied"
+  "satisfaction of .MachineTransition<OldState, NewState, Edges>."
+  "machine_transition_v<From, To, Edges>.*evaluated to .false.")
+
+# A Borrowed of a const element type built from a temporary vector
+# selects the deleted rvalue-range twin of the span constructor.
+fixy_neg_compile_test(neg_borrowed_from_a_temporary
+  "use of deleted function"
+  "fixy::Borrowed<T, Source>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
+  "Borrowed of a temporary range dangles")
+
+# weaken towards a fresher grade in a constant expression reaches the
+# CRUCIBLE_PRE trap inside Stale::weaken.
+fixy_neg_compile_test(neg_stale_weakened_downwards
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .eight_behind\\.fixy::Stale<int>::weaken\\("
+  "fixy/Stale\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+

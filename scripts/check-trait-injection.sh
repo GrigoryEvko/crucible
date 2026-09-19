@@ -56,6 +56,39 @@
 # shape; they have their own guard (check-splits-into-orphan.sh) plus a
 # companion authoring-witness trait, and are not duplicated here.
 #
+# ── Family C: fail-closed namespaces ─────────────────────────────────
+#
+# The new tree states a relation as a namespace of
+# foundation::fail_closed::edge<From, To> variables
+# (foundation/diag/FailClosed.h).  There is no primary template to
+# specialize, so the forgery surface moves from "specialize the trait"
+# to "reopen the namespace and declare an edge".  A namespace is open
+# by definition; this guard closes it by scanning for the reopening:
+#
+#   fixy::tags::admitted_retags                 — the retag catalog of
+#                                                 fixy/Tagged.h.  Same
+#                                                 authority as
+#                                                 retag_policy above.
+#   fixy::tags::secret_policy::admitted_policies — the declassification
+#                                                 exits of fixy/Secret.h.
+#                                                 A forged edge lets a
+#                                                 Secret leave through a
+#                                                 policy nobody
+#                                                 reviewed.
+#   fixy::machine::admitted_transitions         — the shared edge set of
+#                                                 fixy/Machine.h.  A forged
+#                                                 edge admits a state
+#                                                 transition the machine
+#                                                 never declared.
+#   fixy::refined::admitted_implications        — the implication relation
+#                                                 of fixy/Refined.h.  A
+#                                                 forged edge lets a proof
+#                                                 of P stand in for a
+#                                                 proof of Q.
+#
+# A namespace alias (`namespace x = fixy::tags::admitted_retags;`) does
+# not match, and cannot add a member either.
+#
 # ── Authoring sets are PER TRAIT ─────────────────────────────────────
 #
 # A single shared whitelist would be a downgrade: admitting sessions/
@@ -99,12 +132,18 @@ Scanned traits and their authoring sets:
 
   retag_policy              include/crucible/safety/Tagged.h
                             include/crucible/safety/source/*.h      + test/**
-  machine_transition        include/crucible/safety/Machine.h       + test/**
+  machine_transition        include/crucible/safety/Machine.h
+                            include/fixy/Machine.h                 + test/**
   predicate_implies         include/crucible/safety/Refined{,Algebra}.h
                                                                     + test/**
   survivor_registry         include/crucible/permissions/PermissionInherit.h
                             include/crucible/fixy/Bridge.h          + test/**
   is_subsort                include/crucible/sessions/*.h           + test/**
+
+  admitted_retags           include/fixy/Tagged.h                  + test/**
+  admitted_policies         include/fixy/Secret.h                  + test/**
+  admitted_transitions      include/fixy/Machine.h                 + test/**
+  admitted_implications     include/fixy/Refined.h                 + test/**
 
 CLAUDE.md §XVI — a substrate trait is specialized only beside the
 wrapper whose algebraic property it asserts.  CLAUDE.md §IX — a
@@ -130,10 +169,14 @@ substrate_paths='include/crucible/algebra/* include/foundation/algebra/* include
 scan_table=(
     "substrate|(struct|class)\s+(is_graded_specialization|value_type_decoupled|graded_modality|is_numerical_tier_impl)\s*<|${substrate_paths}"
     "retag_policy|(struct|class)\s+retag_policy\s*<|include/crucible/safety/Tagged.h include/crucible/safety/source/*.h test/*"
-    "machine_transition|((struct|class)\s+machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/Machine.h test/*"
+    "machine_transition|((struct|class)\s+machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/Machine.h include/fixy/Machine.h test/*"
     "predicate_implies|(struct|class)\s+predicate_implies\s*<|include/crucible/safety/Refined.h include/crucible/safety/RefinedAlgebra.h test/*"
     "survivor_registry|(struct|class)\s+survivor_registry\s*<|include/crucible/permissions/PermissionInherit.h include/crucible/fixy/Bridge.h test/*"
     "is_subsort|(struct|class)\s+is_subsort\s*<|include/crucible/sessions/*.h test/*"
+    "admitted_retags|namespace\s+(fixy::tags::)?admitted_retags\b|include/fixy/Tagged.h test/*"
+    "admitted_policies|namespace\s+(fixy::tags::secret_policy::|secret_policy::)?admitted_policies\b|include/fixy/Secret.h test/*"
+    "admitted_transitions|namespace\s+(fixy::machine::|machine::)?admitted_transitions\b|include/fixy/Machine.h test/*"
+    "admitted_implications|namespace\s+(fixy::refined::|refined::)?admitted_implications\b|include/fixy/Refined.h test/*"
 )
 
 case "${1:-}" in
@@ -230,6 +273,50 @@ struct is_subsort<PlantedNarrow, PlantedWide> : std::true_type {};
 }  // namespace crucible::safety::proto
 PLANTED
 
+        # The two namespace-shaped relations: the qualified reopening on
+        # line 3 and the nested reopening on line 7 must both be caught;
+        # the alias on line 10 must not, because an alias adds nothing.
+        planted_retags='src/planted/planted_admitted_retags.cpp'
+        cat >"$tmp_root/$planted_retags" <<'PLANTED'
+// Synthetic admitted_retags fixture for --self-test.
+#include <fixy/Tagged.h>
+namespace fixy::tags::admitted_retags {
+inline constexpr ::foundation::fail_closed::edge<source::Sanitized, source::External> planted{};
+}  // namespace fixy::tags::admitted_retags
+namespace fixy::tags {
+namespace admitted_retags {
+}  // namespace admitted_retags
+}  // namespace fixy::tags
+namespace planted_alias = fixy::tags::admitted_retags;
+PLANTED
+
+        planted_policies='src/planted/planted_admitted_policies.cpp'
+        cat >"$tmp_root/$planted_policies" <<'PLANTED'
+// Synthetic admitted_policies fixture for --self-test.
+#include <fixy/Secret.h>
+namespace fixy::tags::secret_policy::admitted_policies {
+inline constexpr ::foundation::fail_closed::edge<classified, PlantedPolicy> planted{};
+}  // namespace fixy::tags::secret_policy::admitted_policies
+PLANTED
+
+        planted_transitions='src/planted/planted_admitted_transitions.cpp'
+        cat >"$tmp_root/$planted_transitions" <<'PLANTED'
+// Synthetic admitted_transitions fixture for --self-test.
+#include <fixy/Machine.h>
+namespace fixy::machine::admitted_transitions {
+inline constexpr ::foundation::fail_closed::edge<PlantedFrom, PlantedTo> planted{};
+}  // namespace fixy::machine::admitted_transitions
+PLANTED
+
+        planted_implications='src/planted/planted_admitted_implications.cpp'
+        cat >"$tmp_root/$planted_implications" <<'PLANTED'
+// Synthetic admitted_implications fixture for --self-test.
+#include <fixy/Refined.h>
+namespace fixy::refined::admitted_implications {
+inline constexpr ::foundation::fail_closed::edge<non_negative, positive> planted{};
+}  // namespace fixy::refined::admitted_implications
+PLANTED
+
         # ── exemption fixtures: same edge, blessed authoring path ────
         exempt_substrate='include/crucible/algebra/planted.h'
         cat >"$tmp_root/$exempt_substrate" <<'EXEMPT'
@@ -295,6 +382,39 @@ struct predicate_implies<PlantedWide, PlantedNarrow> : std::true_type {};
 }  // namespace crucible::safety
 EXEMPT
 
+        mkdir -p "$tmp_root/include/fixy"
+        exempt_retags='include/fixy/Tagged.h'
+        cat >"$tmp_root/$exempt_retags" <<'EXEMPT'
+// Synthetic admitted_retags authoring-location fixture for --self-test.
+namespace fixy::tags::admitted_retags {
+inline constexpr ::foundation::fail_closed::edge<source::PlantedRaw, source::Sanitized> planted{};
+}  // namespace fixy::tags::admitted_retags
+EXEMPT
+
+        exempt_policies='include/fixy/Secret.h'
+        cat >"$tmp_root/$exempt_policies" <<'EXEMPT'
+// Synthetic admitted_policies authoring-location fixture for --self-test.
+namespace fixy::tags::secret_policy::admitted_policies {
+inline constexpr ::foundation::fail_closed::edge<classified, PlantedPolicy> planted{};
+}  // namespace fixy::tags::secret_policy::admitted_policies
+EXEMPT
+
+        exempt_transitions='include/fixy/Machine.h'
+        cat >"$tmp_root/$exempt_transitions" <<'EXEMPT'
+// Synthetic admitted_transitions authoring-location fixture for --self-test.
+namespace fixy::machine::admitted_transitions {
+inline constexpr ::foundation::fail_closed::edge<PlantedFrom, PlantedTo> planted{};
+}  // namespace fixy::machine::admitted_transitions
+EXEMPT
+
+        exempt_implications='include/fixy/Refined.h'
+        cat >"$tmp_root/$exempt_implications" <<'EXEMPT'
+// Synthetic admitted_implications authoring-location fixture for --self-test.
+namespace fixy::refined::admitted_implications {
+inline constexpr ::foundation::fail_closed::edge<positive, non_negative> planted{};
+}  // namespace fixy::refined::admitted_implications
+EXEMPT
+
         scanner_stderr="$(mktemp)"
 
         self_test_fail() {
@@ -320,7 +440,12 @@ EXEMPT
             "$planted_machine:7" \
             "$planted_implies:4" \
             "$planted_survivor:4" \
-            "$planted_subsort:4"
+            "$planted_subsort:4" \
+            "$planted_retags:3" \
+            "$planted_retags:7" \
+            "$planted_policies:3" \
+            "$planted_transitions:3" \
+            "$planted_implications:3"
         do
             if ! grep -qF "$expect" "$scanner_stderr"; then
                 self_test_fail "expected diagnostic for $expect missing."
@@ -333,6 +458,12 @@ EXEMPT
             self_test_fail 'pure-comment line leaked through the filter.'
         fi
 
+        # The namespace alias on line 10 of the admitted_retags fixture
+        # is not a reopening and must not fire.
+        if grep -qF "$planted_retags:10" "$scanner_stderr"; then
+            self_test_fail 'a namespace alias was flagged as a reopening.'
+        fi
+
         # Every blessed authoring location must be exempt.  A whitelist
         # that stopped matching would turn the guard into noise and get
         # switched off, so each exemption gets its own witness too.
@@ -342,7 +473,11 @@ EXEMPT
             "$exempt_subsort" \
             "$exempt_survivor" \
             "$exempt_machine" \
-            "$exempt_implies"
+            "$exempt_implies" \
+            "$exempt_retags" \
+            "$exempt_policies" \
+            "$exempt_transitions" \
+            "$exempt_implications"
         do
             # Match the diagnostic form "…at <rel>:<line>", not a bare
             # path occurrence: the failure report echoes each trait's
@@ -354,7 +489,7 @@ EXEMPT
         done
 
         rm -f "$scanner_stderr"
-        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) each caught, per-trait authoring-location exemptions + comment filter honoured.\n' >&2
+        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured.\n' >&2
         exit 0
         ;;
     "") ;;

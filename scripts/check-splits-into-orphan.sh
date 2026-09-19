@@ -97,6 +97,7 @@ Exemptions:
   include/foundation/permissions/*.h                — authoring set (ported)
   include/crucible/concurrent/*.h                   — per-channel substrate
   include/crucible/safety/Permission{Tree,Grid}Generator.h
+  include/fixy/OwnedRegion.h                        — the ported Slice generator
   test/*                                            — test-local tag trees
   a pure-comment line (leading // or *)             — doc-block citation
 
@@ -216,6 +217,7 @@ while IFS=: read -r file line text; do
         include/crucible/concurrent/*.h | \
         include/crucible/safety/PermissionTreeGenerator.h | \
         include/crucible/safety/PermissionGridGenerator.h | \
+        include/fixy/OwnedRegion.h | \
         test/*)
             continue
             ;;

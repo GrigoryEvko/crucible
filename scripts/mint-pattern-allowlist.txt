@@ -215,6 +215,12 @@ include/crucible/safety/ScopedView.h:mint_linear_view:requires-ok
 include/crucible/safety/ScopedView.h:mint_view:requires-ok
 include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
 
+# ── fixy/ScopedView.h — the ported copies of the two view mints above.
+# The gate is view_ok, a precondition on the carrier's runtime state
+# (§XXI carve-out rq=pre), so there is no requires-clause to write.
+include/fixy/ScopedView.h:mint_linear_view:requires-ok
+include/fixy/ScopedView.h:mint_view:requires-ok
+
 # ── sessions/ concept-constrained-param session mints ────────────────
 include/crucible/sessions/CalendarGridSession.h:mint_calendar_grid_consumer:requires-ok
 include/crucible/sessions/CalendarGridSession.h:mint_calendar_grid_producer:requires-ok
