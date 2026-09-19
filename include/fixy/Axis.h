@@ -36,6 +36,7 @@
 #include <foundation/reflect/Enumerate.h>
 #include <fixy/Tags.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -241,64 +242,62 @@ struct Stale {};
 
 // The axes below are wrapper-only: the claim is per value rather than
 // per binding, and the wrapper that carries it goes on the value at
-// the call site.  Each namespace exists so the table can name a pole
-// for its axis.  Unconstrained is the strict pole in each: the binding
-// makes no claim at all.
-
-namespace sync {
+// the call site.  Unconstrained is the strict pole of each: the
+// binding makes no claim at all.
+//
+// The axis is the template argument, so one template gives each of
+// those axes a pole type of its own and two axes still cannot share
+// one.  Thirteen namespaces holding one empty struct each said the
+// same thing thirteen times, and a fourteenth axis had to remember to
+// add the fourteenth.
+template <Axis A>
 struct Unconstrained {};
-}  // namespace sync
-
-namespace regime {
-struct Unconstrained {};
-}  // namespace regime
-
-namespace fp_mode {
-struct Unconstrained {};
-}  // namespace fp_mode
-
-namespace syscall {
-struct Unconstrained {};
-}  // namespace syscall
-
-namespace control_flow {
-struct Unconstrained {};
-}  // namespace control_flow
-namespace call_shape {
-struct Unconstrained {};
-}  // namespace call_shape
-namespace stack_use {
-struct Unconstrained {};
-}  // namespace stack_use
-namespace global_state {
-struct Unconstrained {};
-}  // namespace global_state
-namespace stdio {
-struct Unconstrained {};
-}  // namespace stdio
-
-namespace hw_instruction {
-struct Unconstrained {};
-}  // namespace hw_instruction
-namespace barrier_strength {
-struct Unconstrained {};
-}  // namespace barrier_strength
-namespace simd_isa {
-struct Unconstrained {};
-}  // namespace simd_isa
-
-namespace memory_scope {
-struct Unconstrained {};
-}  // namespace memory_scope
 
 }  // namespace pole
 
-// One specialisation per axis.  A specialisation exposes exactly one
-// of three pole markers: `strict`, the strict pole as a type (a value
-// pole is an integral_constant); `derived_from`, the axis whose pole
-// this one takes; or `caller_supplied`, for the one axis with no pole.
+// Twelve axes are wrapper-only and say exactly the same thing: a
+// lattice discharged at the type level, no wrapper on the binding, and
+// the unconstrained pole.  The primary below is that sentence, and
+// this roster is the opt-in to it.
+//
+// The roster is what keeps a defined primary from failing open.  An
+// undefined primary used to reject a new axis by being incomplete at
+// the walk's sizeof; a defined one would hand that axis a claim nobody
+// gave it.  Naming the twelve here restores the rejection and costs
+// one line per axis instead of seven.
+inline constexpr Axis defaulted_axes[] = {
+    Axis::Synchronization, Axis::FpMode,          Axis::SyscallSurface, Axis::ControlFlow,
+    Axis::CallShape,       Axis::StackUse,        Axis::GlobalState,    Axis::Stdio,
+    Axis::HwInstruction,   Axis::BarrierStrength, Axis::SimdIsa,        Axis::MemoryScope,
+};
+
+[[nodiscard]] consteval bool axis_is_on_default_roster(Axis axis) noexcept {
+    for (const Axis listed : defaulted_axes) {
+        if (listed == axis) return true;
+    }
+    return false;
+}
+
 template <Axis A>
-struct axis_traits;
+inline constexpr bool axis_takes_defaults = axis_is_on_default_roster(A);
+
+// One specialisation per axis that says something the primary does
+// not.  A specialisation exposes exactly one of three pole markers:
+// `strict`, the strict pole as a type (a value pole is an
+// integral_constant); `derived_from`, the axis whose pole this one
+// takes; or `caller_supplied`, for the one axis with no pole.
+//
+// `defaulted` is how the walk tells the primary apart from a
+// specialisation.  A specialisation does not declare that member, so
+// its absence reads as "an author classified this axis by hand".
+template <Axis A>
+struct axis_traits {
+    static constexpr bool defaulted = true;
+    static constexpr Shape shape = Shape::Lattice;
+    static constexpr Discharge discharge = Discharge::TypeLevel;
+    static constexpr Wrapper wrapper = Wrapper::None;
+    using strict = pole::Unconstrained<A>;
+};
 
 template <>
 struct axis_traits<Axis::Type> {
@@ -477,108 +476,16 @@ struct axis_traits<Axis::Staleness> {
     using strict = pole::stale::Fresh;
 };
 
-template <>
-struct axis_traits<Axis::Synchronization> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::sync::Unconstrained;
-};
-
+// Regime shares the pole of the twelve above but not their discharge:
+// where in the latency budget a function runs is settled by the bench,
+// not by the type.  That one difference is why it keeps a
+// specialisation and stays off the roster.
 template <>
 struct axis_traits<Axis::Regime> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Measurement;
     static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::regime::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::FpMode> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::fp_mode::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::SyscallSurface> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::syscall::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::ControlFlow> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::control_flow::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::CallShape> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::call_shape::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::StackUse> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::stack_use::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::GlobalState> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::global_state::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::Stdio> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::stdio::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::HwInstruction> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::hw_instruction::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::BarrierStrength> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::barrier_strength::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::SimdIsa> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::simd_isa::Unconstrained;
-};
-
-template <>
-struct axis_traits<Axis::MemoryScope> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::memory_scope::Unconstrained;
+    using strict = pole::Unconstrained<Axis::Regime>;
 };
 
 template <Axis A>
@@ -592,17 +499,39 @@ concept IsCallerSupplied = requires {
     { axis_traits<A>::caller_supplied } -> std::convertible_to<bool>;
 } && axis_traits<A>::caller_supplied;
 
-// Walks the enum.  A missing specialisation is an incomplete-type
-// error inside the walk, at the sizeof; a present one must classify
-// as exactly one of caller-supplied, strict or derived, and must name
-// a shape and a discharge that the switches below know.
+// True for an axis that reached the primary, false for one that a
+// specialisation classified.  Only the primary declares `defaulted`.
+template <Axis A>
+concept TakesDefaultTraits = requires {
+    { axis_traits<A>::defaulted } -> std::convertible_to<bool>;
+};
+
+// The roster and the specialisations partition the enum, and this one
+// comparison catches both ways of breaking that.  A new axis nobody
+// classified lands on the primary while off the roster.  A roster
+// entry that has since grown a specialisation is stale.  The undefined
+// primary this table used to carry caught only the first, and only by
+// being incomplete at a sizeof.
+//
+// Only the first of the two is witnessed from outside, by the
+// assertion below and by neg_axis_unclassified_axis.  Witnessing the
+// second would mean specialising axis_traits for an axis the walk has
+// already instantiated, which is separately ill-formed, so no fixture
+// can reach it.
+template <Axis A>
+concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
+
+// Walks the enum.  Each axis must sit on the default roster or carry a
+// specialisation, must classify as exactly one of caller-supplied,
+// strict or derived, and must name a shape and a discharge that the
+// switches below know.
 [[nodiscard]] consteval bool every_axis_has_traits() noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : axes) {
         constexpr Axis axis = [:en:];
-        static_assert(sizeof(axis_traits<axis>) > 0);
+        if (!AxisIsClassified<axis>) return false;
         constexpr bool has_caller = IsCallerSupplied<axis>;
         constexpr bool has_strict = HasStrictPole<axis>;
         constexpr bool has_derived = HasDerivedPole<axis>;
@@ -640,9 +569,24 @@ concept IsCallerSupplied = requires {
     return count;
 }
 
-static_assert(every_axis_has_traits(), "fixy::Axis: an axis has no axis_traits specialisation, or one that "
-                                       "does not classify as exactly one of caller-supplied, strict or "
-                                       "derived.  Add the specialisation next to the others above.");
+static_assert(every_axis_has_traits(),
+              "fixy::Axis: an axis is neither on defaulted_axes nor carries an axis_traits "
+              "specialisation, or it carries both, or the one it carries does not classify as "
+              "exactly one of caller-supplied, strict or derived.  A wrapper-only axis whose claim "
+              "is a lattice discharged at the type level joins defaulted_axes and needs nothing "
+              "else.  Any other axis needs a specialisation next to the others above.");
+
+// The walk above rejects an axis only if the comparison it rests on can
+// answer no.  A value one past the enum stands in for the next
+// enumerator somebody adds: it reaches the primary, like that
+// enumerator would, and it is not on the roster, like that enumerator
+// would not be.  Without this line the partition check could pass by
+// being vacuous, which is how the undefined primary it replaces would
+// have been quietly weakened.
+static_assert(!AxisIsClassified<static_cast<Axis>(axis_count)>,
+              "fixy::Axis: the partition check must reject an axis the table has not classified.  "
+              "It answers yes for a value one past the enum, so it would answer yes for a new "
+              "enumerator too, and defaulted_axes would stop being an opt-in.");
 
 static_assert(std::is_same_v<axis_traits<Axis::Observability>::strict, axis_traits<Axis::Effect>::strict>,
               "Observability's derived pole must round-trip to Effect's strict pole.");

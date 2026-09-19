@@ -62,6 +62,14 @@ fixy_test(test_qtt)
 fixy_test(test_mutation)
 fixy_test(test_axis)
 
+# The axis table's primary is defined, so defaulted_axes is what keeps
+# it from handing a new axis a claim nobody gave it.  A value one past
+# the enum stands in for that axis.
+fixy_neg_compile_test(neg_axis_unclassified_axis
+  "static assertion failed: an axis off the roster and off the specialization list is classified"
+  "required by the constraints of .template<fixy::Axis A> concept fixy::AxisIsClassified."
+  "the expression .\\(TakesDefaultTraits<A>\\) == \\(axis_takes_defaults<A>\\) \\[with A = \\(fixy::Axis\\)33\\]. evaluated to .false.")
+
 # The copy constructor of Qtt is deleted with a reason; the compiler
 # names the constructor and repeats the reason.
 fixy_neg_compile_test(neg_qtt_copy_a_linear

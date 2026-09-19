@@ -10,6 +10,7 @@
 #include <foundation/effects/Row.h>
 
 #include <cstddef>
+#include <iterator>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -60,12 +61,56 @@ static_assert(axis_traits<Axis::Usage>::strict::value == ::foundation::algebra::
 static_assert(axis_traits<Axis::Version>::strict::value == 1u);
 static_assert(std::is_same_v<axis_traits<Axis::Refinement>::strict, ::fixy::pole::pred::True>);
 static_assert(std::is_same_v<axis_traits<Axis::Complexity>::strict, ::fixy::pole::cost::Unstated>);
-static_assert(std::is_same_v<axis_traits<Axis::MemoryScope>::strict, ::fixy::pole::memory_scope::Unconstrained>);
+static_assert(std::is_same_v<axis_traits<Axis::MemoryScope>::strict, ::fixy::pole::Unconstrained<Axis::MemoryScope>>);
 static_assert(axis_traits<Axis::Type>::caller_supplied);
 static_assert(::fixy::IsCallerSupplied<Axis::Type>);
 static_assert(!::fixy::HasStrictPole<Axis::Type>);
 static_assert(::fixy::HasDerivedPole<Axis::Observability>);
 static_assert(!::fixy::HasDerivedPole<Axis::Effect>);
+
+// The unconstrained pole is one template, so two axes that both take
+// it still hold different types. Collapsing them would let a binding
+// that constrains one axis satisfy another.
+static_assert(
+    !std::is_same_v<::fixy::pole::Unconstrained<Axis::MemoryScope>, ::fixy::pole::Unconstrained<Axis::SimdIsa>>);
+static_assert(!std::is_same_v<axis_traits<Axis::Stdio>::strict, axis_traits<Axis::GlobalState>::strict>);
+static_assert(std::is_empty_v<::fixy::pole::Unconstrained<Axis::Stdio>>);
+
+// The roster and the specialisations partition the enum. Twelve axes
+// take the primary's defaults; the other twenty-one say something the
+// primary does not.
+static_assert(std::size(::fixy::defaulted_axes) == 12);
+static_assert(::fixy::axis_count - std::size(::fixy::defaulted_axes) == 21);
+static_assert(::fixy::TakesDefaultTraits<Axis::MemoryScope>);
+static_assert(::fixy::axis_takes_defaults<Axis::MemoryScope>);
+static_assert(!::fixy::TakesDefaultTraits<Axis::Trust>);
+static_assert(!::fixy::axis_takes_defaults<Axis::Trust>);
+
+// Regime shares the pole of the twelve but not their discharge, so it
+// stays off the roster.
+static_assert(!::fixy::axis_takes_defaults<Axis::Regime>);
+static_assert(!::fixy::TakesDefaultTraits<Axis::Regime>);
+static_assert(axis_traits<Axis::Regime>::discharge == Discharge::Measurement);
+static_assert(std::is_same_v<axis_traits<Axis::Regime>::strict, ::fixy::pole::Unconstrained<Axis::Regime>>);
+
+// Every axis on the roster reads back the primary's sentence.
+[[nodiscard]] consteval bool every_defaulted_axis_reads_the_primary() noexcept {
+    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : axes) {
+        constexpr Axis axis = [:en:];
+        if constexpr (::fixy::axis_takes_defaults<axis>) {
+            if (axis_traits<axis>::shape != Shape::Lattice) return false;
+            if (axis_traits<axis>::discharge != Discharge::TypeLevel) return false;
+            if (axis_traits<axis>::wrapper != Wrapper::None) return false;
+            if (!std::is_same_v<typename axis_traits<axis>::strict, ::fixy::pole::Unconstrained<axis>>) return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_defaulted_axis_reads_the_primary());
 
 // The shapes the algebra forces: the two counted resources, the row,
 // the protocol order, and the two predicates over the type.
