@@ -31,6 +31,7 @@ endfunction()
 
 foundation_test(test_platform)
 foundation_test(test_algebra_core)
+foundation_test(test_lattices_core)
 
 # Negative-compile fixtures for the foundation layer.
 #
