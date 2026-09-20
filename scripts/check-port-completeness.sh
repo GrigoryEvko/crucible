@@ -120,7 +120,7 @@
 # qualified one says nothing about a hidden friend, which is a
 # declaration members_of does not report (crucible::safety::drop became a
 # hidden friend of fixy::Qtt and reads as absent).  The guard catches the
-# A2.3 and A11.2 shape, a thing that was never carried at all, plus the
+# shape it was built for, a thing that was never carried at all, plus the
 # shape a shared name used to hide. It makes no stronger claim.
 #
 # What is out of scope, stated so nobody infers it is covered

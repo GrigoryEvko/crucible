@@ -1314,9 +1314,9 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
   "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0> >&>")
 
-# ── Task #193: the two Qtt discipline recognisers, armed ──────────────
+# ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
-# A10.3 carried both gates of fixy/Qtt.h and neither table's arms, so
+# The port carried both gates of fixy/Qtt.h and neither table's arms, so
 # Affine<Linear<int>> compiled for a release and an exactly-once
 # obligation silently became at-most-once.  Both recognisers are
 # structural now, and these four fixtures are what holds them there:
