@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -249,8 +250,10 @@ int main(int argc, char* argv[]) {
     reports.push_back([] {
         auto test = effects::testing::test();
 
-        TraceRing ring;
-        ring.reset();
+        // A TraceRing is 6 MiB and the stack is 8 MiB, so the ring lives
+        // on the heap, as it does in Vigil.
+        auto ring = std::make_unique<TraceRing>();
+        ring->reset();
         MetaLog meta_log;
         meta_log.reset();
 
@@ -281,11 +284,11 @@ int main(int argc, char* argv[]) {
                     std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
             }
             MetaIndex meta_start = meta_log.try_append(metas, total_metas);
-            ring.try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()});
+            ring->try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()});
         }
 
         BackgroundThread bg;
-        bg.ring.set(BackgroundThread::RingPtr{&ring});
+        bg.ring.set(BackgroundThread::RingPtr{ring.get()});
         bg.meta_log.set(BackgroundThread::MetaLogPtr{&meta_log});
 
         // Drain buffers heap-allocated; 4× 4096-element arrays on the
@@ -294,7 +297,7 @@ int main(int argc, char* argv[]) {
         std::vector<MetaIndex> meta_batch(4096);
         std::vector<ScopeHash> scope_batch(4096);
         std::vector<CallsiteHash> callsite_batch(4096);
-        const uint32_t n = ring.drain(batch.data(), 4096, meta_batch.data(), scope_batch.data(), callsite_batch.data());
+        const uint32_t n = ring->drain(batch.data(), 4096, meta_batch.data(), scope_batch.data(), callsite_batch.data());
 
         std::vector<TraceRing::Entry> saved_trace(batch.begin(), batch.begin() + n);
         std::vector<MetaIndex> saved_meta(meta_batch.begin(), meta_batch.begin() + n);
