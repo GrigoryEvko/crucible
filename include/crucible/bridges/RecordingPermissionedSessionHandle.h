@@ -148,7 +148,7 @@ public:
     [[nodiscard]] constexpr Resource
     close(StopReasonKind reason = StopReasonKind::PeerCrashed,
           RecoveryPathHash recovery_path = {}) && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        log_->append_event(SessionEvent::stop(self_role_, peer_role_, peer_role_, reason, recovery_path));
+        log_->append_event(SessionEvent::stop(self_role_, peer_role_, peer_role_, reason, recovery_path, crash_class));
         this->mark_consumed_();
         return std::move(inner_).close();
     }
