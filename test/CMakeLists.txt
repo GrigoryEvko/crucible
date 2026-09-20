@@ -848,6 +848,22 @@ add_test(NAME spawn_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-spawn-discipline.sh)
 set_tests_properties(spawn_discipline spawn_discipline_self_test PROPERTIES
     LABELS "ci_guard;fixy-V-210")
+
+# foundation::effects::testing returns minted capabilities with no gate,
+# and a capability is what every ctx-bound mint checks for.  Effect.h says
+# naming it outside test and bench code is a review rejection, and that a
+# grep for it finds every translation unit taking the test path — but
+# nothing performed that grep, so the boundary was prose.  The self-test
+# plants a violating file, a prose-only file and a stale entry, so the
+# guard proves it can fail in each direction rather than merely reporting
+# clean.
+add_test(NAME ctx_testing_boundary_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.sh
+          --self-test)
+add_test(NAME ctx_testing_boundary
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.sh)
+set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
+    PROPERTIES LABELS "ci_guard")
 # FIXY-U-101 row-membership discipline (closes fixy-A5-039
 # regression-prevention surface).  scripts/check-row-contains-discipline.sh
 # flags inline `effects::row_contains_v<row_type_of_t<Ctx>, ...>` sites

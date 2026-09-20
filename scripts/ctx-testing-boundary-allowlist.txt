@@ -1,0 +1,31 @@
+# ctx-testing-boundary allowlist — files in the new production tree that
+# may name foundation::effects::testing (#172, Door 2).
+#
+# Effect.h:413 says: "Naming this namespace outside test and bench code is
+# a review rejection.  Its whole purpose is that a grep for it finds every
+# translation unit taking the test path."  Nothing enforced that until this
+# guard, so the boundary was prose.  testing::bg() / init() / test() return
+# minted capabilities with no gate, and a capability is what every
+# ctx-bound mint checks for, so an unnoticed use in production code silently
+# hands out authority.
+#
+# Each entry is `path  — <why this file may name it>`.  A path that no
+# longer names the namespace is a stale entry and fails, so the file drains
+# as the new tree stops needing it.
+#
+# SCOPE LIMIT, stated rather than hidden: this guard is file-level.  It
+# catches a NEW production file reaching for the namespace, which is the
+# case that matters.  It does not catch a new use inside a file already
+# listed here.  Every listed file is a self-test-bearing header where such
+# a use is expected; if one ever stops being that, remove it from this list
+# rather than widening the rule.
+#
+# test/ and bench/ are not scanned at all.  Taking the test path is what
+# they are for.
+
+include/foundation/effects/Effect.h  — declares the namespace, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
+include/foundation/effects/Ctx.h  — the ExecCtx self-test builds each witness context, which after #172 Door 1 means handing it a real capability.
+include/foundation/effects/Capability.h  — the capability self-test mints from each source and drives mint_from_ctx over a background witness.
+include/fixy/os/ThreadName.h  — runtime smoke test needs an Init context to call the ported mint.
+include/fixy/os/Time.h  — runtime smoke test builds the init and blocking witnesses the clock and TSC readers are minted under.
+include/fixy/os/Sched.h  — runtime smoke test builds the background witness the scheduler mints are gated on.
