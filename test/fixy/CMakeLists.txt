@@ -360,3 +360,27 @@ fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
   "static assertion failed: fixy/atoms/Os\\.h: a class declared in one of the nine tag namespaces has state"
   "static assertion failed: fixy/atoms/Os\\.h: the nine tag namespaces hold a different number of tags"
   "the comparison reduces to .\\(36 == 35\\).")
+
+# ── Task #117 (A14.1): the binary session core ───────────────────────
+#
+# Protocol.h is the type level: combinators, duality, composition,
+# well-formedness.  Stepping.h adds the abandonment-check policy and
+# the SteppingGraded contract that foundation/algebra/Modality.h
+# reserved ModalityKind::Stepping for and never wrote down.
+fixy_test(test_session_protocol)
+
+# A channel whose two endpoints are not duals has no deadlock-freedom
+# guarantee.  Both operands here are individually well-formed, so the
+# refusal can only come from the duality clause.
+fixy_neg_compile_test(neg_sess_dual_mismatch
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Dual_Mismatch\\]"
+  "ensure_dual<P1, P2>")
+
+# Branch-asymmetric composition on a spine that holds no choice has no
+# branch to compose into.  Walking Send -> Recv -> End reaches the End
+# arm, which is the clause that refuses.
+fixy_neg_compile_test(neg_sess_compose_at_branch_no_choice
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Branch_Compose_No_Choice\\]"
+  "compose_at_branch_t<P, I, Q>")
