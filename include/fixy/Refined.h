@@ -570,18 +570,20 @@ using RefinedLinear = Refined<Pred, Linear<T>>;
 // dealiases to the class template either way, so ^^Refinement is the
 // only spelling that works and the only one needed.
 
+// The concept is the question; the value spelling is derived from it
+// and read by nothing that gates.
 template <typename T>
-inline constexpr bool is_refined_v = ::foundation::reflect::is_instance_of_v<T, ^^Refinement>;
+concept IsRefined = ::foundation::reflect::IsInstanceOf<T, ^^Refinement>;
 
 template <typename T>
-concept IsRefined = is_refined_v<T>;
+inline constexpr bool is_refined_v = IsRefined<T>;
 
 template <typename T>
-    requires is_refined_v<T>
+    requires IsRefined<T>
 using refined_value_t = typename std::remove_cvref_t<T>::value_type;
 
 template <typename T>
-    requires is_refined_v<T>
+    requires IsRefined<T>
 using refined_predicate_type_t = typename std::remove_cvref_t<T>::predicate_type;
 
 // The sealed-ness is a template argument now rather than a separate
@@ -589,7 +591,7 @@ using refined_predicate_type_t = typename std::remove_cvref_t<T>::predicate_type
 // of asking reflection which of two templates the type came from.  The
 // other traits beside it already read members this way.
 template <typename T>
-    requires is_refined_v<T>
+    requires IsRefined<T>
 inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 
 // implies_v<P, Q> reads: every value satisfying P also satisfies Q.
