@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-20T05:16:01Z`.
+Snapshot generated: `2026-09-20T15:31:47Z`.
 
 ## bridges/
 
@@ -141,9 +141,6 @@ Snapshot generated: `2026-09-20T05:16:01Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:309` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:27` | HS14: 15 |
 | `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:259` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:35` | HS14: 3 |
-| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:713` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:31` | HS14: 11 |
-| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:727` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:32` | HS14: 2 |
-| `mint_stage` | `include/crucible/concurrent/Stage.h:426` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:29` | HS14: 23 |
 | `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:252` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:34` | HS14: 7 |
 | `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:397` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:240` | HS14: 12 |
 | `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:274` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:36` | HS14: 2 |
@@ -355,7 +352,7 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 169
+- Total substrate mints: 166
 - Missing fixy re-export: 65
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 23 (declared in fixy/, no substrate counterpart — see above)
