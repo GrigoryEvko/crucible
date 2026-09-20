@@ -13,6 +13,7 @@ include/foundation/permissions/Permission.h	54
 include/foundation/permissions/PermissionFork.h	4
 include/foundation/permissions/ReadView.h	9
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp	1
+test/fixy/neg/neg_disjoint_receipt_from_another_split.cpp	1
 test/fixy/neg/neg_qtt_affine_over_shared_permission.cpp	1
 test/fixy/neg/neg_qtt_linear_over_permission.cpp	1
 test/fixy/neg/neg_scoped_view_escapes_through_private_member.cpp	1

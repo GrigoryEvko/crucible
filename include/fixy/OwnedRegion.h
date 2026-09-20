@@ -11,10 +11,18 @@
 // erased identity is itself erased.  foundation/Brand.h states the
 // facts a brand rests on.
 //
-// split_into partitions the index space, not the allocation.  Every
+// mint_split partitions the index space, not the allocation.  Every
 // sub-region points into the same buffer at a distinct chunk offset,
 // and the distinct Slice tags are what prove the chunks are disjoint.
 // The shards carry the parent's brand, and recombine demands it back.
+//
+// mint_split also writes a receipt, Disjoint below, and recombine
+// consumes it beside the shards.  Holding shards is therefore not by
+// itself authority to rebuild a whole: the split's own receipt is, it
+// is move-only, and its type names the tag, the brand, the arity and
+// the site of the split that wrote it.  Disjoint's own comment states
+// which half of use-after-consume that catches and which half no
+// template argument can catch.
 //
 // The surrendered Permission is the one door: the constructor is
 // private, and adopt and wrap each take a token by rvalue.  The old
@@ -64,22 +72,138 @@ namespace fixy {
 // parent_type is also how a shard finds its effect row: the row
 // relation reads a derived tag's parent, so a shard touches the region
 // under the same row as the whole.
-template <typename Parent, std::size_t I>
+
+// The name a shard carries when no split wrote it: the spelling a
+// reader uses to talk about the shape of a split rather than about one
+// split's shards.
+struct Unsplit {};
+
+// SplitName is the third parameter because a shard has to say which
+// split cut it.  Two splits are two names, so their shards are two
+// types, and a tuple that takes one shard from each does not satisfy
+// recombine.  The receipt alone cannot say this: nothing in a tuple of
+// shards would contradict it.
+template <typename Parent, std::size_t I, typename SplitName = Unsplit>
 struct Slice {
     using parent_type = Parent;
+    using split_name_type = SplitName;
     static constexpr std::size_t index = I;
 };
+
+namespace detail {
+
+// The one door to a disjointness receipt.  Only mint_split holds it.
+struct split_mint_t {};
+
+}  // namespace detail
+
+// The receipt a split writes: these shards came from one split of one
+// region.  mint_split hands it back beside the shards, and recombine
+// consumes both, so holding the shards is not by itself authority to
+// rebuild the whole.  It carries no bytes: the proof is the type.
+//
+// What the receipt catches.
+//
+//   A rebuild from shards nobody split.  recombine took a tuple and
+//   nothing else before this, so a caller who held shards could
+//   assemble a tuple and get a whole.  There is no public constructor
+//   here, so a tuple alone no longer reaches recombine.
+//
+//   A receipt spent twice.  The type is move-only, so a second
+//   recombine has nothing left to pass, and the copy that would make
+//   one is deleted with its reason.
+//
+//   A receipt from the wrong split.  The tag, the brand of the region
+//   that was split, the arity and the name of the split site are all
+//   in the type, so a receipt written at another site does not convert
+//   to the one recombine asks for.
+//
+// What the receipt cannot catch, and why it is not a matter of trying
+// harder.  A brand names a mint SITE, not a mint CALL: fact 2 of
+// foundation/Brand.h, measured rather than assumed.  So two regions
+// minted by one statement in a loop are one type, their shards are one
+// type, and their receipts are one type, and a tuple that takes shard 0
+// from the first and shard 1 from the second is well typed here.  A
+// borrow checker refuses that because it reasons about the flow of one
+// program point to another, and a template argument does not.  That is
+// the half of use-after-consume C++ cannot type, and the claim this
+// header makes is the narrower one.
+template <typename Tag, typename Brand, typename SplitName, std::size_t N>
+class [[nodiscard]] Disjoint {
+    static_assert(N > 0, "Disjoint: a split of zero shards proves nothing.");
+    static_assert(::foundation::brand::IsBrand<SplitName>,
+                  "Disjoint: SplitName must be an empty class type, the fresh name of one split site.");
+
+public:
+    using tag_type = Tag;
+    using brand_type = Brand;
+    using split_name_type = SplitName;
+    static constexpr std::size_t shard_count = N;
+
+    Disjoint(Disjoint const&) = delete("a second receipt would let one split authorize two rebuilds");
+    Disjoint& operator=(Disjoint const&) = delete("a second receipt would let one split authorize two rebuilds");
+    constexpr Disjoint(Disjoint&&) noexcept = default;
+    constexpr Disjoint& operator=(Disjoint&&) noexcept = default;
+    ~Disjoint() = default;
+
+private:
+    // The door.  mint_split holds the key; nothing else does.
+    constexpr explicit Disjoint(detail::split_mint_t) noexcept {}
+
+    template <typename U, typename UTag, typename UBrand>
+    friend class OwnedRegion;
+};
+
+// What a split hands back: the receipt and the shards, named so a
+// caller reads which is which.
+template <typename Witness, typename Shards>
+struct [[nodiscard]] SplitParts {
+    Witness witness;
+    Shards shards;
+};
+
+// The return type of mint_split, spelled without an index pack so the
+// mint can be declared before the class it consumes and befriended by
+// it.
+template <typename T, typename Tag, typename Brand, typename SplitName, typename Seq>
+struct split_parts_for_;
+
+template <typename T, typename Tag, typename Brand, typename SplitName, std::size_t... Is>
+struct split_parts_for_<T, Tag, Brand, SplitName, std::index_sequence<Is...>> {
+    using type = SplitParts<Disjoint<Tag, Brand, SplitName, sizeof...(Is)>,
+                            std::tuple<OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>...>>;
+};
+
+template <typename T, typename Tag, typename Brand, typename SplitName, std::size_t N>
+using split_parts_t = typename split_parts_for_<T, Tag, Brand, SplitName, std::make_index_sequence<N>>::type;
+
+// The split: it consumes the whole and issues the shards beside the
+// receipt that recombines them.
+//
+// It is a free function rather than a member because the name of the
+// split is a lambda in a defaulted trailing template parameter, and
+// measured on this compiler such a default inside a member of a class
+// template yields one closure for the class rather than one per call
+// site.  A free function template gives each call site its own name,
+// which is the whole point of the name.  Everything else about the
+// shape follows the mint pattern: the pack before SplitName absorbs
+// whatever a caller writes, so the name cannot be spelled.
+template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand,
+          typename SplitName = CRUCIBLE_FRESH_BRAND>
+    requires(N > 0 && std::is_object_v<T>)
+[[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N>
+mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept;  // MINT-PATTERN-OK: the split partitions at run time
 
 }  // namespace fixy
 
 namespace foundation::permissions {
 
-template <typename Parent, std::size_t... Is>
-struct splits_into_pack<Parent, ::fixy::Slice<Parent, Is>...> : std::true_type {};
+template <typename Parent, typename SplitName, std::size_t... Is>
+struct splits_into_pack<Parent, ::fixy::Slice<Parent, Is, SplitName>...> : std::true_type {};
 
 // Specialize this witness in lockstep with the specialization above.
-template <typename Parent, std::size_t... Is>
-struct splits_into_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is>...> : std::true_type {};
+template <typename Parent, typename SplitName, std::size_t... Is>
+struct splits_into_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is, SplitName>...> : std::true_type {};
 
 }  // namespace foundation::permissions
 
@@ -194,27 +318,33 @@ public:
     [[nodiscard]] constexpr T const* begin() const noexcept { return base_; }
     [[nodiscard]] constexpr T const* end() const noexcept { return base_ + count_; }
 
-    // The result is a tuple and not an array because each shard has a
-    // distinct Slice tag, so the element types differ.
-    template <std::size_t N>
-    [[nodiscard]] auto split_into() && noexcept;
+    // The split is mint_split, declared above.  It reaches the private
+    // partition through this friendship, so the only way to a shard is
+    // through a call that also writes the receipt.
+    template <std::size_t UN, typename... UNever, typename U, typename UTag, typename UBrand, typename USplitName>
+        requires(UN > 0 && std::is_object_v<U>)
+    friend split_parts_t<U, UTag, UBrand, USplitName, UN> mint_split(OwnedRegion<U, UTag, UBrand>&& region) noexcept;
 
-    // The inverse of split_into.  Every shard is surrendered here, and
-    // their Slice permissions are combined back into the parent's, so
-    // the shards themselves are the proof that the whole is exclusively
-    // owned again.  mint_permission_combine_n checks that the shard tags
-    // mirror a declared splits_into_pack, and that every shard carries
-    // this region's brand, so a tuple assembled from somewhere other
-    // than a real split of this region does not combine.
+    // The inverse of split_into.  The receipt and every shard are
+    // surrendered here, and the shards' Slice permissions are combined
+    // back into the parent's.  mint_permission_combine_n checks that the
+    // shard tags mirror a declared splits_into_pack and that every shard
+    // carries this region's brand; the receipt adds what the shards
+    // cannot say, which is that one split produced them and that this
+    // rebuild is the only one that split authorizes.
     //
     // This is the only way to recover a parent permission after a split.
     // There is deliberately no nullary rebuild: one that took no
     // argument would prove nothing, and the previous such helper minted
     // a Permission for any tag from any translation unit.
-    template <std::size_t... Is>
+    template <typename SplitName, std::size_t... Is>
     [[nodiscard]] static OwnedRegion
-    recombine(std::tuple<OwnedRegion<T, Slice<Tag, Is>, Brand>...>&& shards) noexcept {
+    recombine(Disjoint<Tag, Brand, SplitName, sizeof...(Is)>&& witness,
+              std::tuple<OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>...>&& shards) noexcept {
         static_assert(sizeof...(Is) > 0, "recombine() needs at least one shard.");
+        // The receipt is spent by being taken by rvalue and named here.
+        // It carries no bytes, so there is nothing else to consume.
+        [[maybe_unused]] Disjoint<Tag, Brand, SplitName, sizeof...(Is)> spent{std::move(witness)};
         // Shard 0 starts at offset 0, so its base is the whole's base.
         T* const base = std::get<0>(shards).base_;
         std::size_t const total = (std::size_t{0} + ... + std::get<Is>(shards).count_);
@@ -224,7 +354,7 @@ public:
     }
 
 private:
-    template <std::size_t N, std::size_t... Is>
+    template <std::size_t N, typename SplitName, std::size_t... Is>
     auto split_into_impl_(std::index_sequence<Is...>) && noexcept;
 
     // Returns the start offset and the length of shard i.
@@ -272,15 +402,19 @@ template <typename T, typename Tag, typename Brand>
 constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
     delete("a borrow of a temporary region outlives it; bind the region to a name that outlives the borrow");
 
-template <typename T, typename Tag, typename Brand>
-template <std::size_t N>
-auto OwnedRegion<T, Tag, Brand>::split_into() && noexcept {
-    static_assert(N > 0, "split_into<N>() requires N > 0");
-    return std::move(*this).template split_into_impl_<N>(std::make_index_sequence<N>{});
+template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand, typename SplitName>
+    requires(N > 0 && std::is_object_v<T>)
+[[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N>
+mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept {  // MINT-PATTERN-OK: the split partitions at run time
+    static_assert(sizeof...(Never) == 0,
+                  "mint_split<N>(region) takes one template argument. The name of the split follows it and is "
+                  "minted here, because a caller who could spell it could write a receipt for a split it did "
+                  "not perform.");
+    return std::move(region).template split_into_impl_<N, SplitName>(std::make_index_sequence<N>{});
 }
 
 template <typename T, typename Tag, typename Brand>
-template <std::size_t N, std::size_t... Is>
+template <std::size_t N, typename SplitName, std::size_t... Is>
 auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) && noexcept {
     static_assert(sizeof...(Is) == N, "index_sequence size mismatch");
 
@@ -290,11 +424,16 @@ auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) &&
     T* base = base_;
     const std::size_t total = count_;
 
-    auto sub_perms = ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is>...>(std::move(perm_));
+    auto sub_perms =
+        ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is, SplitName>...>(std::move(perm_));
 
-    return std::tuple<OwnedRegion<T, Slice<Tag, Is>, Brand>...>{OwnedRegion<T, Slice<Tag, Is>, Brand>{
-        base + chunk_range_(total, N, Is).first, chunk_range_(total, N, Is).second,
-        std::move(std::get<Is>(sub_perms))}...};
+    using Shards = std::tuple<OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>...>;
+    using Witness = Disjoint<Tag, Brand, SplitName, N>;
+    return SplitParts<Witness, Shards>{
+        Witness{detail::split_mint_t{}},
+        Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{base + chunk_range_(total, N, Is).first,
+                                                                chunk_range_(total, N, Is).second,
+                                                                std::move(std::get<Is>(sub_perms))}...}};
 }
 
 // The detection surface of the old IsOwnedRegion.h.  One reflection
@@ -447,6 +586,30 @@ static_assert(!ArrayArena<int, int>);
     return borrow.size() == 4 && borrow[2] == 3 && region.data() == storage;
 }
 static_assert(region_carries_its_permission_brand());
+
+// The receipt a split writes.  It costs no bytes, it cannot be built
+// from nothing, and it cannot be copied, so one split authorizes one
+// rebuild.  Two spellings that differ in any of the four things the
+// type carries are two types, and neither converts to the other.
+using SplitA = decltype([] {});
+using SplitB = decltype([] {});
+using ReceiptA2 = Disjoint<test_tag_a, ::foundation::brand::DefaultBrand, SplitA, 2>;
+using ReceiptB2 = Disjoint<test_tag_a, ::foundation::brand::DefaultBrand, SplitB, 2>;
+using ReceiptA4 = Disjoint<test_tag_a, ::foundation::brand::DefaultBrand, SplitA, 4>;
+using ReceiptOtherTag = Disjoint<test_tag_b, ::foundation::brand::DefaultBrand, SplitA, 2>;
+
+static_assert(sizeof(ReceiptA2) == 1, "a receipt is a type, not a byte of state");
+static_assert(std::is_empty_v<ReceiptA2>);
+static_assert(!std::is_default_constructible_v<ReceiptA2>, "a receipt nobody wrote proves nothing");
+static_assert(!std::is_copy_constructible_v<ReceiptA2>, "a copied receipt would authorize two rebuilds");
+static_assert(!std::is_copy_assignable_v<ReceiptA2>);
+static_assert(std::is_move_constructible_v<ReceiptA2>);
+static_assert(std::is_nothrow_move_constructible_v<ReceiptA2>);
+static_assert(!std::is_convertible_v<ReceiptB2&&, ReceiptA2>, "another split's receipt is another type");
+static_assert(!std::is_convertible_v<ReceiptA4&&, ReceiptA2>, "another arity's receipt is another type");
+static_assert(!std::is_convertible_v<ReceiptOtherTag&&, ReceiptA2>, "another tag's receipt is another type");
+static_assert(ReceiptA2::shard_count == 2);
+static_assert(std::is_same_v<ReceiptA2::tag_type, test_tag_a>);
 
 }  // namespace detail::owned_region_self_test
 

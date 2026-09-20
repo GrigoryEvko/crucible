@@ -191,7 +191,8 @@ void test_split_into_chunk_math() {
     for (std::size_t i = 0; i < 1000; ++i)
         region.span()[i] = i;
 
-    auto [s0, s1, s2, s3, s4, s5, s6, s7] = std::move(region).split_into<8>();
+    auto parts = ::fixy::mint_split<8>(std::move(region));
+    auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
 
     // 1000 over 8 divides exactly, so every shard is the same size.
     CRUCIBLE_TEST_REQUIRE(s0.size() == 125);
@@ -216,7 +217,8 @@ void test_split_uneven() {
     auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, 1001, std::move(perm));
 
-    auto [s0, s1, s2, s3, s4, s5, s6, s7] = std::move(region).split_into<8>();
+    auto parts = ::fixy::mint_split<8>(std::move(region));
+    auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
 
     // The chunk size rounds up, so the leading shards take 126 each and
     // the last one takes whatever is left, which is fewer.
@@ -230,7 +232,8 @@ void test_split_smaller_than_n() {
     auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, 5, std::move(perm));
 
-    auto [s0, s1, s2, s3, s4, s5, s6, s7] = std::move(region).split_into<8>();
+    auto parts = ::fixy::mint_split<8>(std::move(region));
+    auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
 
     // With fewer elements than shards the rounded-up chunk is one, so
     // the shards past the end are empty rather than out of range.
@@ -260,7 +263,7 @@ void test_split_then_rebuild_through_recombine() {
     std::uint64_t* base = region.data();
     const std::size_t count = region.size();
 
-    auto shards = std::move(region).split_into<8>();
+    auto parts = ::fixy::mint_split<8>(std::move(region));
     std::apply(
         [](auto&... sub) {
             (
@@ -272,9 +275,12 @@ void test_split_then_rebuild_through_recombine() {
                 }(sub),
                 ...);
         },
-        shards);
+        parts.shards);
 
-    auto recombined = OwnedRegion<std::uint64_t, DataA>::recombine(std::move(shards));
+    // The receipt the split wrote is surrendered beside the shards, and
+    // it is what tells recombine that one split produced them.
+    auto recombined =
+        OwnedRegion<std::uint64_t, DataA>::recombine(std::move(parts.witness), std::move(parts.shards));
 
     // recombine derives both from the shards rather than being told, so
     // check it recovered the extent the split started from.
@@ -303,12 +309,19 @@ void test_brand_travels_through_split_and_recombine() {
     static_assert(::foundation::brand::SameBrand<decltype(borrow), decltype(region)>);
     CRUCIBLE_TEST_REQUIRE(borrow.size() == 8);
 
-    auto [s0, s1] = std::move(region).split_into<2>();
+    auto parts = ::fixy::mint_split<2>(std::move(region));
+    auto& [s0, s1] = parts.shards;
     static_assert(::foundation::brand::SameBrand<decltype(s0), decltype(borrow)>);
     static_assert(::foundation::brand::SameBrand<decltype(s1), decltype(borrow)>);
     CRUCIBLE_TEST_REQUIRE(s0.size() == 4 && s1.size() == 4);
 
-    auto whole = OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::tuple{std::move(s0), std::move(s1)});
+    // The receipt names the region that was split, so its brand is the
+    // region's and its shard count is the split's.
+    static_assert(std::is_same_v<decltype(parts.witness)::brand_type, Brand>);
+    static_assert(decltype(parts.witness)::shard_count == 2);
+
+    auto whole =
+        OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
     static_assert(::foundation::brand::SameBrand<decltype(whole), decltype(borrow)>);
     CRUCIBLE_TEST_REQUIRE(whole.size() == 8);
     CRUCIBLE_TEST_REQUIRE(whole.data() == storage);

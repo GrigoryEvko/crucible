@@ -85,6 +85,10 @@ fixy::Borrowed<int, int> | fixy/Borrowed.h | fixy::Borrowed<int, int>{fixy::deta
 # permission, so a forger who reaches it describes a region that need
 # not be the one the permission covers.
 fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/OwnedRegion.h | fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>{static_cast<int*>(nullptr), std::size_t{0}, forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()} | private | closed
+# The receipt a split writes.  Its key is a public empty struct, because
+# the door is the constructor and not the key: handing the key over is
+# still not a way in.
+fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2> | fixy/OwnedRegion.h | fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2>{fixy::detail::split_mint_t{}} | private | closed
 
 # -- OS handles: the constructor is the syscall, or it consumes one ---
 fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed

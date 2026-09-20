@@ -1571,7 +1571,7 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
 # its shard is refused.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
-  "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0>, Brand>&>")
+  "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0[^>]*>, Brand>&>")
 
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
@@ -1661,3 +1661,35 @@ fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_range
   "use of deleted function"
   "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner"
   "a borrow of a temporary range dangles at the end of the full expression")
+
+# ── Disjointness: one split, one receipt, one rebuild ─────────────────
+#
+# A shard says which split cut it and the receipt says which split wrote
+# it, so a rebuild needs both to agree.  Each fixture below names one
+# thing that agreement refuses, and each was proven live by a mutant
+# that removes its mechanism and lets it compile.
+
+# Shards alone are no longer a call.
+fixy_neg_compile_test(neg_disjoint_recombine_without_receipt
+  "no matching function for call to .fixy::OwnedRegion<int, \\{anonymous\\}::Buffer, foundation::permissions::<lambda\\(\\)> >::recombine\\("
+  "candidate expects 2 arguments, 1 provided")
+
+# The headline: two splits of two same-typed regions, and a tuple that
+# takes one shard from each.  The shard's own type carries the name of
+# the split, so the mixed tuple is not the one the receipt goes with.
+fixy_neg_compile_test(neg_disjoint_receipt_from_another_split
+  "no matching function for call to .fixy::OwnedRegion<int, \\{anonymous\\}::Buffer>::recombine\\("
+  "fixy::Disjoint<\\{anonymous\\}::Buffer, foundation::brand::DefaultBrand, fixy::<lambda\\(\\)>, 2>"
+  "std::tuple<fixy::OwnedRegion<T, fixy::Slice<Tag, Is, SplitName>, Brand>\\.\\.\\.>&&")
+
+# One split authorizes one rebuild.
+fixy_neg_compile_test(neg_disjoint_receipt_copied
+  "use of deleted function"
+  "Disjoint\\(const fixy::Disjoint<Tag, Brand, SplitName, N>&\\)"
+  "a second receipt would let one split authorize two rebuilds")
+
+# The name of a split cannot be spelled, so a second receipt for one
+# split cannot be written.
+fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
+  "static assertion failed: mint_split<N>\\(region\\) takes one template argument"
+  "Never = \\{\\{anonymous\\}::HeldName\\}")

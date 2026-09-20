@@ -309,6 +309,14 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
 
 // The background capability is demanded even when N is one and no thread
 // is spawned, so the contract does not change shape with N.
+// The shard a body actually receives carries the name of the split that
+// cut it, and that name is minted inside the call below, so no clause
+// out here can spell it.  The probe shard therefore carries the Unsplit
+// name, which stands for the shape of a shard rather than for one
+// split's shard.  A body generic over its shard satisfies the clause and
+// the call; a body that spells the probe shard exactly satisfies the
+// clause and then fails inside, which is the one case where the
+// diagnostic lands in this header rather than at the call.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
 concept CtxFitsParallelFor =
     (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
@@ -339,17 +347,19 @@ template <std::size_t N, typename Ctx, typename T, typename Whole, typename Bran
                                                                      Body body) noexcept {
     // The context is read by the constraint on the declaration and nowhere
     // else.  The fan-out below is driven by N alone.
-    auto shards = std::move(region).template split_into<N>();
+    auto parts = ::fixy::mint_split<N>(std::move(region));
 
     if constexpr (N == 1) {
-        body(std::get<0>(shards));
+        body(std::get<0>(parts.shards));
     } else {
-        detail::run_shards_(shards, body, std::make_index_sequence<N>{});
+        detail::run_shards_(parts.shards, body, std::make_index_sequence<N>{});
     }
 
     // Deviation 4: every shard is surrendered here, and their Slice
-    // permissions are what reissue the parent's.
-    return ::fixy::OwnedRegion<T, Whole, Brand>::recombine(std::move(shards));
+    // permissions are what reissue the parent's.  The receipt the split
+    // wrote is surrendered with them, so this rebuild is the one that
+    // split authorized and there is no second one.
+    return ::fixy::OwnedRegion<T, Whole, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
 }
 
 }  // namespace fixy::spawn
