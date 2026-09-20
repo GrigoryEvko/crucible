@@ -2313,7 +2313,29 @@ Library types in `include/crucible/safety/` that mechanize the axioms from §II 
 | `Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` for lifetime-bound borrows. Factories: `permission_root_mint` / `permission_split` / `permission_combine` / `permission_split_n`. |
 | `PermissionFork.h` | ThreadSafe, BorrowSafe | `permission_fork<Children...>(parent, callables...)` — encodes CSL parallel composition rule as RAII fork-join over `std::jthread`. Constraint: `splits_into_pack_v<Parent, Children...>`. Returns parent permission after all children join. |
 
-Each header is ≤150 lines except `Permission.h` (≤500 — substantial doc + the fractional-permission machinery), header-only, depending only on `<type_traits>`, `<atomic>`, and `Platform.h`.
+Every header is header-only and self-contained. The dependency rule is the layer
+rule, and `scripts/check-layer-boundary.sh` enforces it: `foundation` names only
+`foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
+names anything below it.
+
+**There is no line cap, and the one this sentence used to state was false in both
+halves.** It claimed ≤150 lines per header with `Permission.h` excepted at ≤500,
+and it claimed a dependency set of `<type_traits>`, `<atomic>` and `Platform.h`.
+Measured 2026-09-20: `Permission.h` is 1,579 lines and carries 22 includes, ten
+of them project headers. `Catalog.h` is 1,970, `Collision.h` 1,469, `Refined.h`
+1,317. The new layers are 22% comment, so the size is code and not prose.
+
+The cap was not raised, because a line count cannot tell a table from a
+god-header. `Catalog.h` is 1,970 lines at 4% comment and is a catalog: long by
+nature, and splitting it on a line count would cut a table in an arbitrary place.
+`Permission.h` is 1,024 lines of code spanning `Permission`, `SharedPermission`,
+the pool, the `ReadView` interaction, brands, `permission_row` and the splits,
+which is a real multi-concern header. The two sit at a similar size and deserve
+opposite verdicts, so the instrument that ranks them equal is the wrong one.
+Header size is a review question about concerns, not a gate. `Permission.h` is
+the one header whose growth is a standing concern: it outgrew an exception this
+guide had already granted it, and a split decided on concerns rather than lines
+is owed.
 
 ### Usage rules
 

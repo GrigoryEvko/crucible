@@ -1514,7 +1514,20 @@ Library types in `include/crucible/safety/` that mechanize the axioms from §II 
 | `Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
 | `ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
 
-Each header is ≤150 lines, header-only, depending only on `<type_traits>` and `Platform.h`.
+Every header is header-only and self-contained. The dependency rule is the layer
+rule, and `scripts/check-layer-boundary.sh` enforces it: `foundation` names only
+`foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
+names anything below it.
+
+**There is no line cap, and the one this sentence used to state was false.** It
+claimed ≤150 lines per header and a dependency set of `<type_traits>` and
+`Platform.h`. Measured 2026-09-20: `Permission.h` is 1,579 lines with 22
+includes, `Catalog.h` 1,970, `Collision.h` 1,469, `Refined.h` 1,317, and the new
+layers are 22% comment, so the size is code rather than prose. The cap was not
+raised, because a line count cannot tell a table from a god-header: `Catalog.h`
+at 4% comment is a catalog and is long by nature, while `Permission.h` carries
+1,024 lines of code across seven concepts. Header size is a review question about
+concerns, not a gate.
 
 ### Usage rules
 
