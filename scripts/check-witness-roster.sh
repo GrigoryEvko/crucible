@@ -460,6 +460,26 @@ esac
 
 build_dir="${WITNESS_BUILD_DIR:-}"
 if [[ -z "$build_dir" ]]; then
+    # Pick the build tree whose registration is NEWEST, not the one
+    # whose name sorts first.  A shared worktree carries several build
+    # dirs, and one configured before the roster's last entry registers
+    # a fixture set that no longer matches the disk.  Arm 5 then prints
+    # a fixture diff, which reads as roster drift and is not: the roster
+    # and the fixtures agree, and --gen changes nothing.  Newest wins,
+    # and arm 5 names staleness by itself when even the newest lags.
+    newest_stamp=""
+    for candidate in "$root"/build "$root"/build-*; do
+        [[ -f "$candidate/compile_commands.json" ]] || continue
+        stamp="$candidate/test/fixy/CTestTestfile.cmake"
+        [[ -f "$stamp" ]] || continue
+        if [[ -z "$newest_stamp" || "$stamp" -nt "$newest_stamp" ]]; then
+            newest_stamp="$stamp"
+            build_dir="$candidate"
+        fi
+    done
+fi
+if [[ -z "$build_dir" ]]; then
+    # A dir configured but not yet generated is still better than none.
     for candidate in "$root"/build "$root"/build-*; do
         if [[ -f "$candidate/compile_commands.json" ]]; then build_dir="$candidate"; break; fi
     done
@@ -585,7 +605,17 @@ fi
 registered="$(cd "$build_dir" && ctest -N -R '^neg_witness_.*_direct_construction$' 2>/dev/null | rg -o 'neg_witness_[a-z0-9_]+_direct_construction' | sort -u)"
 generated="$(cd "$fixture_dir" && for f in neg_witness_*_direct_construction.cpp; do printf '%s\n' "${f%.cpp}"; done | sort -u)"
 if [[ "$registered" != "$generated" ]]; then
-    printf 'check-witness-roster: SELF-TEST FAILED — the tests ctest registers do not match the fixtures on disk; reconfigure %s or run --gen.\n' "$build_dir" >&2
+    stamp="$build_dir/test/fixy/CTestTestfile.cmake"
+    if [[ -f "$stamp" && "$roster" -nt "$stamp" ]]; then
+        # Staleness, not drift.  The roster changed after this build
+        # tree was generated, so its registration is simply older than
+        # the corpus.  Say which, because the fixture diff below looks
+        # the same either way and the two have different repairs.
+        printf 'check-witness-roster: SELF-TEST FAILED — %s was generated before the roster last changed, so its registration is stale rather than wrong. The roster and the fixtures agree and --gen changes nothing. Run: cmake -S %s -B %s\n' \
+            "$build_dir" "$root" "$build_dir" >&2
+    else
+        printf 'check-witness-roster: SELF-TEST FAILED — the tests ctest registers do not match the fixtures on disk; reconfigure %s or run --gen.\n' "$build_dir" >&2
+    fi
     diff <(printf '%s\n' "$registered") <(printf '%s\n' "$generated") >&2 || true
     exit 2
 fi
