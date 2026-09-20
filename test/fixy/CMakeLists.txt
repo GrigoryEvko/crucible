@@ -271,6 +271,28 @@ fixy_neg_compile_test(neg_rule_b001_bg_surface_unbounded
   "Collision rule\\(s\\) B001:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the hardware-instruction family ────────────────────────
+#
+# Three rules over one chain, each read at one boundary.  V201 is the hot
+# path against a tier at or above the timestamp read; V202 is the
+# privileged tier against an effect row with no Init; V203 is a
+# replay-deterministic payload against the timestamp tier, and it is the
+# first fixture that refuses on the payload rather than the pack.  Each
+# pack trips exactly one of the three, which the cells in
+# test_collision.cpp pin the other way around.
+fixy_neg_compile_test(neg_rule_v201_hot_tsc
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V201:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_v202_privileged_msr_no_init
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V202:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_v203_replay_tsc
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V203:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.
@@ -548,7 +570,7 @@ fixy_neg_compile_test(neg_machine_transition_not_admitted
 # selects the deleted rvalue-range twin of the span constructor.
 fixy_neg_compile_test(neg_borrowed_from_a_temporary
   "use of deleted function"
-  "fixy::Borrowed<T, Source>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
+  "fixy::Borrowed<T, Source, Brand>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
   "Borrowed of a temporary range dangles")
 
 # weaken towards a fresher grade in a constant expression reaches the
@@ -1255,11 +1277,11 @@ fixy_test(test_os_spawn)
 # production sites bypassed the background-context clause.
 fixy_neg_compile_test(neg_spin_lock_door_is_private
   "is private within this context"
-  "fixy::spin::SpinLock<Tag>::lock\\(permission_t&\\)")
+  "fixy::spin::SpinLock<Tag>::lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\)")
 
 fixy_neg_compile_test(neg_spin_try_lock_door_is_private
   "is private within this context"
-  "fixy::spin::SpinLock<Tag>::try_lock\\(permission_t&\\)")
+  "fixy::spin::SpinLock<Tag>::try_lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\)")
 
 # Deviation 3: release costs the same witness acquisition did.
 fixy_neg_compile_test(neg_spin_unlock_without_witness

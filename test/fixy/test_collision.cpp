@@ -348,6 +348,63 @@ static_assert(std::is_same_v<live_rules<at::copy>, rules_of<void, at::copy>>);
 static_assert(rules_of<det<DetTier::Pure>>::valid);
 
 // ---------------------------------------------------------------------
+// The hardware-instruction family, live since fixy/atoms/Hw.h (task #176).
+//
+// The ladder is a chain where a tier admits every class below it, so the
+// cells read it at the one boundary V201 and V203 care about — at or
+// above NonDeterministicTsc — and at the top for V202.
+
+static_assert(col::axis_has_an_atom<Axis::HwInstruction>);
+
+// V201 hot x a tier at or above NonDeterministicTsc.  PrivilegedMsr is
+// above the timestamp tier, which is why the old name's "or privileged"
+// is one clause, not two.  The cost and refinement atoms silence H001
+// and H002; an Init row silences V202 for the privileged cell.
+static_assert(!live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
+                          at::refined_with<hot_invariant>>::V201_ok);
+static_assert(!live_rules<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
+                          at::refined_with<hot_invariant>>::V201_ok,
+              "the privileged tier is at or above the timestamp tier, so the hot path refuses it too");
+static_assert(live_rules<at::regime::hot, at::hw::vectorizable, at::cost_constant,
+                         at::refined_with<hot_invariant>>::V201_ok,
+              "SIMD intrinsics sit below the timestamp tier and are what a hot path is made of");
+static_assert(live_rules<at::hw::non_deterministic_tsc>::V201_ok, "not hot, so a timestamp read is ordinary");
+static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok);
+
+// V202 the PrivilegedMsr tier x an effect row with no Init.  The twin the
+// fixture names: add Init to the row and the tier is admitted.
+static_assert(!live_rules<at::hw::privileged_msr>::V202_ok);
+static_assert(!live_rules<at::hw::privileged_msr, at::with<Eff::IO>>::V202_ok, "a row without Init is not enough");
+static_assert(live_rules<at::hw::privileged_msr, at::with<Eff::Init>>::V202_ok, "the twin: reached from Init");
+static_assert(live_rules<at::hw::privileged_msr, at::with<Eff::Init, Eff::IO>>::V202_ok);
+static_assert(live_rules<at::hw::non_deterministic_tsc>::V202_ok, "only the privileged tier needs Init");
+
+// V203 a replay-deterministic payload x a tier at or above
+// NonDeterministicTsc.  This is the payload read consumed: the same pack
+// is refused under a Pure payload and admitted under a payload with no
+// band or under the pack-only view.
+static_assert(!rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V203_ok);
+static_assert(!rules_of<det<DetTier::PhiloxRng>, at::hw::privileged_msr, at::with<Eff::Init>>::V203_ok);
+static_assert(rules_of<det<DetTier::WallClockRead>, at::hw::non_deterministic_tsc>::V203_ok,
+              "a payload that already admits wall-clock reads claims nothing a timestamp could break");
+static_assert(rules_of<int, at::hw::non_deterministic_tsc>::V203_ok, "no band, no claim");
+static_assert(live_rules<at::hw::non_deterministic_tsc>::V203_ok, "the pack-only view cannot see a payload");
+static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::V203_ok, "below the timestamp tier");
+
+// The three rules are three: each pack below trips exactly one of them.
+static_assert(!live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
+                          at::refined_with<hot_invariant>>::V201_ok
+              && live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
+                            at::refined_with<hot_invariant>>::V202_ok);
+static_assert(!live_rules<at::hw::privileged_msr>::V202_ok && live_rules<at::hw::privileged_msr>::V201_ok);
+static_assert(!rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V203_ok
+              && rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V201_ok);
+
+// The read alone still refuses nothing: a Pure payload with a tier below
+// the timestamp one is accepted through the bound view.
+static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
@@ -356,7 +413,7 @@ static_assert(rules_of<det<DetTier::Pure>>::valid);
 // rather than a floor because the three dispositions partition the
 // catalog — a floor here would let a rule fall out of all three and go
 // unnoticed.
-static_assert(col::pending_rule_count == 13);
+static_assert(col::pending_rule_count == 10);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -395,7 +452,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 21);
+static_assert(col::live_rule_count == 24);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -404,8 +461,8 @@ static_assert(col::live_rule_count == 21);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 21);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 13);
+static_assert(corpus_entries_with(col::Disposition::Live) == 24);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 10);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
@@ -472,8 +529,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 13) return 2;
-    if (col::live_rule_count != 21) return 3;
+    if (col::pending_rule_count != 10) return 2;
+    if (col::live_rule_count != 24) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -495,7 +552,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 21 || pending != 13 || absent != 21) return 9;
+    if (live != 24 || pending != 10 || absent != 21) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 

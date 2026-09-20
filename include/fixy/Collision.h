@@ -58,6 +58,7 @@
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/atoms/Dispatch.h>
 #include <fixy/atoms/Global.h>
+#include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Observe.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Regime.h>
@@ -144,7 +145,7 @@ struct grades {
 using all_atom_roster =
     ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
                                        ::fixy::atom::detail::dispatch_atom_roster,
-                                       ::fixy::atom::detail::global_atom_roster,
+                                       ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::hw_atom_roster,
                                        ::fixy::atom::detail::observe_atom_roster,
                                        ::fixy::atom::detail::os_atom_roster,
                                        ::fixy::atom::detail::regime_atom_roster,
@@ -187,7 +188,7 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 // any.  fixy/atoms/Regime.h left it first, taking the H, R and S
 // families live; fixy/atoms/Sync.h left it second, taking W001 and W002.
 inline constexpr Axis pending_axes[] = {
-    Axis::FpMode, Axis::HwInstruction, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
+    Axis::FpMode, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -277,14 +278,7 @@ inline constexpr pending_rule pending_rules[] = {
     {RuleCode::V101, Axis::SimdIsa,
      "Replay x a pinned SIMD ISA: a vector width chosen per host makes the reduction order host-dependent."},
     {RuleCode::V102, Axis::SimdIsa, "SIMD width exceeds the pinned ISA: the emitted vector does not fit the trunk."},
-    {RuleCode::V201, Axis::HwInstruction,
-     "HotPath x non-deterministic TSC: a serialising timestamp read is both slow and non-deterministic."},
-    {RuleCode::V202, Axis::HwInstruction,
-     "Privileged MSR access without an Init context: MSR access belongs to startup, where it can be ordered and "
-     "audited."},
-    {RuleCode::V203, Axis::HwInstruction,
-     "Replay x non-deterministic TSC: the timestamp differs per run, so replay "
-     "cannot be bit-exact."},
+    // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped.
     {RuleCode::V301, Axis::BarrierStrength,
      "HotPath x a full fence: a seq_cst fence drains the store buffer and costs ~30 ns on x86."},
     {RuleCode::V401, Axis::BarrierStrength,
@@ -365,6 +359,13 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"B001", Disposition::Live, "Row<Bg> x an observable surface x an unbounded resource"},
     {"B002", Disposition::Live, "an observability row outside the binding's effect row"},
 
+    // The hardware-instruction family, live since fixy/atoms/Hw.h shipped
+    // the five HwInstruction atoms (task #176).  V203 is the first rule
+    // to consume the payload's replay claim.
+    {"V201", Disposition::Live, "hot x a tier at or above NonDeterministicTsc"},
+    {"V202", Disposition::Live, "the PrivilegedMsr tier x an effect row with no Init"},
+    {"V203", Disposition::Live, "a replay-deterministic payload x a tier at or above NonDeterministicTsc"},
+
     // The rest wait on an axis with no atom.  pending_rules above carries
     // the theorem and names the axis for each.
     {"F101", Disposition::Pending, "Axis::FpMode"},
@@ -374,9 +375,6 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"F105", Disposition::Pending, "Axis::FpMode"},
     {"V101", Disposition::Pending, "Axis::SimdIsa"},
     {"V102", Disposition::Pending, "Axis::SimdIsa"},
-    {"V201", Disposition::Pending, "Axis::HwInstruction"},
-    {"V202", Disposition::Pending, "Axis::HwInstruction"},
-    {"V203", Disposition::Pending, "Axis::HwInstruction"},
     {"V301", Disposition::Pending, "Axis::BarrierStrength"},
     {"V401", Disposition::Pending, "Axis::BarrierStrength"},
     {"V402", Disposition::Pending, "Axis::MemoryScope"},
@@ -673,6 +671,27 @@ struct observability_row_of_<::fixy::atom::observe::surface<Es...>> {
     using type = ::foundation::effects::Row<Es...>;
 };
 
+// The hardware-instruction tier, read against a floor.  The primary is
+// false because the strict pole of HwInstruction is Unconstrained: a
+// binding that names no tier makes no claim about instruction classes,
+// so neither V201 nor V202 fires on it.  The chain order comes from
+// fixy/atoms/Hw.h's own at_or_above, so a rule and the atom header
+// cannot disagree about which way the ladder runs.
+template <::fixy::atom::hw::HwInstruction Floor, class G>
+struct hw_at_or_above_ : std::false_type {};
+template <::fixy::atom::hw::HwInstruction Floor, class G>
+    requires requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>,
+                                                     ::fixy::atom::hw::HwInstruction>
+struct hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or_above(G::tier, Floor)> {};
+
+// Whether the Effect row carries Init, which is the context V202 asks a
+// privileged tier to be reached from.  Same shape as row_admits_bg_.
+template <class G>
+struct row_admits_init_ : std::false_type {};
+template <::foundation::effects::Effect... Es>
+struct row_admits_init_<::fixy::atom::with<Es...>>
+    : std::bool_constant<((Es == ::foundation::effects::Effect::Init) || ...)> {};
+
 // The two wait classifications, lifted from a grade to a type-level
 // answer.  The primaries are false because the strict pole of
 // Synchronization is not a wait at all: a binding that names no strategy
@@ -893,6 +912,25 @@ struct rules_of {
     static constexpr bool may_run_unbounded = cost_unstated || unbounded_cost || space_unbounded;
     static constexpr bool B001_ok = !(row_bg && observes_something && may_run_unbounded);
 
+    // ── The hardware-instruction family, live since fixy/atoms/Hw.h ──
+    //
+    // The ladder is a chain where each tier admits every class below it,
+    // so "at or above NonDeterministicTsc" covers PrivilegedMsr too, and
+    // V201's old name — HotPathNondetTscOrPrivileged — needs no second
+    // clause.  V203 is the first rule to consume the payload's replay
+    // claim: the same tier that is too slow for the hot path is also
+    // non-deterministic by construction, and a payload claiming
+    // replay-determinism cannot survive it.
+    static constexpr bool hw_nondeterministic = detail::hw_at_or_above_<
+        ::fixy::atom::hw::HwInstruction::NonDeterministicTsc, typename G::template on<Axis::HwInstruction>>::value;
+    static constexpr bool hw_privileged = detail::hw_at_or_above_<
+        ::fixy::atom::hw::HwInstruction::PrivilegedMsr, typename G::template on<Axis::HwInstruction>>::value;
+    static constexpr bool row_init = detail::row_admits_init_<typename G::template on<Axis::Effect>>::value;
+
+    static constexpr bool V201_ok = !(hot && hw_nondeterministic);
+    static constexpr bool V202_ok = !(hw_privileged && !row_init);
+    static constexpr bool V203_ok = !(replay_deterministic && hw_nondeterministic);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -928,6 +966,7 @@ struct rules_of {
             rule_verdict{H002_ok, "H002"}, rule_verdict{H003_ok, "H003"}, rule_verdict{H010_ok, "H010"},
             rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
             rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
+            rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
         };
     }
 
@@ -1016,6 +1055,17 @@ struct rules_of {
                                "Observability names which PART of the declared row is observation; it is not a "
                                "second row and cannot widen the first. Add the effect to the Effect grade if the "
                                "operation really performs it, or drop it from the surface.");
+        static_assert(V201_ok, "V201: hot x an instruction tier at or above NonDeterministicTsc. A serialising "
+                               "timestamp read drains the pipeline, 20-40 cycles against a budget of tens of "
+                               "nanoseconds, and PrivilegedMsr sits above it on the ladder. Read the counter off "
+                               "the hot path, or drop the tier.");
+        static_assert(V202_ok, "V202: the PrivilegedMsr tier x an effect row with no Init. rdmsr, wrmsr, IN and OUT "
+                               "belong to startup, where they can be ordered and audited and where the ring-0 "
+                               "capability is held. Add Effect::Init to the row, or drop the tier.");
+        static_assert(V203_ok, "V203: a replay-deterministic payload x an instruction tier at or above "
+                               "NonDeterministicTsc. The payload's DetSafe band claims the same bits on every "
+                               "replay; a timestamp counter differs per run by construction. Lower the band, or "
+                               "drop the tier.");
         return valid;
     }
 
