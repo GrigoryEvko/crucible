@@ -54,6 +54,7 @@
 
 #include <cstddef>
 #include <meta>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -490,33 +491,46 @@ static_assert(rule_corpus_size == 54,
 // Every code the corpus says ships has an enumerator, and every code it
 // says is absent has none.  A rule written without a corpus entry, or
 // recorded as absent after being written, reddens here.
-[[nodiscard]] consteval bool corpus_and_rule_code_agree() noexcept {
+//
+// Both checks answer with the offending code rather than with a bool, so
+// the diagnostic names the rule instead of asking the reader to diff two
+// lists of fifty-four.
+
+namespace detail {
+
+[[nodiscard]] consteval std::string_view code_the_enum_disagrees_about_() noexcept {
     for (const corpus_entry& entry : rule_corpus) {
         const bool shipped = entry.disposition != Disposition::Absent;
-        if (detail::rule_code_names_(entry.code) != shipped) return false;
+        if (rule_code_names_(entry.code) != shipped) return entry.code;
     }
-    return true;
+    return {};
 }
-static_assert(corpus_and_rule_code_agree(),
-              "fixy/Collision.h: the rule corpus and the RuleCode enum disagree.  Either a code is in the enum "
-              "and the corpus records it as Absent, or the corpus records it as Live or Pending and the enum "
-              "does not name it.");
 
-// And the reverse direction, so an enumerator the corpus never heard of
-// cannot slip in.
-[[nodiscard]] consteval bool every_rule_code_is_in_the_corpus() noexcept {
-    bool complete = true;
+[[nodiscard]] consteval std::string_view code_the_corpus_never_listed_() noexcept {
+    std::string_view missing{};
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^RuleCode))) {
-        complete = complete && detail::corpus_lists_(std::meta::identifier_of(enumerator));
+        constexpr std::string_view name = std::meta::identifier_of(enumerator);
+        if (missing.empty() && !corpus_lists_(name)) missing = name;
     }
 #pragma GCC diagnostic pop
-    return complete;
+    return missing;
 }
-static_assert(every_rule_code_is_in_the_corpus(),
-              "fixy/Collision.h: a RuleCode enumerator is not listed in rule_corpus.  Add it with its "
-              "disposition, so the corpus stays the complete account of the 54 codes.");
+
+[[nodiscard]] consteval std::string_view named_(std::string_view lead, std::string_view code) noexcept {
+    return std::define_static_string(std::string{lead} + std::string{code});
+}
+
+}  // namespace detail
+
+static_assert(detail::code_the_enum_disagrees_about_().empty(),
+              detail::named_("fixy/Collision.h: the rule corpus and the RuleCode enum disagree about rule ",
+                             detail::code_the_enum_disagrees_about_()));
+
+static_assert(detail::code_the_corpus_never_listed_().empty(),
+              detail::named_("fixy/Collision.h: this RuleCode enumerator is in no rule_corpus entry: ",
+                             detail::code_the_corpus_never_listed_()));
 
 // pending_rules and the corpus are two hand-written lists of the same
 // set.  Comparing them catches an edit to one and not the other.
