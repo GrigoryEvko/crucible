@@ -32,6 +32,7 @@
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
+#include <fixy/Collision.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 
@@ -147,17 +148,19 @@ template <class... Atoms>
 concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() == ::fixy::axis_count);
 
 // ---------------------------------------------------------------------
-// Tier 5 and the collision rules.
+// Tier 5: the collision rules and the corpus.
 //
-// A11.2 writes ValidComposition over the collision rules and A11.3
-// writes NotInCorpus over the refused-combination corpus.  Both are
-// satisfied by everything until then, so the tier exists and is wired
-// from the day the class body is written, and landing either header is
-// a change to one concept rather than a change to the gate.
+// The collision rules are live.  NotInCorpus is still satisfied by
+// everything until A11.3 writes the refused-combination corpus, so the
+// tier is wired and landing that header is a change to one concept
+// rather than a change to the gate.
 //
-// TODO(A11.2): replace with the fold over the 54 collision rules.
+// The collision rules, folded in fixy/Collision.h.  A rule reads the
+// pack and nothing else, which is why this delegates the pack rather
+// than the fn: a rule that completed fn would recurse through fn's own
+// assertion of this concept.
 template <class T, class... Atoms>
-concept ValidComposition = true;
+concept ValidComposition = ::fixy::collision::live_rules<Atoms...>::valid;
 
 // TODO(A11.3): replace with the walk over the refused-combination corpus.
 template <class T, class... Atoms>
@@ -320,6 +323,15 @@ static_assert(IsAccepted<int>);
 static_assert(!AllAtomsWellFormed<not_an_atom>);
 static_assert(!IsAccepted<int, not_an_atom>);
 static_assert(!IsAccepted<void>);
+
+// Tier 5 reaches the gate: a pack whose atoms sit on different axes,
+// so tier 4 admits it, and which a collision rule still refuses.  Each
+// half alone is accepted, which is what says the rule and not the tier
+// is what refused the pair.
+static_assert(IsAccepted<int, ::fixy::atom::borrow>);
+static_assert(IsAccepted<int, ::fixy::atom::coroutine>);
+static_assert(!IsAccepted<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>, "R002 and L002 refuse this pair");
+static_assert(!IsAccepted<int, ::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>, "T001 refuses it");
 
 // The duplicate walk answers with an axis, and the tag it selects names
 // that axis.  Two atoms on one axis is the case; two atoms on two axes

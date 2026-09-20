@@ -101,6 +101,11 @@ fixy_test(test_atom)
 # The negative fixtures for the tiers arrive with A11.5.
 fixy_test(test_fn)
 
+# ── Task #109 (A11.2): the collision rules ───────────────────────────
+# Ten live rules, and twenty-two registered against the axis they wait
+# on.  The per-rule negative fixtures arrive with A11.4.
+fixy_test(test_collision)
+
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
 # names the clause and the two types it compared.
 fixy_neg_compile_test(neg_atom_cv_qualified_rejected
