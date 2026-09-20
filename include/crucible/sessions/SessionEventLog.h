@@ -7,9 +7,11 @@
 // is what stops a caller from silently swapping the two role fields.
 //
 // A step identifier is non-decreasing inside one log.  Recording does
-// not stamp the step itself: the caller mints one first.  Splitting the
-// two lets a writer take its step number atomically without holding the
-// log while it does so.
+// not stamp the step itself: the caller mints one first with
+// next_step().  The log has one writer.  A record is a plain vector
+// push with no lock, so the caller serialises its appends.  next_step()
+// mints the step id atomically, but that atomicity does not make a
+// concurrent append safe.
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
@@ -559,7 +561,9 @@ public:
     // carries no information.
     constexpr explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
-    // Safe to call from several recording threads at once.
+    // Minting a step id is atomic, so several threads may mint at once.
+    // This does not extend to append: the log has one writer, and a
+    // record races the backing vector if two threads run it together.
     [[nodiscard]] StepId next_step() noexcept {
         // The counter offers no fetch-and-bump operation, only a
         // conditional advance, so the read and the advance are composed

@@ -24,3 +24,5 @@
 # with '#'.  A blank line is skipped.
 
 include/crucible/bridges/RecordingPermissionedSessionHandle.h — include/crucible/bridges/RecordingSessionHandle.h close() passes the terminal tier as the sixth stop() argument — the crash-watched close() dropped the crash class, so the Stop event defaulted to Abort and replayed into the wrong recovery family
+
+include/crucible/sessions/SessionEventLog.h — include/crucible/safety/_Mutation.h OrderedAppendOnly::append is an unsynchronised vector push, so the log is single-writer — removes a false concurrency claim, no code change
