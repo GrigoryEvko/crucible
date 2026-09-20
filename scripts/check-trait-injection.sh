@@ -126,6 +126,17 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# The script's own absolute path, resolved once.
+#
+# Two places below re-invoke this script, and both used ${BASH_SOURCE[0]}
+# verbatim.  Under `bash scripts/check-trait-injection.sh` that is a
+# RELATIVE path, so a re-invocation from any other working directory
+# fails to find the file — and a self-test axis whose inner run silently
+# fails to start produces no output, which greps clean and passes
+# vacuously.  That is how the build-tree axis passed under relative
+# invocation while failing under the absolute one ctest uses.
+script_path="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+
 usage() {
     cat >&2 <<'USAGE'
 check-trait-injection.sh — substrate trait + fail-closed relation guard.
@@ -458,7 +469,7 @@ LEDGER
         }
 
         if CRUCIBLE_TRAIT_INJECTION_TEST_ROOT="$tmp_root" \
-           bash "${BASH_SOURCE[0]}" 2>"$scanner_stderr"; then
+           bash "$script_path" 2>"$scanner_stderr"; then
             self_test_fail 'planted specializations not caught.'
         fi
 
@@ -557,15 +568,38 @@ LEDGER
         build_cwd_stderr="$(mktemp)"
         (cd "$tmp_root/build/test" \
          && CRUCIBLE_TRAIT_INJECTION_TEST_ROOT="$tmp_root" \
-            bash "${BASH_SOURCE[0]}" 2>"$build_cwd_stderr" || true)
+            bash "$script_path" 2>"$build_cwd_stderr" || true)
         if grep -qF 'build/Testing/Temporary/LastTest.log' "$build_cwd_stderr"; then
             rm -f "$build_cwd_stderr"
             self_test_fail 'the build-tree exclude does not hold when the scanner runs from inside the build tree, so a generated artifact was scanned as source.'
         fi
         rm -f "$build_cwd_stderr"
 
+        # ── The self-test passes the way ctest invokes it ────────────
+        #
+        # ctest runs this script by an absolute path built from
+        # CMAKE_SOURCE_DIR, with the working directory inside the build
+        # tree.  Nothing covered that, and two defects hid in the gap at
+        # once: the script re-invoked itself through ${BASH_SOURCE[0]},
+        # which is relative under `bash scripts/...`, so a re-invocation
+        # from another directory failed to start and the axis that
+        # depended on it greped clean and passed on no evidence; and the
+        # build-tree exclude was anchored at the repo root rather than
+        # the scan root, which is the same path in production and a
+        # different one under --self-test.
+        #
+        # So the axis is the whole self-test again, run the way ctest
+        # runs it.  The env guard stops the recursion at one level.
+        if [ -z "${CRUCIBLE_TRAIT_INJECTION_SELF_TEST_NESTED:-}" ]; then
+            if ! (cd "$tmp_root/build/test" \
+                  && CRUCIBLE_TRAIT_INJECTION_SELF_TEST_NESTED=1 \
+                     bash "$script_path" --self-test >/dev/null 2>&1); then
+                self_test_fail 'the self-test does not pass when invoked by absolute path from a working directory inside a build tree, which is the invocation ctest uses.'
+            fi
+        fi
+
         rm -f "$scanner_stderr"
-        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured, a prose ledger naming every relation stays silent, and the build-tree exclude holds with the cwd inside the build tree.\n' >&2
+        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured, a prose ledger naming every relation stays silent, the build-tree exclude holds with the cwd inside the build tree, and the whole self-test passes again under the absolute-path, deep-cwd invocation ctest uses.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -630,9 +664,13 @@ for row in "${scan_table[@]}"; do
         # a negative-compile fixture's expected diagnostic was read as a
         # forbidden specialization.
         #
-        # The subshell anchors the globs where they read.  It does not
-        # change what is scanned, because the scan root stays absolute.
-        cd "$root" && rg --vimgrep --no-heading --multiline --pcre2 \
+        # The subshell anchors the globs where they read.  The anchor is
+        # the SCAN ROOT and not the repo root: the two are the same in
+        # production, and --self-test points the scan root at a fixture
+        # tree, so anchoring at the repo root would leave the fixture
+        # tree's own build directory unexcluded.  It does not change what
+        # is scanned, because the scan root stays absolute.
+        cd "$scan_root" && rg --vimgrep --no-heading --multiline --pcre2 \
             --glob '!build/**' \
             --glob '!build-*/**' \
             --glob '!cmake-build-*/**' \
