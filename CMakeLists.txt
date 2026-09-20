@@ -434,15 +434,6 @@ target_compile_options(crucible_dialect INTERFACE
   -fcontracts
 )
 
-# The CRUCIBLE_PGO block at the head of this file computes these.  Both
-# lists are empty when CRUCIBLE_PGO is off.
-if(_CRUCIBLE_PGO_COMPILE_FLAGS)
-  target_compile_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_COMPILE_FLAGS})
-endif()
-if(_CRUCIBLE_PGO_LINK_FLAGS)
-  target_link_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_LINK_FLAGS})
-endif()
-
 # FIXY-V-094 — crucible_fp_strict INTERFACE library defines THE FLOOR
 # for FP discipline across every consumer of `crucible`.  PUBLIC link
 # propagates the strict-IEEE-754 flag pack to every test / bench /
@@ -1466,6 +1457,17 @@ endif()
 target_compile_definitions(crucible_dialect INTERFACE
   _FORTIFY_SOURCE=3                     # 228  max glibc buffer checks
 )
+
+# The CRUCIBLE_PGO block at the head of this file computes these.  Both
+# lists are empty when CRUCIBLE_PGO is off.  They come after the warning
+# set above, because GCC takes the last of -Wfoo and -Wno-foo, and the
+# use flags switch one of those warnings off.
+if(_CRUCIBLE_PGO_COMPILE_FLAGS)
+  target_compile_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_COMPILE_FLAGS})
+endif()
+if(_CRUCIBLE_PGO_LINK_FLAGS)
+  target_link_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_LINK_FLAGS})
+endif()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 5: Debug-only — auto-init
