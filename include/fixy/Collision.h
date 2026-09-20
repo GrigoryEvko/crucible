@@ -63,6 +63,7 @@
 #include <fixy/atoms/Observe.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Regime.h>
+#include <fixy/atoms/Scope.h>
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
@@ -151,6 +152,7 @@ using all_atom_roster =
                                        ::fixy::atom::detail::observe_atom_roster,
                                        ::fixy::atom::detail::os_atom_roster,
                                        ::fixy::atom::detail::regime_atom_roster,
+                                       ::fixy::atom::detail::scope_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
                                        ::fixy::atom::detail::stdio_atom_roster,
                                        ::fixy::atom::detail::sync_atom_roster>;
@@ -190,7 +192,7 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 // any.  fixy/atoms/Regime.h left it first, taking the H, R and S
 // families live; fixy/atoms/Sync.h left it second, taking W001 and W002.
 inline constexpr Axis pending_axes[] = {
-    Axis::FpMode, Axis::SimdIsa, Axis::MemoryScope,
+    Axis::FpMode, Axis::SimdIsa,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -280,16 +282,14 @@ inline constexpr pending_rule pending_rules[] = {
     {RuleCode::V101, Axis::SimdIsa,
      "Replay x a pinned SIMD ISA: a vector width chosen per host makes the reduction order host-dependent."},
     {RuleCode::V102, Axis::SimdIsa, "SIMD width exceeds the pinned ISA: the emitted vector does not fit the trunk."},
-    // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped, and
-    // V301 when fixy/atoms/Barrier.h did.
+    // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped,
+    // V301 when fixy/atoms/Barrier.h did, and V401 when fixy/atoms/Scope.h
+    // did.  V401 read a scope AND a strength, so like W001 it moved axis
+    // between those two commits.
     //
-    // V401 reads a scope AND a strength, so like W001 it moved axis when
-    // the first of its two shipped: it waited on BarrierStrength until
-    // Barrier.h, and waits on MemoryScope now.
-    {RuleCode::V401, Axis::MemoryScope,
-     "Memory scope at or above cluster with a barrier below acq_rel: the publication reaches further than the fence "
-     "orders."},
-    {RuleCode::V402, Axis::MemoryScope,
+    // V402 reads a scope AND a pinned ISA, so it moves the same way: it
+    // waited on MemoryScope until Scope.h, and waits on SimdIsa now.
+    {RuleCode::V402, Axis::SimdIsa,
      "Memory scope across an architecture trunk: two vendor trunks meet only at the shared bottom and top, so a "
      "scope pinned on one does not compose with the other."},
 };
@@ -375,6 +375,11 @@ inline constexpr corpus_entry rule_corpus[] = {
     // the seven BarrierStrength atoms (task #176).
     {"V301", Disposition::Live, "hot x a fence at or above SeqCst"},
 
+    // The memory-scope family, live since fixy/atoms/Scope.h shipped the
+    // eight MemoryScope atoms (task #176).  V401 is the first rule to read
+    // two of the new axes together.
+    {"V401", Disposition::Live, "a scope at or above Cluster x a fence below AcqRel"},
+
     // The rest wait on an axis with no atom.  pending_rules above carries
     // the theorem and names the axis for each.
     {"F101", Disposition::Pending, "Axis::FpMode"},
@@ -384,8 +389,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"F105", Disposition::Pending, "Axis::FpMode"},
     {"V101", Disposition::Pending, "Axis::SimdIsa"},
     {"V102", Disposition::Pending, "Axis::SimdIsa"},
-    {"V401", Disposition::Pending, "Axis::MemoryScope"},
-    {"V402", Disposition::Pending, "Axis::MemoryScope"},
+    {"V402", Disposition::Pending, "Axis::SimdIsa"},
 
     // The twenty-one this layer cannot state.  Each note names the thing
     // that is missing, so the entry is a claim someone can check rather
@@ -707,6 +711,20 @@ template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
                                                      ::foundation::algebra::lattices::BarrierStrength>
 struct barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier::at_or_above(G::tier, Floor)> {};
 
+// The reached scope, read against a floor.  The primary is false: a
+// binding that names no scope publishes to nobody in particular, so
+// V401 has nothing to refuse on it.  The order is the lattice's own leq
+// through fixy/atoms/Scope.h, and that lattice is two trunks, so a scope
+// on the host trunk is NOT at or above an accelerator floor — Inner and
+// Cluster are incomparable — and a rule reading this stands down for it
+// rather than reading "incomparable" as "wide".
+template <::foundation::algebra::lattices::MemoryScope Floor, class G>
+struct scope_at_or_above_ : std::false_type {};
+template <::foundation::algebra::lattices::MemoryScope Floor, class G>
+    requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
+                                                      ::foundation::algebra::lattices::MemoryScope>
+struct scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at_or_above(G::scope, Floor)> {};
+
 // Whether the Effect row carries Init, which is the context V202 asks a
 // privileged tier to be reached from.  Same shape as row_admits_bg_.
 template <class G>
@@ -967,6 +985,24 @@ struct rules_of {
 
     static constexpr bool V301_ok = !(hot && barrier_seq_cst_or_above);
 
+    // ── The memory-scope family, live since fixy/atoms/Scope.h ────────
+    //
+    // A scope is how far a publication REACHES and a strength is what the
+    // fence ORDERS, and V401 is the rule that reads the two together: a
+    // publication that reaches a cluster or further needs a fence at or
+    // above acq_rel, or a reader it reaches can observe the write ahead
+    // of the data the writer ordered before it.  A binding that names a
+    // wide scope and no strength provides no fence at all, which is the
+    // same trap with nothing named, so the rule fires on it too.  The
+    // floor is read through the lattice's leq, so the host trunk is
+    // incomparable with Cluster and the rule stands down for it.
+    static constexpr bool scope_cluster_or_above = detail::scope_at_or_above_<
+        ::foundation::algebra::lattices::MemoryScope::Cluster, typename G::template on<Axis::MemoryScope>>::value;
+    static constexpr bool barrier_acq_rel_or_above = detail::barrier_at_or_above_<
+        ::foundation::algebra::lattices::BarrierStrength::AcqRel, typename G::template on<Axis::BarrierStrength>>::value;
+
+    static constexpr bool V401_ok = !(scope_cluster_or_above && !barrier_acq_rel_or_above);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -1003,7 +1039,7 @@ struct rules_of {
             rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
             rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
             rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
-            rule_verdict{V301_ok, "V301"},
+            rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"},
         };
     }
 
@@ -1107,6 +1143,10 @@ struct rules_of {
                                "about 30 ns on x86, against a budget bounded by the cache-coherence fabric at 10-40 "
                                "ns. Publish with a release store and read with an acquire load, or leave the hot "
                                "path.");
+        static_assert(V401_ok, "V401: a scope at or above Cluster x a fence below AcqRel. The publication reaches "
+                               "further than the fence orders, so a reader on another block can observe the write "
+                               "before the data the writer published ahead of it. Fence with acq_rel or stronger, "
+                               "or narrow the scope.");
         return valid;
     }
 

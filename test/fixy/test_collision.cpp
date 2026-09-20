@@ -453,6 +453,45 @@ static_assert(live_rules<at::barrier::full_fence>::V201_ok && live_rules<at::bar
               "the top of the fence ladder is not a hardware tier");
 
 // ---------------------------------------------------------------------
+// The memory-scope family, live since fixy/atoms/Scope.h (task #176).
+//
+// V401 is the first rule to read two of the new axes together, and the
+// lattice under the scope axis is two trunks, so the cells cover the
+// floor on the accelerator trunk, the shared top, the host trunk that
+// is incomparable with the floor, and the unnamed strength.
+
+static_assert(col::axis_has_an_atom<Axis::MemoryScope>);
+
+// V401 a scope at or above Cluster x a fence below AcqRel.
+static_assert(!live_rules<at::scope::cluster, at::barrier::release_store>::V401_ok);
+static_assert(!live_rules<at::scope::gpu, at::barrier::acquire_load>::V401_ok);
+static_assert(!live_rules<at::scope::system, at::barrier::compiler_barrier>::V401_ok,
+              "the shared top reaches everywhere, so it is at or above the floor");
+static_assert(!live_rules<at::scope::cluster>::V401_ok,
+              "no strength named provides no fence, which is the same trap with nothing said");
+static_assert(live_rules<at::scope::cluster, at::barrier::acq_rel>::V401_ok, "the twin: acq_rel is the floor");
+static_assert(live_rules<at::scope::gpu, at::barrier::seq_cst>::V401_ok);
+static_assert(live_rules<at::scope::system, at::barrier::full_fence>::V401_ok);
+static_assert(live_rules<at::scope::cta, at::barrier::release_store>::V401_ok, "below the cluster floor");
+static_assert(live_rules<at::scope::warp, at::barrier::none>::V401_ok);
+static_assert(live_rules<at::scope::thread>::V401_ok, "the shared bottom reaches nobody else");
+static_assert(live_rules<at::scope::inner, at::barrier::release_store>::V401_ok,
+              "Inner is incomparable with Cluster, so it is not at or above it and the rule stands down");
+static_assert(live_rules<at::scope::outer>::V401_ok, "Outer is on the host trunk too");
+static_assert(live_rules<at::barrier::none>::V401_ok, "no scope named publishes to nobody in particular");
+static_assert(live_rules<>::V401_ok);
+
+// V401 and V301 read the same strength axis and are two rules: the
+// fixture's pack trips V401 alone, and a hot seq_cst publication to the
+// whole system trips V301 alone.
+static_assert(live_rules<at::scope::cluster, at::barrier::release_store>::V301_ok
+              && !live_rules<at::scope::cluster, at::barrier::release_store>::V401_ok);
+static_assert(!live_rules<at::regime::hot, at::scope::system, at::barrier::seq_cst, at::cost_constant,
+                          at::refined_with<hot_invariant>>::V301_ok
+              && live_rules<at::regime::hot, at::scope::system, at::barrier::seq_cst, at::cost_constant,
+                            at::refined_with<hot_invariant>>::V401_ok);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
@@ -461,7 +500,7 @@ static_assert(live_rules<at::barrier::full_fence>::V201_ok && live_rules<at::bar
 // rather than a floor because the three dispositions partition the
 // catalog — a floor here would let a rule fall out of all three and go
 // unnoticed.
-static_assert(col::pending_rule_count == 9);
+static_assert(col::pending_rule_count == 8);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -500,7 +539,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 25);
+static_assert(col::live_rule_count == 26);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -509,8 +548,8 @@ static_assert(col::live_rule_count == 25);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 25);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 9);
+static_assert(corpus_entries_with(col::Disposition::Live) == 26);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 8);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
@@ -542,7 +581,9 @@ static_assert(every_absent_entry_gives_a_reason());
 // rule really has one.  Both halves, so the roster is not merely
 // self-consistent.
 static_assert(!col::axis_has_an_atom<Axis::FpMode>);
-static_assert(!col::axis_has_an_atom<Axis::MemoryScope>);
+// MemoryScope moved sides when fixy/atoms/Scope.h shipped, as Regime did
+// below; the V401 cells above are what it bought.
+static_assert(col::axis_has_an_atom<Axis::MemoryScope>);
 static_assert(col::axis_has_an_atom<Axis::Usage>);
 static_assert(col::axis_has_an_atom<Axis::Effect>);
 // Regime moved sides when fixy/atoms/Regime.h shipped.  The cell stays
@@ -577,8 +618,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 9) return 2;
-    if (col::live_rule_count != 25) return 3;
+    if (col::pending_rule_count != 8) return 2;
+    if (col::live_rule_count != 26) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -600,7 +641,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 25 || pending != 9 || absent != 21) return 9;
+    if (live != 26 || pending != 8 || absent != 21) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 

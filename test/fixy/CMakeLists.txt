@@ -304,6 +304,16 @@ fixy_neg_compile_test(neg_rule_v301_hot_seq_cst
   "Collision rule\\(s\\) V301:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the memory-scope family ────────────────────────────────
+#
+# One rule that reads two of the new axes together: a scope at or above
+# Cluster against a fence below AcqRel.  The pack names no regime, so
+# V301 stands down on the same strength axis.
+fixy_neg_compile_test(neg_rule_v401_wide_scope_weak_fence
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V401:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.
