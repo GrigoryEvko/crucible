@@ -302,52 +302,6 @@ static_assert(std::is_trivially_copyable_v<B>);
 
 static_assert(B::wrapper_kind() == "structural::Bits");
 
-inline void runtime_smoke_test() {
-    B b{};
-    if (!b.none()) std::abort();
-
-    b.set(F::A);
-    b.set(F::B);
-    if (b.popcount() != 2) std::abort();
-
-    B c = b;
-    if (c != b) std::abort();
-
-    B u = b | B{F::C};
-    if (u.popcount() != 3) std::abort();
-    if (!u.test(F::C)) std::abort();
-
-    B v = b | F::C;
-    if (v != u) std::abort();
-
-    B serialized = B::from_raw(static_cast<std::uint8_t>(0x0F));
-    if (!serialized.test(F::A)) std::abort();
-    if (!serialized.test(F::B)) std::abort();
-    if (!serialized.test(F::C)) std::abort();
-    if (!serialized.test(F::D)) std::abort();
-    if (serialized.popcount() != 4) std::abort();
-
-    serialized.toggle(F::A);
-    if (serialized.test(F::A)) std::abort();
-    serialized.toggle(F::A);
-    if (!serialized.test(F::A)) std::abort();
-
-    b.clear();
-    if (!b.none()) std::abort();
-
-    B d{};
-    d |= F::A;
-    d |= F::B;
-    if (d.popcount() != 2) std::abort();
-
-    B e{F::A};
-    B ne = ~e;
-    if (ne.test(F::A)) std::abort();
-    if (ne.popcount() != 7) std::abort();
-
-    if (B{F::A, F::C}.raw() != 0x05) std::abort();
-}
-
 }  // namespace detail::bits_self_test
 
 }  // namespace fixy

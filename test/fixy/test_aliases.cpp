@@ -79,10 +79,34 @@ constexpr PureInt pinned{Computation<Row<>, int>{42}, {}};
 static_assert(pinned.peek().extract() == 42);
 static_assert(fixy::tier_of(pinned) == fixy::DetSafeTier_v::Pure);
 
+// The alias types and the concept names must also compile outside a
+// static_assert operand, where consteval-versus-constexpr accessor
+// regressions and inline-body faults surface.  Nothing here can fail at
+// run time; the value is that the bodies are instantiated at all.
+void instantiate_every_alias_outside_an_assert() noexcept {
+    [[maybe_unused]] constexpr bool pure_is_pure = fixy::IsPure<fixy::PureRow>;
+    [[maybe_unused]] constexpr bool div_is_div = fixy::IsDiv<fixy::DivRow>;
+    [[maybe_unused]] constexpr bool st_is_st = fixy::IsST<fixy::STRow>;
+    [[maybe_unused]] constexpr bool all_is_all = fixy::IsAll<fixy::AllRow>;
+    [[maybe_unused]] constexpr auto pure_size = ::foundation::effects::row_size_v<fixy::PureRow>;
+    [[maybe_unused]] constexpr auto all_size = ::foundation::effects::row_size_v<fixy::AllRow>;
+
+    static_assert(fixy::IsPure<fixy::PureRow> && fixy::IsAll<fixy::AllRow>);
+
+    fixy::Pure<int> pure_value{};
+    fixy::Tot<Row<Effect::IO>, int> tot_value{};
+
+    [[maybe_unused]] auto pure_tier = fixy::tier_of(pure_value);
+    [[maybe_unused]] auto tot_tier = fixy::tier_of(tot_value);
+
+    static_assert(std::is_same_v<decltype(pure_value), fixy::Pure<int>>);
+    static_assert(std::is_same_v<decltype(tot_value), fixy::Tot<Row<Effect::IO>, int>>);
+}
+
 }  // namespace
 
 int main() {
-    fixy::runtime_smoke_test_aliases();
+    instantiate_every_alias_outside_an_assert();
 
     volatile int raw = 5;
     const int seed = raw;

@@ -1,9 +1,9 @@
 // Sentinel TU for fixy/Borrowed.h: the three views cost one pointer or
 // one span, the owner tag keeps two borrows apart, a borrow of a
 // temporary selects a deleted constructor, the detection surface
-// answers through the one reflection query, and the header's runtime
-// smoke test runs under the test flags.  The WeakRef null-dereference
-// contract is shown to abort.
+// answers through the one reflection query, and every accessor of the
+// three views answers on a value.  The WeakRef null-dereference contract
+// is shown to abort.
 //
 // Ported from test/test_is_borrowed.cpp, test/test_is_borrowed_ref.cpp
 // and the Borrowed and WeakRef calls of test/test_smoke_safety_wrappers.cpp.
@@ -132,11 +132,98 @@ int check_weak_ref_null_aborts() {
     return 0;
 }
 
+struct Holder {
+    int v = 0;
+};
+
+// Every accessor of the three views, and the equality each one carries.
+// A view is a value, so two views over the same range compare equal and
+// two over different ranges do not.
+int check_every_accessor() {
+    int x = 42;
+    BorrowedRef<int> r{x};
+    if (r.get() != 42) return 30;
+    if (*r != 42) return 31;
+    if (r.raw_ptr() != &x) return 32;
+
+    int y = 99;
+    BorrowedRef<int> other{y};
+    if (r == other) return 33;
+    BorrowedRef<int> r_copy = r;
+    if (!(r == r_copy)) return 34;
+
+    if (BorrowedRef<int>::from_raw_nonnull(&x).get() != 42) return 35;
+
+    Holder h{};
+    h.v = 7;
+    BorrowedRef<Holder> rh{h};
+    if (rh->v != 7) return 36;
+
+    B_A empty{};
+    if (!empty.empty() || empty.size() != 0) return 37;
+
+    int arr[5] = {10, 20, 30, 40, 50};
+    B_A b{arr};
+    if (b.size() != 5) return 38;
+    if (b.front() != 10 || b.back() != 50 || b[2] != 30) return 39;
+
+    int sum = 0;
+    for (int v : b)
+        sum += v;
+    if (sum != 150) return 40;
+
+    B_A prefix{arr, 2};
+    if (prefix.size() != 2) return 41;
+    if (b == prefix) return 42;
+    B_A b_copy = b;
+    if (!(b == b_copy)) return 43;
+
+    if (b.as_span().size() != 5) return 44;
+
+    auto window = b.subview(1, 3);
+    if (window.size() != 3) return 45;
+    if (window[0] != 20 || window[2] != 40) return 46;
+    if (!b.subview(0, 0).empty()) return 47;
+
+    WeakRef<int> w_empty{};
+    if (w_empty.has_value() || static_cast<bool>(w_empty)) return 48;
+    if (w_empty.try_get() != nullptr) return 49;
+
+    volatile int seed = 77;
+    int box = static_cast<int>(seed);
+    WeakRef<int> w{box};
+    if (!w.has_value() || !static_cast<bool>(w)) return 50;
+    if (w.try_get() != &box) return 51;
+    if (w.get() != box || *w != box) return 52;
+
+    struct Pair {
+        int a;
+        int b;
+    };
+    Pair p{box, box + 1};
+    WeakRef<Pair> wp{p};
+    if (wp->a != box || wp->b != box + 1) return 53;
+
+    w.reset();
+    if (w.has_value() || w.try_get() != nullptr) return 54;
+
+    // from_raw is the arm that accepts a null, unlike the reference
+    // constructor, so both of its outcomes are walked.
+    if (WeakRef<int>::from_raw(nullptr).has_value()) return 55;
+    WeakRef<int> from_full = WeakRef<int>::from_raw(&box);
+    if (!from_full.has_value() || from_full.try_get() != &box) return 56;
+
+    WeakRef<int> wa{box};
+    WeakRef<int> wb = wa;
+    if (!(wa == wb) || wa.try_get() != wb.try_get()) return 57;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::borrowed_self_test::runtime_smoke_test();
-
+    if (int rc = check_every_accessor(); rc != 0) return rc;
     if (int rc = check_views_over_a_vector(); rc != 0) return rc;
     if (int rc = check_weak_ref_null_aborts(); rc != 0) return rc;
 

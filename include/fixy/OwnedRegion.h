@@ -21,7 +21,7 @@
 // It briefly did so through `rebuild_parent_after_fork_<Whole>()`
 // instead.  That helper took no argument, so it proved nothing, and it
 // minted a Permission for any tag from any translation unit.  It is
-// gone (#169).  A rebuild has to consume the thing it reissues.
+// gone.  A rebuild has to consume the thing it reissues.
 //
 // Old spelling: include/crucible/safety/OwnedRegion.h, the detection
 // surface of include/crucible/safety/IsOwnedRegion.h and the Slice half
@@ -151,7 +151,7 @@ public:
     // This is the only way to recover a parent permission after a split.
     // There is deliberately no nullary rebuild: one that took no
     // argument would prove nothing, and the previous such helper minted
-    // a Permission for any tag from any translation unit (#169).
+    // a Permission for any tag from any translation unit.
     template <std::size_t... Is>
     [[nodiscard]] static OwnedRegion recombine(std::tuple<OwnedRegion<T, Slice<Tag, Is>>...>&& shards) noexcept {
         static_assert(sizeof...(Is) > 0, "recombine() needs at least one shard.");
@@ -254,7 +254,6 @@ static_assert(::foundation::permissions::well_authored_split_pack_v<detail::owne
 
 namespace detail::owned_region_self_test {
 
-struct smoke_tag {};
 struct test_tag_a {};
 struct test_tag_b {};
 
@@ -320,64 +319,6 @@ public:
 };
 static_assert(ArrayArena<BumpArena, int>);
 static_assert(!ArrayArena<int, int>);
-
-inline void runtime_smoke_test() {
-    int seed = 7;
-    ::foundation::effects::Alloc alloc_token{};
-    BumpArena arena{};
-
-    auto perm = ::foundation::permissions::mint_permission_root<smoke_tag>();
-    auto region =
-        OwnedRegion<int, smoke_tag>::adopt(alloc_token, arena, static_cast<std::size_t>(seed + 1), std::move(perm));
-    if (region.size() != 8u) std::abort();
-    if (region.empty()) std::abort();
-    if (region.data() == nullptr) std::abort();
-
-    for (std::size_t i = 0; i < region.size(); ++i) {
-        region.data()[i] = static_cast<int>(i) * seed;
-    }
-    int sum = 0;
-    for (int v : region)
-        sum += v;
-    if (sum != (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7) * seed) std::abort();
-
-    std::span<int> view = region.span();
-    if (view.size() != 8u) std::abort();
-    if (view.data() != region.data()) std::abort();
-    std::span<int const> cview = region.cspan();
-    if (cview.size() != 8u) std::abort();
-
-    auto shards = std::move(region).split_into<4>();
-    auto& s0 = std::get<0>(shards);
-    auto& s1 = std::get<1>(shards);
-    auto& s2 = std::get<2>(shards);
-    auto& s3 = std::get<3>(shards);
-    if (s0.size() != 2u || s1.size() != 2u || s2.size() != 2u || s3.size() != 2u) std::abort();
-    if (s0.data()[0] != 0 || s0.data()[1] != seed) std::abort();
-    if (s3.data()[1] != 7 * seed) std::abort();
-
-    int storage[3] = {seed, seed + 1, seed + 2};
-    auto wrap_perm = ::foundation::permissions::mint_permission_root<smoke_tag>();
-    auto wrapped = OwnedRegion<int, smoke_tag>::wrap(storage, 3u, std::move(wrap_perm));
-    if (wrapped.size() != 3u) std::abort();
-    if (wrapped.data() != storage) std::abort();
-    if (wrapped.data()[2] != seed + 2) std::abort();
-
-    auto empty_perm = ::foundation::permissions::mint_permission_root<smoke_tag>();
-    auto empty = OwnedRegion<int, smoke_tag>::adopt(alloc_token, arena, 0u, std::move(empty_perm));
-    if (!empty.empty()) std::abort();
-    if (empty.data() != nullptr) std::abort();
-    if (empty.size() != 0u) std::abort();
-
-    // The volatile bound defeats constant folding, so the trait reads
-    // survive dead-code elimination.
-    volatile std::size_t const cap = 4;
-    for (std::size_t i = 0; i < cap; ++i) {
-        if (!is_owned_region_v<OR_int_a>) std::abort();
-        if (is_owned_region_v<int>) std::abort();
-        if (!IsOwnedRegion<OR_int_a&&>) std::abort();
-    }
-}
 
 }  // namespace detail::owned_region_self_test
 

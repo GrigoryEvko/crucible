@@ -131,27 +131,6 @@ static_assert(!can_release<DummyTag>);
 static_assert(!can_release<void*>);
 static_assert(!can_release<int>);
 
-// The empty state is reachable without a real mapping, and every query
-// answers on it.  release_ takes the not-mapped branch, so the
-// destructor of an empty region issues no syscall.
-inline void runtime_smoke_test() {
-    SmokeOwnedMmap empty{};
-    if (empty.is_mapped()) std::abort();
-    if (empty.size() != 0u) std::abort();
-    if (empty.data() != MAP_FAILED) std::abort();
-
-    SmokeOwnedMmap moved = std::move(empty);
-    if (moved.is_mapped()) std::abort();
-
-    SmokeOwnedMmap assigned{};
-    assigned = std::move(moved);
-    if (assigned.is_mapped()) std::abort();
-
-    auto [addr, len] = std::move(assigned).release(SampleLeak{});
-    if (addr != MAP_FAILED) std::abort();
-    if (len != 0u) std::abort();
-}
-
 }  // namespace detail::owned_mmap_self_test
 
 }  // namespace fixy

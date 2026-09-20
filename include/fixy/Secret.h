@@ -365,45 +365,4 @@ static_assert(!detail::secret_api_lock::ExposesGetMut<Secret<int>>,
               "extractor is ergonomic, and on a classified value it bypasses "
               "declassify<Policy>().");
 
-namespace detail::secret_self_test {
-
-// Declassification routes through a substrate path distinct from the
-// ordinary read and consume paths, so a divergence between the
-// compile-time and run-time behaviour of that path would classify the
-// wrong bytes without any assertion noticing.
-inline void runtime_smoke_test() {
-    int seed = 17;
-
-    Secret<int> s = mint_secret<int>(seed * 2);
-
-    Secret<int> t = std::move(s).transform([](int&& v) { return v + 1; });
-    int declassified = std::move(t).template declassify<tags::secret_policy::AuditedLogging>();
-    if (declassified != 35) std::abort();
-
-    Secret<int> m = mint_secret<int>(seed);
-    int m_out = std::move(m).template declassify<tags::secret_policy::WireSerialize>();
-    if (m_out != 17) std::abort();
-
-    Secret<int> hp = mint_secret<int>(seed);
-    int hp_out = std::move(hp).template declassify<tags::secret_policy::HashForCompare>();
-    if (hp_out != 17) std::abort();
-
-    Secret<unsigned long long> key = mint_secret<unsigned long long>(0xCAFEBABE12345678ULL);
-    key.zeroize();
-    // The zeroized value cannot be inspected without declassifying it,
-    // so it is compared against a freshly zeroized one instead.
-    Secret<unsigned long long> zero = mint_secret<unsigned long long>(0ULL);
-    auto k_out = std::move(key).template declassify<tags::secret_policy::HashForCompare>();
-    auto z_out = std::move(zero).template declassify<tags::secret_policy::HashForCompare>();
-    if (k_out != z_out) std::abort();
-
-    if (!is_secret_v<S_int>) std::abort();
-    if (!is_secret_v<S_payload const&>) std::abort();
-    if (is_secret_v<int>) std::abort();
-    if (is_secret_v<LookalikeSecret>) std::abort();
-    if (!IsSecret<S_int&&>) std::abort();
-}
-
-}  // namespace detail::secret_self_test
-
 }  // namespace fixy

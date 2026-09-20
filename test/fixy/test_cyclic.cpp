@@ -84,11 +84,46 @@ int check_runtime_lap() {
     return 0;
 }
 
+// The anchors the consteval walks pin, run again through a volatile
+// seed so the counter is read rather than folded.
+int check_runtime_anchors() {
+    volatile std::uint32_t seed = 3;
+    C8 c{static_cast<std::uint32_t>(seed)};
+
+    if (c.raw() != 3u) return 20;
+    if (c.index() != 3u) return 21;
+    if (c.index_back(0) != 2u) return 22;
+    if (c.index_back(3) != 7u) return 23;
+
+    c.advance();
+    if (c.index() != 4u || c.raw() != 4u) return 24;
+
+    c.advance_by(5);
+    if (c.raw() != 9u || c.index() != 1u) return 25;
+
+    if (static_cast<std::uint32_t>(c) != 9u) return 26;
+
+    // The wrap at the ceiling of the counter's own type stays slot exact.
+    volatile std::uint8_t hi = 255;
+    C4x8 n{static_cast<std::uint8_t>(hi)};
+    if (n.index() != 3u) return 27;
+    n.advance();
+    if (n.raw() != 0u || n.index() != 0u) return 28;
+
+    C8 d{};
+    if (d.raw() != 0u || d.index() != 0u) return 29;
+    C8 e{};
+    if (!(d == e)) return 30;
+    e.advance();
+    if (d == e) return 31;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::cyclic_self_test::runtime_smoke_test();
-
+    if (int rc = check_runtime_anchors(); rc != 0) return rc;
     if (int rc = check_runtime_lap(); rc != 0) return rc;
 
     return 0;

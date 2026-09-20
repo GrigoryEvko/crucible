@@ -1,7 +1,6 @@
 // Sentinel TU for fixy/Mutation.h: every wrapper lands in the storage
-// regime its lattice selects, every constructor is behind its mint, the
-// header's runtime smoke test runs under the test flags, and each
-// contract that a violation can reach at runtime is shown to abort.
+// regime its lattice selects, every constructor is behind its mint, and
+// each contract that a violation can reach at runtime is shown to abort.
 
 #include <fixy/Mutation.h>
 
@@ -140,10 +139,14 @@ static_assert(!::fixy::mint_write_once_non_null<int*>().has_value());
 
 int check_append_only() {
     AppendOnly<int> log = ::fixy::mint_append_only<int>();
-    log.append(1);
+    if (!log.empty()) return 9;
+    // emplace constructs in place and append copies; both grow the log
+    // by one and neither offers a way to shrink it.
+    log.emplace(1);
     log.append(2);
     log.append(3);
     // No erase is exposed, so the only way out of the log is reading it.
+    if (log.empty()) return 15;
     if (log.size() != 3) return 10;
     if (log[2] != 3) return 11;
     if (log.front() != 1 || log.back() != 3) return 12;
@@ -630,8 +633,6 @@ int check_contracts_abort() {
 }  // namespace
 
 int main() {
-    ::fixy::detail::mutation_self_test::runtime_smoke_test();
-
     if (int rc = check_append_only(); rc != 0) return rc;
     if (int rc = check_monotonic(); rc != 0) return rc;
     if (int rc = check_ordered_append_only(); rc != 0) return rc;

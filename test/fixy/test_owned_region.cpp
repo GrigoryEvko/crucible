@@ -284,15 +284,28 @@ void test_split_then_rebuild_through_recombine() {
     }
 }
 
+// A zero-length request is the one arm of adopt that asks the arena for
+// nothing.  The region it returns has to answer as empty on all three
+// queries, because a null pointer with a non-zero count would read as a
+// live region.
+void test_adopt_zero_length() {
+    Arena arena;
+    auto region = OwnedRegion<int, DataA>::adopt(test_alloc_token(), arena, 0, mint_permission_root<DataA>());
+
+    CRUCIBLE_TEST_REQUIRE(region.empty());
+    CRUCIBLE_TEST_REQUIRE(region.size() == 0);
+    CRUCIBLE_TEST_REQUIRE(region.data() == nullptr);
+    CRUCIBLE_TEST_REQUIRE(region.span().empty());
+}
+
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_owned_region:\n");
 
-    ::fixy::detail::owned_region_self_test::runtime_smoke_test();
-
     test_compile_time_properties();  // pure compile-time
 
+    run_test("test_adopt_zero_length", test_adopt_zero_length);
     run_test("test_adopt_and_view", test_adopt_and_view);
     run_test("test_wrap_borrows_storage", test_wrap_borrows_storage);
     run_test("test_split_into_chunk_math", test_split_into_chunk_math);

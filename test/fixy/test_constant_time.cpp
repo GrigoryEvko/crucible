@@ -2,11 +2,11 @@
 // at compile time and at run time, and the trace does not branch on the
 // operand.
 //
-// The header's self-test covers the anchors and the corners it reasons
-// about.  This TU adds the property the header states but does not
-// check: eq over every single-byte difference position, and less over an
-// exhaustive 8-bit cross product, which is where a borrow-propagation
-// defect would hide.
+// Three kinds of cell sit here.  The exhaustive ones walk an 8-bit cross
+// product at compile time and every single-byte difference position at
+// run time, which is where a borrow-propagation defect would hide.  The
+// corner cells reach the widths and the maximal operands the exhaustive
+// ones cannot.  The anchors are the small-magnitude cases.
 
 #include <fixy/ConstantTime.h>
 
@@ -96,11 +96,58 @@ int check_select_and_cswap_at_runtime() {
     return 0;
 }
 
+// The widths and the corners the exhaustive 8-bit cross product above
+// cannot reach.  Three corners matter: a narrow width, where promotion
+// to int could sign-extend into the shift; a maximal operand, where a
+// truncated subtraction would lose the borrow; and a pair further apart
+// than half the range, which no borrow-free idiom handles.
+int check_every_width_and_corner() {
+    volatile std::uint32_t seed32_v = 0xDEADBEEFu;
+    volatile std::uint64_t seed64_v = 0xCAFEBABEDEADBEEFull;
+    const auto seed32 = static_cast<std::uint32_t>(seed32_v);
+    const auto seed64 = static_cast<std::uint64_t>(seed64_v);
+
+    if (ct::mask_from_bit<std::uint32_t>(0u) != 0u) return 30;
+    if (ct::mask_from_bit<std::uint32_t>(1u) != static_cast<std::uint32_t>(-1)) return 31;
+    if (ct::mask_from_bit<std::uint8_t>(1u) != static_cast<std::uint8_t>(-1)) return 32;
+    if (ct::mask_from_bit<std::uint64_t>(1u) != static_cast<std::uint64_t>(-1)) return 33;
+
+    // Only the 32-bit and 64-bit widths are exercised for select.  At
+    // uint8_t and uint16_t the body promotes through int before
+    // truncating back to T, which the project's conversion warnings
+    // reject.  That is a property of the primitive, not of this test.
+    if (ct::select<std::uint64_t>(1u, seed64, 0u) != seed64) return 34;
+    if (ct::select<std::uint64_t>(0u, seed64, 0u) != 0u) return 35;
+
+    if (ct::less<std::uint64_t>(1ull, 2ull) != 1u) return 36;
+    if (ct::less<std::uint64_t>(2ull, 2ull) != 0u) return 37;
+    if (ct::less<std::uint64_t>(3ull, 2ull) != 0u) return 38;
+    if (ct::less<std::uint8_t>(std::uint8_t{5}, std::uint8_t{250}) != std::uint8_t{1}) return 39;
+    if (ct::less<std::uint8_t>(std::uint8_t{250}, std::uint8_t{5}) != std::uint8_t{0}) return 40;
+    if (ct::less<std::uint16_t>(std::uint16_t{0x000A}, std::uint16_t{0xFFFF}) != std::uint16_t{1}) return 41;
+    if (ct::less<std::uint16_t>(std::uint16_t{0xFFFF}, std::uint16_t{0x000A}) != std::uint16_t{0}) return 42;
+    if (ct::less<std::uint32_t>(0xFFFFFFFFu, 1u) != 0u) return 43;
+    if (ct::less<std::uint32_t>(1u, 0xFFFFFFFFu) != 1u) return 44;
+    if (ct::less<std::uint64_t>(0xFFFFFFFFFFFFFFFFull, 1ull) != 0ull) return 45;
+    if (ct::less<std::uint64_t>(1ull, 0xFFFFFFFFFFFFFFFFull) != 1ull) return 46;
+    if (ct::less<std::uint8_t>(std::uint8_t{0}, std::uint8_t{0x80}) != std::uint8_t{1}) return 47;
+    if (ct::less<std::uint64_t>(0ull, 0x8000000000000000ull) != 1ull) return 48;
+    if (ct::less<std::uint64_t>(0x8000000000000000ull, 0ull) != 0ull) return 49;
+
+    if (ct::is_zero<std::uint8_t>(0u) != 1u) return 50;
+    if (ct::is_zero<std::uint32_t>(seed32) != 0u) return 51;
+    if (ct::is_zero<std::uint64_t>(seed64) != 0u) return 52;
+
+    // Two empty spans carry no differing byte, so they compare equal.
+    if (!ct::eq(std::span<const std::byte>{}, std::span<const std::byte>{})) return 53;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::ct::detail::ct_self_test::runtime_smoke_test();
-
+    if (int rc = check_every_width_and_corner(); rc != 0) return rc;
     if (int rc = check_eq_finds_every_difference_position(); rc != 0) return rc;
     if (int rc = check_select_and_cswap_at_runtime(); rc != 0) return rc;
 

@@ -1,9 +1,9 @@
 // Sentinel TU for fixy/OwnedMmap.h: the region is move-only, the leak
 // witness admits only the leak atom, and release binds to an rvalue.
 //
-// The header's own self-test reaches only the empty state, because a
-// real region needs a syscall.  This TU maps one anonymous page, so the
-// unmap path, the move path and the grant-gated release all run.
+// The empty state is the only one reachable without a syscall, so it is
+// checked first.  Then this TU maps one anonymous page, so the unmap
+// path, the move path and the grant-gated release all run.
 
 #include <fixy/OwnedMmap.h>
 
@@ -100,11 +100,33 @@ int check_move_assign_unmaps_the_replaced_region() {
     return 0;
 }
 
+// The empty state is reachable without a syscall, and every query
+// answers on it.  release_ takes the not-mapped branch, so the
+// destructor of an empty region issues no syscall.
+int check_empty_state() {
+    Region empty{};
+    if (empty.is_mapped()) return 40;
+    if (empty.size() != 0u) return 41;
+    if (empty.data() != MAP_FAILED) return 42;
+
+    Region moved = std::move(empty);
+    if (moved.is_mapped()) return 43;
+
+    Region assigned{};
+    assigned = std::move(moved);
+    if (assigned.is_mapped()) return 44;
+
+    auto [addr, len] = std::move(assigned).release(SampleLeak{});
+    if (addr != MAP_FAILED) return 45;
+    if (len != 0u) return 46;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::owned_mmap_self_test::runtime_smoke_test();
-
+    if (int rc = check_empty_state(); rc != 0) return rc;
     if (int rc = check_live_mapping(); rc != 0) return rc;
     if (int rc = check_release_hands_the_region_back(); rc != 0) return rc;
     if (int rc = check_move_assign_unmaps_the_replaced_region(); rc != 0) return rc;

@@ -1,6 +1,7 @@
 // Sentinel TU for fixy/Qtt.h: the two usage grades collapse to sizeof(T),
 // the wrapper is move-only with one door, consume takes an rvalue only,
-// and the header's runtime smoke test runs under the test flags.
+// and the mutating accessors write through a live wrapper without
+// spending the usage the grade counts.
 //
 // There is no runtime double-consume check to exercise; the header
 // states the decision.
@@ -164,11 +165,53 @@ int check_consume_and_move() {
     return 0;
 }
 
+// The two doors that write through a live wrapper: the mutable peek and
+// the swap, in both its free and its member spelling.  Neither counts as
+// a use, so the linear bound is still owed after them.
+int check_peek_mut_and_swap() {
+    volatile int raw = 41;
+    const int seed = raw;
+
+    Linear<int> a = ::fixy::mint_linear<int>(seed + 1);
+    if (a.peek() != 42) return 30;
+    a.peek_mut() = 100;
+    if (a.peek() != 100) return 31;
+
+    Linear<int> b = ::fixy::mint_linear<int>(7);
+    swap(a, b);
+    if (a.peek() != 7 || b.peek() != 100) return 32;
+    a.swap(b);
+    if (a.peek() != 100 || b.peek() != 7) return 33;
+
+    // The bound is still owed, so both ends are consumed.
+    if (std::move(a).consume() != 100) return 34;
+    if (std::move(b).consume() != 7) return 35;
+
+    Affine<int> aa = ::fixy::mint_affine<int>(seed + 1);
+    if (aa.peek() != 42) return 36;
+    aa.peek_mut() = 100;
+    if (aa.peek() != 100) return 37;
+
+    Affine<int> ab = ::fixy::mint_affine<int>(7);
+    swap(aa, ab);
+    if (aa.peek() != 7 || ab.peek() != 100) return 38;
+    aa.swap(ab);
+    if (aa.peek() != 100 || ab.peek() != 7) return 39;
+
+    if (std::move(aa).consume() != 100) return 40;
+
+    // The zero-uses corner of the at-most-once bound: ab leaves scope
+    // without being consumed or dropped, which is the whole difference
+    // between Affine and Linear.
+    if (ab.peek() != 7) return 41;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::qtt_self_test::runtime_smoke_test();
-
+    if (int rc = check_peek_mut_and_swap(); rc != 0) return rc;
     if (int rc = check_drop_branches(); rc != 0) return rc;
     if (int rc = check_consume_and_move(); rc != 0) return rc;
 

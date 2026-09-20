@@ -75,25 +75,6 @@ static_assert(std::is_nothrow_move_assignable_v<OwnedFile>);
 static_assert(std::is_nothrow_default_constructible_v<OwnedFile>);
 static_assert(std::is_nothrow_destructible_v<OwnedFile>);
 
-// The empty state is the only one reachable without a real stream, and
-// every query answers on it.  Closing an empty handle reports success,
-// because there was nothing whose flush could fail.
-inline void runtime_smoke_test() {
-    OwnedFile empty{};
-    if (empty.is_open()) std::abort();
-    if (static_cast<bool>(empty)) std::abort();
-    if (empty.get() != nullptr) std::abort();
-    if (empty.release() != nullptr) std::abort();
-    if (empty.close_explicit() != 0) std::abort();
-
-    OwnedFile moved = std::move(empty);
-    if (moved.is_open()) std::abort();
-
-    OwnedFile assigned{};
-    assigned = std::move(moved);
-    if (assigned.is_open()) std::abort();
-}
-
 }  // namespace detail::owned_file_self_test
 
 }  // namespace fixy

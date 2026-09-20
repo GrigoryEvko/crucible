@@ -136,11 +136,58 @@ int check_runtime_word() {
     return 0;
 }
 
+// The mutators and the whole-word operators, run rather than folded.
+// The complement is over the underlying word and not over the declared
+// flags, so a four-flag enum in a byte leaves seven bits set.
+int check_runtime_flag_algebra() {
+    PermBits b{};
+    if (!b.none()) return 20;
+
+    b.set(Perm::Read);
+    b.set(Perm::Write);
+    if (b.popcount() != 2) return 21;
+
+    PermBits copy = b;
+    if (copy != b) return 22;
+
+    PermBits joined = b | PermBits{Perm::Exec};
+    if (joined.popcount() != 3) return 23;
+    if (!joined.test(Perm::Exec)) return 24;
+
+    // The enum-typed and the word-typed right operands agree.
+    if ((b | Perm::Exec) != joined) return 25;
+
+    PermBits serialized = PermBits::from_raw(static_cast<std::uint8_t>(0x0F));
+    if (!serialized.test(Perm::Read) || !serialized.test(Perm::Write)) return 26;
+    if (!serialized.test(Perm::Exec) || !serialized.test(Perm::Sticky)) return 27;
+    if (serialized.popcount() != 4) return 28;
+
+    serialized.toggle(Perm::Read);
+    if (serialized.test(Perm::Read)) return 29;
+    serialized.toggle(Perm::Read);
+    if (!serialized.test(Perm::Read)) return 30;
+
+    b.clear();
+    if (!b.none()) return 31;
+
+    PermBits accumulated{};
+    accumulated |= Perm::Read;
+    accumulated |= Perm::Write;
+    if (accumulated.popcount() != 2) return 32;
+
+    PermBits complement = ~PermBits{Perm::Read};
+    if (complement.test(Perm::Read)) return 33;
+    if (complement.popcount() != 7) return 34;
+
+    if (PermBits{Perm::Read, Perm::Exec}.raw() != 0x05) return 35;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::bits_self_test::runtime_smoke_test();
-
+    if (int rc = check_runtime_flag_algebra(); rc != 0) return rc;
     if (int rc = check_runtime_word(); rc != 0) return rc;
 
     return 0;

@@ -1,9 +1,10 @@
 // Sentinel TU for fixy/Stale.h: the wrapper lands in the stored-grade
 // regime, its diagnostic surface agrees with the substrate, the
 // detection surface answers through the one reflection query, and the
-// header's runtime smoke test runs under the test flags.  The weaken
-// contract is shown to abort at runtime; its constant-expression form
-// is test/fixy/neg/neg_stale_weakened_downwards.cpp.
+// semiring answers the same at run time as in a constant expression,
+// including the saturating arm no constant-expression cell reaches.  The
+// weaken contract is shown to abort at runtime; its constant-expression
+// form is test/fixy/neg/neg_stale_weakened_downwards.cpp.
 //
 // Ported from test/test_is_stale.cpp and the Stale cells of
 // test/test_migration_verification.cpp.
@@ -93,11 +94,66 @@ int check_weaken_aborts_downwards() {
     return 0;
 }
 
+// The semiring operations against values the compiler cannot fold.  The
+// constant-expression cells in the header reach only the unsaturated arm
+// of the multiply, so the clamp at the top of the range is checked here
+// and nowhere else.
+int check_semiring_at_runtime() {
+    volatile std::uint64_t seed = 3;
+    const auto near_top = SS::top().value - 2;
+
+    Stale<int> a = Stale<int>::at(10, static_cast<std::uint64_t>(seed));
+    Stale<int> b = Stale<int>::at(20, static_cast<std::uint64_t>(seed) + 5);
+    Stale<int> inf = Stale<int>::at_infinity(99);
+
+    if (!a.is_finite() || a.is_fresh()) return 20;
+    if (!inf.is_infinite()) return 21;
+    if (!a.fresher_than(b) || !a.no_staler_than(b)) return 22;
+
+    // join keeps the staler grade, meet the fresher one, and neither
+    // touches the value.
+    const Stale<int> watermark = a.combine_max(b);
+    if (watermark.staleness().value != 8 || watermark.peek() != 10) return 23;
+    const Stale<int> freshest = a.combine_min(b);
+    if (freshest.staleness().value != 3 || freshest.peek() != 10) return 24;
+
+    // Infinity absorbs under join and is ignored under meet.
+    if (!a.combine_max(inf).is_infinite()) return 25;
+    if (!a.combine_min(inf).is_finite()) return 26;
+
+    // Multiplication in this semiring is addition of the grades.
+    Stale<int> chain = a.compose_add(b);
+    if (chain.staleness().value != 11 || chain.peek() != 10) return 27;
+    if (!a.compose_add(inf).is_infinite()) return 28;
+    if (a.advance_by(5).staleness().value != 8) return 29;
+    if (a.advance_by(0).staleness().value != 3) return 30;
+
+    // The saturating arm: a step past the top of the range clamps to
+    // infinity rather than wrapping to a fresh grade.
+    Stale<int> almost = Stale<int>::at(1, near_top);
+    if (!almost.advance_by(5).is_infinite()) return 31;
+    if (!almost.compose_add(Stale<int>::at(2, 5)).is_infinite()) return 32;
+
+    // The default and the two named mints land where they claim.
+    if (Stale<int>{}.staleness() != SS::bottom()) return 33;
+    if (!Stale<int>::fresh(42).is_fresh()) return 34;
+    if (Stale<int>::at(7, 100).staleness().value != 100) return 35;
+
+    chain.peek_mut() = 99;
+    if (chain.peek() != 99) return 36;
+
+    // The rvalue overloads carry the value out rather than copying it.
+    Stale<int> moved = std::move(a).combine_max(b);
+    if (moved.peek() != 10 || moved.staleness().value != 8) return 37;
+    if (!std::move(moved).weaken(inf.staleness()).is_infinite()) return 38;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::stale_self_test::runtime_smoke_test();
-
+    if (int rc = check_semiring_at_runtime(); rc != 0) return rc;
     if (int rc = check_weaken_aborts_downwards(); rc != 0) return rc;
 
     return 0;

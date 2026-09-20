@@ -478,7 +478,10 @@ static_assert(IsRefinementPredicate<::fixy::pole::pred::True>,
               "A named empty default-constructible predicate must satisfy "
               "IsRefinementPredicate.");
 
-namespace found_037_witness {
+// What IsRefinementPredicate admits and refuses, on four shapes: the
+// two that carry state or a constructor argument, and the empty
+// default-constructible one that a capture-less lambda produces.
+namespace refinement_predicate_shape_witness {
 struct StatefulPredicate {
     int threshold = 0;
     [[nodiscard]] constexpr bool operator()(int v) const noexcept { return v > threshold; }
@@ -501,7 +504,7 @@ static_assert(std::is_default_constructible_v<CaptureLessLambdaType>);
 static_assert(IsRefinementPredicate<CaptureLessLambdaType>,
               "A capture-less lambda is empty and default-constructible, so "
               "IsRefinementPredicate must admit it.");
-}  // namespace found_037_witness
+}  // namespace refinement_predicate_shape_witness
 
 // A forge-phase source carries its phase as a non-type parameter and stays
 // empty, so the empty-marker gate admits every instantiation.  A refactor

@@ -238,10 +238,10 @@ inline constexpr pending_rule pending_rules[] = {
     {RuleCode::H010, Axis::Regime,
      "HotPath x Row<Bg>: a function cannot be both on the hot path (<=40 ns intra-socket, CLAUDE.md SIX) and in "
      "background context. H001 and H003 both miss a HotPath x Bg x cost::Constant binding, which is still a context "
-     "contradiction. FIXY-FOUND-063."},
+     "contradiction."},
     {RuleCode::R001, Axis::Regime,
      "Coroutine x HotPath: a coroutine frame costs an indirect call plus a state spill at every suspension point, "
-     "and one resume breaches the hot-path budget. FIXY-FOUND-071."},
+     "and one resume breaches the hot-path budget."},
     {RuleCode::S001, Axis::Regime,
      "Stdio x HotPath: buffered stdio takes a lock and may block; neither belongs on a path budgeted in "
      "nanoseconds."},
@@ -318,7 +318,9 @@ static_assert(every_pending_axis_is_still_empty(),
 
 static_assert(pending_rule_count == 22, "the pending-rule count is pinned; changing it is a deliberate act");
 static_assert(live_rule_count == 10, "the live-rule count is pinned; changing it is a deliberate act");
-static_assert(pending_axis_count == 8, "eight axes have no atom; see task #176");
+static_assert(pending_axis_count == 8,
+              "the count of atom-less axes is pinned: a change here means an axis gained or lost its "
+              "first atom, which every_pending_axis_is_still_empty above reports in detail");
 
 // ---------------------------------------------------------------------
 // Reading a grade.
@@ -427,13 +429,13 @@ struct live_rules {
                                "repr<ReprKind::Atomic>.");
         static_assert(P010_ok, "P010: ghost x Row<Alloc|IO|Block>. A ghost binding is erased at codegen and emits no "
                                "instructions, but each of those three effects requires emitted code. Drop the ghost "
-                               "grade, or drop the observable effect. FIXY-FOUND-064.");
+                               "grade, or drop the observable effect.");
         static_assert(L007_ok, "L007: borrow x Row<Bg>. When the background thread runs the body, the caller's frame "
                                "may have unwound and the borrow dangles. Move ownership into the closure, or drop "
-                               "the Bg atom. FIXY-FOUND-065.");
+                               "the Bg atom.");
         static_assert(T001_ok, "T001: capability x trust::unverified. A capability mints a non-revocable "
                                "authorization token that consumers treat as proof of authority, which a binding of "
-                               "unverified provenance cannot establish. FIXY-FOUND-070.");
+                               "unverified provenance cannot establish.");
         static_assert(R002_ok, "R002: coroutine x borrow. A coroutine resumes after the caller's frame may have "
                                "unwound, dangling the borrow.");
         static_assert(R003_ok, "R003: coroutine x Row<Bg>. The suspension and the background hand-off are two "

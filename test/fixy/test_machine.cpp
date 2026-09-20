@@ -1,8 +1,8 @@
 // Sentinel TU for fixy/Machine.h: the machine costs its state, the
 // constructor is behind its two doors, a transition is admitted only by
 // an edge in the relation the machine names, the three Mach.h helpers
-// project and gate on that relation, and the header's runtime smoke
-// test runs under the test flags.
+// project and gate on that relation, and the walk runs a second time
+// through a volatile seed so the state is not folded away.
 //
 // Ported from test/test_fixy_mach_transitions.cpp and the Machine cells
 // of test/test_fixy_mach_safety.cpp.  The two edges the old test opted
@@ -123,8 +123,29 @@ static_assert(walk_per_machine() == 42);
 }
 static_assert(walk_shared() == 43);
 
+namespace {
+
+// The same two walks a second time, through a volatile seed, so the
+// state travels in a register rather than being folded away.
+int check_runtime_walk() {
+    volatile int seed = 42;
+    auto m = mint_machine<int>(static_cast<int>(seed));
+    if (m.data() != 42) return 10;
+    auto m2 = transition_to(std::move(m), static_cast<int>(seed) + 57);
+    if (m2.data() != 99) return 11;
+
+    auto m_disc = mint_machine<Disconnected, ^^connection_edges>();
+    auto m_conn = transition_to(std::move(m_disc), Connecting{static_cast<int>(seed)});
+    auto m_done = transition_to(std::move(m_conn), Connected{static_cast<int>(seed) + 1});
+    if (m_done.data().fd != 43) return 12;
+
+    return 0;
+}
+
+}  // namespace
+
 int main() {
-    ::fixy::detail::machine_self_test::runtime_smoke_test();
+    if (int rc = check_runtime_walk(); rc != 0) return rc;
 
     auto m = mint_machine<int>(42);
     auto m2 = transition_to(std::move(m), int{99});

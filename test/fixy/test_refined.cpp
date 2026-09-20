@@ -1,13 +1,12 @@
 // Sentinel TU for fixy/Refined.h: the two wrappers collapse to sizeof(T),
 // every bare-value constructor is behind its mint, the checked mint runs
 // the predicate at consteval and at runtime, the implication relation is
-// the admitted namespace and nothing else, and the header's three runtime
-// smoke tests run under the test flags.
+// the admitted namespace and nothing else, and every combinator is driven
+// with arguments the compiler cannot fold.
 //
 // Ported from test/test_smoke_safety_wrappers.cpp, test/test_safety_compile.cpp
 // and test/test_is_refined.cpp, whose Refined cells were calls into the old
-// headers' self-tests.  Those self-tests moved with the header; the cells
-// here are what the old files never stated.
+// headers' self-tests.
 
 #include <fixy/Refined.h>
 
@@ -300,14 +299,162 @@ int check_contracts_abort() {
     return 0;
 }
 
+// The mint overload that names the value type, the trusted door's value
+// passthrough, and each named alias built over a predicate.
+int check_refined_doors_and_aliases() {
+    int volatile vol = 42;
+    int seed = vol;
+
+    auto named = fixy::mint_refined<fixy::positive, int>(seed);
+    if (named.value() != 42) return 40;
+    static_assert(std::is_same_v<decltype(named), Refined<fixy::positive, int>>);
+
+    // The trusted door carries a value the predicate would refuse.
+    int sentinel = -seed;
+    Refined<fixy::positive, int> trusted = fixy::mint_refined_trusted<fixy::positive>(sentinel);
+    if (trusted.value() != -42) return 41;
+
+    Refined<fixy::positive, int> lo = fixy::mint_refined<fixy::positive>(seed);
+    Refined<fixy::positive, int> hi = fixy::mint_refined<fixy::positive>(seed + 1);
+    if ((lo <=> hi) != std::strong_ordering::less) return 42;
+
+    Refined<fixy::bounded_above<128u>, unsigned int> capped =
+        fixy::mint_refined<fixy::bounded_above<128u>>(static_cast<unsigned int>(seed));
+    if (capped.value() != 42u) return 43;
+
+    Refined<fixy::in_range<0, 100>, int> ranged = fixy::mint_refined<fixy::in_range<0, 100>>(seed);
+    if (ranged.value() != 42) return 44;
+
+    int arr[3] = {1, 2, 3};
+    std::span<int> sp{arr};
+    Refined<fixy::length_ge<1>, std::span<int>> at_least_one = fixy::mint_refined<fixy::length_ge<1>>(sp);
+    if (at_least_one.value().size() != 3) return 45;
+
+    fixy::NonZero<int> non_zero = fixy::mint_refined<fixy::non_zero>(seed);
+    if (non_zero.value() != 42) return 46;
+
+    fixy::NonEmpty<std::span<int>> non_empty = fixy::mint_refined<fixy::non_empty>(sp);
+    if (non_empty.value().size() != 3) return 47;
+
+    // The refinement rides inside the linear wrapper, so the proof
+    // survives the one use the wrapper allows.
+    fixy::LinearRefined<fixy::positive, int> linear =
+        fixy::mint_linear<Refined<fixy::positive, int>>(fixy::mint_refined<fixy::positive>(seed));
+    if (linear.peek().value() != 42) return 48;
+    if (std::move(linear).consume().into() != 42) return 49;
+
+    return 0;
+}
+
+// The sealed twin has no into(), so its doors are the two mints, the
+// promotion from an unsealed Refined, and the value-copy operations.
+int check_sealed_doors() {
+    int volatile vol = 5;
+    int seed = vol;
+
+    SealedRefined<fixy::positive, int> five = fixy::mint_sealed_refined<fixy::positive>(seed);
+    if (five.value() != 5) return 60;
+
+    auto named = fixy::mint_sealed_refined<fixy::positive, int>(seed);
+    if (named.value() != 5) return 61;
+    static_assert(std::is_same_v<decltype(named), SealedRefined<fixy::positive, int>>);
+
+    int sentinel = -3 * seed / 5;
+    SealedRefined<fixy::positive, int> trusted = fixy::mint_sealed_refined_trusted<fixy::positive>(sentinel);
+    if (trusted.value() != -3) return 62;
+
+    Refined<fixy::positive, int> unsealed = fixy::mint_refined<fixy::positive>(seed * 2);
+    SealedRefined<fixy::positive, int> promoted{std::move(unsealed)};
+    if (promoted.value() != 10) return 63;
+
+    SealedRefined<fixy::positive, int> same = fixy::mint_sealed_refined<fixy::positive>(seed);
+    if (!(five == same)) return 64;
+    SealedRefined<fixy::positive, int> lower = fixy::mint_sealed_refined<fixy::positive>(seed - 1);
+    if ((lower <=> five) != std::strong_ordering::less) return 65;
+
+    SealedRefined<fixy::positive, int> copied = five;
+    if (copied.value() != 5) return 66;
+    SealedRefined<fixy::positive, int> moved = std::move(copied);
+    if (moved.value() != 5) return 67;
+
+    return 0;
+}
+
+// Driving the combinators with non-constant arguments and a move-only
+// payload catches the consteval, substitution and inline-body bugs that
+// a block of compile-time assertions alone would mask.  Nothing here can
+// fail at run time; the value is that the bodies are instantiated.
+void instantiate_every_combinator_at_runtime() noexcept {
+    int volatile vol = 42;  // defeats constant folding
+    int x = vol;
+    constexpr auto pred = fixy::all_of<fixy::positive, fixy::bounded_above<100>>;
+    bool ok = pred(x);
+    static_cast<void>(ok);
+
+    Refined<fixy::all_of<fixy::positive, fixy::bounded_above<100>>, int> composed =
+        fixy::mint_refined<fixy::all_of<fixy::positive, fixy::bounded_above<100>>>(x);
+    static_cast<void>(composed);
+
+    // The wrapper must not demand a copyable payload, which a combinator
+    // could reintroduce by accident.  Minting through the trusted door
+    // keeps this about type composition rather than about the predicate
+    // being callable on a move-only value.
+    struct MoveOnly {
+        int v_ = 0;
+        constexpr MoveOnly() noexcept = default;
+        constexpr explicit MoveOnly(int v) noexcept : v_{v} {}
+        MoveOnly(const MoveOnly&) = delete;
+        MoveOnly(MoveOnly&&) noexcept = default;
+        MoveOnly& operator=(const MoveOnly&) = delete;
+        MoveOnly& operator=(MoveOnly&&) noexcept = default;
+    };
+    static_assert(!std::is_copy_constructible_v<MoveOnly>);
+    static_assert(std::is_move_constructible_v<MoveOnly>);
+
+    using RmoT = Refined<fixy::positive, MoveOnly>;
+    MoveOnly mo{vol};
+    RmoT rmo = fixy::mint_refined_trusted<fixy::positive>(std::move(mo));
+    static_assert(sizeof(RmoT) == sizeof(MoveOnly), "Refined<P, MoveOnly> must EBO-collapse to sizeof(MoveOnly) "
+                                                    "regardless of T's copyability");
+    static_cast<void>(rmo);
+
+    alignas(64) int buf[16] = {};
+    fixy::AlignedTo<64, int*> ap = fixy::mint_refined<fixy::aligned<64>>(static_cast<int*>(buf));
+    static_cast<void>(ap);
+
+    std::array<int, 8> arr8_runtime{};
+    fixy::Sized<8, std::array<int, 8>> sized = fixy::mint_refined<fixy::exact_size<8>>(arr8_runtime);
+    static_cast<void>(sized);
+
+    fixy::Bounded<0, 100, int> bd = fixy::mint_refined<fixy::in_range<0, 100>>(x);
+    static_cast<void>(bd);
+
+    fixy::Capped<255, std::uint32_t> cap =
+        fixy::mint_refined<fixy::bounded_above<255>>(static_cast<std::uint32_t>(vol));
+    static_cast<void>(cap);
+
+    fixy::Floored<1, int> fl = fixy::mint_refined<fixy::bounded_below<1>>(x);
+    static_cast<void>(fl);
+
+    std::size_t volatile big = 1024;
+    fixy::DivisibleByN<4, std::size_t> dN = fixy::mint_refined<fixy::divisible_by<4>>(big);
+    static_cast<void>(dN);
+
+    // The composed predicate accepts a pointer argument because both of
+    // its conjuncts do.
+    Refined<fixy::all_of<fixy::non_null, fixy::aligned<64>>, void*> aligned_nonnull_ptr =
+        fixy::mint_refined<fixy::all_of<fixy::non_null, fixy::aligned<64>>>(static_cast<void*>(buf));
+    static_cast<void>(aligned_nonnull_ptr);
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::refined_self_test::runtime_smoke_test();
-    ::fixy::detail::sealed_refined_self_test::runtime_smoke_test();
-    ::fixy::detail::refined_algebra_self_test::runtime_smoke_test();
+    instantiate_every_combinator_at_runtime();
 
     if (int rc = check_value_paths(); rc != 0) return rc;
+    if (int rc = check_refined_doors_and_aliases(); rc != 0) return rc;
+    if (int rc = check_sealed_doors(); rc != 0) return rc;
     if (int rc = check_contracts_abort(); rc != 0) return rc;
     return 0;
 }

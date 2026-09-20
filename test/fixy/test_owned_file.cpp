@@ -2,9 +2,9 @@
 // state answers every query, and close_explicit reports the flush result
 // the destructor cannot.
 //
-// The header's own self-test reaches only the empty state, because a
-// real stream needs a file.  This TU opens one through tmpfile, so the
-// close path, the release path and the move-assign-over-a-live-handle
+// The empty state is the only one reachable without a file, so it is
+// checked first.  Then this TU opens a real stream through tmpfile, so
+// the close path, the release path and the move-assign-over-a-live-handle
 // path all run for real.
 
 #include <fixy/OwnedFile.h>
@@ -82,11 +82,31 @@ int check_release_hands_the_handle_back() {
     return 0;
 }
 
+// The empty state is reachable without a real stream, and every query
+// answers on it.  Closing an empty handle reports success, because there
+// was nothing whose flush could fail.
+int check_empty_state() {
+    OwnedFile empty{};
+    if (empty.is_open()) return 40;
+    if (static_cast<bool>(empty)) return 41;
+    if (empty.get() != nullptr) return 42;
+    if (empty.release() != nullptr) return 43;
+    if (empty.close_explicit() != 0) return 44;
+
+    OwnedFile moved = std::move(empty);
+    if (moved.is_open()) return 45;
+
+    OwnedFile assigned{};
+    assigned = std::move(moved);
+    if (assigned.is_open()) return 46;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::owned_file_self_test::runtime_smoke_test();
-
+    if (int rc = check_empty_state(); rc != 0) return rc;
     if (int rc = check_live_stream(); rc != 0) return rc;
     if (int rc = check_move_transfers_ownership(); rc != 0) return rc;
     if (int rc = check_release_hands_the_handle_back(); rc != 0) return rc;

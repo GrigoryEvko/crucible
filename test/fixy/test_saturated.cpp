@@ -110,11 +110,50 @@ int check_runtime_matches_consteval() {
     return 0;
 }
 
+// The carrier holds two fields, and every door that fills them has to
+// fill both.  The equality above is a constant expression; these are the
+// same claims against values the compiler cannot fold.
+int check_carrier_shape() {
+    using Sat64 = Saturated<std::uint64_t>;
+
+    Sat64 empty{};
+    if (empty.value() != 0u || empty.was_clamped()) return 20;
+
+    Sat64 converted = std::uint64_t{777};
+    if (converted.value() != 777u || converted.was_clamped()) return 21;
+
+    Sat64 flagged{std::uint64_t{888}, true};
+    if (flagged.value() != 888u || !flagged.was_clamped()) return 22;
+
+    const auto add_ok = add_sat_checked<std::uint64_t>(10, 20);
+    if (add_ok.value() != 30u || add_ok.was_clamped()) return 23;
+
+    const auto sub_clamped = sub_sat_checked<std::uint64_t>(5, 10);
+    if (sub_clamped.value() != 0u || !sub_clamped.was_clamped()) return 24;
+
+    const auto mul_ok = mul_sat_checked<std::uint64_t>(7, 6);
+    if (mul_ok.value() != 42u || mul_ok.was_clamped()) return 25;
+
+    // The flag is part of the identity, so two carriers holding the same
+    // value but a different flag are not equal.
+    if (!(Sat64{std::uint64_t{5}, false} == Sat64{std::uint64_t{5}, false})) return 26;
+    if (Sat64{std::uint64_t{5}, false} == Sat64{std::uint64_t{5}, true}) return 27;
+
+    // The explicit conversion releases the value and drops the flag.
+    if (static_cast<std::uint64_t>(Sat64{std::uint64_t{5}, true}) != 5u) return 28;
+
+    const Sat64 src{std::uint64_t{0xDEADBEEFCAFEBABEull}, true};
+    Sat64 dst;
+    dst = src;
+    if (dst.value() != src.value() || dst.was_clamped() != src.was_clamped()) return 29;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::saturated_self_test::runtime_smoke_test();
-
+    if (int rc = check_carrier_shape(); rc != 0) return rc;
     if (int rc = check_runtime_matches_consteval(); rc != 0) return rc;
 
     return 0;

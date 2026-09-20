@@ -1,8 +1,7 @@
 // Sentinel TU for fixy/Secret.h: the classification collapses to
 // sizeof(T), the wrapper is move-only with one door, declassification is
-// the only exit and takes an rvalue, every policy tag leaves through its
-// own edge and nothing else does, and the header's runtime smoke test
-// runs under the test flags.
+// the only exit and takes an rvalue, and every policy tag leaves through
+// its own edge and nothing else does.
 //
 // Cells ported from test/test_safety.cpp and the Secret rows of
 // test/test_migration_verification.cpp and test/test_graded_extract.cpp;
@@ -202,11 +201,31 @@ int check_move_transfer() {
     return 0;
 }
 
+// Declassification routes through a substrate path distinct from the
+// ordinary read and consume paths, and each policy names its own edge.
+// A divergence between the compile-time and the run-time behaviour of
+// one edge would classify the wrong bytes with no assertion noticing,
+// so every edge a cell below does not already walk is walked here.
+int check_each_policy_edge() {
+    int seed = 17;
+
+    Secret<int> s = mint_secret<int>(seed * 2);
+    Secret<int> t = std::move(s).transform([](int&& v) { return v + 1; });
+    if (std::move(t).declassify<secret_policy::AuditedLogging>() != 35) return 50;
+
+    Secret<int> wire = mint_secret<int>(seed);
+    if (std::move(wire).declassify<secret_policy::WireSerialize>() != 17) return 51;
+
+    Secret<int> hashed = mint_secret<int>(seed);
+    if (std::move(hashed).declassify<secret_policy::HashForCompare>() != 17) return 52;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::secret_self_test::runtime_smoke_test();
-
+    if (int rc = check_each_policy_edge(); rc != 0) return rc;
     if (int rc = check_transform_and_declassify(); rc != 0) return rc;
     if (int rc = check_size_forwarder(); rc != 0) return rc;
     if (int rc = check_zeroize(); rc != 0) return rc;

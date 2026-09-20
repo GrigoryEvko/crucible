@@ -230,50 +230,6 @@ static_assert(Sat64::wrapper_kind() == "structural::Saturated");
 static_assert(std::is_arithmetic_v<float>);
 static_assert(sizeof(Saturated<float>) == 8);
 
-inline void runtime_smoke_test() {
-    Sat64 a{};
-    if (a.value() != 0 || a.was_clamped()) std::abort();
-
-    Sat64 b = uint64_t{777};
-    if (b.value() != 777 || b.was_clamped()) std::abort();
-
-    Sat64 c{uint64_t{888}, true};
-    if (c.value() != 888 || !c.was_clamped()) std::abort();
-
-    auto add_ok = add_sat_checked<uint64_t>(10, 20);
-    if (add_ok.value() != 30 || add_ok.was_clamped()) std::abort();
-
-    auto add_clamped = add_sat_checked<uint8_t>(uint8_t{200}, uint8_t{100});
-    if (add_clamped.value() != std::numeric_limits<uint8_t>::max()) std::abort();
-    if (!add_clamped.was_clamped()) std::abort();
-
-    auto sub_clamped = sub_sat_checked<uint64_t>(5, 10);
-    if (sub_clamped.value() != 0 || !sub_clamped.was_clamped()) std::abort();
-
-    auto mul_clamped = mul_sat_checked<uint8_t>(uint8_t{20}, uint8_t{20});
-    if (mul_clamped.value() != std::numeric_limits<uint8_t>::max()) std::abort();
-    if (!mul_clamped.was_clamped()) std::abort();
-
-    auto mul_ok = mul_sat_checked<uint64_t>(7, 6);
-    if (mul_ok.value() != 42 || mul_ok.was_clamped()) std::abort();
-
-    Sat64 eq_a{uint64_t{5}, false};
-    Sat64 eq_b{uint64_t{5}, false};
-    Sat64 eq_c{uint64_t{5}, true};
-    if (!(eq_a == eq_b)) std::abort();
-    if (eq_a == eq_c) std::abort();
-
-    auto raw = static_cast<uint64_t>(eq_c);
-    if (raw != 5) std::abort();
-
-    Sat64 src{uint64_t{0xDEADBEEFCAFEBABEull}, true};
-    Sat64 dst;
-    dst = src;
-    if (dst.value() != src.value() || dst.was_clamped() != src.was_clamped()) {
-        std::abort();
-    }
-}
-
 }  // namespace detail::saturated_self_test
 
 }  // namespace fixy

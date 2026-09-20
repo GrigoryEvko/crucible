@@ -213,32 +213,4 @@ static_assert(CanSanitize<tags::source::External>);
 static_assert(CanSanitize<tags::source::FromUserPath>);
 static_assert(!CanSanitize<::fixy::detail::retag_policy_test::NeverFrom>);
 
-// The header is made of templates and inline functions, so a
-// static_assert inside it proves nothing about a body that no
-// translation unit instantiates.  This walks the rules the predicates
-// carry, and a sentinel translation unit calls it.
-inline void runtime_smoke_test() {
-    namespace pt = sanitize::path_traversal;
-    using fs_path = std::filesystem::path;
-
-    if (!pt::check_no_dotdot(fs_path{"/var/cipher/objects"})) std::abort();
-    if (pt::check_no_dotdot(fs_path{""}).error() != PathTraversalError::Empty) std::abort();
-    if (pt::check_no_dotdot(fs_path{"/var/../etc/passwd"}).error() != PathTraversalError::DotDotComponent) std::abort();
-
-    if (pt::check_absolute_root_locked(fs_path{"/var/cipher"}, fs_path{"/home/user"}).error()
-        != PathTraversalError::EscapesAnchor)
-        std::abort();
-    if (!pt::check_absolute_root_locked(fs_path{"/var/cipher/objects"}, fs_path{"/var/cipher"})) std::abort();
-
-    auto tainted = mint_tagged<tags::source::External>(fs_path{"/var/cipher/objects"});
-    auto clean = sanitize_path(std::move(tainted));
-    if (!clean.has_value()) std::abort();
-    if (clean->value() != fs_path{"/var/cipher/objects"}) std::abort();
-
-    auto escaping = mint_tagged<tags::source::External>(fs_path{"../etc/passwd"});
-    auto refused = sanitize_path(std::move(escaping));
-    if (refused.has_value()) std::abort();
-    if (refused.error() != PathTraversalError::DotDotComponent) std::abort();
-}
-
 }  // namespace fixy::detail::path_self_test

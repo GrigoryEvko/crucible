@@ -114,11 +114,73 @@ int check_runtime_indexing() {
     return 0;
 }
 
+// The whole-array operations: the two constructors, the two fills, the
+// ordering, the span view, equality and swap.
+int check_whole_array_operations() {
+    using FA8 = FixedArray<int, 8>;
+
+    FA8 zeroed{};
+    for (std::size_t i = 0; i < 8; ++i)
+        if (zeroed[i] != 0) return 20;
+
+    FA8 counted{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
+    int sum = 0;
+    for (auto v : counted)
+        sum += v;
+    if (sum != 36) return 21;
+
+    const auto filled = FA8::fill_with(99);
+    if (filled.front() != 99 || filled.back() != 99) return 22;
+
+    zeroed.fill(7);
+    for (std::size_t i = 0; i < 8; ++i)
+        if (zeroed[i] != 7) return 23;
+
+    const auto i5 = mint_refined<bounded_above<FA8::capacity - 1>>(std::size_t{5});
+    if (counted.at(i5) != 6) return 24;
+    if (counted.at<0>() != 1 || counted.at<7>() != 8) return 25;
+
+    // The ordering is lexicographic over the elements, so a difference
+    // in the last slot decides it.
+    FA8 ord_b{std::in_place, 1, 2, 3, 4, 5, 6, 7, 9};
+    if (!std::is_lt(counted <=> ord_b)) return 26;
+    if (!std::is_gt(ord_b <=> counted)) return 27;
+
+    const auto view = counted.as_span();
+    if (view.size() != 8) return 28;
+    int span_sum = 0;
+    for (auto v : view)
+        span_sum += v;
+    if (span_sum != 36) return 29;
+
+    FA8 eq_a = FA8::fill_with(5);
+    FA8 eq_b = FA8::fill_with(5);
+    if (!(eq_a == eq_b)) return 30;
+    eq_b.fill(4);
+    if (eq_a == eq_b) return 31;
+
+    FA8 sw_a{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
+    FA8 sw_b = FA8::fill_with(0);
+    sw_a.swap(sw_b);
+    if (sw_b.front() != 1 || sw_a.front() != 0) return 32;
+
+    // The alignment specifier reaches the elements, because the storage
+    // member sits at offset zero.
+    alignas(64) FixedArray<std::int64_t, 8> aligned_buf{};
+    if (std::bit_cast<std::uintptr_t>(aligned_buf.data()) % 64 != 0) return 33;
+
+    FixedArray<std::int64_t, 4> wide{};
+    if (wide.size() != 4) return 34;
+    for (std::size_t i = 0; i < 4; ++i)
+        if (wide[i] != 0) return 35;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::fixed_array_self_test::runtime_smoke_test();
-
+    if (int rc = check_whole_array_operations(); rc != 0) return rc;
     if (int rc = check_runtime_indexing(); rc != 0) return rc;
 
     return 0;

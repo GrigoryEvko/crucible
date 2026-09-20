@@ -191,27 +191,4 @@ static_assert(sizeof(Tot<AllRow, void*>) == sizeof(Computation<AllRow, void*>));
 
 }  // namespace detail::aliases_self_test
 
-// The alias types and concept names must also compile outside a
-// static_assert operand, where consteval-versus-constexpr accessor
-// regressions and inline-body faults surface.
-inline void runtime_smoke_test_aliases() noexcept {
-    [[maybe_unused]] constexpr bool pure_is_pure = IsPure<PureRow>;
-    [[maybe_unused]] constexpr bool div_is_div = IsDiv<DivRow>;
-    [[maybe_unused]] constexpr bool st_is_st = IsST<STRow>;
-    [[maybe_unused]] constexpr bool all_is_all = IsAll<AllRow>;
-    [[maybe_unused]] constexpr auto pure_size = ::foundation::effects::row_size_v<PureRow>;
-    [[maybe_unused]] constexpr auto all_size = ::foundation::effects::row_size_v<AllRow>;
-
-    static_assert(IsPure<PureRow> && IsAll<AllRow>);
-
-    Pure<int> pure_value{};
-    Tot<Row<Effect::IO>, int> tot_value{};
-
-    [[maybe_unused]] auto pure_tier = tier_of(pure_value);
-    [[maybe_unused]] auto tot_tier = tier_of(tot_value);
-
-    static_assert(std::is_same_v<decltype(pure_value), Pure<int>>);
-    static_assert(std::is_same_v<decltype(tot_value), Tot<Row<Effect::IO>, int>>);
-}
-
 }  // namespace fixy

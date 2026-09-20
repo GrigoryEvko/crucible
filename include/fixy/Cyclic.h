@@ -156,37 +156,6 @@ static_assert(C16::capacity == 16 && C16::mask == 15);
 
 static_assert(C8::wrapper_kind() == "structural::Cyclic");
 
-inline void runtime_smoke_test() {
-    volatile uint32_t seed = 3;
-    C8 c{static_cast<uint32_t>(seed)};
-
-    if (c.raw() != 3) std::abort();
-    if (c.index() != 3) std::abort();
-    if (c.index_back(0) != 2) std::abort();
-    if (c.index_back(3) != 7) std::abort();
-
-    c.advance();
-    if (c.index() != 4 || c.raw() != 4) std::abort();
-
-    c.advance_by(5);
-    if (c.raw() != 9 || c.index() != 1) std::abort();
-
-    if (static_cast<uint32_t>(c) != 9) std::abort();
-
-    volatile uint8_t hi = 255;
-    Cyclic<uint8_t, 4> n{static_cast<uint8_t>(hi)};
-    if (n.index() != 3) std::abort();
-    n.advance();
-    if (n.raw() != 0 || n.index() != 0) std::abort();
-
-    C8 d{};
-    if (d.raw() != 0 || d.index() != 0) std::abort();
-    C8 e{};
-    if (!(d == e)) std::abort();
-    e.advance();
-    if (d == e) std::abort();
-}
-
 }  // namespace detail::cyclic_self_test
 
 }  // namespace fixy

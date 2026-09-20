@@ -227,19 +227,6 @@ static_assert(!std::is_constructible_v<ConnMachine, Disconnected>,
 }
 static_assert(walks_the_relation());
 
-inline void runtime_smoke_test() {
-    volatile int seed = 42;
-    auto m = mint_machine<int>(static_cast<int>(seed));
-    if (m.data() != 42) std::abort();
-    auto m2 = transition_to(std::move(m), static_cast<int>(seed) + 57);
-    if (m2.data() != 99) std::abort();
-
-    auto m_disc = mint_machine<Disconnected, ^^connection_edges>();
-    auto m_conn = transition_to(std::move(m_disc), Connecting{static_cast<int>(seed)});
-    auto m_done = transition_to(std::move(m_conn), Connected{static_cast<int>(seed) + 1});
-    if (m_done.data().fd != 43) std::abort();
-}
-
 }  // namespace detail::machine_self_test
 
 }  // namespace fixy

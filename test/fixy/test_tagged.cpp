@@ -282,11 +282,46 @@ int check_slot_array() {
     return 0;
 }
 
+// The doors the cells above do not walk: the mint overload that names
+// the value type, the free-function retag beside the member one, and the
+// vessel_trust edge.
+int check_remaining_doors() {
+    int seed = 7;
+
+    Tagged<int, source::FromUser> deduced = mint_tagged<source::FromUser>(seed * 6);
+    if (deduced.value() != 42) return 50;
+
+    // The same value through the overload that names the value type, so
+    // a narrowing argument cannot pick the element type of the result.
+    auto named = mint_tagged<source::FromUser, int>(seed * 6);
+    if (named.value() != 42) return 51;
+    static_assert(std::is_same_v<decltype(named), Tagged<int, source::FromUser>>);
+
+    Tagged<int, source::Sanitized> sanitized = std::move(deduced).retag<source::Sanitized>();
+    if (std::move(sanitized).into() != 42) return 52;
+
+    // The two trust poles carry the same value; only the tag differs.
+    Tagged<long, trust::Verified> verified = mint_tagged<trust::Verified>(static_cast<long>(seed * seed));
+    Tagged<long, trust::Unverified> unverified = mint_tagged<trust::Unverified>(static_cast<long>(seed * seed));
+    if (verified.value() != unverified.value()) return 53;
+
+    Tagged<int, vessel_trust::FromPytorch> raw = mint_tagged<vessel_trust::FromPytorch>(seed);
+    auto validated = std::move(raw).retag<vessel_trust::Validated>();
+    if (validated.value() != 7) return 54;
+
+    // The free-function door, beside the member one check_arch_weakening
+    // walks.
+    Tagged<int, source::PortablePinned> portable = mint_tagged<source::PortablePinned>(seed);
+    auto x86 = ::fixy::retag<source::X86Pinned>(std::move(portable));
+    if (x86.value() != 7) return 55;
+
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    ::fixy::detail::tagged_self_test::runtime_smoke_test();
-
+    if (int rc = check_remaining_doors(); rc != 0) return rc;
     if (int rc = check_retag_route(); rc != 0) return rc;
     if (int rc = check_arch_weakening(); rc != 0) return rc;
     if (int rc = check_value_and_into(); rc != 0) return rc;

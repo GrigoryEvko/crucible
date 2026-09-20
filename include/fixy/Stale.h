@@ -385,58 +385,6 @@ static_assert(std::is_same_v<stale_value_t<S_payload const&>, payload>);
 static_assert(std::is_same_v<stale_semiring_t<S_i>, ::foundation::algebra::lattices::StalenessSemiring>);
 static_assert(std::is_same_v<stale_staleness_t<S_i>, ::foundation::algebra::lattices::StalenessSemiring::element_type>);
 
-// These calls repeat the compile-time checks on purpose.  They catch a
-// divergence between the constant-evaluated and the runtime form of the
-// saturating-add path.
-inline void runtime_smoke_test() {
-    Stale<int> a = Stale<int>::at(10, 3);
-    Stale<int> b = Stale<int>::at(20, 8);
-    Stale<int> inf = Stale<int>::at_infinity(99);
-
-    [[maybe_unused]] bool fa = a.is_fresh();
-    [[maybe_unused]] bool fi = a.is_finite();
-    [[maybe_unused]] bool ii = inf.is_infinite();
-
-    [[maybe_unused]] bool ord = a.fresher_than(b);
-    [[maybe_unused]] bool nos = a.no_staler_than(b);
-
-    Stale<int> watermark = a.combine_max(b);
-    Stale<int> freshest = a.combine_min(b);
-    Stale<int> chain = a.compose_add(b);
-    Stale<int> ticked = a.advance_by(5);
-    Stale<int> older = a.weaken(b.staleness());
-
-    [[maybe_unused]] auto v1 = watermark.peek();
-    [[maybe_unused]] auto vf = freshest.peek();
-    [[maybe_unused]] auto t1 = chain.staleness();
-    [[maybe_unused]] auto t2 = ticked.staleness();
-    [[maybe_unused]] auto t3 = older.staleness();
-
-    Stale<int> moved = std::move(a).combine_max(b);
-    [[maybe_unused]] auto mv = moved.peek();
-
-    Stale<int> moved_older = std::move(moved).weaken(inf.staleness());
-    [[maybe_unused]] auto mo = moved_older.is_infinite();
-
-    Stale<int> def{};
-    Stale<int> fr = Stale<int>::fresh(42);
-    Stale<int> ai = Stale<int>::at(7, 100);
-    [[maybe_unused]] auto def_t = def.staleness();
-    [[maybe_unused]] auto fr_t = fr.staleness();
-    [[maybe_unused]] auto ai_t = ai.staleness();
-
-    chain.peek_mut() = 99;
-
-    volatile int const cap = 4;
-    for (int i = 0; i < cap; ++i) {
-        if (!is_stale_v<S_i>) std::abort();
-        if (!is_stale_v<S_payload const&>) std::abort();
-        if (is_stale_v<int>) std::abort();
-        if (is_stale_v<LookalikeStale>) std::abort();
-        if (!IsStale<S_i&&>) std::abort();
-    }
-}
-
 }  // namespace detail::stale_self_test
 
 }  // namespace fixy

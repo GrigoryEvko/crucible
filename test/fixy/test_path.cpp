@@ -171,7 +171,14 @@ void check_every_admitted_lane() {
                         PathTraversalError::DotDotComponent, "no_dotdot fires before the root check");
 
     // The one-argument entry point carries the value through unchanged.
+    // The retag is the whole of the transformation, so a sanitizer that
+    // rewrote the path would still report success here.
     auto clean = ::fixy::sanitize_path(mint_tagged<src::External>(fs_ns::path{"/var/cipher/objects"}));
+    if (!clean.has_value()) std::abort();
+    if (clean->value() != fs_ns::path{"/var/cipher/objects"}) {
+        std::fprintf(stderr, "FAIL: sanitize_path rewrote the value it carried\n");
+        std::abort();
+    }
     expect_sanitize_ok(std::move(clean), "sanitize_path entry point");
 
     // A sanitized path re-enters the sanitizer through the identity
@@ -184,8 +191,6 @@ void check_every_admitted_lane() {
 }  // namespace
 
 int main() {
-    ::fixy::detail::path_self_test::runtime_smoke_test();
-
     check_every_error_variant();
     check_every_admitted_lane();
 
