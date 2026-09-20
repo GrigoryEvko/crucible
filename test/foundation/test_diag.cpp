@@ -107,10 +107,51 @@ static_assert(enumerate_count == diag::catalog_size, "enumerate_categories did n
 
 // ── Catalog: runtime cells ───────────────────────────────────────────────
 
+namespace smoke {
+
+// A local class may not have static data members, so the fixture tag for the
+// smoke test below lives at namespace scope.
+struct smoke_local_tag : diag::tag_base {
+    static constexpr std::string_view name = "SmokeLocalTag";
+    static constexpr std::string_view description = "runtime smoke probe";
+    static constexpr std::string_view remediation = "this tag exists only as the smoke-test fixture";
+};
+
+}  // namespace smoke
+
 // The header's own checks are all constant-evaluated.  This one runs
 // the same accessors with non-constant arguments, which is where an
-// inline-body defect in an accessor would surface.
-void test_runtime_smoke() { diag::runtime_smoke_test(); }
+// inline-body defect in an accessor would surface.  The body was an
+// inline runtime_smoke_test in Catalog.h, compiled into every
+// translation unit that included the header; it sits directly in
+// foundation::diag, so the using-directive reproduces the lookup it had
+// there, and the fixture tag above came with it.
+void test_runtime_smoke() {
+    using namespace ::foundation::diag;
+    // The volatile bound stops the optimizer from folding the loop back into a
+    // constant, which would put the switches back on the compile-time path.
+    volatile std::size_t const cap = catalog_size;
+    for (std::size_t i = 0; i < cap; ++i) {
+        Category const c = static_cast<Category>(i);
+        std::string_view const n = name_of(c);
+        std::string_view const d = description_of(c);
+        std::string_view const r = remediation_of(c);
+
+        volatile std::size_t sink = 0;
+        sink ^= n.size();
+        sink ^= d.size();
+        sink ^= r.size();
+        (void)sink;
+    }
+
+    bool const is_tag = is_diagnostic_class_v<smoke::smoke_local_tag>;
+    volatile bool sink_b = is_tag;
+    (void)sink_b;
+
+    using d_t = Diagnostic<EffectRowMismatch, int, float>;
+    volatile std::size_t sink_n = d_t::name.size();
+    (void)sink_n;
+}
 
 // The bound is a floor, not an equality.  The catalog is append-only, so
 // this guards against it shrinking; the header derives the exact count
