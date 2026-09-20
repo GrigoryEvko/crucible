@@ -20,7 +20,7 @@
 #include <crucible/safety/PipelineStage.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/SignatureTraits.h>
-#include <crucible/safety/diag/RowMismatch.h>
+#include <crucible/safety/diag/_RowMismatch.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 
 #include <cstddef>

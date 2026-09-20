@@ -6,6 +6,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
+#include <foundation/diag/RowMismatch.h>
 
 #include <array>
 #include <charconv>
@@ -21,8 +22,8 @@
 
 namespace foundation::diag {
 
-// Consumers gate on this version.
-inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_VERSION = 1;
+// The version consumers gate on is CRUCIBLE_DIAG_FORMAT_VERSION in
+// RowMismatch.h, which ties it to the line count of the block.
 
 struct SourcePosition {
     std::string_view file{};

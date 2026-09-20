@@ -6,7 +6,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/diag/RowMismatch.h>
+#include <crucible/safety/diag/_RowMismatch.h>
 
 #include <charconv>
 #include <cstdio>

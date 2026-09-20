@@ -6,7 +6,7 @@
 // must fire with the framework-controlled
 // `[RowMismatchTag_NonTag]` diagnostic.
 
-#include <crucible/safety/diag/RowMismatch.h>
+#include <crucible/safety/diag/_RowMismatch.h>
 
 inline void some_function() noexcept {}
 

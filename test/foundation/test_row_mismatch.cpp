@@ -1,9 +1,15 @@
 // Including the header from a translation unit is what drives it
 // through the target's full warning matrix.  The body then exercises
 // the consteval message builder with non-constant arguments.
+//
+// Old spelling: test/test_row_mismatch_compile.cpp.  The runtime smoke
+// test that the old header carried inline, compiled into every
+// including translation unit and called only from here, is the first
+// case below.
 
-#include <crucible/safety/diag/_RowMismatch.h>
+#include <foundation/diag/RowMismatch.h>
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -12,6 +18,7 @@
 // The display-name tests need functions at namespace scope.
 inline void sample_dispatch(int) noexcept {}
 inline int sample_compute(int, float) noexcept { return 0; }
+inline void smoke_fn(int) noexcept {}
 
 namespace {
 
@@ -48,16 +55,40 @@ void run_test(const char* name, F&& body) {
         }                                                                                                 \
     } while (0)
 
-namespace diag = ::crucible::safety::diag;
+namespace diag = ::foundation::diag;
+namespace refl = ::foundation::reflect;
 
-void test_runtime_smoke() { diag::runtime_smoke_test_row_mismatch(); }
+// A static_assert can be discharged without the consteval body running
+// as written, so the same surface is consumed here from a runtime
+// context through volatile sinks the optimizer cannot fold away.
+void test_runtime_smoke() {
+    constexpr auto msg = diag::row_mismatch_message_v<diag::EffectRowMismatch, &::smoke_fn, int, float, double>;
+
+    // The signedness of char is implementation-defined, so each byte is
+    // cast to unsigned before it reaches the exclusive-or.
+    volatile std::size_t sink = msg.length;
+    auto const first = static_cast<unsigned char>(msg.data[std::size_t{0}]);
+    sink ^= first;
+    if (msg.length > 1) {
+        auto const last = static_cast<unsigned char>(msg.data[msg.length - 1]);
+        sink ^= last;
+    }
+    (void)sink;
+
+    volatile std::size_t name_sink = diag::type_name<int>.size();
+    name_sink ^= diag::type_name<float>.size();
+    (void)name_sink;
+
+    volatile std::size_t fn_sink = diag::function_display_name<&::smoke_fn>.size();
+    (void)fn_sink;
+}
 
 void test_type_name_aliases_stable_name_of() {
-    static_assert(diag::type_name<int> == diag::stable_name_of<int>);
-    static_assert(diag::type_name<float> == diag::stable_name_of<float>);
+    static_assert(diag::type_name<int> == refl::stable_name_of<int>);
+    static_assert(diag::type_name<float> == refl::stable_name_of<float>);
 
-    EXPECT_EQ(diag::type_name<int>, diag::stable_name_of<int>);
-    EXPECT_EQ(diag::type_name<void>, diag::stable_name_of<void>);
+    EXPECT_EQ(diag::type_name<int>, refl::stable_name_of<int>);
+    EXPECT_EQ(diag::type_name<void>, refl::stable_name_of<void>);
     EXPECT_TRUE(diag::type_name<int>.ends_with("int"));
 }
 
@@ -164,7 +195,7 @@ void test_macro_happy_path() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_row_mismatch_compile:\n");
+    std::fprintf(stderr, "test_row_mismatch:\n");
     run_test("test_runtime_smoke", test_runtime_smoke);
     run_test("test_type_name_aliases_stable_name_of", test_type_name_aliases_stable_name_of);
     run_test("test_function_display_name_non_empty", test_function_display_name_non_empty);

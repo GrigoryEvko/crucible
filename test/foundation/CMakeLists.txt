@@ -301,3 +301,21 @@ foundation_neg_compile_test(neg_signature_param_index_on_nullary
 foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
   "constraints not satisfied"
   "satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = .*NeedsIo.*ctx_cap::Fg")
+
+# ── Task #119 (A15): the row-mismatch message builder ────────────────
+#
+# The static_assert message a mint hands the compiler when a row is not
+# admitted: the site, the caller's row, the row the callee requires and
+# the offending atoms, built at compile time.  The test keeps the file
+# name of the one it is ported from minus its _compile suffix, and the
+# runtime smoke the old header carried inline is its first case.
+foundation_test(test_row_mismatch)
+
+# A type that is not a diagnostic tag in the tag slot reaches the routed
+# static_assert, whose wording is the header's.  The second regex is the
+# instantiation as the compiler spells it, with the boolean the primary
+# template dispatched on, which the fixture source does not contain.
+foundation_neg_compile_test(neg_row_mismatch_tag_not_a_tag
+  "static assertion failed: foundation::diag \\[RowMismatchTag_NonTag\\]"
+  "row_message_check<int, some_function, int, float, double, false>"
+  "is_diagnostic_class_v<int>. evaluates to false")

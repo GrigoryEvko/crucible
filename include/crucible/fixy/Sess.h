@@ -7,7 +7,7 @@
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/diag/RowMismatch.h>
+#include <crucible/safety/diag/_RowMismatch.h>
 #include <crucible/sessions/FederationProtocol.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>

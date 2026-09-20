@@ -29,7 +29,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Decide.h>
-#include <crucible/safety/diag/RowMismatch.h>
+#include <crucible/safety/diag/_RowMismatch.h>
 
 #include <array>
 #include <cstdint>
