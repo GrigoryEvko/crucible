@@ -96,6 +96,11 @@ fixy_neg_compile_test(neg_mutation_write_once_twice
 # ── Task #100 (A9): the atom catalog ─────────────────────────────────
 fixy_test(test_atom)
 
+# ── Task #108 (A11.1): the fn gate ───────────────────────────────────
+# The resolver, the silent strict defaults and what the gate refuses.
+# The negative fixtures for the tiers arrive with A11.5.
+fixy_test(test_fn)
+
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
 # names the clause and the two types it compared.
 fixy_neg_compile_test(neg_atom_cv_qualified_rejected
