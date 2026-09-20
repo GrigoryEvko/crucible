@@ -148,7 +148,7 @@ static_assert(sizeof(SchedClass<SchedulerPolicy_v::Fifo, double>) == sizeof(doub
 static_assert(sizeof(SchedClass<SchedulerPolicy_v::Idle, char>) == sizeof(char));
 static_assert(sizeof(SchedClass<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>) == sizeof(int));
 
-namespace detail::sched_class_self_test {
+namespace detail::sched_class_invariants {
 
 using OtherInt = SchedClass<SchedulerPolicy_v::Other, int>;
 using FifoInt = SchedClass<SchedulerPolicy_v::Fifo, int>;
@@ -233,6 +233,6 @@ concept hostable_on = Task::template runnable_on<PoolPolicy>;
 static_assert(hostable_on<OtherInt, SchedulerPolicy_v::Fifo>, "A FIFO pool MUST host an OTHER task.");
 static_assert(!hostable_on<FifoInt, SchedulerPolicy_v::Other>, "An OTHER pool MUST reject a FIFO task.");
 
-}  // namespace detail::sched_class_self_test
+}  // namespace detail::sched_class_invariants
 
 }  // namespace fixy

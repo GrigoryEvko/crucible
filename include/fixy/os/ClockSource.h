@@ -151,7 +151,7 @@ static_assert(sizeof(PtpHwClockBytes<unsigned long long>) == sizeof(unsigned lon
               "PtpHwClockBytes<u64> is the size of a bare u64.  The source grade is an "
               "empty singleton and carries nothing per instance.");
 
-namespace detail::clock_source_self_test {
+namespace detail::clock_source_invariants {
 
 using BootU64 = BootClockBytes<unsigned long long>;
 using MonoU64 = MonotonicClockBytes<unsigned long long>;
@@ -278,6 +278,6 @@ static_assert(!keeps_ticking_through_suspend<MonoU64>,
               "spent across a suspend and resume.");
 static_assert(!keeps_ticking_through_suspend<RealU64>);
 
-}  // namespace detail::clock_source_self_test
+}  // namespace detail::clock_source_invariants
 
 }  // namespace fixy

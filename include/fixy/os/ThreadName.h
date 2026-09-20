@@ -93,7 +93,7 @@ static_assert(sizeof(ThreadNamed<"x">) == 1, "ThreadNamed must be an empty witne
 static_assert(ThreadNameLiteral<2>{"x"}.visible_length == 1);
 static_assert(ThreadNameLiteral<16>{"123456789012345"}.visible_length == 15);
 
-namespace detail::thread_name_self_test {
+namespace detail::thread_name_invariants {
 
 using namespace ::fixy::detail::thread_name_extract;
 
@@ -110,6 +110,6 @@ static_assert(CtxIsInitPhase<::foundation::effects::Init>);
 static_assert(!CtxIsInitPhase<::foundation::effects::Bg>);
 static_assert(!CtxIsInitPhase<::foundation::effects::Test>);
 
-}  // namespace detail::thread_name_self_test
+}  // namespace detail::thread_name_invariants
 
 }  // namespace fixy

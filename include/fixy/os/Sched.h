@@ -227,7 +227,7 @@ template <eff::IsExecCtx Ctx>
 
 }  // namespace fixy::sched
 
-namespace fixy::sched::detail::v191_self_test {
+namespace fixy::sched::detail::scheduler_mint_invariants {
 
 // The eleven grant-tag assertions the old self-test carried are not
 // ported, because the tags they read are not ported.
@@ -272,4 +272,4 @@ static_assert(CtxFitsRuntimeAffinity<InitWitness>);
 static_assert(!CtxFitsRuntimeAffinity<FgWitness>, "the Fg hot path owns no Bg or Init effect — it must not be "
                                                   "able to re-pin a thread.");
 
-}  // namespace fixy::sched::detail::v191_self_test
+}  // namespace fixy::sched::detail::scheduler_mint_invariants

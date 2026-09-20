@@ -218,7 +218,7 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
 
 }  // namespace fixy::time
 
-namespace fixy::time::detail::v190_self_test {
+namespace fixy::time::detail::clock_reader_invariants {
 
 // The nine grant-tag assertions the old self-test carried are not
 // ported, because the tags they read are not ported.
@@ -253,4 +253,4 @@ static_assert(BoundedSleeper<1000000>::max_nanos == 1000000ULL);
 // itself with no sched_setaffinity on the path, which is the forgery
 // the proof exists to prevent.
 
-}  // namespace fixy::time::detail::v190_self_test
+}  // namespace fixy::time::detail::clock_reader_invariants

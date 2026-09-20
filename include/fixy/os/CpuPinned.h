@@ -112,7 +112,7 @@ static_assert(std::is_move_constructible_v<CpuPinned<AffinityMask::single(0), Pi
 
 }  // namespace fixy
 
-namespace fixy::detail::cpu_pinned_self_test {
+namespace fixy::detail::cpu_pinned_invariants {
 
 inline constexpr AffinityMask kCore0 = AffinityMask::single(0);
 inline constexpr AffinityMask kCore7 = AffinityMask::single(7);
@@ -181,4 +181,4 @@ static_assert(!admissible_tsc_proof<TwoBitC>, "a 2-core pin MUST be rejected (no
 static_assert(!admissible_tsc_proof<AutoC0>, "an AUTO pin MUST be rejected (a TSC reader needs an explicit, "
                                              "non-migrating pin).");
 
-}  // namespace fixy::detail::cpu_pinned_self_test
+}  // namespace fixy::detail::cpu_pinned_invariants
