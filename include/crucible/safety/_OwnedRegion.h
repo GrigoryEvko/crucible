@@ -39,10 +39,15 @@ class [[nodiscard]] OwnedRegion {
 
     // Reconstructs the parent after the workers join.  Producing a
     // post-join parent permission is passkey gated, and this is one of
-    // the two places allowed to do it.
+    // the two places allowed to do it.  OwnedRegion is a friend of
+    // ForkRebuildKey, so this private member can build the key here.  Its
+    // own structured-parallel friends reach it only after consuming the
+    // whole region, which is the proof the reissue is legitimate.
     template <typename Parent>
     static OwnedRegion<T, Parent> rebuild_parent_(T* base, std::size_t count) noexcept {
-        return OwnedRegion<T, Parent>{base, count, ::crucible::safety::detail::rebuild_parent_after_fork_<Parent>()};
+        return OwnedRegion<T, Parent>{base, count,
+                                      ::crucible::safety::detail::ForkRebuildAccess::rebuild<Parent>(
+                                          ::crucible::safety::detail::ForkRebuildKey{})};
     }
 
     template <std::size_t N, typename U, typename Whole, typename Body>

@@ -87,13 +87,17 @@ namespace detail {
 class ForkRebuildKey;
 struct ForkRebuildAccess;
 
-// A friend declaration of a constrained function template must repeat
-// the constraint exactly.  Friending the structured-join primitives
-// directly would therefore drag their whole requires-clauses, and every
-// type those clauses name, into this header.  The rebuild routes
-// through this constraint-free helper instead.
-template <typename Parent>
-[[nodiscard]] constexpr Permission<Parent> rebuild_parent_after_fork_() noexcept;
+// The unconstrained fork helper is the only free function that may
+// rebuild the parent after a structured join.  It is declared here so
+// ForkRebuildKey can name it as a friend, and it is defined in
+// PermissionFork.h.  It takes the parent Permission by rvalue and
+// consumes it at the split, so a caller that reaches the rebuild has
+// already surrendered the region the rebuild hands back.  The earlier
+// route was a nullary free function any translation unit could call to
+// mint a Permission for a tag it did not own.  A friend that consumes
+// nothing proves nothing, so that helper is gone.
+template <typename... Children, typename Ctx, typename Parent, typename... Callables>
+[[nodiscard]] Permission<Parent> permission_fork_(Ctx const&, Permission<Parent>&&, Callables&&...) noexcept;
 }  // namespace detail
 
 // The declarative manifest of valid splits.  C++ has no orphan rule, so
@@ -511,8 +515,17 @@ class ForkRebuildKey {
 private:
     constexpr ForkRebuildKey() noexcept = default;
 
-    template <typename UParent>
-    friend constexpr Permission<UParent> rebuild_parent_after_fork_() noexcept;
+    // The two places that may reissue a parent after a join, and nothing
+    // else.  permission_fork_ takes the parent by rvalue and consumes it
+    // at the split, so holding the key proves the region was surrendered.
+    // OwnedRegion reaches the key only through its private rebuild_parent_,
+    // which its structured-parallel friends call after consuming the whole
+    // region.  Neither route is a free function a stranger can call.
+    template <typename... UChildren, typename UCtx, typename UParent, typename... UCallables>
+    friend Permission<UParent> permission_fork_(UCtx const&, Permission<UParent>&&, UCallables&&...) noexcept;
+
+    template <typename U, typename UTag>
+    friend class ::crucible::safety::OwnedRegion;
 };
 
 struct ForkRebuildAccess {
@@ -521,11 +534,6 @@ struct ForkRebuildAccess {
         return Permission<T>{};
     }
 };
-
-template <typename Parent>
-[[nodiscard]] constexpr Permission<Parent> rebuild_parent_after_fork_() noexcept {
-    return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
-}
 
 }  // namespace detail
 

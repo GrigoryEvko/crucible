@@ -26,3 +26,7 @@
 include/crucible/bridges/RecordingPermissionedSessionHandle.h — include/crucible/bridges/RecordingSessionHandle.h close() passes the terminal tier as the sixth stop() argument — the crash-watched close() dropped the crash class, so the Stop event defaulted to Abort and replayed into the wrong recovery family
 
 include/crucible/sessions/SessionEventLog.h — include/crucible/safety/_Mutation.h OrderedAppendOnly::append is an unsynchronised vector push, so the log is single-writer — removes a false concurrency claim, no code change
+
+include/crucible/permissions/_Permission.h — include/foundation/permissions/Permission.h ForkRebuildKey friends permission_fork_ (brand commit 50db03a1) — the nullary rebuild_parent_after_fork_ let any translation unit mint a Permission for a tag it never owned
+include/crucible/permissions/_PermissionFork.h — include/foundation/permissions/PermissionFork.h routes the rebuild through the consuming permission_fork_ — the post-join reissue reached a forgeable free function instead of a consumer of the parent permission
+include/crucible/safety/_OwnedRegion.h — include/fixy/OwnedRegion.h drops the nullary rebuild — the frozen rebuild_parent_ reached the parent reissue through the same forgeable free function

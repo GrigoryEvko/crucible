@@ -114,6 +114,42 @@ void permission_fork_inline_(Ctx const& ctx, Children&& children, Callables&& ca
      ...);
 }
 
+// The one free function that reissues the parent after the bodies join.
+// It takes the parent by rvalue and consumes it at the split, so
+// ForkRebuildKey names it as the sole free-function friend.  The runtime
+// spawn-or-inline decision lives here rather than in mint_permission_fork,
+// which lets the key friend this unconstrained helper instead of the
+// constrained mint whose requires-clause a friend declaration would have
+// to repeat in full.  Do not add a caller that does not consume a
+// Permission<Parent>: a friend of the key that consumes nothing proves
+// nothing.
+template <typename... Children, typename Ctx, typename Parent, typename... Callables>
+[[nodiscard]] Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>&& parent,
+                                                  Callables&&... callables) noexcept {
+    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
+
+    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
+
+    // A working set that is zero at compile time can only be inline, so
+    // that case skips the host probe entirely.  Any other budget has to
+    // ask, because cache sizes and CPU limits are facts about the host.
+    if constexpr (permission_fork_zero_budget_v<Ctx>()) {
+        permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
+                                std::index_sequence_for<Children...>{});
+    } else {
+        const auto decision = ::crucible::concurrent::parallelism_decision_for<Ctx>();
+        if (decision.kind == ::crucible::concurrent::ParallelismDecision::Kind::Sequential) {
+            permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
+                                    std::index_sequence_for<Children...>{});
+        } else {
+            permission_fork_spawn_(ctx, std::move(child_perms), std::move(callable_pack),
+                                   std::index_sequence_for<Children...>{});
+        }
+    }
+
+    return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
+}
+
 }  // namespace detail
 
 template <typename... Children, typename Ctx, typename Parent, typename... Callables>
@@ -146,28 +182,10 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
                   "through structured fork-join would corrupt parent Permission "
                   "rebuild and child Permission lifetimes.");
 
-    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
-
-    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
-
-    // A working set that is zero at compile time can only be inline, so
-    // that case skips the host probe entirely.  Any other budget has to
-    // ask, because cache sizes and CPU limits are facts about the host.
-    if constexpr (detail::permission_fork_zero_budget_v<Ctx>()) {
-        detail::permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
-                                        std::index_sequence_for<Children...>{});
-    } else {
-        const auto decision = ::crucible::concurrent::parallelism_decision_for<Ctx>();
-        if (decision.kind == ::crucible::concurrent::ParallelismDecision::Kind::Sequential) {
-            detail::permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
-                                            std::index_sequence_for<Children...>{});
-        } else {
-            detail::permission_fork_spawn_(ctx, std::move(child_perms), std::move(callable_pack),
-                                           std::index_sequence_for<Children...>{});
-        }
-    }
-
-    return detail::rebuild_parent_after_fork_<Parent>();
+    // The split, the run and the post-join rebuild live in the
+    // unconstrained helper, which is what ForkRebuildKey befriends.  This
+    // mint consumes the parent by rvalue and hands it straight in.
+    return detail::permission_fork_<Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
 }  // namespace crucible::safety
