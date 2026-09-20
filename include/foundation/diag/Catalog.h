@@ -23,6 +23,63 @@ struct tag_base {
     ~tag_base() = default;
 };
 
+// Error and Fatal behave identically at compile time. They differ in
+// what tooling is meant to do: Fatal marks a violation whose silent
+// passage is dangerous rather than merely wrong, and offers no override.
+//
+// The severity grades a tag, so it is declared beside the tags rather
+// than beside the reader in Insights.h, which is where it used to sit.
+// The spelling foundation::diag::Severity is unchanged, and Insights.h
+// includes this header, so no consumer sees a difference.
+enum class Severity : std::uint8_t {
+    Hint = 0,  // the code is correct and could be better shaped
+    Warning = 1,  // the code compiles and carries a runtime risk
+    Error = 2,  // the assertion or the implementation has to change
+    Fatal = 3,  // as Error, and no override path
+};
+
+// The prose a diagnostic prints rides on the tag as an annotation, so
+// the tag name is spelled once. foundation/diag/Insights.h reads these
+// back and is the only reader.
+//
+// std::string_view is not a structural type, so an annotation cannot
+// carry one. Each carrier holds the characters instead, and the reader
+// turns them into a view over static storage. One class template per
+// field, because the reader tells the fields apart by their template.
+namespace insight {
+
+#define FOUNDATION_DIAG_INSIGHT_FIELD(FieldName)                \
+    template <std::size_t N>                                    \
+    struct FieldName {                                          \
+        char text[N]{};                                         \
+        consteval FieldName(const char (&source)[N]) noexcept { \
+            for (std::size_t i = 0; i < N; ++i)                 \
+                text[i] = source[i];                            \
+        }                                                       \
+    };                                                          \
+    template <std::size_t N>                                    \
+    FieldName(const char (&)[N])->FieldName<N>
+
+// States the architectural constraint and what breaks if it is ignored.
+FOUNDATION_DIAG_INSIGHT_FIELD(why);
+// Describes how the violation typically arrives at a call site.
+FOUNDATION_DIAG_INSIGHT_FIELD(symptom);
+// One line of real C++ that complies.
+FOUNDATION_DIAG_INSIGHT_FIELD(correct);
+// The same line, violating.
+FOUNDATION_DIAG_INSIGHT_FIELD(violating);
+
+#undef FOUNDATION_DIAG_INSIGHT_FIELD
+
+// The severity carrier is not a char array, so it is written out.  A tag
+// carrying no severity annotation reads as Error, which is the default
+// the reader supplies.
+struct severity {
+    Severity value = Severity::Error;
+};
+
+}  // namespace insight
+
 // Authoring rule for every tag below: the description states what the bug
 // class is, the remediation states how to fix an instance of it. Both read as
 // standalone sentences, because a build log shows them without this file.

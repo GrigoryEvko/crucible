@@ -22,22 +22,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <meta>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <utility>
 
 namespace foundation::diag {
 
-// Error and Fatal behave identically at compile time. They differ in
-// what tooling is meant to do: Fatal marks a violation whose silent
-// passage is dangerous rather than merely wrong, and offers no override.
-
-enum class Severity : std::uint8_t {
-    Hint = 0,  // the code is correct and could be better shaped
-    Warning = 1,  // the code compiles and carries a runtime risk
-    Error = 2,  // the assertion or the implementation has to change
-    Fatal = 3,  // as Error, and no override path
-};
+// Severity is declared in Catalog.h, beside the tags it grades.
 
 // The name is the enumerator's own, read by reflection, so a new
 // severity needs no arm here.  A value no enumerator carries, which
@@ -47,13 +40,87 @@ enum class Severity : std::uint8_t {
     return name.empty() ? std::string_view{"<unknown Severity>"} : name;
 }
 
+namespace detail {
+
+// What one walk over a tag's annotations yields.  Reading the five
+// fields in one pass rather than five keeps the walk count equal to the
+// number of tags.
+struct insight_fields {
+    Severity severity = Severity::Error;
+    std::string_view why{};
+    std::string_view symptom{};
+    std::string_view correct{};
+    std::string_view violating{};
+};
+
+// The carrier is a local inside the walk, so its array dies with the
+// call.  define_static_string copies the characters into static
+// storage, and the view outlives the call.
+template <std::meta::info Note, template <std::size_t> class Field>
+[[nodiscard]] consteval std::string_view field_text_() noexcept {
+    // type_of reports an annotation's type const-qualified, so the cv is
+    // stripped before the type is compared or spliced.  Measured: the
+    // severity carrier printed as "const foundation::diag::insight::
+    // severity", and a bare == against the class reflection was false.
+    constexpr std::meta::info carrier = std::meta::remove_cv(std::meta::type_of(Note));
+    if constexpr (!std::meta::has_template_arguments(carrier)) {
+        return {};
+    } else if constexpr (std::meta::template_of(carrier) != ^^Field) {
+        return {};
+    } else {
+        using Carrier = [:carrier:];
+        constexpr Carrier held = std::meta::extract<Carrier>(Note);
+        return std::define_static_string(std::string_view{held.text, sizeof(held.text) - 1});
+    }
+}
+
+// annotations_of returns a std::vector, whose elements are not constant
+// expressions in a runtime loop, and a splice needs one.
+// define_static_array gives the elements a constant address, and
+// `template for` binds each as constexpr.
+template <std::meta::info Cls>
+[[nodiscard]] consteval insight_fields insights_on_() noexcept {
+    insight_fields found{};
+    static constexpr auto notes = std::define_static_array(std::meta::annotations_of(Cls));
+    template for (constexpr auto note : notes) {
+        if constexpr (std::meta::remove_cv(std::meta::type_of(note)) == ^^insight::severity) {
+            found.severity = std::meta::extract<insight::severity>(note).value;
+        } else {
+            if (const std::string_view text = field_text_<note, insight::why>(); !text.empty()) found.why = text;
+            if (const std::string_view text = field_text_<note, insight::symptom>(); !text.empty())
+                found.symptom = text;
+            if (const std::string_view text = field_text_<note, insight::correct>(); !text.empty())
+                found.correct = text;
+            if (const std::string_view text = field_text_<note, insight::violating>(); !text.empty())
+                found.violating = text;
+        }
+    }
+    return found;
+}
+
+}  // namespace detail
+
+// The prose lives on the tag as an annotation, so the tag name is
+// spelled once rather than once here and once in the catalog.  A tag
+// carrying no annotation reads as empty fields and Error severity, and
+// the builder skips an empty field, so an unannotated tag degrades to
+// the shorter block rather than emitting empty sections.
+//
+// An explicit specialization still beats this primary, which is what
+// CRUCIBLE_DEFINE_INSIGHTS below writes.  A tag whose prose cannot sit
+// in the catalog, because the catalog does not know the tag, keeps that
+// route.
 template <typename Tag>
 struct insight_provider {
-    static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = {};
-    static constexpr std::string_view symptom_pattern = {};
-    static constexpr std::string_view correct_example = {};
-    static constexpr std::string_view violating_example = {};
+private:
+    static constexpr detail::insight_fields fields_ = detail::insights_on_<^^Tag>();
+
+public:
+    static constexpr Severity severity = fields_.severity;
+    static constexpr std::string_view why_this_matters = fields_.why;
+    static constexpr std::string_view symptom_pattern = fields_.symptom;
+    static constexpr std::string_view correct_example = fields_.correct;
+    static constexpr std::string_view violating_example = fields_.violating;
 };
 
 // Name the tag fully qualified. A specialization has to be declared in
@@ -1052,6 +1119,44 @@ struct user_tag : tag_base {
 };
 static_assert(!has_insights_v<user_tag>);
 static_assert(insight_provider<user_tag>::severity == Severity::Error);
+
+// The annotation route, on a tag the catalog does not know.  Each field
+// is read back through its own template, and the severity through the
+// one carrier that is not a character array.
+struct[[= insight::severity{Severity::Warning}]]  //
+      [[= insight::why{"the why field, carried as an annotation"}]]  //
+      [[= insight::symptom{"the symptom field"}]]  //
+      [[= insight::correct{"fn(Good);"}]]  //
+      [[= insight::violating{"fn(Bad);"}]] annotated_tag : tag_base {
+    static constexpr std::string_view name = "AnnotatedTag";
+    static constexpr std::string_view description = "fixture for the annotation route";
+    static constexpr std::string_view remediation = "n/a — fixture";
+};
+
+static_assert(insight_provider<annotated_tag>::severity == Severity::Warning);
+static_assert(insight_provider<annotated_tag>::why_this_matters == "the why field, carried as an annotation");
+static_assert(insight_provider<annotated_tag>::symptom_pattern == "the symptom field");
+static_assert(insight_provider<annotated_tag>::correct_example == "fn(Good);");
+static_assert(insight_provider<annotated_tag>::violating_example == "fn(Bad);");
+static_assert(has_insights_v<annotated_tag>);
+
+// One field on its own reads back, and the other three stay empty.  A
+// tag that carries some prose and not the rest is the state a partly
+// written entry is in, and the reader does not confuse the fields.
+struct[[= insight::correct{"only_this_one();"}]] partly_annotated_tag : tag_base {
+    static constexpr std::string_view name = "PartlyAnnotatedTag";
+    static constexpr std::string_view description = "fixture for a single annotated field";
+    static constexpr std::string_view remediation = "n/a — fixture";
+};
+
+static_assert(insight_provider<partly_annotated_tag>::correct_example == "only_this_one();");
+static_assert(insight_provider<partly_annotated_tag>::why_this_matters.empty());
+static_assert(insight_provider<partly_annotated_tag>::symptom_pattern.empty());
+static_assert(insight_provider<partly_annotated_tag>::violating_example.empty());
+static_assert(insight_provider<partly_annotated_tag>::severity == Severity::Error,
+              "a tag carrying no severity annotation reads as Error");
+static_assert(has_insights_v<partly_annotated_tag>);
+static_assert(!has_substantive_insights_v<partly_annotated_tag>);
 
 // The catalog walk above covers every admitting case of both concepts.
 // The rejection cases use the tag above, which carries the empty
