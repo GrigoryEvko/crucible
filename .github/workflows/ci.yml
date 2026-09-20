@@ -83,6 +83,25 @@ jobs:
       - name: Install ripgrep, fd and clang-format
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep fd-find clang-format
 
+      # The AST guards parse C++ rather than scan text, and they parse it with
+      # the pinned fork of the tree-sitter C++ grammar.  The upstream grammar
+      # reports an error on roughly one construct in three of this tree, and the
+      # fork's grammar declares ABI 1019, which no upstream runtime loads.  So
+      # the kit carries both halves, and the installer is the only way onto it.
+      #
+      # The installer verifies the release tarball against a SHA256 hardcoded in
+      # the script, checks the grammar and runtime lineage in the kit manifest,
+      # and parses a fixture that only the fork parses.  A failure installs
+      # nothing.  The kit lands in .tools/, which is gitignored, and the
+      # installer appends its bin directory to GITHUB_PATH.
+      #
+      # This step stays FREE: the download is one 43 MB release asset from
+      # GitHub, and no runner label changes.
+      - name: Install the pinned tree-sitter C++ kit (self-test + install)
+        run: |
+          bash scripts/install-tree-sitter.sh --self-test
+          bash scripts/install-tree-sitter.sh
+
       # Non-blocking for now, matching the aarch64, bench and vessel-dispatch
       # convention: flip `continue-on-error` off once a run confirms the
       # runner's clang-format agrees with this tree.
@@ -334,12 +353,16 @@ jobs:
       # Full toolchain + BPF stack + sanitizer runtimes. clang+xxd+bpftool flip
       # CRUCIBLE_HAVE_BPF=ON (cmake/CrucibleBpf.cmake); libasan/libubsan/libtsan
       # back the default/tsan presets; libbpf-devel provides bpf_helpers.h.
+      # curl, tar and coreutils serve scripts/install-tree-sitter.sh: it
+      # downloads one release asset, checks its SHA256 and unpacks it. The
+      # fedora:44 base carries none of the three reliably, and weak deps are off.
       - name: Install toolchain + BPF stack + sanitizers + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ cmake ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
           libasan libubsan libtsan liblsan
+          curl tar coreutils
 
       # Split restore/save: the combined actions/cache@v4 only saves in its
       # post-step on JOB SUCCESS, so a failing preset never persists its
@@ -359,6 +382,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v5
+
+      # ctest runs the script-backed guards under the ci_guard label, and the
+      # AST guards among them parse C++ with the pinned kit.  Install it before
+      # the compile rather than before the test step, so a kit failure costs one
+      # download instead of a full build.  The pin covers both matrix arches.
+      - name: Install the pinned tree-sitter C++ kit
+        run: bash scripts/install-tree-sitter.sh
 
       # The committed vmlinux.h is an x86_64 BTF dump; on aarch64 the BPF
       # programs need the matching arm64 layout. Regenerate it from the runner

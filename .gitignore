@@ -16,6 +16,15 @@ Testing/
 .playwright-mcp/
 .claude/
 
+# Pinned binary tools that the repo installs for itself. Crucible holds its own
+# tree-sitter CLI and C++ grammar here rather than reach for one on the PATH,
+# because a PATH binary is an unpinned input. scripts/install-tree-sitter.sh
+# fills this directory from a GitHub release, and it verifies the tarball
+# against a hardcoded SHA256 before it unpacks anything. CI runs the same
+# script, so the bytes match. The contents are large and platform-specific, so
+# they never enter a commit.
+.tools/
+
 # Python bytecode
 __pycache__/
 *.pyc
