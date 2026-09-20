@@ -8,7 +8,7 @@
 
 #include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <type_traits>
 

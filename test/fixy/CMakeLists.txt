@@ -1693,3 +1693,14 @@ fixy_neg_compile_test(neg_disjoint_receipt_copied
 fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
   "static assertion failed: mint_split<N>\\(region\\) takes one template argument"
   "Never = \\{\\{anonymous\\}::HeldName\\}")
+
+# ── Task #96 (A6.2): the row hash reaches every wrapper ──────────────
+#
+# foundation/diag/RowHash.h folds the row hash over one shape rather
+# than over fifty-two named wrappers, so the property it owes this tree
+# is coverage: every wrapper still lands in a slot of its own.  Half the
+# wrappers here are aliases for Graded and half are classes over
+# graded_facade, and a fold that read the template rather than the shape
+# would hand the class half a zero.  The cell lives here rather than in
+# test/foundation because foundation must not depend on fixy.
+fixy_test(test_row_hash_wrappers)

@@ -32,7 +32,7 @@
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/_Wait.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include "test_assert.h"
 

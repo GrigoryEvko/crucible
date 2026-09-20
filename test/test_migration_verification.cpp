@@ -44,7 +44,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/TimeOrdered.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdio>
 #include <cstdlib>

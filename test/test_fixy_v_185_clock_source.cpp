@@ -11,7 +11,7 @@
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/IsClockSource.h>
 #include <crucible/safety/ScopedFence.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>
 #include <type_traits>

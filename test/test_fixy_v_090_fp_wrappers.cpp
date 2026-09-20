@@ -1,6 +1,6 @@
 #include <crucible/safety/FpMode.h>
 #include <crucible/safety/DimensionTraits.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/lattices/FpModeLattice.h>
 #include <crucible/algebra/lattices/AllLattices.h>

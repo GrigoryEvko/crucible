@@ -398,3 +398,24 @@ foundation_neg_compile_test(neg_row_mismatch_tag_not_a_tag
   "static assertion failed: foundation::diag \\[RowMismatchTag_NonTag\\]"
   "row_message_check<int, some_function, int, float, double, false>"
   "is_diagnostic_class_v<int>. evaluates to false")
+
+# ── Task #96 (A6.2): the row hash, as one fold ───────────────────────
+#
+# The half of the cache key that separates one effect regime from
+# another.  The old header carried a partial specialisation per wrapper,
+# fifty-two of them, each with a hand-allocated salt byte; here one
+# specialisation over Graded covers every wrapper, because a wrapper in
+# this tree is a spelling over Graded.
+#
+# Almost everything the header owes a consumer is a constant, so the
+# test is mostly static assertions and exists to make them run: an
+# assertion inside a header is checked only where some translation unit
+# includes it, and nothing else in the new tree includes this one yet.
+# Two cases are not constants, and they are the ones a header cannot
+# check on its own: that the folded values reach a running program.
+#
+# The wire-format literals in that file are the published on-the-wire
+# contract and are reproduced from the old header unchanged, which is
+# the proof that the fold did not move a single row already in a peer's
+# cache.
+foundation_test(test_row_hash)

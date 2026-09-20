@@ -11,7 +11,7 @@
 #include <crucible/safety/Hw.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/DimensionTraits.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>
 #include <type_traits>

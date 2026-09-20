@@ -430,7 +430,7 @@ static_assert(sizeof(Fn<const int*>) == sizeof(const int*));
 // are positional, which is what separates an axis's position from its
 // value without any canonicalization step.
 
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 namespace crucible::safety::diag {
 

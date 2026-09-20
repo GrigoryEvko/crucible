@@ -1230,7 +1230,7 @@ static_assert(sizeof(stance::RealtimeHot<int>) == sizeof(int),
 // one cache slot would erase the record of which surface published a kernel, and
 // the federation cache key is the only place that record survives.
 
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 namespace crucible::safety::diag {
 

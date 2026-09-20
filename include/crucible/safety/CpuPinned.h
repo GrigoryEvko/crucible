@@ -15,7 +15,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/_AffinityLattice.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <concepts>
 #include <cstdint>

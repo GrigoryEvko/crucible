@@ -7,7 +7,7 @@
 // optimizer folds each check back to a compile-time constant, and a
 // consteval path that disagrees with the runtime path stays hidden.
 
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/safety/diag/RowHashGrade.h>
 #include <crucible/Types.h>
 #include <crucible/effects/_Computation.h>

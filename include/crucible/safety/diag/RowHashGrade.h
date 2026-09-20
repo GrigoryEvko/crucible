@@ -9,7 +9,7 @@
 // drift attribution, per-instance memoization or change detection across
 // a fleet. It is not a cache slot key and must not be used as one.
 
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/safety/diag/_StableName.h>
 
 #include <crucible/safety/Budgeted.h>

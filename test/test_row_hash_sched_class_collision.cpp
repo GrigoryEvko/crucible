@@ -5,7 +5,7 @@
 // concrete aliasing pair and asserts that the real fold separates it.
 
 #include <crucible/safety/SchedClass.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/safety/diag/_StableName.h>
 
 #include <cstdint>

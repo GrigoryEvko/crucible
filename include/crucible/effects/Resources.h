@@ -16,7 +16,7 @@
 // bandwidth.  uint32_t would silently truncate those, and the tag is an
 // empty type either way.
 
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>
 #include <meta>

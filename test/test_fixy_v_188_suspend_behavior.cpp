@@ -6,7 +6,7 @@
 #include <crucible/safety/SuspendBehavior.h>
 #include <crucible/safety/IsSuspendBehavior.h>
 #include <crucible/safety/ClockSource.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <string_view>
 #include <type_traits>

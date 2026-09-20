@@ -7,7 +7,7 @@
 #include <crucible/safety/IsCpuPinned.h>
 #include <crucible/safety/ClockSource.h>
 #include <crucible/safety/SchedClass.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <type_traits>
 

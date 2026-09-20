@@ -6,7 +6,7 @@
 #include <crucible/safety/SchedClass.h>
 #include <crucible/safety/IsSchedClass.h>
 #include <crucible/safety/ClockSource.h>
-#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>
 #include <type_traits>

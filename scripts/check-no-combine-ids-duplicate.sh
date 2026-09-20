@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # check-no-combine-ids-duplicate.sh — FIXY-FOUND-050 drift-defense guard.
 #
-# Crucible's row_hash machinery (RowHashFold.h + every wrapper-specific
-# row_hash_contribution<W> specialization) folds via a SINGLE function:
+# Crucible's row_hash machinery folds via a SINGLE function.  That is
+# the new tree's one Graded fold in foundation/diag/RowHash.h, and the
+# old tree's _RowHashFold.h with its per-wrapper
+# row_hash_contribution<W> specializations, which stands until Stage D
+# deletes it.  Both reach:
 #
 #   include/foundation/reflect/Hash.h
 #     [[nodiscard]] constexpr uint64_t combine_ids(
