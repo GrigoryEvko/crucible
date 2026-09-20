@@ -31,7 +31,7 @@
 // A callable's own noexcept specification is all that is checked here.
 // The old header also rejected a callable whose type carried the
 // crucible::fixy::ctrl::throws grant; that name is above this layer, so
-// the structural check moves to fixy/os/Spawn.h (task A13.4).
+// the structural check belongs to fixy/os/Spawn.h.
 //
 // Old spelling: include/crucible/permissions/PermissionFork.h, namespace
 // crucible::safety.
@@ -185,8 +185,7 @@ constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>
     // legitimate is that `parent` was taken by rvalue and consumed at
     // the split above.  Do not factor this call out into a helper that
     // does not consume a Permission<Parent> — that is exactly the shape
-    // which made the parent forgeable from any translation unit before
-    // the fix for #169.
+    // which once made the parent forgeable from any translation unit.
     return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
 }
 

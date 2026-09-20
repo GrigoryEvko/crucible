@@ -414,7 +414,7 @@ struct AllocClassViolation : tag_base {
                                                     "(or invoked a callee that does).  The hot path forbids heap "
                                                     "allocation: malloc round-trip is ~50-200ns and unpredictable; "
                                                     "Arena bump is ~2ns and lock-free.  Crucible discipline per "
-                                                    "HS10 (CLAUDE.md §XVIII).";
+                                                    "CLAUDE.md §XVIII.";
     static constexpr std::string_view remediation = "Replace heap allocation with arena allocation: use "
                                                     "Arena::alloc_obj<T>() / Arena::alloc_array<T>(n) for DAG-"
                                                     "lifetime objects; PoolAllocator for object-pool patterns; "
@@ -425,7 +425,7 @@ struct AllocClassViolation : tag_base {
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "Hot-path code MUST NOT allocate from the heap (CLAUDE.md HS10): "
+        "Hot-path code MUST NOT allocate from the heap (CLAUDE.md §XVIII): "
         "malloc round-trip is ~50-200 ns, unpredictable under "
         "contention, and breaks the per-iteration latency budget.  "
         "Arena bump allocation is ~2 ns and lock-free; PoolAllocator "
@@ -768,7 +768,7 @@ struct EpochMismatch : tag_base {
     static constexpr std::string_view remediation = "Rebuild the value at the new epoch via Canopy::reshard, or "
                                                     "if the value is epoch-independent, declare its construction "
                                                     "without the EpochVersioned wrapper.  Reshard checks include "
-                                                    "row intersection across the new fleet (FOUND-K07/K10) — a "
+                                                    "row intersection across the new fleet — a "
                                                     "stale-epoch value triggers the diagnostic at the first "
                                                     "operation that consumes it.";
 
@@ -1075,7 +1075,7 @@ struct InsufficientWitness : tag_base {
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "The witness lattice (safety/witness/Witness.h, FIXY-G9) encodes "
+        "The witness lattice (safety/witness/Witness.h) encodes "
         "proof-relevance per axis: Asserted (developer claim) ⊑ Tested "
         "(unit-test-witnessed) ⊑ CrossValidated (CI-witnessed across "
         "vendors / configurations) ⊑ FormallyVerified (machine-checked "
@@ -1123,7 +1123,7 @@ struct ModalityMismatch : tag_base {
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "The modality taxonomy (fixy/Modality.h, FIXY-G10) classifies "
+        "The modality taxonomy (fixy/Modality.h) classifies "
         "grants by their categorical role: Frame (invariant of the "
         "value), Declares (witness-producing — the binding establishes "
         "the property), Requires (caller-side refinement the binding "
@@ -1812,7 +1812,7 @@ inline constexpr auto category_enumerators = std::define_static_array(std::meta:
 
 inline constexpr std::size_t category_count = category_enumerators.size();
 
-static_assert(category_count == catalog_size, "FIXY-FOUND-139: Category enum cardinality and Catalog tuple "
+static_assert(category_count == catalog_size, "Category enum cardinality and Catalog tuple "
                                               "size diverged.  Every Category enumerator must have a matching "
                                               "tag type at the same integer index in the Catalog tuple "
                                               "(append-only discipline).  Likely cause: a new Category value "

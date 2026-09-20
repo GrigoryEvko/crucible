@@ -17,7 +17,7 @@
 //
 // Linearity is the deleted copy and the move-only transfer, and nothing
 // more: a token consumed twice after std::move is a use-after-move that
-// the compiler does not diagnose (task #34, decided with fixy/Qtt.h).
+// the compiler does not diagnose (decided alongside fixy/Qtt.h).
 // A Debug-only consumed byte was rejected there because production
 // layout pins on the empty token are Debug-independent.
 //
@@ -630,7 +630,7 @@ private:
     // therefore already surrendered the very permission the rebuild
     // hands back.
     //
-    // Until the fix for #169 the friend was a nullary free function
+    // An earlier shape of this friend was a nullary free function
     // template at namespace scope, `rebuild_parent_after_fork_`.  It
     // took no argument, carried no constraint, and was itself friended
     // to build the key, so the chain was a closed loop whose entry point
@@ -652,8 +652,8 @@ struct ForkRebuildAccess {
     // parent was split into.
     //
     // That sentence holds only while the key's friend list names one
-    // function that consumes a parent permission.  It was false before
-    // the fix for #169, when the friend took no argument at all.
+    // function that consumes a parent permission.  It was false in an
+    // earlier shape, when the friend took no argument at all.
     template <typename T>
     [[nodiscard]] static constexpr Permission<T> rebuild(ForkRebuildKey) noexcept {
         return Permission<T>{perm_mint_key{}};

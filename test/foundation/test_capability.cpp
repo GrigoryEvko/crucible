@@ -29,7 +29,7 @@ static_assert(!fe::CtxOwnsCapability<BgWitness, Effect::IO>);
 int main() {
     fe::runtime_smoke_test_capability();
 
-    // Each context is handed the capability it claims (#172).
+    // Each context is handed the capability it claims.
     BgWitness bg_ctx{fe::testing::bg()};
     BgIoWitness bg_io_ctx{fe::testing::bg()};
     auto alloc = fe::mint_from_ctx<Effect::Alloc>(bg_ctx);

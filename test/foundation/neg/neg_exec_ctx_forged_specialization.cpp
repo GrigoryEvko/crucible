@@ -7,7 +7,7 @@
 // context that satisfied CtxCanMint for every effect that source
 // permits — reaching the capability by constructing the thing that
 // holds it, without ever passing the passkey guarding Init's own
-// constructor.  That is #172, Door 1.
+// constructor.  That was the hole.
 //
 // The default constructor is now constrained to the foreground source,
 // which claims nothing and so has nothing to forge.  Every other

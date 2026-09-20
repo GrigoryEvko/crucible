@@ -5,9 +5,9 @@
 
 int main() {
     // Built honestly, so the ONLY rejection in this fixture is the one
-    // it is named for.  A context now carries the capability it claims
-    // (#172), and a fixture that also failed to construct its context
-    // would reject for two reasons and prove neither.
+    // it is named for.  A context carries the capability it claims, and
+    // a fixture that also failed to construct its context would reject
+    // for two reasons and prove neither.
     ::foundation::effects::detail::exec_ctx_self_test::BgWitness bg{
         ::foundation::effects::testing::bg()};  // Row<Bg, Alloc>: no IO
     using Pure = ::foundation::effects::Computation<::foundation::effects::Row<>, int>;

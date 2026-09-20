@@ -4,7 +4,7 @@
 // the type, returning a context that owned one.  So
 // `ExecCtx<>{}.with_cap<Init>()` climbed from a foreground context to an
 // init context in a single call, supplying no evidence whatever.  That
-// is #172, Door 1, by its second route.
+// was the hole, reached by its second route.
 //
 // Ctx.h asserted the opposite in prose: "no chain of calls turns a
 // foreground context into one that claims a background effect."  This
@@ -13,7 +13,7 @@
 // with_cap takes a NewCap VALUE.  Cap's own default constructor is
 // private and passkey-gated, so a caller holding one obtained it from
 // mint_bg_context, mint_init_context or mint_test_context — the rule
-// #169 settled, that a gate must consume what it authorises.
+// that a gate must consume what it authorises.
 //
 // Sibling of neg_exec_ctx_forged_specialization.cpp, which closes the
 // specialization route.  Both are required.

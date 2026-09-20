@@ -183,8 +183,8 @@ inline constexpr std::array<enum_pin, 10> clock_source_pins{{{"Realtime", 0},
                                                              {"PtpHwClock", 9}}};
 static_assert(pin_enum<ClockSource>(clock_source_pins), "ClockSource drifted from clock_source_pins.");
 
-// Lifetime reached foundation with the OpaqueLifetime band (A10.6).  The
-// old tree carried no pins for it; these pin the values it arrived with.
+// Lifetime reached foundation with the OpaqueLifetime band.  The old
+// tree carried no pins for it; these pin the values it arrived with.
 inline constexpr std::array<enum_pin, 3> lifetime_pins{{{"PER_REQUEST", 0}, {"PER_PROGRAM", 1}, {"PER_FLEET", 2}}};
 static_assert(pin_enum<Lifetime>(lifetime_pins), "Lifetime drifted from lifetime_pins.");
 

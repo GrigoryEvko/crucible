@@ -157,7 +157,7 @@ void test_permission_row_compile() {
     static_assert(perm::CtxAdmitsPermission<NetworkBuffer, BgCompileCtx>);
     static_assert(!perm::CtxAdmitsPermission<NetworkBuffer, HotFgCtx>);
 
-    // Each context is handed the capability it claims (#172).
+    // Each context is handed the capability it claims.
     BgCompileCtx bg_compile{::foundation::effects::testing::bg()};
     auto huge = perm::mint_permission_root<HugePage>(bg_compile);
     auto huge_shared = perm::mint_permission_share(bg_compile, std::move(huge));

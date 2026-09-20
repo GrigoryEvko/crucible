@@ -21,7 +21,7 @@ int main() {
     [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork<Left, Right>(
         // Built honestly, so the only rejection is the partition check
         // this fixture is named for.  A context carries the capability
-        // it claims (#172); a fixture that failed to build its context
+        // it claims; a fixture that failed to build its context
         // would never reach its own gate.
         BgCtx{::foundation::effects::testing::bg()}, std::move(whole),
         [](::foundation::permissions::Permission<Left>, BgCtx const&) noexcept {},

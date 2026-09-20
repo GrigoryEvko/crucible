@@ -129,15 +129,15 @@ foundation_neg_compile_test(neg_permission_fork_rebuild_no_nullary_door
   "is not a member of"
   "rebuild_parent_after_fork_")
 
-# #172 Door 1, route one: a context is not evidence of a capability, so
-# naming a specialization and building it from nothing is refused.  The
+# Route one: a context is not evidence of a capability, so naming a
+# specialization and building it from nothing is refused.  The
 # second regex proves the refusal is on ExecCtx's own constructor and not
 # on the fixture's row type.
 foundation_neg_compile_test(neg_exec_ctx_forged_specialization
   "no matching function for call to"
   "ExecCtx<.*Init.*>::ExecCtx\\(\\)")
 
-# #172 Door 1, route two: promotion takes the capability, not its name.
+# Route two: promotion takes the capability, not its name.
 # Closing one route and not the other leaves the gate open, so these two
 # fixtures are a pair.
 foundation_neg_compile_test(neg_exec_ctx_with_cap_needs_the_capability
@@ -249,10 +249,10 @@ foundation_neg_compile_test(neg_permission_fork_without_bg
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
 
-# ── Task #100 (A9): the lift from a marker to its effect row ─────────
+# ── The lift from a marker to its effect row ─────────────────────────
 foundation_test(test_lift)
 
-# ── Task #104 (A10.4) part 2: the folded permission mints ────────────
+# ── The folded permission mints ──────────────────────────────────────
 #
 # Each permission mint is one template gated by the shape of its
 # argument list.  A token passed as an lvalue is not consumed, so it is

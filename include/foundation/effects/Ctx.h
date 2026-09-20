@@ -131,8 +131,8 @@ public:
     // A context that claims nothing is free to build, because there is
     // nothing in it to forge.
     //
-    // Until the fix for #172 this constructor was public for EVERY
-    // specialization, and that was the hole.  ExecCtx is friended by
+    // This constructor was once public for EVERY specialization, and
+    // that was the hole.  ExecCtx is friended by
     // each capability type so the member's default initializer can run,
     // so `ExecCtx<Init, Row<Init, Alloc, IO>>{}` default-built the Init
     // member and then satisfied CtxCanMint for every effect an init
@@ -391,8 +391,8 @@ static_assert(CtxCanMint<TestWitnessCtx, Effect::Block>);
 // static_assert wall above only proves the constant-evaluated path.
 inline void runtime_smoke_test() {
     // Only the foreground witness builds from nothing.  Each of the
-    // others is handed the capability it claims, which is the point of
-    // #172: a context is not evidence of a capability, it carries one.
+    // others is handed the capability it claims: a context is not
+    // evidence of a capability, it carries one.
     [[maybe_unused]] FgWitness fg{};
     [[maybe_unused]] BgWitness bg{testing::bg()};
     [[maybe_unused]] BgIoWitness bg_io{testing::bg()};

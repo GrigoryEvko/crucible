@@ -449,7 +449,7 @@ static_assert(CapMatchesCtx<Capability<Effect::Alloc, Test>, detail::exec_ctx_se
     static_cast<void>(test_block);
 
     // Each witness is handed the capability it claims — a context is
-    // not evidence of a capability, it carries one (#172).
+    // not evidence of a capability, it carries one.
     detail::exec_ctx_self_test::BgWitness bg_ctx{testing::bg()};
     detail::exec_ctx_self_test::BgIoWitness bg_compile_ctx{testing::bg()};
     auto from_ctx_alloc = mint_from_ctx<Effect::Alloc>(bg_ctx);
