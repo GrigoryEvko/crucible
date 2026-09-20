@@ -176,7 +176,7 @@ USAGE
 # holds the wrappers that specialize beside themselves the way
 # include/crucible/safety/ does, until Stage D of the canonical-fixy
 # refactor deletes the old tree.
-substrate_paths='include/crucible/algebra/* include/foundation/algebra/* include/fixy/* include/crucible/safety/* include/crucible/permissions/* include/crucible/handles/* test/test_concept_cheat_probe.cpp'
+substrate_paths='include/crucible/algebra/* include/foundation/algebra/* include/fixy/* include/crucible/safety/* include/crucible/permissions/* include/crucible/handles/* test/test_concept_cheat_probe.cpp test/fixy/test_cheat_probe.cpp test/fixy/neg/neg_cheat_graded_modality_injection.cpp'
 
 # A specialization, explicit or partial, always carries a template
 # header, and the header cannot contain a brace or a semicolon.  The
