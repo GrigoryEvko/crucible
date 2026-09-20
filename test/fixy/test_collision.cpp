@@ -533,6 +533,54 @@ static_assert(live_rules<at::simd::neon, at::scope::inner>::V401_ok
               && live_rules<at::simd::neon, at::scope::inner>::V402_ok);
 
 // ---------------------------------------------------------------------
+// The floating-point-mode family, live since fixy/atoms/Fp.h (task #176).
+//
+// The atom is a product, so a mode names some settings and leaves the
+// rest at their enum's first enumerator.  The cells read both halves:
+// what a mode says, and what it leaves unsaid.
+
+static_assert(col::axis_has_an_atom<Axis::FpMode>);
+
+using Reassoc = at::fp::FpReassociate;
+using Contract = at::fp::FpContract;
+template <auto... Settings>
+using fp_mode = at::fp::mode<Settings...>;
+
+// F101 a replay-deterministic payload x reassociation permitted.
+static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Reassoc::UnrestrictedRewrite>>::F101_ok);
+static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Reassoc::BoundedTreeDepth>>::F101_ok,
+              "a tree of any shape but the one the source wrote is a different sum");
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<Reassoc::Forbidden>>::F101_ok);
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast>>::F101_ok,
+              "a mode that names only contraction leaves reassociation at Forbidden");
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::F101_ok, "the empty mode is every setting at its strict pole");
+static_assert(rules_of<int, fp_mode<Reassoc::UnrestrictedRewrite>>::F101_ok, "no band, no claim");
+static_assert(live_rules<fp_mode<Reassoc::UnrestrictedRewrite>>::F101_ok, "the pack-only view cannot see a payload");
+
+// F102 a replay-deterministic payload x contraction across statements.
+static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast>>::F102_ok);
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<Contract::OnInExpr>>::F102_ok,
+              "contraction within one expression is visible in the source and the same on every build");
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<Contract::Off>>::F102_ok);
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<Reassoc::UnrestrictedRewrite>>::F102_ok,
+              "a mode that names only reassociation leaves contraction at Off");
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::F102_ok);
+
+// The two are two rules: a mode naming both trips both, and each of the
+// single-setting modes trips exactly one.
+static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::UnrestrictedRewrite>>::F101_ok
+              && !rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::UnrestrictedRewrite>>::F102_ok);
+
+// The settings no rule reads are admitted, which is the atom's own
+// claim: a mode may name them, and naming them refuses nothing.
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<at::fp::FpFtz::FlushToZero>>::valid);
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<at::fp::FpDenormalInput::DenormalsAreZero>>::valid);
+
+// The read alone still refuses nothing: a Pure payload under the strict
+// mode is accepted through the bound view.
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::valid);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
@@ -541,7 +589,9 @@ static_assert(live_rules<at::simd::neon, at::scope::inner>::V401_ok
 // rather than a floor because the three dispositions partition the
 // catalog — a floor here would let a rule fall out of all three and go
 // unnoticed.
-static_assert(col::pending_rule_count == 5);
+static_assert(col::pending_rule_count == 0,
+              "task #176 drained the pending roster: every axis but Type now has an atom, so a rule that still "
+              "cannot fire is Absent for a reason this layer can name, not Pending on an atom");
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -580,7 +630,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 28);
+static_assert(col::live_rule_count == 30);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -589,9 +639,9 @@ static_assert(col::live_rule_count == 28);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 28);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 5);
-static_assert(corpus_entries_with(col::Disposition::Absent) == 22);
+static_assert(corpus_entries_with(col::Disposition::Live) == 30);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 0);
+static_assert(corpus_entries_with(col::Disposition::Absent) == 25);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
               == col::rule_corpus_size);
@@ -621,9 +671,10 @@ static_assert(every_absent_entry_gives_a_reason());
 // Each pending axis really has no atom, and each axis carrying a live
 // rule really has one.  Both halves, so the roster is not merely
 // self-consistent.
-static_assert(!col::axis_has_an_atom<Axis::FpMode>);
-// SimdIsa moved sides when fixy/atoms/Simd.h shipped, as Regime did
-// below; the V101 and V402 cells above are what it bought.
+// Every axis on this side now, because task #176 drained the other one.
+// The cells stay rather than being deleted: each is the witness that its
+// axis crossed, and the rule cells above are what each crossing bought.
+static_assert(col::axis_has_an_atom<Axis::FpMode>);
 static_assert(col::axis_has_an_atom<Axis::SimdIsa>);
 static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);
 static_assert(col::axis_has_an_atom<Axis::HwInstruction>);
@@ -662,8 +713,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 5) return 2;
-    if (col::live_rule_count != 28) return 3;
+    if (col::pending_rule_count != 0) return 2;
+    if (col::live_rule_count != 30) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -685,7 +736,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 28 || pending != 5 || absent != 22) return 9;
+    if (live != 30 || pending != 0 || absent != 25) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 

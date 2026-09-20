@@ -330,6 +330,22 @@ fixy_neg_compile_test(neg_rule_v402_scope_across_trunk
   "Collision rule\\(s\\) V402:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the floating-point-mode family ─────────────────────────
+#
+# The last axis the task drained.  Both rules refuse on the payload's
+# replay claim against one setting of the product atom: F101 on
+# reassociation, F102 on contraction across statements.  Each fixture's
+# mode names one setting and leaves the other at its strict pole, which
+# is what makes each trip exactly one of the two.
+fixy_neg_compile_test(neg_rule_f101_replay_reassociate
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F101:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f102_replay_contract_fast
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F102:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.

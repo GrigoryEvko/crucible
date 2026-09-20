@@ -58,6 +58,7 @@
 #include <fixy/atoms/Barrier.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/atoms/Dispatch.h>
+#include <fixy/atoms/Fp.h>
 #include <fixy/atoms/Global.h>
 #include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Observe.h>
@@ -149,6 +150,7 @@ using all_atom_roster =
     ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster,
                                        ::fixy::atom::detail::barrier_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
                                        ::fixy::atom::detail::dispatch_atom_roster,
+                                       ::fixy::atom::detail::fp_atom_roster,
                                        ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::hw_atom_roster,
                                        ::fixy::atom::detail::observe_atom_roster,
                                        ::fixy::atom::detail::os_atom_roster,
@@ -189,17 +191,21 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 // caller-supplied by design, being the payload itself, so it is the one
 // axis that is atomless and complete rather than atomless and waiting.
 //
-// Task #176 is draining this list, one axis per commit, because the
-// user's decision was to ship an atom for every axis rather than delete
-// any.  Regime.h left first, taking the H, R and S families live; then
-// Sync.h with W001 and W002, Observe.h with B001 and the new B002, Hw.h
-// with the three V2 rules, Barrier.h with V301, Scope.h with V401, and
-// Simd.h with V101 and V402.  One axis is left.
-inline constexpr Axis pending_axes[] = {
-    Axis::FpMode,
-};
+// Task #176 drained this list, one axis per commit, because the user's
+// decision was to ship an atom for every axis rather than delete any.
+// Regime.h left first, taking the H, R and S families live; then Sync.h
+// with W001 and W002, Observe.h with B001 and the new B002, Hw.h with the
+// three V2 rules, Barrier.h with V301, Scope.h with V401, Simd.h with
+// V101 and V402, and Fp.h last with F101 and F102.  The list is now
+// empty, which is the whole of what the task set out to prove: every axis
+// but Type can be written.
+//
+// It is a std::array rather than a C array precisely so it can reach
+// zero.  A C array of length zero is ill-formed, so the type that held
+// this list could not express the state the task was aiming at.
+inline constexpr std::array<Axis, 0> pending_axes{};
 
-inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
+inline constexpr std::size_t pending_axis_count = pending_axes.size();
 
 [[nodiscard]] consteval bool axis_is_pending(Axis axis) noexcept {
     for (const Axis listed : pending_axes) {
@@ -241,19 +247,16 @@ enum class RuleCode : std::uint8_t {
     W002,
     F101,
     F102,
-    F103,
-    F104,
-    F105,
-    // V102 has no enumerator, and the pin below is why: this enum holds
-    // exactly the codes a rule in this file can be named by, and an
-    // Absent code is named only by the corpus, as a string.  The
-    // twenty-one codes that were Absent from the start have never had one
-    // either.  V102 was briefly here while it was Pending, because a
-    // pending rule keeps its code against the day its axis gains an atom;
-    // when fixy/atoms/Simd.h shipped and it still could not fire, it
-    // joined the Absent list and gave its enumerator up.  Nothing renamed
-    // and nothing reused: the corpus still carries the string, with the
-    // reason it cannot fire.
+    // F103, F104, F105 and V102 have no enumerator, and the pin below is
+    // why: this enum holds exactly the codes a rule in this file can be
+    // named by, and an Absent code is named only by the corpus, as a
+    // string.  The twenty-one codes that were Absent from the start have
+    // never had one either.  They were briefly here while they were
+    // Pending, because a pending rule keeps its code against the day its
+    // axis gains an atom; when task #176 gave FpMode and SimdIsa atoms
+    // and the four still could not fire, they joined the Absent list and
+    // gave their enumerators up.  Nothing renamed and nothing reused: the
+    // corpus still carries each string, with the reason it cannot fire.
     V101,
     V201,
     V202,
@@ -273,35 +276,27 @@ struct pending_rule {
     std::string_view theorem{};
 };
 
-inline constexpr pending_rule pending_rules[] = {
-    // H001, H002, H003, H010, R001 and S001 left this list when
-    // fixy/atoms/Regime.h shipped, W001 and W002 when fixy/atoms/Sync.h
-    // did, and B001 with the new B002 when fixy/atoms/Observe.h did.  Each
-    // is a live_rules member below and a Live row in rule_corpus.  W001
-    // needed two of those commits: it reads a tier AND a wait strategy, so
-    // the axis it waited on moved from Regime to Synchronization before it
-    // could fire.
-    {RuleCode::F101, Axis::FpMode,
-     "Replay x FP reassociation permitted: reassociation reorders the sum, so a replayed run produces different "
-     "bits and DetSafe fails."},
-    {RuleCode::F102, Axis::FpMode,
-     "Replay x FP contract fast: cross-statement contraction changes the rounding sequence between builds."},
-    {RuleCode::F103, Axis::FpMode,
-     "ConstantTime x unrestricted FP reassociation: the rewrite is data-dependent, so the timing is too."},
-    {RuleCode::F104, Axis::FpMode,
-     "ConstantTime x denormal inputs honored: denormal arithmetic is slower on most silicon, which leaks the "
-     "operand through timing."},
-    {RuleCode::F105, Axis::FpMode, "ConstantTime x subnormals preserved: same leak as F104 on the result side."},
-    // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped,
-    // V301 when fixy/atoms/Barrier.h did, V401 when fixy/atoms/Scope.h
-    // did, and V101 with V402 when fixy/atoms/Simd.h did.  V401 and V402
-    // each read two axes, so like W001 each moved axis between the two
-    // commits that shipped them.  V102 left for the Absent list in
-    // rule_corpus: it reads a SIMD width, which no atom or band carries,
-    // so an atom on its axis did not make it fire.
-};
+// Empty, and empty for two different reasons.
+//
+// Most of the roster left for the live rules as task #176 shipped each
+// axis: H001, H002, H003, H010, R001 and S001 with fixy/atoms/Regime.h,
+// W001 and W002 with Sync.h, B001 with Observe.h, V201, V202 and V203
+// with Hw.h, V301 with Barrier.h, V401 with Scope.h, V101 and V402 with
+// Simd.h, and F101 with F102 last, when Fp.h shipped.  Each is a
+// live_rules member below and a Live row in rule_corpus.  Three of them
+// moved axis on the way: W001 reads a tier AND a wait strategy, V401 a
+// scope AND a strength, V402 a scope AND a pinned ISA, so each waited on
+// whichever of its two axes was still atomless.
+//
+// Four left for the Absent list in rule_corpus instead, because the atom
+// their axis gained did not make them fire.  V102 reads a SIMD width, and
+// F103, F104 and F105 read a constant-time grade; no atom and no band
+// carries either.  That is the honest distinction this list exists to
+// draw: pending means waiting on an atom, and absent means waiting on
+// something this layer does not have.
+inline constexpr std::array<pending_rule, 0> pending_rules{};
 
-inline constexpr std::size_t pending_rule_count = sizeof(pending_rules) / sizeof(pending_rules[0]);
+inline constexpr std::size_t pending_rule_count = pending_rules.size();
 
 // ---------------------------------------------------------------------
 // The corpus: every rule code the old catalog defines, and what became
@@ -394,24 +389,29 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"V101", Disposition::Live, "a replay-deterministic payload x an ISA pinned to one trunk"},
     {"V402", Disposition::Live, "a trunk-pinned scope x a trunk-pinned ISA that do not cohere"},
 
-    // The rest wait on an axis with no atom.  pending_rules above carries
-    // the theorem and names the axis for each.
-    {"F101", Disposition::Pending, "Axis::FpMode"},
-    {"F102", Disposition::Pending, "Axis::FpMode"},
-    {"F103", Disposition::Pending, "Axis::FpMode"},
-    {"F104", Disposition::Pending, "Axis::FpMode"},
-    {"F105", Disposition::Pending, "Axis::FpMode"},
+    // The floating-point-mode family, live since fixy/atoms/Fp.h shipped
+    // the product atom (task #176).  Both read the payload's replay claim,
+    // as V203 and V101 do.
+    {"F101", Disposition::Live, "a replay-deterministic payload x FP reassociation permitted"},
+    {"F102", Disposition::Live, "a replay-deterministic payload x FP contraction across statements"},
 
-    // The twenty-two this layer cannot state.  Each note names the thing
+    // Nothing waits on an atom any more.  pending_rules above is empty and
+    // says why in two parts; the rest of this list is the second part.
+
+    // The twenty-five this layer cannot state.  Each note names the thing
     // that is missing, so the entry is a claim someone can check rather
     // than a gap someone has to notice.
     //
-    // One of them waited in pending_rules until task #176 gave its axis an
-    // atom, and moved here rather than going live, because the atom was
-    // not what it was missing: V102 reads a SIMD width against the ISA,
-    // and the width a body emits is not the instruction set it was
-    // emitted for.
+    // Four of them waited in pending_rules until task #176 gave their axis
+    // an atom, and moved here rather than going live, because the atom was
+    // not what they were missing.  V102 reads a SIMD width against the
+    // ISA, and the width a body emits is not the instruction set it was
+    // emitted for.  F103, F104 and F105 read a constant-time grade, which
+    // is the same thing E044 and S010 below are missing.
     {"V102", Disposition::Absent, "reads a pinned SIMD width against the ISA; no atom or band carries a width"},
+    {"F103", Disposition::Absent, "reads a constant-time grade against the FP mode, as E044 does"},
+    {"F104", Disposition::Absent, "reads a constant-time grade against denormal inputs, as E044 does"},
+    {"F105", Disposition::Absent, "reads a constant-time grade against subnormal results, as E044 does"},
     //
     // Four of them read a grade on the payload type.  live_rules receives
     // the atom pack and not the payload: CollisionRules<fn<Type, Atoms...>>
@@ -779,6 +779,19 @@ template <class G>
     requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
 struct isa_on_arm_trunk_<G> : std::bool_constant<::fixy::atom::simd::on_arm_trunk(G::isa)> {};
 
+// Whether the FP mode NAMES one setting value.  The atom on this axis is
+// a product rather than a family, so a rule asks it about one setting at
+// a time and the atom answers from the pack it was written with.  The
+// primary is false, which is the strict pole read correctly: a binding
+// that names no mode leaves every setting at its enum's first
+// enumerator — reassociation forbidden, contraction off — and those are
+// exactly the values no rule refuses.
+template <auto Wanted, class G>
+struct fp_names_ : std::false_type {};
+template <auto Wanted, class G>
+    requires requires { G::template names<Wanted>; }
+struct fp_names_<Wanted, G> : std::bool_constant<G::template names<Wanted>> {};
+
 // Whether the Effect row carries Init, which is the context V202 asks a
 // privileged tier to be reached from.  Same shape as row_admits_bg_.
 template <class G>
@@ -1083,6 +1096,33 @@ struct rules_of {
     static constexpr bool V101_ok = !(replay_deterministic && isa_pinned);
     static constexpr bool V402_ok = !(scope_pinned && isa_pinned && !trunks_cohere);
 
+    // ── The floating-point-mode family, live since fixy/atoms/Fp.h ────
+    //
+    // Two rules, both reading the payload's replay claim against one
+    // setting of the mode.  F101 is reassociation: a sum rewritten into a
+    // different tree rounds differently, and the bounded-depth rung is
+    // refused with the unrestricted one because a tree of ANY shape but
+    // the one the source wrote is a different sum.  F102 is contraction
+    // across statements: whether a multiply and an add fuse into one FMA
+    // changes where the single rounding falls, and "fast" leaves that to
+    // whatever the compiler decides per build.
+    //
+    // Contraction WITHIN one expression is not refused, and that is
+    // deliberate rather than an omission: it is what -ffp-contract=on
+    // permits, which is the flag CLAUDE.md's DetSafe discipline names as
+    // safe, because the fusion is visible in the source expression and so
+    // is the same on every build.
+    using fp_mode_grade = typename G::template on<Axis::FpMode>;
+
+    static constexpr bool fp_reassociates =
+        detail::fp_names_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value
+        || detail::fp_names_<::fixy::atom::fp::FpReassociate::BoundedTreeDepth, fp_mode_grade>::value;
+    static constexpr bool fp_contracts_across_statements =
+        detail::fp_names_<::fixy::atom::fp::FpContract::Fast, fp_mode_grade>::value;
+
+    static constexpr bool F101_ok = !(replay_deterministic && fp_reassociates);
+    static constexpr bool F102_ok = !(replay_deterministic && fp_contracts_across_statements);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -1120,7 +1160,7 @@ struct rules_of {
             rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
             rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
             rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"}, rule_verdict{V101_ok, "V101"},
-            rule_verdict{V402_ok, "V402"},
+            rule_verdict{V402_ok, "V402"}, rule_verdict{F101_ok, "F101"}, rule_verdict{F102_ok, "F102"},
         };
     }
 
@@ -1236,6 +1276,14 @@ struct rules_of {
                                "shareability scopes are the ARM DMB ISH/OSH family and the accelerator scopes are "
                                "GPU scope; an x86 ISA has neither and an ARM ISA has only the first. Pin the scope "
                                "and the ISA on one trunk, or leave one at its shared point.");
+        static_assert(F101_ok, "F101: a replay-deterministic payload x FP reassociation permitted. Reassociation "
+                               "rewrites the sum into a different tree, and a different tree rounds differently, so "
+                               "the bits differ between builds; the bounded-depth rung is refused with the "
+                               "unrestricted one for the same reason. Forbid reassociation, or lower the band.");
+        static_assert(F102_ok, "F102: a replay-deterministic payload x FP contraction across statements. Whether a "
+                               "multiply and an add fuse into one FMA decides where the single rounding falls, and "
+                               "'fast' leaves that to the build. Contract within an expression instead, which is "
+                               "visible in the source and stable, or lower the band.");
         return valid;
     }
 
