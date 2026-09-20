@@ -1754,3 +1754,54 @@ fixy_neg_compile_test(neg_shared_read_from_a_temporary_share
 # reference rather than a silent layout mismatch.
 fixy_test(test_qtt_tracked)
 target_compile_definitions(test_qtt_tracked PRIVATE CRUCIBLE_QTT_TRACK_CONSUME=1)
+
+# ── The witnessed deref ───────────────────────────────────────────────
+#
+# A borrow carries an owner tag and a brand, and leaves WHEN it may be
+# read to lexical scope.  A witnessed borrow names an obligation instead
+# and exposes no accessor, so every read goes through one gate.  Two
+# obligations ship: a protocol position and an effect row.  The fixtures
+# below are the four refusals plus the two the mints make, and each was
+# proven live by a mutant that removes its mechanism.
+fixy_test(test_witnessed)
+
+# TEMPORAL, the refusal the whole kind exists for: the session moved on,
+# and the handle it handed back is not the handle the borrow names.
+fixy_neg_compile_test(neg_witnessed_deref_at_a_later_protocol_position
+  "no matching function for call to .deref\\("
+  "required for the satisfaction of .Discharges<Witness, Presented>."
+  "Presented = fixy::session::SessionHandle<fixy::session::End,")
+
+# TEMPORAL, presented the wrong kind of thing entirely.
+fixy_neg_compile_test(neg_witnessed_deref_without_a_handle
+  "no matching function for call to .deref\\("
+  "Witness = fixy::witness::AtProtocol<fixy::session::Send<"
+  "Presented = foundation::effects::ExecCtx<")
+
+# EFFECT: the region's tag says the read costs IO, and the context's row
+# is empty.  The same Subrow test a lend already runs, on the borrow.
+fixy_neg_compile_test(neg_witnessed_deref_ctx_refuses_the_row
+  "no matching function for call to .deref\\("
+  "Witness = fixy::witness::UnderRow<<unnamed>::Spilled>"
+  "Presented = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg")
+
+# EFFECT, presented the wrong kind of thing entirely.  With the one
+# above, this pair is what shows the two kinds share a gate and not an
+# obligation.
+fixy_neg_compile_test(neg_witnessed_deref_with_a_handle_for_a_row
+  "no matching function for call to .deref\\("
+  "Witness = fixy::witness::UnderRow<<unnamed>::Cache"
+  "Presented = fixy::session::SessionHandle<fixy::session::Send<")
+
+# The mint refuses a tag that states no obligation, rather than minting
+# a witness every context discharges.
+fixy_neg_compile_test(neg_witnessed_under_a_tag_with_no_row
+  "no matching function for call to .mint_witnessed_under\\("
+  "has_permission_row_v<typename UBorrow::source_type>"
+  "evaluated to .false.")
+
+# The position a borrow names has to outlive the borrow.
+fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
+  "use of deleted function"
+  "mint_witnessed_at\\(const session::SessionHandle<Proto, Resource, LoopCtx, Policy>&&"
+  "the protocol position the borrow would name is already gone")

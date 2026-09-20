@@ -94,6 +94,11 @@ fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/Shared
 # a key only mint_shared_read holds, because a read built beside the
 # mint would carry a brand, a share and a row that nobody weighed.
 fixy::SharedRead<int, foundation::permissions::tag::HugePageTag> | fixy/SharedRegion.h | fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>{fixy::detail::shared_read_mint_t{}, std::span<int const>{}} | private | closed
+# A borrow that names what has to be presented before it can be read.
+# The obligation is the whole value of the type, so a carrier assembled
+# beside the mint carries one nobody weighed.  The key is handed over in
+# the expression below and the door is shut anyway.
+fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>> | fixy/Witnessed.h | fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>>{fixy::detail::witnessed_mint_t{}, forge::rvalue<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>>()} | private | closed
 
 # The receipt a split writes.  Its key is a public empty struct, because
 # the door is the constructor and not the key: handing the key over is
