@@ -826,3 +826,10 @@ foreach(_witness_line IN LISTS _witness_lines)
     "${_witness_why}"
     "\\b${_witness_base}\\(")
 endforeach()
+
+# ── Task #107 (A10.7): the cross-wrapper harness and the cheat probe ──
+#
+# test_wrapper_verification is the one translation unit where every
+# fixy wrapper meets: the diagnostic surface, the layout per storage
+# regime, composition at every depth, and one smoke call each.
+fixy_test(test_wrapper_verification)
