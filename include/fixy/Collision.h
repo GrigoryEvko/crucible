@@ -46,6 +46,7 @@
 #include <fixy/atoms/Dispatch.h>
 #include <fixy/atoms/Global.h>
 #include <fixy/atoms/Os.h>
+#include <fixy/atoms/Regime.h>
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <foundation/Platform.h>
@@ -129,6 +130,7 @@ using all_atom_roster =
     ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
                                        ::fixy::atom::detail::dispatch_atom_roster,
                                        ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::os_atom_roster,
+                                       ::fixy::atom::detail::regime_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
                                        ::fixy::atom::detail::stdio_atom_roster>;
 
@@ -157,12 +159,18 @@ template <Axis A>
 template <Axis A>
 inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 
-// The eight axes no shipped atom reaches.  A rule reading one of them
-// is registered as pending below.  Axis::Type is not here: it is
-// caller-supplied by design, being the payload itself.
+// The axes no shipped atom reaches.  A rule reading one of them is
+// registered as pending below.  Axis::Type is not here: it is
+// caller-supplied by design, being the payload itself, so it is the one
+// axis that is atomless and complete rather than atomless and waiting.
+//
+// Task #176 is draining this list, one axis per commit, because the
+// user's decision was to ship an atom for every axis rather than delete
+// any.  fixy/atoms/Regime.h left it first: the H, R and S families
+// below went live with it.
 inline constexpr Axis pending_axes[] = {
-    Axis::Observability, Axis::Synchronization, Axis::Regime,  Axis::FpMode,
-    Axis::HwInstruction, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
+    Axis::Observability, Axis::Synchronization, Axis::FpMode,   Axis::HwInstruction,
+    Axis::BarrierStrength, Axis::SimdIsa,       Axis::MemoryScope,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -229,27 +237,13 @@ inline constexpr pending_rule pending_rules[] = {
     {RuleCode::B001, Axis::Observability,
      "Bg observable surface with unbounded resource: declare space::Bounded<N> + cost::Linear<N>; a Bg-observable "
      "surface that may run unbounded is a back-pressure trap."},
-    {RuleCode::H001, Axis::Regime,
-     "HotPath x cost::Unstated/Unbounded: declare cost::Constant or cost::Linear<N>; the hot path must justify its "
-     "compute envelope."},
-    {RuleCode::H002, Axis::Regime,
-     "HotPath x pred::True refinement (no witness floor): attach a Refined<predicate, Type> input that proves an "
-     "invariant the hot body assumes; pred::True is review-rejected on hot paths."},
-    {RuleCode::H003, Axis::Regime,
-     "HotPath x (Alloc or IO) x unbounded cost: move Alloc/IO outside the hot path, or attach an Init/Bg context "
-     "that owns the unbounded surface."},
-    {RuleCode::H010, Axis::Regime,
-     "HotPath x Row<Bg>: a function cannot be both on the hot path (<=40 ns intra-socket, CLAUDE.md SIX) and in "
-     "background context. H001 and H003 both miss a HotPath x Bg x cost::Constant binding, which is still a context "
-     "contradiction."},
-    {RuleCode::R001, Axis::Regime,
-     "Coroutine x HotPath: a coroutine frame costs an indirect call plus a state spill at every suspension point, "
-     "and one resume breaches the hot-path budget."},
-    {RuleCode::S001, Axis::Regime,
-     "Stdio x HotPath: buffered stdio takes a lock and may block; neither belongs on a path budgeted in "
-     "nanoseconds."},
-    {RuleCode::W001, Axis::Regime,
-     "HotPath x kernel wait: a park or a futex wait costs 1-5 us against a 40 ns budget."},
+    // H001, H002, H003, H010, R001 and S001 left this list when
+    // fixy/atoms/Regime.h shipped; each is a live_rules member below and
+    // a Live row in rule_corpus.  W001 stays because it reads two axes
+    // and only one of them gained atoms.
+    {RuleCode::W001, Axis::Synchronization,
+     "HotPath x kernel wait: a park or a futex wait costs 1-5 us against a 40 ns budget.  Regime has atoms now; "
+     "this waits on the wait-strategy grade, which is the other half of the premise."},
     {RuleCode::W002, Axis::Synchronization,
      "Bg row x active spin: a background-context body that spins burns a core that the scheduler could have given "
      "to foreground work."},
@@ -331,16 +325,22 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"G002", Disposition::Live, "thread-local x atomic representation"},
     {"D002", Disposition::Live, "unbounded recursion x unbounded cost"},
 
+    // The regime family, live since fixy/atoms/Regime.h shipped the
+    // three HotPathTier atoms (task #176).
+    {"H001", Disposition::Live, "hot x unstated or unbounded cost"},
+    {"H002", Disposition::Live, "hot x no refinement witness"},
+    {"H003", Disposition::Live, "hot x an Alloc or IO row x unbounded cost"},
+    {"H010", Disposition::Live, "hot x Row<Bg>"},
+    {"R001", Disposition::Live, "coroutine x hot"},
+    {"S001", Disposition::Live, "stdio x hot"},
+
     // The twenty-two waiting on an atomless axis.  pending_rules above
     // carries the theorem and names the axis for each.
     {"B001", Disposition::Pending, "Axis::Observability"},
-    {"H001", Disposition::Pending, "Axis::Regime"},
-    {"H002", Disposition::Pending, "Axis::Regime"},
-    {"H003", Disposition::Pending, "Axis::Regime"},
-    {"H010", Disposition::Pending, "Axis::Regime"},
-    {"R001", Disposition::Pending, "Axis::Regime"},
-    {"S001", Disposition::Pending, "Axis::Regime"},
-    {"W001", Disposition::Pending, "Axis::Regime"},
+    // W001 reads Regime AND Synchronization.  Regime has atoms now, so
+    // the axis it still waits on is the other one, and it is registered
+    // against that rather than left against the axis it has.
+    {"W001", Disposition::Pending, "Axis::Synchronization"},
     {"W002", Disposition::Pending, "Axis::Synchronization"},
     {"F101", Disposition::Pending, "Axis::FpMode"},
     {"F102", Disposition::Pending, "Axis::FpMode"},
@@ -569,6 +569,17 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
                            || Es == ::foundation::effects::Effect::Block)
                           || ...)> {};
 
+// H003's theorem names Alloc and IO specifically, so it gets its own
+// predicate rather than reusing row_admits_observable_ above, which also
+// admits Block.  A blocking hot path is just as wrong, but it is W001's
+// theorem and W001 cites the futex cost, not the allocator's.
+template <class G>
+struct row_admits_alloc_or_io_ : std::false_type {};
+template <::foundation::effects::Effect... Es>
+struct row_admits_alloc_or_io_<::fixy::atom::with<Es...>>
+    : std::bool_constant<((Es == ::foundation::effects::Effect::Alloc || Es == ::foundation::effects::Effect::IO)
+                          || ...)> {};
+
 template <class G>
 struct repr_is_atomic_ : std::false_type {};
 template <>
@@ -644,6 +655,43 @@ struct live_rules {
     static constexpr bool G002_ok = !(thread_local_state && atomic_repr);
     static constexpr bool D002_ok = !(recurses && unbounded_cost);
 
+    // ── The regime family, live since fixy/atoms/Regime.h ────────────
+    //
+    // Regime's discharge is Measurement: which tier a body ACHIEVES is
+    // the bench's answer.  These six rules are the part that needs no
+    // bench, because each is a contradiction between the declared tier
+    // and something else the same binding declares.  A body cannot be
+    // budgeted in nanoseconds and also admit an unbounded cost, a
+    // background row, buffered stdio, or a coroutine suspension.
+    static constexpr bool hot = std::is_same_v<typename G::template on<Axis::Regime>, ::fixy::atom::regime::hot>;
+    static constexpr bool row_alloc_or_io =
+        detail::row_admits_alloc_or_io_<typename G::template on<Axis::Effect>>::value;
+
+    // "Unstated" is the strict pole on Complexity, so an unstated cost
+    // is the absence of a grade rather than a grade of its own.  H001
+    // refuses both it and the explicit unbounded grade: the hot path has
+    // to say what its compute envelope is.
+    static constexpr bool cost_unstated = !G::template mentions<Axis::Complexity>;
+    static constexpr bool H001_ok = !(hot && (cost_unstated || unbounded_cost));
+
+    // pred::True is the Refinement strict pole, again an absence.  A hot
+    // body assumes an invariant it does not check — that is what buys
+    // the nanoseconds — so it must carry a witness that something else
+    // proved it.
+    static constexpr bool no_witness_floor = !G::template mentions<Axis::Refinement>;
+    static constexpr bool H002_ok = !(hot && no_witness_floor);
+
+    static constexpr bool H003_ok = !(hot && row_alloc_or_io && unbounded_cost);
+
+    // H010 is not covered by H001 or H003: a HotPath x Bg binding with
+    // cost::Constant and no Alloc or IO row passes both of those and is
+    // still a context contradiction, because the two name different
+    // threads.
+    static constexpr bool H010_ok = !(hot && row_bg);
+
+    static constexpr bool R001_ok = !(coroutine && hot);
+    static constexpr bool S001_ok = !(G::template mentions<Axis::Stdio> && hot);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -675,7 +723,9 @@ struct live_rules {
             rule_verdict{L002_ok, "L002"}, rule_verdict{M012_ok, "M012"}, rule_verdict{P010_ok, "P010"},
             rule_verdict{L007_ok, "L007"}, rule_verdict{T001_ok, "T001"}, rule_verdict{R002_ok, "R002"},
             rule_verdict{R003_ok, "R003"}, rule_verdict{L006_ok, "L006"}, rule_verdict{G002_ok, "G002"},
-            rule_verdict{D002_ok, "D002"}, rule_verdict{P002_ok, "P002"},
+            rule_verdict{D002_ok, "D002"}, rule_verdict{P002_ok, "P002"}, rule_verdict{H001_ok, "H001"},
+            rule_verdict{H002_ok, "H002"}, rule_verdict{H003_ok, "H003"}, rule_verdict{H010_ok, "H010"},
+            rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"},
         };
     }
 
@@ -734,12 +784,42 @@ struct live_rules {
         static_assert(P002_ok, "P002: ghost x an emitting surface. A ghost binding is erased at codegen, and a "
                                "stdio write or a syscall is emitted code by definition. P010 catches this through "
                                "the effect row; these two axes are the other doors to the same contradiction.");
-        return L002_ok && M012_ok && P010_ok && L007_ok && T001_ok && R002_ok && R003_ok && L006_ok && G002_ok
-            && D002_ok && P002_ok;
+        static_assert(H001_ok, "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
+                               "envelope, so declare cost::Constant or cost::Linear. An unstated cost is the "
+                               "Complexity strict pole, which on a hot binding is a claim nobody made.");
+        static_assert(H002_ok, "H002: hot x no refinement witness. A hot body buys its nanoseconds by assuming an "
+                               "invariant instead of checking it, so something upstream must have proved it. Attach "
+                               "a Refined input that carries the proof.");
+        static_assert(H003_ok, "H003: hot x an Alloc or IO row x unbounded cost. Move the allocation or the I/O "
+                               "outside the hot path, or give it an Init or Bg context that owns the unbounded "
+                               "surface.");
+        static_assert(H010_ok, "H010: hot x Row<Bg>. A function cannot be both on the foreground hot path and in "
+                               "background context: the two name different threads. H001 and H003 both admit a hot "
+                               "Bg binding with a constant cost and no Alloc or IO, which is still this "
+                               "contradiction.");
+        static_assert(R001_ok, "R001: coroutine x hot. A coroutine frame costs an indirect call plus a state spill "
+                               "at every suspension point, and one resume breaches the budget.");
+        static_assert(S001_ok, "S001: stdio x hot. Buffered stdio takes a lock and may block. Neither belongs on a "
+                               "path budgeted in nanoseconds.");
+        return valid;
     }
 
-    static constexpr bool valid = L002_ok && M012_ok && P010_ok && L007_ok && T001_ok && R002_ok && R003_ok && L006_ok
-                               && G002_ok && D002_ok && P002_ok;
+    // Folded over verdicts() rather than written as a conjunction of the
+    // same codes a third time.
+    //
+    // This file used to carry the list three ways: the verdicts array,
+    // validate()'s return, and this.  Adding a rule to two of the three
+    // left a rule that reports itself in the tier-5 message and refuses
+    // nothing — the exact shape of a gate that asks for nothing, which is
+    // what this migration keeps finding.  The fold makes verdicts() the
+    // single list, and every_ok_member_has_a_verdict_row_ below is what
+    // keeps a new `_ok` member from staying out of it.
+    static constexpr bool valid = [] {
+        for (const rule_verdict& verdict : verdicts()) {
+            if (!verdict.ok) return false;
+        }
+        return true;
+    }();
 };
 
 // ---------------------------------------------------------------------

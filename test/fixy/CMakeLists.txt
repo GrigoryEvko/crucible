@@ -191,6 +191,46 @@ fixy_neg_compile_test(neg_rule_d002_recursion_unbounded_cost
   "Collision rule\\(s\\) D002:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the regime family ──────────────────────────────────────
+#
+# Six rules that could not fire until fixy/atoms/Regime.h gave Axis::Regime
+# its first atoms.  Five of the six are isolated to their own code, which
+# takes work rather than luck: H001's and H002's premises are both
+# ABSENCES (the Complexity and Refinement strict poles), so a bare
+# `regime::hot` pack trips both, and every other fixture in this group
+# carries a cost grade and a refinement witness specifically to silence
+# them.  Without those atoms each fixture would floor on a code it does
+# not claim — the defect #166 was.
+#
+# H003 is the one that cannot be isolated, and its own text says so:
+# cost_unbounded is H001's premise as well, so the pack trips H001, H003.
+# The tier-5 message lists every code, which is what still lets it floor
+# on H003.
+fixy_neg_compile_test(neg_rule_h001_hot_unstated_cost
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) H001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_h002_hot_no_witness
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) H002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_h003_hot_alloc_unbounded
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) .*H003"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_h010_hot_bg_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) H010:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_r001_coroutine_hot
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) R001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_s001_stdio_hot
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) S001:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.

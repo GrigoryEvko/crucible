@@ -31,6 +31,13 @@ using Eff = ::foundation::effects::Effect;
 // lives in a detail namespace and is not the test's to name.
 struct tls_tag final {};
 
+// H002 asks a hot binding to carry a refinement witness, and
+// atom::refined_with is parametric on the predicate that was proved.  The
+// test brings its own for the same reason as tls_tag: which predicate a
+// hot body needs is the caller's business, and H002 only asks that there
+// IS one.
+struct hot_invariant final {};
+
 // ---------------------------------------------------------------------
 // grades answers without fn.
 
@@ -117,9 +124,89 @@ static_assert(live_rules<at::copy, at::stdio::write<at::stdio::streams::Stdout>>
               "only the ghost grade makes an emitted write a contradiction");
 
 // ---------------------------------------------------------------------
+// The regime family, live since fixy/atoms/Regime.h (task #176).
+//
+// Each cell pair is the rule refusing its pair and admitting each half,
+// the same shape as the eleven above.  Two things are worth reading for
+// rather than assuming.
+//
+// First, `hot` alone trips H001 AND H002, because both premises are
+// ABSENCES: an unstated cost and a missing refinement witness are the
+// strict poles of Complexity and Refinement.  So the "admits the half"
+// cell for the other H rules has to satisfy those two first, which is
+// what the cost_constant and refined_with atoms in them are doing.  They
+// are not decoration; without them the cell would pass for the wrong
+// reason.
+//
+// Second, `warm` and `cold` trip nothing.  Every rule here reads `hot`
+// specifically, not "mentions Regime", so declaring a cold path is free.
+
+// H001 hot x an unstated or unbounded cost
+static_assert(!live_rules<at::regime::hot>::H001_ok, "hot with no Complexity grade is an unstated envelope");
+static_assert(!live_rules<at::regime::hot, at::cost_unbounded>::H001_ok);
+static_assert(live_rules<at::regime::hot, at::cost_constant>::H001_ok);
+static_assert(live_rules<at::regime::hot, at::cost_linear<8>>::H001_ok);
+static_assert(live_rules<at::cost_unbounded>::H001_ok, "an unbounded cost off the hot path is not H001's business");
+static_assert(live_rules<at::regime::warm>::H001_ok, "H001 reads hot, not any regime grade");
+static_assert(live_rules<at::regime::cold>::H001_ok);
+
+// H002 hot x no refinement witness
+static_assert(!live_rules<at::regime::hot>::H002_ok);
+static_assert(live_rules<at::regime::hot, at::refined_with<hot_invariant>>::H002_ok);
+static_assert(live_rules<at::refined_with<hot_invariant>>::H002_ok);
+static_assert(live_rules<at::regime::warm>::H002_ok);
+
+// H003 hot x an Alloc or IO row x unbounded cost.  Three premises, so
+// dropping any one admits the binding.
+static_assert(!live_rules<at::regime::hot, at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok);
+static_assert(!live_rules<at::regime::hot, at::with<Eff::IO>, at::cost_unbounded>::H003_ok);
+static_assert(live_rules<at::regime::hot, at::with<Eff::Alloc>, at::cost_constant>::H003_ok);
+static_assert(live_rules<at::regime::hot, at::cost_unbounded>::H003_ok, "no Alloc or IO row, so H001 not H003");
+static_assert(live_rules<at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok, "not hot, so no contradiction");
+// Block is deliberately outside H003: a blocking hot path is W001's
+// theorem, which cites the futex cost rather than the allocator's.  The
+// cell is here so the boundary is a decision on the record.
+static_assert(live_rules<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>::H003_ok,
+              "H003's theorem names Alloc and IO; Block on a hot path belongs to W001");
+
+// H010 hot x Row<Bg>.  The cost_constant and refined_with atoms are what
+// make this cell prove H010 rather than H001 or H002 in disguise.
+static_assert(!live_rules<at::regime::hot, at::with<Eff::Bg>, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
+static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
+static_assert(live_rules<at::with<Eff::Bg>>::H010_ok);
+static_assert(live_rules<at::regime::cold, at::with<Eff::Bg>>::H010_ok, "a cold background body is ordinary");
+
+// R001 coroutine x hot
+static_assert(!live_rules<at::coroutine, at::regime::hot>::R001_ok);
+static_assert(live_rules<at::coroutine>::R001_ok);
+static_assert(live_rules<at::regime::hot>::R001_ok);
+static_assert(live_rules<at::coroutine, at::regime::cold>::R001_ok);
+
+// S001 stdio x hot
+static_assert(!live_rules<at::stdio::write<at::stdio::streams::Stdout>, at::regime::hot>::S001_ok);
+static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>>::S001_ok);
+static_assert(live_rules<at::regime::hot>::S001_ok);
+static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>, at::regime::warm>::S001_ok);
+
+// The whole family stands down for a binding that claims no tier, which
+// is what keeps the axis's Unconstrained strict pole honest: most of the
+// tree is neither hot nor cold in any sense worth typing.
+static_assert(live_rules<>::H001_ok && live_rules<>::H002_ok && live_rules<>::H003_ok && live_rules<>::H010_ok
+              && live_rules<>::R001_ok && live_rules<>::S001_ok);
+
+// A hot binding that answers every rule is accepted, so the family is a
+// gate and not a ban on the hot path.
+static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::valid);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
-static_assert(col::pending_rule_count == 22);
+// Sixteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
+// and S rules live (task #176).  The number moves once per axis this task
+// drains, and it is a literal rather than a floor because the three
+// dispositions partition a fixed 54-code catalog — a floor here would let
+// a rule fall out of all three and go unnoticed.
+static_assert(col::pending_rule_count == 16);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -152,7 +239,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // are counted separately and must sum to the catalog's 54.
 
 static_assert(col::rule_corpus_size == 54);
-static_assert(col::live_rule_count == 11);
+static_assert(col::live_rule_count == 17);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -161,8 +248,8 @@ static_assert(col::live_rule_count == 11);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 11);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 22);
+static_assert(corpus_entries_with(col::Disposition::Live) == 17);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 16);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
@@ -193,11 +280,14 @@ static_assert(every_absent_entry_gives_a_reason());
 // Each pending axis really has no atom, and each axis carrying a live
 // rule really has one.  Both halves, so the roster is not merely
 // self-consistent.
-static_assert(!col::axis_has_an_atom<Axis::Regime>);
 static_assert(!col::axis_has_an_atom<Axis::FpMode>);
 static_assert(!col::axis_has_an_atom<Axis::MemoryScope>);
 static_assert(col::axis_has_an_atom<Axis::Usage>);
 static_assert(col::axis_has_an_atom<Axis::Effect>);
+// Regime moved sides when fixy/atoms/Regime.h shipped.  The cell stays
+// rather than being deleted: it is the witness that the axis crossed, and
+// the H, R and S cells below are what it bought.
+static_assert(col::axis_has_an_atom<Axis::Regime>);
 static_assert(col::axis_has_an_atom<Axis::ControlFlow>);
 static_assert(col::axis_has_an_atom<Axis::GlobalState>);
 
@@ -226,8 +316,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 22) return 2;
-    if (col::live_rule_count != 11) return 3;
+    if (col::pending_rule_count != 16) return 2;
+    if (col::live_rule_count != 17) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -249,7 +339,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 11 || pending != 22 || absent != 21) return 9;
+    if (live != 17 || pending != 16 || absent != 21) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 54) return 11;
 
