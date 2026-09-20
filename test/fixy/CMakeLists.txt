@@ -424,16 +424,8 @@ fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
 # The eight hand fixtures are the cases NOT already covered elsewhere in
 # this tree; the ones that were are listed in the commit message with the
 # fixture that covers each, so this block does not duplicate them.  Two
-# deserve naming here because the reason they are here is a gap rather
+# deserves naming here because the reason it is here is a gap rather
 # than a choice:
-#
-#   neg_role_io_row_under_foreground_ctx spells Row<IO> in its gate
-#   instead of lifting it from the binding's own Effect grade, because
-#   atom::with<Es...> carries no `lifts_to`.  Only the SyscallSurface
-#   atoms of fixy/atoms/Os.h lift, which is why the os mints can fold a
-#   pack into a required row and nothing else can.  Widening with<Es...>
-#   would tighten another stream's os gates, so the gap is recorded in
-#   the fixture and left for whoever owns that lift.
 #
 #   neg_secret_transform_returns_reference is the Secret escape that
 #   does NOT go through declassify.  Secret has no other public reader,
@@ -472,9 +464,20 @@ fixy_neg_compile_test(neg_fn_role_alias_as_atom
 # qualified spelling, which the fixture writes as `fe::` throughout, so
 # neither can be satisfied by the quoted source.
 fixy_neg_compile_test(neg_role_io_row_under_foreground_ctx
-  "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::IO> >."
-  "required for the satisfaction of .Subrow<R, foundation::effects::row_type_of_t<Ctx> >."
-  "Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
+  "required for the satisfaction of .CtxAdmitsBinding<Ctx, Bound>."
+  "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<>")
+
+# The same lift, pointing the other way.  An atom::with in an os mint
+# pack widens the row the context has to admit, and this is the fixture
+# for that direction: before with<Es...> lifted, the pack failed one
+# conjunct earlier because the atom could not be folded at all.  The
+# second regex is the folded row itself, IO and Block from the mode atom
+# and Bg from the with atom, which is the evidence that the fold reached
+# it.
+fixy_neg_compile_test(neg_os_fs_mint_file_with_atom_widens_required_row
+  "required for the satisfaction of .CtxAdmitsAtomRow<Ctx, Atoms ...>."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Bg>")
 #   Both refusals are constraints (#191), so the diagnostic names the
 #   concept that failed and the atomic expression that decided it, and
 #   Secret<int&> is never named because deduction stops before the

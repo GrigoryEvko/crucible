@@ -363,6 +363,11 @@ concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has
 // madvise call itself needs rather than deriving it.  Both calls reach
 // the same syscall as the mints above and can park for the same
 // reasons.
+//
+// Still true after atom::with<Es...> gained its lift: an advice tag is
+// not an effect declaration, it selects which madvise the call makes.
+// What changed is that a pack reaching the mints above may now carry a
+// with atom, whose effects fold into the required row and widen it.
 template <typename Ctx>
 concept CtxAdmitsAdvise =
     ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;

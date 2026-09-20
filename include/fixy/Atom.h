@@ -150,9 +150,17 @@ struct capability_usage final : atom_of<Axis::Usage> {};
 // An empty pack means the same thing as the strict pole for this axis:
 // both resolve to the empty effect row.  An audit for pure-effect bindings
 // has to recognise both spellings.
-
+//
+// It lifts, and the lift is what lets a context be gated on a binding's
+// declared effects.  Until it did, the Effect axis's own atom was the one
+// thing foundation/effects/Lift.h could not see: the syscall and wait
+// atoms lifted, so the os mints could fold a pack into a required row,
+// and a binding that had declared it performs IO could still be called
+// from a context admitting nothing, because the row nobody computed is
+// the empty row and the empty row is a Subrow of every context's.  A
+// caller who wanted the gate wrote the row a second time by hand.
 template <::foundation::effects::Effect... Es>
-struct with final : atom_of<Axis::Effect> {};
+struct with final : lifting_atom_of<Axis::Effect, ::foundation::effects::Row<Es...>> {};
 
 using with_alloc = with<::foundation::effects::Effect::Alloc>;
 using with_io = with<::foundation::effects::Effect::IO>;
@@ -160,6 +168,45 @@ using with_block = with<::foundation::effects::Effect::Block>;
 using with_bg = with<::foundation::effects::Effect::Bg>;
 using with_init = with<::foundation::effects::Effect::Init>;
 using with_test = with<::foundation::effects::Effect::Test>;
+
+// ---------------------------------------------------------------------
+// The Effect axis's grade in its two shapes, and the row each names.
+//
+// fn resolves an axis to the atom the pack states, or to the axis's
+// strict pole when the pack states nothing, and Axis::Effect's strict
+// pole is a bare Row rather than an atom.  So the grade is with<Es...>
+// on a binding that declared its effects and Row<Es...> on one that did
+// not, and anything reading the grade has to answer for both.
+//
+// The relation is CLOSED.  A grade of any other shape fails the
+// constraint with its own name in the diagnostic rather than being
+// answered with the empty row, because the empty row is a Subrow of
+// every context's: a quiet default here would admit the binding
+// everywhere, which is the failure the relation exists to stop.  That is
+// the same shape as foundation/diag/FailClosed.h's relations and as the
+// repair to payload_effect_row_t.
+namespace detail {
+
+template <class Grade>
+struct effect_grade_row_;
+
+template <::foundation::effects::Effect... Es>
+struct effect_grade_row_<with<Es...>> {
+    using type = ::foundation::effects::Row<Es...>;
+};
+
+template <::foundation::effects::Effect... Es>
+struct effect_grade_row_<::foundation::effects::Row<Es...>> {
+    using type = ::foundation::effects::Row<Es...>;
+};
+
+}  // namespace detail
+
+template <class Grade>
+concept IsEffectGrade = requires { typename detail::effect_grade_row_<Grade>::type; };
+
+template <IsEffectGrade Grade>
+using effect_row_of_t = typename detail::effect_grade_row_<Grade>::type;
 
 // `declassify<Policy>` drops the binding to the public security level and
 // names the policy that licenses the drop.  The policy is opaque to the
@@ -539,6 +586,50 @@ static_assert(!IsAtom<not_final>);
 static_assert(!IsAtom<no_axis>);
 static_assert(!IsAtom<atom_base>);
 static_assert(!IsAtom<int>);
+
+// ── The Effect grade reads the same both ways ────────────────────────
+//
+// `with` lifts, so foundation/effects/Lift.h can fold it into a
+// required row alongside the syscall and wait atoms.  The closed
+// relation above answers for the same atom AND for the bare Row the
+// strict pole leaves behind.  The two readings have to agree wherever
+// both apply, or a gate written against one would admit what a gate
+// written against the other refuses.
+namespace fe_ = ::foundation::effects;
+
+static_assert(fe_::LiftsToRow<with<>>);
+static_assert(fe_::LiftsToRow<with_io>);
+static_assert(std::is_same_v<fe_::lift_row_t<with<>>, fe_::Row<>>);
+static_assert(std::is_same_v<fe_::lift_row_t<with_io>, fe_::Row<fe_::Effect::IO>>);
+static_assert(std::is_same_v<fe_::lift_row_t<with<fe_::Effect::Bg, fe_::Effect::Alloc>>,
+                             fe_::Row<fe_::Effect::Bg, fe_::Effect::Alloc>>);
+
+static_assert(std::is_same_v<effect_row_of_t<with<>>, fe_::lift_row_t<with<>>>);
+static_assert(std::is_same_v<effect_row_of_t<with_io>, fe_::lift_row_t<with_io>>);
+static_assert(std::is_same_v<effect_row_of_t<with<fe_::Effect::Bg, fe_::Effect::Alloc>>,
+                             fe_::lift_row_t<with<fe_::Effect::Bg, fe_::Effect::Alloc>>>);
+
+// The strict pole's shape, which no lift can answer for because a bare
+// row is not an atom and declares no `lifts_to`.  This arm is the whole
+// reason the relation exists beside the lift rather than instead of it.
+static_assert(IsEffectGrade<fe_::Row<>>);
+static_assert(!fe_::LiftsToRow<fe_::Row<>>);
+static_assert(std::is_same_v<effect_row_of_t<fe_::Row<>>, fe_::Row<>>);
+static_assert(std::is_same_v<effect_row_of_t<fe_::Row<fe_::Effect::IO>>, fe_::Row<fe_::Effect::IO>>);
+
+// Closed.  A grade of any other shape is refused rather than answered
+// with the empty row, because the empty row is a Subrow of every
+// context's and a quiet default would admit the binding everywhere.
+static_assert(!IsEffectGrade<int>);
+static_assert(!IsEffectGrade<affine>);
+static_assert(!IsEffectGrade<with_io&>);
+static_assert(!IsEffectGrade<const with_io>);
+
+// `with` stays an atom, and stays empty: the lift is a static member,
+// so nothing about the pack's size or its axis moves.
+static_assert(IsAtom<with_io>);
+static_assert(with_io::axis == Axis::Effect);
+static_assert(sizeof(with_io) == 1 && std::is_empty_v<with_io>);
 
 }  // namespace detail::atom_self_test
 

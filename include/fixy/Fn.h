@@ -29,6 +29,7 @@
 #include <fixy/Axis.h>
 #include <fixy/Reject.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
 
 #include <cstddef>
 #include <meta>
@@ -289,6 +290,36 @@ template <template <class> class Role, class Type>
 [[nodiscard]] constexpr auto mint_fn_for(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) -> Role<Type> {
     return Role<Type>{std::move(v)};
 }
+
+// ---------------------------------------------------------------------
+// The row a binding requires of its caller's context.
+//
+// A binding declares its effects on Axis::Effect.  This reads that
+// declaration back as a row, and the concept below is the gate a caller
+// writes instead of spelling the row a second time by hand.
+//
+// It is one line because the work is elsewhere: fixy/Atom.h's closed
+// relation answers for both shapes the grade can take, the stated
+// `with<Es...>` and the bare Row the strict pole leaves behind.  A grade
+// of any other shape fails there, with its own name in the diagnostic.
+//
+// What this closes: before it, nothing mapped the Effect axis's grade to
+// a row for context admission.  The row nobody computed is the empty
+// row, the empty row is a Subrow of every context's, and so a binding
+// that had declared it performs IO was admitted by a context that admits
+// nothing.  The declaration was readable by the collision rules and by
+// no gate.
+template <class F>
+    requires is_fn_v<F>
+using binding_row_t = atom::effect_row_of_t<typename std::remove_cvref_t<F>::template grade_on<Axis::Effect>>;
+
+// A context admits a binding when it admits every effect the binding
+// declared.  Both halves are checked: a first argument that is not a
+// context fails here rather than being read as one.
+template <class Ctx, class F>
+concept CtxAdmitsBinding =
+    ::foundation::effects::IsExecCtx<Ctx> && is_fn_v<F>
+    && ::foundation::effects::CtxAdmits<Ctx, binding_row_t<F>>;
 
 // TODO(A6.2): the row-hash contribution.  Folding the 33 resolved
 // grades into a federation cache key needs foundation/reflect/RowHash.h,

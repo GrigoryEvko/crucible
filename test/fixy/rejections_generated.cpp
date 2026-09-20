@@ -34,9 +34,12 @@
 //      exactly when that row is empty.  The foreground context claims
 //      Row<>, so the biconditional below says: a lifting atom with a
 //      non-empty row cannot run there, and one that lifts to nothing
-//      can.  The SyscallSurface atoms of fixy/atoms/Os.h are the atoms
-//      that lift; atom::with<Es...> does not, which is why nothing can
-//      gate a context on the Effect axis's own grade.
+//      can.  The atoms that lift are the SyscallSurface family of
+//      fixy/atoms/Os.h, the wait strategies of fixy/atoms/Sync.h, and
+//      atom::with<Es...>, the Effect axis's own atom.  The last of those
+//      is what lets a context be gated on a binding's declared effects;
+//      until it lifted, the row nobody computed was the empty row and
+//      the empty row is admitted everywhere.
 //
 // A gate bug that admitted a duplicate, or an atom that stopped being
 // one, fails the build here rather than going unnoticed for want of the

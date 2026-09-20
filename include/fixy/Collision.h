@@ -668,34 +668,23 @@ struct replay_deterministic_<Payload>
     : std::bool_constant<::foundation::algebra::lattices::DetSafeLattice::leq(
           ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier)> {};
 
-// The Effect row and the Observability row, each extracted from its
-// grade.
+// The Observability row, extracted from its grade.
 //
-// Effect's strict pole IS a Row already (axis_traits<Axis::Effect>::strict
-// is Row<>), so the pole and the atom both need an arm and the pole's is
-// the identity.  Observability's pole is derived from Effect's, so its
-// pole is that same empty row: a binding that names no surface observes
-// nothing.
+// The Effect row is NOT extracted here any more.  This file used to
+// carry its own two-arm map with a primary answering Row<> for a grade
+// it did not recognise, which was safe for B002's comparison direction
+// and was still a second copy of a relation.  fixy/Atom.h now carries
+// the one closed relation — atom::effect_row_of_t, over the stated
+// with<Es...> and the bare Row the strict pole leaves behind — and the
+// rules below read it.  A grade of any other shape fails there by name
+// rather than passing as the empty row.
 //
-// Neither primary fails open.  Both answer Row<> for a grade they do not
-// recognise, and Row<> is the strongest answer on the Effect side (a
-// binding that may do nothing) and the weakest on the Observability side
-// (a binding that observes nothing).  B002 compares them in the direction
-// that makes both of those safe: an unrecognised observability grade
-// claims to observe nothing and passes, and an unrecognised effect grade
-// permits nothing and refuses any surface.
-template <class G>
-struct effect_row_of_ {
-    using type = ::foundation::effects::Row<>;
-};
-template <::foundation::effects::Effect... Es>
-struct effect_row_of_<::fixy::atom::with<Es...>> {
-    using type = ::foundation::effects::Row<Es...>;
-};
-template <::foundation::effects::Effect... Es>
-struct effect_row_of_<::foundation::effects::Row<Es...>> {
-    using type = ::foundation::effects::Row<Es...>;
-};
+// Observability keeps its own map, because its shape is different: its
+// pole is derived from Effect's, so the pole is that same empty row, and
+// the primary answering Row<> is the WEAKEST answer on this side rather
+// than the strongest.  A binding whose observability grade is
+// unrecognised claims to observe nothing, and B002 admits it, which is
+// the direction that stays safe.
 
 template <class G>
 struct observability_row_of_ {
@@ -1005,7 +994,7 @@ struct rules_of {
     // a new code rather than a reinterpretation of this one.
     using observability_row = typename detail::observability_row_of_<
         typename G::template on<Axis::Observability>>::type;
-    using effect_row = typename detail::effect_row_of_<typename G::template on<Axis::Effect>>::type;
+    using effect_row = ::fixy::atom::effect_row_of_t<typename G::template on<Axis::Effect>>;
 
     static constexpr bool observes_something = G::template mentions<Axis::Observability>;
     static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, effect_row>;
