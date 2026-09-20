@@ -286,41 +286,6 @@ static_assert(verify_distributive_lattice<AffinityLattice>(AffinityMask::range(0
 static_assert(verify_distributive_lattice<AffinityLattice>(AffinityMask::single(0), AffinityMask::single(127),
                                                            AffinityMask::single(255)));
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    AffinityMask bot = AffinityLattice::bottom();
-    AffinityMask topv = AffinityLattice::top();
-    AffinityMask bergamo_full = AffinityMask::range(0, 191);
-
-    [[maybe_unused]] bool l1 = AffinityLattice::leq(bot, topv);
-    [[maybe_unused]] bool l2 = AffinityLattice::leq(bergamo_full, topv);
-    [[maybe_unused]] AffinityMask j = AffinityLattice::join(bergamo_full, bot);
-    [[maybe_unused]] AffinityMask m = AffinityLattice::meet(bergamo_full, topv);
-
-    if (bergamo_full.popcount() != 192) std::abort();
-
-    AffinityMask core_0 = AffinityMask::single(0);
-    AffinityMask core_191 = AffinityMask::single(191);
-    AffinityMask core_255 = AffinityMask::single(255);
-    if (!core_0.contains(0)) std::abort();
-    if (!core_191.contains(191)) std::abort();
-    if (!core_255.contains(255)) std::abort();
-    if (core_0.contains(1)) std::abort();
-
-    AffinityMask joined = AffinityLattice::join(core_0, core_191);
-    if (!joined.contains(0)) std::abort();
-    if (!joined.contains(191)) std::abort();
-
-    AffinityMask intersected = AffinityLattice::meet(AffinityMask::range(0, 127), AffinityMask::range(64, 191));
-    if (intersected.popcount() != 64) std::abort();
-
-    using AffinityGraded = Graded<ModalityKind::Absolute, AffinityLattice, double>;
-    AffinityGraded v{3.14, AffinityMask::range(0, 31)};
-    [[maybe_unused]] auto g = v.grade();
-    [[maybe_unused]] auto vp = v.peek();
-}
-
 }  // namespace detail::affinity_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

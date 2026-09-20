@@ -184,37 +184,6 @@ template <typename T_>
 using DeadlineGraded = Graded<ModalityKind::Absolute, scheduler_policy::DeadlineClass, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(DeadlineGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    SchedulerPolicy a = SchedulerPolicy::Idle;
-    SchedulerPolicy b = SchedulerPolicy::Deadline;
-    [[maybe_unused]] bool l1 = SchedulerPolicyLattice::leq(a, b);
-    [[maybe_unused]] SchedulerPolicy j1 = SchedulerPolicyLattice::join(a, b);
-    [[maybe_unused]] SchedulerPolicy m1 = SchedulerPolicyLattice::meet(a, b);
-    [[maybe_unused]] SchedulerPolicy bot = SchedulerPolicyLattice::bottom();
-    [[maybe_unused]] SchedulerPolicy top = SchedulerPolicyLattice::top();
-
-    SchedulerPolicy rr = SchedulerPolicy::RoundRobin;
-    SchedulerPolicy fifo = SchedulerPolicy::Fifo;
-    SchedulerPolicy other = SchedulerPolicy::Other;
-    [[maybe_unused]] SchedulerPolicy j2 = SchedulerPolicyLattice::join(rr, fifo);
-    [[maybe_unused]] SchedulerPolicy m2 = SchedulerPolicyLattice::meet(rr, fifo);
-    [[maybe_unused]] bool tsc_ok = SchedulerPolicyLattice::leq(other, fifo);
-
-    OneByteValue v{42};
-    FifoGraded<OneByteValue> initial{v, scheduler_policy::FifoClass::bottom()};
-    auto widened = initial.weaken(scheduler_policy::FifoClass::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(scheduler_policy::FifoClass::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    scheduler_policy::FifoClass::element_type e{};
-    [[maybe_unused]] SchedulerPolicy rec = e;
-}
-
 }  // namespace detail::scheduler_policy_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

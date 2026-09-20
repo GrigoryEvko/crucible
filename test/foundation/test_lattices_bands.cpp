@@ -7,6 +7,7 @@
 // new enumerator is covered the moment it is declared.
 
 #include <foundation/algebra/Graded.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/algebra/lattices/AllocClassLattice.h>
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
@@ -20,6 +21,7 @@
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
+#include <foundation/algebra/lattices/SchedulerPolicyLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
@@ -598,9 +600,88 @@ void clock_source_lattice_runs_at_run_time() {
     [[maybe_unused]] auto moved = std::move(composed).consume().v;
 }
 
+// These two had no caller at all before this file gained one.  Both
+// headers were ported to foundation to unblock the OS wrappers, and the
+// port copied each self test across without registering it with a test.
+// The old tree's copies ARE called, so the same body passed for
+// crucible:: and had never once run for foundation::, which left a
+// divergence between the two copies invisible.  Copying a self test
+// along with a header is not the same as porting it, and the difference
+// is silent.
+
+void affinity_lattice_runs_at_run_time() {
+    using namespace fa;
+    using namespace fl;
+    using namespace fl::detail::affinity_lattice_self_test;
+    AffinityMask bot = AffinityLattice::bottom();
+    AffinityMask topv = AffinityLattice::top();
+    AffinityMask bergamo_full = AffinityMask::range(0, 191);
+
+    [[maybe_unused]] bool l1 = AffinityLattice::leq(bot, topv);
+    [[maybe_unused]] bool l2 = AffinityLattice::leq(bergamo_full, topv);
+    [[maybe_unused]] AffinityMask j = AffinityLattice::join(bergamo_full, bot);
+    [[maybe_unused]] AffinityMask m = AffinityLattice::meet(bergamo_full, topv);
+
+    if (bergamo_full.popcount() != 192) std::abort();
+
+    AffinityMask core_0 = AffinityMask::single(0);
+    AffinityMask core_191 = AffinityMask::single(191);
+    AffinityMask core_255 = AffinityMask::single(255);
+    if (!core_0.contains(0)) std::abort();
+    if (!core_191.contains(191)) std::abort();
+    if (!core_255.contains(255)) std::abort();
+    if (core_0.contains(1)) std::abort();
+
+    AffinityMask joined = AffinityLattice::join(core_0, core_191);
+    if (!joined.contains(0)) std::abort();
+    if (!joined.contains(191)) std::abort();
+
+    AffinityMask intersected = AffinityLattice::meet(AffinityMask::range(0, 127), AffinityMask::range(64, 191));
+    if (intersected.popcount() != 64) std::abort();
+
+    using AffinityGraded = Graded<ModalityKind::Absolute, AffinityLattice, double>;
+    AffinityGraded v{3.14, AffinityMask::range(0, 31)};
+    [[maybe_unused]] auto g = v.grade();
+    [[maybe_unused]] auto vp = v.peek();
+}
+
+void scheduler_policy_lattice_runs_at_run_time() {
+    using namespace fa;
+    using namespace fl;
+    using namespace fl::detail::scheduler_policy_lattice_self_test;
+    SchedulerPolicy a = SchedulerPolicy::Idle;
+    SchedulerPolicy b = SchedulerPolicy::Deadline;
+    [[maybe_unused]] bool l1 = SchedulerPolicyLattice::leq(a, b);
+    [[maybe_unused]] SchedulerPolicy j1 = SchedulerPolicyLattice::join(a, b);
+    [[maybe_unused]] SchedulerPolicy m1 = SchedulerPolicyLattice::meet(a, b);
+    [[maybe_unused]] SchedulerPolicy bot = SchedulerPolicyLattice::bottom();
+    [[maybe_unused]] SchedulerPolicy top = SchedulerPolicyLattice::top();
+
+    SchedulerPolicy rr = SchedulerPolicy::RoundRobin;
+    SchedulerPolicy fifo = SchedulerPolicy::Fifo;
+    SchedulerPolicy other = SchedulerPolicy::Other;
+    [[maybe_unused]] SchedulerPolicy j2 = SchedulerPolicyLattice::join(rr, fifo);
+    [[maybe_unused]] SchedulerPolicy m2 = SchedulerPolicyLattice::meet(rr, fifo);
+    [[maybe_unused]] bool tsc_ok = SchedulerPolicyLattice::leq(other, fifo);
+
+    OneByteValue v{42};
+    FifoGraded<OneByteValue> initial{v, scheduler_policy::FifoClass::bottom()};
+    auto widened = initial.weaken(scheduler_policy::FifoClass::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(scheduler_policy::FifoClass::top());
+
+    [[maybe_unused]] auto g = rv_widen.grade();
+    [[maybe_unused]] auto vc = composed.peek().c;
+
+    scheduler_policy::FifoClass::element_type e{};
+    [[maybe_unused]] SchedulerPolicy rec = e;
+}
+
 }  // namespace
 
 int main() {
+    affinity_lattice_runs_at_run_time();
+    scheduler_policy_lattice_runs_at_run_time();
     chain_lattice_runs_at_run_time();
     det_safe_lattice_runs_at_run_time();
     alloc_class_lattice_runs_at_run_time();
