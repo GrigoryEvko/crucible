@@ -29,9 +29,13 @@
 # scripts/frozen-soundness-mirrors.txt admits one such edit per line, in
 # the shape `path — new-tree fix reference — reason`.  A
 # MODIFY under a frozen path whose path is listed is admitted, with a
-# note that names the ledger and the reason.  Only a modify is admitted.
-# An add, a rename into a frozen path and an untracked file stay
-# rejected, because a mirror edits a file that is already here.
+# note that names the ledger and the reason.  A plain frozen file edits
+# as a modify.  An already-ported file (renamed dir/Name to dir/_Name)
+# edits as a rename or an add, because dir/_Name is absent from the
+# freeze base, so those are admitted too when the base still holds the
+# dir/Name twin.  A genuine new frozen file has no base twin, so its add
+# stays rejected, and so does an untracked file: a mirror edits a file
+# that is already here.
 #
 # The ledger is fail-closed against its own rot, the way
 # check-allowlist-keys.sh is.  An entry that names a path outside every
@@ -215,6 +219,32 @@ validate_ledger() {
     return "$rc"
 }
 
+# True when $3 is the superseded-marking twin of a file that exists at
+# base $2.  A ported file is renamed dir/Name -> dir/_Name, so a later
+# content edit to dir/_Name is reported by git as a rename or an add,
+# not a modify, because dir/_Name is absent from the base.  This tells a
+# soundness-mirror edit of an already-ported file apart from a genuine
+# new frozen file, which has no base twin.
+is_edit_of_ported_frozen() {
+    local repo="$1" base="$2" path="$3" name twin
+    name="$(basename "$path")"
+    [[ "$name" == _* ]] || return 1
+    twin="$(dirname "$path")/${name#_}"
+    git -C "$repo" cat-file -e "${base}:${twin}" 2>/dev/null
+}
+
+# True when the change to frozen $3 (status $4) is an admitted soundness
+# mirror: the path is listed, and the change is either a plain modify of
+# a frozen file present at the base, or a content edit to an already-
+# ported file (its _Name twin).  A genuine new frozen file has no base
+# twin and its add is not a modify, so it is not admitted here.
+mirror_admits() {
+    local repo="$1" base="$2" path="$3" status="$4"
+    is_soundness_mirror "$repo" "$path" || return 1
+    [[ "$status" == M* ]] && return 0
+    is_edit_of_ported_frozen "$repo" "$base" "$path"
+}
+
 scan() {
     # $1 = repo root, $2 = base commit.  Prints violations to stderr.
     local repo="$1" base="$2" rc=0 status path dest
@@ -241,17 +271,27 @@ scan() {
             D) continue ;;
             R*|C*)
                 if is_frozen "$dest" && ! is_marking_of_base "$repo" "$base" "$dest"; then
-                    printf 'FROZEN violation: %s — %s into a frozen path (from %s).  The old substrate only shrinks, or a ported file is marked _Name with its content unchanged.\n' \
-                        "$dest" "$status" "$path" >&2
-                    rc=1
+                    # A content edit to an already-ported _Name file is
+                    # reported here as a rename, because dir/_Name is
+                    # absent from the base.  Admit it when the ledger
+                    # lists it; otherwise it is a change into a frozen path.
+                    if mirror_admits "$repo" "$base" "$dest" "$status"; then
+                        printf 'check-frozen-tree: ADMITTED soundness mirror: %s — %s (per %s).\n' \
+                            "$dest" "$(mirror_reason "$repo" "$dest")" "$FROZEN_MIRROR_LEDGER" >&2
+                    else
+                        printf 'FROZEN violation: %s — %s into a frozen path (from %s).  The old substrate only shrinks, or a ported file is marked _Name with its content unchanged.\n' \
+                            "$dest" "$status" "$path" >&2
+                        rc=1
+                    fi
                 fi
                 ;;
             *)
                 if is_frozen "$path" && ! is_marking_of_base "$repo" "$base" "$path"; then
-                    if [[ "$status" == M* ]] && is_soundness_mirror "$repo" "$path"; then
-                        # A modify the ledger admits.  Only a modify, and
-                        # only a listed one: an add, a type change or an
-                        # unlisted modify falls through to the violation.
+                    # Only a modify, or a content edit to an already-ported
+                    # _Name file, and only a listed one.  An unlisted change,
+                    # a type change or a genuine new frozen file falls through
+                    # to the violation.
+                    if mirror_admits "$repo" "$base" "$path" "$status"; then
                         printf 'check-frozen-tree: ADMITTED soundness mirror: %s — %s (per %s).\n' \
                             "$path" "$(mirror_reason "$repo" "$path")" "$FROZEN_MIRROR_LEDGER" >&2
                     else
@@ -295,6 +335,7 @@ case "${1:-}" in
         printf '#pragma once\n#include <crucible/safety/Twin.h>\n// still frozen\n' >"$tmp_root/include/crucible/safety/Includer.h"
         printf '#pragma once\n// tampered\n' >"$tmp_root/include/crucible/safety/Tampered.h"
         printf '#pragma once\n// mirror base\n' >"$tmp_root/include/crucible/safety/Mirror.h"
+        printf '#pragma once\n// mirror2 base ported\n' >"$tmp_root/include/crucible/safety/Mirror2.h"
         # A header at the root of include/crucible/, and a frozen file that
         # includes it.  Every other fixture here includes through a
         # subdirectory, which is why a normalizer that required one went
@@ -339,14 +380,26 @@ case "${1:-}" in
         # crucible/.
         git -C "$tmp_root" mv "include/crucible/Root.h" "include/crucible/_Root.h"
         printf '#pragma once\n#include <crucible/_Root.h>\n// roots includer\n' >"$tmp_root/include/crucible/safety/RootIncluder.h"
-        # A soundness mirror: a content edit to a frozen file that the
-        # ledger admits.  It must pass where the unledgered edit to Old.h
-        # above fails.  The ledger holds only this one valid entry, so the
-        # planted scan also proves a good ledger passes validation.
+        # A soundness mirror on a PLAIN frozen file: a content edit the
+        # ledger admits.  Git reports it as a modify.  It must pass where
+        # the unledgered edit to Old.h above fails.
         printf '#pragma once\n// mirror edited\n' >"$tmp_root/include/crucible/safety/Mirror.h"
+        # A soundness mirror on an ALREADY-PORTED file: the base held
+        # Mirror2.h, the port renamed it to _Mirror2.h, and now it takes a
+        # content edit.  Git reports this as a rename-plus-edit, not a
+        # modify, and the ledger must admit it just the same.  Tampered.h
+        # above is the negative twin: marked, edited, and NOT listed.
+        git -C "$tmp_root" mv "include/crucible/safety/Mirror2.h" "include/crucible/safety/_Mirror2.h"
+        printf '#pragma once\n// mirror2 ported, and soundness-edited\n' \
+            >"$tmp_root/include/crucible/safety/_Mirror2.h"
+        # The ledger holds only these two valid entries, so the planted
+        # scan also proves a good ledger passes validation.
         mkdir -p "$tmp_root/scripts"
-        printf '# self-test ledger\ninclude/crucible/safety/Mirror.h — include/foundation/safety/Mirror.h — a live bug the new tree already fixed\n' \
-            >"$tmp_root/scripts/frozen-soundness-mirrors.txt"
+        {
+            printf '# self-test ledger\n'
+            printf 'include/crucible/safety/Mirror.h — include/foundation/safety/Mirror.h — a live bug the new tree already fixed\n'
+            printf 'include/crucible/safety/_Mirror2.h — include/foundation/safety/Mirror2.h — a live bug the new tree already fixed in the ported file\n'
+        } >"$tmp_root/scripts/frozen-soundness-mirrors.txt"
         git -C "$tmp_root" add -A
         rc=0; scan "$tmp_root" "$base" 2>"$out" || rc=$?
         [[ "$rc" -eq 1 ]] || fail "planted tree reported $rc, want 1"
@@ -367,6 +420,11 @@ case "${1:-}" in
             || fail "a ledgered modify was not admitted"
         if grep -qF 'violation: include/crucible/safety/Mirror.h' "$out"; then
             fail "a ledgered modify was flagged as a violation"
+        fi
+        grep -qF 'ADMITTED soundness mirror: include/crucible/safety/_Mirror2.h' "$out" \
+            || fail "a ledgered edit to an already-ported file (rename) was not admitted"
+        if grep -qF 'violation: include/crucible/safety/_Mirror2.h' "$out"; then
+            fail "a ledgered edit to an already-ported file was flagged as a violation"
         fi
         if grep -qF 'SOUNDNESS-MIRROR-LEDGER:' "$out"; then
             fail "a valid ledger entry was reported as rot"
@@ -405,7 +463,7 @@ case "${1:-}" in
             || fail2 "the non-frozen ledger entry was not named"
         rm -f "$out2"
 
-        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean; a ledgered soundness mirror admitted, and a dead or non-frozen ledger entry rejected.\n' >&2
+        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean; a ledgered soundness mirror on a plain file and on an already-ported file both admitted, and a dead or non-frozen ledger entry rejected.\n' >&2
         exit 0
         ;;
     "") ;;
