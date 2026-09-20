@@ -238,13 +238,27 @@ inline constexpr bool has_subprocess_v = detail::any_of_v<detail::is_subprocess,
 
 namespace fixy::atom::detail {
 
+// SAMPLES, not a roster, and the name says which.
+//
 // Every member is a parametric atom, so the namespace walk that catches an
 // unrostered plain atom has nothing to read here; fixy/Atom.h says why
-// beside that walk.  The roster still earns its place: the two checks
-// below read it, and they are what says a rationale atom is an atom on the
-// axis it claims.
-using spawn_atom_roster = std::tuple<spawn::detach_with<"sample detach">, spawn::syscall_only<"sample clone">,
-                                     spawn::subprocess<"sample fork">>;
+// beside that walk.  The set still earns its place: the two checks below
+// read it, and they are what says a rationale atom is an atom on the axis
+// it claims.
+//
+// It is a sample set rather than a family population because this family
+// has no finite membership.  It is parametric over free-form justification
+// text, so detach_with<"anything"> is an atom and no list can enumerate
+// them.  The three strings below are placeholders chosen to instantiate
+// the checks, not grades anybody writes.  Contrast observe_atom_roster,
+// whose members are parameterised by a meaningful enumerator: that family
+// is finite, its members are distinct grades, and it belongs in
+// collision::all_atom_roster.  Joining these three would put three
+// placeholder strings into the generated-rejection corpus as if they were
+// grades.  fixy/Collision.h's sample_set_wrongly_joined() is what holds
+// this distinction, so the name is load-bearing rather than descriptive.
+using spawn_atom_samples = std::tuple<spawn::detach_with<"sample detach">, spawn::syscall_only<"sample clone">,
+                                      spawn::subprocess<"sample fork">>;
 
 }  // namespace fixy::atom::detail
 
@@ -462,9 +476,9 @@ static_assert(!::foundation::effects::LiftsToRow<atom_spawn::detach_with<"r">>,
 static_assert(!::foundation::effects::LiftsToRow<atom_spawn::syscall_only<"r">>);
 static_assert(!::foundation::effects::LiftsToRow<atom_spawn::subprocess<"r">>);
 
-static_assert(::fixy::atom::detail::every_roster_member_is_atom_<::fixy::atom::detail::spawn_atom_roster>(),
-              "fixy/os/Spawn.h: a member of spawn_atom_roster is not an atom.");
-static_assert(::fixy::atom::detail::every_roster_member_on_axis_<::fixy::atom::detail::spawn_atom_roster,
+static_assert(::fixy::atom::detail::every_roster_member_is_atom_<::fixy::atom::detail::spawn_atom_samples>(),
+              "fixy/os/Spawn.h: a member of spawn_atom_samples is not an atom.");
+static_assert(::fixy::atom::detail::every_roster_member_on_axis_<::fixy::atom::detail::spawn_atom_samples,
                                                                  Axis::Protocol>(),
               "fixy/os/Spawn.h: every spawn rationale atom engages Axis::Protocol.");
 

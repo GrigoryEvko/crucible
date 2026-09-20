@@ -688,11 +688,14 @@ template <class Site>
         "fixy::collision::all_atom_roster: ";
     message += offenders;
     message +=
-        ".  A _atom_samples set is representative instantiations for a local self-test and is deliberately "
-        "outside the population; joining one blurs the two categories, and a blurred boundary is what would "
-        "let a family roster be renamed out of roster_declared_but_not_joined() rather than joined into the "
-        "population.  Either drop each from the all_atom_roster alias in include/fixy/Collision.h, or rename "
-        "it to end in _atom_roster if it is a family population after all.";
+        ".  A sample set is a set of INSTANTIATIONS of a parametric family, kept outside the population "
+        "because the family has no finite membership and no list can enumerate it; the instantiations are "
+        "placeholders chosen to instantiate a local self-test, not grades anybody writes.  A family whose "
+        "members are distinct grades is finite and belongs in the joined population instead, under a name "
+        "ending in _atom_roster.  Joining a sample set blurs the two categories, and a blurred boundary is "
+        "what would let a real family be renamed out of roster_declared_but_not_joined() rather than joined "
+        "into the population.  So: drop each from the all_atom_roster alias in include/fixy/Collision.h, or, "
+        "if its members really are distinct grades, rename it to end in _atom_roster and leave it joined.";
     return std::string_view{std::define_static_string(message)};
 }
 
