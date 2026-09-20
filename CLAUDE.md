@@ -665,7 +665,7 @@ struct TensorSlot {
 
 **Cost of violation:** silent parameter swap, implicit conversion bug, type confusion.
 
-**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast -fno-rtti`.
+**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus `scripts/check-no-throw-no-rtti.sh`, which holds the no-RTTI property on the artifact.
 
 **Discipline:**
 - Every semantic value is a strong type. No raw `uint32_t` for anything with meaning.
@@ -715,7 +715,7 @@ void process(const TraceEntry* entry)
 
 **Cost of violation:** use-after-free, double-free, memory corruption, RCE.
 
-**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. `-fno-exceptions` eliminates the whole class of "destructor during stack unwind" bugs.
+**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — `scripts/check-no-throw-no-rtti.sh` holds that on the artifact rather than a flag holding it on our TUs.
 
 **Discipline:**
 - All graph/DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF). Arena bulk-frees at epoch boundary.
@@ -860,8 +860,8 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | `-fno-exceptions` | Setup cost even unthrown; unwind tables in icache; use `std::expected` or `abort()` |
-| RTTI | `-fno-rtti` | Vtable bloat; use `kind` enum + `static_cast` |
+| Exceptions | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `concurrent/Topology.h`, whose sixteen catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or `crucible_abort`. The guard checks `__cxa_throw` is absent from the artifact, which also catches a throw arriving through a library header |
+| RTTI | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks the artifact defines no typeinfo or vtable and references no `__dynamic_cast` |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
 | `[=]` capturing `this` | P0806R2 deprecated; `-Werror=deprecated-this-capture` | Lifetime footgun |
@@ -963,12 +963,18 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 
 ### Common (every build)
 
+**Neither `-fno-exceptions` nor `-fno-rtti` is in this build.** Both were listed
+here as common flags and neither has ever been on a compile line. The properties
+they stood for do hold — measured 2026-09-20: zero `__cxa_throw` references and
+zero typeinfo or vtable definitions in `libcrucible.a` in every preset — and
+`scripts/check-no-throw-no-rtti.sh` is what holds them, on the artifact, where a
+throw arriving through an instantiated library header is also visible. Adding the
+flags is the wrong repair; the opt-out table in §III says why for each.
+
 ```
 -std=c++26                           strict C++26, no GNU dialect drift
 -fcontracts                          P2900 contracts
 -freflection                         P2996 reflection
--fno-exceptions                      eliminate unwind tables
--fno-rtti                            eliminate vtables of typeinfo
 -fno-strict-overflow                 don't optimize assuming signed overflow impossible
 -fno-delete-null-pointer-checks      don't optimize away null checks
 -fno-math-errno                      math functions don't set errno (faster, vec-friendly)
@@ -1868,7 +1874,7 @@ CRUCIBLE_HOT void scan(
 
 ## XII. Error Handling and Debug Assertions
 
-No exceptions (compiled out via `-fno-exceptions`). Three tiers of error response:
+Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below, and `scripts/check-no-throw-no-rtti.sh` fails the build if `__cxa_throw` reaches an artifact. Three tiers of error response:
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
@@ -2498,7 +2504,7 @@ For those properties, the `verify` preset reserves space for an internal small-S
 
 ## XVII. Identifier and Readability Discipline
 
-Code tells a story. Reading a function should read like prose — a noun subject, a verb action, an adjective condition. Every identifier reads as a sentence fragment that narrates what the thing IS or DOES. The primary reader of this codebase is an agentic LLM — so names carry semantic weight equal to types. Under `-fno-rtti` + `-fno-exceptions` an identifier's spelling is often the only remaining signal an automated tool has about semantics; ambiguous names degrade grep, code review, and future refactoring equally.
+Code tells a story. Reading a function should read like prose — a noun subject, a verb action, an adjective condition. Every identifier reads as a sentence fragment that narrates what the thing IS or DOES. The primary reader of this codebase is an agentic LLM — so names carry semantic weight equal to types. With no RTTI and no throw in the artifact, an identifier's spelling is often the only remaining signal an automated tool has about semantics; ambiguous names degrade grep, code review, and future refactoring equally.
 
 ### Names by part-of-speech
 

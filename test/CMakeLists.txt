@@ -523,6 +523,23 @@ crucible_test(test_concept_cheat_probe)
 # feedback_header_only_static_assert_blind_spot.md +
 # feedback_algebra_runtime_smoke_test_discipline.md.
 crucible_test(test_smoke_algebra_effects)
+# The two properties -fno-exceptions and -fno-rtti stood for, held on the
+# artifact of THIS build rather than asserted by flags neither preset has
+# ever carried.  The self-test needs the project compiler, because the
+# system g++ may be too old for the fixtures.
+add_test(NAME no_throw_no_rtti_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-throw-no-rtti.sh --self-test)
+set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
+  ENVIRONMENT "CRUCIBLE_CXX=${CMAKE_CXX_COMPILER}"
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
+add_test(NAME no_throw_no_rtti
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-throw-no-rtti.sh
+          $<TARGET_FILE:crucible> $<TARGET_FILE:foundation>)
+set_tests_properties(no_throw_no_rtti PROPERTIES
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
+
 add_test(NAME trait_guard_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh
           --self-test)
