@@ -150,18 +150,6 @@ include/crucible/cntp/dataplane/Xdp.h:mint_bpf_map_spec:requires-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 
 # ── fixy/ syscall / resource mints ───────────────────────────────────
-include/crucible/fixy/_CipherDurable.h:mint_cold_writer:constexpr-ok
-include/crucible/fixy/_CipherDurable.h:mint_head_advancer:constexpr-ok
-include/crucible/fixy/_CipherDurable.h:mint_warm_writer:constexpr-ok
-include/crucible/fixy/_Fs.h:mint_durable_append_file:constexpr-ok
-include/crucible/fixy/_Fs.h:mint_durable_append_file:requires-ok
-include/crucible/fixy/_Fs.h:mint_durable_truncate_file:constexpr-ok
-include/crucible/fixy/_Fs.h:mint_durable_truncate_file:requires-ok
-include/crucible/fixy/_Fs.h:mint_file:constexpr-ok
-include/crucible/fixy/_Io.h:mint_io_uring_ring:constexpr-ok
-include/crucible/fixy/_Io.h:mint_zerocopy_transfer:constexpr-ok
-include/crucible/fixy/_Mmap.h:mint_mmap:constexpr-ok
-include/crucible/fixy/_Mmap.h:mint_mmap_anon:constexpr-ok
 include/crucible/fixy/Sched.h:mint_affinity:constexpr-ok
 include/crucible/fixy/Sched.h:mint_priority:constexpr-ok
 include/crucible/fixy/Sched.h:mint_scheduler_policy:constexpr-ok
@@ -212,8 +200,6 @@ include/fixy/os/CipherDurable.h:mint_head_advancer:constexpr-ok
 # to be declared before it is named.  Deleting the declaration would
 # reopen the forgery the friendship closes.
 include/fixy/os/CpuPinned.h:mint_affinity:constexpr-ok
-include/crucible/fixy/spawn/_Spawn.h:mint_parallel_for:constexpr-ok
-include/crucible/fixy/spawn/_Spawn.h:mint_spawn:constexpr-ok
 # The ported pair, §XXI carve-out cx=thread.  Neither can be constexpr and
 # mean it: mint_spawn starts one jthread per child, and mint_parallel_for
 # does the same for every shard but the single-shard case.  A constexpr on
@@ -245,15 +231,7 @@ include/crucible/perf/SyscallTpBtf.h:mint_syscall_tp_btf:constexpr-ok
 include/crucible/perf/WorkloadProfiler.h:mint_workload_profiler:constexpr-ok
 
 # ── permissions/ token + structured-concurrency mints ────────────────
-include/crucible/permissions/_PermissionFork.h:mint_permission_fork:constexpr-ok
-include/crucible/permissions/_Permission.h:mint_permission_combine:requires-ok
-include/crucible/permissions/_Permission.h:mint_permission_combine_n:requires-ok
-include/crucible/permissions/_Permission.h:mint_permission_root:requires-ok
-include/crucible/permissions/_Permission.h:mint_permission_share:requires-ok
-include/crucible/permissions/_Permission.h:mint_permission_split:requires-ok
-include/crucible/permissions/_Permission.h:mint_permission_split_n:requires-ok
 include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
-include/crucible/permissions/_ReadView.h:mint_read_view:requires-ok
 
 # ── foundation/permissions/ — the ported copies of the entries above ──
 # Each permission mint is one template whose argument shape (leading
@@ -264,8 +242,6 @@ include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-o
 include/foundation/permissions/ReadView.h:mint_read_view:requires-ok
 
 # ── safety/ concept-constrained view + syscall mints ─────────────────
-include/crucible/safety/_ScopedView.h:mint_linear_view:requires-ok
-include/crucible/safety/_ScopedView.h:mint_view:requires-ok
 include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
 
 # ── fixy/os/ThreadName.h — the ported copy of the mint above.  The
@@ -332,3 +308,12 @@ include/crucible/sessions/SwmrSession.h:mint_writer_session:requires-ok
 include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok
 include/crucible/topology/Ptp.h:mint_ptp_handle:constexpr-ok
 include/crucible/warden/Hardening.h:mint_hardening:constexpr-ok
+
+# fixy-A4-027 follow-up, 2026-09-21.  The AST guard sees a template the bash
+# window could not: the template parameter list sits at line 288 and the
+# signature at line 305, seventeen lines apart against a fifteen-line window,
+# so the old guard found no template, skipped the requires axis and passed a
+# templated mint that carries no clause.  The site is under a frozen path and
+# the federation permission surface has no port yet, so the clause cannot be
+# added here.  The port carries it.
+include/crucible/permissions/FederationPermission.h:mint_federation_admittance:requires-ok

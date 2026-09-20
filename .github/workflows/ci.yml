@@ -159,8 +159,8 @@ jobs:
 
       - name: mint pattern (self-test + scan)
         run: |
-          bash scripts/check-mint-pattern.sh --self-test
-          bash scripts/check-mint-pattern.sh
+          python3 scripts/check-mint-pattern.py --self-test
+          python3 scripts/check-mint-pattern.py
 
       - name: permission storage antipattern (self-test + scan)
         run: |

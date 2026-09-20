@@ -284,7 +284,10 @@ class Tree:
     def source(self) -> bytes:
         """Return the file bytes, read once and kept for later slices."""
         if self._source is None:
-            self._source = self.path.read_bytes()
+            # The path is repo-relative, and a gate under ctest runs with the
+            # build directory as its working directory, so resolve against the
+            # repo root rather than the process cwd.
+            self._source = (REPO_ROOT / self.path).read_bytes()
         return self._source
 
     def _starts(self) -> list[int]:

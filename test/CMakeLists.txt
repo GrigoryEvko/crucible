@@ -667,13 +667,19 @@ set_tests_properties(fixy_discipline fixy_discipline_self_test PROPERTIES
 # preceding line.  Phase 2 (deferred) will extend to constexpr /
 # noexcept / requires-clause checks.  Self-test mode plants both a
 # canonical mint and a drift case to guard against regex regression.
+# The gate reads each axis off the parse tree rather than off a line window.
+# The window it replaced failed open: it decided whether the requires axis
+# applied by walking fifteen lines up for the word `template`, and in
+# FederationPermission.h the parameter list sits seventeen lines above the
+# signature, so a templated mint with no clause passed unreported.
 add_test(NAME mint_pattern_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py
           --self-test)
 add_test(NAME mint_pattern
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py)
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
-  LABELS "ci_guard;FIXY-U-003")
+  LABELS "ci_guard;ast;FIXY-U-003")
+set_tests_properties(mint_pattern PROPERTIES SKIP_RETURN_CODE 3)
 # The witness roster.  Every type that attests to a fact it cannot see
 # — a pin, a mapping, a descriptor, a permission, a context — is named
 # in scripts/witness-roster.txt with the expression a forger would

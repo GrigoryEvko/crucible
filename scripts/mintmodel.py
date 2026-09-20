@@ -61,6 +61,13 @@ SUPERSEDED_PREFIX = "_"
 CARVE_OUT_CX = "§XXI carve-out: cx=alloc"
 CARVE_OUT_RQ = "§XXI carve-out: rq=pre"
 
+# A third exemption mechanism, read by the guard rather than the inventory: an
+# inline marker on the signature line itself.  The tree carries all three at
+# once — 138 allowlist entries, 39 carve-out comments and 9 inline markers, for
+# 97 real axis failures.  The model reads every one, so the guard can reproduce
+# the old verdict, and so a later consolidation can count what it removes.
+INLINE_OK = "MINT-PATTERN-OK"
+
 
 @dataclass(frozen=True, slots=True)
 class Mint:
@@ -71,11 +78,13 @@ class Mint:
         path: The declaration site's path, relative to the repo root
         line: The one-based line of the identifier that names the factory
         owner: The enclosing class for a member mint, otherwise None
+        inline_ok: Whether a `MINT-PATTERN-OK` marker sits on the signature line
         nodiscard: Whether the site carries `[[nodiscard]]`
         constexpr: Whether the site carries `constexpr` or `consteval`
         noexcept_: Whether the declarator carries `noexcept`
         requires_: Whether a `requires` clause constrains the site
         shape: `ctx`, `token` or `member` — the authorization shape
+        templated: Whether a template declaration encloses the site
         carve_out_cx: Whether a comment documents the absent `constexpr`
         carve_out_rq: Whether a comment documents the absent `requires`
     """
@@ -84,11 +93,14 @@ class Mint:
     path: str
     line: int
     owner: str | None
+    namespace: str
+    inline_ok: bool
     nodiscard: bool
     constexpr: bool
     noexcept_: bool
     requires_: bool
     shape: str
+    templated: bool
     carve_out_cx: bool
     carve_out_rq: bool
 
@@ -106,6 +118,35 @@ class Mint:
         """Return `Class::name` for a member mint, or the bare name."""
         return f"{self.owner}::{self.name}" if self.owner else self.name
 
+    @property
+    def linkage_name(self) -> str:
+        """Return the fully qualified name a using-declaration would name.
+
+        A re-export names the mint through its namespace, so this is the key a
+        `using` has to match.  Matching the bare name instead reports a
+        re-export that names a different function as if it named this one.
+        """
+        return f"::{self.namespace}::{self.name}" if self.namespace else f"::{self.name}"
+
+
+def requires_applies(mint: Mint) -> bool:
+    """Report whether the `requires` axis is meaningful for this mint.
+
+    A `requires` clause constrains a template.  A non-template function cannot
+    carry one, so demanding it there would report a shortfall no edit can fix.
+    The bash guard reaches the same rule through `has_requires_if_templated`,
+    which walks fifteen lines up looking for the word `template` — and so misses
+    a template whose parameter list sits further above behind a comment block.
+    The enclosing `template_declaration` answers it exactly.
+
+    Args:
+        mint: The mint to judge
+
+    Returns:
+        True when a template encloses the site
+    """
+    return mint.templated
+
 
 def scan_files() -> list[Path]:
     """Return every header the §XXI mint surface covers, sorted.
@@ -121,6 +162,25 @@ def scan_files() -> list[Path]:
     found += tsast.cpp_files("include/crucible/fixy")
     root = Path("include/crucible")
     found += [p for p in tsast.cpp_files("include/crucible") if p.parent == root]
+    return sorted({p for p in found if not p.name.startswith(SUPERSEDED_PREFIX)})
+
+
+def guard_files() -> list[Path]:
+    """Return every header the §XXI GUARD enforces over, sorted.
+
+    The guard and the inventory have different scopes, and conflating them was
+    the source of two wrong numbers.  The guard scans all of `include/`, so it
+    reaches the canonical new substrate at `include/foundation/` and
+    `include/fixy/` as well as the old tree.  The inventory documents the
+    substrate trees it lists, which is a narrower set.
+
+    Superseded `_*.h` headers are excluded from both: they are frozen, so a
+    shortfall there cannot be repaired, and Stage D deletes them.
+
+    Returns:
+        Repo-relative paths, in sorted order
+    """
+    found = tsast.cpp_files("include")
     return sorted({p for p in found if not p.name.startswith(SUPERSEDED_PREFIX)})
 
 
@@ -252,6 +312,107 @@ def _shape(site: tsast.Node, declarator: tsast.Node, owner: str | None) -> str:
     return "token"
 
 
+def _namespace_of(node: tsast.Node) -> str:
+    """Return the enclosing namespace of a node, as `a::b::c`.
+
+    A `namespace_definition` names itself either with a single `identifier` or
+    with a `nested_namespace_specifier` whose text already reads `a::b::c`, so
+    the walk collects the name fields outward and joins them.  An anonymous
+    namespace contributes nothing.
+
+    Args:
+        node: Any node inside the namespace
+
+    Returns:
+        The namespace path, or the empty string at global scope
+    """
+    parts: list[str] = []
+    owner = node.ancestor_of_type("namespace_definition")
+    while owner is not None:
+        named = owner.child_by_field("name")
+        if named is not None:
+            parts.append(named.text)
+        owner = owner.ancestor_of_type("namespace_definition")
+    return "::".join(reversed(parts))
+
+
+def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
+    """Return every fixy re-export, keyed by the qualified name it names.
+
+    A re-export is a `using_declaration` whose one child is a
+    `qualified_identifier`.  The key is that qualified name verbatim, so a
+    lookup matches the mint the using actually names.  A bare-name key cannot:
+    `fixy/Bridge.h:55` reads `using ::crucible::mint_vigil_mode_bridge;`, which
+    names the overload in namespace `crucible`, not the one in
+    `crucible::vigil_mode` that the inventory pairs it with.
+
+    Args:
+        paths: The files to scan, or None to scan include/crucible/fixy
+
+    Returns:
+        Qualified name to the site that re-exports it
+    """
+    files = tsast.cpp_files("include/crucible/fixy") if paths is None else paths
+    found: dict[str, tuple[str, int]] = {}
+    for tree in tsast.parse(sorted(files), strict=False):
+        # A re-export may name its target through a namespace alias, so collect
+        # the aliases of the file first.  `fixy/Time.h` writes
+        # `namespace sf = ::crucible::safety;` and then `using sf::mint_clock_source;`,
+        # and a lookup that demands the full spelling misses it.
+        alias: dict[str, str] = {}
+        for definition in tree.find("namespace_alias_definition"):
+            named = definition.child_by_field("name")
+            target = next(iter(definition.children_of_type("nested_namespace_specifier")), None)
+            if named is not None and target is not None:
+                alias[named.text] = target.text
+        for using in tree.find("using_declaration"):
+            named = next(iter(using.children_of_type("qualified_identifier")), None)
+            if named is None:
+                continue
+            key = named.text
+            if not key.rsplit("::", 1)[-1].startswith("mint_"):
+                continue
+            head, _, rest = key.partition("::")
+            if head in alias:
+                key = f"{alias[head]}::{rest}"
+            elif not key.startswith("::"):
+                key = f"::{key}"
+            found.setdefault(key, (str(tree.path), using.line))
+    return found
+
+
+def fixture_counts(paths: list[Path] | None = None) -> dict[str, int]:
+    """Return, for each mint name, how many negative-compile fixtures use it.
+
+    HS14 sets a floor of two fixtures per mint.  The count has to come from the
+    AST rather than a text scan, because a fixture's own doc comment names the
+    mint it is about, and a text scan counts that mention as a use.  An
+    identifier node cannot appear inside a comment, so parsing removes the whole
+    class of inflation by construction.
+
+    Args:
+        paths: The fixture files to scan, or None to find every `*_neg` tree
+
+    Returns:
+        Mint name to the number of fixture files that reference it
+    """
+    if paths is None:
+        found: list[Path] = []
+        for tree_dir in sorted(tsast.REPO_ROOT.glob("test/*_neg")):
+            found += tsast.cpp_files(str(tree_dir.relative_to(tsast.REPO_ROOT)))
+        paths = sorted(found)
+    counts: dict[str, int] = {}
+    for tree in tsast.parse(paths, strict=False):
+        seen: set[str] = set()
+        for node in tree.find("identifier", "field_identifier"):
+            name = node.text
+            if name.startswith("mint_"):
+                seen.add(name)
+        for name in seen:
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def _carve_outs(tree: tsast.Tree, line: int) -> tuple[bool, bool]:
     """Return the two §XXI carve-out markers above a signature.
 
@@ -333,11 +494,14 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 path=str(tree.path),
                 line=node.line,
                 owner=owner,
+                namespace=_namespace_of(node),
+                inline_ok=INLINE_OK in tree.source.decode("utf-8", "replace").splitlines()[node.line - 1],
                 nodiscard=_has_attribute(site, "nodiscard"),
                 constexpr=_has_qualifier(site, "constexpr", "consteval"),
                 noexcept_=bool(declarator.children_of_type("noexcept")),
                 requires_=_has_requires(site, declarator),
                 shape=_shape(site, declarator, owner),
+                templated=site.parent is not None and site.parent.type == "template_declaration",
                 carve_out_cx=carve_cx,
                 carve_out_rq=carve_rq,
             )
