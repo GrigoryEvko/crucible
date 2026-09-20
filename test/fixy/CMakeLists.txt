@@ -164,6 +164,13 @@ fixy_neg_compile_test(neg_refined_sealed_into_unreachable
   "constraints not satisfied"
   "the expression .!Sealed \\[with Sealed = true\\]. evaluated to .false.")
 
+# A rule family opts in by deriving rule_family<itself>, which replaced
+# a marker variable that could be forgotten.  A class in the namespace
+# that derives nothing is refused where the namespace is walked.
+fixy_neg_compile_test(neg_refined_rule_family_without_base
+  "static assertion failed: a class declared in admitted_implications is a rule family, which it says by deriving rule_family<itself>"
+  ".fixy::refined::rule_family<fixy::refined::admitted_implications::not_a_rule_family>. is not a base of .fixy::refined::admitted_implications::not_a_rule_family.")
+
 # DivisibleBy<0> and Bounded<10, 5, int> are refused where the type is
 # named, before any value is minted.
 fixy_neg_compile_test(neg_refined_divisible_by_zero

@@ -44,17 +44,51 @@
 #include <meta>
 #include <ranges>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
 namespace fixy {
+
+namespace detail {
+
+// "structural::" followed by the wrapper's own identifier.  Each of the
+// three wrappers below spelled its name twice, once as the class and
+// once inside a literal on the next line, and a rename moved only one
+// of them.  Reflection reads the identifier off the class, so there is
+// one spelling now.
+//
+// The text lives in static storage, so the view stays valid for the
+// whole program.  This is the shape ChainLattice.h uses for
+// pinned_at_name_v.
+//
+// Inside a class template body, `^^Name` is the injected class name and
+// reflects the specialization, which carries no identifier of its own.
+// The template does, so a specialization is asked about its template
+// first.
+[[nodiscard]] consteval std::string_view named_entity_of(std::meta::info cls) {
+    return std::meta::has_template_arguments(cls) ? std::meta::identifier_of(std::meta::template_of(cls))
+                                                  : std::meta::identifier_of(cls);
+}
+
+template <std::meta::info Cls>
+[[nodiscard]] consteval std::string_view make_structural_kind() {
+    std::string text{"structural::"};
+    text += named_entity_of(Cls);
+    return std::define_static_string(text);
+}
+
+template <std::meta::info Cls>
+inline constexpr std::string_view structural_kind_v = make_structural_kind<Cls>();
+
+}  // namespace detail
 
 template <class T>
 class [[nodiscard]] BorrowedRef {
 public:
     using element_type = T;
 
-    static constexpr std::string_view wrapper_kind() noexcept { return "structural::BorrowedRef"; }
+    static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^BorrowedRef>; }
 
 private:
     // No reachable constructor leaves this initializer in play.  It is
@@ -80,12 +114,6 @@ public:
         return BorrowedRef{from_raw_tag_t{}, p};
     }
 
-    constexpr BorrowedRef(BorrowedRef const&) = default;
-    constexpr BorrowedRef(BorrowedRef&&) = default;
-    constexpr BorrowedRef& operator=(BorrowedRef const&) = default;
-    constexpr BorrowedRef& operator=(BorrowedRef&&) = default;
-    ~BorrowedRef() = default;
-
     [[nodiscard]] constexpr T& get() const noexcept { return *ptr_; }
     [[nodiscard]] constexpr T& operator*() const noexcept { return *ptr_; }
     [[nodiscard]] constexpr T* operator->() const noexcept { return ptr_; }
@@ -102,7 +130,7 @@ public:
     using source_type = Source;
     using span_type = std::span<T>;
 
-    static constexpr std::string_view wrapper_kind() noexcept { return "structural::Borrowed"; }
+    static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^Borrowed>; }
 
 private:
     span_type span_{};
@@ -132,12 +160,6 @@ public:
     Borrowed(std::initializer_list<std::remove_cv_t<T>>) = delete(
         "Borrowed of a braced list dangles at the end of the full expression; "
         "give the elements a name that outlives the borrow");
-
-    constexpr Borrowed(Borrowed const&) = default;
-    constexpr Borrowed(Borrowed&&) = default;
-    constexpr Borrowed& operator=(Borrowed const&) = default;
-    constexpr Borrowed& operator=(Borrowed&&) = default;
-    ~Borrowed() = default;
 
     [[nodiscard]] constexpr T* data() const noexcept { return span_.data(); }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return span_.size(); }
@@ -176,7 +198,7 @@ class [[nodiscard]] WeakRef {
 public:
     using element_type = T;
 
-    static constexpr std::string_view wrapper_kind() noexcept { return "structural::WeakRef"; }
+    static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^WeakRef>; }
 
 private:
     T* ptr_ = nullptr;
@@ -196,12 +218,6 @@ public:
     [[nodiscard]] static constexpr WeakRef from_raw(T* p CRUCIBLE_LIFETIMEBOUND) noexcept {
         return WeakRef{from_raw_tag_t{}, p};
     }
-
-    constexpr WeakRef(WeakRef const&) = default;
-    constexpr WeakRef(WeakRef&&) = default;
-    constexpr WeakRef& operator=(WeakRef const&) = default;
-    constexpr WeakRef& operator=(WeakRef&&) = default;
-    ~WeakRef() = default;
 
     [[nodiscard]] constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
@@ -460,9 +476,25 @@ concept can_assign_ref = requires(R1 a, R2 b) {
 };
 static_assert(!can_assign_ref<BorrowedRef<int>, BorrowedRef<double>>);
 
-static_assert(BorrowedRef<int>::wrapper_kind() == "structural::BorrowedRef");
-static_assert(B_A::wrapper_kind() == "structural::Borrowed");
-static_assert(WeakRef<int>::wrapper_kind() == "structural::WeakRef");
+// The three kinds are built from the prefix and the class identifier,
+// so the pins check that shape rather than restating the literal a
+// fourth, fifth and sixth time.
+template <class W, std::meta::info Cls>
+[[nodiscard]] consteval bool kind_is_prefix_and_identifier() noexcept {
+    constexpr std::string_view prefix = "structural::";
+    const std::string_view kind = W::wrapper_kind();
+    if (!kind.starts_with(prefix)) return false;
+    return kind.substr(prefix.size()) == std::meta::identifier_of(Cls);
+}
+
+static_assert(kind_is_prefix_and_identifier<BorrowedRef<int>, ^^BorrowedRef>());
+static_assert(kind_is_prefix_and_identifier<B_A, ^^Borrowed>());
+static_assert(kind_is_prefix_and_identifier<WeakRef<int>, ^^WeakRef>());
+
+// The three are distinct, which is what a caller reading the kind off a
+// diagnostic relies on.
+static_assert(BorrowedRef<int>::wrapper_kind() != B_A::wrapper_kind());
+static_assert(B_A::wrapper_kind() != WeakRef<int>::wrapper_kind());
 
 [[nodiscard]] consteval bool default_is_empty() noexcept {
     WeakRef<int> w{};

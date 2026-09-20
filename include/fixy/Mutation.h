@@ -310,11 +310,6 @@ private:
     friend constexpr Monotonic<U, C> mint_monotonic(U initial) noexcept(std::is_nothrow_move_constructible_v<U>);
 
 public:
-    Monotonic(const Monotonic&) = default;
-    Monotonic(Monotonic&&) = default;
-    Monotonic& operator=(const Monotonic&) = default;
-    Monotonic& operator=(Monotonic&&) = default;
-
     [[nodiscard]] constexpr const T& get() const noexcept { return impl_.peek(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return impl_.peek(); }
 
@@ -398,11 +393,6 @@ public:
     using comparator_type = Cmp;
     static constexpr T max() noexcept { return kMax; }
 
-    BoundedMonotonic(const BoundedMonotonic&) = default;
-    BoundedMonotonic(BoundedMonotonic&&) = default;
-    BoundedMonotonic& operator=(const BoundedMonotonic&) = default;
-    BoundedMonotonic& operator=(BoundedMonotonic&&) = default;
-
     [[nodiscard]] constexpr const T& get() const noexcept { return inner_.get(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return inner_.current(); }
 
@@ -449,11 +439,6 @@ class [[nodiscard]] WriteOnce {
 
 public:
     using value_type = T;
-
-    WriteOnce(const WriteOnce&) = default;
-    WriteOnce(WriteOnce&&) = default;
-    WriteOnce& operator=(const WriteOnce&) = default;
-    WriteOnce& operator=(WriteOnce&&) = default;
 
     constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
         CRUCIBLE_PRE(!value_.has_value());
@@ -522,11 +507,6 @@ class [[nodiscard]] WriteOnceNonNull<T*> {
 public:
     using value_type = T*;
     using pointee_type = T;
-
-    WriteOnceNonNull(const WriteOnceNonNull&) = default;
-    WriteOnceNonNull(WriteOnceNonNull&&) = default;
-    WriteOnceNonNull& operator=(const WriteOnceNonNull&) = default;
-    WriteOnceNonNull& operator=(WriteOnceNonNull&&) = default;
 
     constexpr void set(T* p) noexcept {
         CRUCIBLE_PRE(p != nullptr);

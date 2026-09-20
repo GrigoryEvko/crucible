@@ -208,11 +208,14 @@ static_assert(!fixy::implies_v<even, fixy::non_negative>, "an edge outside admit
 // header runs over them is reachable from here.
 static_assert(fixy::detail::refined_self_test::every_edge_holds());
 
+// A family says it is one by deriving rule_family<itself>, so the
+// count reads classes rather than the marker variables that used to sit
+// beside them.  A family written without its variable was inert under
+// the old shape; under this one it cannot be.
 [[nodiscard]] consteval std::size_t rule_count() noexcept {
     std::size_t count = 0;
     for (auto const m : std::meta::members_of(^^rel::admitted_implications, std::meta::access_context::unchecked())) {
-        if (!std::meta::is_variable(m)) continue;
-        if (ffc::is_edge(m)) continue;
+        if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
         ++count;
     }
     return count;

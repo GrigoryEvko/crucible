@@ -242,12 +242,6 @@ public:
         requires std::default_initializable<T>
     = default;
 
-    Tagged(const Tagged&) = default;
-    Tagged(Tagged&&) = default;
-    Tagged& operator=(const Tagged&) = default;
-    Tagged& operator=(Tagged&&) = default;
-    ~Tagged() = default;
-
     [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
 
     // There is no value_mut().  The substrate admits mutation for an

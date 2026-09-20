@@ -397,6 +397,15 @@ public:
     // The refinement is a property of the value, so copying or moving
     // preserves it and neither needs to re-check.  What a sealed
     // refinement forbids is extraction, not movement.
+    //
+    // These four are load-bearing and cannot be dropped as implicit.
+    // The sealing constructor above takes Refinement<Pred, T, false>&&,
+    // which for the unsealed instantiation is Refinement&& — a
+    // user-declared move constructor, even though a requires-clause
+    // makes it unusable there.  Declaring one deletes the implicit copy
+    // constructor, and removing this block leaves Refined<Pred, T>
+    // uncopyable.  Measured: without it, mint_linear over a Refined
+    // fails on a deleted copy constructor.
     Refinement(const Refinement&) = default;
     Refinement(Refinement&&) = default;
     Refinement& operator=(const Refinement&) = default;
@@ -608,21 +617,18 @@ inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 
 namespace refined {
 
-// A parameterised family of implications.  The declaration
-// `inline constexpr rule<Family> name{};` inside admitted_implications
-// is the whole opt-in, and Family::admits<P, Q>() decides each pair.
-// The families deduce against the predicate struct templates through
-// overload resolution on a null pointer of each type, which is what
-// keeps a family closed: an overload set cannot be extended from
-// outside its class.
-template <class Family>
-struct rule {
-    using rule_type = Family;
-};
-
-template <class X>
-concept IsRuleMarker = requires { typename X::rule_type; } && std::same_as<X, rule<typename X::rule_type>>;
-
+// A parameterised family of implications.  Deriving rule_family<Self>
+// inside admitted_implications is the whole opt-in, and
+// Family::admits<P, Q>() decides each pair.  The families deduce
+// against the predicate struct templates through overload resolution on
+// a null pointer of each type, which is what keeps a family closed: an
+// overload set cannot be extended from outside its class.
+//
+// Each family used to declare a marker variable beside itself, which
+// the walk below looked for.  A family written without its variable was
+// silently inert: it compiled, it read as admitted, and it decided
+// nothing.  The base class is the opt-in now, so a family cannot be
+// declared and left out.
 template <class Family, class P, class Q>
 concept RuleDecides = requires {
     { Family::template admits<P, Q>() } -> std::same_as<bool>;
@@ -686,7 +692,6 @@ struct aligned_weakens : rule_family<aligned_weakens> {
         return N >= M && M > 0 && (N % M == 0);
     }
 };
-inline constexpr rule<aligned_weakens> aligned_weakens_rule{};
 
 // A smaller ceiling implies a larger one.
 struct bounded_above_weakens : rule_family<bounded_above_weakens> {
@@ -695,7 +700,6 @@ struct bounded_above_weakens : rule_family<bounded_above_weakens> {
         return N <= M;
     }
 };
-inline constexpr rule<bounded_above_weakens> bounded_above_weakens_rule{};
 
 // A tighter range implies a looser one.
 struct in_range_weakens : rule_family<in_range_weakens> {
@@ -704,7 +708,6 @@ struct in_range_weakens : rule_family<in_range_weakens> {
         return L2 <= L1 && H1 <= H2;
     }
 };
-inline constexpr rule<in_range_weakens> in_range_weakens_rule{};
 
 // A range ceiling is an upper bound.
 struct in_range_is_bounded_above : rule_family<in_range_is_bounded_above> {
@@ -713,7 +716,6 @@ struct in_range_is_bounded_above : rule_family<in_range_is_bounded_above> {
         return true;
     }
 };
-inline constexpr rule<in_range_is_bounded_above> in_range_is_bounded_above_rule{};
 
 // A longer minimum implies a shorter one.
 struct length_ge_weakens : rule_family<length_ge_weakens> {
@@ -722,7 +724,6 @@ struct length_ge_weakens : rule_family<length_ge_weakens> {
         return N >= M;
     }
 };
-inline constexpr rule<length_ge_weakens> length_ge_weakens_rule{};
 
 // A container's emptiness test equals a size of zero, so a minimum
 // length of one or more implies non-emptiness. The clause excluding
@@ -734,7 +735,6 @@ struct length_ge_is_non_empty : rule_family<length_ge_is_non_empty> {
         return N >= 1;
     }
 };
-inline constexpr rule<length_ge_is_non_empty> length_ge_is_non_empty_rule{};
 
 // The lower-bound conjunct gives x ≥ L, so a non-negative L implies a
 // non-negative x. A negative L admits negative values and is excluded
@@ -746,7 +746,6 @@ struct in_range_is_non_negative : rule_family<in_range_is_non_negative> {
         return L >= 0;
     }
 };
-inline constexpr rule<in_range_is_non_negative> in_range_is_non_negative_rule{};
 
 // A lower bound of one or more gives x ≥ 1 and so x > 0. A bound of
 // zero admits zero, which is not positive, hence the clause.  This is
@@ -757,7 +756,6 @@ struct in_range_is_positive : rule_family<in_range_is_positive> {
         return L >= 1;
     }
 };
-inline constexpr rule<in_range_is_positive> in_range_is_positive_rule{};
 
 // non_zero is a union of two half-lines rather than one, so the gate
 // here is a disjunction: either bound alone suffices to keep zero out
@@ -774,7 +772,6 @@ struct in_range_is_non_zero : rule_family<in_range_is_non_zero> {
         return L >= 1 || H <= -1;
     }
 };
-inline constexpr rule<in_range_is_non_zero> in_range_is_non_zero_rule{};
 
 // A conjunction implies each of its conjuncts, and each disjunct
 // implies the disjunction.  Wiring both through the relation lets a
@@ -790,7 +787,6 @@ struct all_of_implies_conjunct : rule_family<all_of_implies_conjunct> {
         return ((std::is_same_v<predicate_t<Preds>, Q> || implies_types<predicate_t<Preds>, Q>()) || ...);
     }
 };
-inline constexpr rule<all_of_implies_conjunct> all_of_implies_conjunct_rule{};
 
 struct disjunct_implies_any_of : rule_family<disjunct_implies_any_of> {
     template <class P, auto... Preds>
@@ -798,7 +794,6 @@ struct disjunct_implies_any_of : rule_family<disjunct_implies_any_of> {
         return (std::is_same_v<predicate_t<Preds>, P> || ...);
     }
 };
-inline constexpr rule<disjunct_implies_any_of> disjunct_implies_any_of_rule{};
 
 // The lower-bound axioms mirror the upper-bound ones but with the
 // inequality flipped: a tighter floor is a larger N, whereas a tighter
@@ -814,7 +809,6 @@ struct bounded_below_weakens : rule_family<bounded_below_weakens> {
         return N >= M;
     }
 };
-inline constexpr rule<bounded_below_weakens> bounded_below_weakens_rule{};
 
 struct in_range_is_bounded_below : rule_family<in_range_is_bounded_below> {
     template <auto L, auto H>
@@ -822,7 +816,6 @@ struct in_range_is_bounded_below : rule_family<in_range_is_bounded_below> {
         return true;
     }
 };
-inline constexpr rule<in_range_is_bounded_below> in_range_is_bounded_below_rule{};
 
 struct bounded_below_is_non_negative : rule_family<bounded_below_is_non_negative> {
     template <auto N>
@@ -830,7 +823,6 @@ struct bounded_below_is_non_negative : rule_family<bounded_below_is_non_negative
         return N >= 0;
     }
 };
-inline constexpr rule<bounded_below_is_non_negative> bounded_below_is_non_negative_rule{};
 
 struct bounded_below_is_positive : rule_family<bounded_below_is_positive> {
     template <auto N>
@@ -838,7 +830,6 @@ struct bounded_below_is_positive : rule_family<bounded_below_is_positive> {
         return N >= 1;
     }
 };
-inline constexpr rule<bounded_below_is_positive> bounded_below_is_positive_rule{};
 
 // The relation does not chain, so this direct bridge is needed even
 // though the same conclusion follows by chaining the floor bridge to
@@ -852,7 +843,6 @@ struct bounded_below_is_non_zero : rule_family<bounded_below_is_non_zero> {
         return N >= 1;
     }
 };
-inline constexpr rule<bounded_below_is_non_zero> bounded_below_is_non_zero_rule{};
 
 // The same shape on the size axis. An exact size of N satisfies any
 // minimum up to N, and satisfies non-emptiness once N is at least one.
@@ -868,7 +858,6 @@ struct exact_size_is_length_ge : rule_family<exact_size_is_length_ge> {
         return N >= M;
     }
 };
-inline constexpr rule<exact_size_is_length_ge> exact_size_is_length_ge_rule{};
 
 struct exact_size_is_non_empty : rule_family<exact_size_is_non_empty> {
     template <std::size_t N>
@@ -876,7 +865,6 @@ struct exact_size_is_non_empty : rule_family<exact_size_is_non_empty> {
         return N >= 1;
     }
 };
-inline constexpr rule<exact_size_is_non_empty> exact_size_is_non_empty_rule{};
 
 // The same relation as pointer alignment, on the modulo axis. If x is
 // a multiple of N and N is a multiple of M, then x is a multiple of M.
@@ -890,12 +878,14 @@ struct divisible_by_weakens : rule_family<divisible_by_weakens> {
         return N >= M && M > decltype(M){0} && (N % M == decltype(N){0});
     }
 };
-inline constexpr rule<divisible_by_weakens> divisible_by_weakens_rule{};
 
 }  // namespace admitted_implications
 
-// True when some rule variable of Ns decides the pair.  Every other
-// member of Ns is skipped, the same way the edge check skips them.
+// True when some rule family of Ns decides the pair.  A family is a
+// class deriving rule_family<itself>, which is the same shape
+// fail_closed::every_class_in_has_edge walks for.  Every other member
+// of Ns is skipped, the same way the edge check skips them: an edge is
+// a variable, and a type alias is not a class declared here.
 template <std::meta::info Ns, class P, class Q>
 [[nodiscard]] consteval bool rule_admits() noexcept {
     static_assert(std::meta::is_namespace(Ns), "refined::rule_admits<Ns, P, Q>: Ns must be the reflection of "
@@ -906,11 +896,13 @@ template <std::meta::info Ns, class P, class Q>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto m : members) {
-        if constexpr (std::meta::is_variable(m)) {
-            using Marker = [:std::meta::remove_cvref(std::meta::type_of(m)):];
-            if constexpr (IsRuleMarker<Marker>) {
-                using Family = typename Marker::rule_type;
-                static_assert(RuleDecides<Family, P, Q>, "a rule<Family> in admitted_implications must expose "
+        if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
+            // The splice is named before the base test: one in a
+            // template-argument position needs a disambiguator, and an
+            // alias sidesteps that.
+            using Family = [:m:];
+            if constexpr (std::is_base_of_v<rule_family<Family>, Family>) {
+                static_assert(RuleDecides<Family, P, Q>, "a rule family in admitted_implications must expose "
                                                          "Family::admits<P, Q>() returning bool.");
                 if (Family::template admits<P, Q>()) {
                     return true;
@@ -1097,9 +1089,14 @@ template <class P, class Q>
             static_assert(std::is_empty_v<From> && std::is_empty_v<To>, "an edge names two stateless predicates");
             static_assert(edge_sound<From, To>(), "an admitted edge is unsound on the sample roster: a value "
                                                   "satisfies the source predicate and fails the target");
+        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
+            using Family = [:m:];
+            static_assert(std::is_base_of_v<refined::rule_family<Family>, Family>,
+                          "a class declared in admitted_implications is a rule family, which it says by "
+                          "deriving rule_family<itself>");
         } else if constexpr (std::meta::is_variable(m)) {
-            using Marker = [:std::meta::remove_cvref(std::meta::type_of(m)):];
-            static_assert(refined::IsRuleMarker<Marker>, "admitted_implications holds edges and rules only");
+            static_assert(::foundation::fail_closed::is_edge(m), "a variable declared in admitted_implications "
+                                                                 "is an edge");
         }
     }
 #pragma GCC diagnostic pop
