@@ -295,17 +295,4 @@ static_assert(sizeof(PermSet<A_tag, B_tag, C_tag, D_tag>) == 1);
 static_assert(std::is_trivially_destructible_v<PermSet<A_tag>>);
 static_assert(std::is_empty_v<PermSet<A_tag, B_tag, C_tag>>);
 
-inline void runtime_smoke_test() noexcept {
-    constexpr auto empty_size = EmptyPermSet::size;
-    constexpr auto three_size = PermSet<A_tag, B_tag, C_tag>::size;
-    static_assert(empty_size == 0);
-    static_assert(three_size == 3);
-
-    constexpr auto name = perm_set_name<PermSet<A_tag, B_tag>>();
-    static_assert(!name.empty());
-
-    static_assert(perm_set_equal_v<perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
-                                   perm_set_canonicalize_t<PermSet<B_tag, A_tag>>>);
-}
-
 }  // namespace foundation::permissions::detail::permset_smoke

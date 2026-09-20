@@ -189,7 +189,24 @@ void test_permission_row_compile() {
                                                               std::move(std::get<1>(split_n)));
     perm::permission_drop(std::move(joined_n));
 }
-void test_perm_set_compile() {}
+// The body was an inline runtime_smoke_test in PermSet.h that nothing
+// called.  It sits in detail::permset_smoke, whose fixture tags it
+// names, so the two using-directives reproduce the lookup it had
+// there.  The body moves verbatim.
+void test_perm_set_compile() {
+    using namespace ::foundation::permissions;
+    using namespace ::foundation::permissions::detail::permset_smoke;
+    constexpr auto empty_size = EmptyPermSet::size;
+    constexpr auto three_size = PermSet<A_tag, B_tag, C_tag>::size;
+    static_assert(empty_size == 0);
+    static_assert(three_size == 3);
+
+    constexpr auto name = perm_set_name<PermSet<A_tag, B_tag>>();
+    static_assert(!name.empty());
+
+    static_assert(perm_set_equal_v<perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
+                                   perm_set_canonicalize_t<PermSet<B_tag, A_tag>>>);
+}
 void test_read_view_compile() {}
 
 }  // namespace
