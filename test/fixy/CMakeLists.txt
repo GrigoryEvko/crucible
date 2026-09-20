@@ -517,12 +517,14 @@ fixy_neg_compile_test(neg_path_forge_sanitized_tag
 # The check reads the nine namespaces rather than a hand roster, so the
 # witness that it works is a class it was never told about.  The
 # fixture plants one before the header, and both halves of the check
-# answer: the shape walk refuses it, and the count pin sees 36 where it
-# recorded 35.
+# answer: the shape walk refuses it, and the count pin sees 46 where it
+# recorded 45.  The namespace count went from nine to ten and the tag
+# count from 35 to 45 when #116 moved fixy::mmap::advice here, so that one
+# walk covers every tag namespace.
 fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
-  "static assertion failed: fixy/atoms/Os\\.h: a class declared in one of the nine tag namespaces has state"
-  "static assertion failed: fixy/atoms/Os\\.h: the nine tag namespaces hold a different number of tags"
-  "the comparison reduces to .\\(36 == 35\\).")
+  "static assertion failed: fixy/atoms/Os\\.h: a class declared in one of the ten tag namespaces has state"
+  "static assertion failed: fixy/atoms/Os\\.h: the ten tag namespaces hold a different number of tags"
+  "the comparison reduces to .\\(46 == 45\\).")
 
 # ── Task #117 (A14.1): the binary session core ───────────────────────
 #
@@ -1048,3 +1050,104 @@ fixy_test(test_cheat_probe)
 fixy_neg_compile_test(neg_cheat_graded_modality_injection
   "template constraint failure"
   "IsGraded<T>. \\[with T = FakeSubstrate\\]")
+
+# ── Task #116 (A13.4): the spin gate, the throws walk, fp, and spawn ──
+#
+# fixy/Throws.h and fixy/fp/Canonicalize.h carry their whole claim as
+# static assertions, so they have no runtime unit of their own; the two
+# below are the parts that only a constructed sequence of calls can show.
+#
+# test_fp_polynomial re-checks at run time every value the header pins at
+# compile time.  The two are different arithmetic engines, GCC's constant
+# folding and the host FPU, and the claim is that they agree.
+fixy_test(test_fp_polynomial)
+
+# test_os_spinlock acquires and releases through every door the gate has.
+# The cells that prove a door is CLOSED are the five fixtures below: a
+# private-member access is a compile error, not a runtime result.
+fixy_test(test_os_spinlock)
+
+# test_os_spawn runs both mints for real: that every child body ran, that
+# the parent Permission comes back, and that a recombined region still
+# describes the storage it started with.
+fixy_test(test_os_spawn)
+
+# Every second regex is text the compiler emits and the fixture source
+# does not: a signature with its permission_t parameter spelled out, a
+# candidate-arity line, a constraint note naming the concept, or a
+# sentence from the header's own static_assert.  So no fixture can satisfy
+# its own gate by echoing itself.
+
+# Deviation 1 of fixy/os/SpinLock.h: both doors are private, and lock_in
+# is the way in.  The old header had them public, which is how eleven
+# production sites bypassed the background-context clause.
+fixy_neg_compile_test(neg_spin_lock_door_is_private
+  "is private within this context"
+  "fixy::spin::SpinLock<Tag>::lock\\(permission_t&\\)")
+
+fixy_neg_compile_test(neg_spin_try_lock_door_is_private
+  "is private within this context"
+  "fixy::spin::SpinLock<Tag>::try_lock\\(permission_t&\\)")
+
+# Deviation 3: release costs the same witness acquisition did.
+fixy_neg_compile_test(neg_spin_unlock_without_witness
+  "no matching function for call to .fixy::spin::SpinLock<\\{anonymous\\}::GateTag>::unlock\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+
+# Deviation 2: a background context may also allocate, syscall or block.
+fixy_neg_compile_test(neg_spin_guard_under_bg_ctx
+  "constraints not satisfied"
+  "required for the satisfaction of .CtxMayAcquireSpin<Ctx>.")
+
+fixy_neg_compile_test(neg_spin_lock_without_permission
+  "no matching function for call to .fixy::spin::SpinGuard<\\{anonymous\\}::GateTag>::SpinGuard\\("
+  "candidate expects 3 arguments, 2 provided")
+
+# Deviation 1 of fixy/os/Spawn.h, and the hole fixy/Throws.h closes: the
+# callable here carries the atom at a NAMED exception family, which the
+# old needle did not match because it compared against the default
+# specialization alone.
+fixy_neg_compile_test(neg_spawn_callable_carries_throws
+  "static assertion failed: mint_spawn: a callable.s type carries fixy::atom::ctrl::throws"
+  "tears through the join")
+
+# A mechanism that never joins has to say why.
+fixy_neg_compile_test(neg_spawn_detached_missing_rationale
+  "static assertion failed: a Detached mechanism with no detach_with atom must be refused"
+  "required by the constraints of .template<class Mechanism, class \\.\\.\\. Atoms> concept fixy::spawn::JoinPolicyGrantsCoherent.")
+
+fixy_neg_compile_test(neg_spawn_empty_rationale
+  "static assertion failed: detach_with<\"\"> rejected"
+  "enumerates every legitimate detach across the codebase")
+
+# The mechanism allowlist is by identity, so a lookalike that declares the
+# same member is still refused.
+fixy_neg_compile_test(neg_spawn_join_concept_rejects_non_tag
+  "static assertion failed: a struct that merely declares a mechanism member must not pass for a declared tag"
+  "required by the constraints of .template<class T> concept fixy::spawn::join::IsJoinMechanismTag.")
+
+# canonicalize_for gates on the two axes a content hash depends on.
+fixy_neg_compile_test(neg_canonicalize_for_non_bitexact_spec
+  "static assertion failed: fixy::fp::canonicalize_for<Spec> requires"
+  "cross-vendor drift exceeds 1 ULP")
+
+fixy_neg_compile_test(neg_canonicalize_for_wrong_rounding
+  "static assertion failed: fixy::fp::canonicalize_for<Spec> requires RoundingMode::RN"
+  "a rounding mode no default kernel")
+
+# The HS14 floor for the two new mints: two fixtures each.  mint_spawn is
+# floored by the throws gate above and by the context gate here;
+# mint_parallel_for by its context gate and by its body signature.
+fixy_neg_compile_test(neg_spawn_mint_spawn_ctx_lacks_bg
+  "no matching function for call to .mint_spawn<\\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
+  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, std::tuple<_Ts \\.\\.\\.>")
+
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
+  "constraints not satisfied"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
+
+# Deviation 4: recombine needs every shard back, so a body that consumes
+# its shard is refused.
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
+  "static assertion failed: a body that consumes its shard must be refused"
+  "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0> >&>")
