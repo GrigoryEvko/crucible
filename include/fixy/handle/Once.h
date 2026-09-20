@@ -13,7 +13,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstdlib>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -166,43 +165,5 @@ public:
 
     [[nodiscard]] bool initialized() const noexcept { return once_.done(); }
 };
-
-namespace detail::lazy_self_test {
-
-// The checks below run rather than fold, so a refactor that made the
-// stored initializer re-runnable fails here instead of compiling.
-inline void runtime_smoke_test() {
-    const int seed = 0xA5C3;
-    int invocations = 0;
-    Lazy<int> lazy{};
-
-    if (lazy.initialized()) std::abort();
-
-    int& first = lazy.get_or_init([&] {
-        ++invocations;
-        return seed + 1;
-    });
-    if (first != seed + 1) std::abort();
-    if (invocations != 1) std::abort();
-    if (!lazy.initialized()) std::abort();
-
-    int& second = lazy.get_or_init([&] {
-        ++invocations;
-        return seed + 99999;
-    });
-    if (invocations != 1) std::abort();
-    if (&second != &first) std::abort();
-    if (second != seed + 1) std::abort();
-
-    int& third = lazy.get();
-    if (&third != &first) std::abort();
-    if (third != seed + 1) std::abort();
-
-    const Lazy<int>& clazy = lazy;
-    const int& fourth = clazy.get();
-    if (&fourth != &first) std::abort();
-}
-
-}  // namespace detail::lazy_self_test
 
 }  // namespace fixy::handle

@@ -99,7 +99,7 @@ static_assert(!std::is_constructible_v<AtSend, ValueWire>);
 
 // ── What the policy costs ────────────────────────────────────────────
 //
-// This is the decision A14.1 made, stated as two sizes.  Under Off the
+// The abandonment-policy decision, stated as two sizes.  Under Off the
 // tracker is empty, [[no_unique_address]] collapses it, and a handle
 // costs exactly its Resource.  Under Enforced it carries a flag and a
 // source_location, and a test binary pays for them deliberately.

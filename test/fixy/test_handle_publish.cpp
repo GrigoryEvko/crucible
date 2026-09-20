@@ -223,11 +223,59 @@ static_assert(std::is_copy_constructible_v<h::SetOnce<Payload>>);
     return 0;
 }
 
-[[nodiscard]] int lazy_initializes_once() {
-    // The header's own smoke test walks the single-threaded path.
-    // Running it from here is what keeps it from being dead code.
-    h::detail::lazy_self_test::runtime_smoke_test();
+// The single-threaded path, which used to run as an inline smoke test
+// compiled into every translation unit that included the header.  What
+// it checks is behaviour under a contrived sequence of calls, not a
+// property of Lazy as shipped, so it belongs here.
+//
+// These checks run rather than fold: a refactor that made the stored
+// initializer re-runnable would fail here instead of compiling.
+[[nodiscard]] int lazy_initializes_once_single_threaded() {
+    const int seed = 0xA5C3;
+    int invocations = 0;
+    h::Lazy<int> lazy{};
 
+    if (lazy.initialized()) {
+        std::fprintf(stderr, "a fresh Lazy read as initialized\n");
+        return 1;
+    }
+
+    int& first = lazy.get_or_init([&]() noexcept {
+        ++invocations;
+        return seed + 1;
+    });
+    if (first != seed + 1 || invocations != 1 || !lazy.initialized()) {
+        std::fprintf(stderr, "the first get_or_init did not initialize once\n");
+        return 1;
+    }
+
+    // The second initializer must never run, and the reference must be
+    // the same object rather than a second one holding the same value.
+    int& second = lazy.get_or_init([&]() noexcept {
+        ++invocations;
+        return seed + 99999;
+    });
+    if (invocations != 1 || &second != &first || second != seed + 1) {
+        std::fprintf(stderr, "the second get_or_init re-ran the initializer\n");
+        return 1;
+    }
+
+    int& third = lazy.get();
+    if (&third != &first || third != seed + 1) {
+        std::fprintf(stderr, "get() returned a different object than get_or_init\n");
+        return 1;
+    }
+
+    const h::Lazy<int>& const_view = lazy;
+    const int& fourth = const_view.get();
+    if (&fourth != &first) {
+        std::fprintf(stderr, "the const get() returned a different object\n");
+        return 1;
+    }
+    return 0;
+}
+
+[[nodiscard]] int lazy_initializes_once() {
     constexpr int kThreads = 8;
     h::Lazy<int> lazy{};
     std::atomic<int> initializers{0};
@@ -326,6 +374,7 @@ int main() {
     if (const int rc = publish_slot_runs(); rc != 0) return rc;
     if (const int rc = set_once_runs(); rc != 0) return rc;
     if (const int rc = once_runs_exactly_once(); rc != 0) return rc;
+    if (const int rc = lazy_initializes_once_single_threaded(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once(); rc != 0) return rc;
     if (const int rc = double_publish_aborts(); rc != 0) return rc;
     return 0;
