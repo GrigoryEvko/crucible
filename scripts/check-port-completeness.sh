@@ -153,15 +153,60 @@
 # Either is exit 2.  The sentence must be non-empty and end with a period.
 # `--emit-drops` prints a template line for every current miss.
 #
+# The second half of a trait's identity: specialisation folds
+# ----------------------------------------------------------
+# Everything above compares NAMES.  A trait's identity is its name plus
+# what it ANSWERS, and the two halves fail separately.  A trait can
+# survive the port by name, lose every specialisation, and answer the same
+# thing for every argument.  The enforcement it carried is then gone and
+# no name is missing, so the scan above reports clean.  That is how
+# fixy/Qtt.h shipped two discipline tables whose four old specialisations
+# became zero, making linearity a tautology (task #193).
+#
+# So this guard also counts specialisations on both sides.  A
+# specialisation is a class, struct or union declaration whose name is
+# immediately followed by `<`; the primary is the same spelling without
+# it.  Both counts read the namespace-scope text, which is the compiler's
+# own output, so a comment, a string literal, a class body and a private
+# namespace contribute nothing and a macro-generated specialisation has
+# already expanded.
+#
+# A name is REQUIRED TO BE JUSTIFIED when all three hold:
+#   - the old superseded surface specialises it at least once;
+#   - the new tree declares a primary for it;
+#   - the new tree specialises it zero times.
+# Its row lives in scripts/port-folds.txt, keyed by
+# `<new header>:<trait>` because the fold is a property of the NEW trait,
+# and checked in both directions like a drop:
+#   - STALE:    that header declares no primary for that name any more, or
+#               the name is no longer one the old tree specialises;
+#   - OBSOLETE: the new tree now specialises it, so no fold is left.
+# `--emit-folds` prints a template line for every unjustified fold.
+#
+# WHY A COUNT AND NOT A COMPARISON OF ANSWERS.  Comparing what the two
+# trees answer at the old argument lists is the property anyone actually
+# depends on, and it is not reachable here.  P2996 offers no
+# specialisations_of query and a specialisation is not a namespace member:
+# a walk over a namespace holding one primary and three specialisations,
+# two explicit and one partial, reports exactly ONE member, measured
+# 2026-09-20.  Mapping each old argument list onto its new spelling is
+# also the rename problem port-drops.txt solves by hand.  So the count is
+# the trigger and the written sentence is the evidence, the same shape the
+# drops channel already uses.  A sentence is a claim a person reviews, not
+# a proof, and this file says so rather than implying more.
+#
 # Exit codes
-#   0 — clean: every superseded symbol is present or has a written drop
-#   1 — at least one missing port (takes precedence over 2)
-#   2 — stale or obsolete drop entry, malformed entry, sentinel would not
-#       compile, missing dependency, or bad invocation
+#   0 — clean: every superseded symbol is present or has a written drop,
+#       and every fold has a written sentence
+#   1 — at least one missing port or unjustified fold (takes precedence
+#       over 2)
+#   2 — stale or obsolete drop or fold entry, malformed entry, sentinel
+#       would not compile, missing dependency, or bad invocation
 #
 # Usage
 #   check-port-completeness.sh [--quiet]     scan
 #   check-port-completeness.sh --emit-drops  print template lines for misses
+#   check-port-completeness.sh --emit-folds  print template lines for folds
 #   check-port-completeness.sh --self-test   plant controls and prove each
 #                                            direction of failure
 #
@@ -178,6 +223,7 @@
 #   PORT_GUARD_NS_CORROBORATION symbols one new namespace must hold before
 #                               it counts as having received an old one (2)
 #   PORT_GUARD_DROPS            drops file (scripts/port-drops.txt)
+#   PORT_GUARD_FOLDS            folds file (scripts/port-folds.txt)
 
 set -euo pipefail
 
@@ -191,10 +237,11 @@ walk_ns="${PORT_GUARD_NS:-crucible}"
 new_ns="${PORT_GUARD_NEW_NS:-foundation fixy}"
 corroboration="${PORT_GUARD_NS_CORROBORATION:-2}"
 drops_file="${PORT_GUARD_DROPS:-scripts/port-drops.txt}"
+folds_file="${PORT_GUARD_FOLDS:-scripts/port-folds.txt}"
 quiet=0
 
 usage() {
-    printf 'usage: %s [--quiet | --emit-drops | --self-test]\n' "${BASH_SOURCE[0]}" >&2
+    printf 'usage: %s [--quiet | --emit-drops | --emit-folds | --self-test]\n' "${BASH_SOURCE[0]}" >&2
     exit 2
 }
 
@@ -675,6 +722,133 @@ load_drops() {
     done <"$drops_file"
 }
 
+# ── Specialisation folds ────────────────────────────────────────────────
+
+# The text a template count reads.
+#
+# Deliberately NOT namespace_scope_text.  That one strips private
+# namespaces and class bodies, which is right for a PUBLIC surface and
+# wrong here: a trait in a detail namespace folds exactly like a public
+# one, and foundation::effects::detail::extract_admits_payload is one of
+# them.  Stripping detail would hide the very shape this check exists for.
+# What is removed is only what would be miscounted — comments, through the
+# compiler's own -fpreprocessed pass, and string literals.
+template_text() {
+    local cxx="$1" src="$2"
+    { "$cxx" -fpreprocessed -dD -E -P "$src" 2>/dev/null || true; } \
+        | sed -E 's/"([^"\\]|\\.)*"//g'
+}
+
+# Prints `S|P<TAB>file<TAB>name` for every class-template declaration in
+# the files listed on stdin, each resolved under $2 and printed under the
+# spelling it was listed with.
+#
+# S is a specialisation: the name is immediately followed by `<`, whether
+# the `template <...>` prefix sits on the same line or the line above.
+# P is a primary: the name is followed by `:`, `{`, `;`, or the end of the
+# line, which is where an opening brace lands after the strip.  The
+# end-of-line arm is why `struct Foo {` is seen at all; without it every
+# primary with an inline body would read as absent.
+tally_templates() {
+    local cxx="$1" root="$2" f path
+    while IFS= read -r f; do
+        # The old list is relative to an include root; the new list is
+        # already openable and, under the self-test's planted roots,
+        # absolute.  Prefixing an absolute path with the root yields a
+        # path that opens nothing, and the loop then silently tallies an
+        # empty tree — which is a guard reporting green because it
+        # measured nothing.
+        if [[ "$f" == /* ]]; then path="$f"; else path="$root/$f"; fi
+        [[ -f "$path" ]] || continue
+        template_text "$cxx" "$path" | awk -v file="$f" '
+            {
+                if (match($0, /^[[:space:]]*(template[[:space:]]*<.*>[[:space:]]*)?(struct|class|union)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*</)) {
+                    s = substr($0, RSTART, RLENGTH)
+                    sub(/^[[:space:]]*(template[[:space:]]*<.*>[[:space:]]*)?(struct|class|union)[[:space:]]+/, "", s)
+                    sub(/[[:space:]]*<$/, "", s)
+                    print "S\t" file "\t" s
+                    next
+                }
+                if (match($0, /^[[:space:]]*(struct|class|union)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(final[[:space:]]*)?([:{;]|$)/)) {
+                    s = substr($0, RSTART, RLENGTH)
+                    sub(/^[[:space:]]*(struct|class|union)[[:space:]]+/, "", s)
+                    sub(/[[:space:]]*(final[[:space:]]*)?[:{;]?$/, "", s)
+                    if (s != "") print "P\t" file "\t" s
+                }
+            }'
+    done
+}
+
+# Writes `new header<TAB>trait<TAB>old specialisation count` to $1 for
+# every trait that must carry a fold sentence: the old surface specialises
+# it, the new tree declares a primary, and the new tree specialises it
+# zero times.
+#
+# One row per (new header declaring the primary, name).  Two new headers
+# can declare one primary — a forward declaration and its definition — and
+# each is a place a reader looks for the trait, so each takes a row rather
+# than one row standing for both.
+fold_requirements() {
+    local out="$1" old_tally="$2" new_tally="$3"
+    awk -F'\t' -v oldf="$old_tally" -v newf="$new_tally" '
+        BEGIN {
+            while ((getline line < oldf) > 0) {
+                split(line, a, "\t")
+                if (a[1] == "S") old_spec[a[3]]++
+            }
+            while ((getline line < newf) > 0) {
+                split(line, a, "\t")
+                if (a[1] == "S") new_spec[a[3]] = 1
+                else if (a[1] == "P") home[a[3] SUBSEP a[2]] = 1
+            }
+            for (k in home) {
+                split(k, p, SUBSEP)
+                name = p[1]; file = p[2]
+                if (!(name in old_spec)) continue
+                if (name in new_spec) continue
+                printf "%s\t%s\t%s\n", file, name, old_spec[name]
+            }
+        }' </dev/null | sort -u >"$out"
+}
+
+# Parses the folds file into $1 as `header<TAB>trait` and validates each
+# entry against the requirement set ($2) and the new tally ($3).  Sets
+# stale_rc=2 on any stale, obsolete or malformed entry.  A row that is not
+# a requirement is OBSOLETE when the new tree specialises the trait again
+# and STALE otherwise, because the two ask the author for different edits.
+load_folds() {
+    local out="$1" reqs="$2" new_tally="$3" line key sentence header name
+    : >"$out"
+    [[ -f "$folds_file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" != *" — "* ]]; then
+            printf 'MALFORMED FOLD  %s\n  (expected `<new header>:<trait>  — <one sentence>.`)\n' "$line" >&2
+            stale_rc=2; continue
+        fi
+        key="${line%% — *}"; key="${key%"${key##*[![:space:]]}"}"
+        sentence="${line#* — }"; sentence="${sentence#"${sentence%%[![:space:]]*}"}"
+        header="${key%%:*}"; name="${key##*:}"
+        if [[ -z "$header" || -z "$name" || "$key" != *:* ]]; then
+            printf 'MALFORMED FOLD  %s\n  (no `<new header>:<trait>` key)\n' "$line" >&2
+            stale_rc=2; continue
+        fi
+        if [[ -z "$sentence" || "$sentence" != *. ]]; then
+            printf 'MALFORMED FOLD  %s:%s\n  (the sentence after the em dash must be non-empty and end with a period)\n' "$header" "$name" >&2
+            stale_rc=2; continue
+        fi
+        if ! grep -qP "^\Q${header}\E\t\Q${name}\E\t" "$reqs"; then
+            if grep -qP "^S\t[^\t]*\t\Q${name}\E$" "$new_tally"; then
+                printf 'OBSOLETE FOLD   %s  %s\n  (the new tree specializes this trait again — there is no fold left to justify; remove the entry)\n' "$header" "$name" >&2
+            else
+                printf 'STALE FOLD      %s  %s\n  (that header declares no primary of this name the old tree specialized — remove the entry)\n' "$header" "$name" >&2
+            fi
+            stale_rc=2; continue
+        fi
+        printf '%s\t%s\n' "$header" "$name" >>"$out"
+    done <"$folds_file"
+}
+
 # ── Scan ────────────────────────────────────────────────────────────────
 
 stale_rc=0
@@ -682,6 +856,7 @@ stale_rc=0
 scan() {
     local mode="${1:-scan}"
     local cxx tmp headers surface index pairs verdicts drops misses
+    local new_headers old_tally new_tally fold_reqs folds fold_misses
     cxx="$(find_cxx)"
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' RETURN
@@ -757,6 +932,42 @@ scan() {
         $3 == "absent" && !(($1 SUBSEP $2) in dropped) { print $1 "\t" $2 }
     ' "$drops" "$verdicts" | sort -u >"$misses"
 
+    # The other half of a trait's identity.  The two tallies read their
+    # own strip rather than the one above, for the reason template_text
+    # states.  The new list is repo-relative, because a fold row names a
+    # file a reader opens rather than a path inside an include root.
+    new_headers="$tmp/new_header_paths.txt"
+    : >"$new_headers"
+    local nroot
+    for nroot in $new_roots; do
+        [[ -d "$nroot" ]] || continue
+        find "$nroot" -type f -name '*.h' | sort >>"$new_headers"
+    done
+    # Plain `sort`, never `sort -u`.  Every specialisation of one trait in
+    # one file produces the same line, so a dedupe here would turn the
+    # count into a presence bit: _Tagged.h's eighteen retag_policy
+    # specialisations collapsed to one and the report said the old tree
+    # specialised it twice, once per file, instead of twenty-one times.
+    # The verdict would have survived that, because it only asks whether
+    # the count is zero, and the number the report prints would have been
+    # a lie.
+    old_tally="$tmp/old_templates.tsv"
+    new_tally="$tmp/new_templates.tsv"
+    tally_templates "$cxx" "$old_root" <"$headers" | sort >"$old_tally"
+    tally_templates "$cxx" . <"$new_headers" | sort >"$new_tally"
+
+    fold_reqs="$tmp/fold_reqs.tsv"
+    fold_requirements "$fold_reqs" "$old_tally" "$new_tally"
+
+    folds="$tmp/folds.tsv"
+    load_folds "$folds" "$fold_reqs" "$new_tally"
+
+    fold_misses="$tmp/fold_misses.tsv"
+    awk -F'\t' -v folds="$folds" '
+        FILENAME == folds { written[$1 SUBSEP $2] = 1; next }
+        !(($1 SUBSEP $2) in written) { print $1 "\t" $2 "\t" $3 }
+    ' "$folds" "$fold_reqs" | sort -u >"$fold_misses"
+
     if [[ "$mode" == "emit" ]]; then
         while IFS=$'\t' read -r h s; do
             printf '%s:%s  — <why this symbol has no home in the new tree>.\n' "$h" "$s"
@@ -764,8 +975,16 @@ scan() {
         return 0
     fi
 
-    local count
+    if [[ "$mode" == "emit_folds" ]]; then
+        while IFS=$'\t' read -r h s n; do
+            printf '%s:%s  — <what now computes the answer the %s specializations spelled out>.\n' "$h" "$s" "$n"
+        done <"$fold_misses"
+        return 0
+    fi
+
+    local count fold_count
     count=$(wc -l <"$misses")
+    fold_count=$(wc -l <"$fold_misses")
     if [[ $count -gt 0 ]]; then
         while IFS=$'\t' read -r h s; do
             local methods rule spaces
@@ -781,14 +1000,29 @@ scan() {
         printf '\ncheck-port-completeness: %s symbol(s) from superseded headers have no home in the new tree\n' "$count" >&2
         printf '  and no entry in %s.  Port each one, or write its sentence there.\n' "$drops_file" >&2
         printf '  `%s --emit-drops` prints a template line per miss.\n' "${BASH_SOURCE[0]}" >&2
+    fi
+    if [[ $fold_count -gt 0 ]]; then
+        while IFS=$'\t' read -r h s n; do
+            printf 'UNJUSTIFIED FOLD  %s  %s  (the old tree specializes it %s time(s); the new tree, never)\n' "$h" "$s" "$n"
+        done <"$fold_misses"
+        printf '\ncheck-port-completeness: %s trait(s) kept their name through the port and lost\n' "$fold_count" >&2
+        printf '  every specialization, with no entry in %s.  A primary that\n' "$folds_file" >&2
+        printf '  answers the same thing for every argument enforces nothing, which is how\n' >&2
+        printf '  the Qtt discipline tables made linearity a tautology.  Either restore the\n' >&2
+        printf '  discrimination, or write the sentence naming what now computes the answer.\n' >&2
+        printf '  `%s --emit-folds` prints a template line per fold.\n' "${BASH_SOURCE[0]}" >&2
+    fi
+    if [[ $count -gt 0 || $fold_count -gt 0 ]]; then
         return 1
     fi
     if [[ $stale_rc -ne 0 ]]; then
-        printf 'check-port-completeness: no missing ports, but %s has entries that no longer hold.\n' "$drops_file" >&2
+        printf 'check-port-completeness: no missing ports and no unjustified folds, but %s or %s\n' "$drops_file" "$folds_file" >&2
+        printf '  has entries that no longer hold.\n' >&2
         return 2
     fi
-    printf 'check-port-completeness: clean — every symbol of %s superseded headers is present or has a written drop (%s drops).\n' \
+    printf 'check-port-completeness: clean — every symbol of %s superseded headers is present or has a written drop (%s drops),\n' \
         "$(wc -l <"$headers")" "$(wc -l <"$drops")"
+    printf '  and every trait that lost its specializations has a written fold (%s folds).\n' "$(wc -l <"$folds")"
     return 0
 }
 
@@ -857,6 +1091,32 @@ namespace crucible::planted_home_b {
 struct planted_two_homes {};
 }  // namespace crucible::planted_home_b
 EOF
+    # Fold controls.  Two traits, each specialised once by the old tree
+    # and each present by name in the new one.  planted_folded loses its
+    # specialisation in the port and must be reported; planted_kept keeps
+    # one and must never be, which is the negative control that stops the
+    # fold check from degenerating into "every trait needs a sentence".
+    cat >"$tmp/old/crucible/_PlantedFold.h" <<'EOF'
+#pragma once
+namespace crucible {
+template <class T>
+struct planted_folded {
+    static constexpr bool value = false;
+};
+template <>
+struct planted_folded<int> {
+    static constexpr bool value = true;
+};
+template <class T>
+struct planted_kept {
+    static constexpr bool value = false;
+};
+template <>
+struct planted_kept<int> {
+    static constexpr bool value = true;
+};
+}  // namespace crucible
+EOF
     cat >"$tmp/new/foundation/Planted.h" <<'EOF'
 #pragma once
 namespace planted_new {
@@ -869,14 +1129,32 @@ struct planted_sibling_two {};
 namespace planted_elsewhere {
 struct planted_collided_name {};
 }  // namespace planted_elsewhere
+template <class T>
+struct planted_folded {
+    static constexpr bool value = false;
+};
+template <class T>
+struct planted_kept {
+    static constexpr bool value = false;
+};
+template <>
+struct planted_kept<int> {
+    static constexpr bool value = true;
+};
 }  // namespace planted_new
 EOF
+
+    # The fold row for the planted fold.  The key is the new header as the
+    # scan lists it, which under the self-test's roots is an absolute path.
+    printf '%s:planted_folded  — planted by the self-test as a legitimate fold.\n' \
+        "$tmp/new/foundation/Planted.h" >"$tmp/folds-ok.txt"
 
     run_guard() {
         PORT_GUARD_OLD_ROOT="$tmp/old" PORT_GUARD_OLD_SUBDIR=crucible \
         PORT_GUARD_NEW_ROOTS="$tmp/new/foundation" PORT_GUARD_NS=crucible \
         PORT_GUARD_NEW_NS=planted_new \
-        PORT_GUARD_DROPS="$1" bash "${BASH_SOURCE[0]}" --quiet
+        PORT_GUARD_DROPS="$1" PORT_GUARD_FOLDS="${2:-$tmp/folds-ok.txt}" \
+        bash "${BASH_SOURCE[0]}" --quiet
     }
 
     local fails=0
@@ -975,6 +1253,65 @@ EOF
         sed 's/^/    /' "$out" >&2; fails=1
     fi
 
+    folded() { grep -E '^UNJUSTIFIED FOLD' "$out" | awk '{print $4}' | LC_ALL=C sort | paste -sd, -; }
+
+    # Arm 8: the fold check, with its negative control in the same
+    # assertion.  planted_folded lost its only specialisation and must be
+    # reported; planted_kept still has one and must not be.  A check that
+    # reported both would be asking every trait for a sentence, which is
+    # noise rather than a gate.
+    : >"$tmp/folds-empty.txt"
+    out="$tmp/arm8.out"; set +e; run_guard "$tmp/drops-ok.txt" "$tmp/folds-empty.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 1 && "$(folded)" == "planted_folded" ]]; then
+        printf 'check-port-completeness --self-test: a trait that lost every specialization was reported, and one that kept a specialization was not, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — expected exit 1 reporting exactly {planted_folded}, got exit %s reporting {%s}.\n' "$rc" "$(folded)" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 9: a written fold clears it.
+    out="$tmp/arm9.out"; set +e; run_guard "$tmp/drops-ok.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 0 ]]; then
+        printf 'check-port-completeness --self-test: a written fold reported clean, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a written fold was not clean (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 10: a row for a trait the new tree still specializes is
+    # OBSOLETE, not STALE.  The two ask for different edits, so the guard
+    # has to tell them apart rather than print one word for both.
+    { cat "$tmp/folds-ok.txt"; printf '%s:planted_kept  — obsolete on purpose.\n' "$tmp/new/foundation/Planted.h"; } >"$tmp/folds-obsolete.txt"
+    out="$tmp/arm10.out"; set +e; run_guard "$tmp/drops-ok.txt" "$tmp/folds-obsolete.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'OBSOLETE FOLD.*planted_kept' "$out"; then
+        printf 'check-port-completeness --self-test: a fold row for a trait the new tree still specializes was reported obsolete, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — an obsolete fold row was not reported as exit 2 (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 11: a row for a name that is not a fold at all is STALE.
+    { cat "$tmp/folds-ok.txt"; printf '%s:planted_never_folded  — stale on purpose.\n' "$tmp/new/foundation/Planted.h"; } >"$tmp/folds-stale.txt"
+    out="$tmp/arm11.out"; set +e; run_guard "$tmp/drops-ok.txt" "$tmp/folds-stale.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'STALE FOLD.*planted_never_folded' "$out"; then
+        printf 'check-port-completeness --self-test: a fold row naming no fold was reported stale, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a stale fold row was not reported as exit 2 (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 12: a fold with no sentence is rejected, and the fold it was
+    # meant to justify is then reported, so exit 1 takes precedence the
+    # way the exit-code contract says.
+    printf '%s:planted_folded  — \n' "$tmp/new/foundation/Planted.h" >"$tmp/folds-prose.txt"
+    out="$tmp/arm12.out"; set +e; run_guard "$tmp/drops-ok.txt" "$tmp/folds-prose.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -ne 0 ]] && grep -q 'MALFORMED FOLD.*planted_folded' "$out"; then
+        printf 'check-port-completeness --self-test: sentence-less fold rejected, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a sentence-less fold was not rejected (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
     if [[ $fails -ne 0 ]]; then
         printf 'check-port-completeness --self-test: FAIL.\n' >&2
         return 1
@@ -988,6 +1325,7 @@ case "${1:-}" in
     "")            scan ;;
     --quiet)       quiet=1; scan ;;
     --emit-drops)  quiet=1; scan emit ;;
+    --emit-folds)  quiet=1; scan emit_folds ;;
     --self-test)   self_test ;;
     *)             usage ;;
 esac

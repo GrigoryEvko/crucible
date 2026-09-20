@@ -1,0 +1,70 @@
+# port-folds — traits the old tree specialised and the new tree answers
+# with a primary alone.
+#
+# A trait's identity is its NAME plus what it ANSWERS.  The name half is
+# checked by the drops channel: a trait that vanished is a missing port.
+# This file covers the other half.  A trait can survive the port by name,
+# lose every specialisation, and answer the same thing for every argument.
+# The enforcement it carried is then gone and no name is missing, which is
+# how fixy/Qtt.h shipped two discipline tables that made linearity a
+# tautology (task #193).
+#
+# scripts/check-port-completeness.sh counts specialisations on both sides.
+# A name the old tree specialises at least once, whose primary the new
+# tree declares, and which the new tree specialises zero times, must be
+# listed here with one sentence naming the mechanism that replaced the
+# specialisations.  A name that is neither specialised nor listed fails
+# the guard.
+#
+# Each entry is `<new header>:<trait>  — <one sentence>.`  The header path
+# is relative to the repository root and names the new-tree header that
+# declares the primary, because the fold is a property of the new trait.
+# The entry is checked in both directions, so the file drains in lockstep
+# with the code:
+#   - STALE:    that header no longer declares a primary for that name, or
+#               the name is no longer one the old tree specialised;
+#   - OBSOLETE: the new tree now specialises the trait, so there is no
+#               fold left to justify.
+# Either is exit 2.  The sentence must be non-empty and end with a period.
+# `--emit-folds` prints a template line for every unjustified fold.
+#
+# WHAT A GOOD SENTENCE SAYS.  Name the mechanism that now computes the
+# answer, not the subsystem the trait belongs to.  A folded primary is
+# legitimate exactly when it still discriminates: it delegates to a
+# concept, to a reflection query, or to a member of its own parameter.  A
+# primary whose body mentions none of its parameters answers the same
+# thing for everything, and that is the defect this file exists to keep
+# out.  "Deferred to task N" is a valid sentence; the entry then drains
+# itself when that task lands.
+#
+# WHAT THIS DOES NOT CHECK, stated so nobody infers it is covered.  The
+# guard counts specialisations; it does not compare answers.  P2996 has no
+# specialisations_of query and a specialisation is not a namespace member,
+# so a reflection walk over a namespace holding one primary and three
+# specialisations reports exactly one member, measured 2026-09-20.  A
+# sentence here is a written claim reviewed by a person, not a proof.
+
+include/foundation/algebra/GradedTrait.h:graded_modality  — the one specialisation read a member, and the primary now reads T::modality directly, so every wrapper that declares the member answers for itself.
+include/foundation/algebra/GradedTrait.h:is_graded_specialization  — the primary delegates to the IsGraded concept, which recognises a Graded specialisation structurally rather than by a listed instantiation.
+include/foundation/algebra/GradedTrait.h:value_type_decoupled  — the primary delegates to the DeclaresValueTypeDecoupled concept, so a wrapper opts in by declaring the member rather than by being named here.
+include/foundation/contracts/DecideOracle.h:widen  — the eight per-type specialisations became one conditional_t over width and signedness, pinned by six static_asserts, and it answers for long and long long as well, which the listed form did not.
+include/foundation/effects/Computation.h:extract_admits_payload  — the one specialisation covered a nested Computation hiding an engaged row, and the relation is now stated positively as detail::conveys_authority, which carries five specialisations plus an opt-in member.
+include/foundation/effects/Ctx.h:cap_permitted_row  — the four specialisations became four context declarations, because the primary reads Cap::permitted_as<Row> off the capability source's own class.
+include/foundation/effects/Ctx.h:is_cap_type  — the primary delegates to the IsCapType concept, which reads the context roster in Effect.h, so no translation unit can add a capability source by specialising this.
+include/fixy/Mutation.h:is_writeonce  — the primary delegates to the IsInstanceOf reflection query against ^^WriteOnce, so the answer follows the template rather than a list.
+include/fixy/Mutation.h:is_writeoncenonnull  — the primary delegates to the IsInstanceOf reflection query against ^^WriteOnceNonNull, so the answer follows the template rather than a list.
+include/fixy/ScopedView.h:is_scoped_view  — the primary delegates to the is_instance_of_v reflection query against ^^ScopedView, so the answer follows the template rather than a list.
+include/fixy/Tagged.h:retag_policy  — each specialisation became one edge in the fail-closed namespace tags::admitted_retags which the RetagAllowed concept reads, and retag consults the concept, so a specialisation of this struct now admits nothing.
+
+# NOT YET IN SCOPE, recorded so the next reader does not rediscover it.
+# include/fixy/session/Protocol.h:session_loop_ctx_rebind_inner would be a
+# thirteenth row.  The old tree specialises it twice, for EpochCtx and for
+# VendorCtx, and the new primary replaces the inner context outright.  It
+# is NOT a requirement today because its two old homes,
+# crucible/sessions/Session.h and crucible/sessions/PermissionedSession.h,
+# carry no underscore: the session port is task #210 and has not claimed
+# them.  Marking a header is what puts it under this guard, so this row
+# becomes required the moment #210 marks those two, and the header already
+# says EpochCtx drops in as one specialisation of each trait when it
+# lands.  A row written before then reads STALE, which is the guard
+# refusing to accept a sentence about a fold it cannot see.

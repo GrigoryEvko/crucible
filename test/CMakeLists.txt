@@ -938,6 +938,14 @@ set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
 # unported symbol and proves exactly the second is reported, then a
 # template, an alias, a re-export and a macro, then each direction of
 # drop-file failure.
+#
+# The guard also checks the other half of a trait's identity.  A trait can
+# survive the port by name and lose every specialisation, and then answer
+# the same thing for every argument, which is how the Qtt discipline
+# tables made linearity a tautology (#193).  Such a trait needs a sentence
+# in scripts/port-folds.txt naming what now computes the answer.  The
+# self-test plants two traits, one that loses its specialisation and one
+# that keeps one, and proves exactly the first is reported.
 add_test(NAME port_completeness_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.sh
           --self-test)
