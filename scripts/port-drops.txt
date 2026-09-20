@@ -11,13 +11,17 @@
 #
 # Each entry is `<header>:<symbol>  — <one sentence>.`  The header path is
 # relative to the include root, so it starts with `crucible/`.  The entry
-# is keyed by symbol: name any one superseded header that declares it and
-# the entry covers every header that declares it, so a template dropped
-# with its specialisations, or a class with its forward declarations,
-# takes one line.  The sentence is the audit surface: write what happened
-# to the symbol, not what the surrounding subsystem does.  "Deferred to
-# task N" is a valid sentence; the entry then drains itself when that
-# task lands.
+# is keyed by the (header, symbol) pair.  Every declaration of that name
+# inside that header is one row, so a template dropped with its
+# specialisations, or a class with its forward declarations, takes one
+# line.  A name that several superseded headers declare takes one row per
+# header, because a bare name is not an identity.  Keyed by the name
+# alone, one row silenced every header that declared it: three unrelated
+# runtime_smoke_test functions in three namespaces shared one sentence,
+# and the row for the effect aliases silenced the polynomial one.  The
+# sentence is the audit surface: write what happened to the symbol, not
+# what the surrounding subsystem does.  "Deferred to task N" is a valid
+# sentence; the entry then drains itself when that task lands.
 #
 # An entry is checked in both directions, so this file drains in lockstep
 # with the code, the way the syscall allowlist does:
@@ -85,6 +89,8 @@ crucible/effects/_ExecCtx.h:heat_resid_coherent  — A coherence predicate betwe
 crucible/effects/_ExecCtx.h:heat_resid_coherent_v  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
 crucible/effects/_ExecCtx.h:hot_path_tier_of_t  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
 crucible/effects/_ExecCtx.h:is_alloc_class  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsAllocClass  — The allocator-axis recogniser concept, dropped at 8fd50215 with the six policy axes because no consumer read them. The per-band concept of the same name is a different fact and keeps its own row.
+crucible/effects/_ExecCtx.h:is_alloc_class_v  — The value spelling of the allocator-axis recogniser, dropped at 8fd50215 with the axis. The per-band trait of the same name keeps its own row.
 crucible/effects/_ExecCtx.h:IsArenaCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
 crucible/effects/_ExecCtx.h:IsBgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
 crucible/effects/_ExecCtx.h:IsBoundedCtx  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
@@ -145,12 +151,17 @@ crucible/effects/_ComputationGraded.h:runtime_smoke_test_computation_graded  —
 crucible/effects/_Computation.h:runtime_smoke_test_computation  — An inline smoke test in a public namespace; its body moved to test/foundation/test_computation.cpp.
 crucible/effects/_EffectRowLattice.h:runtime_smoke_test_lattice  — An inline smoke test in a public namespace; its body moved to test/foundation/test_effects_core.cpp.
 crucible/effects/_FxAliases.h:Div  — Progress did not survive the port, so Div has no value form; fixy/Aliases.h:12-18 records why and keeps DivRow.
-crucible/effects/_FxAliases.h:runtime_smoke_test  — An inline smoke test in a public namespace, in two headers; each body moved to the test of its header (test/foundation/test_diag.cpp for the catalog, the fixy sentinel at 24456d2a for the aliases).
+crucible/effects/_FxAliases.h:runtime_smoke_test  — An inline smoke test in a public namespace; its body moved to the fixy sentinel at 24456d2a.
 
 # ── fixy: the grant tier that became the atom tier at A9 ────────────────
 # fixy/Atom.h:17-22 records the renaming: a grant is an effect atom, so
 # grant_base, IsGrantTag, which_dim and the tags of eighteen axes became
 # the atoms of fixy/atoms/.  Nothing on the atom side carries these names.
+#
+# which_dim is the one name of this group that ten superseded headers
+# declare: _Grant.h declares the primary and the usage tags, and nine
+# more specialise it for their own family.  Each of the ten takes a row,
+# because the rule an axis registration states is per family.
 
 crucible/fixy/_Grant.h:accept_default_strict_for  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
 crucible/fixy/grant/_Ctrl.h:accept_default_strict_for_ControlFlow  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
@@ -167,11 +178,21 @@ crucible/fixy/_Grant.h:grant_family_witnessed_v  — The grant tier became the a
 crucible/fixy/_Grant.h:IsGrantTag  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
 crucible/fixy/_Grant.h:IsGrantTag_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
 crucible/fixy/_Grant.h:kAxesWithoutNonDefaultGrants  — A literal cardinality pin that #36 found stale; it retired with the grant tier at A9.
-crucible/fixy/_Grant.h:which_dim  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name and its five per-family specialisations have no counterpart on the atom side.
+crucible/fixy/_Grant.h:which_dim  — The primary of the axis-registration trait, together with the usage-family specialisations this header declares. fixy/Atom.h:8 records that an atom now carries its axis as a static member, so no trait registers it.
+crucible/fixy/_Fs.h:which_dim  — The axis registration of the filesystem family, written here as four specialisations of the old trait. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/_Io.h:which_dim  — The axis registration of the io_uring family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/_Mmap.h:which_dim  — The axis registration of the mmap family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/grant/_Ctrl.h:which_dim  — The axis registration of the control-flow family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/grant/_Dispatch.h:which_dim  — The axis registration of the call-shape family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/grant/_Global.h:which_dim  — The axis registration of the global-state family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/grant/_Stack.h:which_dim  — The axis registration of the stack-use family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/grant/_Stdio.h:which_dim  — The axis registration of the stdio family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
+crucible/fixy/spawn/_SpawnGrant.h:which_dim  — The axis registration of the spawn family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
 
 # ── permissions ─────────────────────────────────────────────────────────
 
+crucible/permissions/_ReadView.h:Borrowed  — A forward declaration of the session payload marker, friended so a session step could mint a borrow. The marker itself is declared in crucible/sessions/SessionGrade.h, which no port has marked superseded, so no completed task owed it a home. foundation/permissions/ReadView.h:76 friends host::BorrowIssuer in its place. The fixy::Borrowed of the new tree is the borrow wrapper of A10.4 and a different thing with the same name.
 crucible/permissions/_PermissionFork.h:PermissionForkSpawnCtx  — The spawn context left with the throws gate; foundation/permissions/PermissionFork.h:34 assigns the structural check to fixy/os/Spawn.h at A13.4 (#116).
 
 # ── safety: the diagnostic catalog and the stable name ──────────────────
@@ -221,11 +242,14 @@ crucible/safety/_IsRecipeSpec.h:is_recipe_spec_smoke_test  — An inline smoke t
 
 # ── safety: wrappers ────────────────────────────────────────────────────
 
+crucible/safety/_Affine.h:drop  — The free function became a hidden friend of Qtt (fixy/Qtt.h:175), which is one drop for both grades instead of one per wrapper. An unqualified drop(std::move(x)) still resolves by argument-dependent lookup, and the qualified spelling has no successor.
+crucible/safety/_Linear.h:drop  — The same hidden friend as the affine one; fixy/Qtt.h:175 declares drop once for both grades.
 crucible/safety/_Machine.h:machine_transition  — The transition relation is no longer a trait; fixy/Machine.h:13 states it as edges beside the states they join.
 crucible/safety/_OwnedMmap.h:is_leak_grant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
 crucible/safety/_OwnedMmap.h:IsLeakGrant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
 crucible/safety/_OwnedMmap.h:is_leak_grant_v  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
 crucible/safety/_Refined.h:predicate_implies  — The open implication trait was the hole; fixy/Refined.h:595 keeps implies_v and admits an edge only from the namespace admitted_implications.
+crucible/safety/_RefinedAlgebra.h:predicate_implies  — The algebra's own specialisations of that open trait, one per axiom over AllOf, AnyOf and the bounded predicates. Each is now a rule family inside the namespace admitted_implications of fixy/Refined.h:661, which no other header can reopen.
 crucible/safety/_Secret.h:All  — The policy roster tuple became the namespace admitted_policies of fail-closed edges in fixy/Secret.h:51.
 crucible/safety/_Secret.h:kCount  — A hand-written cardinality pin; the roster it pinned is now a namespace the guard enumerates, and such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
@@ -234,27 +258,37 @@ crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple becam
 
 # ── fixy/os, A13.2 / A13.3 / A13.4 (#114, #115, #116) ───────────────────
 #
-# The four rows whose sentence names a successor are renames, not losses.
-# The drops file has no channel for a rename, so they are recorded here
-# with the new name in the sentence; #185 gives the guard that channel.
+# The six rows whose sentence names a successor are renames, not losses.
+# The file has one row shape, so a rename reads as a drop whose sentence
+# names the new symbol.  A reader follows that name; the guard checks
+# only that the old name is absent, which is the limit of this file.
 crucible/fixy/_CipherDurable.h:CtxFitsWarmWriterMint  — Ported as CtxFitsDurableMint<Ctx, Stance, Extras...> in fixy/os/CipherDurable.h:116, which folds three textually identical concepts into one parameterised by the stance.
 crucible/fixy/_CipherDurable.h:CtxFitsColdWriterMint  — Ported as CtxFitsDurableMint, the same fold; see the warm-writer entry.
 crucible/fixy/_CipherDurable.h:CtxFitsHeadAdvancerMint  — Ported as CtxFitsDurableMint, the same fold; see the warm-writer entry.
-crucible/fixy/_Fs.h:CtxAdmitsIoBlock  — Ported as fs::CtxAdmitsFs in fixy/os/Fs.h:219, and where the gate now derives the row from the atom pack rather than naming IO and Block by hand, as CtxAdmitsAtomRow in fixy/os/Io.h and fixy/os/Mmap.h, with mmap::CtxAdmitsAdvise beside it.
+crucible/fixy/_Fs.h:CtxAdmitsIoBlock  — Ported twice, because the header separates the two uses the one concept served. fs::CtxAdmitsFs (fixy/os/Fs.h:219) names IO and Block for the three operations that take no atom pack, and fs::CtxAdmitsAtomRow (fixy/os/Fs.h:370) derives the row from the pack for the mint.
 crucible/fixy/_Fs.h:TmpFile  — A placeholder for the dirfd surface atomicity::LinkAtomic needed, refused by the old open gate on every call it was given; with LinkAtomic gone it has nothing left to be a placeholder for (fixy/os/Fs.h:27).
 crucible/fixy/_Fs.h:Directory  — The tag folded O_DIRECTORY and nothing gated or consumed it; the capability survives, because OwnedFd::open_directory sets that bit itself (fixy/os/Fs.h:27).
 crucible/fixy/_Fs.h:NonBlock  — The tag folded O_NONBLOCK and had no consumer anywhere in the old tree (fixy/os/Fs.h:27).
+crucible/fixy/_Fs.h:Path  — Two declarations, and neither was carried. fs::flag::Path folded O_PATH and its flag_bits specialisation is the only occurrence of the name in the tree, so nothing selected it, and a descriptor opened O_PATH can be neither read nor written, which is no use to a surface whose every operation reads or writes. fixy/atoms/Os.h:72 keeps the five flag tags that have a consumer. fs::Path was a local alias for the sanitized path, and fixy/os/Fs.h names fixy::Path directly.
 crucible/fixy/_Fs.h:LinkAtomic  — A hard ENOSYS in the old commit body, probe-confirmed on the development host, and cold_writer_stance pinned it, so every cold commit failed before a filesystem was consulted; fixy/os/CipherDurable.h:13 pins atomicity::Rename in its place and records the probe.
 crucible/fixy/_Fs.h:Msync  — The tag was selectable and always returned EINVAL, and the old comment beside it said a memory-mapped flush goes through the mmap surface instead: no msync call exists in either tree, so that surface was never there. Nothing regressed, and the missing flush is unimplemented work tracked as #186.
+crucible/fixy/_Io.h:CtxAdmitsIoBlock  — A separate concept of the same name and the same body as the filesystem one. Ported as io::CtxAdmitsAtomRow in fixy/os/Io.h:347, which derives the row from the atom pack rather than naming IO and Block by hand.
 crucible/fixy/_Io.h:Synchronous  — An engine tag the old mint already refused, as that header's own self-test asserts; engine_is_io_uring_v is ported with a false primary, so it refuses this tag and any other added later (fixy/os/Io.h:22).
 crucible/fixy/_Io.h:Aio  — The same, and the old comment records that review policy forbids libaio (fixy/os/Io.h:22).
 crucible/fixy/_Io.h:Splice  — A zerocopy tag the old zerocopy_is_simple_transfer_v refused, asserted false by that header's own self-test; the predicate is ported with a false primary (fixy/os/Io.h:22).
 crucible/fixy/_Io.h:MsgZerocopy  — The same shape and the same self-test as Splice (fixy/os/Io.h:22).
+crucible/fixy/_Io.h:Default  — A ring_flag tag whose own comment read "no bits set". The old mint accepted it and mapped it to zero bits, so selecting it set nothing. fixy/atoms/Os.h keeps the five ring_flag tags that each set a bit, and a caller that wants no flag passes no flag atom.
+crucible/fixy/_Io.h:None  — A zerocopy tag that named the absence of zerocopy. The old mint refused it, and zerocopy_is_none existed to do the refusing, so the tag and its predicate went together. fixy/atoms/Os.h keeps the two accepted tags and nothing else.
 crucible/fixy/_Io.h:zerocopy_is_none  — Gone with the zerocopy::None tag it existed to refuse; the surviving conjunct answers false for every tag but the two accepted ones, which the new self-test pins (fixy/os/Io.h:47).
 crucible/fixy/_Io.h:zerocopy_is_none_v  — The value spelling of the same predicate, gone with it.
+crucible/fixy/_Mmap.h:CtxAdmitsIoBlock  — A third concept of that name and that body, one per os header. Ported as mmap::CtxAdmitsAtomRow in fixy/os/Mmap.h:349 for the two mints, with mmap::CtxAdmitsAdvise (fixy/os/Mmap.h:367) beside it for advise, which takes no atom pack.
+crucible/fixy/_Mmap.h:OwnedMmap  — A local alias, one spelling of ::crucible::safety::OwnedMmap inside the mmap namespace. fixy/os/Mmap.h names fixy::OwnedMmap directly (fixy/os/Mmap.h:384), which is the same type reached without a second spelling.
+crucible/fixy/_Mmap.h:is_leak_grant  — A specialisation of the old open leak trait for this header's own leak grant, which is how any translation unit could mint the authorization. The witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, which no header can extend (fixy/OwnedMmap.h:20).
 crucible/fixy/_Mmap.h:release_aware  — The grant was dead: the old concept read CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice> and named neither the grant nor its RegionTag, so the tag was a parameter no gate read. The Permission argument on advise_release_aware is what admits the dangerous advice, and it is still there (fixy/os/Mmap.h:38).
 crucible/fixy/_Mmap.h:with_advice  — Nothing lifts an advice tag, because advise takes an Advice directly and never an atom, so the grant was decoration; the advice tags themselves are ported into fixy::mmap::advice in fixy/atoms/Os.h (fixy/os/Mmap.h:25).
 crucible/fixy/concurrent/_SpinLock.h:cache_tier_hot  — A namespace-scope constant that restated SpinLock<Tag>::cache_tier, which is ported; nothing read it (fixy/os/SpinLock.h:45).
 crucible/fixy/concurrent/_SpinLock.h:fixy_spinlock_runtime_smoke_test  — A smoke function compiled into every including translation unit and called by nothing, which is the shape #178 removed throughout; its cases are test/fixy/test_os_spinlock.cpp, which ctest runs.
+crucible/fixy/ctrl/_Throws.h:throws  — An alias that filled in the atom's default argument, so a caller could write ctrl::throws for ctrl::throws<>. fixy/Throws.h:32 records the decision as deviation 3: the walk matches the template rather than that one specialisation, and a short name for the specialisation would invite the bug deviation 1 closes. A caller names fixy::atom::ctrl::throws<>.
+crucible/fixy/fp/_Polynomial.h:runtime_smoke_test  — An inline smoke test in a public namespace that called each function into a volatile local and asserted nothing. fixy/fp/Polynomial.h:26 records its removal, and test/fixy/test_fp_polynomial.cpp calls each function once against a pinned bit pattern.
 crucible/fixy/spawn/_SpawnGrant.h:fork_parent  — A grant whose comment said it threaded the parent identity through the pack so the coherence check could read it without the call site retyping it; JoinPolicyGrantsCoherent read neither it nor its parent_tag, and nothing else read it either (fixy/os/Spawn.h:20).
 crucible/fixy/spawn/_SpawnGrant.h:exec_ctx  — The same, for the execution context: a parameter no gate consumed (fixy/os/Spawn.h:20).

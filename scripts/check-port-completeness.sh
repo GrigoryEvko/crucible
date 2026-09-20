@@ -35,6 +35,8 @@
 #     _smoke, _test or _layout, are the tree's private convention and are
 #     not walked.  Identifiers beginning with two underscores are dropped:
 #     they are compiler-synthesised (deduction guides) and never API.
+#     The walk carries the namespace path down the recursion and prints it
+#     with each member, because presence is decided by qualified name.
 #     A fourth blind spot, found while building this: source_location_of
 #     reports the FIRST declaration in translation order, so a symbol
 #     forward-declared by an earlier header is attributed there, and one
@@ -61,14 +63,65 @@
 #
 # How presence in the new tree is decided
 # ---------------------------------------
-# Every header under the new roots is comment-stripped by the compiler
-# (`-fpreprocessed -dD -E -P`, which strips comments without processing
-# directives), string literals are removed, and the remaining identifiers
-# form the index.  A symbol is present if its exact identifier occurs
-# anywhere in that index.  This is deliberately weak: presence BY NAME
-# says nothing about signature, namespace or semantics, and a common name
-# passes trivially.  The guard catches the A2.3 and A11.2 shape — a thing
-# that was never carried at all — and makes no stronger claim.
+# Two indices are built over the new roots, and a symbol is judged against
+# the stronger of the two that applies to it.
+#
+# (a) The qualified index.  A second sentinel includes every header under
+#     the new roots and walks the new root namespaces, printing
+#     `namespace<TAB>symbol` for each namespace-scope member.  Private
+#     namespaces are INCLUDED here, unlike on the old side: the question
+#     is where the new tree declares a name, and a name the port put in a
+#     detail namespace is still declared.  Namespace ALIASES are not
+#     recursed into, because an alias pointing at an ancestor makes the
+#     walk call itself for ever at run time.
+# (b) The bare index.  Every new-tree header is comment-stripped by the
+#     compiler (`-fpreprocessed -dD -E -P`, which strips comments without
+#     processing directives), string literals are removed, and the
+#     remaining identifiers form a set.  This is the old test, kept for
+#     the cases (a) cannot speak about.
+#
+# Comparing the two qualified names directly does not work, because the
+# port relocated namespaces on purpose. crucible::safety::Linear is
+# fixy::Linear, and crucible::algebra::Graded is
+# foundation::algebra::Graded.  Measured over the whole surface, a direct
+# comparison calls 1058 present symbols missing.  So the correspondence
+# between old and new namespaces is MEASURED instead: for each old
+# namespace, the new namespaces that hold at least PORT_GUARD_NS_-
+# CORROBORATION (default two) of its symbols are the ones that received
+# it, and one of those must declare the symbol.  One name landing
+# somewhere is coincidence; two are a correspondence.
+#
+# What this catches that a bare name cannot: fixy::fs::flag::Path, the
+# O_PATH open flag, was never carried, and the identifier Path occurs in
+# the new tree as fixy::Path, the sanitized-path wrapper.  Its seven
+# sibling tags went to fixy::fs::flag, which is therefore where Path had
+# to go, and it is not there.  The bare test called it present for months.
+#
+# Where the bare test still decides, by construction:
+#   - a macro has no namespace, because the preprocessor runs before the
+#     language has them.  A macro is matched by (header, name) in the
+#     drops file and by bare name in the new tree, and that asymmetry is
+#     deliberate rather than an oversight;
+#   - a re-export carries the namespace it is re-exported INTO, which the
+#     brace scan does not track, so it keeps the bare test too;
+#   - an old namespace with fewer than the corroboration floor of its
+#     symbols in any one new namespace teaches nothing, so its symbols
+#     keep the bare test.  Thirty-three surface rows are in that case;
+#   - a name the text rescued into a header takes the union of the
+#     namespaces reflection saw for it, because the text scan knows the
+#     name is declared there and not in which namespace.
+#
+# A symbol declared in two namespaces of one header needs a home for
+# each, not for one of them: fixy::fs::Path having a successor says
+# nothing about fixy::fs::flag::Path.  Eight rows of the current surface
+# are in that case.
+#
+# Neither index says anything about signature or semantics, and the
+# qualified one says nothing about a hidden friend, which is a
+# declaration members_of does not report (crucible::safety::drop became a
+# hidden friend of fixy::Qtt and reads as absent).  The guard catches the
+# A2.3 and A11.2 shape, a thing that was never carried at all, plus the
+# shape a shared name used to hide. It makes no stronger claim.
 #
 # What is out of scope, stated so nobody infers it is covered
 # -----------------------------------------------------------
@@ -84,10 +137,14 @@
 # scripts/port-drops.txt
 # ----------------------
 # One entry per line: `<old header path>:<symbol>  — <one sentence>.`
-# The entry is keyed by symbol: it names any one superseded header that
-# declares the symbol and covers every header that declares it, so a
-# template dropped with its specialisations, or a class with its forward
-# declarations, takes one sentence.  An entry is checked in both
+# The entry is keyed by the (header, symbol) pair.  Every declaration of
+# that name inside that header is covered by the one row, so a template
+# dropped with its specialisations, or a class with its forward
+# declarations, takes one sentence. A name several superseded headers
+# declare takes one row per header, because a bare name is not an
+# identity.  Keyed by the name alone, one row silenced every header that
+# declared it: three unrelated runtime_smoke_test functions in three
+# namespaces shared one sentence.  An entry is checked in both
 # directions, so the file drains in lockstep with the code, the way the
 # syscall allowlist does:
 #   - STALE:    the symbol is no longer in that old header's surface;
@@ -116,6 +173,10 @@
 #   PORT_GUARD_NEW_ROOTS        space-separated new roots
 #                               (include/foundation include/fixy)
 #   PORT_GUARD_NS               root namespace to walk (crucible)
+#   PORT_GUARD_NEW_NS           root namespaces of the new tree, space
+#                               separated (foundation fixy)
+#   PORT_GUARD_NS_CORROBORATION symbols one new namespace must hold before
+#                               it counts as having received an old one (2)
 #   PORT_GUARD_DROPS            drops file (scripts/port-drops.txt)
 
 set -euo pipefail
@@ -127,6 +188,8 @@ old_root="${PORT_GUARD_OLD_ROOT:-include}"
 old_subdir="${PORT_GUARD_OLD_SUBDIR:-crucible}"
 new_roots="${PORT_GUARD_NEW_ROOTS:-include/foundation include/fixy}"
 walk_ns="${PORT_GUARD_NS:-crucible}"
+new_ns="${PORT_GUARD_NEW_NS:-foundation fixy}"
+corroboration="${PORT_GUARD_NS_CORROBORATION:-2}"
 drops_file="${PORT_GUARD_DROPS:-scripts/port-drops.txt}"
 quiet=0
 
@@ -166,7 +229,7 @@ list_superseded() {
 write_sentinel() {
     local out="$1"
     {
-        printf '#include <meta>\n#include <cstdio>\n#include <string_view>\n'
+        printf '#include <meta>\n#include <cstdio>\n#include <string>\n#include <string_view>\n'
         sed 's|^|#include <|; s|$|>|'
         cat <<'EOF'
 
@@ -184,16 +247,23 @@ consteval bool is_compiler_synthesised(std::string_view id) noexcept {
     return id.size() >= 2 && id[0] == '_' && id[1] == '_';
 }
 
+// A namespace alias is not recursed into.  An alias whose target is an
+// ancestor (namespace eff = ::foundation::effects; inside a namespace
+// under effects) makes walk<A> call walk<B> and walk<B> call walk<A>:
+// two instantiations, so it compiles, and unbounded recursion at run
+// time, so it dies on the stack.  The entity behind the alias is reached
+// through its own name anyway.
 template <std::meta::info NS>
-void walk() {
+void walk(std::string const& path) {
     static constexpr auto members =
         std::define_static_array(std::meta::members_of(NS, std::meta::access_context::unchecked()));
     template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_namespace(member)) {
+        if constexpr (std::meta::is_namespace(member) && !std::meta::is_namespace_alias(member)) {
             if constexpr (std::meta::has_identifier(member)) {
-                if constexpr (!is_private_ns(std::meta::identifier_of(member))) walk<member>();
+                constexpr std::string_view ns = std::meta::identifier_of(member);
+                if constexpr (!is_private_ns(ns)) walk<member>(path + "::" + std::string(ns));
             }
-        } else if constexpr (std::meta::has_identifier(member)) {
+        } else if constexpr (!std::meta::is_namespace(member) && std::meta::has_identifier(member)) {
             constexpr std::string_view id = std::meta::identifier_of(member);
             if constexpr (!is_compiler_synthesised(id)) {
                 constexpr auto where = std::meta::source_location_of(member);
@@ -204,7 +274,8 @@ void walk() {
                                    : std::meta::is_variable(member)   ? "variable"
                                    : std::meta::is_concept(member)    ? "concept"
                                                                       : "other";
-                std::printf("%s\t%.*s\t%s\n", where.file_name(), static_cast<int>(id.size()), id.data(), kind);
+                std::printf("%s\t%.*s\t%s\t%s\n", where.file_name(), static_cast<int>(id.size()), id.data(), kind,
+                            path.c_str());
             }
         }
     }
@@ -213,13 +284,13 @@ void walk() {
 }  // namespace port_guard
 
 EOF
-        printf 'int main() { port_guard::walk<^^%s>(); }\n' "$walk_ns"
+        printf 'int main() { port_guard::walk<^^%s>("%s"); }\n' "$walk_ns" "$walk_ns"
     } >"$out"
 }
 
-# Prints `header<TAB>symbol<TAB>reflection` for every namespace-scope
-# member attributed to a superseded header.  Exits 2 if the sentinel
-# does not compile.
+# Prints `header<TAB>symbol<TAB>reflection<TAB>namespace` for every
+# namespace-scope member attributed to a superseded header.  Exits 2 if
+# the sentinel does not compile.
 enumerate_reflection() {
     local cxx="$1" tmp="$2" headers="$3"
     local tu="$tmp/sentinel.cpp" bin="$tmp/sentinel" log="$tmp/sentinel.log"
@@ -235,7 +306,7 @@ enumerate_reflection() {
         {
             f = $1
             if (index(f, root) == 1) f = substr(f, length(root) + 1)
-            print f "\t" $2 "\t" $3
+            print f "\t" $2 "\t" $3 "\t" $4
         }' | sort -u
 }
 
@@ -318,13 +389,29 @@ attribute_reflection() {
             printf 'NOTE  %s is first declared in %s (not superseded); attributed by definition text to: %s\n' \
                 "$name" "$first" "$(printf '%s' "$claims" | paste -sd, -)" >&2
         fi
+        # The namespace of the declaration travels with it, because the
+        # presence test compares a qualified name.  A header takes the
+        # namespaces reflection saw for the name IN that header; a header
+        # the text rescued takes the union, because the text scan knows
+        # the name is declared there and not which namespace it sits in.
         { [[ $first_is_superseded -eq 1 ]] && printf '%s\n' "$first"; printf '%s\n' "$claims"; } \
-            | grep -v '^$' | sort -u | while IFS= read -r h; do printf '%s\t%s\treflection\n' "$h" "$name"; done
+            | grep -v '^$' | sort -u | while IFS= read -r h; do
+                local spaces
+                spaces=$(awk -F'\t' -v n="$name" -v h="$h" '$2==n && $1==h {print $4}' "$refl" | sort -u)
+                [[ -z "$spaces" ]] && spaces=$(awk -F'\t' -v n="$name" '$2==n {print $4}' "$refl" | sort -u)
+                while IFS= read -r ns; do
+                    [[ -z "$ns" ]] && continue
+                    printf '%s\t%s\treflection\t%s\n' "$h" "$name" "$ns"
+                done <<<"$spaces"
+            done
     done
 }
 
-# Prints `header<TAB>MACRO<TAB>macro` for every #define the preprocessor
-# attributes to a superseded header.
+# Prints `header<TAB>MACRO<TAB>macro<TAB>-` for every #define the
+# preprocessor attributes to a superseded header.  The fourth column is
+# the namespace, and a macro has none: the preprocessor runs before the
+# language has namespaces at all.  A macro therefore keeps the bare-name
+# presence test, which is the asymmetry stated in the file header.
 enumerate_macros() {
     local cxx="$1" tmp="$2" headers="$3"
     local tu="$tmp/macros.cpp"
@@ -343,13 +430,16 @@ enumerate_macros() {
                 if (parts[n] !~ /^_[A-Za-z0-9]+\.h$/) next
                 name = $2; sub(/\(.*/, "", name)
                 if (name ~ /^__/) next
-                print current "\t" name "\tmacro"
+                print current "\t" name "\tmacro\t-"
             }' | sort -u
 }
 
-# Prints `header<TAB>symbol<TAB>reexport` for every `using a::b::c;` in
-# a header's namespace-scope text (see namespace_scope_text), the one
-# form of public surface neither compiler pass reports.
+# Prints `header<TAB>symbol<TAB>reexport<TAB>-` for every `using a::b::c;`
+# in a header's namespace-scope text (see namespace_scope_text), the one
+# form of public surface neither compiler pass reports.  The fourth column
+# is the namespace the name is re-exported INTO, and the brace scan does
+# not track which namespace is open, so it is `-` and the symbol keeps the
+# bare-name presence test.  Stated as a limit in the file header.
 enumerate_reexports() {
     local tmp="$1" headers="$2" h
     while IFS= read -r h; do
@@ -357,8 +447,79 @@ enumerate_reexports() {
         # pipefail that must not read as a failure of the scan.
         grep -oE '^[[:space:]]*using[[:space:]]+(::)?[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)+[[:space:]]*;' "$tmp/stripped/$h" 2>/dev/null \
             | sed -E 's/[[:space:]]*;.*//; s/.*::([A-Za-z_][A-Za-z0-9_]*)$/\1/' \
-            | grep -vE '^__' | sort -u | sed "s|^|$h\t|; s|\$|\treexport|" || true
+            | grep -vE '^__' | sort -u | sed "s|^|$h\t|; s|\$|\treexport\t-|" || true
     done <"$headers" | sort -u
+}
+
+# Writes the new-tree sentinel to $1 for the header list on stdin.  It
+# walks the new root namespaces and prints `namespace<TAB>symbol` for
+# every namespace-scope member, private namespaces INCLUDED: the question
+# this side answers is where the new tree declares a name, and a name the
+# port put inside a detail namespace is still declared.  The old side
+# skips private namespaces for the opposite reason. A private name was
+# never public surface owed a port.
+write_new_sentinel() {
+    local out="$1" ns
+    {
+        printf '#include <meta>\n#include <cstdio>\n#include <string>\n#include <string_view>\n'
+        sed 's|^|#include <|; s|$|>|'
+        cat <<'EOF'
+
+namespace port_guard_new {
+
+template <std::meta::info NS>
+void walk(std::string const& path) {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(NS, std::meta::access_context::unchecked()));
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_namespace(member) && !std::meta::is_namespace_alias(member)) {
+            if constexpr (std::meta::has_identifier(member)) {
+                constexpr std::string_view ns = std::meta::identifier_of(member);
+                walk<member>(path + "::" + std::string(ns));
+            }
+        } else if constexpr (!std::meta::is_namespace(member) && std::meta::has_identifier(member)) {
+            constexpr std::string_view id = std::meta::identifier_of(member);
+            if constexpr (!(id.size() >= 2 && id[0] == '_' && id[1] == '_')) {
+                std::printf("%s\t%.*s\n", path.c_str(), static_cast<int>(id.size()), id.data());
+            }
+        }
+    }
+}
+
+}  // namespace port_guard_new
+
+EOF
+        printf 'int main() {'
+        for ns in $new_ns; do printf ' port_guard_new::walk<^^%s>("%s");' "$ns" "$ns"; done
+        printf ' }\n'
+    } >"$out"
+}
+
+# Builds the qualified index of the new tree into $1 as
+# `namespace<TAB>symbol`.  Exits 2 if the sentinel does not compile.
+build_new_pairs() {
+    local cxx="$1" out="$2" tmp="$3" root
+    local tu="$tmp/new_sentinel.cpp" bin="$tmp/new_sentinel" log="$tmp/new_sentinel.log"
+    local list="$tmp/new_headers.txt"
+    : >"$list"
+    for root in $new_roots; do
+        [[ -d "$root" ]] || continue
+        find "$root" -type f -name '*.h' | sed -E "s|^$(dirname "$root")/||" | sort >>"$list"
+    done
+    if [[ ! -s "$list" ]]; then
+        printf 'check-port-completeness: no headers under the new roots (%s). Nothing to compare against.\n' "$new_roots" >&2
+        exit 2
+    fi
+    write_new_sentinel "$tu" <"$list"
+    if ! "$cxx" "${sentinel_flags[@]}" $(for root in $new_roots; do printf -- '-I%s ' "$(dirname "$root")"; done) \
+            -o "$bin" "$tu" >"$log" 2>&1; then
+        printf 'check-port-completeness: the new-tree sentinel did not compile, so presence cannot be decided\n' >&2
+        printf '  by qualified name.  A guard that cannot measure does not report green.\n' >&2
+        printf '  compiler: %s\n' "$cxx" >&2
+        grep -E 'error' "$log" | head -20 >&2
+        exit 2
+    fi
+    "$bin" | sort -u >"$out"
 }
 
 # Builds the identifier index of the new tree into $1.
@@ -376,13 +537,113 @@ build_new_index() {
     rm -f "$out.raw"
 }
 
+# ── Presence ────────────────────────────────────────────────────────────
+
+# Decides presence for every (header, symbol) on the surface and writes
+# `header<TAB>symbol<TAB>present|absent<TAB>rule` to $1.
+#
+# The port relocated namespaces on purpose. crucible::safety::Linear is
+# fixy::Linear and crucible::algebra::Graded is
+# foundation::algebra::Graded, so comparing the two qualified names
+# directly reports nearly every ported symbol missing.  The correspondence is therefore MEASURED, not
+# assumed: for each old namespace, the new namespaces that received its
+# symbols are the ones that hold at least $corroboration of them by name.
+# A symbol of that old namespace is present when one of those receiving
+# namespaces declares it.  One name landing somewhere is not a
+# correspondence; two are, which is why the floor is two.
+#
+# What this catches that a bare name cannot: fixy::fs::flag::Path (the
+# O_PATH tag) is not ported, and the identifier Path occurs in the new
+# tree as fixy::Path, the sanitized-path wrapper.  The flag namespace
+# ported its other seven tags to fixy::fs::flag, so that is where Path
+# had to land, and it did not.
+#
+# Where it falls back to the bare name, by construction:
+#   - a macro and a re-export carry no namespace (column four is `-`);
+#   - an old namespace with fewer than $corroboration symbols in any one
+#     new namespace teaches nothing, so its symbols keep the old test;
+#   - a symbol reflection reports in more than one namespace, or one the
+#     text rescued, is present if ANY of its namespaces accepts it.
+decide_presence() {
+    local out="$1" surface="$2" pairs="$3" index="$4"
+    awk -F'\t' -v pairs="$pairs" -v idxfile="$index" -v floor="$corroboration" '
+        FILENAME == pairs {
+            np[$1 SUBSEP $2] = 1
+            holders[$2] = holders[$2] " " $1
+            next
+        }
+        FILENAME == idxfile { bare[$1] = 1; next }
+        {
+            key = $1 SUBSEP $2
+            if (!(key in row)) { row[key] = 1; order[++n] = key; hdr[key] = $1; sym[key] = $2 }
+            spaces[key] = spaces[key] " " $4
+            if ($4 != "-") { oldns[$4] = 1; oldmember[$4 SUBSEP $2] = 1 }
+        }
+        END {
+            # Learn where each old namespace sent its symbols.
+            for (k in oldmember) {
+                split(k, part, SUBSEP)
+                o = part[1]; s = part[2]
+                cnt = split(holders[s], hs, " ")
+                for (i = 1; i <= cnt; i++) if (hs[i] != "") hits[o SUBSEP hs[i]]++
+            }
+            for (k in hits) {
+                if (hits[k] < floor) continue
+                split(k, part, SUBSEP)
+                target[part[1]] = target[part[1]] " " part[2]
+            }
+            # Every namespace the symbol is declared in must have a home,
+            # not just one of them: a header that declares one name twice
+            # declares two things, and fixy::fs::Path (an alias for the
+            # sanitized path) having a home says nothing about
+            # fixy::fs::flag::Path (the O_PATH tag).  Eight pairs on the
+            # current surface are declared in two namespaces.
+            for (i = 1; i <= n; i++) {
+                key = order[i]
+                verdict = "present"; rule = "qualified"; counted = 0
+                cnt = split(spaces[key], sp, " ")
+                for (j = 1; j <= cnt; j++) {
+                    p = sp[j]
+                    if (p == "") continue
+                    if (seen[key SUBSEP p]++) continue
+                    counted = 1
+                    here = 0
+                    if (p == "-" || target[p] == "") {
+                        rule = "bare"
+                        if (bare[sym[key]]) here = 1
+                    } else {
+                        tc = split(target[p], tg, " ")
+                        for (t = 1; t <= tc; t++) {
+                            if (tg[t] == "") continue
+                            if ((tg[t] SUBSEP sym[key]) in np) { here = 1; break }
+                        }
+                    }
+                    if (!here) verdict = "absent"
+                }
+                if (!counted) {
+                    rule = "bare"
+                    verdict = (sym[key] in bare) ? "present" : "absent"
+                }
+                print hdr[key] "\t" sym[key] "\t" verdict "\t" rule
+            }
+        }' "$pairs" "$index" "$surface" | sort -u >"$out"
+}
+
+# Reads $2 (the verdict file) and prints present or absent for one pair.
+verdict_of() {
+    local verdicts="$1" header="$2" symbol="$3"
+    awk -F'\t' -v h="$header" -v s="$symbol" '$1==h && $2==s {print $3; exit}' "$verdicts"
+}
+
 # ── Drops file ──────────────────────────────────────────────────────────
 
 # Parses the drops file into $1 as `header<TAB>symbol` and validates each
-# entry against the surface ($2) and the new index ($3).  Sets stale_rc=2
-# on any stale, obsolete or malformed entry.
+# entry against the surface ($2) and the presence verdicts ($3).  Sets
+# stale_rc=2 on any stale, obsolete or malformed entry.  The obsolete test
+# reads the same verdict the miss loop reads, so a row can never be both
+# refused as obsolete and required as a miss.
 load_drops() {
-    local out="$1" surface="$2" index="$3" line key sentence header symbol
+    local out="$1" surface="$2" verdicts="$3" line key sentence header symbol
     : >"$out"
     [[ -f "$drops_file" ]] || return 0
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -406,7 +667,7 @@ load_drops() {
             printf 'STALE DROP      %s  %s\n  (that header no longer declares this symbol — remove the entry)\n' "$header" "$symbol" >&2
             stale_rc=2; continue
         fi
-        if grep -qxF "$symbol" "$index"; then
+        if [[ "$(verdict_of "$verdicts" "$header" "$symbol")" == "present" ]]; then
             printf 'OBSOLETE DROP   %s  %s\n  (the symbol now exists in the new tree — it is no longer a drop; remove the entry)\n' "$header" "$symbol" >&2
             stale_rc=2; continue
         fi
@@ -420,7 +681,7 @@ stale_rc=0
 
 scan() {
     local mode="${1:-scan}"
-    local cxx tmp headers surface index drops misses
+    local cxx tmp headers surface index pairs verdicts drops misses
     cxx="$(find_cxx)"
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' RETURN
@@ -449,6 +710,12 @@ scan() {
     index="$tmp/new_index.txt"
     build_new_index "$cxx" "$index"
 
+    pairs="$tmp/new_pairs.tsv"
+    build_new_pairs "$cxx" "$pairs" "$tmp"
+
+    verdicts="$tmp/verdicts.tsv"
+    decide_presence "$verdicts" "$surface" "$pairs" "$index"
+
     if [[ "$mode" == "scan" && $quiet -eq 0 ]]; then
         printf '== enumerated surface: %s superseded headers, %s (header, symbol, method) rows ==\n' \
             "$(wc -l <"$headers")" "$(wc -l <"$surface")"
@@ -467,24 +734,28 @@ scan() {
                 printf '%s  reflection=%s macros=%s reexports=%s\n' "$h" "$r" "$m" "$x"
             fi
         done <"$headers"
-        printf '\n== new-tree identifier index: %s distinct identifiers across %s ==\n\n' \
+        printf '\n== new-tree identifier index: %s distinct identifiers across %s ==\n' \
             "$(wc -l <"$index")" "$new_roots"
+        printf '== new-tree qualified index: %s (namespace, symbol) pairs in %s namespaces ==\n\n' \
+            "$(wc -l <"$pairs")" "$(cut -f1 "$pairs" | sort -u | wc -l)"
     fi
 
     drops="$tmp/drops.tsv"
-    load_drops "$drops" "$surface" "$index"
+    load_drops "$drops" "$surface" "$verdicts"
 
-    # A drop is keyed by symbol: one entry, naming any one header that
-    # declares the symbol, covers every header that declares it (a
-    # template and its specialisations, a class and its forward
-    # declarations).  load_drops has already required the named header
-    # to be one of the declarers.
+    # A drop is keyed by (header, symbol).  It used to be keyed by symbol
+    # alone, so one entry covered every header declaring that NAME. A bare
+    # name is not an identity.  Three unrelated `runtime_smoke_test`
+    # functions in three namespaces shared one row, and the row for the
+    # effects aliases silenced the polynomial one.  A symbol genuinely
+    # declared by several headers now takes one row per header, which is
+    # one row per fact rather than one row hiding several.  load_drops has
+    # already required the named header to declare the symbol.
     misses="$tmp/misses.tsv"
-    cut -f1,2 "$surface" | sort -u | while IFS=$'\t' read -r h s; do
-        grep -qxF "$s" "$index" && continue
-        grep -qP "\t\Q${s}\E$" "$drops" && continue
-        printf '%s\t%s\n' "$h" "$s"
-    done >"$misses"
+    awk -F'\t' -v drops="$drops" '
+        FILENAME == drops { dropped[$1 SUBSEP $2] = 1; next }
+        $3 == "absent" && !(($1 SUBSEP $2) in dropped) { print $1 "\t" $2 }
+    ' "$drops" "$verdicts" | sort -u >"$misses"
 
     if [[ "$mode" == "emit" ]]; then
         while IFS=$'\t' read -r h s; do
@@ -497,9 +768,15 @@ scan() {
     count=$(wc -l <"$misses")
     if [[ $count -gt 0 ]]; then
         while IFS=$'\t' read -r h s; do
-            local methods
+            local methods rule spaces
             methods=$(awk -F'\t' -v h="$h" -v s="$s" '$1==h && $2==s {print $3}' "$surface" | sort -u | paste -sd+ -)
-            printf 'MISSING PORT    %s  %s  (%s)\n' "$h" "$s" "$methods"
+            rule=$(awk -F'\t' -v h="$h" -v s="$s" '$1==h && $2==s {print $4; exit}' "$verdicts")
+            spaces=$(awk -F'\t' -v h="$h" -v s="$s" '$1==h && $2==s && $4!="-" {print $4}' "$surface" | sort -u | paste -sd, -)
+            if [[ "$rule" == "qualified" && -n "$spaces" ]]; then
+                printf 'MISSING PORT    %s  %s  (%s; %s declares it and the new tree does not)\n' "$h" "$s" "$methods" "$spaces"
+            else
+                printf 'MISSING PORT    %s  %s  (%s; matched by bare name)\n' "$h" "$s" "$methods"
+            fi
         done <"$misses"
         printf '\ncheck-port-completeness: %s symbol(s) from superseded headers have no home in the new tree\n' "$count" >&2
         printf '  and no entry in %s.  Port each one, or write its sentence there.\n' "$drops_file" >&2
@@ -551,15 +828,54 @@ struct planted_private {};
 using detail::planted_reexport_unported;
 }  // namespace crucible
 EOF
+    # Qualified-name control.  Three symbols in one old namespace: two
+    # port into one new namespace, which is what teaches the guard where
+    # that namespace went, and the third does not.  Its bare name occurs
+    # in the new tree, in a different namespace, so the bare-name test
+    # would call it present.
+    cat >"$tmp/old/crucible/_PlantedQualified.h" <<'EOF'
+#pragma once
+namespace crucible::planted_family {
+struct planted_sibling_one {};
+struct planted_sibling_two {};
+struct planted_collided_name {};
+}  // namespace crucible::planted_family
+EOF
+    # Two headers declaring one name, in different namespaces, neither
+    # ported.  One drop row must silence one of them and not the other.
+    # Header A also carries a macro, for the (header, macro name) key.
+    cat >"$tmp/old/crucible/_PlantedHomeA.h" <<'EOF'
+#pragma once
+#define PLANTED_MACRO_KEYED 1
+namespace crucible::planted_home_a {
+struct planted_two_homes {};
+}  // namespace crucible::planted_home_a
+EOF
+    cat >"$tmp/old/crucible/_PlantedHomeB.h" <<'EOF'
+#pragma once
+namespace crucible::planted_home_b {
+struct planted_two_homes {};
+}  // namespace crucible::planted_home_b
+EOF
     cat >"$tmp/new/foundation/Planted.h" <<'EOF'
 #pragma once
+namespace planted_new {
 struct planted_ported {};
 struct planted_ported_base {};
+namespace planted_family {
+struct planted_sibling_one {};
+struct planted_sibling_two {};
+}  // namespace planted_family
+namespace planted_elsewhere {
+struct planted_collided_name {};
+}  // namespace planted_elsewhere
+}  // namespace planted_new
 EOF
 
     run_guard() {
         PORT_GUARD_OLD_ROOT="$tmp/old" PORT_GUARD_OLD_SUBDIR=crucible \
         PORT_GUARD_NEW_ROOTS="$tmp/new/foundation" PORT_GUARD_NS=crucible \
+        PORT_GUARD_NEW_NS=planted_new \
         PORT_GUARD_DROPS="$1" bash "${BASH_SOURCE[0]}" --quiet
     }
 
@@ -568,10 +884,12 @@ EOF
 
     # Arm 1: no drops file — the misses are exactly the planted unported set.
     out="$tmp/arm1.out"; set +e; run_guard "$tmp/no-such-drops.txt" >"$out" 2>&1; rc=$?; set -e
-    local want="PLANTED_MACRO_UNPORTED,planted_alias_unported,planted_reexport_unported,planted_template_unported,planted_unported"
+    local want="PLANTED_MACRO_KEYED,PLANTED_MACRO_UNPORTED,planted_alias_unported,planted_collided_name,planted_reexport_unported,planted_template_unported,planted_two_homes,planted_two_homes,planted_unported"
     if [[ $rc -eq 1 && "$(reported)" == "$want" ]]; then
         printf 'check-port-completeness --self-test: minimal control — planted_unported reported and planted_ported not, as expected.\n'
         printf 'check-port-completeness --self-test: blind spots — template, alias-by-own-name, re-export and macro each reported; the detail member was not, as expected.\n'
+        printf 'check-port-completeness --self-test: the qualified test reported planted_collided_name although the new tree holds that identifier in another namespace, as expected.\n'
+        printf 'check-port-completeness --self-test: one name declared by two headers was reported for both, as expected.\n'
     else
         printf 'check-port-completeness --self-test: FAIL — expected exit 1 reporting {%s}, got exit %s reporting {%s}.\n' "$want" "$rc" "$(reported)" >&2
         sed 's/^/    /' "$out" >&2; fails=1
@@ -585,6 +903,10 @@ crucible/_PlantedBlindSpots.h:planted_template_unported  — planted.
 crucible/_PlantedBlindSpots.h:planted_alias_unported  — planted.
 crucible/_PlantedBlindSpots.h:planted_reexport_unported  — planted.
 crucible/_PlantedBlindSpots.h:PLANTED_MACRO_UNPORTED  — planted.
+crucible/_PlantedQualified.h:planted_collided_name  — planted.
+crucible/_PlantedHomeA.h:planted_two_homes  — planted.
+crucible/_PlantedHomeB.h:planted_two_homes  — planted.
+crucible/_PlantedHomeA.h:PLANTED_MACRO_KEYED  — planted.
 EOF
     out="$tmp/arm2.out"; set +e; run_guard "$tmp/drops-ok.txt" >"$out" 2>&1; rc=$?; set -e
     if [[ $rc -eq 0 ]]; then
@@ -624,6 +946,32 @@ EOF
         printf 'check-port-completeness --self-test: sentence-less drop rejected, as expected.\n'
     else
         printf 'check-port-completeness --self-test: FAIL — a sentence-less drop was not rejected (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 6: the (header, symbol) key.  Drop the row for one of the two
+    # headers that declare planted_two_homes.  The other must still be
+    # reported, and it must be the one whose row is gone.
+    grep -v '_PlantedHomeB.h:planted_two_homes' "$tmp/drops-ok.txt" >"$tmp/drops-one-home.txt"
+    out="$tmp/arm6.out"; set +e; run_guard "$tmp/drops-one-home.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 1 ]] && [[ "$(reported)" == "planted_two_homes" ]] \
+       && grep -q 'MISSING PORT.*_PlantedHomeB.h  planted_two_homes' "$out"; then
+        printf 'check-port-completeness --self-test: a row for one header does not silence the same name in another, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a drop row keyed on one header silenced another header (exit %s reporting {%s}).\n' "$rc" "$(reported)" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 7: a macro is keyed the same way.  Move its row to a header that
+    # does not define it: the row must read stale and the macro must still
+    # be reported against the header that does define it.
+    sed 's|_PlantedHomeA.h:PLANTED_MACRO_KEYED|_PlantedHomeB.h:PLANTED_MACRO_KEYED|' "$tmp/drops-ok.txt" >"$tmp/drops-macro-moved.txt"
+    out="$tmp/arm7.out"; set +e; run_guard "$tmp/drops-macro-moved.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 1 ]] && grep -q 'STALE DROP.*PLANTED_MACRO_KEYED' "$out" \
+       && grep -q 'MISSING PORT.*_PlantedHomeA.h  PLANTED_MACRO_KEYED' "$out"; then
+        printf 'check-port-completeness --self-test: a macro row is keyed by header and name, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a macro row naming the wrong header was accepted (exit %s).\n' "$rc" >&2
         sed 's/^/    /' "$out" >&2; fails=1
     fi
 
