@@ -529,6 +529,185 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 
 #pragma GCC diagnostic pop
 
+// ---------------------------------------------------------------------
+// Every declared atom roster is joined into all_atom_roster.
+//
+// The join above is a hand-written list, and the guard beside it only
+// notices a missing family when the family's AXIS ends up with no atoms
+// at all.  A roster whose axis is populated by some other family is
+// invisible to it: the atoms exist, nothing reads them, and the guard
+// whose name promises completeness reports clean.  That is how
+// fixy/os/Spawn.h's three atoms sat outside the population while the
+// check said every axis was covered, and it is the same shape as an
+// allowlist key naming a file that is gone — a guard that cannot fail
+// the way its name implies.
+//
+// So the relation is stated over the DECLARATIONS rather than over the
+// axes.  A `*_atom_roster` alias in fixy::atom::detail must have every
+// one of its atoms reachable from all_atom_roster.  A roster composed of
+// sub-rosters satisfies it through the parent, which is why the io, fs,
+// mmap and leak sets pass without being named in the join.
+//
+// The walk sees what its translation unit has included, so this file's
+// own assertion covers the families this file includes and no more.  The
+// complete answer needs a sentinel over every header that can declare a
+// roster; scripts/check-atom-roster-joined.sh builds one from the
+// directory rather than from a list, and calls the same two functions.
+// Both this file and Stage A's gate check consume this derivation rather
+// than building a second set.
+//
+// The Site parameter is what makes that second vantage point possible.
+// std::meta::members_of answers as of the point where the walk is
+// INSTANTIATED, and a specialization is instantiated once: a later call
+// to the same specialization returns the earlier point's answer.  A
+// non-template walk is frozen at this header's own line and can never
+// see a roster declared by a header included after it.  Each vantage
+// point passes its own tag type instead, so its call is a fresh
+// specialization that walks the namespace as its translation unit has it
+// at that line.  Reusing another site's tag silently reuses that site's
+// answer, which is the one way to get a wrong clean result here.
+
+namespace detail {
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+template <class Atom>
+[[nodiscard]] consteval bool atom_is_joined_() noexcept {
+    bool joined = false;
+    template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<all_atom_roster>) {
+        using Candidate = [:member:];
+        if constexpr (std::is_same_v<Atom, Candidate>) joined = true;
+    }
+    return joined;
+}
+
+template <class Roster>
+[[nodiscard]] consteval bool every_atom_joined_() noexcept {
+    bool all_joined = true;
+    template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<Roster>) {
+        using Atom = [:member:];
+        all_joined = all_joined && atom_is_joined_<Atom>();
+    }
+    return all_joined;
+}
+
+#pragma GCC diagnostic pop
+
+}  // namespace detail
+
+// The offending rosters' names, comma-separated, or empty when every
+// declared roster is joined.  Answering with the NAMES rather than a bool
+// is what lets the diagnostic say which roster and leaves the reader one
+// edit from the join site.
+//
+// Every offender, not the first.  Reporting only the first would make one
+// known offender mask every other, which is how a second orphan would
+// arrive unnoticed while the guard was already red for the first — and it
+// would also make the guard's own self-test unable to tell its injected
+// probe from the offender already there.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+template <class Site>
+[[nodiscard]] consteval std::string_view roster_declared_but_not_joined() {
+    std::string offenders;
+    template for (constexpr auto member : std::define_static_array(
+                      std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current()))) {
+        if constexpr (std::meta::is_type_alias(member)) {
+            constexpr std::string_view name = std::meta::identifier_of(member);
+            if constexpr (name.ends_with("_atom_roster")) {
+                using Roster = [:std::meta::dealias(member):];
+                if constexpr (!detail::every_atom_joined_<Roster>()) {
+                    if (!offenders.empty()) offenders += ", ";
+                    offenders += name;
+                }
+            }
+        }
+    }
+    if (offenders.empty()) return {};
+    return std::string_view{std::define_static_string(offenders)};
+}
+
+// The other direction, and it is what keeps the first from being dodged
+// by a rename.  A set named `*_atom_samples` is representative
+// instantiations for a local self-test and is deliberately OUTSIDE the
+// population; if one is joined, the two categories have blurred and the
+// name no longer says which it is.
+template <class Site>
+[[nodiscard]] consteval std::string_view sample_set_wrongly_joined() {
+    std::string offenders;
+    template for (constexpr auto member : std::define_static_array(
+                      std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current()))) {
+        if constexpr (std::meta::is_type_alias(member)) {
+            constexpr std::string_view name = std::meta::identifier_of(member);
+            if constexpr (name.ends_with("_atom_samples")) {
+                using Samples = [:std::meta::dealias(member):];
+                if constexpr (detail::every_atom_joined_<Samples>()) {
+                    if (!offenders.empty()) offenders += ", ";
+                    offenders += name;
+                }
+            }
+        }
+    }
+    if (offenders.empty()) return {};
+    return std::string_view{std::define_static_string(offenders)};
+}
+
+#pragma GCC diagnostic pop
+
+// The two diagnostics.
+//
+// P2741R3 lets a static_assert message be computed, and that is the only
+// reason this relation can NAME the offending roster instead of saying
+// that one of them is wrong.  A reader gets the roster and the single
+// line to edit, which is the difference between a guard that reports a
+// fault and a guard that reports a fault somebody can fix.
+template <class Site>
+[[nodiscard]] consteval std::string_view roster_join_diagnostic() {
+    const std::string_view offenders = roster_declared_but_not_joined<Site>();
+    if (offenders.empty()) return {};
+    std::string message =
+        "fixy/Collision.h: the atom-population relation: declared in fixy::atom::detail and NOT joined into "
+        "fixy::collision::all_atom_roster, so their atoms sit outside the population that every axis-coverage "
+        "and collision-rule check reads: ";
+    message += offenders;
+    message +=
+        ".  Join each at the all_atom_roster alias in include/fixy/Collision.h.  If one is representative "
+        "instantiations for a local self-test rather than a family population, rename it to end in "
+        "_atom_samples instead — that spelling says so, and sample_set_wrongly_joined() holds it to it.";
+    return std::string_view{std::define_static_string(message)};
+}
+
+template <class Site>
+[[nodiscard]] consteval std::string_view sample_set_diagnostic() {
+    const std::string_view offenders = sample_set_wrongly_joined<Site>();
+    if (offenders.empty()) return {};
+    std::string message =
+        "fixy/Collision.h: the atom-population relation: these sample sets ARE joined into "
+        "fixy::collision::all_atom_roster: ";
+    message += offenders;
+    message +=
+        ".  A _atom_samples set is representative instantiations for a local self-test and is deliberately "
+        "outside the population; joining one blurs the two categories, and a blurred boundary is what would "
+        "let a family roster be renamed out of roster_declared_but_not_joined() rather than joined into the "
+        "population.  Either drop each from the all_atom_roster alias in include/fixy/Collision.h, or rename "
+        "it to end in _atom_roster if it is a family population after all.";
+    return std::string_view{std::define_static_string(message)};
+}
+
+// This header's own vantage point.  It covers the families included at
+// the top of this file and no others; scripts/check-atom-roster-joined.sh
+// instantiates the same two templates from a sentinel that includes every
+// header under fixy/ and so covers the rest.  The tag is never defined —
+// it is an identity for the instantiation point, not a type anyone uses.
+struct collision_header_site;
+
+static_assert(roster_join_diagnostic<collision_header_site>().empty(),
+              roster_join_diagnostic<collision_header_site>());
+static_assert(sample_set_diagnostic<collision_header_site>().empty(),
+              sample_set_diagnostic<collision_header_site>());
+
 static_assert(every_pending_axis_is_still_empty(),
               "fixy/Collision.h: the pending-rule roster is out of date.  Either an axis listed in "
               "collision::pending_axes has gained its first atom — in which case the rules registered against it in "

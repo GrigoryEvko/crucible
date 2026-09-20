@@ -15684,5 +15684,23 @@ add_test(NAME allowlist_keys
 set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
     LABELS "ci_guard;stage-A1")
 
+# atom_roster_joined supplies the one thing fixy/Collision.h cannot supply
+# for itself: a vantage point that has seen every header.  The relation is
+# in the header — roster_declared_but_not_joined<Site>() and
+# sample_set_wrongly_joined<Site>() — and members_of answers as of the
+# point where a walk is instantiated, so a walk written in a header can
+# never see a roster declared by a header included after it.  The script
+# generates a sentinel over every header under include/fixy/, from the
+# directory rather than from a list, and instantiates the same two
+# templates from its own tag.  Stage A's acceptance gate check 6 consumes
+# the same two templates rather than building a second set of atoms.
+add_test(NAME atom_roster_joined_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-atom-roster-joined.sh --self-test)
+add_test(NAME atom_roster_joined
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-atom-roster-joined.sh --quiet)
+set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
+  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
+  LABELS "ci_guard;stage-A1")
+
 add_subdirectory(foundation)
 add_subdirectory(fixy)
