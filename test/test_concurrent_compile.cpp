@@ -7,8 +7,8 @@
 
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ExecCtxBridge.h>
-#include <crucible/concurrent/Pipeline.h>
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Pipeline.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>

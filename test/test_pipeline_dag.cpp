@@ -1,4 +1,4 @@
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>

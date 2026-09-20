@@ -4,7 +4,7 @@
 // NUMA policy puts under one.  Only admission is testable here.  A pair
 // that must fail to compile lives in a negative-compile fixture instead.
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/WorkloadBudgetCoherent.h>
 #include <crucible/effects/_ExecCtx.h>
 

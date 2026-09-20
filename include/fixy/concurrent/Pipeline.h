@@ -19,17 +19,19 @@
 // each of its endpoints did the same before that.  What is left to check here
 // is that consecutive payload types agree, and that the coordinating context
 // admits the effects of all the stage contexts it is about to start.
+//
+// Old spelling: include/crucible/concurrent/Pipeline.h.  That header also
+// included the SPSC channel and the permission token and used neither.
 
-#include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
-#include <crucible/concurrent/Stage.h>
-#include <crucible/concurrent/_Topology.h>
-#include <crucible/concurrent/WorkingSet.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/permissions/_Permission.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/diag/_RowMismatch.h>
+#include <fixy/Ctx.h>
+#include <fixy/concurrent/Stage.h>
+#include <fixy/concurrent/Topology.h>
+#include <fixy/concurrent/WorkingSet.h>
+#include <foundation/Platform.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/diag/RowMismatch.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <cstdint>
@@ -41,13 +43,13 @@
 #if __has_include(<pthread.h>) && __has_include(<sched.h>)
 #include <pthread.h>
 #include <sched.h>
-#include <crucible/fixy/Sched.h>
+#include <fixy/os/Sched.h>
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
 #else
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
 #endif
 
-namespace crucible::concurrent {
+namespace fixy::concurrent {
 
 namespace detail {
 
@@ -165,14 +167,14 @@ struct pipeline_row_union_impl;
 
 template <>
 struct pipeline_row_union_impl<> {
-    using type = ::crucible::effects::Row<>;
+    using type = ::foundation::effects::Row<>;
 };
 
 template <class Stage0, class... Rest>
 struct pipeline_row_union_impl<Stage0, Rest...> {
     using stage_row = typename std::remove_cvref_t<Stage0>::ctx_type::row_type;
     using rest_row = typename pipeline_row_union_impl<Rest...>::type;
-    using type = ::crucible::effects::row_union_t<stage_row, rest_row>;
+    using type = ::foundation::effects::row_union_t<stage_row, rest_row>;
 };
 
 }  // namespace detail
@@ -181,8 +183,8 @@ template <class... Stages>
 using pipeline_row_union_t = typename detail::pipeline_row_union_impl<std::remove_cvref_t<Stages>...>::type;
 
 template <class Ctx, class... Stages>
-concept CtxFitsPipeline = ::crucible::effects::IsExecCtx<Ctx> && pipeline_chain<Stages...>
-                       && ::crucible::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
+concept CtxFitsPipeline = ::foundation::effects::IsExecCtx<Ctx> && pipeline_chain<Stages...>
+                       && ::foundation::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
 
 template <class... Stages>
 struct StagePack {};
@@ -346,8 +348,9 @@ template <class Graph>
 using stage_graph_row_union_t = typename detail::stage_graph_row_union<std::remove_cvref_t<Graph>>::type;
 
 template <class Ctx, class Graph>
-concept CtxFitsPipelineDag = ::crucible::effects::IsExecCtx<Ctx> && StageGraphWellFormed<Graph>
-                          && ::crucible::decide::row_subset<stage_graph_row_union_t<Graph>, typename Ctx::row_type>();
+concept CtxFitsPipelineDag =
+    ::foundation::effects::IsExecCtx<Ctx> && StageGraphWellFormed<Graph>
+    && ::foundation::decide::row_subset<stage_graph_row_union_t<Graph>, typename Ctx::row_type>();
 
 template <class Stage>
 struct stage_inline_safe : std::false_type {};
@@ -375,7 +378,7 @@ public:
         } else {
             using In = typename S::consumer_handle_type;
             using Out = typename S::producer_handle_type;
-            return has_static_per_call_working_set_v<In> && has_static_per_call_working_set_v<Out>;
+            return HasStaticPerCallWorkingSet<In> && HasStaticPerCallWorkingSet<Out>;
         }
     }();
 
@@ -459,13 +462,24 @@ template <std::size_t N>
 }
 
 // The pin goes through the context-gated surface rather than the raw system
-// call, and a stage worker presents a background context.  Only a background
-// or startup context is admitted there, so nothing on the hot path can repin a
-// running thread.  A negative cpu does nothing, and a refused pin is tolerated.
-inline void pin_current_pipeline_thread_(int cpu) noexcept {
+// call, and presents the context the stage was minted under.  Only a
+// background or startup context is admitted there, so nothing on the hot path
+// can repin a running thread, and a stage minted under the foreground context
+// runs its worker unpinned rather than under a context it does not hold.  The
+// old header built a background context from nothing here, which is the
+// forgery #172 closed.  A negative cpu does nothing, and a refused pin is
+// tolerated.
+template <class Ctx>
+void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
-    (void)::crucible::fixy::sched::apply_affinity_to_cpu(::crucible::effects::BgDrainCtx{}, cpu);
+    if constexpr (::fixy::sched::CtxFitsRuntimeAffinity<Ctx>) {
+        (void)::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
+    } else {
+        (void)ctx;
+        (void)cpu;
+    }
 #else
+    (void)ctx;
     (void)cpu;
 #endif
 }
@@ -540,7 +554,7 @@ private:
     // that starts it.
     [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept : stages_{std::forward<Stages>(stages)...} {}
 
-    template <::crucible::effects::IsExecCtx MintCtx, class... MintStages>
+    template <::foundation::effects::IsExecCtx MintCtx, class... MintStages>
         requires pipeline_chain<std::remove_cvref_t<MintStages>...>
     friend constexpr auto mint_pipeline(MintCtx const&, MintStages&&...) noexcept;
 
@@ -570,7 +584,7 @@ private:
         // end of this function joins them all.
         [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
             [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                detail::pin_current_pipeline_thread_(cpu);
+                detail::pin_current_pipeline_thread_(stage.ctx(), cpu);
                 std::move(stage).run();
             }}...};
     }
@@ -671,7 +685,7 @@ private:
     [[nodiscard]] explicit constexpr PipelineDag(Stages&&... stages) noexcept
         : stages_{std::forward<Stages>(stages)...} {}
 
-    template <::crucible::effects::IsExecCtx MintCtx, class MintGraph, class... MintStages>
+    template <::foundation::effects::IsExecCtx MintCtx, class MintGraph, class... MintStages>
         requires CtxFitsPipelineDagMint<MintCtx, MintGraph, MintStages...>
     friend constexpr auto mint_pipeline_dag(MintCtx const&, MintGraph, MintStages&&...) noexcept;
 
@@ -700,7 +714,7 @@ private:
 
         [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
             [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                detail::pin_current_pipeline_thread_(cpu);
+                detail::pin_current_pipeline_thread_(stage.ctx(), cpu);
                 std::move(stage).run();
             }}...};
     }
@@ -708,29 +722,29 @@ private:
     std::tuple<Stages...> stages_;
 };
 
-template <::crucible::effects::IsExecCtx Ctx, class... Stages>
+template <::foundation::effects::IsExecCtx Ctx, class... Stages>
     requires pipeline_chain<std::remove_cvref_t<Stages>...>
 [[nodiscard]] constexpr auto mint_pipeline(Ctx const& /*ctx*/, Stages&&... stages) noexcept {
     using ctx_row = typename Ctx::row_type;
     using required_row = pipeline_row_union_t<std::remove_cvref_t<Stages>...>;
-    using offending_row = ::crucible::effects::row_difference_t<required_row, ctx_row>;
+    using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                 &::crucible::concurrent::detail::pipeline_row_admission_anchor_, ctx_row, required_row,
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                 &::fixy::concurrent::detail::pipeline_row_admission_anchor_, ctx_row, required_row,
                                  offending_row);
 
     return Pipeline<std::remove_cvref_t<Stages>...>{std::forward<Stages>(stages)...};
 }
 
-template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
+template <::foundation::effects::IsExecCtx Ctx, class Graph, class... Stages>
     requires CtxFitsPipelineDagMint<Ctx, Graph, Stages...>
 [[nodiscard]] constexpr auto mint_pipeline_dag(Ctx const& /*ctx*/, Graph, Stages&&... stages) noexcept {
     using ctx_row = typename Ctx::row_type;
     using required_row = stage_graph_row_union_t<Graph>;
-    using offending_row = ::crucible::effects::row_difference_t<required_row, ctx_row>;
+    using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                 &::crucible::concurrent::detail::pipeline_dag_row_admission_anchor_, ctx_row,
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                 &::fixy::concurrent::detail::pipeline_dag_row_admission_anchor_, ctx_row,
                                  required_row, offending_row);
 
     using graph_type = std::remove_cvref_t<Graph>;
@@ -739,25 +753,39 @@ template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
 
 namespace detail::pipeline_self_test {
 
-namespace eff = ::crucible::effects;
-namespace saf = ::crucible::safety::extract;
+namespace eff = ::foundation::effects;
 
-using namespace ::crucible::concurrent::detail::stage_self_test;
+using namespace ::fixy::concurrent::detail::stage_self_test;
 
 inline void stage_transform_float_to_double(FakeConsumer<float>&&, FakeProducer<double>&&) noexcept {}
-static_assert(saf::PipelineStage<&stage_transform_float_to_double>);
+static_assert(PipelineStage<&stage_transform_float_to_double>);
 
-using S_int_to_int = Stage<&stage_pass_through, eff::HotFgCtx>;
-using S_int_to_float = Stage<&stage_transform_int_to_float, eff::HotFgCtx>;
-using S_float_to_double = Stage<&stage_transform_float_to_double, eff::HotFgCtx>;
-using S_bg_int_to_int = Stage<&stage_pass_through, eff::BgDrainCtx>;
-using S_init_int_to_int = Stage<&stage_pass_through, eff::ColdInitCtx>;
+using S_int_to_int = Stage<&stage_pass_through, HotFgCtx>;
+using S_int_to_float = Stage<&stage_transform_int_to_float, HotFgCtx>;
+using S_float_to_double = Stage<&stage_transform_float_to_double, HotFgCtx>;
+using S_bg_int_to_int = Stage<&stage_pass_through, BgDrainCtx>;
+using S_init_int_to_int = Stage<&stage_pass_through, ColdInitCtx>;
 
 static_assert(IsStage<S_int_to_int>);
 static_assert(IsStage<S_int_to_float>);
 static_assert(IsStage<S_float_to_double>);
 static_assert(!IsStage<int>);
-static_assert(!IsStage<eff::HotFgCtx>);
+static_assert(!IsStage<HotFgCtx>);
+
+// The other two stage shapes read through the same ports.  These are the
+// witnesses the old self-test lacked for them.
+static_assert(IsStage<M1>);
+static_assert(IsStage<W1>);
+static_assert(stage_input_count_v<M1> == 2);
+static_assert(stage_output_count_v<M1> == 1);
+static_assert(std::is_same_v<stage_input_value_t<M1, 1>, int>);
+static_assert(std::is_same_v<stage_output_value_t<M1, 0>, int>);
+static_assert(stage_input_count_v<W1> == 1);
+static_assert(stage_output_count_v<W1> == 1);
+static_assert(std::is_same_v<stage_output_value_t<W1, 0>, int>);
+static_assert(stages_chain<W1, S_int_to_int>);
+static_assert(stages_chain<M1, S_int_to_int>);
+static_assert(!stages_chain<S_int_to_int, M1>);
 
 static_assert(stages_chain<S_int_to_int, S_int_to_int>);
 static_assert(stages_chain<S_int_to_float, S_float_to_double>);
@@ -781,15 +809,15 @@ static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int>, eff::Row<eff::E
 static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int, S_init_int_to_int>,
                           eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Init, eff::Effect::IO>>);
 
-static_assert(CtxFitsPipeline<eff::HotFgCtx, S_int_to_int>);
-static_assert(CtxFitsPipeline<eff::BgDrainCtx, S_int_to_float, S_float_to_double>);
-static_assert(CtxFitsPipeline<eff::BgDrainCtx, S_bg_int_to_int, S_int_to_int>);
+static_assert(CtxFitsPipeline<HotFgCtx, S_int_to_int>);
+static_assert(CtxFitsPipeline<BgDrainCtx, S_int_to_float, S_float_to_double>);
+static_assert(CtxFitsPipeline<BgDrainCtx, S_bg_int_to_int, S_int_to_int>);
 static_assert(!CtxFitsPipeline<int, S_int_to_int>);
-static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_int_to_int, S_float_to_double>);
-static_assert(!CtxFitsPipeline<eff::HotFgCtx, int>);
+static_assert(!CtxFitsPipeline<HotFgCtx, S_int_to_int, S_float_to_double>);
+static_assert(!CtxFitsPipeline<HotFgCtx, int>);
 // The coordinating context admits fewer effects than the stage needs.
-static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_bg_int_to_int>);
-static_assert(!CtxFitsPipeline<eff::ColdInitCtx, S_bg_int_to_int>);
+static_assert(!CtxFitsPipeline<HotFgCtx, S_bg_int_to_int>);
+static_assert(!CtxFitsPipeline<ColdInitCtx, S_bg_int_to_int>);
 
 using FanOutGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
                                EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<0, 3>>>;
@@ -805,10 +833,10 @@ static_assert(StageGraphWellFormed<DiamondGraph>);
 static_assert(!StageGraphWellFormed<CycleGraph>);
 static_assert(!StageGraphWellFormed<UnreachableGraph>);
 static_assert(!StageGraphWellFormed<DisconnectedGraph>);
-static_assert(CtxFitsPipelineDag<eff::HotFgCtx, FanOutGraph>);
-static_assert(CtxFitsPipelineDag<eff::HotFgCtx, DiamondGraph>);
-static_assert(!CtxFitsPipelineDag<eff::HotFgCtx, CycleGraph>);
-static_assert(!CtxFitsPipelineDag<eff::HotFgCtx, UnreachableGraph>);
+static_assert(CtxFitsPipelineDag<HotFgCtx, FanOutGraph>);
+static_assert(CtxFitsPipelineDag<HotFgCtx, DiamondGraph>);
+static_assert(!CtxFitsPipelineDag<HotFgCtx, CycleGraph>);
+static_assert(!CtxFitsPipelineDag<HotFgCtx, UnreachableGraph>);
 static_assert(eff::Subrow<stage_graph_row_union_t<FanOutGraph>, eff::Row<>>);
 
 using P1 = Pipeline<S_int_to_int>;
@@ -835,4 +863,4 @@ static_assert(std::is_move_assignable_v<P1>);
 
 }  // namespace detail::pipeline_self_test
 
-}  // namespace crucible::concurrent
+}  // namespace fixy::concurrent

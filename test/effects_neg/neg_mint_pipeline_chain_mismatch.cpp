@@ -14,7 +14,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at CtxFitsPipeline / pipeline_chain.
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

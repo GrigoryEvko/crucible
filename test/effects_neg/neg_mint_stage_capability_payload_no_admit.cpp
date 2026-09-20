@@ -3,7 +3,7 @@
 // GAPS-025: Capability<E, S> payloads carry Row<E>; a Ctx whose row
 // omits E cannot host the stage.
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_Capability.h>
 #include <crucible/effects/_ExecCtx.h>
 

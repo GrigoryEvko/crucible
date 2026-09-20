@@ -4,7 +4,7 @@
 // topological order.  An edge from a later node back to an earlier node
 // is a cycle witness and must be rejected by StageGraphWellFormed.
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

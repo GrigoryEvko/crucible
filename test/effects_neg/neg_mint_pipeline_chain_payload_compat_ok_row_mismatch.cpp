@@ -3,7 +3,7 @@
 // GAPS-026: payload chain compatibility is not enough; coordinator
 // row admission must also cover the stage context rows.
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

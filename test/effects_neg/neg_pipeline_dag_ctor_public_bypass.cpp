@@ -23,8 +23,8 @@
 // rejected direct-construction of PipelineDag.  Build MUST fail;
 // diagnostic MUST contain "private".
 
-#include <crucible/concurrent/Pipeline.h>
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Pipeline.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

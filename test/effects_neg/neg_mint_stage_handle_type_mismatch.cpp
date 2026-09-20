@@ -23,7 +23,7 @@
 // failure, not a "constraints are not satisfied" message (the
 // concept passes; the parameter-type binding fails).
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

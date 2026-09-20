@@ -5,8 +5,8 @@
 #include <crucible/concurrent/AutoSplit.h>
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ParallelismRule.h>
-#include <crucible/concurrent/Pipeline.h>
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Pipeline.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/concurrent/TopologyConstexpr.h>

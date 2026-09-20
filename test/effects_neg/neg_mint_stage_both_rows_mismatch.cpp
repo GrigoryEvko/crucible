@@ -3,7 +3,7 @@
 // GAPS-025: mint_stage checks both payload directions, so hiding
 // effectful input and output payloads behind empty HotFgCtx is rejected.
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ExecCtx.h>
 

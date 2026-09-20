@@ -3,7 +3,7 @@
 // GAPS-025: mint_stage rejects a stage whose output payload row is not
 // admitted by the stage Ctx.
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ExecCtx.h>
 

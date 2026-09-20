@@ -1,4 +1,4 @@
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <atomic>

@@ -1005,6 +1005,157 @@ fixy_neg_compile_test(neg_payload_row_unclassified_hides_effect
 # and a CMake target name is global.
 fixy_test(test_topology_fixy test_topology.cpp)
 
+# ── Task #119 (A15): the stage and the pipeline ──────────────────────
+#
+# Stage.h and Pipeline.h carry their type-level claims as static
+# assertions, so the two tests below are the parts only a constructed
+# run can show: which thread each stage body ran on, and that a
+# branching graph runs every stage exactly once.  Both keep the file
+# names of the tests they are ported from and carry a suffix, because
+# test/CMakeLists.txt still registers the plain names and a CMake
+# target name is global.
+fixy_test(test_pipeline_dispatch_fixy test_pipeline_dispatch.cpp)
+fixy_test(test_pipeline_dag_fixy test_pipeline_dag.cpp)
+
+# The nine refusals of mint_stage and of the stage it returns.  Every
+# second regex is a string the compiler emits and the fixture source
+# does not: a satisfaction note naming the conjunct, a substitution with
+# the anonymous-namespace prefix the source never writes, or a
+# constructor rendered with parentheses where the source spells braces.
+#
+# The first three separate the shape gate from the context gate: a body
+# with no producer slot fails where the factory's own signature names
+# that slot, so the refusal is an arity bound rather than a concept.
+fixy_neg_compile_test(neg_stage_mint_body_not_a_stage
+  "no matching function for call to .mint_stage<\\{anonymous\\}::consumer_only>"
+  "I < foundation::reflect::signature_traits<FnPtr>::arity \\[with I = 1. FnPtr = &consumer_only")
+fixy_neg_compile_test(neg_stage_mint_ctx_not_exec_ctx
+  "no matching function for call to .mint_stage<\\{anonymous\\}::pass_through>\\(int&"
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]"
+  "is_exec_ctx_v<T> \\[with T = int\\]. evaluated to .false.")
+
+# The row gate, one fixture per direction and one for both at once.
+# The gate is a conjunction and the compiler reports the first conjunct
+# that fails, so the both-rows fixture floors on the input conjunct like
+# the input fixture; what makes it a distinct cell is the payload pair,
+# which its second regex names.  The capability fixture is the fourth
+# case because a capability carries the row of the effect it grants
+# rather than a row written into a computation.
+fixy_neg_compile_test(neg_stage_mint_input_row_not_admitted
+  "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."
+  "FakeConsumer<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int> >&&, <unnamed>::FakeProducer<int>&&\\)")
+fixy_neg_compile_test(neg_stage_mint_output_row_not_admitted
+  "required for the satisfaction of .StageOutputRowAdmitted<FnPtr, Ctx>."
+  "Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init")
+fixy_neg_compile_test(neg_stage_mint_both_rows_not_admitted
+  "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."
+  "FakeProducer<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >&&\\). Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg")
+fixy_neg_compile_test(neg_stage_mint_capability_payload_not_admitted
+  "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."
+  "FakeConsumer<foundation::effects::Capability<foundation::effects::Effect::Alloc, foundation::effects::Bg> >&&")
+
+# The parameter binding, which is a gate the concept does not make: both
+# handles satisfy the shape predicates and only the element type is
+# wrong, so the refusal is the argument failing to bind rather than a
+# constraint answering false.
+fixy_neg_compile_test(neg_stage_mint_handle_type_mismatch
+  "no matching function for call to .mint_stage<\\{anonymous\\}::int_to_int>"
+  "cannot convert .std::move<\\{anonymous\\}::FakeConsumer<float>&>"
+  "to type .std::remove_reference_t<\\{anonymous\\}::FakeConsumer<int>&&>&&.")
+
+# The two disciplines the stage carries after it is minted.
+fixy_neg_compile_test(neg_stage_copied
+  "use of deleted function"
+  "fixy::concurrent::Stage<FnPtr, Ctx>::Stage\\(const fixy::concurrent::Stage<FnPtr, Ctx>&\\)"
+  "Stage holds linear Permission tokens via the consumer/producer handles")
+fixy_neg_compile_test(neg_stage_run_on_an_lvalue
+  "as .this. argument discards qualifiers"
+  "in call to .void fixy::concurrent::Stage<FnPtr, Ctx>::run\\(\\) &&")
+
+# The fourteen refusals of the pipeline, its graph and its two mints.
+# The chain gate has three cells that fail through the same concept and
+# are separated by what the fold answered false about: an element that
+# is not a stage at all, two stages whose payloads do not meet, and an
+# empty pack.
+fixy_neg_compile_test(neg_pipeline_mint_not_a_stage
+  "required for the satisfaction of .pipeline_chain<typename std::remove_cvref<_ArgTypes>::type \\.\\.\\.>."
+  "the expression .\\(IsStage<Stages> && \\.\\.\\.\\).*, int\\}\\].* evaluated to .false.")
+fixy_neg_compile_test(neg_pipeline_mint_chain_break
+  "required for the satisfaction of .pipeline_chain<typename std::remove_cvref<_ArgTypes>::type \\.\\.\\.>."
+  "pipeline_chain_check<std::tuple<typename std::remove_cvref<_Tps>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
+  "&float_to_double\\(<unnamed>::FakeConsumer<float>&&")
+fixy_neg_compile_test(neg_pipeline_mint_empty_pack
+  "no matching function for call to .mint_pipeline\\(fixy::HotFgCtx&\\)."
+  "sizeof \\.\\.\\. \\(Stages \\.\\.\\.\\) >= 1 \\[with Stages = \\{\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_pipeline_mint_ctx_not_exec_ctx
+  "no matching function for call to .mint_pipeline\\(int&"
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]"
+  "is_exec_ctx_v<T> \\[with T = int\\]. evaluated to .false.")
+
+# The coordinator's row admission, which is the one gate in this family
+# that reports through the assembled block rather than a concept: the
+# payloads chain and every stage fits its own context, and what fails is
+# the union against the context that starts them.  The third regex is
+# the offending set the block names, which is the whole reason the block
+# exists.
+fixy_neg_compile_test(neg_pipeline_mint_row_union_not_admitted
+  "static assertion failed: \\[EffectRowMismatch\\]"
+  "at fixy::concurrent::detail::pipeline_row_admission_anchor_"
+  "offending atoms:     foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::Init>")
+
+# The two disciplines the pipeline carries, as for the stage above.
+fixy_neg_compile_test(neg_pipeline_copied
+  "use of deleted function"
+  "fixy::concurrent::Pipeline<Stages>::Pipeline\\(const fixy::concurrent::Pipeline<Stages>&\\)"
+  "Pipeline holds move-only Stages")
+fixy_neg_compile_test(neg_pipeline_run_on_an_lvalue
+  "as .this. argument discards qualifiers"
+  "in call to .void fixy::concurrent::Pipeline<Stages>::run\\(\\) &&")
+
+# The inline opt-in, on three axes.  The first is the claim a stage
+# makes about itself: opting in without a stated working set is refused
+# where the pipeline forms, because the opt-in means the working set
+# fits a private cache and a handle that states none cannot support it.
+fixy_neg_compile_test(neg_pipeline_inline_opt_in_without_working_set
+  "static assertion failed: Pipeline inline opt-in requires both stage handles to expose "
+  "fixy::concurrent::stage_per_call_ws_known_v<fixy::concurrent::Stage<\\{anonymous\\}::body")
+
+# The other two are the compile-time claim asked of a stated cache size,
+# and they are two axes rather than two values on one: the oversized
+# pipeline IS opted in and fails on the size, the tiny one fits in any
+# cache and fails on the missing opt-in.  Each floors on its own stage
+# body as the compiler renders it, with the working set expanded to a
+# literal the fixture source never writes.
+fixy_neg_compile_test(neg_pipeline_inline_claim_oversized
+  "no matching function for call to .claim_inline<\\{anonymous\\}::HugePipeline>\\(\\)."
+  "P::will_run_inline_v<32 \\* <unnamed>::KiB, 1 \\* <unnamed>::MiB>"
+  "&heavy\\(<unnamed>::HeavyConsumer<10485760>&&")
+fixy_neg_compile_test(neg_pipeline_inline_claim_without_opt_in
+  "no matching function for call to .claim_inline<\\{anonymous\\}::TinyPipeline>\\(\\)."
+  "P::will_run_inline_v<32 \\* <unnamed>::KiB, 1 \\* <unnamed>::MiB>"
+  "&tiny\\(<unnamed>::TinyConsumer<128>&&")
+
+# The graph's two well-formedness refusals, separated by the edge each
+# one declares: an edge running backwards is a cycle witness, and a
+# graph of three stages with one edge leaves the third with no edge in
+# either direction.
+fixy_neg_compile_test(neg_pipeline_dag_cyclic_graph
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<1, 0, 0, 0> >")
+fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<0, 1, 0, 0> >")
+
+# The dag mint's two clauses, in order: the graph is a graph at all, and
+# the supplied pack is the graph's own stage pack.  The second fixture's
+# graph is well formed, so only the pack clause can be what refuses.
+fixy_neg_compile_test(neg_pipeline_dag_mint_not_a_graph
+  "required for the satisfaction of .CtxFitsPipelineDagMint<Ctx, Graph, Stages \\.\\.\\.>."
+  "pipeline_dag_mint_gate<Ctx, Graph, Stages \\.\\.\\.>::value \\[with Ctx = .*. Graph = int.")
+fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
+  "required for the satisfaction of .CtxFitsPipelineDagMint<Ctx, Graph, Stages \\.\\.\\.>."
+  "Graph = fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&pass_through")
+
 # ── Task #119 (A15): the publication handles ─────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a

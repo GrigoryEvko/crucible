@@ -22,7 +22,7 @@
 // direct-construction of Stage.  Build MUST fail; diagnostic MUST
 // contain "private".
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

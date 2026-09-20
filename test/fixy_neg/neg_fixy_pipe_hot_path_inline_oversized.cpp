@@ -38,8 +38,8 @@
 // (concept unsatisfied because will_run_inline_v<32 KiB, 1 MiB>()
 // returned false for an oversized aggregate).
 
-#include <crucible/concurrent/Pipeline.h>
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Pipeline.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 

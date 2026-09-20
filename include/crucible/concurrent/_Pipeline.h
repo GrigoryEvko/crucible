@@ -1,0 +1,838 @@
+#pragma once
+
+// Running the stages one after another on the calling thread would deadlock.
+// Each stage body is a drain loop: it keeps taking from the channel behind it
+// until that channel closes, so the first stage never returns, and the stage
+// that would close its channel never starts.  A thread per stage is therefore
+// the normal path, and the threads are joined by the array that holds them
+// when run returns.
+//
+// A stage can opt out of that, but only if its body is a single bounded call
+// rather than a drain loop, and only if the working sets are known and small
+// enough to stay in one core's private cache.  Splitting bounded work across
+// threads at that size costs more than it saves.
+//
+// This suits a few long-lived stages.  Many short tasks want a work queue
+// instead, since each run here pays for creating and joining the threads.
+//
+// Every stage settled its own fit with its own context when it was minted, and
+// each of its endpoints did the same before that.  What is left to check here
+// is that consecutive payload types agree, and that the coordinating context
+// admits the effects of all the stage contexts it is about to start.
+
+#include <crucible/Platform.h>
+#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_Stage.h>
+#include <crucible/concurrent/_Topology.h>
+#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/effects/_ExecCtx.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/permissions/_Permission.h>
+#include <crucible/safety/_Decide.h>
+#include <crucible/safety/diag/_RowMismatch.h>
+
+#include <array>
+#include <cstdint>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
+#if __has_include(<pthread.h>) && __has_include(<sched.h>)
+#include <pthread.h>
+#include <sched.h>
+#include <crucible/fixy/Sched.h>
+#define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
+#else
+#define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
+#endif
+
+namespace crucible::concurrent {
+
+namespace detail {
+
+template <class T>
+struct is_stage : std::false_type {};
+
+template <auto FnPtr, class Ctx>
+struct is_stage<Stage<FnPtr, Ctx>> : std::true_type {};
+
+template <auto FnPtr, class Ctx, class Inputs, class Outputs>
+struct is_stage<MpmcStage<FnPtr, Ctx, Inputs, Outputs>> : std::true_type {};
+
+template <auto FnPtr, class Ctx>
+struct is_stage<SwmrStage<FnPtr, Ctx>> : std::true_type {};
+
+template <class Stage>
+struct stage_ports;
+
+template <auto FnPtr, class Ctx>
+struct stage_ports<Stage<FnPtr, Ctx>> {
+    static constexpr std::size_t input_count = 1;
+    static constexpr std::size_t output_count = 1;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using input_value_type = typename Stage<FnPtr, Ctx>::input_value_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using output_value_type = typename Stage<FnPtr, Ctx>::output_value_type;
+};
+
+template <auto FnPtr, class Ctx, class Inputs, class Outputs>
+struct stage_ports<MpmcStage<FnPtr, Ctx, Inputs, Outputs>> {
+    using stage_type = MpmcStage<FnPtr, Ctx, Inputs, Outputs>;
+    static constexpr std::size_t input_count = stage_type::input_count;
+    static constexpr std::size_t output_count = stage_type::output_count;
+
+    template <std::size_t I>
+        requires(I < input_count)
+    using input_value_type = typename stage_type::template input_value_type<I>;
+
+    template <std::size_t I>
+        requires(I < output_count)
+    using output_value_type = typename stage_type::template output_value_type<I>;
+};
+
+template <auto FnPtr, class Ctx>
+struct stage_ports<SwmrStage<FnPtr, Ctx>> {
+    using stage_type = SwmrStage<FnPtr, Ctx>;
+    static constexpr std::size_t input_count = 1;
+    static constexpr std::size_t output_count = 1;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using input_value_type = typename stage_type::input_value_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using output_value_type = typename stage_type::output_value_type;
+};
+
+}  // namespace detail
+
+template <class T>
+concept IsStage = detail::is_stage<std::remove_cvref_t<T>>::value;
+
+template <class Stage>
+    requires IsStage<Stage>
+inline constexpr std::size_t stage_input_count_v = detail::stage_ports<std::remove_cvref_t<Stage>>::input_count;
+
+template <class Stage>
+    requires IsStage<Stage>
+inline constexpr std::size_t stage_output_count_v = detail::stage_ports<std::remove_cvref_t<Stage>>::output_count;
+
+template <class Stage, std::size_t I>
+    requires IsStage<Stage>
+using stage_input_value_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template input_value_type<I>;
+
+template <class Stage, std::size_t I>
+    requires IsStage<Stage>
+using stage_output_value_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template output_value_type<I>;
+
+template <class S1, class S2>
+concept stages_chain = IsStage<S1> && IsStage<S2> && stage_output_count_v<S1> == 1 && stage_input_count_v<S2> == 1
+                    && std::is_same_v<stage_output_value_t<S1, 0>, stage_input_value_t<S2, 0>>;
+
+namespace detail {
+
+template <class Tuple, std::size_t... Is>
+consteval bool pipeline_chain_check(std::index_sequence<Is...>) noexcept {
+    if constexpr (sizeof...(Is) == 0) {
+        return true;  // one stage: no adjacent pair to check
+    } else {
+        return ((stages_chain<std::tuple_element_t<Is, Tuple>, std::tuple_element_t<Is + 1, Tuple>>) && ...);
+    }
+}
+
+}  // namespace detail
+
+template <class... Stages>
+concept pipeline_chain = sizeof...(Stages) >= 1 && (IsStage<Stages> && ...)
+                      && detail::pipeline_chain_check<std::tuple<std::remove_cvref_t<Stages>...>>(
+                             std::make_index_sequence<(sizeof...(Stages) > 0 ? sizeof...(Stages) - 1 : 0)>{});
+
+// The context here is the one that starts the stages, not the one any stage
+// runs under.  It has to admit the effects of all of them together.
+
+namespace detail {
+
+inline void pipeline_row_admission_anchor_() noexcept {}
+
+template <class... Stages>
+struct pipeline_row_union_impl;
+
+template <>
+struct pipeline_row_union_impl<> {
+    using type = ::crucible::effects::Row<>;
+};
+
+template <class Stage0, class... Rest>
+struct pipeline_row_union_impl<Stage0, Rest...> {
+    using stage_row = typename std::remove_cvref_t<Stage0>::ctx_type::row_type;
+    using rest_row = typename pipeline_row_union_impl<Rest...>::type;
+    using type = ::crucible::effects::row_union_t<stage_row, rest_row>;
+};
+
+}  // namespace detail
+
+template <class... Stages>
+using pipeline_row_union_t = typename detail::pipeline_row_union_impl<std::remove_cvref_t<Stages>...>::type;
+
+template <class Ctx, class... Stages>
+concept CtxFitsPipeline = ::crucible::effects::IsExecCtx<Ctx> && pipeline_chain<Stages...>
+                       && ::crucible::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
+
+template <class... Stages>
+struct StagePack {};
+
+template <class... Edges>
+struct EdgePack {};
+
+template <std::size_t From, std::size_t To, std::size_t FromOutput = 0, std::size_t ToInput = 0>
+struct StageEdge {
+    static constexpr std::size_t from = From;
+    static constexpr std::size_t to = To;
+    static constexpr std::size_t from_output = FromOutput;
+    static constexpr std::size_t to_input = ToInput;
+};
+
+template <class Stages, class Edges>
+struct StageGraph {};
+
+namespace detail {
+
+template <class T>
+struct is_stage_edge : std::false_type {};
+
+template <std::size_t From, std::size_t To, std::size_t FromOutput, std::size_t ToInput>
+struct is_stage_edge<StageEdge<From, To, FromOutput, ToInput>> : std::true_type {};
+
+template <class T>
+struct is_stage_graph : std::false_type {};
+
+template <class... Stages, class... Edges>
+struct is_stage_graph<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> : std::true_type {};
+
+template <class Graph>
+struct stage_graph_traits;
+
+template <class... Stages, class... Edges>
+struct stage_graph_traits<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> {
+    using stage_pack_type = StagePack<Stages...>;
+    using edge_pack_type = EdgePack<Edges...>;
+    using stage_tuple = std::tuple<Stages...>;
+    using edge_tuple = std::tuple<Edges...>;
+    static constexpr std::size_t stage_count = sizeof...(Stages);
+    static constexpr std::size_t edge_count = sizeof...(Edges);
+};
+
+template <class Graph, class Edge>
+consteval bool stage_graph_edge_valid() noexcept {
+    using traits = stage_graph_traits<Graph>;
+    constexpr std::size_t n = traits::stage_count;
+    if constexpr (!is_stage_edge<Edge>::value) {
+        return false;
+    } else if constexpr (Edge::from >= n || Edge::to >= n) {
+        return false;
+    } else if constexpr (Edge::from >= Edge::to) {
+        return false;
+    } else {
+        using from_stage = std::tuple_element_t<Edge::from, typename traits::stage_tuple>;
+        using to_stage = std::tuple_element_t<Edge::to, typename traits::stage_tuple>;
+
+        if constexpr (Edge::from_output >= stage_output_count_v<from_stage>
+                      || Edge::to_input >= stage_input_count_v<to_stage>) {
+            return false;
+        } else {
+            return std::is_same_v<stage_output_value_t<from_stage, Edge::from_output>,
+                                  stage_input_value_t<to_stage, Edge::to_input>>;
+        }
+    }
+}
+
+template <class Graph, class... Edges>
+consteval bool stage_graph_connected_impl(EdgePack<Edges...>) noexcept {
+    using traits = stage_graph_traits<Graph>;
+    constexpr std::size_t n = traits::stage_count;
+    if constexpr (n <= 1) {
+        return true;
+    } else {
+        std::array<bool, n> reached{};
+        reached[0] = true;
+
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            auto propagate = [&]<class Edge>() consteval {
+                if (reached[Edge::from] && !reached[Edge::to]) {
+                    reached[Edge::to] = true;
+                    changed = true;
+                }
+                if (reached[Edge::to] && !reached[Edge::from]) {
+                    reached[Edge::from] = true;
+                    changed = true;
+                }
+            };
+            (propagate.template operator()<Edges>(), ...);
+        }
+
+        for (bool seen : reached) {
+            if (!seen) return false;
+        }
+        return true;
+    }
+}
+
+template <class Graph>
+consteval bool stage_graph_connected() noexcept {
+    using traits = stage_graph_traits<Graph>;
+    return stage_graph_connected_impl<Graph>(typename traits::edge_pack_type{});
+}
+
+template <class Graph, std::size_t... Is>
+consteval bool stage_graph_all_stages(std::index_sequence<Is...>) noexcept {
+    using traits = stage_graph_traits<Graph>;
+    return ((IsStage<std::tuple_element_t<Is, typename traits::stage_tuple>>) && ...);
+}
+
+template <class Graph, class... Edges>
+consteval bool stage_graph_all_edges_valid(EdgePack<Edges...>) noexcept {
+    return (stage_graph_edge_valid<Graph, Edges>() && ...);
+}
+
+template <class Graph>
+consteval bool stage_graph_well_formed() noexcept {
+    if constexpr (!is_stage_graph<Graph>::value) {
+        return false;
+    } else {
+        using traits = stage_graph_traits<Graph>;
+        if constexpr (traits::stage_count == 0) {
+            return false;
+        } else if constexpr (!stage_graph_all_stages<Graph>(std::make_index_sequence<traits::stage_count>{})) {
+            return false;
+        } else if constexpr (!stage_graph_all_edges_valid<Graph>(typename traits::edge_pack_type{})) {
+            return false;
+        } else {
+            return stage_graph_connected<Graph>();
+        }
+    }
+}
+
+template <class Graph>
+struct stage_graph_row_union;
+
+template <class... Stages, class... Edges>
+struct stage_graph_row_union<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> {
+    using type = pipeline_row_union_t<Stages...>;
+};
+
+inline void pipeline_dag_row_admission_anchor_() noexcept {}
+
+}  // namespace detail
+
+template <class T>
+concept IsStageEdge = detail::is_stage_edge<std::remove_cvref_t<T>>::value;
+
+template <class T>
+concept IsStageGraph = detail::is_stage_graph<std::remove_cvref_t<T>>::value;
+
+template <class Graph>
+concept StageGraphWellFormed = IsStageGraph<Graph> && detail::stage_graph_well_formed<std::remove_cvref_t<Graph>>();
+
+template <class Graph>
+    requires StageGraphWellFormed<Graph>
+using stage_graph_row_union_t = typename detail::stage_graph_row_union<std::remove_cvref_t<Graph>>::type;
+
+template <class Ctx, class Graph>
+concept CtxFitsPipelineDag = ::crucible::effects::IsExecCtx<Ctx> && StageGraphWellFormed<Graph>
+                          && ::crucible::decide::row_subset<stage_graph_row_union_t<Graph>, typename Ctx::row_type>();
+
+template <class Stage>
+struct stage_inline_safe : std::false_type {};
+
+template <class Stage>
+inline constexpr bool stage_inline_safe_v = stage_inline_safe<std::remove_cvref_t<Stage>>::value;
+
+namespace detail {
+
+template <class Stage, bool = IsStage<Stage>>
+struct stage_working_set_traits {
+    static constexpr bool known = false;
+    static constexpr std::size_t value = unknown_per_call_working_set;
+};
+
+template <class Stage>
+struct stage_working_set_traits<Stage, true> {
+private:
+    using S = std::remove_cvref_t<Stage>;
+
+public:
+    static constexpr bool known = [] consteval {
+        if constexpr (requires { S::aggregate_working_set_known; }) {
+            return S::aggregate_working_set_known;
+        } else {
+            using In = typename S::consumer_handle_type;
+            using Out = typename S::producer_handle_type;
+            return has_static_per_call_working_set_v<In> && has_static_per_call_working_set_v<Out>;
+        }
+    }();
+
+    static constexpr std::size_t value = [] consteval {
+        if constexpr (requires { S::aggregate_per_call_working_set; }) {
+            return S::aggregate_per_call_working_set;
+        } else if constexpr (known) {
+            using In = typename S::consumer_handle_type;
+            using Out = typename S::producer_handle_type;
+            return saturating_ws_add(per_call_working_set_of_v<In>, per_call_working_set_of_v<Out>);
+        } else {
+            return unknown_per_call_working_set;
+        }
+    }();
+};
+
+template <class... Stages>
+[[nodiscard]] consteval std::size_t aggregate_stage_ws() noexcept {
+    std::size_t total = 0;
+    ((total = saturating_ws_add(total, stage_working_set_traits<std::remove_cvref_t<Stages>>::value)), ...);
+    return total;
+}
+
+}  // namespace detail
+
+template <class Stage>
+inline constexpr bool stage_per_call_ws_known_v = detail::stage_working_set_traits<std::remove_cvref_t<Stage>>::known;
+
+template <class Stage>
+inline constexpr std::size_t stage_per_call_ws_v = detail::stage_working_set_traits<std::remove_cvref_t<Stage>>::value;
+
+template <class... Stages>
+inline constexpr bool aggregate_per_call_ws_known_v = (stage_per_call_ws_known_v<Stages> && ...);
+
+template <class... Stages>
+inline constexpr std::size_t aggregate_per_call_ws_v = detail::aggregate_stage_ws<std::remove_cvref_t<Stages>...>();
+
+template <class... Stages>
+inline constexpr bool pipeline_inline_safe_v = (stage_inline_safe_v<Stages> && ...);
+
+enum class PipelineDispatchKind : std::uint8_t {
+    Inline,
+    ThreadPerStage,
+};
+
+namespace detail {
+
+[[nodiscard]] inline int pipeline_affinity_cpu_(const Topology& topology, std::size_t worker_index) noexcept {
+    auto clusters = topology.cache_clusters();
+    if (!clusters.empty()) {
+        const std::vector<int>* best = &clusters.front();
+        for (auto const& cluster : clusters) {
+            if (cluster.size() > best->size()) best = &cluster;
+        }
+        if (!best->empty()) {
+            return (*best)[worker_index % best->size()];
+        }
+    }
+
+    auto node0 = topology.cores_on_node(0);
+    if (!node0.empty()) {
+        return node0[worker_index % node0.size()];
+    }
+
+    return -1;
+}
+
+template <std::size_t N>
+[[nodiscard]] inline const std::array<int, N>& pipeline_affinity_cpus_() noexcept {
+    static const std::array<int, N> cpus = [] {
+        std::array<int, N> out{};
+        out.fill(-1);
+
+        const auto& topology = Topology::instance();
+        for (std::size_t i = 0; i < N; ++i) {
+            out[i] = pipeline_affinity_cpu_(topology, i);
+        }
+        return out;
+    }();
+    return cpus;
+}
+
+// The pin goes through the context-gated surface rather than the raw system
+// call, and a stage worker presents a background context.  Only a background
+// or startup context is admitted there, so nothing on the hot path can repin a
+// running thread.  A negative cpu does nothing, and a refused pin is tolerated.
+inline void pin_current_pipeline_thread_(int cpu) noexcept {
+#if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
+    (void)::crucible::fixy::sched::apply_affinity_to_cpu(::crucible::effects::BgDrainCtx{}, cpu);
+#else
+    (void)cpu;
+#endif
+}
+
+}  // namespace detail
+
+template <class... Stages>
+    requires pipeline_chain<Stages...>
+class Pipeline {
+public:
+    static constexpr std::size_t arity = sizeof...(Stages);
+    static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
+    static constexpr bool inline_safe = pipeline_inline_safe_v<Stages...>;
+    static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
+
+    static_assert(((!stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
+                  "Pipeline inline opt-in requires both stage handles to expose "
+                  "static constexpr per_call_working_set");
+
+    Pipeline(Pipeline const&) = delete(
+        "Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
+    Pipeline& operator=(Pipeline const&) = delete(
+        "Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
+    Pipeline(Pipeline&&) noexcept = default;
+    Pipeline& operator=(Pipeline&&) noexcept = default;
+
+    void run() && noexcept {
+        if (will_run_inline()) {
+            std::move(*this).run_inline_impl_(std::index_sequence_for<Stages...>{});
+        } else {
+            std::move(*this).run_threaded_impl_(std::index_sequence_for<Stages...>{});
+        }
+    }
+
+    [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
+        static const PipelineDispatchKind kind = compute_dispatch_kind_();
+        return kind;
+    }
+
+    [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
+
+    // The same question as will_run_inline, asked of a stated cache size
+    // instead of the probed one, so a caller can assert at compile time that
+    // its pipeline runs inline on the target it is built for.  The runtime
+    // answer stays authoritative: on a host smaller than the assertion
+    // assumed, dispatch quietly falls back to a thread per stage and only the
+    // claim was wrong.
+    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
+    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1dBytes) || (aggregate_per_call_working_set <= L2Bytes);
+        }
+    }
+
+    template <std::size_t I>
+        requires(I < sizeof...(Stages))
+    [[nodiscard]] constexpr auto& stage() & noexcept {
+        return std::get<I>(stages_);
+    }
+
+    template <std::size_t I>
+        requires(I < sizeof...(Stages))
+    [[nodiscard]] constexpr auto const& stage() const& noexcept {
+        return std::get<I>(stages_);
+    }
+
+private:
+    // Private because direct construction would skip the row admission and
+    // produce a pipeline whose effects were never weighed against the context
+    // that starts it.
+    [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept : stages_{std::forward<Stages>(stages)...} {}
+
+    template <::crucible::effects::IsExecCtx MintCtx, class... MintStages>
+        requires pipeline_chain<std::remove_cvref_t<MintStages>...>
+    friend constexpr auto mint_pipeline(MintCtx const&, MintStages&&...) noexcept;
+
+    [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
+        if constexpr (inline_safe && aggregate_working_set_known) {
+            const auto& topology = Topology::instance();
+            const std::size_t aggregate = aggregate_per_call_working_set;
+            if (aggregate <= topology.l1d_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+            if (aggregate <= topology.l2_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+        }
+        return PipelineDispatchKind::ThreadPerStage;
+    }
+    template <std::size_t... Is>
+    void run_inline_impl_(std::index_sequence<Is...>) && noexcept {
+        ((void)std::move(std::get<Is>(stages_)).run(), ...);
+    }
+
+    template <std::size_t... Is>
+    void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
+        const auto& affinity_cpus = detail::pipeline_affinity_cpus_<sizeof...(Is)>();
+
+        // Each thread takes its stage by move.  The array destructor at the
+        // end of this function joins them all.
+        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
+            [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
+                detail::pin_current_pipeline_thread_(cpu);
+                std::move(stage).run();
+            }}...};
+    }
+
+    std::tuple<Stages...> stages_;
+};
+
+// Declared ahead of the class below because the friend declaration inside it
+// has to name this same concept.  Out of order, the friend declaration and the
+// factory would not match and the factory could not reach the constructor.
+namespace detail {
+
+template <class Ctx, class Graph, class... Stages>
+struct pipeline_dag_mint_gate {
+private:
+    static consteval bool compute() noexcept {
+        if constexpr (!CtxFitsPipelineDag<Ctx, Graph>) {
+            return false;
+        } else {
+            using expected = typename stage_graph_traits<std::remove_cvref_t<Graph>>::stage_pack_type;
+            using actual = StagePack<std::remove_cvref_t<Stages>...>;
+            return std::is_same_v<expected, actual>;
+        }
+    }
+
+public:
+    static constexpr bool value = compute();
+};
+
+}  // namespace detail
+
+template <class Ctx, class Graph, class... Stages>
+concept CtxFitsPipelineDagMint = detail::pipeline_dag_mint_gate<Ctx, Graph, Stages...>::value;
+
+template <class Graph>
+    requires StageGraphWellFormed<Graph>
+class PipelineDag;
+
+template <class... Stages, class... Edges>
+    requires StageGraphWellFormed<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>>
+class PipelineDag<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> {
+public:
+    using graph_type = StageGraph<StagePack<Stages...>, EdgePack<Edges...>>;
+
+    static constexpr std::size_t arity = sizeof...(Stages);
+    static constexpr std::size_t edge_count = sizeof...(Edges);
+    static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
+    static constexpr bool inline_safe = pipeline_inline_safe_v<Stages...>;
+    static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
+
+    static_assert(((!stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
+                  "PipelineDag inline opt-in requires every stage handle pack to "
+                  "expose static constexpr per_call_working_set");
+
+    PipelineDag(PipelineDag const&) = delete("PipelineDag holds move-only Stages, each of which owns endpoint handles");
+    PipelineDag&
+    operator=(PipelineDag const&) = delete("PipelineDag holds move-only Stages, each of which owns endpoint handles");
+    PipelineDag(PipelineDag&&) noexcept = default;
+    PipelineDag& operator=(PipelineDag&&) noexcept = default;
+
+    void run() && noexcept {
+        if (will_run_inline()) {
+            std::move(*this).run_inline_impl_(std::index_sequence_for<Stages...>{});
+        } else {
+            std::move(*this).run_threaded_impl_(std::index_sequence_for<Stages...>{});
+        }
+    }
+
+    [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
+        static const PipelineDispatchKind kind = compute_dispatch_kind_();
+        return kind;
+    }
+
+    [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
+
+    // As for a linear pipeline.  A branching graph still sums the working
+    // set over every stage, which is the worst case of one token reaching all
+    // of them, so a wide fan-out counts each branch.
+    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
+    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1dBytes) || (aggregate_per_call_working_set <= L2Bytes);
+        }
+    }
+
+    template <std::size_t I>
+        requires(I < sizeof...(Stages))
+    [[nodiscard]] constexpr auto& stage() & noexcept {
+        return std::get<I>(stages_);
+    }
+
+private:
+    // Private because direct construction would skip the row admission and
+    // produce a graph whose effects were never weighed against the context
+    // that starts it.
+    [[nodiscard]] explicit constexpr PipelineDag(Stages&&... stages) noexcept
+        : stages_{std::forward<Stages>(stages)...} {}
+
+    template <::crucible::effects::IsExecCtx MintCtx, class MintGraph, class... MintStages>
+        requires CtxFitsPipelineDagMint<MintCtx, MintGraph, MintStages...>
+    friend constexpr auto mint_pipeline_dag(MintCtx const&, MintGraph, MintStages&&...) noexcept;
+
+    [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
+        if constexpr (inline_safe && aggregate_working_set_known) {
+            const auto& topology = Topology::instance();
+            const std::size_t aggregate = aggregate_per_call_working_set;
+            if (aggregate <= topology.l1d_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+            if (aggregate <= topology.l2_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+        }
+        return PipelineDispatchKind::ThreadPerStage;
+    }
+
+    template <std::size_t... Is>
+    void run_inline_impl_(std::index_sequence<Is...>) && noexcept {
+        ((void)std::move(std::get<Is>(stages_)).run(), ...);
+    }
+
+    template <std::size_t... Is>
+    void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
+        const auto& affinity_cpus = detail::pipeline_affinity_cpus_<sizeof...(Is)>();
+
+        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
+            [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
+                detail::pin_current_pipeline_thread_(cpu);
+                std::move(stage).run();
+            }}...};
+    }
+
+    std::tuple<Stages...> stages_;
+};
+
+template <::crucible::effects::IsExecCtx Ctx, class... Stages>
+    requires pipeline_chain<std::remove_cvref_t<Stages>...>
+[[nodiscard]] constexpr auto mint_pipeline(Ctx const& /*ctx*/, Stages&&... stages) noexcept {
+    using ctx_row = typename Ctx::row_type;
+    using required_row = pipeline_row_union_t<std::remove_cvref_t<Stages>...>;
+    using offending_row = ::crucible::effects::row_difference_t<required_row, ctx_row>;
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                 &::crucible::concurrent::detail::pipeline_row_admission_anchor_, ctx_row, required_row,
+                                 offending_row);
+
+    return Pipeline<std::remove_cvref_t<Stages>...>{std::forward<Stages>(stages)...};
+}
+
+template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
+    requires CtxFitsPipelineDagMint<Ctx, Graph, Stages...>
+[[nodiscard]] constexpr auto mint_pipeline_dag(Ctx const& /*ctx*/, Graph, Stages&&... stages) noexcept {
+    using ctx_row = typename Ctx::row_type;
+    using required_row = stage_graph_row_union_t<Graph>;
+    using offending_row = ::crucible::effects::row_difference_t<required_row, ctx_row>;
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                 &::crucible::concurrent::detail::pipeline_dag_row_admission_anchor_, ctx_row,
+                                 required_row, offending_row);
+
+    using graph_type = std::remove_cvref_t<Graph>;
+    return PipelineDag<graph_type>{std::forward<Stages>(stages)...};
+}
+
+namespace detail::pipeline_self_test {
+
+namespace eff = ::crucible::effects;
+namespace saf = ::crucible::safety::extract;
+
+using namespace ::crucible::concurrent::detail::stage_self_test;
+
+inline void stage_transform_float_to_double(FakeConsumer<float>&&, FakeProducer<double>&&) noexcept {}
+static_assert(saf::PipelineStage<&stage_transform_float_to_double>);
+
+using S_int_to_int = Stage<&stage_pass_through, eff::HotFgCtx>;
+using S_int_to_float = Stage<&stage_transform_int_to_float, eff::HotFgCtx>;
+using S_float_to_double = Stage<&stage_transform_float_to_double, eff::HotFgCtx>;
+using S_bg_int_to_int = Stage<&stage_pass_through, eff::BgDrainCtx>;
+using S_init_int_to_int = Stage<&stage_pass_through, eff::ColdInitCtx>;
+
+static_assert(IsStage<S_int_to_int>);
+static_assert(IsStage<S_int_to_float>);
+static_assert(IsStage<S_float_to_double>);
+static_assert(!IsStage<int>);
+static_assert(!IsStage<eff::HotFgCtx>);
+
+static_assert(stages_chain<S_int_to_int, S_int_to_int>);
+static_assert(stages_chain<S_int_to_float, S_float_to_double>);
+static_assert(!stages_chain<S_int_to_int, S_float_to_double>);
+static_assert(!stages_chain<S_int_to_float, S_int_to_int>);
+static_assert(!stages_chain<int, S_int_to_int>);
+static_assert(!stages_chain<S_int_to_int, int>);
+
+static_assert(pipeline_chain<S_int_to_int>);
+static_assert(pipeline_chain<S_int_to_int, S_int_to_int>);
+static_assert(pipeline_chain<S_int_to_int, S_int_to_float, S_float_to_double>);
+// The stages run under different contexts; only the payload types have to meet.
+static_assert(pipeline_chain<S_bg_int_to_int, S_int_to_int>);
+static_assert(!pipeline_chain<S_int_to_int, S_float_to_double>);
+static_assert(!pipeline_chain<S_int_to_int, S_int_to_int, S_float_to_double>);
+static_assert(!pipeline_chain<int>);
+static_assert(!pipeline_chain<>);
+
+static_assert(eff::Subrow<pipeline_row_union_t<S_int_to_int>, eff::Row<>>);
+static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int>, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int, S_init_int_to_int>,
+                          eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Init, eff::Effect::IO>>);
+
+static_assert(CtxFitsPipeline<eff::HotFgCtx, S_int_to_int>);
+static_assert(CtxFitsPipeline<eff::BgDrainCtx, S_int_to_float, S_float_to_double>);
+static_assert(CtxFitsPipeline<eff::BgDrainCtx, S_bg_int_to_int, S_int_to_int>);
+static_assert(!CtxFitsPipeline<int, S_int_to_int>);
+static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_int_to_int, S_float_to_double>);
+static_assert(!CtxFitsPipeline<eff::HotFgCtx, int>);
+// The coordinating context admits fewer effects than the stage needs.
+static_assert(!CtxFitsPipeline<eff::HotFgCtx, S_bg_int_to_int>);
+static_assert(!CtxFitsPipeline<eff::ColdInitCtx, S_bg_int_to_int>);
+
+using FanOutGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
+                               EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<0, 3>>>;
+using DiamondGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
+                                EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<1, 3>, StageEdge<2, 3>>>;
+using CycleGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int>, EdgePack<StageEdge<1, 0>>>;
+using UnreachableGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
+using DisconnectedGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
+                                     EdgePack<StageEdge<0, 1>, StageEdge<2, 3>>>;
+
+static_assert(StageGraphWellFormed<FanOutGraph>);
+static_assert(StageGraphWellFormed<DiamondGraph>);
+static_assert(!StageGraphWellFormed<CycleGraph>);
+static_assert(!StageGraphWellFormed<UnreachableGraph>);
+static_assert(!StageGraphWellFormed<DisconnectedGraph>);
+static_assert(CtxFitsPipelineDag<eff::HotFgCtx, FanOutGraph>);
+static_assert(CtxFitsPipelineDag<eff::HotFgCtx, DiamondGraph>);
+static_assert(!CtxFitsPipelineDag<eff::HotFgCtx, CycleGraph>);
+static_assert(!CtxFitsPipelineDag<eff::HotFgCtx, UnreachableGraph>);
+static_assert(eff::Subrow<stage_graph_row_union_t<FanOutGraph>, eff::Row<>>);
+
+using P1 = Pipeline<S_int_to_int>;
+using P2 = Pipeline<S_int_to_int, S_int_to_int>;
+using P3 = Pipeline<S_int_to_int, S_int_to_float, S_float_to_double>;
+using PDiamond = PipelineDag<DiamondGraph>;
+
+static_assert(P1::arity == 1);
+static_assert(P2::arity == 2);
+static_assert(P3::arity == 3);
+static_assert(PDiamond::arity == 4);
+static_assert(PDiamond::edge_count == 4);
+static_assert(stage_per_call_ws_known_v<S_int_to_int>);
+static_assert(stage_per_call_ws_v<S_int_to_int> == 128);
+static_assert(aggregate_per_call_ws_v<S_int_to_int, S_int_to_int> == 256);
+static_assert(P3::aggregate_per_call_working_set == 384);
+static_assert(!stage_inline_safe_v<S_int_to_int>);
+static_assert(!P3::inline_safe);
+
+static_assert(!std::is_copy_constructible_v<P1>);
+static_assert(!std::is_copy_assignable_v<P1>);
+static_assert(std::is_move_constructible_v<P1>);
+static_assert(std::is_move_assignable_v<P1>);
+
+}  // namespace detail::pipeline_self_test
+
+}  // namespace crucible::concurrent

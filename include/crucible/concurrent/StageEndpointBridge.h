@@ -6,7 +6,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/Endpoint.h>
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/safety/_Decide.h>
 
 #include <cstddef>

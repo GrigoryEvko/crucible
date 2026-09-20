@@ -21,7 +21,7 @@
 // Expected diagnostic: "static assertion failed" /
 // "WorkloadBudgetCoherent" / "coherence" / "constraints not satisfied".
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/WorkloadBudgetCoherent.h>
 #include <crucible/effects/_ExecCtx.h>
 

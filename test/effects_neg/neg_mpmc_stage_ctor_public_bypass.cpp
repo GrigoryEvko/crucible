@@ -18,7 +18,7 @@
 //
 // Diagnostic regex: "is private within this context".
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

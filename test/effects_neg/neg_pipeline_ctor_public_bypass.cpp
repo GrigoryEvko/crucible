@@ -22,8 +22,8 @@
 // landed) and then attempts the rejected direct-construction of
 // Pipeline.  Build MUST fail; diagnostic MUST contain "private".
 
-#include <crucible/concurrent/Pipeline.h>
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Pipeline.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

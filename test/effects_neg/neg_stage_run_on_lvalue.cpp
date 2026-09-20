@@ -19,7 +19,7 @@
 // passing.*as.*'this'|discards qualifiers" — the ref-qualifier
 // rejection diagnostic family.
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

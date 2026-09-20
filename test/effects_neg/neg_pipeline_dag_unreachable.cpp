@@ -5,7 +5,7 @@
 // graph producer and feeds no graph consumer, so it is unreachable
 // glue rather than a connected pipeline node.
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

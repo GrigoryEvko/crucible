@@ -18,7 +18,7 @@
 // Expected diagnostic: "no matching function for call|cannot bind|
 // passing.*as.*'this'|discards qualifiers".
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

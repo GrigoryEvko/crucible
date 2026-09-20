@@ -14,7 +14,7 @@
 // linear Permission tokens" — the = delete reason string is grep-
 // stable and survives toolchain bumps.
 
-#include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

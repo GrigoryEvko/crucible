@@ -3,7 +3,7 @@
 // GAPS-026: mint_pipeline rejects a coordinator Ctx that does not
 // admit the union of all staged execution-context rows.
 
-#include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/_Pipeline.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>
