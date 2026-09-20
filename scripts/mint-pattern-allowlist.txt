@@ -215,6 +215,12 @@ include/crucible/safety/_ScopedView.h:mint_linear_view:requires-ok
 include/crucible/safety/_ScopedView.h:mint_view:requires-ok
 include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
 
+# ── fixy/os/ThreadName.h — the ported copy of the mint above.  The
+# carve-out is the same one and for the same reason: the body calls
+# pthread_setname_np, so the factory cannot be constexpr.  Both entries
+# stand until the old tree is deleted.
+include/fixy/os/ThreadName.h:mint_thread_name:constexpr-ok
+
 # ── fixy/ScopedView.h — the ported copies of the two view mints above.
 # The gate is view_ok, a precondition on the carrier's runtime state
 # (§XXI carve-out rq=pre), so there is no requires-clause to write.
