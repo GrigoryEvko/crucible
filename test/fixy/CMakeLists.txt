@@ -482,3 +482,29 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
   "template constraint failure"
   "constraints not satisfied"
   "satisfaction of .RingValue<T>.")
+
+# ── Task #119 (A15): the permissioned channels ───────────────────────
+#
+# The split relation for each channel's tag triple is declared in the
+# channel's own header, which is why include/fixy/concurrent/ is an
+# authoring location in scripts/check-splits-into-orphan.sh.
+fixy_test(test_concurrent_channels)
+
+# A handle owns a linear token or a pool share; copying it would
+# duplicate the one and double-count the other.
+fixy_neg_compile_test(neg_channel_producer_handle_copied
+  "use of deleted function"
+  "ProducerHandle owns the Producer Permission"
+  "duplicate the linear token")
+
+# The role is in the handle type: a producer has no pop.
+fixy_neg_compile_test(neg_channel_pop_from_producer_handle
+  "has no member named .try_pop."
+  "ProducerHandle")
+
+# Two channels with the same value type and capacity still have
+# distinct tags, so an endpoint token from one cannot open the other.
+fixy_neg_compile_test(neg_channel_foreign_tag_permission
+  "cannot convert"
+  "spsc_tag::Producer<.*TraceTag"
+  "spsc_tag::Producer<.*MetaTag")

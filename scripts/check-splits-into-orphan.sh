@@ -96,6 +96,7 @@ Exemptions:
   include/crucible/permissions/*.h                  — authoring set
   include/foundation/permissions/*.h                — authoring set (ported)
   include/crucible/concurrent/*.h                   — per-channel substrate
+  include/fixy/concurrent/*.h                       — ported per-channel substrate
   include/crucible/safety/Permission{Tree,Grid}Generator.h
   include/fixy/OwnedRegion.h                        — the ported Slice generator
   test/*                                            — test-local tag trees
@@ -109,17 +110,21 @@ USAGE
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
     --self-test)
-        # Plant the SAME specialization three ways: under a non-exempt
-        # path (must be flagged), under the blessed concurrent/ path
-        # (path exemption), and as a doc-comment line (comment
-        # exemption).  Both exemption axes get a witness, so a future
-        # refactor cannot silently widen or narrow either one.
+        # Plant the SAME specialization four ways: under a non-exempt
+        # path (must be flagged), under each of the two blessed
+        # concurrent/ paths (path exemption, old tree and ported tree),
+        # and as a doc-comment line (comment exemption).  Every
+        # exemption arm gets its own witness, so a future refactor
+        # cannot silently widen or narrow one of them, and a typo in one
+        # glob cannot hide behind another glob that still matches.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
-        mkdir -p "$tmp_root/src/planted" "$tmp_root/include/crucible/concurrent"
+        mkdir -p "$tmp_root/src/planted" "$tmp_root/include/crucible/concurrent" \
+                 "$tmp_root/include/fixy/concurrent"
 
         planted_rel='src/planted/planted_splits.cpp'
         exempt_rel='include/crucible/concurrent/PlantedChannel.h'
+        fixy_exempt_rel='include/fixy/concurrent/PlantedChannel.h'
 
         cat >"$tmp_root/$planted_rel" <<'PLANTED'
 // Synthetic orphan-specialization fixture for --self-test.
@@ -152,6 +157,21 @@ struct splits_into<planted::ChanParent, planted::ChanLeft, planted::ChanRight> {
 }  // namespace crucible
 EXEMPT
 
+        cat >"$tmp_root/$fixy_exempt_rel" <<'FIXY_EXEMPT'
+// Synthetic blessed-authoring fixture for --self-test, ported tree.
+namespace fixy::planted {
+struct ChanParent {};
+struct ChanLeft {};
+struct ChanRight {};
+}  // namespace fixy::planted
+namespace foundation::permissions {
+template <>
+struct splits_into<::fixy::planted::ChanParent, ::fixy::planted::ChanLeft, ::fixy::planted::ChanRight> {
+    static constexpr bool value = true;
+};
+}  // namespace foundation::permissions
+FIXY_EXEMPT
+
         scanner_stderr="$(mktemp)"
 
         self_test_fail() {
@@ -178,9 +198,15 @@ EXEMPT
         if grep -qF "$exempt_rel" "$scanner_stderr"; then
             self_test_fail 'authoring-location exemption leaked.'
         fi
+        # So must the ported tree's copy.  Without this arm a typo in
+        # the include/fixy/concurrent glob would go unnoticed, because
+        # the old tree's glob still matches its own fixture.
+        if grep -qF "$fixy_exempt_rel" "$scanner_stderr"; then
+            self_test_fail 'ported authoring-location exemption leaked.'
+        fi
 
         rm -f "$scanner_stderr"
-        printf 'check-splits-into-orphan: self-test passed — orphan caught, authoring-location + comment exemptions honoured.\n' >&2
+        printf 'check-splits-into-orphan: self-test passed — orphan caught, both authoring-location exemptions + comment exemption honoured.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -215,6 +241,7 @@ while IFS=: read -r file line text; do
         include/crucible/permissions/*.h | \
         include/foundation/permissions/*.h | \
         include/crucible/concurrent/*.h | \
+        include/fixy/concurrent/*.h | \
         include/crucible/safety/PermissionTreeGenerator.h | \
         include/crucible/safety/PermissionGridGenerator.h | \
         include/fixy/OwnedRegion.h | \
@@ -240,7 +267,7 @@ done < <(
 )
 
 if [[ "$status" -ne 0 ]]; then
-    printf 'splits_into_orphan: specializations belong only in include/crucible/{permissions,concurrent}/, include/foundation/permissions/, include/crucible/safety/Permission{Tree,Grid}Generator.h or test/**.\n' >&2
+    printf 'splits_into_orphan: specializations belong only in include/crucible/{permissions,concurrent}/, include/fixy/concurrent/, include/foundation/permissions/, include/crucible/safety/Permission{Tree,Grid}Generator.h or test/**.\n' >&2
     printf 'splits_into_orphan: per CLAUDE.md §IX, the manifest must live in the same TU as the parent tag declaration; otherwise any foreign TU can forge cross-region authority.\n' >&2
 fi
 
