@@ -29,6 +29,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/contracts/Armed.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -39,27 +40,26 @@
 #include <type_traits>
 #include <utility>
 
+// Declared, not included.  The two recognisers below name these
+// templates and instantiate neither, so a declaration is the whole
+// dependency and foundation/permissions/Permission.h does not become a
+// prerequisite of every file that wraps a value.  The old tree declared
+// them the same way, in include/crucible/safety/_Linear.h:29.  A change
+// to either template's parameter list breaks this declaration at the
+// compile that follows, which is the intended failure.
+namespace foundation::permissions {
+
+template <typename Tag>
+class Permission;
+
+template <typename Tag>
+class SharedPermission;
+
+}  // namespace foundation::permissions
+
 namespace fixy {
 
-// A type is already linear when its own discipline encodes the
-// exactly-once obligation, and consume-disciplined when it already
-// encodes a use bound at least as tight as at-most-once.  Wrapping the
-// first in Linear adds no guarantee; wrapping the second in Affine
-// makes a required consume optional.  A new token of either family
-// adds its specialization here rather than being wrapped at a call
-// site.
-//
-// The cv-ref strip is what closes the slip-through: partial
-// specialization does not match a cv-qualified or reference-qualified
-// argument, so `Linear<const Token>` would otherwise pass the
-// rejection.
 namespace detail {
-
-template <typename T>
-struct is_already_linear_impl : std::false_type {};
-
-template <typename T>
-struct is_already_consume_disciplined_impl : std::false_type {};
 
 // Only the two bounded grades name a consume discipline.  A value at
 // Omega may be used freely, and that is the bare T.
@@ -70,18 +70,6 @@ concept IsConsumeBound = std::same_as<decltype(Grade), ::foundation::algebra::la
 
 }  // namespace detail
 
-template <typename T>
-struct is_already_linear : detail::is_already_linear_impl<std::remove_cvref_t<T>> {};
-
-template <typename T>
-inline constexpr bool is_already_linear_v = is_already_linear<T>::value;
-
-template <typename T>
-struct is_already_consume_disciplined : detail::is_already_consume_disciplined_impl<std::remove_cvref_t<T>> {};
-
-template <typename T>
-inline constexpr bool is_already_consume_disciplined_v = is_already_consume_disciplined<T>::value;
-
 template <auto Grade, class T>
     requires detail::IsConsumeBound<Grade>
 class Qtt;
@@ -91,6 +79,69 @@ using Linear = Qtt<::foundation::algebra::lattices::QttGrade::One, T>;
 
 template <class T>
 using Affine = Qtt<::foundation::algebra::lattices::QttGrade::Zero, T>;
+
+// A type is already linear when its own discipline encodes the
+// exactly-once obligation, and consume-disciplined when it already
+// encodes a use bound at least as tight as at-most-once.  Wrapping the
+// first in Linear adds no guarantee; wrapping the second in Affine
+// makes a required consume optional.
+//
+// Both answers used to come from a table with a false primary and one
+// specialization per token.  That shape is what this file is now
+// written against: the port carried both gates and neither table's
+// arms, so for a release Affine<Linear<int>> compiled and an
+// exactly-once obligation became at-most-once.  A table with no arms
+// and a table whose arms all refuse are the same text, and nothing read
+// the difference.
+//
+// So neither answer is a table any more.  Qtt IS the discipline, and
+// one reflection query recognises every grade of it without an arm per
+// instantiation.  The two permission tokens are a family written once,
+// inside a concept body, and a concept cannot be specialized.  The
+// witnesses at the foot of this header pin both recognisers in both
+// directions, so an arm cannot be removed silently again.
+//
+// A new token family whose own type encodes an exactly-once obligation
+// is added to IsPermissionToken below and to the witnesses beside it.
+// Both edits are in this file, and the second is what fails the build
+// when the first is forgotten.
+//
+// The cv-ref strip lives inside the reflection query, so `Linear<const
+// Token>` answers as `Linear<Token>` does.
+namespace detail {
+
+// Qtt of either grade, recognised structurally.
+template <typename T>
+concept IsQttInstance = ::foundation::reflect::IsInstanceOf<T, ^^Qtt>;
+
+// Qtt at grade One: the exactly-once half of the family.  The grade is
+// read off the wrapper's own member rather than from a second table.
+template <typename T>
+concept IsExactlyOnceQtt =
+    IsQttInstance<T>
+    && (std::remove_cvref_t<T>::usage_grade == ::foundation::algebra::lattices::QttGrade::One);
+
+// The permission tokens: empty, move-only, and consumed exactly once by
+// the operation they authorize.
+template <typename T>
+concept IsPermissionToken =
+    ::foundation::reflect::IsInstanceOfAny<T, ^^::foundation::permissions::Permission,
+                                           ^^::foundation::permissions::SharedPermission>;
+
+}  // namespace detail
+
+template <typename T>
+struct is_already_linear : std::bool_constant<detail::IsExactlyOnceQtt<T> || detail::IsPermissionToken<T>> {};
+
+template <typename T>
+inline constexpr bool is_already_linear_v = is_already_linear<T>::value;
+
+template <typename T>
+struct is_already_consume_disciplined
+    : std::bool_constant<detail::IsQttInstance<T> || detail::IsPermissionToken<T>> {};
+
+template <typename T>
+inline constexpr bool is_already_consume_disciplined_v = is_already_consume_disciplined<T>::value;
 
 // The constructors are private, so these two are the only door.
 template <class T, class... Args>
@@ -118,6 +169,13 @@ class [[nodiscard]] Qtt : public graded_facade<::foundation::algebra::ModalityKi
                   "the consume OPTIONAL when it is REQUIRED.  Use the token directly.");
 
 public:
+    // The grade, carried as a member rather than read back out of the
+    // lattice type by a second table.  is_already_linear reads this to
+    // tell the exactly-once half of the family from the at-most-once
+    // half, and a caller reasoning about a Qtt it was handed reads the
+    // same member.
+    static constexpr ::foundation::algebra::lattices::QttGrade usage_grade = Grade;
+
     // value_type, modality and the two name forwarders arrive from
     // graded_facade.  The base is dependent, so the two names this
     // class body uses unqualified are re-declared here rather than
@@ -218,5 +276,48 @@ static_assert(!::foundation::reflect::is_instance_of_v<int, ^^Qtt>);
 static_assert(!::foundation::reflect::is_instance_of_v<void, ^^Qtt>);
 static_assert(!::foundation::reflect::is_instance_of_v<std::unique_ptr<int>, ^^Qtt>);
 static_assert(!::foundation::reflect::is_instance_of_v<Linear<int>, ^^std::unique_ptr>);
+
+// The grade is readable off the wrapper, which is what tells the
+// exactly-once half of the family from the at-most-once half.
+static_assert(Linear<int>::usage_grade == ::foundation::algebra::lattices::QttGrade::One);
+static_assert(Affine<int>::usage_grade == ::foundation::algebra::lattices::QttGrade::Zero);
+
+namespace detail::qtt_witness {
+
+// Incomplete on purpose: the recognisers name the templates and
+// instantiate nothing, so an incomplete argument is the honest witness.
+struct tag;
+
+using ExclusiveToken = ::foundation::permissions::Permission<tag>;
+using SharedToken = ::foundation::permissions::SharedPermission<tag>;
+
+}  // namespace detail::qtt_witness
+
+// Both recognisers, pinned in both directions.  This is the cell that
+// was missing: a port can carry a gate and drop its arms, and until
+// something asserts that the arms still answer, the gate reads as a
+// gate and admits everything.  Each line names types the recogniser
+// must accept and types it must refuse, and an empty recogniser fails
+// the first, a universal one the second.
+static_assert(::foundation::contracts::predicate_accepts<
+              is_already_linear, Linear<int>, Linear<int> const&, Linear<int>&&, Linear<void*>,
+              detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken const&>());
+static_assert(::foundation::contracts::predicate_refuses<is_already_linear, int, void*, Affine<int>,
+                                                         std::unique_ptr<int>>());
+
+static_assert(::foundation::contracts::predicate_accepts<
+              is_already_consume_disciplined, Linear<int>, Affine<int>, Affine<int> const&, Affine<void*>&&,
+              detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken>());
+static_assert(::foundation::contracts::predicate_refuses<is_already_consume_disciplined, int, void*,
+                                                         std::unique_ptr<int>>());
+
+// The two rejections the gates exist for, stated as the facts they
+// rest on.  The refusals themselves are compile errors, so they are
+// proven by the fixtures test/fixy/neg/neg_qtt_*.cpp rather than here.
+static_assert(is_already_linear_v<Linear<int>>, "Linear<Linear<T>> must be refused: the inner wrapper already "
+                                                "carries the exactly-once obligation.");
+static_assert(is_already_consume_disciplined_v<Linear<int>>,
+              "Affine<Linear<T>> must be refused: wrapping an exactly-once obligation in an at-most-once one "
+              "downgrades a required consume to an optional one.");
 
 }  // namespace fixy

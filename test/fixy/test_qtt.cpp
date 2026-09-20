@@ -98,11 +98,20 @@ static_assert(std::is_same_v<Affine<int>::lattice_type, fa::lattices::qtt::Erase
 static_assert(Linear<int>::modality == fa::ModalityKind::Absolute);
 static_assert(Affine<int>::modality == fa::ModalityKind::Absolute);
 
-// The rejection traits are fail-closed until a token specializes them.
+// The rejection traits, read in both directions.  Two of these cells
+// used to assert that Linear<int> is not already linear and that
+// Affine<int> is not consume-disciplined, under a comment calling an
+// empty table fail-closed.  The polarity runs the other way.  Each gate
+// reads its trait negated, so a trait answering "no" to every type
+// waives the duty rather than refusing it, and both gates were
+// tautologies for a release.  The cells below are what an armed
+// recogniser answers.
 static_assert(!::fixy::is_already_linear_v<int>);
-static_assert(!::fixy::is_already_linear_v<Linear<int>>);
+static_assert(::fixy::is_already_linear_v<Linear<int>>);
+static_assert(!::fixy::is_already_linear_v<Affine<int>>);
 static_assert(!::fixy::is_already_consume_disciplined_v<int>);
-static_assert(!::fixy::is_already_consume_disciplined_v<Affine<int>>);
+static_assert(::fixy::is_already_consume_disciplined_v<Linear<int>>);
+static_assert(::fixy::is_already_consume_disciplined_v<Affine<int>>);
 
 // The mint is usable in a constant expression.
 constexpr int minted_and_consumed = ::fixy::mint_linear<int>(7).peek();

@@ -1313,3 +1313,28 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
   "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0> >&>")
+
+# ── Task #193: the two Qtt discipline recognisers, armed ──────────────
+#
+# A10.3 carried both gates of fixy/Qtt.h and neither table's arms, so
+# Affine<Linear<int>> compiled for a release and an exactly-once
+# obligation silently became at-most-once.  Both recognisers are
+# structural now, and these four fixtures are what holds them there:
+# each names one composition the gates must refuse, and the second
+# regex is the compiler's rendering of the instantiation, which the
+# fixture source never spells.
+fixy_neg_compile_test(neg_qtt_affine_over_linear
+  "Affine<Token> over a consume-disciplined token is unsound"
+  "QttGrade::Zero, fixy::Qtt<foundation::algebra::lattices::QttGrade::One")
+
+fixy_neg_compile_test(neg_qtt_linear_over_linear
+  "Linear<Token> over an already-linear token is redundant"
+  "QttGrade::One, fixy::Qtt<foundation::algebra::lattices::QttGrade::One")
+
+fixy_neg_compile_test(neg_qtt_linear_over_permission
+  "Linear<Token> over an already-linear token is redundant"
+  "QttGrade::One, foundation::permissions::Permission")
+
+fixy_neg_compile_test(neg_qtt_affine_over_shared_permission
+  "Affine<Token> over a consume-disciplined token is unsound"
+  "QttGrade::Zero, foundation::permissions::SharedPermission")
