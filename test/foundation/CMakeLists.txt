@@ -31,6 +31,7 @@ endfunction()
 
 foundation_test(test_platform)
 foundation_test(test_saturate_foundation test_saturate.cpp)
+foundation_test(test_signature)
 foundation_test(test_algebra_core)
 foundation_test(test_lattices_core)
 foundation_test(test_lattices_bands)
@@ -281,6 +282,22 @@ foundation_neg_compile_test(neg_permission_split_lvalue_token
 # The ctx-bound root mint in a context whose row does not cover the
 # tag's row: the one root template's fit concept names the tag and the
 # context it refused.
+# ── Task #119 (A15): the signature reflection ────────────────────────
+#
+# param_type_t names one parameter by index, bounded by the function's
+# own arity.  The two fixtures stand on the two ends of that bound: an
+# index past the parameters of a function that has some, and any index at
+# all on a function that has none.  An off-by-one in the bound would
+# admit the second while still rejecting the first, so neither fixture
+# covers the other.  Each is matched on the constraint as the compiler
+# spells it, which the fixture source never contains.
+foundation_neg_compile_test(neg_signature_param_index_overflow
+  "template constraint failure"
+  "the expression .I < foundation::reflect::signature_traits<FnPtr>::arity \\[with I = 2; FnPtr = &witness_binary\\(int, double\\)\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_signature_param_index_on_nullary
+  "template constraint failure"
+  "the expression .I < foundation::reflect::signature_traits<FnPtr>::arity \\[with I = 0; FnPtr = &witness_nullary\\(\\)\\]. evaluated to .false.")
+
 foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
   "constraints not satisfied"
   "satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = .*NeedsIo.*ctx_cap::Fg")

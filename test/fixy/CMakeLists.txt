@@ -548,6 +548,45 @@ fixy_neg_compile_test(neg_channel_foreign_tag_permission
   "spsc_tag::Producer<.*TraceTag"
   "spsc_tag::Producer<.*MetaTag")
 
+# ── Task #119 (A15): the handle poles and the stage shape ─────────────
+#
+# Which pole of a channel a handle is, and what shape a pipeline-stage
+# body has.  Both were in namespace crucible::safety::extract, which 57
+# headers reopened; they arrive here beside the channels whose handles
+# they read.
+fixy_test(test_handle_traits)
+fixy_test(test_stage_shape)
+
+# Each pole's value alias is constrained on its own predicate.  Both
+# probes hold the member the predicate wants, with exactly the right
+# signature, and are refused for holding the opposite pole's member as
+# well — so nothing decides which pole they are.  The two families
+# exclude on different member pairs, try_push against try_pop and publish
+# against load, so a dropped check in one leaves the other's fixture
+# green.
+fixy_neg_compile_test(neg_handle_traits_consumer_value_on_non_handle
+  "template constraint failure"
+  "the expression .is_consumer_handle_v<T> \\[with T = <unnamed>::both_poles\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_handle_traits_swmr_writer_value_on_non_writer
+  "template constraint failure"
+  "the expression .is_swmr_writer_v<T> \\[with T = <unnamed>::both_swmr_poles\\]. evaluated to .false.")
+
+# The three stage-shape extractors are each constrained on PipelineStage.
+# The input fixture probes a function of plain ints; the output fixture
+# probes a function whose parameters ARE the right handles as non-const
+# rvalue references, with only the data-flow order reversed, which is the
+# sharper case; the value-preserving fixture probes a nullary, where an
+# unconstrained comparison would answer true because void equals void.
+fixy_neg_compile_test(neg_stage_shape_input_value_on_non_stage
+  "template constraint failure"
+  "required for the satisfaction of .PipelineStage<FnPtr>. \\[with FnPtr = &not_a_stage\\(int, int\\)\\]")
+fixy_neg_compile_test(neg_stage_shape_output_value_on_non_stage
+  "template constraint failure"
+  "the expression .fixy::concurrent::StageArity<FnPtr>::ordered \\[with FnPtr = &producer_first\\(<unnamed>::fake_producer<int>&&, <unnamed>::fake_consumer<int>&&\\)\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_stage_shape_value_preserving_on_non_stage
+  "use of invalid variable template"
+  "the expression .\\(arity_v<FnPtr>\\) >= 2 \\[with FnPtr = &nullary_body\\(\\)\\]. evaluated to .false.")
+
 # ── Task #119 (A15): the publication handles ─────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a
