@@ -357,26 +357,27 @@ set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(fixy INTERFACE)
 target_link_libraries(fixy INTERFACE foundation)
 
-# ContractHandler.cpp pulls in <stacktrace>, which inlines libstdc++'s
-# `std::stacktrace_entry::_Info::_S_set` — that helper materializes a
-# string from a SIZE_MAX-bound allocator at compile time.  At -O1+ the
-# allocator's `__n * sizeof(_Tp)` argument is constant-propagated and
-# the global `-Walloc-size-larger-than=1073741824` flag (set by the
-# crucible warning sweep) fires as an error.  The bench/release/
-# tsan presets all build with -O1+; default's -O0 hides it because
-# inlining doesn't propagate the constant.  Disable the warning ONLY
-# for this TU — the stacktrace machinery is library code we don't own
-# and the SIZE_MAX is a sentinel value that never executes at runtime.
-# The same false positive hits tools/lsp_code_action_plugin via
-# append_json_string()'s `std::string += const char*`: libstdc++'s _M_create
-# folds the SIZE_MAX max_size() overflow branch into allocate() under
-# NDEBUG/-march=native (bench/release). Suppress on both TUs — library code
-# we don't own, sentinel never executes.
-set_source_files_properties(
-  src/ContractHandler.cpp
-  src/foundation/ContractHandler.cpp
-  tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
-  PROPERTIES COMPILE_OPTIONS "-Wno-alloc-size-larger-than")
+# -Walloc-size-larger-than and libstdc++: the list that could not hold.
+#
+# Several libstdc++ helpers carry a sentinel branch that allocates
+# max_size() bytes and throws.  `std::string::_M_create` is the one this
+# tree meets most: `if (capacity > max_size()) __throw_length_error()`.
+# At -O1 and above the optimizer inlines the helper, constant-propagates
+# PTRDIFF_MAX into the allocator call, cannot prove the branch dead, and
+# `-Walloc-size-larger-than=1073741824` fires on a path that never
+# executes.  `std::stacktrace_entry::_Info::_S_set` does the same.
+#
+# This was a list of the three translation units that happened to inline
+# it.  Which TU inlines a library helper is an optimizer decision, so the
+# list was keyed on the optimizer: -O level, -march, and now the profile.
+# Building with -fprofile-use added two entries it did not have
+# (tools/crucible_hwprobe.cpp and vessel/torch/vessel_api.cpp, through
+# read_small_file, read_trimmed_ and select_hot_cpu), and the next
+# collection would move them again.  A list that has to be re-derived
+# whenever the optimizer changes its mind is not a list, so it is gone.
+#
+# The rule that replaced it is in the CRUCIBLE_WERROR block below:
+# the warning stays on and stays visible, and it is not an error.
 
 # Control-flow integrity is ISA-specific: x86 = CET (-fcf-protection),
 # aarch64 = BTI+PAC (-mbranch-protection). -fcf-protection=full is a hard
@@ -1250,10 +1251,29 @@ if(CRUCIBLE_WERROR)
   # -Wno-error=suggest-attribute=cold: GCC 16's heuristic flags test
   # main() functions as cold under TSan instrumentation.  The code
   # guide lists -Wsuggest-* as suggestions, not errors.
+  #
+  # -Wno-error=alloc-size-larger-than: every instance this tree has ever
+  # seen is a libstdc++ sentinel branch — `_M_create`'s length-error
+  # path, `_S_set`'s stacktrace string — inlined at -O1+ with PTRDIFF_MAX
+  # constant-propagated into the allocator call, on a path that never
+  # runs.  The diagnostic points into bits/new_allocator.h, not into our
+  # source.  The block near the top of this file says why the per-TU
+  # suppression list this replaces could not be kept correct.
+  #
+  # What this gives up, stated: an allocation of more than 1 GiB in our
+  # own code warns and no longer stops the build.  It is still reported,
+  # at our own source location and with our own value rather than
+  # PTRDIFF_MAX, so it stays greppable in a build log.  The tree's real
+  # allocation discipline is elsewhere — the arena bump allocator, HS10's
+  # no-allocation-on-the-hot-path rule, and std::*_sat at every size-math
+  # site — and none of it depends on this warning being fatal.
   target_compile_options(crucible_dialect INTERFACE
     $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror
       -Wno-error=tsan
-      -Wno-error=suggest-attribute=cold>)
+      -Wno-error=suggest-attribute=cold
+      # The trailing `=` is part of the option name.  GCC rejects
+      # `-Wno-error=alloc-size-larger-than` outright.
+      -Wno-error=alloc-size-larger-than=>)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
@@ -1671,9 +1691,6 @@ endif()
 # so a source-level flag is last on the line, and GCC 16.2.1 takes the
 # last `-fcontract-evaluation-semantic` it sees (verified: `ignore`
 # then `observe` fires the handler, `observe` then `ignore` does not).
-# The same precedence is what makes the `-Wno-alloc-size-larger-than`
-# override on src/ContractHandler.cpp work near the top of this file,
-# so this is a mechanism the tree already depends on.
 #
 # The alternatives were rejected.  A per-file `#pragma GCC
 # contract_evaluation_semantic` (what CLAUDE.md used to describe) is
