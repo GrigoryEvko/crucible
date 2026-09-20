@@ -20,6 +20,7 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/reflect/Instance.h>
 
 #include <contracts>
 #include <meta>
@@ -792,23 +793,20 @@ static_assert(HasRvalueWeaken<GMoveOnly>);
 }  // namespace detail::graded_self_test
 
 // IsGraded is strict identity: it holds for a Graded specialization
-// itself, not for a class that wraps one.
-
-namespace detail {
-
-template <typename>
-inline constexpr bool is_graded_v_impl = false;
-
-template <ModalityKind M, Lattice L, typename V>
-inline constexpr bool is_graded_v_impl<Graded<M, L, V>> = true;
-
-}  // namespace detail
+// itself, not for a class that wraps one or derives from one.  It is
+// the reflection query of foundation/reflect/Instance.h asked of this
+// template, so its answer is a concept's and nothing a translation unit
+// declares can change it.  It once read a variable template with a
+// partial specialization for Graded<M, L, V>, and a variable template
+// can be explicitly specialized from anywhere, so a lookalike that
+// specialized it was Graded to every gate.  The value spelling below is
+// derived from the concept and read by nothing that gates.
 
 template <typename T>
-inline constexpr bool is_graded_v = detail::is_graded_v_impl<std::remove_cvref_t<T>>;
+concept IsGraded = ::foundation::reflect::IsInstanceOf<T, ^^Graded>;
 
 template <typename T>
-concept IsGraded = is_graded_v<T>;
+inline constexpr bool is_graded_v = IsGraded<T>;
 
 namespace detail::is_graded_self_test {
 
