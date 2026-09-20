@@ -580,3 +580,16 @@ fixy_neg_compile_test(neg_os_cpu_pinned_free_mint
 fixy_neg_compile_test(neg_os_cpu_pinned_copied
   "use of deleted function"
   "a pin proof cannot be duplicated")
+
+# ── The mapping and io_uring surfaces get their first positive test ───
+#
+# Thirteen negative-compile fixtures stand over the headers these were
+# ported from, and not one positive case: the corpus says what the gates
+# refuse and nothing about what the mints do.  These two make real
+# mappings, set up a real ring, and move real bytes, so a mint that
+# compiles and returns garbage is caught.
+#
+# Legs the kernel refuses are skipped rather than failed.  io_uring can
+# be off entirely, and copy_file_range refuses some filesystem pairs.
+fixy_test(test_os_mmap)
+fixy_test(test_os_io)

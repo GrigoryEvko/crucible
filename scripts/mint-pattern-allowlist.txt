@@ -174,6 +174,20 @@ include/fixy/os/Sched.h:mint_affinity:constexpr-ok
 include/fixy/os/Sched.h:mint_priority:constexpr-ok
 include/fixy/os/Sched.h:mint_scheduler_policy:constexpr-ok
 
+# ── fixy/os/{Mmap,Io}.h — the ported copies of the mmap and io entries
+# above.  The carve-out is the same one and for the same reason: each
+# body issues mmap, madvise, io_uring_setup, sendfile or
+# copy_file_range, so the factory cannot be constexpr.
+#
+# mint_io_uring_ring is DECLARED before IoUringRing and defined after
+# it, because the class names it as the sole friend of its only
+# constructor and a friend has to be declared first.  The guard sees the
+# signature twice; one name-keyed entry covers both.
+include/fixy/os/Mmap.h:mint_mmap:constexpr-ok
+include/fixy/os/Mmap.h:mint_mmap_anon:constexpr-ok
+include/fixy/os/Io.h:mint_io_uring_ring:constexpr-ok
+include/fixy/os/Io.h:mint_zerocopy_transfer:constexpr-ok
+
 # mint_affinity is DECLARED in fixy/os/CpuPinned.h and defined in
 # fixy/os/Sched.h, so the guard sees its signature twice and both sites
 # need the same carve-out.  The split is not arbitrary: CpuPinned names
