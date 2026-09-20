@@ -221,6 +221,15 @@ concept ArrayArena = requires(Allocator& arena, ::foundation::effects::Alloc tok
 template <typename T, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class OwnedRegion;
 
+// fixy/SharedRegion.h parks a region's permission in a pool so several
+// readers hold a share of it at once.  Its door consumes the exclusive
+// region, which is the evidence, and it reaches the same three private
+// members the split reaches, so it is a friend below for the reason the
+// split is: the alternative is a public accessor that hands the
+// permission to anyone.
+template <typename T, typename Tag, typename Brand>
+class SharedRegion;
+
 // The branded doors.  Each takes the permission by rvalue and hands
 // back a region of that permission's brand, so `mint_owned_region(base,
 // count, std::move(perm))` is the whole spelling and the brand is never
@@ -254,6 +263,12 @@ class [[nodiscard]] OwnedRegion {
     // split_into builds sub-regions whose tag differs from its own.
     template <typename U, typename UTag, typename UBrand>
     friend class OwnedRegion;
+
+    // The shared door, and its inverse: SharedRegion takes the base,
+    // the count and the permission on the way in, and rebuilds a region
+    // from the same three when the pool hands the exclusive back.
+    template <typename U, typename UTag, typename UBrand>
+    friend class SharedRegion;
 
     template <typename U, typename UTag, typename UBrand>
         requires std::is_object_v<U>

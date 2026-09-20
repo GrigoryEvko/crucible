@@ -1707,3 +1707,35 @@ fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
 # would hand the class half a zero.  The cell lives here rather than in
 # test/foundation because foundation must not depend on fixy.
 fixy_test(test_row_hash_wrappers)
+
+# ── The three axes as one surface ─────────────────────────────────────
+#
+# A brand names one instance, a share names a live fraction, and an
+# effect row names what the caller may do at all.  Each refuses
+# something the other two cannot see, and the read is where all three
+# have to agree.  Each fixture below names one of the three refusals,
+# and each was proven live by a mutant that removes its mechanism.
+fixy_test(test_shared_region)
+
+# The composition's own refusal: the share is outstanding, the context
+# admits the row, and the region is the wrong instance of the tag.
+fixy_neg_compile_test(neg_shared_read_of_another_region
+  "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
+  "deduced conflicting types for parameter .Brand.")
+
+# The fractional axis: no guard, no read.
+fixy_neg_compile_test(neg_shared_read_without_a_share
+  "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
+  "candidate expects 3 arguments, 2 provided")
+
+# The effect axis, inside the composition rather than beside it.
+fixy_neg_compile_test(neg_shared_read_ctx_refuses_the_row
+  "required for the satisfaction of .CtxAdmitsPermission<Tag, Ctx>."
+  "required for the satisfaction of .CtxFitsSharedRead<T, Tag, Brand, Ctx>."
+  "is_subrow_v<.*permission_row_lookup<Tag>::type, typename Ctx::row_type>")
+
+# The share a read stands on has to outlive it.
+fixy_neg_compile_test(neg_shared_read_from_a_temporary_share
+  "use of deleted function"
+  "mint_shared_read\\(const Ctx&, const foundation::permissions::SharedPermissionGuard<Tag, Brand>&&"
+  "the guard is released at the end of the full expression")

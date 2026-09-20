@@ -34,9 +34,11 @@
 #   - anything across files, so a twin declared in another header does
 #     not count and a site whose twin genuinely lives elsewhere must be
 #     restructured or excluded;
-#   - any site where the annotation is not on a line that also carries
-#     the declaration's name, which the scan reports as unreadable
-#     rather than passing silently.
+#   - any site whose declaration's name is more than four lines above the
+#     annotation, which the scan reports as unreadable rather than
+#     passing silently.  A wrapped parameter list is read by walking back
+#     to the line that opened it, so a mint with several parameters is
+#     checked rather than skipped.
 # Reflection would answer the first two, and cannot be used here: most
 # annotated sites are inside function templates, and a template's
 # parameters are not enumerable through std::meta in GCC 16.  Measured.
@@ -102,6 +104,34 @@ def declaration_name(line: str) -> str:
     # before a paren is the element type rather than the constructor.
     return first_declaration_name(head)
 
+def declaration_name_near(lines: list[str], index: int) -> str:
+    """The declaration's own name for the site on lines[index].
+
+    A mint that takes more than one parameter wraps its list, and the
+    annotated parameter then sits on a line carrying no paren at all, so
+    reading that line alone yields nothing and the site is unreadable.
+    An unreadable site is one the guard silently stops checking, which is
+    how a claim loses its twin without anyone noticing.  So walk back
+    until the line that opened the list is in view, at most four lines,
+    the window the deleted-twin scan already joins.
+
+    The walk cannot invent a pass: the name it finds is still matched
+    against the deleted-twin set, so a wrong name is reported as a
+    missing twin rather than accepted.
+    """
+    name = declaration_name(lines[index])
+    if name:
+        return name
+    joined = lines[index]
+    for back in range(1, 5):
+        if index - back < 0:
+            break
+        joined = lines[index - back] + " " + joined
+        name = declaration_name(joined)
+        if name:
+            return name
+    return ""
+
 def deleted_names(text: str) -> set[str]:
     """Names of deleted declarations whose parameter list takes an rvalue.
 
@@ -126,13 +156,14 @@ for r in roots:
         if TOKEN not in text:
             continue
         twins = deleted_names(text)
-        for lineno, line in enumerate(text.splitlines(), 1):
+        lines = text.splitlines()
+        for lineno, line in enumerate(lines, 1):
             if TOKEN not in line:
                 continue
             if line.lstrip().startswith(("//", "#define", "#")):
                 continue
             sites += 1
-            name = declaration_name(line)
+            name = declaration_name_near(lines, lineno - 1)
             shown = path.relative_to(r.parent)
             if not name:
                 unreadable.append((str(shown), lineno, line.strip()[:70]))
@@ -175,6 +206,12 @@ constexpr int planted_mint(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept;
 template <class T>
     requires(!std::is_lvalue_reference_v<T>)
 constexpr auto planted_mint(T&&) = delete("planted constrained twin");
+template <class T>
+constexpr int planted_wrapped(Carrier const& first,
+                              T& second CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <class T>
+    requires(!std::is_lvalue_reference_v<T>)
+constexpr auto planted_wrapped(Carrier const&, T&&) = delete("planted wrapped twin");
 struct Unguarded {
     explicit Unguarded(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 };
@@ -185,8 +222,9 @@ EOF
     rc=$?
     set -e
     if [[ $rc -eq 1 ]] && grep -q 'NO TWIN.*Unguarded' "$out" && ! grep -q 'NO TWIN.*Guarded(' "$out" \
-        && ! grep -q 'NO TWIN.*planted_mint' "$out"; then
-        printf 'check-lifetime-twin --self-test: a claim without its twin is reported, and a claim with one is not, including a twin behind a requires-clause, as expected.\n'
+        && ! grep -q 'NO TWIN.*planted_mint' "$out" \
+        && ! grep -q 'UNREADABLE' "$out" && ! grep -q 'NO TWIN.*planted_wrapped' "$out"; then
+        printf 'check-lifetime-twin --self-test: a claim without its twin is reported, and a claim with one is not, including a twin behind a requires-clause and a claim whose parameter list wraps, as expected.\n'
     else
         printf 'check-lifetime-twin --self-test: FAIL — expected exit 1 naming Unguarded (exit %s).\n' "$rc" >&2
         sed 's/^/    /' "$out" >&2

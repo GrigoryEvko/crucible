@@ -85,6 +85,16 @@ fixy::Borrowed<int, int> | fixy/Borrowed.h | fixy::Borrowed<int, int>{fixy::deta
 # permission, so a forger who reaches it describes a region that need
 # not be the one the permission covers.
 fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/OwnedRegion.h | fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>{static_cast<int*>(nullptr), std::size_t{0}, forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()} | private | closed
+# A shared region has no door of its own: its one constructor consumes
+# the exclusive region, which is the evidence.  The forging expression
+# offers the region without surrendering it, which is what a forger who
+# wanted to keep reading it exclusively would write.
+fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/SharedRegion.h | fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag>{forge::lvalue<fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>>()} | deleted | closed
+# The read the three axes agreed on.  Its constructor is private behind
+# a key only mint_shared_read holds, because a read built beside the
+# mint would carry a brand, a share and a row that nobody weighed.
+fixy::SharedRead<int, foundation::permissions::tag::HugePageTag> | fixy/SharedRegion.h | fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>{fixy::detail::shared_read_mint_t{}, std::span<int const>{}} | private | closed
+
 # The receipt a split writes.  Its key is a public empty struct, because
 # the door is the constructor and not the key: handing the key over is
 # still not a way in.
