@@ -31,7 +31,7 @@ Crucible has no proof-assistant source of truth. Correctness is won by three com
 
 **Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`pre`/`post`/`contract_assert`), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
 
-**Safety wrappers — Graded foundation refactor (25_04_2026.md §2).** Eleven value-level wrappers split across `include/crucible/{safety,permissions,handles,sessions,bridges}/` and unified by a single algebraic substrate `Graded<Modality, Lattice, T>` in `include/crucible/algebra/Graded.h`. Every Graded-backed wrapper exposes a uniform diagnostic surface (`graded_type`, `lattice_type`, `value_type`, `modality`, `value_type_name()`, `lattice_name()`); the `GradedWrapper` concept in `algebra/GradedTrait.h` enforces the contract structurally. Adversarial cheat-detection harness at `test/test_concept_cheat_probe.cpp` (18 cheats, 4 architectural-limit admissions documented).
+**Safety wrappers — Graded foundation refactor (25_04_2026.md §2).** Eleven value-level wrappers split across `include/crucible/{safety,permissions,handles,sessions,bridges}/` and unified by a single algebraic substrate `Graded<Modality, Lattice, T>` in `include/foundation/algebra/Graded.h`, whose old spelling `include/crucible/algebra/_Graded.h` is marked superseded. Every Graded-backed wrapper exposes a uniform diagnostic surface (`graded_type`, `lattice_type`, `value_type`, `modality`, `value_type_name()`, `lattice_name()`); the `GradedWrapper` concept in `algebra/GradedTrait.h` enforces the contract structurally. Adversarial cheat-detection harness at `test/test_concept_cheat_probe.cpp` (18 cheats, 4 architectural-limit admissions documented).
 
 **Wrapper → substrate map** (canonical reference; full enumeration in `safety/Safety.h` umbrella):
 
@@ -2041,7 +2041,7 @@ const auto& ck = *r;  // happy path
 - **Disjunction-vs-implies for null-guarded post:** `decide::implies(p != nullptr, p->status == X)` evaluates BOTH args eagerly under C++ function-call semantics — `p->status` derefs null when p is null. Use C++ short-circuit `||` (`p == nullptr || p->status == X`) when the consequent dereferences a witnessed non-null pointer. See `feedback_decide_implies_eager_eval.md` (UBSan-caught regression on `Tx::activate`, fixed in `9a0fc58`).
 - **Consteval-bypass on `this->` member predicates (GCC 16.1.1):** vanilla P2900 `pre()` / `post (r:...)` referencing class members through `this->` silently bypasses at consteval for foldable bodies. Migrate to in-body `CRUCIBLE_PRE` / `CRUCIBLE_POST`. The shim macros use `__builtin_trap()` (non-constexpr) to poison the surrounding consteval call.
 
-Full per-axiom enforcement story for `CRUCIBLE_PRE` / `CRUCIBLE_POST` lives in `include/crucible/safety/Pre.h` and `include/crucible/safety/Post.h` docstrings.
+Full per-axiom enforcement story for `CRUCIBLE_PRE` / `CRUCIBLE_POST` lives in `include/foundation/contracts/Pre.h` and `include/foundation/contracts/Post.h` docstrings. The old spellings `include/crucible/safety/_Pre.h` and `include/crucible/safety/_Post.h` are marked superseded.
 
 ### Abort path
 

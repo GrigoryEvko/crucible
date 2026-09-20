@@ -31,11 +31,37 @@
 # answers the single question none of them can answer once the file is
 # gone.
 #
+# ── The second input set: guidance prose ─────────────────────────────
+#
+# One rule, two places it applies.  An allowlist key and a sentence in
+# CLAUDE.md both name a file by path, and a port breaks both the same
+# way.  The difference is only that a dead key makes a guard stop
+# firing, while a dead path in guidance sends a reader to a file that is
+# not there.
+#
+# The prose half was ungated until #208, and it had rotted: CLAUDE.md
+# named three headers that no longer existed, two of them in section XII
+# as the place the contract-enforcement story lives, and AGENTS.md named
+# one.  No allowlist dangled at the same moment, because the key half of
+# this guard was already holding that line.  So the prose half is not a
+# second rule, it is the same rule over the input set nobody had pointed
+# it at.
+#
+# What is in: markdown at the repository root, and docs/ if it exists.
+# Those are the documents loaded as guidance, where a dead path misleads.
+#
+# What is out, and why:
+#   * misc/*.md — dated design papers.  They record a finding against the
+#     tree as it stood on their date, and several propose files that do
+#     not exist yet.  A forward reference is the point of the sentence
+#     rather than a defect in it.
+#   * any _planned/ directory — the same, by directory convention.
+#
 # Usage:
-#   check-allowlist-keys.sh             # scan scripts/*allowlist*.txt
+#   check-allowlist-keys.sh             # scan allowlist keys and guidance prose
 #   check-allowlist-keys.sh --self-test # plant drift, verify catch
 #
-# Exit 0 clean, 1 on a dead key, 2 on a usage error.
+# Exit 0 clean, 1 on a dead key or a dead prose path, 2 on a usage error.
 
 set -u
 
@@ -106,6 +132,61 @@ moved_candidates_() {
 
     [ ${#found[@]} -eq 0 ] && return 1
     printf '%s\n' "${found[@]}"
+}
+
+# ── The prose scan ───────────────────────────────────────────────────
+#
+# The documents this reads, one per line.  The self-test points
+# PROSE_ROOT at its own fixture tree, which is why the walk takes a root
+# rather than naming files.
+prose_files_() {
+    local root=${PROSE_ROOT:-$SCAN_ROOT}
+    find "$root" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null
+    [ -d "$root/docs" ] && find "$root/docs" -type f -name '*.md' -print 2>/dev/null
+    return 0
+}
+
+# A path in prose is not the first field of a line, it is anywhere in a
+# sentence, so the match has to end where the path ends.  Without the
+# terminator, `bench/serve.h` matches inside `bench/serve.html` and the
+# guard reports a file that was never named.  The terminator admits `.`
+# and `:` after the extension, because a path at the end of a sentence
+# and a path carrying a line number are both ordinary here.
+readonly PROSE_EXT='h|hpp|cpp|cc|sh|txt|py|json'
+
+extract_prose_paths_() {
+    grep -oE "($PATH_ROOTS)/[A-Za-z0-9_/.-]+\.($PROSE_EXT)(\$|[^A-Za-z0-9_-])" "$1" 2>/dev/null \
+        | sed 's/[^A-Za-z0-9_/.-]*$//' \
+        | sort -u
+}
+
+scan_prose_() {
+    local violations=0
+    local doc
+    while IFS= read -r doc; do
+        [ -f "$doc" ] || continue
+        local rel=${doc#"$SCAN_ROOT/"}
+        rel=${rel#"${PROSE_ROOT:-$SCAN_ROOT}/"}
+        local path
+        while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ -e "$SCAN_ROOT/$path" ] && continue
+
+            violations=$((violations + 1))
+            printf 'PROSE dead path: %s names %s, which does not exist.\n' "$rel" "$path" >&2
+            local -a cands=()
+            mapfile -t cands < <(moved_candidates_ "$path")
+            if [ ${#cands[@]} -gt 0 ]; then
+                printf '    the file appears to have moved to: %s\n' "${cands[@]}" >&2
+                printf '    name the surviving path, so a reader following the sentence arrives somewhere.\n' >&2
+            else
+                printf '    no file of that name survives anywhere in the tree.  Either the sentence is\n' >&2
+                printf '    describing something deleted, in which case say so, or the path is a\n' >&2
+                printf '    placeholder, in which case write it so it does not read as a path.\n' >&2
+            fi
+        done < <(extract_prose_paths_ "$doc")
+    done < <(prose_files_)
+    return "$violations"
 }
 
 # ── The scan ─────────────────────────────────────────────────────────
@@ -228,10 +309,70 @@ CLEAN
         failures=1
     fi
 
+    # ── The prose half ───────────────────────────────────────────────
+    #
+    # Four axes again, and two of them are negative controls.  The
+    # prefix axis is the one that matters most: a path is matched inside
+    # a sentence rather than at the start of a line, so without a
+    # terminator `bench/serve.h` matches inside `bench/serve.html` and
+    # the guard reports a file nobody named.
+    #
+    #   1. a document naming a path that was underscored  -> caught
+    #   2. a document naming a live path                  -> clean
+    #   3. a longer filename with a shorter one as prefix -> clean
+    #   4. a placeholder written with angle brackets      -> clean
+    mkdir -p "$tmp/tree/bench"
+    : > "$tmp/tree/bench/serve.html"
+
+    cat > "$tmp/tree/Guidance.md" <<'PROSE'
+The substrate lives in `include/planted/Moved.h` and the live one is
+`include/planted/Live.h`.  The dashboard is `bench/serve.html`.  A task
+re-targets `include/planted/<Name>.h` once the move happens.
+PROSE
+
+    out=$(SCAN_ROOT="$tmp/tree" PROSE_ROOT="$tmp/tree" scan_prose_ 2>&1)
+    rc=$?
+    if [ "$rc" -ne 1 ]; then
+        printf 'check-allowlist-keys self-test: expected 1 dead prose path, got %d.\n' "$rc" >&2
+        failures=1
+    fi
+    printf '%s' "$out" | grep -q 'include/planted/Moved.h' || {
+        printf 'check-allowlist-keys self-test: the dead prose path was not caught.\n' >&2
+        failures=1
+    }
+    printf '%s' "$out" | grep -q 'include/planted/_Moved.h' || {
+        printf 'check-allowlist-keys self-test: the prose catch did not name the path it moved to.\n' >&2
+        failures=1
+    }
+    printf '%s' "$out" | grep -q 'include/planted/Live.h' && {
+        printf 'check-allowlist-keys self-test: a live prose path was reported, so the prose scan cannot pass.\n' >&2
+        failures=1
+    }
+    printf '%s' "$out" | grep -q 'bench/serve.h ' && {
+        printf 'check-allowlist-keys self-test: a shorter filename matched inside a longer one, so the terminator is gone.\n' >&2
+        failures=1
+    }
+    printf '%s' "$out" | grep -q 'Name' && {
+        printf 'check-allowlist-keys self-test: an angle-bracket placeholder was read as a path.\n' >&2
+        failures=1
+    }
+
+    # The clean control for the prose half.
+    cat > "$tmp/tree/Guidance.md" <<'PROSECLEAN'
+The live header is `include/planted/Live.h` and the dashboard is
+`bench/serve.html`.
+PROSECLEAN
+    out=$(SCAN_ROOT="$tmp/tree" PROSE_ROOT="$tmp/tree" scan_prose_ 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ] || [ -n "$out" ]; then
+        printf 'check-allowlist-keys self-test: the prose clean control did not pass (rc=%d, out=%s).\n' "$rc" "$out" >&2
+        failures=1
+    fi
+
     if [ "$failures" -ne 0 ]; then
         return 1
     fi
-    printf 'check-allowlist-keys: self-test passed — an underscored-in-place key and a vanished key are both caught and the move is named, a live key and a non-path key stay clean, and the clean control exits 0.\n' >&2
+    printf 'check-allowlist-keys: self-test passed — an underscored-in-place key and a vanished key are both caught and the move is named, a live key and a non-path key stay clean, a dead prose path is caught, and a live path, a prefix filename and a placeholder all stay clean.\n' >&2
     return 0
 }
 
@@ -249,19 +390,26 @@ case "${1-}" in
 esac
 
 scan_
-violations=$?
-if [ "$violations" -ne 0 ]; then
+key_violations=$?
+scan_prose_
+prose_violations=$?
+
+if [ "$key_violations" -ne 0 ] || [ "$prose_violations" -ne 0 ]; then
     cat >&2 <<'TAIL'
 
-check-allowlist-keys found allowlist entries keyed on paths that no
-longer exist.  A key that names a missing file exempts nothing and,
-because the owning guard locates its site through that key, leaves the
-guard unable to fire on the code the entry was written for.
+check-allowlist-keys found a path that no longer exists.
+
+An allowlist key that names a missing file exempts nothing and, because
+the owning guard locates its site through that key, leaves the guard
+unable to fire on the code the entry was written for.  A guidance
+document that names a missing file sends its reader nowhere, which is
+worse in CLAUDE.md than anywhere else, because every session loads it.
 
 The rule this breaks is the one in the superseded-marking procedure:
-refresh a line-keyed entry in the SAME commit as the edit that moved the
-line.  A port that underscores the original and adds a copy produces two
-live paths from one, so it needs two entries where there was one.
+refresh every artifact that names a path in the SAME commit as the edit
+that moved it.  A port that underscores the original and adds a copy
+produces two live paths from one, so it needs two entries where there
+was one.  scripts/refresh-derived.sh runs that refresh and re-checks it.
 TAIL
     exit 1
 fi
