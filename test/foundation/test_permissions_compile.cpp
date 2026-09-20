@@ -157,7 +157,8 @@ void test_permission_row_compile() {
     static_assert(perm::CtxAdmitsPermission<NetworkBuffer, BgCompileCtx>);
     static_assert(!perm::CtxAdmitsPermission<NetworkBuffer, HotFgCtx>);
 
-    BgCompileCtx bg_compile{};
+    // Each context is handed the capability it claims (#172).
+    BgCompileCtx bg_compile{::foundation::effects::testing::bg()};
     auto huge = perm::mint_permission_root<HugePage>(bg_compile);
     auto huge_shared = perm::mint_permission_share(bg_compile, std::move(huge));
     (void)huge_shared;
@@ -171,7 +172,7 @@ void test_permission_row_compile() {
     auto value = perm::with_shared_read(bg_compile, pool, [](perm::SharedPermission<HugePage>) noexcept { return 7; });
     if (!value || *value != 7) std::abort();
 
-    TestRunnerCtx test_ctx{};
+    TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     auto disk = perm::mint_permission_root<DiskSpilled>(test_ctx);
     auto handed = perm::permission_handoff(test_ctx, std::move(disk));
     perm::permission_drop(std::move(handed));

@@ -129,6 +129,21 @@ foundation_neg_compile_test(neg_permission_fork_rebuild_no_nullary_door
   "is not a member of"
   "rebuild_parent_after_fork_")
 
+# #172 Door 1, route one: a context is not evidence of a capability, so
+# naming a specialization and building it from nothing is refused.  The
+# second regex proves the refusal is on ExecCtx's own constructor and not
+# on the fixture's row type.
+foundation_neg_compile_test(neg_exec_ctx_forged_specialization
+  "no matching function for call to"
+  "ExecCtx<.*Init.*>::ExecCtx\\(\\)")
+
+# #172 Door 1, route two: promotion takes the capability, not its name.
+# Closing one route and not the other leaves the gate open, so these two
+# fixtures are a pair.
+foundation_neg_compile_test(neg_exec_ctx_with_cap_needs_the_capability
+  "no matching function for call to"
+  "with_cap<")
+
 # A thread atom has no value-level tag, so the one extract_bare template
 # leaves the overload set by substitution failure on HasBareTag.  The
 # first regex proves the call found no candidate, and the second proves

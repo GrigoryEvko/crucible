@@ -46,8 +46,9 @@ static_assert(sizeof(fe::ExecCtx<fe::Bg, fe::Row<Effect::Bg, Effect::Alloc, Effe
 int main() {
     fe::detail::exec_ctx_self_test::runtime_smoke_test();
 
-    BgWitness bg{};
-    InitWitness init{};
+    // Each context is handed the capability it claims (#172).
+    BgWitness bg{fe::testing::bg()};
+    InitWitness init{fe::testing::init()};
     if (needs_init_or_bg(bg) != 42) return 1;
     if (needs_init_or_bg(init) != 42) return 2;
     if (needs_bg_and_alloc(bg) != 99) return 3;

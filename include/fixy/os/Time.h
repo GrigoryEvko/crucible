@@ -260,8 +260,10 @@ using BlockWitness =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
 inline bool runtime_smoke_test() {
-    InitWitness init{};
-    BlockWitness blocking{};
+    // Each witness is handed the capability it claims.  A context is no
+    // longer evidence of a capability — it carries one (#172, Door 1).
+    InitWitness init{eff::testing::init()};
+    BlockWitness blocking{eff::testing::test()};
 
     auto boot_reader = mint_clock_reader<ClockSource_v::Boot>(init);
     const auto t0 = boot_reader.read();

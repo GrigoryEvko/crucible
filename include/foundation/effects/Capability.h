@@ -448,8 +448,10 @@ static_assert(CapMatchesCtx<Capability<Effect::Alloc, Test>, detail::exec_ctx_se
     static_cast<void>(test_alloc);
     static_cast<void>(test_block);
 
-    detail::exec_ctx_self_test::BgWitness bg_ctx;
-    detail::exec_ctx_self_test::BgIoWitness bg_compile_ctx;
+    // Each witness is handed the capability it claims — a context is
+    // not evidence of a capability, it carries one (#172).
+    detail::exec_ctx_self_test::BgWitness bg_ctx{testing::bg()};
+    detail::exec_ctx_self_test::BgIoWitness bg_compile_ctx{testing::bg()};
     auto from_ctx_alloc = mint_from_ctx<Effect::Alloc>(bg_ctx);
     auto from_ctx_io = mint_from_ctx<Effect::IO>(bg_compile_ctx);
     static_assert(std::is_same_v<decltype(from_ctx_alloc), Capability<Effect::Alloc, Bg>>);

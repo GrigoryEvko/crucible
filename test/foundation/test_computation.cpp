@@ -38,7 +38,8 @@ int main() {
     auto doubled = pure.map([](int x) { return x * 2; });
     if (doubled.extract() != 42) return 1;
 
-    fe::detail::exec_ctx_self_test::BgWitness bg_ctx{};
+    // The context carries the capability it claims (#172).
+    fe::detail::exec_ctx_self_test::BgWitness bg_ctx{fe::testing::bg()};
     auto claimed = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(bg_ctx, value);
     auto wider = std::move(claimed).template weaken<Row<Effect::Bg, Effect::Alloc>>();
     if (wider.graded().peek() != 21) return 2;

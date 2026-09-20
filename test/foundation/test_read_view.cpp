@@ -191,7 +191,7 @@ void test_fork_with_shared_read_view() {
     auto whole = mint_permission_root<fork_tags::Whole>();
 
     auto rebuilt = mint_permission_fork<fork_tags::Left, fork_tags::Right>(
-        BgDrainCtx{}, std::move(whole),
+        BgDrainCtx{::foundation::effects::testing::bg()}, std::move(whole),
         [cv, &left_done](Permission<fork_tags::Left>, BgDrainCtx const&) noexcept {
             // The view exposes no mutating operation at all, so read-only
             // is a property of the type rather than of the body.

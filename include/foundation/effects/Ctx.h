@@ -123,12 +123,32 @@ private:
     // constructed for itself.
     //
     // Making this a class rather than a struct changes only the default
-    // member access, so the implicit default constructor stays public
-    // and the aliases and builder methods below still work.
+    // member access.
     [[no_unique_address]] Cap cap_{};
     [[no_unique_address]] Row row_{};
 
 public:
+    // A context that claims nothing is free to build, because there is
+    // nothing in it to forge.
+    //
+    // Until the fix for #172 this constructor was public for EVERY
+    // specialization, and that was the hole.  ExecCtx is friended by
+    // each capability type so the member's default initializer can run,
+    // so `ExecCtx<Init, Row<Init, Alloc, IO>>{}` default-built the Init
+    // member and then satisfied CtxCanMint for every effect an init
+    // source permits.  The capability was reachable by constructing the
+    // context that holds it, without ever passing the passkey that
+    // guards Init's own constructor.
+    constexpr ExecCtx() noexcept
+        requires std::is_same_v<Cap, ctx_cap::Fg>
+    = default;
+
+    // Every other context is handed the capability it claims, and that
+    // capability IS the evidence: Cap's own default constructor is
+    // private, so a caller holding one obtained it from
+    // mint_bg_context, mint_init_context or mint_test_context.
+    constexpr explicit ExecCtx(Cap cap) noexcept : cap_{cap} {}
+
     // The only way to reach the capability, and it borrows rather than
     // copies.  Code that wants a copy has to write one, which a grep
     // for this accessor finds.
@@ -140,19 +160,26 @@ public:
     // Each builder returns a fresh context with one axis replaced.
     // Every link of a chain is a distinct type and every link is one
     // byte.
+    // Promoting the capability axis takes the capability itself, not
+    // merely its name.  This used to be `with_cap<NewCap>()`, naming
+    // the type and handing back a context that owned one, which is how
+    // `ExecCtx<>{}.with_cap<Init>()` climbed from a foreground context
+    // to an init context in a single call with no evidence at all.
     template <class NewCap>
         requires IsCapType<NewCap> && Subrow<Row, cap_permitted_row_t<NewCap>>
-    [[nodiscard]] consteval auto with_cap() const noexcept -> ExecCtx<NewCap, Row> {
-        return {};
+    [[nodiscard]] constexpr auto with_cap(NewCap cap) const noexcept -> ExecCtx<NewCap, Row> {
+        return ExecCtx<NewCap, Row>{cap};
     }
 
-    // The row only grows.  It may not grow past what the capability
-    // source permits, so no chain of calls turns a foreground context
-    // into one that claims a background effect.
+    // Widening the row carries the capability already held rather than
+    // minting one, which is why it needs no evidence beyond the context
+    // it is called on.  The row may not grow past what the capability
+    // source permits, so a foreground context — whose source permits
+    // nothing — cannot widen at all.
     template <class NewRow>
         requires IsEffectRow<NewRow> && Subrow<Row, NewRow> && Subrow<NewRow, cap_permitted_row_t<Cap>>
-    [[nodiscard]] consteval auto in_row() const noexcept -> ExecCtx<Cap, NewRow> {
-        return {};
+    [[nodiscard]] constexpr auto in_row() const noexcept -> ExecCtx<Cap, NewRow> {
+        return ExecCtx<Cap, NewRow>{cap_};
     }
 
     [[nodiscard]] static consteval std::string_view kind_name() noexcept { return "ExecCtx"; }
@@ -222,7 +249,10 @@ static_assert(std::is_same_v<typename ExecCtx<>::cap_type, ctx_cap::Fg>);
 static_assert(std::is_same_v<typename ExecCtx<>::row_type, Row<>>);
 
 constexpr auto ctx0 = ExecCtx<>{};
-constexpr auto ctx1 = ctx0.with_cap<Bg>();
+// The promotion needs a real Bg.  This is a header self-test, so it
+// takes one from the testing witness; production code promotes with the
+// capability its own mint returned.
+constexpr auto ctx1 = ctx0.with_cap(testing::bg());
 static_assert(std::is_same_v<typename decltype(ctx1)::cap_type, Bg>);
 static_assert(std::is_same_v<typename decltype(ctx1)::row_type, Row<>>);
 
@@ -300,11 +330,11 @@ static_assert(std::is_same_v<ctx_cap::Test, Test>);
 // Promoting the empty row to a background capability is admitted.
 // Moving a background row to an initialization capability is not, and
 // would have to narrow the row first.
-constexpr auto bg_promoted = FgWitness{}.with_cap<Bg>();
+constexpr auto bg_promoted = FgWitness{}.with_cap(testing::bg());
 static_assert(std::is_same_v<typename decltype(bg_promoted)::cap_type, Bg>);
 static_assert(std::is_same_v<typename decltype(bg_promoted)::row_type, Row<>>);
 template <class C>
-concept CanTakeInitCap = requires(C const& c) { c.template with_cap<Init>(); };
+concept CanTakeInitCap = requires(C const& c) { c.with_cap(testing::init()); };
 static_assert(CanTakeInitCap<FgWitness>);
 static_assert(!CanTakeInitCap<BgWitness>, "A row that names Bg cannot move under an Init source.");
 
@@ -360,11 +390,14 @@ static_assert(CtxCanMint<TestWitnessCtx, Effect::Block>);
 // Every operation is driven here with non-constant arguments.  The
 // static_assert wall above only proves the constant-evaluated path.
 inline void runtime_smoke_test() {
+    // Only the foreground witness builds from nothing.  Each of the
+    // others is handed the capability it claims, which is the point of
+    // #172: a context is not evidence of a capability, it carries one.
     [[maybe_unused]] FgWitness fg{};
-    [[maybe_unused]] BgWitness bg{};
-    [[maybe_unused]] BgIoWitness bg_io{};
-    [[maybe_unused]] InitWitness init{};
-    [[maybe_unused]] TestWitnessCtx test_ctx{};
+    [[maybe_unused]] BgWitness bg{testing::bg()};
+    [[maybe_unused]] BgIoWitness bg_io{testing::bg()};
+    [[maybe_unused]] InitWitness init{testing::init()};
+    [[maybe_unused]] TestWitnessCtx test_ctx{testing::test()};
 
     [[maybe_unused]] auto s1 = sizeof(fg);
     [[maybe_unused]] auto s2 = sizeof(bg);

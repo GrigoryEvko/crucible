@@ -19,7 +19,12 @@ using BgCtx = ::foundation::effects::detail::exec_ctx_self_test::BgWitness;
 int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork<Left, Right>(
-        BgCtx{}, std::move(whole), [](::foundation::permissions::Permission<Left>, BgCtx const&) noexcept {},
+        // Built honestly, so the only rejection is the partition check
+        // this fixture is named for.  A context carries the capability
+        // it claims (#172); a fixture that failed to build its context
+        // would never reach its own gate.
+        BgCtx{::foundation::effects::testing::bg()}, std::move(whole),
+        [](::foundation::permissions::Permission<Left>, BgCtx const&) noexcept {},
         [](::foundation::permissions::Permission<Right>, BgCtx const&) noexcept {});
     return 0;
 }

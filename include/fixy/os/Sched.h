@@ -277,7 +277,9 @@ static_assert(!CtxFitsRuntimeAffinity<FgWitness>, "the Fg hot path owns no Bg or
                                                   "able to re-pin a thread.");
 
 inline bool runtime_smoke_test() {
-    BgWitness bg{};
+    // The witness is handed the capability it claims.  A context is no
+    // longer evidence of a capability — it carries one (#172, Door 1).
+    BgWitness bg{eff::testing::bg()};
 
     // SCHED_OTHER and a nice value of 5 need no privilege. A thread may
     // always lower its own priority.
