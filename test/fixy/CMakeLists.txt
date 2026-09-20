@@ -833,3 +833,21 @@ endforeach()
 # fixy wrapper meets: the diagnostic surface, the layout per storage
 # regime, composition at every depth, and one smoke call each.
 fixy_test(test_wrapper_verification)
+
+# test_cheat_probe is the adversarial half: fifty-five lookalikes and
+# injections, fifty-three asserted refused and two admitted by design
+# (cheat 4 and cheat 18).  Each injection is paired with the proof that
+# it took on the variable it named, so the refusal is the concept's.
+# The old probe admitted twenty-seven trait injections, because a
+# detection trait can be specialized from anywhere.  The seventeen with
+# a target here are all refused: the new tree's detection is a concept
+# over a reflection query and the opt-in is a member, so the
+# specialization reaches no gate.
+fixy_test(test_cheat_probe)
+
+# The injection that no longer compiles at all: graded_modality's
+# primary is constrained to Graded, so specializing it for a fake
+# substrate is a constraint failure, not an inert declaration.
+fixy_neg_compile_test(neg_cheat_graded_modality_injection
+  "template constraint failure"
+  "IsGraded<T>. \\[with T = FakeSubstrate\\]")
