@@ -118,6 +118,125 @@ fixy_test(test_insights)
 # the five named contexts.
 fixy_test(test_contexts)
 
+# ── Task #111 (A11.4): the hand corpus ───────────────────────────────
+#
+# One fixture per rule that can fire and one per corpus entry: eleven
+# and six.  The other forty-three rule codes get none, and the reason is
+# data rather than a claim — collision::rule_corpus records each as
+# Pending (twenty-two, waiting on an axis with no atom, so no pack can
+# trip them) or Absent (twenty-one, not implemented, each with the note
+# saying what is missing).  test_collision.cpp pins that accounting, and
+# the day a pending axis gains its first atom
+# every_pending_axis_is_still_empty() fires and names the rules that
+# then need a fixture here.
+#
+# Each fixture floors on three compiler-produced regexes: the tier-5
+# reason, its own rule code or entry name — which fn's message carries
+# because A11.3 made tier 5 report WHICH rule or entry refused the pack
+# — and the GCC bullet naming the member that evaluated false.  None of
+# the three appears in the fixture's own source, so the source echo
+# cannot satisfy the gate.
+#
+# Three rules share two packs, and the fixtures say so in their own
+# text: L007's premises (borrow x Row<Bg>) and R002's (coroutine x
+# borrow) are each a special case of L002's (borrow x concurrent), so no
+# pack isolates them.  The message lists every code a pack trips, which
+# is what lets each of the three stand on its own.
+
+set(_fixy_tier5_reason "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 5\\]: the combination is refused")
+set(_fixy_tier5_member "::tier5_composition_ok_.+ evaluates to false")
+
+fixy_neg_compile_test(neg_rule_l002_borrow_async
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) .*L002"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_l007_borrow_bg_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) .*L007"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_r002_coroutine_borrow
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) .*R002"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_r003_coroutine_bg_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) R003:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_m012_monotonic_concurrent
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) M012:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_p010_ghost_observable_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) P010:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_p002_ghost_stdio
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) P002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_t001_capability_unverified
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) T001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_l006_linear_longjmp
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) L006:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_g002_thread_local_atomic
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) G002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_d002_recursion_unbounded_cost
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) D002:"
+  "${_fixy_tier5_member}")
+
+# The six corpus entries.  Each floors on its entry name and on a phrase
+# of the citation the entry carries, so a fixture cannot pass against an
+# entry that lost its literature reference.
+fixy_neg_compile_test(neg_corpus_classified_io
+  "${_fixy_tier5_reason}"
+  "Corpus entry classified_io_without_declassify"
+  "Sabelfeld-Myers 2003")
+fixy_neg_compile_test(neg_corpus_classified_bg
+  "${_fixy_tier5_reason}"
+  "Corpus entry classified_bg_without_declassify"
+  "Smith-Volpano 1998")
+fixy_neg_compile_test(neg_corpus_staleness_secret
+  "${_fixy_tier5_reason}"
+  "Corpus entry staleness_secret_without_declassify"
+  "Hunt-Sands 2008")
+fixy_neg_compile_test(neg_corpus_ghost_runtime_observable
+  "${_fixy_tier5_reason}"
+  "Corpus entry ghost_runtime_observable"
+  "Spirit of Ghost Code")
+fixy_neg_compile_test(neg_corpus_internal_io
+  "${_fixy_tier5_reason}"
+  "Corpus entry internal_io_without_declassify"
+  "Bell-LaPadula 1973")
+fixy_neg_compile_test(neg_corpus_internal_bg
+  "${_fixy_tier5_reason}"
+  "Corpus entry internal_bg_without_declassify"
+  "Bell-LaPadula 1973")
+
+# The tier chain itself: one message per bad pack.  fn asks the tiers in
+# order and stops at the first failure, because a later tier's question
+# is a hard error on a pack an earlier one refused — the uniqueness walk
+# and every rule read each atom's `axis` member.  Before that gating a
+# malformed atom produced the tier-2 message and thirty-eight
+# diagnostics from inside the walks, and an unholdable payload produced
+# the tier-1 message and six from `const void&`.  These three fixtures
+# are what hold each tier to exactly one error.
+fixy_neg_compile_test(neg_fn_tier1_unholdable_payload
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 1\\]"
+  "fixy::fn<void>::tier1_payload_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_fn_tier2_malformed_atom
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]"
+  "fixy::fn<int, .anonymous.::not_an_atom>::tier2_atoms_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 4\\]"
+  "fixy::atom::copy, fixy::atom::affine>::tier4_unique_ok_.+ evaluates to false")
+
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
 # names the clause and the two types it compared.
 fixy_neg_compile_test(neg_atom_cv_qualified_rejected

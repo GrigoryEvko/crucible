@@ -163,42 +163,49 @@ class fn {
                   "Use fixy::mint_fn<Type, Atoms...>(value), or fixy::mint_fn_for<Role>(value) "
                   "for a role from fixy/Role.h.");
 
-    // Each tier below silences itself when an earlier tier already
-    // failed.  Without that, one wrong pack produces four messages and
-    // the reader has to work out which is the cause.
-    static constexpr bool tier1_payload_ok_ = !tier0_not_ctad_sentinel_ || IsAcceptedPayload<Type>;
+    // The tier that refuses this pack, computed once.  Exactly one
+    // tier's assertion below fires, because the walk returns the FIRST
+    // failure and stops: asking a later tier's question about a pack an
+    // earlier one refused is not merely redundant, it is a hard error
+    // from inside the walks.  fixy/Reject.h carries that reasoning.
+    static constexpr detail::reject::Tier refused_at_ = detail::reject::first_failing_tier_<Type, Atoms...>();
+
+    static constexpr bool tier1_payload_ok_ = refused_at_ != detail::reject::Tier::Payload;
     static_assert(tier1_payload_ok_, "fixy::fn<Type, Atoms...> [tier 1]: Type must be a non-array, "
                                      "non-reference, non-function, cv-unqualified object type, because "
                                      "the binding holds it by value.  fixy::unholdable_payload<Type> "
                                      "names the offending type.");
 
-    static constexpr bool tier2_atoms_ok_ =
-        !tier0_not_ctad_sentinel_ || !tier1_payload_ok_ || AllAtomsWellFormed<Atoms...>;
+    static constexpr bool tier2_atoms_ok_ = refused_at_ != detail::reject::Tier::Malformed;
     static_assert(tier2_atoms_ok_, "fixy::fn<Type, Atoms...> [tier 2]: every entry in the pack must be an "
                                    "atom — a final class deriving fixy::atom::atom_of<Axis>.  "
                                    "fixy::malformed_atom<Offender> names the offending entry.");
 
     // There is no tier 3.  An unmentioned axis is not an error.
 
-    static constexpr bool tier4_unique_ok_ =
-        !tier0_not_ctad_sentinel_ || !tier1_payload_ok_ || !tier2_atoms_ok_ || UniqueAtomPerAxis<Atoms...>;
+    static constexpr bool tier4_unique_ok_ = refused_at_ != detail::reject::Tier::Duplicate;
     static_assert(tier4_unique_ok_, "fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the "
                                     "pack must not name an axis twice.  fixy::duplicate_atom_on<Axis> "
                                     "names the offending axis.");
 
-    // The message is the corpus entry's own when the corpus refused the
-    // pack, citation included, and names the rule file otherwise.
-    static constexpr bool tier5_composition_ok_ = !tier0_not_ctad_sentinel_ || !tier1_payload_ok_ || !tier2_atoms_ok_
-                                               || !tier4_unique_ok_
-                                               || (NotInCorpus<Type, Atoms...> && ValidComposition<Type, Atoms...>);
+    // The message names the corpus entry that refused the pack with its
+    // citation, the collision rules that refused it by code, or both.
+    static constexpr bool tier5_composition_ok_ = refused_at_ != detail::reject::Tier::Composition;
     static_assert(tier5_composition_ok_, detail::reject::tier5_message_<Type, Atoms...>());
 
-    // Naming the tags puts their class names into the compiler's
+    // Naming the tag puts its class name into the compiler's
     // instantiation trail, beside the message above.  A passing pack
-    // selects void, which names nothing and stays silent.
-    using tier1_tag_ = payload_tag_or_void_t<Type>;
-    using tier2_tag_ = std::conditional_t<tier1_payload_ok_, malformed_tag_or_void_t<Atoms...>, void>;
-    using tier4_tag_ = std::conditional_t<tier2_atoms_ok_, duplicate_tag_or_void_t<Atoms...>, void>;
+    // selects void, which names nothing and stays silent.  One alias
+    // rather than one per tier, because only one tier ever fires.
+    using refused_tag_ = [:detail::reject::tier_tag_<Type, Atoms...>():];
+
+    // A payload tier 1 refused is replaced by a stand-in below, because
+    // a member's type is instantiated with the class whatever the
+    // assertion above concluded: `const void&` and a `void` parameter
+    // are hard errors that buried the tier-1 message under six more.
+    // For every payload tier 1 admits, held_ IS Type, so nothing about
+    // a well-formed binding changes.
+    using held_ = std::conditional_t<IsAcceptedPayload<Type>, Type, int>;
 
 public:
     using value_type = Type;
@@ -241,15 +248,15 @@ public:
     // any value under any pack without naming a mint.  Consuming
     // through the rvalue overload still moves the payload out, which is
     // the only mutation a binding's own discipline permits.
-    [[nodiscard]] constexpr const Type& value() const& noexcept { return value_; }
-    [[nodiscard]] constexpr Type&& value() && noexcept { return std::move(value_); }
+    [[nodiscard]] constexpr const held_& value() const& noexcept { return value_; }
+    [[nodiscard]] constexpr held_&& value() && noexcept { return std::move(value_); }
 
 private:
     // Wrapping a value is an authorization event: the caller asserts
     // that this value belongs under this pack.  Keeping the value
     // constructor private and befriending only the mint factories
     // leaves one name to grep for to find every such event.
-    explicit constexpr fn(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) : value_{std::move(v)} {}
+    explicit constexpr fn(held_ v) noexcept(std::is_nothrow_move_constructible_v<held_>) : value_{std::move(v)} {}
 
     template <class T, class... G>
         requires IsAccepted<T, G...>
@@ -259,7 +266,7 @@ private:
         requires IsRoleFor<Role, T>
     friend constexpr auto mint_fn_for(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> Role<T>;
 
-    Type value_{};
+    held_ value_{};
 };
 
 template <class T>

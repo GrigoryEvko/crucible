@@ -148,6 +148,45 @@ inline constexpr std::size_t axis_count = std::meta::enumerators_of(^^Axis).size
     return ::foundation::reflect::enum_name(axis);
 }
 
+namespace detail {
+
+// Whether one text contains another, for a constant expression.
+//
+// std::string_view::find null-checks the pointer char_traits::find hands
+// back, and GCC 16.2's constant evaluator refuses that comparison on a
+// pointer into the template-parameter object std::define_static_string
+// returns; indexing the same pointer is accepted, so this walks indices.
+// Every header in this layer that searches a generated diagnostic —
+// Collision.h, Corpus.h, Reject.h, Insights.h — reads it, which is why
+// it sits here rather than in one of them.
+[[nodiscard]] consteval bool text_contains(std::string_view haystack, std::string_view needle) noexcept {
+    if (needle.size() > haystack.size()) return false;
+    for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
+        bool same = true;
+        for (std::size_t offset = 0; offset < needle.size(); ++offset) {
+            if (haystack[start + offset] != needle[offset]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+// Both answers, so a caller's walk cannot pass through a helper that
+// always says yes.
+static_assert(text_contains("fixy::fn<T>", "fn<"));
+static_assert(text_contains("abc", "abc"));
+static_assert(text_contains("abc", "a"));
+static_assert(text_contains("abc", "c"));
+static_assert(text_contains("abc", ""));
+static_assert(!text_contains("abc", "abcd"));
+static_assert(!text_contains("abc", "x"));
+static_assert(!text_contains("", "a"));
+
+}  // namespace detail
+
 // The strict poles that are not a point of a foundation lattice.  Each
 // is the claim a binding makes when it says nothing, and the relaxed
 // spellings beside it are what a binding names to say more.

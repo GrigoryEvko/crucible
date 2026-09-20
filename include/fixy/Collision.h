@@ -52,6 +52,7 @@
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Row.h>
 
+#include <array>
 #include <cstddef>
 #include <meta>
 #include <string>
@@ -650,6 +651,59 @@ struct live_rules {
                                                || G::template mentions<Axis::SyscallSurface>;
     static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
 
+    // ── Naming the rules a pack trips ────────────────────────────────
+    //
+    // fn's tier-5 message carries these codes, so a reader and a
+    // negative fixture both learn WHICH rule refused rather than only
+    // that one did.  The codes are stable API for exactly that reason.
+    //
+    // The pairing is written out rather than walked by reflection.  A
+    // walk over members_of(^^live_rules<Atoms...>) reads the verdicts
+    // directly, but completing that specialization instantiates
+    // validate() below, whose static_asserts then fire once per failing
+    // rule — eleven extra errors under a fixture that wants one.  The
+    // two pins after this class compare the rows here against the
+    // <code>_ok members reflection finds in live_rules<>, whose empty
+    // pack trips nothing, so a rule written without a row is named.
+    struct rule_verdict {
+        bool ok{};
+        std::string_view code{};
+    };
+
+    [[nodiscard]] static consteval auto verdicts() noexcept {
+        return std::array{
+            rule_verdict{L002_ok, "L002"}, rule_verdict{M012_ok, "M012"}, rule_verdict{P010_ok, "P010"},
+            rule_verdict{L007_ok, "L007"}, rule_verdict{T001_ok, "T001"}, rule_verdict{R002_ok, "R002"},
+            rule_verdict{R003_ok, "R003"}, rule_verdict{L006_ok, "L006"}, rule_verdict{G002_ok, "G002"},
+            rule_verdict{D002_ok, "D002"}, rule_verdict{P002_ok, "P002"},
+        };
+    }
+
+    // Every code the pack trips, in the order above, or an empty view
+    // when it trips none.  A pack can trip several: R002's premises
+    // imply L002's, so no pack names R002 alone, and listing every one
+    // is what lets each rule's fixture floor on its own code.
+    [[nodiscard]] static consteval std::string_view failing_codes() noexcept {
+        std::string text;
+        for (const rule_verdict& verdict : verdicts()) {
+            if (verdict.ok) continue;
+            if (!text.empty()) text += ", ";
+            text += std::string{verdict.code};
+        }
+        return std::define_static_string(text);
+    }
+
+    // Every code, whatever the pack.  The pin below reads it against
+    // the member walk; nothing else calls it.
+    [[nodiscard]] static consteval std::string_view every_code() noexcept {
+        std::string text;
+        for (const rule_verdict& verdict : verdicts()) {
+            text += std::string{verdict.code};
+            text += ' ';
+        }
+        return std::define_static_string(text);
+    }
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(L002_ok, "L002: borrow x async. A borrowed reference's lifetime is tied to the caller's frame "
                                "and cannot bridge a suspension or a hand-off to another thread. Scope the borrow "
@@ -748,6 +802,50 @@ static_assert(detail::implemented_rule_count_() == live_rule_count,
               "fixy/Collision.h: live_rules defines a different number of <code>_ok members than the corpus "
               "records as Live.  Either a rule was written without a corpus entry, or one entry names a rule "
               "the implementation spells differently.");
+
+// The verdict rows are the third hand-written list of the same set, and
+// these two pins bind it to the other two.  The count is against the
+// member walk rather than against live_rule_count so that a rule
+// written with an `_ok` member and no verdict row is named here even
+// before it reaches the corpus.
+namespace detail {
+
+[[nodiscard]] consteval bool every_ok_member_has_a_verdict_row_() noexcept {
+    bool all_rowed = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : std::define_static_array(
+                      std::meta::members_of(^^live_rules<>, std::meta::access_context::unchecked()))) {
+        if constexpr (std::meta::has_identifier(member)) {
+            constexpr std::string_view id = std::meta::identifier_of(member);
+            if constexpr (id.size() > 3 && id.ends_with("_ok")) {
+                // The trailing space is what keeps a code from matching
+                // inside a longer one.
+                std::string wanted{id.substr(0, id.size() - 3)};
+                wanted += ' ';
+                if (!::fixy::detail::text_contains(live_rules<>::every_code(), wanted)) all_rowed = false;
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return all_rowed;
+}
+
+}  // namespace detail
+
+static_assert(detail::every_ok_member_has_a_verdict_row_(),
+              "fixy/Collision.h: live_rules defines a <code>_ok member with no row in verdicts().  fn's "
+              "tier-5 message reads those rows, so the rule would refuse a binding without naming itself, "
+              "and its negative fixture would have nothing to floor on.");
+
+static_assert(live_rules<>::verdicts().size() == detail::implemented_rule_count_(),
+              "fixy/Collision.h: verdicts() holds a different number of rows than live_rules has <code>_ok "
+              "members.  A row without a member, or a member without a row.");
+
+static_assert(live_rules<>::failing_codes().empty(),
+              "fixy/Collision.h: the empty pack sits at every strict pole and must trip no rule, so the "
+              "code list it produces is empty.  A non-empty answer here means a rule fires on a binding "
+              "that claims nothing.");
 
 // ---------------------------------------------------------------------
 // The shape fn asks.

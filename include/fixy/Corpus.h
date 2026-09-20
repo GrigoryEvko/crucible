@@ -244,27 +244,10 @@ template <DischargeAxis X, class Policy>
 struct discharges_<X, ::fixy::atom::declassify<Policy>>
     : std::bool_constant<discharge_axis_contains(axes_discharged_of_v<Policy>, X)> {};
 
-// Whether one text contains another, for a constant expression.
-// std::string_view::find null-checks the pointer char_traits::find hands
-// back, and GCC 16.2's constant evaluator refuses that comparison on a
-// pointer into the template-parameter object std::define_static_string
-// returns; indexing the same pointer is accepted, so the search walks
-// indices.  The self-tests here, in fixy/Reject.h and in
-// fixy/Insights.h read it.
-[[nodiscard]] consteval bool text_contains_(std::string_view haystack, std::string_view needle) noexcept {
-    if (needle.size() > haystack.size()) return false;
-    for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
-        bool same = true;
-        for (std::size_t offset = 0; offset < needle.size(); ++offset) {
-            if (haystack[start + offset] != needle[offset]) {
-                same = false;
-                break;
-            }
-        }
-        if (same) return true;
-    }
-    return false;
-}
+// The compile-time text search these self-tests read lives in
+// fixy/Axis.h, because Collision.h needs it too and sits below this
+// header.
+using ::fixy::detail::text_contains;
 
 // Assembled once per entry.  A function-local static inside each entry
 // would be per translation unit and re-run the assembly in every
@@ -595,8 +578,8 @@ template <class Entry>
 [[nodiscard]] consteval bool entry_is_well_formed_() noexcept {
     return ::foundation::diag::is_diagnostic_class_v<Entry> && Entry::name == std::meta::identifier_of(^^Entry)
         && !Entry::description.empty() && !Entry::remediation.empty() && !Entry::cite().empty()
-        && Entry::full_diagnostic().starts_with("fixy::fn<") && text_contains_(Entry::full_diagnostic(), Entry::name)
-        && text_contains_(Entry::full_diagnostic(), Entry::cite());
+        && Entry::full_diagnostic().starts_with("fixy::fn<") && text_contains(Entry::full_diagnostic(), Entry::name)
+        && text_contains(Entry::full_diagnostic(), Entry::cite());
 }
 
 [[nodiscard]] consteval bool every_entry_is_well_formed_() noexcept {
@@ -645,15 +628,7 @@ static_assert(!is_in_corpus_v<int, ::fixy::atom::declassify<::fixy::tags::secret
 // The name and the diagnostic read off a matched pack, and are empty
 // off an admitted one.
 static_assert(corpus_entry_name_for_v<int, ::fixy::atom::with_io> == "classified_io_without_declassify");
-static_assert(text_contains_(corpus_full_diagnostic_v<int, ::fixy::atom::with_io>, "Sabelfeld-Myers 2003"));
-
-// The text search itself, on both answers, so the walks above cannot
-// pass through a helper that always says yes.
-static_assert(text_contains_("fixy::fn<T>", "fn<"));
-static_assert(text_contains_("abc", "abc"));
-static_assert(text_contains_("abc", ""));
-static_assert(!text_contains_("abc", "abcd"));
-static_assert(!text_contains_("abc", "x"));
+static_assert(text_contains(corpus_full_diagnostic_v<int, ::fixy::atom::with_io>, "Sabelfeld-Myers 2003"));
 static_assert(corpus_entry_name_for_v<int>.empty());
 static_assert(corpus_full_diagnostic_v<int>.empty());
 

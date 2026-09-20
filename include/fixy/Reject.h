@@ -38,6 +38,7 @@
 #include <foundation/diag/Catalog.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <string>
 #include <string_view>
@@ -302,27 +303,98 @@ using corpus_tag_or_void_t = ::fixy::corpus::matched_entry_or_void_t<T, Atoms...
 
 namespace detail::reject {
 
-// The tier-5 message.  When the corpus refused the pack it names the
-// entry and carries its citation; otherwise a collision rule did, and
-// the message says where the theorem is.  The corpus is consulted only
-// on a pack tiers 2 and 4 admit, because its walk reads every atom's
-// axis, and a static_assert message is instantiated whatever the
-// condition.
+// ---------------------------------------------------------------------
+// Which tier refuses a pack.
+//
+// The arms below are nested rather than conjoined, and that is
+// load-bearing.  A later tier's question is not merely meaningless once
+// an earlier one has answered no: asking it is a hard error.  The
+// uniqueness walk, every collision rule and every corpus entry read
+// each atom's `axis` member, which a non-atom does not have, so a pack
+// holding one produced the tier-2 message followed by thirty-eight
+// diagnostics from inside the walks.  An `if constexpr` chain leaves
+// the later arms uninstantiated.  A conjunction of concept-ids does
+// not, because a concept-id in an ordinary expression is checked
+// whatever its neighbour says.
+//
+// The enumerators carry the tier numbers fn asserts under.  There is no
+// tier 3: an unmentioned axis is not an error.
+enum class Tier : std::uint8_t {
+    Ok = 0,
+    Payload = 1,
+    Malformed = 2,
+    Duplicate = 4,
+    Composition = 5,
+};
+
+template <class T, class... Atoms>
+[[nodiscard]] consteval Tier first_failing_tier_() noexcept {
+    if constexpr (!IsAcceptedPayload<T>) {
+        return Tier::Payload;
+    } else if constexpr (!AllAtomsWellFormed<Atoms...>) {
+        return Tier::Malformed;
+    } else if constexpr (!UniqueAtomPerAxis<Atoms...>) {
+        return Tier::Duplicate;
+    } else if constexpr (!NotInCorpus<T, Atoms...> || !ValidComposition<T, Atoms...>) {
+        return Tier::Composition;
+    } else {
+        return Tier::Ok;
+    }
+}
+
+// The tag whose class name fn puts into the compiler's instantiation
+// trail: the one the failing tier selects, and void when the pack
+// passes.  void names nothing and stays silent.
+template <class T, class... Atoms>
+[[nodiscard]] consteval std::meta::info tier_tag_() noexcept {
+    constexpr Tier failed = first_failing_tier_<T, Atoms...>();
+    if constexpr (failed == Tier::Payload) {
+        return ^^unholdable_payload<T>;
+    } else if constexpr (failed == Tier::Malformed) {
+        return first_malformed_atom_<Atoms...>() == ^^void ? ^^void
+                                                           : malformed_tag_or_void_<Atoms...>();
+    } else if constexpr (failed == Tier::Duplicate) {
+        return duplicate_tag_or_void_<Atoms...>();
+    } else if constexpr (failed == Tier::Composition) {
+        return ::fixy::corpus::detail::first_match_<T, Atoms...>();
+    } else {
+        return ^^void;
+    }
+}
+
+// The tier-5 message.  A refused pack can trip the corpus, a collision
+// rule, or both, and the message carries every part that applies: the
+// corpus entry names itself and its citation, and the rules name their
+// codes, which are stable API a negative fixture greps.
+//
+// Reached only through the tier chain in fn, which has already
+// established that the pack is atoms and unique per axis.  The guard
+// here repeats that, because a static_assert message is instantiated
+// whatever the condition beside it concluded.
 template <class T, class... Atoms>
 [[nodiscard]] consteval std::string_view tier5_message_() noexcept {
-    // Two nested conditions rather than one conjunction: a concept-id in
-    // an ordinary expression is checked whatever its neighbour says, and
-    // the uniqueness walk reads each atom's axis.
-    if constexpr (AllAtomsWellFormed<Atoms...>) {
-        if constexpr (UniqueAtomPerAxis<Atoms...>) {
-            using Entry = corpus_tag_or_void_t<T, Atoms...>;
-            if constexpr (!std::is_void_v<Entry>) {
-                return Entry::full_diagnostic();
-            }
+    if constexpr (!IsAcceptedPayload<T> || !AllAtomsWellFormed<Atoms...>) {
+        return "fixy::fn<Type, Atoms...> [tier 5]: not reached — an earlier tier refused this pack.";
+    } else if constexpr (!UniqueAtomPerAxis<Atoms...>) {
+        return "fixy::fn<Type, Atoms...> [tier 5]: not reached — tier 4 refused this pack.";
+    } else {
+        using Entry = corpus_tag_or_void_t<T, Atoms...>;
+        constexpr std::string_view codes = ::fixy::collision::live_rules<Atoms...>::failing_codes();
+        std::string text{"fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};
+        if constexpr (!std::is_void_v<Entry>) {
+            text += "Corpus entry ";
+            text += Entry::name;
+            text += ": ";
+            text += Entry::cite();
+            text += "  ";
         }
+        if constexpr (!codes.empty()) {
+            text += "Collision rule(s) ";
+            text += codes;
+            text += ": fixy/Collision.h carries each theorem and its citation.";
+        }
+        return std::define_static_string(text);
     }
-    return "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused by a collision rule.  fixy/Collision.h "
-           "names the pair and carries the theorem.";
 }
 
 }  // namespace detail::reject
@@ -373,17 +445,47 @@ static_assert(std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io>,
                              ::fixy::corpus::classified_io_without_declassify>);
 static_assert(std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io, ::fixy::atom::as_public>, void>);
 
-// The tier-5 message names the entry on a corpus refusal and the rule
-// file otherwise, and is well formed on a pack the earlier tiers
-// refuse, because fn instantiates it whatever the condition.
-static_assert(::fixy::corpus::detail::text_contains_(detail::reject::tier5_message_<int, ::fixy::atom::with_io>(),
-                                                     "classified_io_without_declassify"));
-static_assert(::fixy::corpus::detail::text_contains_(
-    detail::reject::tier5_message_<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>(), "fixy/Collision.h"));
-static_assert(::fixy::corpus::detail::text_contains_(detail::reject::tier5_message_<int, not_an_atom>(),
-                                                     "fixy/Collision.h"));
-static_assert(::fixy::corpus::detail::text_contains_(
-    detail::reject::tier5_message_<int, ::fixy::atom::copy, ::fixy::atom::affine>(), "fixy/Collision.h"));
+// The tier-5 message names the corpus entry that refused the pack, the
+// collision rules that refused it by code, or both.
+static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<int, ::fixy::atom::with_io>(),
+                                            "classified_io_without_declassify"));
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier5_message_<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>(), "L002"));
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier5_message_<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>(), "R002"));
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier5_message_<int, ::fixy::atom::ghost, ::fixy::atom::as_public, ::fixy::atom::with_alloc>(),
+    "ghost_runtime_observable"));
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier5_message_<int, ::fixy::atom::ghost, ::fixy::atom::as_public, ::fixy::atom::with_alloc>(),
+    "P010"));
+
+// On a pack an earlier tier refuses, the message says so rather than
+// consulting the corpus and the rules.  fn instantiates it whatever the
+// tier-5 condition concluded, and both of those walks read each atom's
+// axis, which is a hard error on a non-atom rather than a false.
+static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<int, not_an_atom>(), "not reached"));
+static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<void>(), "not reached"));
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier5_message_<int, ::fixy::atom::copy, ::fixy::atom::affine>(), "tier 4 refused"));
+
+// Which tier refuses which pack, and the tag each selects.  One tier
+// fires per pack, so one message reaches the reader.
+static_assert(detail::reject::first_failing_tier_<int>() == detail::reject::Tier::Ok);
+static_assert(detail::reject::first_failing_tier_<void>() == detail::reject::Tier::Payload);
+static_assert(detail::reject::first_failing_tier_<int, not_an_atom>() == detail::reject::Tier::Malformed);
+static_assert(detail::reject::first_failing_tier_<int, ::fixy::atom::copy, ::fixy::atom::affine>()
+              == detail::reject::Tier::Duplicate);
+static_assert(detail::reject::first_failing_tier_<int, ::fixy::atom::with_io>() == detail::reject::Tier::Composition);
+static_assert(detail::reject::first_failing_tier_<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>()
+              == detail::reject::Tier::Composition);
+
+// A pack that trips an earlier tier AND would trip a later one reports
+// the earlier: a non-atom beside two atoms on one axis is malformed,
+// not duplicated.
+static_assert(detail::reject::first_failing_tier_<int, not_an_atom, ::fixy::atom::copy, ::fixy::atom::affine>()
+              == detail::reject::Tier::Malformed);
+static_assert(detail::reject::first_failing_tier_<void, not_an_atom>() == detail::reject::Tier::Payload);
 
 // The duplicate walk answers with an axis, and the tag it selects names
 // that axis.  Two atoms on one axis is the case; two atoms on two axes

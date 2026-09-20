@@ -232,9 +232,9 @@ namespace fixy::insights::detail::insights_self_test {
         using Tag = ::fixy::duplicate_atom_on<axis>;
         using Provider = ::foundation::diag::insight_provider<Tag>;
         all_provided = all_provided && ::foundation::diag::HasSubstantiveInsights<Tag>
-                    && ::fixy::corpus::detail::text_contains_(Provider::why_this_matters, ::fixy::axis_name(axis))
-                    && ::fixy::corpus::detail::text_contains_(Provider::why_this_matters, strict_pole_name_<axis>())
-                    && ::fixy::corpus::detail::text_contains_(Provider::violating_example, ::fixy::axis_name(axis));
+                    && ::fixy::detail::text_contains(Provider::why_this_matters, ::fixy::axis_name(axis))
+                    && ::fixy::detail::text_contains(Provider::why_this_matters, strict_pole_name_<axis>())
+                    && ::fixy::detail::text_contains(Provider::violating_example, ::fixy::axis_name(axis));
     }
 #pragma GCC diagnostic pop
     return all_provided;
