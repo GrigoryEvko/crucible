@@ -856,6 +856,31 @@ add_test(NAME ctx_testing_boundary
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.sh)
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard")
+
+# Stage A port completeness.  Three completed port tasks (A2.3, A9, A11.2)
+# were incomplete and each was found by downstream work or a one-off
+# sweep, never by review.  This is the sweep's permanent form: every
+# public symbol of every superseded `_Foo.h` under include/crucible/
+# must exist by name under include/foundation/ or include/fixy/, or be
+# listed in scripts/port-drops.txt with one sentence saying why not.  The
+# old surface is enumerated by a reflection sentinel the guard compiles
+# at test time (hence CXX), by the preprocessor for macros, and by a
+# namespace-scope scan for using-declarations; the guard prints the
+# whole surface before comparing.  A drop entry is checked both ways —
+# stale if its symbol left the old tree, obsolete if it arrived in the
+# new one — so the file drains.  The self-test plants one ported and one
+# unported symbol and proves exactly the second is reported, then a
+# template, an alias, a re-export and a macro, then each direction of
+# drop-file failure.
+add_test(NAME port_completeness_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.sh
+          --self-test)
+add_test(NAME port_completeness
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.sh --quiet)
+set_tests_properties(port_completeness port_completeness_self_test
+    PROPERTIES
+  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
+  LABELS "ci_guard")
 # FIXY-U-101 row-membership discipline (closes fixy-A5-039
 # regression-prevention surface).  scripts/check-row-contains-discipline.sh
 # flags inline `effects::row_contains_v<row_type_of_t<Ctx>, ...>` sites

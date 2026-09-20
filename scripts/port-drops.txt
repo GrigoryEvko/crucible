@@ -1,0 +1,232 @@
+# port-drops — superseded-header symbols that deliberately have no home
+# in the new tree.
+#
+# scripts/check-port-completeness.sh enumerates every public symbol of
+# every `_Foo.h` under include/crucible/ (the underscore is the superseded
+# marking, so that set is exactly what the project claims to have ported)
+# and requires each to exist by name under include/foundation/ or
+# include/fixy/.  A symbol that was not carried on purpose is listed here
+# with one sentence saying why.  A symbol that is neither present nor
+# listed is a missing port and fails the guard.
+#
+# Each entry is `<header>:<symbol>  — <one sentence>.`  The header path is
+# relative to the include root, so it starts with `crucible/`.  The entry
+# is keyed by symbol: name any one superseded header that declares it and
+# the entry covers every header that declares it, so a template dropped
+# with its specialisations, or a class with its forward declarations,
+# takes one line.  The sentence is the audit surface: write what happened
+# to the symbol, not what the surrounding subsystem does.  "Deferred to
+# task N" is a valid sentence; the entry then drains itself when that
+# task lands.
+#
+# An entry is checked in both directions, so this file drains in lockstep
+# with the code, the way the syscall allowlist does:
+#   - STALE:    the header no longer declares the symbol — remove the entry;
+#   - OBSOLETE: the symbol now exists in the new tree — it is no longer a
+#               drop; remove the entry.
+# Either is exit 2 from the guard.
+#
+# To add an entry, run `scripts/check-port-completeness.sh --emit-drops`:
+# it prints a template line for every current miss.  Replace the angle-
+# bracket placeholder with the sentence.  Do not add an entry to make the
+# guard green; add it because the symbol has no business in the new tree.
+#
+# Entries whose sentence begins "Deferred to" are not drops.  They are
+# gaps with a task number, kept here so the guard stays runnable while
+# the task is open; each drains when the task lands.  Today: the five
+# named contexts (#110), the fork's spawn context (#116), and the
+# monotonic clock's gate and clamp (#183).
+
+# ── algebra ─────────────────────────────────────────────────────────────
+
+crucible/algebra/_Modality.h:CoeffectModality  — A2.1 deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:Coeffect_t  — A2.1 deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:QuotientModality  — A2.1 deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:Quotient_t  — A2.1 deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
+
+# ── effects: capabilities ───────────────────────────────────────────────
+
+crucible/effects/_Capabilities.h:BackgroundThread  — The production passkey holder is now spelled host::BackgroundOwner in foundation/effects/Effect.h:261.
+crucible/effects/_Capability.h:cap_matches  — The trait struct is gone; only cap_matches_v survives, folded at FOUND-2 to a consteval query over the template arguments.
+crucible/effects/_Capability.h:cap_of  — The trait struct is gone; only cap_of_v survives, read off the template argument by reflection at FOUND-2.
+crucible/effects/_Capability.h:is_capability  — The trait struct is gone; only is_capability_v survives, an is_instance_of_v query at FOUND-2.
+crucible/effects/_Capability.h:source_of  — The trait struct is gone; only source_of_t survives, spliced from the template argument at FOUND-2.
+crucible/effects/_Capability.h:runtime_smoke_test_capability  — An inline smoke test in a public namespace; its body moved to test/foundation/test_capability.cpp.
+
+# ── effects: the six policy axes ExecCtx dropped at 8fd50215 ────────────
+# The commit records the drop at the axis level: NUMA, allocator, heat,
+# residency, workload and progress had no reader, because every consumer
+# asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t.  One
+# sentence per symbol below is the per-symbol record the commit lacked.
+
+crucible/effects/_ExecCtx.h:alloc_class_of_t  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:ByteBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:ChannelBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:ConsumerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:DRAM  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:HasCap  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
+crucible/effects/_ExecCtx.h:HasNumaPolicy  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
+crucible/effects/_ExecCtx.h:heat_alloc_coherent  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
+crucible/effects/_ExecCtx.h:heat_alloc_coherent_v  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
+crucible/effects/_ExecCtx.h:heat_progress_coherent  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
+crucible/effects/_ExecCtx.h:heat_progress_coherent_v  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
+crucible/effects/_ExecCtx.h:heat_resid_coherent  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
+crucible/effects/_ExecCtx.h:heat_resid_coherent_v  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
+crucible/effects/_ExecCtx.h:hot_path_tier_of_t  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_alloc_class  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsArenaCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsBgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
+crucible/effects/_ExecCtx.h:IsBoundedCtx  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsColdCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsFgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
+crucible/effects/_ExecCtx.h:IsHeapCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_heat_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsHeatTier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_heat_tier_v  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsHotCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsHugePageCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsInitCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
+crucible/effects/_ExecCtx.h:IsMayDivergeCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_numa_policy  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsNumaPolicy  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_numa_policy_v  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsPoolCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsProductiveCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_progress_class  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsProgressClass  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_progress_class_v  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_residency_tier  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsResidencyTier  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_residency_tier_v  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsStackCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsSubCtx  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
+crucible/effects/_ExecCtx.h:IsTerminatingCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsTestCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
+crucible/effects/_ExecCtx.h:IsWarmCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_workload_hint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsWorkloadHint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:is_workload_hint_v  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:ItemBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:L3  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:MayDiverge  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:numa_policy_of_t  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:ProducerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:progress_class_of_t  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:rebuild_ctx_to  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
+crucible/effects/_ExecCtx.h:residency_of_t  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:SiblingCtx  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
+crucible/effects/_ExecCtx.h:Spread  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:Terminating  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:to_alloc_class_tag  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:to_alloc_class_tag_v  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:to_hot_path_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:to_hot_path_tier_v  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:to_residency_heat_tag  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:to_residency_heat_tag_v  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:Unbound  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:Unspecified  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
+crucible/effects/_ExecCtx.h:WellFormedExecCtxAxes  — Dropped at 8fd50215 with the six policy axes it ranged over.
+crucible/effects/_ExecCtx.h:workload_hint_of_t  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+
+# ── effects: the named contexts A3.2 handed to A11.3 ───────────────────
+
+crucible/effects/_ExecCtx.h:BgCompileCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
+crucible/effects/_ExecCtx.h:BgDrainCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
+crucible/effects/_ExecCtx.h:ColdInitCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
+crucible/effects/_ExecCtx.h:HotFgCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
+crucible/effects/_ExecCtx.h:TestRunnerCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
+
+# ── effects: Computation and the F*-style aliases ───────────────────────
+
+crucible/effects/_ComputationGraded.h:runtime_smoke_test_computation_graded  — An inline smoke test in a public namespace; its body moved to test/foundation/test_computation.cpp.
+crucible/effects/_Computation.h:runtime_smoke_test_computation  — An inline smoke test in a public namespace; its body moved to test/foundation/test_computation.cpp.
+crucible/effects/_EffectRowLattice.h:runtime_smoke_test_lattice  — An inline smoke test in a public namespace; its body moved to test/foundation/test_effects_core.cpp.
+crucible/effects/_FxAliases.h:Div  — Progress did not survive the port, so Div has no value form; fixy/Aliases.h:12-18 records why and keeps DivRow.
+crucible/effects/_FxAliases.h:runtime_smoke_test  — An inline smoke test in a public namespace, in two headers; each body moved to the test of its header (test/foundation/test_diag.cpp for the catalog, the fixy sentinel at 24456d2a for the aliases).
+
+# ── fixy: the grant tier that became the atom tier at A9 ────────────────
+# fixy/Atom.h:17-22 records the renaming: a grant is an effect atom, so
+# grant_base, IsGrantTag, which_dim and the tags of eighteen axes became
+# the atoms of fixy/atoms/.  Nothing on the atom side carries these names.
+
+crucible/fixy/_Grant.h:accept_default_strict_for  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
+crucible/fixy/grant/_Ctrl.h:accept_default_strict_for_ControlFlow  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
+crucible/fixy/grant/_Dispatch.h:accept_default_strict_for_CallShape  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
+crucible/fixy/grant/_Global.h:accept_default_strict_for_GlobalState  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
+crucible/fixy/grant/_Stack.h:accept_default_strict_for_StackUse  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
+crucible/fixy/grant/_Stdio.h:accept_default_strict_for_Stdio  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
+crucible/fixy/_Grant.h:axis_has_grant_family  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:axis_is_grantless  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:axis_query_tag  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:grant_base  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:grant_families_witnessed_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:grant_family_witnessed_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:IsGrantTag  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:IsGrantTag_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:kAxesWithoutNonDefaultGrants  — A literal cardinality pin that #36 found stale; it retired with the grant tier at A9.
+crucible/fixy/_Grant.h:which_dim  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name and its five per-family specialisations have no counterpart on the atom side.
+crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+
+# ── permissions ─────────────────────────────────────────────────────────
+
+crucible/permissions/_PermissionFork.h:PermissionForkSpawnCtx  — The spawn context left with the throws gate; foundation/permissions/PermissionFork.h:34 assigns the structural check to fixy/os/Spawn.h at A13.4 (#116).
+
+# ── safety: the diagnostic catalog and the stable name ──────────────────
+
+crucible/safety/_Diagnostic.h:runtime_smoke_test  — An inline smoke test in a public namespace; its body moved to test/foundation/test_diag.cpp.
+crucible/safety/diag/_StableName.h:runtime_smoke_test_stable_name  — An inline smoke test in a public namespace; its body moved to test/foundation/test_reflect.cpp.
+
+# ── safety: the per-band recognisers ────────────────────────────────────
+# Each old IsX.h carried a concept, a trait, a tier accessor and a value
+# accessor for one band.  fixy/Bands.h answers all four generically:
+# foundation::reflect::is_instance_of_v over the band alias for the test,
+# band_tier_t (Bands.h:115) and band_value_t (Bands.h:109) for the
+# accessors.  The smoke test of each retired with its header.
+
+crucible/safety/_IsAllocClass.h:alloc_class_tag_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
+crucible/safety/_IsAllocClass.h:alloc_class_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsAllocClass.h:IsAllocClass  — A recogniser for the alloc-class band, declared as the per-band concept and again as an ExecCtx axis predicate; is_instance_of_v over the band alias answers the first, and the second went with the policy axes at 8fd50215.
+crucible/safety/_IsAllocClass.h:is_alloc_class_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsAllocClass.h:is_alloc_class_v  — A recogniser for the alloc-class band, declared as the per-band trait and again as an ExecCtx axis predicate; is_instance_of_v over the band alias answers the first, and the second went with the policy axes at 8fd50215.
+crucible/safety/_IsCipherTier.h:cipher_tier_tag_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
+crucible/safety/_IsCipherTier.h:cipher_tier_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsCipherTier.h:IsCipherTier  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsCipherTier.h:is_cipher_tier_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsCipherTier.h:is_cipher_tier_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
+crucible/safety/_IsDetSafe.h:det_safe_tier_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
+crucible/safety/_IsDetSafe.h:det_safe_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsDetSafe.h:IsDetSafe  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsDetSafe.h:is_det_safe_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsDetSafe.h:is_det_safe_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
+crucible/safety/_IsHotPath.h:hot_path_tier_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
+crucible/safety/_IsHotPath.h:hot_path_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsHotPath.h:IsHotPath  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsHotPath.h:is_hot_path_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsHotPath.h:is_hot_path_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
+crucible/safety/_IsNumericalTier.h:IsNumericalTier  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsNumericalTier.h:is_numerical_tier_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsNumericalTier.h:is_numerical_tier_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
+crucible/safety/_IsNumericalTier.h:numerical_tier_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
+crucible/safety/_IsNumericalTier.h:numerical_tier_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsOpaqueLifetime.h:IsOpaqueLifetime  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsOpaqueLifetime.h:is_opaque_lifetime_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsOpaqueLifetime.h:is_opaque_lifetime_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
+crucible/safety/_IsOpaqueLifetime.h:opaque_lifetime_scope_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
+crucible/safety/_IsOpaqueLifetime.h:opaque_lifetime_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsOwnedRegion.h:is_owned_region_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsRecipeSpec.h:is_recipe_spec_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+
+# ── safety: wrappers ────────────────────────────────────────────────────
+
+crucible/safety/_Machine.h:machine_transition  — The transition relation is no longer a trait; fixy/Machine.h:13 states it as edges beside the states they join.
+crucible/safety/_Mutation.h:CtxFitsMonotonicClock  — Deferred to #183: ClockReader<Monotonic> in fixy/os/Time.h mints with no capability gate, so the foreground-path rejection this concept carried is not yet re-established.
+crucible/safety/_Mutation.h:MonotonicClock  — Deferred to #183: the class's AtomicMonotonic clamp, which kept a replayed timestamp from regressing, has no counterpart in fixy/os/Time.h.
+crucible/safety/_OwnedMmap.h:is_leak_grant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
+crucible/safety/_OwnedMmap.h:IsLeakGrant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
+crucible/safety/_OwnedMmap.h:is_leak_grant_v  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
+crucible/safety/_Refined.h:predicate_implies  — The open implication trait was the hole; fixy/Refined.h:595 keeps implies_v and admits an edge only from the namespace admitted_implications.
+crucible/safety/_Secret.h:All  — The policy roster tuple became the namespace admitted_policies of fail-closed edges in fixy/Secret.h:51.
+crucible/safety/_Secret.h:kCount  — A hand-written cardinality pin; the roster it pinned is now a namespace the guard enumerates, and such pins were deleted throughout the port.
+crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
+crucible/safety/_Tagged.h:kCatalogRosterMatchesCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
+crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple became the namespace admitted_retags of fail-closed edges in fixy/Tagged.h.
