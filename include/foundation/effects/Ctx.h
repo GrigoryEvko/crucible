@@ -228,9 +228,9 @@ concept CtxCanMint = IsExecCtx<Ctx> && row_contains_v<cap_permitted_row_t<cap_ty
 
 namespace detail::ctx_witnesses {
 
-// Witnesses in the shape of the four named contexts the layer above
-// defines (fixy/Ctx.h).  They are scaffolding, not a second spelling of
-// those contexts.
+// Witnesses in the shape of the five named contexts the layer above
+// defines (fixy/Ctx.h, A11.3).  They are scaffolding, not a second
+// spelling of those contexts.
 //
 // They live in the header rather than in a test because Capability.h,
 // Computation.h, Permission.h and the fixtures of all three name them.
@@ -244,6 +244,39 @@ using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
 using InitWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>;
 using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>;
+
+// The five named contexts of include/crucible/effects/_ExecCtx.h, with
+// the six policy axes this layer dropped removed and the two that
+// survive — the capability source and the row — kept exactly.  The
+// port handed these to A11.3 by name and recorded their rows nowhere
+// that deleting the old tree would not erase; this is that record.
+// Each is one witness above, and the assertion after each restates the
+// row the old tree declared, so the layer that promotes them to
+// production contexts starts from a declaration rather than from
+// memory.  The comment on each is the old tree's.
+
+// The context of the foreground thread that runs dispatch.
+using HotFgCtx = FgWitness;
+static_assert(std::is_same_v<HotFgCtx, ExecCtx<ctx_cap::Fg, Row<>>>);
+
+using BgDrainCtx = BgWitness;
+static_assert(std::is_same_v<BgDrainCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>>);
+
+// The compile context claims IO on top of the drain row, because
+// compiling writes kernel artifacts.
+using BgCompileCtx = BgIoWitness;
+static_assert(std::is_same_v<BgCompileCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>>);
+
+// The context of process startup, before the threads are pinned.
+using ColdInitCtx = InitWitness;
+static_assert(std::is_same_v<ColdInitCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
+
+// A fixture may claim any effect this row names, and no others.  In
+// particular it cannot claim the background or initialization effects,
+// so it cannot stand in for either of those contexts.
+using TestRunnerCtx = TestWitnessCtx;
+static_assert(
+    std::is_same_v<TestRunnerCtx, ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>>);
 
 static_assert(sizeof(ExecCtx<>) == 1, "Both axes of ExecCtx are empty types, so the whole context must be 1 byte.");
 static_assert(sizeof(FgWitness) == 1);
@@ -313,6 +346,10 @@ static_assert(IsExecCtx<FgWitness&&>);
 
 static_assert(std::is_same_v<cap_type_of_t<BgWitness>, Bg>);
 static_assert(std::is_same_v<row_type_of_t<BgWitness>, Row<Effect::Bg, Effect::Alloc>>);
+static_assert(std::is_same_v<row_type_of_t<HotFgCtx>, Row<>>);
+static_assert(std::is_same_v<row_type_of_t<BgCompileCtx>, Row<Effect::Bg, Effect::Alloc, Effect::IO>>);
+static_assert(std::is_same_v<cap_type_of_t<ColdInitCtx>, Init>);
+static_assert(std::is_same_v<cap_type_of_t<TestRunnerCtx>, Test>);
 
 static_assert(std::is_same_v<ctx_cap::Bg, Bg>);
 static_assert(std::is_same_v<ctx_cap::Init, Init>);
@@ -360,6 +397,7 @@ static_assert(CtxCanMint<BgWitness, Effect::IO>);
 static_assert(CtxCanMint<BgWitness, Effect::Block>);
 static_assert(CtxCanMint<BgWitness, Effect::Bg>);
 static_assert(!CtxCanMint<BgWitness, Effect::Init>);
+static_assert(CtxCanMint<BgCompileCtx, Effect::Block>);
 static_assert(CtxCanMint<InitWitness, Effect::Alloc>);
 static_assert(CtxCanMint<InitWitness, Effect::IO>);
 static_assert(!CtxCanMint<InitWitness, Effect::Block>);

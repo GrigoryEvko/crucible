@@ -33,11 +33,14 @@
 #
 # Entries whose sentence begins "Deferred to" are not drops.  They are
 # gaps with a task number, kept here so the guard stays runnable while
-# the task is open; each drains when the task lands.  Today: the five
-# named contexts (#110) and the fork's spawn context (#116).  The
-# monotonic clock's gate and clamp (#183) were the first to drain: the
-# names came back to fixy/os/Time.h as a port, and the guard reported
-# the two entries obsolete.
+# the task is open; each drains when the task lands.  Today: the fork's
+# spawn context (#116).  Two groups have drained so far, each when the
+# guard reported its entries obsolete: the monotonic clock's gate and
+# clamp (#183) came back to fixy/os/Time.h as a port, and the five named
+# contexts (#181, the A3.2 half) came back to foundation/effects/Ctx.h
+# as aliases of the witnesses that already carried their rows, so that
+# A11.3 promotes them from a declaration the old tree's deletion cannot
+# erase.
 
 # ── algebra ─────────────────────────────────────────────────────────────
 
@@ -129,14 +132,6 @@ crucible/effects/_ExecCtx.h:Unbound  — One of the six policy axes (allocator) 
 crucible/effects/_ExecCtx.h:Unspecified  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
 crucible/effects/_ExecCtx.h:WellFormedExecCtxAxes  — Dropped at 8fd50215 with the six policy axes it ranged over.
 crucible/effects/_ExecCtx.h:workload_hint_of_t  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-
-# ── effects: the named contexts A3.2 handed to A11.3 ───────────────────
-
-crucible/effects/_ExecCtx.h:BgCompileCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
-crucible/effects/_ExecCtx.h:BgDrainCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
-crucible/effects/_ExecCtx.h:ColdInitCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
-crucible/effects/_ExecCtx.h:HotFgCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
-crucible/effects/_ExecCtx.h:TestRunnerCtx  — Deferred to A11.3 (#110), which writes fixy/Ctx.h; the row to copy is in include/crucible/effects/_ExecCtx.h:512-524, and #181 carries it.
 
 # ── effects: Computation and the F*-style aliases ───────────────────────
 
