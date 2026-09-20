@@ -31,6 +31,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <concepts>
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
@@ -40,8 +41,12 @@ namespace foundation::effects {
 namespace ctx_cap {
 // The foreground thread holds no minted capability token.  A reach for
 // one fails to compile, because this context has no member of any
-// capability type.
-struct Fg {};
+// capability type.  It permits the empty row, spelled the way a context
+// spells its own, so that one reader below serves every source.
+struct Fg {
+    template <template <Effect...> class R>
+    using permitted_as = R<>;
+};
 
 // These name the same three types the enclosing namespace declares.
 // Either spelling works; the aliases only give the axis a uniform look.
@@ -50,48 +55,31 @@ using Init = ::foundation::effects::Init;
 using Test = ::foundation::effects::Test;
 }  // namespace ctx_cap
 
+// A capability source is the foreground marker or a rostered context.
+// This is a concept over the roster in Effect.h, so nothing a
+// translation unit declares can add a source.  The value and the trait
+// spellings are derived from it and read by nothing that gates.
 template <class T>
-struct is_cap_type : std::false_type {};
-template <>
-struct is_cap_type<ctx_cap::Fg> : std::true_type {};
-template <>
-struct is_cap_type<Bg> : std::true_type {};
-template <>
-struct is_cap_type<Init> : std::true_type {};
-template <>
-struct is_cap_type<Test> : std::true_type {};
+concept IsCapType = std::same_as<T, ctx_cap::Fg> || IsContext<T>;
 template <class T>
-inline constexpr bool is_cap_type_v = is_cap_type<T>::value;
+inline constexpr bool is_cap_type_v = IsCapType<T>;
 template <class T>
-concept IsCapType = is_cap_type_v<T>;
+struct is_cap_type : std::bool_constant<IsCapType<T>> {};
 
 // The row recognition trait, is_effect_row, lives in Row.h beside the
 // row it recognizes.
 
-// The largest row each capability source can authorize.  A context's
-// own row must stay inside it, which is what stops a foreground
-// context from claiming a background effect.
-template <class Cap>
-struct cap_permitted_row;
-
-template <>
-struct cap_permitted_row<ctx_cap::Fg> {
-    using type = Row<>;
-};
-template <>
-struct cap_permitted_row<Bg> {
-    using type = Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>;
-};
-template <>
-struct cap_permitted_row<Init> {
-    using type = Row<Effect::Init, Effect::Alloc, Effect::IO>;
-};
-template <>
-struct cap_permitted_row<Test> {
-    using type = Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>;
+// The largest row each capability source can authorize, read off the
+// source's own declaration: a context permits its own atom and the
+// value atoms it holds, and the foreground marker permits nothing.  A
+// context's own row must stay inside it, which is what stops a
+// foreground context from claiming a background effect.
+template <IsCapType Cap>
+struct cap_permitted_row {
+    using type = typename Cap::template permitted_as<Row>;
 };
 
-template <class Cap>
+template <IsCapType Cap>
 using cap_permitted_row_t = typename cap_permitted_row<Cap>::type;
 
 // The two checks are folded into one concept so that a bad argument
@@ -132,21 +120,23 @@ public:
     // nothing in it to forge.
     //
     // This constructor was once public for EVERY specialization, and
-    // that was the hole.  ExecCtx is friended by
-    // each capability type so the member's default initializer can run,
-    // so `ExecCtx<Init, Row<Init, Alloc, IO>>{}` default-built the Init
-    // member and then satisfied CtxCanMint for every effect an init
-    // source permits.  The capability was reachable by constructing the
-    // context that holds it, without ever passing the passkey that
-    // guards Init's own constructor.
+    // that was the hole: `ExecCtx<Init, Row<Init, Alloc, IO>>{}`
+    // default-built the Init member, which the capability types then
+    // befriended this template to allow, and satisfied CtxCanMint for
+    // every effect an init source permits.  The capability was
+    // reachable by constructing the context that holds it, without
+    // ever passing the passkey that guards Init's own constructor.
+    // The capability types no longer befriend this template: nothing
+    // here builds one, and the member's default initializer is reached
+    // through this constructor alone, which exists for the foreground
+    // marker only.
     constexpr ExecCtx() noexcept
         requires std::is_same_v<Cap, ctx_cap::Fg>
     = default;
 
     // Every other context is handed the capability it claims, and that
     // capability IS the evidence: Cap's own default constructor is
-    // private, so a caller holding one obtained it from
-    // mint_bg_context, mint_init_context or mint_test_context.
+    // private, so a caller holding one obtained it from mint_context.
     constexpr explicit ExecCtx(Cap cap) noexcept : cap_{cap} {}
 
     // The only way to reach the capability, and it borrows rather than

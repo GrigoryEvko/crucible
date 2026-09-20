@@ -30,7 +30,7 @@
 namespace foundation::effects {
 
 template <Effect E, class Source>
-concept CanMintCap = is_cap_type_v<Source> && row_contains_v<cap_permitted_row_t<Source>, E>;
+concept CanMintCap = IsCapType<Source> && row_contains_v<cap_permitted_row_t<Source>, E>;
 
 template <Effect Cap, class Source>
 class Capability;

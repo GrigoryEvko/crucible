@@ -36,6 +36,58 @@ concept Complete = requires { sizeof(T); };
 static_assert(!Complete<fe::host::BackgroundOwner>);
 static_assert(!Complete<fe::host::InitOwner>);
 
+// The three are the whole roster.  The foreground marker, a plain type,
+// a value atom and a lookalike that derives from the family base with a
+// real key are not contexts, so nothing a translation unit declares
+// reaches a gate.
+struct Lookalike final : fe::detail::ContextBase<Lookalike, fe::detail::ctx_mint::bg_key, fe::Effect::Bg, fe::Effect::Alloc> {
+    constexpr Lookalike() noexcept = default;
+};
+static_assert(fe::IsContext<fe::Bg> && fe::IsContext<fe::Init> && fe::IsContext<fe::Test>);
+static_assert(!fe::IsContext<Lookalike> && !fe::IsContext<int> && !fe::IsContext<fe::cap::Alloc>);
+static_assert(!fe::IsContext<fe::Bg const> && !fe::IsContext<fe::Bg&>, "The roster is matched on the exact type.");
+
+// One key mints one context: the factory's constraint reads the
+// context's own key_type, so the wrong key is refused at the call, and
+// the lookalike is refused although it names a real key.
+static_assert(fe::CanMintContext<fe::Bg, fe::detail::ctx_mint::bg_key>);
+static_assert(fe::CanMintContext<fe::Init, fe::detail::ctx_mint::init_key>);
+static_assert(fe::CanMintContext<fe::Test, fe::detail::ctx_mint::test_key>);
+static_assert(!fe::CanMintContext<fe::Init, fe::detail::ctx_mint::bg_key>, "A background key cannot mint an init context.");
+static_assert(!fe::CanMintContext<fe::Bg, fe::detail::ctx_mint::init_key>);
+static_assert(!fe::CanMintContext<fe::Test, fe::detail::ctx_mint::bg_key>);
+static_assert(!fe::CanMintContext<Lookalike, fe::detail::ctx_mint::bg_key>);
+static_assert(!fe::CanMintContext<int, fe::detail::ctx_mint::bg_key>);
+
+// Each context declares its atom, its key and the row it permits, and
+// Ctx.h reads the row through permitted_as rather than restating it.
+template <fe::Effect... Es>
+struct RowProbe {};
+static_assert(fe::Bg::own_effect == fe::Effect::Bg && fe::Init::own_effect == fe::Effect::Init
+              && fe::Test::own_effect == fe::Effect::Test);
+static_assert(std::is_same_v<fe::Bg::key_type, fe::detail::ctx_mint::bg_key>);
+static_assert(std::is_same_v<fe::Init::key_type, fe::detail::ctx_mint::init_key>);
+static_assert(std::is_same_v<fe::Test::key_type, fe::detail::ctx_mint::test_key>);
+static_assert(std::is_same_v<fe::Bg::permitted_as<RowProbe>,
+                             RowProbe<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::Init::permitted_as<RowProbe>, RowProbe<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>);
+static_assert(std::is_same_v<fe::Test::permitted_as<RowProbe>,
+                             RowProbe<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
+
+// The fields are the holdings and nothing else: Init has no block to
+// hand to a function that waits.
+template <class C>
+concept HoldsBlock = requires(C const& c) { c.block; };
+template <class C>
+concept HoldsAllocAndIo = requires(C const& c) {
+    c.alloc;
+    c.io;
+};
+static_assert(HoldsAllocAndIo<fe::Bg> && HoldsAllocAndIo<fe::Init> && HoldsAllocAndIo<fe::Test>);
+static_assert(HoldsBlock<fe::Bg> && HoldsBlock<fe::Test> && !HoldsBlock<fe::Init>);
+static_assert(std::is_same_v<decltype(fe::testing::init().alloc), fe::cap::Alloc>);
+static_assert(std::is_same_v<decltype(fe::testing::bg().block), fe::cap::Block>);
+
 // The mask lattice is a Row, and the two row spellings agree on
 // membership for every atom.
 static_assert(::foundation::algebra::Row<fe::EffectRowLattice>);

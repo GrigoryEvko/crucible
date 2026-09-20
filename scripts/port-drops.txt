@@ -52,6 +52,12 @@ crucible/algebra/_Modality.h:Quotient_t  — A2.1 deleted the Quotient kind beca
 # ── effects: capabilities ───────────────────────────────────────────────
 
 crucible/effects/_Capabilities.h:BackgroundThread  — The production passkey holder is now spelled host::BackgroundOwner in foundation/effects/Effect.h:261.
+crucible/effects/_Capabilities.h:CanMintBgContext  — Folded with its two siblings into one CanMintContext<Ctx, Key> at #147, whose binding is the context's own key_type.
+crucible/effects/_Capabilities.h:CanMintInitContext  — Folded with its two siblings into one CanMintContext<Ctx, Key> at #147, whose binding is the context's own key_type.
+crucible/effects/_Capabilities.h:CanMintTestContext  — Folded with its two siblings into one CanMintContext<Ctx, Key> at #147, whose binding is the context's own key_type.
+crucible/effects/_Capabilities.h:mint_bg_context  — Folded with its two siblings into one mint_context<Ctx>(Key) at #147; the friend and the constraint moved with it, so the door is the same door.
+crucible/effects/_Capabilities.h:mint_init_context  — Folded with its two siblings into one mint_context<Ctx>(Key) at #147; the friend and the constraint moved with it, so the door is the same door.
+crucible/effects/_Capabilities.h:mint_test_context  — Folded with its two siblings into one mint_context<Ctx>(Key) at #147; the friend and the constraint moved with it, so the door is the same door.
 crucible/effects/_Capability.h:cap_matches  — The trait struct is gone; only cap_matches_v survives, folded at FOUND-2 to a consteval query over the template arguments.
 crucible/effects/_Capability.h:cap_of  — The trait struct is gone; only cap_of_v survives, read off the template argument by reflection at FOUND-2.
 crucible/effects/_Capability.h:is_capability  — The trait struct is gone; only is_capability_v survives, an is_instance_of_v query at FOUND-2.

@@ -145,6 +145,20 @@ foundation_neg_compile_test(neg_exec_ctx_with_cap_needs_the_capability
   "no matching function for call to"
   "with_cap<")
 
+# The one door of the contexts, mint_context, has one constraint, and
+# these two fixtures stand on its two atoms.  The key is a reference the
+# fixture never builds, so the refusal is the constraint's and not the
+# passkey's.  The wrong key: a background key cannot mint an init
+# context, because the binding is the context's own key_type.  The
+# lookalike: deriving from the family base with a real key is not
+# membership, because IsContext reads the roster and nothing else.
+foundation_neg_compile_test(neg_mint_context_wrong_key
+  "no matching function for call to .mint_context<foundation::effects::Init>\\(foundation::effects::detail::ctx_mint::bg_key\\)."
+  "required for the satisfaction of .CanMintContext<Ctx, Key>. \\[with Ctx = foundation::effects::Init; Key = foundation::effects::detail::ctx_mint::bg_key\\]")
+foundation_neg_compile_test(neg_mint_context_lookalike_context
+  "no matching function for call to .mint_context<\\{anonymous\\}::Lookalike>\\(foundation::effects::detail::ctx_mint::bg_key\\)."
+  "required for the satisfaction of .IsContext<Ctx>. \\[with Ctx = <unnamed>::Lookalike\\]")
+
 # A thread atom has no value-level tag, so the one extract_bare template
 # leaves the overload set by substitution failure on HasBareTag.  The
 # first regex proves the call found no candidate, and the second proves

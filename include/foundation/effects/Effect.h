@@ -24,6 +24,7 @@
 
 #include <foundation/reflect/EnumName.h>
 
+#include <concepts>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -228,22 +229,6 @@ using Alloc = cap::Alloc;
 using IO = cap::IO;
 using Block = cap::Block;
 
-// A context names the atoms a thread or scope may exercise.  Init
-// omits Block because an initialization scope must never wait on a
-// synchronization primitive.  Test is not a superset of Bg or Init: a
-// fixture that must drive a background or initialization path
-// constructs that context explicitly rather than passing a Test one.
-//
-// Each context has a private default constructor and a mint factory
-// that takes a passkey.  The passkey's own default constructor is
-// private too, friended only to the entry points allowed to start a
-// context and to the test scaffolding.  A translation unit that holds
-// neither cannot forge a context.  Adding a privileged entry point is
-// one friend declaration on the relevant passkey.
-//
-// The factories are constexpr so a friended caller can build a context
-// during constant evaluation.
-
 namespace testing {
 struct TestWitness;
 }  // namespace testing
@@ -261,12 +246,6 @@ namespace host {
 struct BackgroundOwner;
 struct InitOwner;
 }  // namespace host
-
-// An execution context default-initializes its capability member, so
-// it needs access to that member's private default constructor.  The
-// contexts below friend this template to grant exactly that.
-template <class Cap, class Row>
-class ExecCtx;
 
 namespace detail::ctx_mint {
 
@@ -300,115 +279,145 @@ class Bg;
 class Init;
 class Test;
 
-// Each concept pins one passkey to one context, so handing the wrong
-// key to a factory is a concept violation rather than a deeper
-// instantiation error.
+// The roster of contexts, and the whole of it.  IsContext reads this
+// array and nothing else, so a class is a context because this header
+// lists it, not because of what it derives from or what a translation
+// unit specializes.  The old is_cap_type was a class template with one
+// specialization per context, and a class template can be explicitly
+// specialized from any translation unit, so a lookalike that
+// specialized it was a capability source to every gate.
+namespace detail {
+
+inline constexpr std::meta::info context_roster[] = {^^Bg, ^^Init, ^^Test};
+
+template <class T>
+[[nodiscard]] consteval bool is_rostered_context_() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto entry : context_roster) {
+        if constexpr (std::is_same_v<T, typename [:entry:]>) return true;
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+}  // namespace detail
+
+template <class T>
+concept IsContext = detail::is_rostered_context_<T>();
+
+// One passkey mints one context.  The binding is the context's own
+// key_type, a member each context declares below, so handing the wrong
+// key to the factory is a constraint failure at the call, and no
+// translation unit can rebind a key by specializing anything.
+template <class Ctx, class Key>
+concept CanMintContext = IsContext<Ctx> && std::same_as<Key, typename Ctx::key_type>;
+
+// The one door of every context.  It is declared before them so that
+// the friend declaration in each names this template and not a fresh
+// one in the enclosing namespace.
+template <class Ctx, class Key>
+    requires CanMintContext<Ctx, Key>
+[[nodiscard]] constexpr Ctx mint_context(Key) noexcept;
+
+namespace detail {
+
+// The value atom a context holds, under the field name a caller spells:
+// `bg.alloc`, `bg.io`, `bg.block`.  Only the three value atoms have a
+// field, so a context that lists a thread atom as a holding fails to
+// compile on an incomplete base.
+template <Effect E>
+struct AtomField;
+
+template <>
+struct AtomField<Effect::Alloc> {
+    [[no_unique_address]] cap::Alloc alloc{};
+};
+
+template <>
+struct AtomField<Effect::IO> {
+    [[no_unique_address]] cap::IO io{};
+};
+
+template <>
+struct AtomField<Effect::Block> {
+    [[no_unique_address]] cap::Block block{};
+};
+
+// What the three contexts share.  A context is its own atom, the value
+// atoms it holds as fields, and the key that mints it.  The row it
+// permits is the atom followed by the holdings, in that order, and
+// Ctx.h reads it through permitted_as instead of restating it.  The
+// constructor is protected because the door is the derived class's own
+// private default constructor: that is the one the roster fixture must
+// find private, and a base cannot make it so.
+template <class Self, class Key, Effect Own, Effect... Holds>
+class ContextBase : public AtomField<Holds>... {
+public:
+    using key_type = Key;
+    static constexpr Effect own_effect = Own;
+
+    template <template <Effect...> class R>
+    using permitted_as = R<Own, Holds...>;
+
+protected:
+    constexpr ContextBase() noexcept = default;
+};
+
+}  // namespace detail
+
+// A context names the atoms a thread or scope may exercise.  Init
+// omits Block because an initialization scope must never wait on a
+// synchronization primitive.  Test is not a superset of Bg or Init: a
+// fixture that must drive a background or initialization path
+// constructs that context explicitly rather than passing a Test one.
 //
-// The concepts deliberately check nothing else.  A nothrow-constructible
-// check would be evaluated at concept-substitution scope, which has no
-// friend access to the private default constructor and would report
-// false whatever the constructor says.  The factory bodies carry that
-// check instead, because they run inside the friended scope.
-template <class Key>
-concept CanMintBgContext = std::same_as<Key, detail::ctx_mint::bg_key>;
+// Each context has a private default constructor and befriends the one
+// factory, whose constraint admits the context's own passkey and no
+// other.  The passkey's own default constructor is private too,
+// friended only to the entry points allowed to start a context and to
+// the test scaffolding.  A translation unit that holds neither cannot
+// forge a context.  Adding a privileged entry point is one friend
+// declaration on the relevant passkey.
+//
+// The factory is constexpr so a friended caller can build a context
+// during constant evaluation.
 
-template <class Key>
-concept CanMintInitContext = std::same_as<Key, detail::ctx_mint::init_key>;
-
-template <class Key>
-concept CanMintTestContext = std::same_as<Key, detail::ctx_mint::test_key>;
-
-class Bg {
-private:
+class Bg final
+    : public detail::ContextBase<Bg, detail::ctx_mint::bg_key, Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block> {
     constexpr Bg() noexcept = default;
 
-    template <class Key>
-        requires CanMintBgContext<Key>
-    friend constexpr Bg mint_bg_context(Key) noexcept;
-
-    // Access to a default member initializer is checked in the context
-    // of the class that contains the member, so this friendship is what
-    // lets an execution context default-initialize a Bg member while
-    // every other translation unit stays locked out.
-    // The parameter list must match the declaration above exactly.  A
-    // qualified friend name with the wrong arity is accepted in
-    // silence, so nothing here would report a drift; only unqualifying
-    // the name turns it into a diagnostic.
-    template <class Cap, class Row>
-    friend class ::foundation::effects::ExecCtx;
-
-public:
-    [[no_unique_address]] cap::Alloc alloc{};
-    [[no_unique_address]] cap::IO io{};
-    [[no_unique_address]] cap::Block block{};
+    template <class Ctx, class Key>
+        requires CanMintContext<Ctx, Key>
+    friend constexpr Ctx mint_context(Key) noexcept;
 };
 
-class Init {
-private:
+class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO> {
     constexpr Init() noexcept = default;
 
-    template <class Key>
-        requires CanMintInitContext<Key>
-    friend constexpr Init mint_init_context(Key) noexcept;
-
-    // The parameter list must match the declaration above exactly.  A
-    // qualified friend name with the wrong arity is accepted in
-    // silence, so nothing here would report a drift; only unqualifying
-    // the name turns it into a diagnostic.
-    template <class Cap, class Row>
-    friend class ::foundation::effects::ExecCtx;
-
-public:
-    [[no_unique_address]] cap::Alloc alloc{};
-    [[no_unique_address]] cap::IO io{};
+    template <class Ctx, class Key>
+        requires CanMintContext<Ctx, Key>
+    friend constexpr Ctx mint_context(Key) noexcept;
 };
 
-class Test {
-private:
+class Test final
+    : public detail::ContextBase<Test, detail::ctx_mint::test_key, Effect::Test, Effect::Alloc, Effect::IO, Effect::Block> {
     constexpr Test() noexcept = default;
 
-    template <class Key>
-        requires CanMintTestContext<Key>
-    friend constexpr Test mint_test_context(Key) noexcept;
-
-    // The parameter list must match the declaration above exactly.  A
-    // qualified friend name with the wrong arity is accepted in
-    // silence, so nothing here would report a drift; only unqualifying
-    // the name turns it into a diagnostic.
-    template <class Cap, class Row>
-    friend class ::foundation::effects::ExecCtx;
-
-public:
-    [[no_unique_address]] cap::Alloc alloc{};
-    [[no_unique_address]] cap::IO io{};
-    [[no_unique_address]] cap::Block block{};
+    template <class Ctx, class Key>
+        requires CanMintContext<Ctx, Key>
+    friend constexpr Ctx mint_context(Key) noexcept;
 };
 
-// A factory body is one of the few scopes where the private default
+// The factory body is one of the few scopes where a private default
 // constructor is a valid expression, so it is where the noexcept
 // property can be pinned at all.
-template <class Key>
-    requires CanMintBgContext<Key>
-[[nodiscard]] inline constexpr Bg mint_bg_context(Key) noexcept {
-    static_assert(noexcept(Bg{}), "The Bg default constructor must be noexcept.  A capability tag's "
-                                  "default member initializer must never throw.");
-    return Bg{};
-}
-
-template <class Key>
-    requires CanMintInitContext<Key>
-[[nodiscard]] inline constexpr Init mint_init_context(Key) noexcept {
-    static_assert(noexcept(Init{}), "The Init default constructor must be noexcept.  A capability tag's "
-                                    "default member initializer must never throw.");
-    return Init{};
-}
-
-template <class Key>
-    requires CanMintTestContext<Key>
-[[nodiscard]] inline constexpr Test mint_test_context(Key) noexcept {
-    static_assert(noexcept(Test{}), "The Test default constructor must be noexcept.  A capability tag's "
-                                    "default member initializer must never throw.");
-    return Test{};
+template <class Ctx, class Key>
+    requires CanMintContext<Ctx, Key>
+[[nodiscard]] constexpr Ctx mint_context(Key) noexcept {
+    static_assert(noexcept(Ctx{}), "A context's default constructor must be noexcept.  A capability tag's "
+                                   "default member initializer must never throw.");
+    return Ctx{};
 }
 
 // Naming this namespace outside test and bench code is a review
@@ -417,9 +426,9 @@ template <class Key>
 namespace testing {
 
 struct TestWitness {
-    [[nodiscard]] static constexpr Bg bg() noexcept { return mint_bg_context(detail::ctx_mint::bg_key{}); }
-    [[nodiscard]] static constexpr Init init() noexcept { return mint_init_context(detail::ctx_mint::init_key{}); }
-    [[nodiscard]] static constexpr Test test() noexcept { return mint_test_context(detail::ctx_mint::test_key{}); }
+    [[nodiscard]] static constexpr Bg bg() noexcept { return mint_context<Bg>(detail::ctx_mint::bg_key{}); }
+    [[nodiscard]] static constexpr Init init() noexcept { return mint_context<Init>(detail::ctx_mint::init_key{}); }
+    [[nodiscard]] static constexpr Test test() noexcept { return mint_context<Test>(detail::ctx_mint::test_key{}); }
 };
 
 [[nodiscard]] inline constexpr Bg bg() noexcept { return TestWitness::bg(); }
@@ -428,10 +437,47 @@ struct TestWitness {
 
 }  // namespace testing
 
-static_assert(sizeof(Bg) == 1, "The Bg context must be 1 byte.  Its capability members are empty and "
-                               "collapse into the object's own byte.");
-static_assert(sizeof(Init) == 1, "The Init context must be 1 byte");
-static_assert(sizeof(Test) == 1, "The Test context must be 1 byte");
+// The family's invariants, read off the roster so that a context is
+// pinned the moment it is listed.  Each context is one byte and empty,
+// because its atoms are; it is built only through the door; it is
+// named after its own atom, which keeps the effect table and the
+// context table one table; and no two contexts share a key, so a key
+// is the name of the context it mints.
+namespace detail {
+
+template <class C>
+[[nodiscard]] consteval bool context_invariants_hold_() noexcept {
+    static_assert(sizeof(C) == 1, "A context must be 1 byte.  Its capability members are empty and "
+                                  "collapse into the object's own byte.");
+    static_assert(std::is_empty_v<C>, "A context must be an empty class, so that ExecCtx holds it at no cost.");
+    static_assert(std::is_trivially_copyable_v<C>, "A context is passed by value and copied into ExecCtx.");
+    static_assert(!std::is_default_constructible_v<C>,
+                  "A context's default constructor must stay private.  Build one through a friended entry "
+                  "point, or through the test witness.");
+    static_assert(effect_name(C::own_effect) == std::meta::identifier_of(^^C), "A context is named after its own atom.");
+    return true;
+}
+
+[[nodiscard]] consteval bool every_context_invariant_holds_() noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto entry : context_roster) {
+        (void)context_invariants_hold_<typename [:entry:]>();
+        template for (constexpr auto other : context_roster) {
+            if constexpr (entry != other) {
+                static_assert(!std::is_same_v<typename [:entry:]::key_type, typename [:other:]::key_type>,
+                              "Two contexts share a passkey, so one key would mint either.");
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+static_assert(every_context_invariant_holds_());
+
+}  // namespace detail
+
 static_assert(sizeof(cap::Alloc) == 1);
 static_assert(sizeof(cap::IO) == 1);
 static_assert(sizeof(cap::Block) == 1);
@@ -561,15 +607,6 @@ static_assert(noexcept(::foundation::effects::testing::TestWitness::test()));
 static_assert(noexcept(::foundation::effects::testing::bg()));
 static_assert(noexcept(::foundation::effects::testing::init()));
 static_assert(noexcept(::foundation::effects::testing::test()));
-
-static_assert(!std::is_default_constructible_v<Bg>,
-              "The Bg default constructor must stay private.  Build one through the friended "
-              "background-thread entry point, or through the test witness.");
-static_assert(!std::is_default_constructible_v<Init>,
-              "The Init default constructor must stay private.  Build one through a friended "
-              "production entry point, or through the test witness.");
-static_assert(!std::is_default_constructible_v<Test>,
-              "The Test default constructor must stay private.  Build one through the test witness.");
 
 }  // namespace detail::capabilities_self_test
 
