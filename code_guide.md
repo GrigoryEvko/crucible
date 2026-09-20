@@ -1286,11 +1286,11 @@ These tests ARE the design guarantee. If they red, the guarantee is broken — s
 
 | Test | Axiom(s) | Cadence |
 |---|---|---|
-| `bit_exact_replay_invariant` | DetSafe | Every PR |
-| `cross_vendor_step_invariant` | DetSafe | Release gate (multi-backend) |
-| `fleet_reshard_replay` | DetSafe + BorrowSafe | Release gate |
+| `bit_exact_replay_invariant` — `test_bit_exact_replay_invariant`, label `determinism` | DetSafe | Every PR |
+| `cross_vendor_step_invariant` — not buildable until a second backend exists; only the CPU oracle does | DetSafe | Release gate (multi-backend) |
+| `fleet_reshard_replay` — not buildable until a fleet exists | DetSafe + BorrowSafe | Release gate |
 | `bit_exact_recovery_invariant` | DetSafe + MemSafe | Release gate |
-| `checkpoint_format_stability` | DetSafe + LeakSafe | Every PR |
+| `checkpoint_format_stability` — `test_serialize` and `test_serialize_release_gate`, label `determinism`; no `TrainingCheckpoint` type exists, so the DAG wire format is the checkpoint format | DetSafe + LeakSafe | Every PR |
 | `tsan_spsc_ring_*` | ThreadSafe + BorrowSafe | Every PR (tsan preset) |
 | `asan_arena_lifetime_*` | MemSafe + LeakSafe | Every PR (default preset) |
 | `ubsan_numeric_*` | TypeSafe + InitSafe | Every PR (default preset) |

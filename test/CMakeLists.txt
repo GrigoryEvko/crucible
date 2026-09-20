@@ -472,11 +472,21 @@ crucible_test(test_memory_plan)
 crucible_test(test_bit_exact_replay_invariant)
 set_tests_properties(test_bit_exact_replay_invariant PROPERTIES
   LABELS "determinism;axiom-detsafe")
+# The two serialize tests carry the checkpoint_format_stability gate of
+# CLAUDE.md §XIII.  Measured 2026-09-20: no TrainingCheckpoint type exists
+# in the code, so the DAG wire format that serialize_region writes is the
+# only checkpoint format there is.  test_serialize pins the byte count and
+# a golden hash in source, which is the cross-process leg of the gate, and
+# test_serialize_release_gate pins the field offsets under NDEBUG.  The
+# cross-backend leg waits behind the same wall as cross_vendor_step_invariant:
+# a second backend.
 crucible_test(test_serialize)
 # fix-11 — release-mode (NDEBUG) witness: malformed wire bytes are rejected
 # by Serialize.h's hard read_gated branch even when the Refined ctor pre()
 # collapses to [[assume]].  Uses exit codes, not assert() (a no-op under NDEBUG).
 crucible_test(test_serialize_release_gate)
+set_tests_properties(test_serialize test_serialize_release_gate PROPERTIES
+  LABELS "determinism;axiom-detsafe")
 crucible_test(test_cipher)
 crucible_test(test_transaction)
 crucible_test(test_vigil)
