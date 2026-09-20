@@ -487,6 +487,18 @@ scan_substrate() {
         case "$stripped" in
             '//'*|'///'*|'*'*|'/*'*) continue ;;
             'return '*|'return('*|'auto '*=*) continue ;;
+            # A `static_assert(mint_X(...))` line uses the mint as a callee in
+            # an expression — it is NOT a declaration.  The former
+            # name-within-tree dedup masked these by collapsing every same-name
+            # match onto the real declaration's row.  The (tree, name,
+            # file:line) dedup below no longer collapses same-name rows, so a
+            # usage line would otherwise re-enter the inventory as a phantom
+            # declaration (safety/Fn.h's three `static_assert(mint_fn(...))`
+            # lines were the canonical case).  Drop it at the source, in the
+            # same discipline as the `return` / `auto x =` skips above.  Zero
+            # false positives: no free-function mint declaration begins with
+            # `static_assert`.
+            'static_assert('*|'static_assert '*) continue ;;
             # Defaulted/deleted special members (a passkey class's own
             # `mint_*_key() = default;` ctor, a removed overload's
             # `= delete("…")`) are NOT handled here any more — see the
@@ -832,6 +844,12 @@ scan_fixy_mints() {
         case "$stripped" in
             '//'*|'///'*|'*'*|'/*'*) continue ;;
             'return '*|'return('*|'auto '*=*) continue ;;
+            # Mirror scan_substrate: a `static_assert(mint_X(...))` line is a
+            # usage, not a declaration.  fixy/ carries no such line today, but
+            # the (name, file:line) dedup below would surface one as a phantom
+            # row if it landed, so keep the two scanners' filter blocks
+            # identical.  Zero false positives.
+            'static_assert('*|'static_assert '*) continue ;;
             '"'*) continue ;;
             'friend '*|'friend('*) continue ;;
         esac
@@ -1248,14 +1266,28 @@ trap 'rm -f "$inventory_tmp"' EXIT
 for tree in "${trees[@]}"; do
     scan_substrate "$tree"
 done | sort -t$'\t' -k1,1 -k2,2 -k3,3 | \
-    awk -F'\t' '!seen[$1"\t"$2]++' >"$inventory_tmp"
-# Note: some mint names are declared in multiple files (e.g.
-# `mint_consumer_session` in both CalendarGridSession.h and
-# SpscSession.h).  We canonicalize on the FIRST declaration when
-# sorted by (tree, name, file:line); awk-based dedup keeps that
-# choice deterministic across runs.  Future PRs that add an
-# alphabetically-earlier declaration will surface as drift via
-# `--check`, prompting the auditor to re-snapshot or reconcile.
+    awk -F'\t' '!seen[$1"\t"$2"\t"$3]++' >"$inventory_tmp"
+# Dedup key is (tree, name, file:line) — NOT (tree, name).  A mint name is not
+# unique: `mint_producer_session` is a distinct overload set in each of four
+# session headers (SpscSession.h, CalendarGridSession.h, ShardedGridSession.h,
+# ShardedCalendarGridSession.h), and `mint_persisted_session` /
+# `mint_recording_session` carry several distinct overloads within one file.
+# Keying on (tree, name) collapsed each overload set to ONE row — whichever
+# declaration lex-sorted first — so every other overload was invisible to the
+# §XXI audit and never reached the HS14 floor.  Adding file:line ($3) makes
+# each distinct declaration its own row.
+#
+# This does not resurrect the "same mint seen twice" duplicates: a friend
+# declaration, a string-literal diagnostic mention, a defaulted/deleted
+# overload, and a `static_assert(mint_X(...))` usage line are all dropped by
+# scan_substrate BEFORE they reach dedup, so only genuine declaration lines
+# remain — and each of those is exactly one file:line.  A signature key was the
+# alternative discriminator; file:line was chosen because it is already emitted
+# ($3), leaves the four upstream carve-out filters untouched, matches the
+# name|path key the --check-floor gate already reduces to, and can never
+# conflate two genuinely distinct declarations (a fragile signature-normalizer
+# could, which would re-hide the very overloads this fixes).  A newly added
+# declaration surfaces as drift via `--check`, prompting a re-snapshot.
 
 # ── Emit markdown ────────────────────────────────────────────────────
 emit_inventory() {
@@ -1458,8 +1490,13 @@ HEADER
     local fixy_rows fixy_origin_count=0 sub_names_tmp
     sub_names_tmp="$(mktemp)"
     cut -f2 "$inventory_tmp" | sort -u >"$sub_names_tmp"
+    # Dedup key is (name, file:line), not name alone — the same overload-
+    # collapse the substrate scan had.  fixy/Fn.h declares two distinct
+    # `mint_fn_for` overloads (unary and binary Stance); keying on name alone
+    # hid the second.  scan_fixy_mints drops friend / string / deleted / usage
+    # lines upstream, so each surviving file:line is a genuine declaration.
     fixy_rows="$(scan_fixy_mints "$sub_names_tmp" \
-                   | sort -t$'\t' -k1,1 -k2,2 | awk -F'\t' '!seen[$1]++')"
+                   | sort -t$'\t' -k1,1 -k2,2 | awk -F'\t' '!seen[$1"\t"$2]++')"
     rm -f "$sub_names_tmp"
     if [[ -n "$fixy_rows" ]]; then
         printf '\n## fixy-origin mints\n\n'
