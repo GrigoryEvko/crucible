@@ -2,7 +2,7 @@
 
 #include "effects/_Capabilities.h"
 #include "Platform.h"
-#include "Saturate.h"
+#include "_Saturate.h"
 // The umbrella header that re-exports these wrappers pulls in a header that
 // includes this one and uses a complete Arena, so including the umbrella here
 // cycles and leaves Arena undeclared in every consuming translation unit.

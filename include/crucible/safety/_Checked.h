@@ -3,7 +3,7 @@
 // Arithmetic that names its overflow behaviour at the call site.
 
 #include <crucible/Platform.h>
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 #include <concepts>
 #include <cstddef>

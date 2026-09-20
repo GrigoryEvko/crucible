@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include <crucible/Platform.h>
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 #include <crucible/Types.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/_Post.h>

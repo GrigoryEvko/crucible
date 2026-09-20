@@ -4,7 +4,7 @@
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 #include <crucible/SwissTable.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>

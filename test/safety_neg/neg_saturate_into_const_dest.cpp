@@ -4,7 +4,7 @@
 // A const counter must use *_sat_from instead, preserving the
 // read-only/mutating split.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 int main() {
     const unsigned counter = 1u;

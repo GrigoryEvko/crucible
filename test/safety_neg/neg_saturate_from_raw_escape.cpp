@@ -4,7 +4,7 @@
 // clamped bit is carried out of memory-resident counter arithmetic.
 // It must not implicitly decay to raw T.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 int main() {
     unsigned counter = ~0u;

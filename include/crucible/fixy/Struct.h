@@ -3,7 +3,7 @@
 // The namespace carries a trailing underscore because struct is a
 // keyword.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/NotInherited.h>

@@ -15,7 +15,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Pipeline.h>

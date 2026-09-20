@@ -308,6 +308,28 @@ fixy_test(test_owned_mmap)
 fixy_test(test_constant_time)
 fixy_test(test_cyclic)
 fixy_test(test_saturated)
+fixy_test(test_saturate_fixy test_saturate.cpp)
+
+# The four refusals of fixy/Saturate.h, from the old safety_neg corpus,
+# under the namespace's name because the old corpus still owns the
+# neg_saturate_ targets.  An into helper takes a mutable reference; a
+# from helper returns Saturated<T>, not T; a det helper returns the pure
+# band, not the Saturated<T> inside it; and a det result reaches another
+# tier only through relax.  Each fixture is matched on the qualified
+# type or signature the compiler prints, which the fixture's source
+# never spells in that form.
+fixy_neg_compile_test(neg_sat_into_const_dest
+  "no matching function for call to .add_sat_into\\(const unsigned int&, unsigned int\\)."
+  "add_sat_into\\(const unsigned int&, unsigned int\\)")
+fixy_neg_compile_test(neg_sat_from_raw_escape
+  "cannot convert .fixy::Saturated<unsigned int>. to .unsigned int. in initialization"
+  "fixy::Saturated<unsigned int>")
+fixy_neg_compile_test(neg_sat_det_raw_result_escape
+  "conversion from .fixy::sat::DetSatPure<unsigned int>. \\{aka .foundation::algebra::Graded<"
+  "to non-scalar type .fixy::Saturated<unsigned int>. requested")
+fixy_neg_compile_test(neg_sat_det_cross_tier_assignment
+  "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
+  "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>,\\[\\.\\.\\.\\]>. requested")
 fixy_test(test_checked_fixy test_checked.cpp)
 fixy_test(test_bits)
 fixy_test(test_fixed_array)

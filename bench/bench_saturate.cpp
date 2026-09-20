@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 #include "bench_harness.h"
 

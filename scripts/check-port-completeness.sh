@@ -77,8 +77,9 @@
 #     purpose) is a different question from a symbol that vanished.
 #   - Headers WITHOUT the underscore are not measured at all.  The guard
 #     measures the claimed set; an unmarked header that was partly ported
-#     (include/crucible/Saturate.h at #179) is invisible here until it is
-#     marked.  Marking is what puts a header under this guard.
+#     is invisible here until it is marked (include/crucible/Saturate.h
+#     was, from A2.2 until #179).  Marking is what puts a header under
+#     this guard.
 #
 # scripts/port-drops.txt
 # ----------------------

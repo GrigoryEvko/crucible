@@ -19,7 +19,7 @@
 // right answer: a staleness past the representable range is unbounded
 // for any practical purpose.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/_Lattice.h>
 

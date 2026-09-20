@@ -5,7 +5,7 @@
 // assignment to another DetSafe tier would erase the production-site
 // proof obligation.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 int main() {
     using Sat = crucible::safety::Saturated<unsigned>;

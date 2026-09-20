@@ -60,7 +60,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 #include <cstdint>
 #include <limits>

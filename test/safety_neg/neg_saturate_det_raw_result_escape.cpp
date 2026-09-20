@@ -5,7 +5,7 @@
 // decay to the underlying Saturated<T>; consumers that drop the
 // determinism pin have to do so explicitly.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 int main() {
     crucible::safety::Saturated<unsigned> escaped = crucible::sat::add_sat_det<unsigned>(1u, 2u);

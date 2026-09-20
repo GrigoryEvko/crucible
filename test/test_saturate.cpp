@@ -2,7 +2,7 @@
 // overflow, and return the plain result otherwise.  Every signed corner
 // case and both unsigned wrap directions appear below.
 
-#include <crucible/Saturate.h>
+#include <crucible/_Saturate.h>
 
 #include "test_assert.h"
 #include <cstdint>
