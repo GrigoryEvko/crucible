@@ -24,4 +24,3 @@
 # they are for.
 
 include/foundation/effects/Effect.h  — declares the namespace, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
-include/foundation/effects/Ctx.h  — the ExecCtx self-test builds each witness context, which after #172 Door 1 means handing it a real capability.

@@ -6,6 +6,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -54,10 +55,37 @@ static_assert(every_atom_agrees_across_spellings());
 // The tag type is the entire gate: no other parameter admits a call.
 [[nodiscard]] int with_alloc(fe::cap::Alloc) noexcept { return 42; }
 
+// Every accessor called with a non-constant argument.  The
+// static_assert walls only prove the constant-evaluated path.  This was
+// an inline runtime_smoke_test in Effect.h, compiled into every
+// translation unit that included the header.
+void every_accessor_runs_at_run_time() {
+    fe::Effect e = fe::Effect::Alloc;
+    [[maybe_unused]] std::string_view n1 = fe::effect_name(e);
+    e = fe::Effect::IO;
+    [[maybe_unused]] std::string_view n2 = fe::effect_name(e);
+    e = fe::Effect::Block;
+    [[maybe_unused]] std::string_view n3 = fe::effect_name(e);
+    e = fe::Effect::Bg;
+    [[maybe_unused]] std::string_view n4 = fe::effect_name(e);
+    e = fe::Effect::Init;
+    [[maybe_unused]] std::string_view n5 = fe::effect_name(e);
+    e = fe::Effect::Test;
+    [[maybe_unused]] std::string_view n6 = fe::effect_name(e);
+
+    [[maybe_unused]] fe::cap::Alloc a_tag{};
+    [[maybe_unused]] fe::cap::IO i_tag{};
+    [[maybe_unused]] fe::cap::Block b_tag{};
+
+    [[maybe_unused]] auto bg_ctx = fe::testing::bg();
+    [[maybe_unused]] auto init_ctx = fe::testing::init();
+    [[maybe_unused]] auto test_ctx = fe::testing::test();
+}
+
 }  // namespace
 
 int main() {
-    fe::detail::capabilities_self_test::runtime_smoke_test();
+    every_accessor_runs_at_run_time();
     fe::detail::effect_row_self_test::runtime_smoke_test();
     fe::runtime_smoke_test_lattice();
 

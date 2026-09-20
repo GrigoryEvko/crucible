@@ -10,7 +10,7 @@
 namespace {
 struct NeedsIo {};
 
-using FgCtx = ::foundation::effects::detail::exec_ctx_self_test::FgWitness;
+using FgCtx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 }  // namespace
 
 namespace foundation::permissions {

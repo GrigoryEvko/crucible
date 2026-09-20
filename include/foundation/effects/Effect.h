@@ -571,31 +571,6 @@ static_assert(!std::is_default_constructible_v<Init>,
 static_assert(!std::is_default_constructible_v<Test>,
               "The Test default constructor must stay private.  Build one through the test witness.");
 
-// Every accessor is called here with a non-constant argument.  The
-// static_assert wall above only proves the constant-evaluated path.
-inline void runtime_smoke_test() {
-    Effect e = Effect::Alloc;
-    [[maybe_unused]] std::string_view n1 = effect_name(e);
-    e = Effect::IO;
-    [[maybe_unused]] std::string_view n2 = effect_name(e);
-    e = Effect::Block;
-    [[maybe_unused]] std::string_view n3 = effect_name(e);
-    e = Effect::Bg;
-    [[maybe_unused]] std::string_view n4 = effect_name(e);
-    e = Effect::Init;
-    [[maybe_unused]] std::string_view n5 = effect_name(e);
-    e = Effect::Test;
-    [[maybe_unused]] std::string_view n6 = effect_name(e);
-
-    [[maybe_unused]] cap::Alloc a_tag{};
-    [[maybe_unused]] cap::IO i_tag{};
-    [[maybe_unused]] cap::Block b_tag{};
-
-    [[maybe_unused]] auto bg_ctx = ::foundation::effects::testing::bg();
-    [[maybe_unused]] auto init_ctx = ::foundation::effects::testing::init();
-    [[maybe_unused]] auto test_ctx = ::foundation::effects::testing::test();
-}
-
 }  // namespace detail::capabilities_self_test
 
 }  // namespace foundation::effects

@@ -13,7 +13,7 @@ struct Whole {};
 struct Left {};
 struct Right {};
 
-using BgCtx = ::foundation::effects::detail::exec_ctx_self_test::BgWitness;
+using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
 }  // namespace
 
 int main() {

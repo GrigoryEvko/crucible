@@ -1020,10 +1020,10 @@ struct permission_row<detail::seplog_multi_effect_tag> {
 // in the shape of the named contexts the layer above defines: a background
 // drain row, the same with IO, the test-runner row, and the empty
 // foreground row.
-using seplog_bg_drain_ctx = ::foundation::effects::detail::exec_ctx_self_test::BgWitness;
-using seplog_bg_compile_ctx = ::foundation::effects::detail::exec_ctx_self_test::BgIoWitness;
-using seplog_test_runner_ctx = ::foundation::effects::detail::exec_ctx_self_test::TestWitnessCtx;
-using seplog_hot_fg_ctx = ::foundation::effects::detail::exec_ctx_self_test::FgWitness;
+using seplog_bg_drain_ctx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+using seplog_bg_compile_ctx = ::foundation::effects::detail::ctx_witnesses::BgIoWitness;
+using seplog_test_runner_ctx = ::foundation::effects::detail::ctx_witnesses::TestWitnessCtx;
+using seplog_hot_fg_ctx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 
 static_assert(permission_row_empty_v<detail::seplog_test_tag>);
 static_assert(!permission_row_empty_v<detail::seplog_io_tag>);

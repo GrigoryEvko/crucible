@@ -15,8 +15,8 @@ namespace {
 
 namespace fe = ::foundation::effects;
 using fe::Effect;
-using fe::detail::exec_ctx_self_test::BgIoWitness;
-using fe::detail::exec_ctx_self_test::BgWitness;
+using fe::detail::ctx_witnesses::BgIoWitness;
+using fe::detail::ctx_witnesses::BgWitness;
 
 // A token is one byte, move-only, and minted only through the friended
 // factory.

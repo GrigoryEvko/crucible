@@ -226,11 +226,19 @@ concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains_v<row_type_of_t<Ctx>, Es>
 template <class Ctx, Effect E>
 concept CtxCanMint = IsExecCtx<Ctx> && row_contains_v<cap_permitted_row_t<cap_type_of_t<Ctx>>, E>;
 
-namespace detail::exec_ctx_self_test {
+namespace detail::ctx_witnesses {
 
-// Local witnesses in the shape of the four named contexts the layer
-// above defines (fixy/Ctx.h).  They are self-test scaffolding, not a
-// second spelling of those contexts.
+// Witnesses in the shape of the four named contexts the layer above
+// defines (fixy/Ctx.h).  They are scaffolding, not a second spelling of
+// those contexts.
+//
+// They live in the header rather than in a test because Capability.h,
+// Computation.h, Permission.h and the fixtures of all three name them.
+// The assertions below are invariants of the shipped concepts read
+// against these shapes.  The scenarios that once sat here — building a
+// promotion chain, probing with_cap, driving every operation at run
+// time — moved to test/foundation/test_ctx.cpp, which is why this
+// namespace no longer says self_test.
 using FgWitness = ExecCtx<ctx_cap::Fg, Row<>>;
 using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
@@ -247,23 +255,6 @@ static_assert(sizeof(TestWitnessCtx) == 1);
 // Every axis defaults to the claim-nothing end of its range.
 static_assert(std::is_same_v<typename ExecCtx<>::cap_type, ctx_cap::Fg>);
 static_assert(std::is_same_v<typename ExecCtx<>::row_type, Row<>>);
-
-constexpr auto ctx0 = ExecCtx<>{};
-// The promotion needs a real Bg.  This is a header self-test, so it
-// takes one from the testing witness; production code promotes with the
-// capability its own mint returned.
-constexpr auto ctx1 = ctx0.with_cap(testing::bg());
-static_assert(std::is_same_v<typename decltype(ctx1)::cap_type, Bg>);
-static_assert(std::is_same_v<typename decltype(ctx1)::row_type, Row<>>);
-
-constexpr auto ctx2 = ctx1.in_row<Row<Effect::Bg, Effect::Alloc>>();
-static_assert(std::is_same_v<typename decltype(ctx2)::row_type, Row<Effect::Bg, Effect::Alloc>>);
-
-constexpr auto ctx3 = ctx2.in_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
-static_assert(std::is_same_v<typename decltype(ctx3)::row_type, Row<Effect::Bg, Effect::Alloc, Effect::IO>>);
-static_assert(std::is_same_v<typename decltype(ctx3)::cap_type, Bg>);
-
-static_assert(sizeof(ctx0) == 1 && sizeof(ctx1) == 1 && sizeof(ctx2) == 1 && sizeof(ctx3) == 1);
 
 using BgVariantA = ExecCtx<Bg, Row<Effect::Bg>>;
 using BgVariantB = ExecCtx<Bg, Row<Effect::Bg, Effect::IO>>;
@@ -327,17 +318,6 @@ static_assert(std::is_same_v<ctx_cap::Bg, Bg>);
 static_assert(std::is_same_v<ctx_cap::Init, Init>);
 static_assert(std::is_same_v<ctx_cap::Test, Test>);
 
-// Promoting the empty row to a background capability is admitted.
-// Moving a background row to an initialization capability is not, and
-// would have to narrow the row first.
-constexpr auto bg_promoted = FgWitness{}.with_cap(testing::bg());
-static_assert(std::is_same_v<typename decltype(bg_promoted)::cap_type, Bg>);
-static_assert(std::is_same_v<typename decltype(bg_promoted)::row_type, Row<>>);
-template <class C>
-concept CanTakeInitCap = requires(C const& c) { c.with_cap(testing::init()); };
-static_assert(CanTakeInitCap<FgWitness>);
-static_assert(!CanTakeInitCap<BgWitness>, "A row that names Bg cannot move under an Init source.");
-
 static_assert(CtxAdmits<FgWitness, Row<>>);
 static_assert(!CtxAdmits<FgWitness, Row<Effect::Bg>>);
 static_assert(CtxAdmits<BgWitness, Row<Effect::Bg>>);
@@ -387,31 +367,6 @@ static_assert(!CtxCanMint<FgWitness, Effect::Alloc>);
 static_assert(!CtxCanMint<FgWitness, Effect::Bg>);
 static_assert(CtxCanMint<TestWitnessCtx, Effect::Block>);
 
-// Every operation is driven here with non-constant arguments.  The
-// static_assert wall above only proves the constant-evaluated path.
-inline void runtime_smoke_test() {
-    // Only the foreground witness builds from nothing.  Each of the
-    // others is handed the capability it claims: a context is not
-    // evidence of a capability, it carries one.
-    [[maybe_unused]] FgWitness fg{};
-    [[maybe_unused]] BgWitness bg{testing::bg()};
-    [[maybe_unused]] BgIoWitness bg_io{testing::bg()};
-    [[maybe_unused]] InitWitness init{testing::init()};
-    [[maybe_unused]] TestWitnessCtx test_ctx{testing::test()};
-
-    [[maybe_unused]] auto s1 = sizeof(fg);
-    [[maybe_unused]] auto s2 = sizeof(bg);
-
-    // The capability member is reachable through the borrowing
-    // accessor and nowhere else.
-    [[maybe_unused]] Bg const& held = bg.cap();
-    [[maybe_unused]] cap::Alloc alloc_tag = held.alloc;
-
-    auto widened = bg.template in_row<Row<Effect::Bg, Effect::Alloc, Effect::Block>>();
-    static_assert(std::is_same_v<typename decltype(widened)::row_type, Row<Effect::Bg, Effect::Alloc, Effect::Block>>);
-    [[maybe_unused]] auto s3 = sizeof(widened);
-}
-
-}  // namespace detail::exec_ctx_self_test
+}  // namespace detail::ctx_witnesses
 
 }  // namespace foundation::effects

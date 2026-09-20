@@ -39,7 +39,7 @@ int main() {
     if (doubled.extract() != 42) return 1;
 
     // The context carries the capability it claims.
-    fe::detail::exec_ctx_self_test::BgWitness bg_ctx{fe::testing::bg()};
+    fe::detail::ctx_witnesses::BgWitness bg_ctx{fe::testing::bg()};
     auto claimed = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(bg_ctx, value);
     auto wider = std::move(claimed).template weaken<Row<Effect::Bg, Effect::Alloc>>();
     if (wider.graded().peek() != 21) return 2;

@@ -15,7 +15,7 @@ struct Whole {};
 struct Left {};
 struct Right {};
 
-using FgCtx = ::foundation::effects::detail::exec_ctx_self_test::FgWitness;
+using FgCtx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 }  // namespace
 
 namespace foundation::permissions {

@@ -640,22 +640,22 @@ static_assert(decltype(Computation<Row<>, int>::lift<Effect::Bg>(0))::effect_cou
 // The asymmetry between the two contexts below is the closure: one
 // carries Bg in its row and can witness a Bg claim, the other cannot.
 // If either pin reds, the gate has lost its discriminating power.
-static_assert(row_contains_v<typename detail::exec_ctx_self_test::BgWitness::row_type, Effect::Bg>,
+static_assert(row_contains_v<typename detail::ctx_witnesses::BgWitness::row_type, Effect::Bg>,
               "The background drain context must carry Effect::Bg in its row.  It is the context that "
               "witnesses a Bg claim.");
 
-static_assert(!row_contains_v<typename detail::exec_ctx_self_test::FgWitness::row_type, Effect::Bg>,
+static_assert(!row_contains_v<typename detail::ctx_witnesses::FgWitness::row_type, Effect::Bg>,
               "The hot foreground context must not carry Effect::Bg in its row.  Foreground code must "
               "not be able to witness a Bg claim.");
 
 static_assert(std::is_same_v<decltype(Computation<Row<>, int>::template mint_computation_in_ctx<Effect::Bg>(
-                                 std::declval<detail::exec_ctx_self_test::BgWitness const&>(), 42)),
+                                 std::declval<detail::ctx_witnesses::BgWitness const&>(), 42)),
                              Computation<Row<Effect::Bg>, int>>,
               "The witnessed lift must admit when the context's row contains the requested effect, and "
               "must give the same result type as the unwitnessed form.");
 
 static_assert(decltype(Computation<Row<>, int>::template mint_computation_in_ctx<Effect::Bg>(
-                  std::declval<detail::exec_ctx_self_test::BgWitness const&>(), 0))::effect_count_in_row()
+                  std::declval<detail::ctx_witnesses::BgWitness const&>(), 0))::effect_count_in_row()
                   == 1u,
               "The witnessed lift preserves the type-level claim.  Only the construction path gained a "
               "check.");

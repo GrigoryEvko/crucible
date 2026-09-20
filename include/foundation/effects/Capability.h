@@ -405,17 +405,17 @@ static_assert(HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Bg>)
 static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Init>);
 static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::IO, Bg>);
 
-static_assert(CapMatchesCtx<Capability<Effect::Bg, Bg>, detail::exec_ctx_self_test::BgWitness>);
-static_assert(CapMatchesCtx<Capability<Effect::Alloc, Bg>, detail::exec_ctx_self_test::BgWitness>);
-static_assert(!CapMatchesCtx<Capability<Effect::IO, Bg>, detail::exec_ctx_self_test::BgWitness>);
-static_assert(CapMatchesCtx<Capability<Effect::IO, Bg>, detail::exec_ctx_self_test::BgIoWitness>);
-static_assert(!CapMatchesCtx<Capability<Effect::Bg, Bg>, detail::exec_ctx_self_test::FgWitness>);
-static_assert(CapMatchesCtx<Capability<Effect::Test, Test>, detail::exec_ctx_self_test::TestWitnessCtx>);
+static_assert(CapMatchesCtx<Capability<Effect::Bg, Bg>, detail::ctx_witnesses::BgWitness>);
+static_assert(CapMatchesCtx<Capability<Effect::Alloc, Bg>, detail::ctx_witnesses::BgWitness>);
+static_assert(!CapMatchesCtx<Capability<Effect::IO, Bg>, detail::ctx_witnesses::BgWitness>);
+static_assert(CapMatchesCtx<Capability<Effect::IO, Bg>, detail::ctx_witnesses::BgIoWitness>);
+static_assert(!CapMatchesCtx<Capability<Effect::Bg, Bg>, detail::ctx_witnesses::FgWitness>);
+static_assert(CapMatchesCtx<Capability<Effect::Test, Test>, detail::ctx_witnesses::TestWitnessCtx>);
 
 // A capability is not locked to the source that minted it.  The last
 // two pairs cross sources on purpose.
-static_assert(CapMatchesCtx<Capability<Effect::Alloc, Init>, detail::exec_ctx_self_test::BgWitness>);
-static_assert(CapMatchesCtx<Capability<Effect::Alloc, Test>, detail::exec_ctx_self_test::BgIoWitness>);
+static_assert(CapMatchesCtx<Capability<Effect::Alloc, Init>, detail::ctx_witnesses::BgWitness>);
+static_assert(CapMatchesCtx<Capability<Effect::Alloc, Test>, detail::ctx_witnesses::BgIoWitness>);
 
 }  // namespace detail::capability_self_test
 
