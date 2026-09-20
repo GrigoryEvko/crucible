@@ -22,7 +22,12 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+// Forward declarations only, for the authority relation below. Permission
+// carries a defaulted Brand parameter, so it has to be named through the
+// header that declares it rather than redeclared here.
+#include <foundation/permissions/Fwd.h>
 
+#include <concepts>
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
@@ -190,18 +195,78 @@ class Computation;
 // complete.  The requires-clauses that use them inside the class body
 // are checked when those members are instantiated, by which point the
 // specializations are visible.
+// Declared, not included.  The authority relation below names Capability
+// and nothing here calls it, so pulling in Capability.h would add a
+// dependency for a name.  Capability carries no defaulted parameter, so
+// unlike Permission it can be declared here.
+template <Effect Cap, class Source>
+class Capability;
+
 namespace detail {
 template <typename>
 struct is_computation : std::false_type {};
 
-// A payload that is itself an engaged Computation hides its row from
-// everything that looks at the outer type.  Wrapping
-// Computation<Row<Bg>, U> inside an empty-row Computation would let
-// the value out through extract while the intervening code believed it
-// was handling pure data.  A plain payload has nothing to hide, so it
-// always admits.
-template <typename>
-struct extract_admits_payload : std::true_type {};
+// Whether handing a payload out through extract would give the receiver
+// a power the outer row never named.
+//
+// This relation used to be its own complement, and the complement was
+// false.  It read "a plain payload has nothing to hide, so it always
+// admits", with a single specialization for a nested Computation hiding
+// its row.  A Capability is a plain payload by that test, so
+// Computation<Row<>, Capability<Effect::IO, S>> — a value typed PURE —
+// admitted extract and handed out an IO capability.  The mechanism
+// checked one thing and the sentence generalised it to every payload.
+//
+// So the relation is stated positively, and the set is enumerated here
+// in one place rather than assumed empty.  Three kinds convey authority:
+//
+//   * a capability, which IS the authority to perform an effect;
+//   * a permission token, exclusive or shared, which is the authority to
+//     touch a region;
+//   * an execution context, which holds a capability member and would
+//     hand that capability out with itself.
+//
+// A nested Computation conveys authority when its own row is engaged,
+// which is the case the old specialization covered, or when its payload
+// does.
+//
+// A type outside this list says so itself by carrying
+// `static constexpr bool conveys_authority = true;`, the same opt-in
+// shape GradedTrait.h uses for value_type_decoupled.
+//
+// The residual, stated rather than papered over.  A type that neither
+// appears here nor declares the member is admitted.  That is not
+// closure.  It is a far smaller hole than the one it replaces, and it is
+// deliberate: most payloads are inert, and refusing them by default
+// would make extract unusable rather than safe.  A new authority-bearing
+// type has to arrive in this list or declare itself, and that is the
+// obligation this comment exists to hand the next author.
+
+template <typename T>
+concept DeclaresConveysAuthority = requires {
+    { T::conveys_authority } -> std::convertible_to<const bool&>;
+} && T::conveys_authority;
+
+template <typename T>
+struct conveys_authority : std::bool_constant<DeclaresConveysAuthority<T>> {};
+
+template <Effect Cap, class Source>
+struct conveys_authority<Capability<Cap, Source>> : std::true_type {};
+
+template <typename Tag, typename Brand>
+struct conveys_authority<::foundation::permissions::Permission<Tag, Brand>> : std::true_type {};
+
+template <typename Tag, typename Brand>
+struct conveys_authority<::foundation::permissions::SharedPermission<Tag, Brand>> : std::true_type {};
+
+template <class Cap, class R>
+struct conveys_authority<ExecCtx<Cap, R>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool conveys_authority_v = conveys_authority<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+struct extract_admits_payload : std::bool_constant<!conveys_authority_v<T>> {};
 template <typename T>
 inline constexpr bool extract_admits_payload_v = extract_admits_payload<T>::value;
 }  // namespace detail
@@ -391,9 +456,13 @@ namespace detail {
 template <typename R, typename T>
 struct is_computation<Computation<R, T>> : std::true_type {};
 
+// A nested carrier hides its own row from everything that reads the
+// outer type, so an engaged inner row conveys authority exactly as a
+// capability does.  The payload recurses, which is what keeps a stack of
+// carriers from laundering one.
 template <typename R, typename U>
-struct extract_admits_payload<Computation<R, U>>
-    : std::bool_constant<(row_size_v<R> == 0) && extract_admits_payload<U>::value> {};
+struct conveys_authority<Computation<R, U>>
+    : std::bool_constant<(row_size_v<R> != 0) || conveys_authority_v<U>> {};
 }  // namespace detail
 
 #define CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationAlias, T_)                                                   \
@@ -536,6 +605,42 @@ static_assert(
     !detail::extract_admits_payload_v<Computation<Row<>, Computation<Row<>, Computation<Row<Effect::Bg>, int>>>>);
 
 static_assert(detail::extract_admits_payload_v<Computation<Row<>, Computation<Row<>, Computation<Row<>, int>>>>);
+
+// The three authority kinds the relation enumerates.  Each reaches the
+// relation through its own specialization, so each needs its own cell.
+// A repair that covered only the capability would satisfy the first
+// line and leave the other two open.
+
+struct AuthorityProbeTag {};
+
+static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg>>);
+static_assert(!detail::extract_admits_payload_v<::foundation::permissions::Permission<AuthorityProbeTag>>);
+static_assert(!detail::extract_admits_payload_v<::foundation::permissions::SharedPermission<AuthorityProbeTag>>);
+static_assert(!detail::extract_admits_payload_v<ExecCtx<Bg, Row<Effect::Bg>>>);
+
+// And each one through a pure carrier, which is the exact shape the old
+// primary admitted: the row is empty and the authority is inside.
+
+static_assert(!detail::extract_admits_payload_v<Computation<Row<>, Capability<Effect::IO, Bg>>>);
+static_assert(
+    !detail::extract_admits_payload_v<Computation<Row<>, ::foundation::permissions::Permission<AuthorityProbeTag>>>);
+static_assert(!detail::extract_admits_payload_v<Computation<Row<>, ExecCtx<Bg, Row<Effect::Bg>>>>);
+
+// The opt-in escape, for a type that conveys authority without being
+// nameable here.  Declaring the member false is not a way out of the
+// enumerated list, and declaring nothing is the admitting default the
+// residual comment above describes.
+
+struct DeclaredAuthority {
+    static constexpr bool conveys_authority = true;
+};
+static_assert(!detail::extract_admits_payload_v<DeclaredAuthority>);
+static_assert(!detail::extract_admits_payload_v<Computation<Row<>, DeclaredAuthority>>);
+
+struct DeclaresNoAuthority {
+    static constexpr bool conveys_authority = false;
+};
+static_assert(detail::extract_admits_payload_v<DeclaresNoAuthority>);
 
 // Only the admitting direction is witnessed through a requires
 // expression.  GCC 16 turns a failed constraint inside the body of a

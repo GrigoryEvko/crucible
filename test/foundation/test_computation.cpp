@@ -2,7 +2,9 @@
 // pins, and the substrate view.
 
 #include <foundation/algebra/GradedTrait.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
+#include <foundation/permissions/Permission.h>
 
 #include <type_traits>
 #include <utility>
@@ -116,6 +118,48 @@ void computation_runs_at_run_time() {
     [[maybe_unused]] int peeked_moved = g_moved.peek();
 }
 
+// The authority relation, read over complete types.
+//
+// Computation.h pins the same property against forward declarations,
+// which is all a partial specialization needs to match.  Here every
+// named type is complete, so a declaration that drifted away from its
+// definition would show up as a mismatch rather than as a silent
+// non-match that admits the payload.
+namespace authority_relation {
+
+namespace fp = ::foundation::permissions;
+
+struct PureRegionTag {
+    using permission_row = Row<>;
+};
+
+// Each enumerated kind is refused on its own.
+static_assert(!fe::detail::extract_admits_payload_v<fe::Capability<Effect::IO, fe::Bg>>);
+static_assert(!fe::detail::extract_admits_payload_v<fp::Permission<PureRegionTag>>);
+static_assert(!fe::detail::extract_admits_payload_v<fp::SharedPermission<PureRegionTag>>);
+static_assert(!fe::detail::extract_admits_payload_v<fe::detail::ctx_witnesses::BgWitness>);
+
+// And inside a carrier whose own row is empty, which is the shape the
+// old primary admitted and the shape the two negative fixtures take.
+static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::Capability<Effect::IO, fe::Bg>>>);
+static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fp::Permission<PureRegionTag>>>);
+static_assert(
+    !fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::detail::ctx_witnesses::BgWitness>>);
+
+// The admitting direction, so the repair cannot be a blanket refusal.
+// A blanket refusal would satisfy both negative fixtures and every
+// assertion above.
+struct PlainPayload {
+    int value = 0;
+};
+
+static_assert(fe::detail::extract_admits_payload_v<PlainPayload>);
+static_assert(fe::detail::extract_admits_payload_v<fe::Computation<Row<>, PlainPayload>>);
+static_assert(requires(fe::Computation<Row<>, PlainPayload> const& c) { c.extract(); },
+              "A payload that conveys no authority must still come out of a pure carrier.");
+
+}  // namespace authority_relation
+
 }  // namespace
 
 int main() {
@@ -133,5 +177,10 @@ int main() {
     auto wider = std::move(claimed).template weaken<Row<Effect::Bg, Effect::Alloc>>();
     if (wider.graded().peek() != 21) return 2;
     if (wider.grade() != decltype(wider)::grade_type{}) return 3;
+
+    // The admitting direction at run time, not only in the assertions.
+    using Plain = authority_relation::PlainPayload;
+    auto plain = fe::Computation<Row<>, Plain>::mint_computation(Plain{value});
+    if (plain.extract().value != 21) return 4;
     return 0;
 }

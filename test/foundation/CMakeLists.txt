@@ -188,6 +188,22 @@ foundation_neg_compile_test(neg_lift_in_ctx_without_the_effect
   "constraints not satisfied"
   "row_contains_v")
 
+# extract must not hand out an authority the carrier's row never names.
+# Two fixtures, because the relation enumerates the authority kinds and
+# each kind reaches it through its own specialization: a repair that
+# covered capabilities alone would satisfy the first and leave the
+# second open.  The second regex in each names the payload type the
+# relation refused, so a fixture that rejected on the wrong type would
+# be red.  The admitting direction is pinned in Computation.h, so a
+# blanket refusal cannot satisfy these.
+foundation_neg_compile_test(neg_computation_extract_capability_payload
+  "constraints not satisfied"
+  "extract_admits_payload_v<T> .with T = foundation::effects::Capability")
+
+foundation_neg_compile_test(neg_computation_extract_permission_payload
+  "constraints not satisfied"
+  "extract_admits_payload_v<T> .with T = foundation::permissions::Permission")
+
 # The contracts tests keep the file names of the tests they are ported
 # from.  The target names carry the contracts prefix because the old
 # tests still register the plain names in test/CMakeLists.txt, and a
