@@ -468,9 +468,15 @@ template <eff::IsExecCtx Ctx>
 }
 
 // The read-only open, spelled once.  The old header exported the same
-// alias over its grant, and include/crucible/fixy/Wrap.h re-exports it,
-// so a port that dropped it would leave that re-export with no target at
-// Stage C.
+// alias over its grant, and include/crucible/fixy/Wrap.h:409 re-exports
+// it, so a port that dropped it would leave that re-export with no target
+// at Stage C.
+//
+// That re-export is the only reader, and D1 deletes the header holding
+// it, so after D1 this alias has no surviving consumer.  It was ported
+// under a reading that counted any consumer rather than a surviving one.
+// D2 removes it, and mode<open_mode::ReadOnly> is the spelling that
+// stays.
 using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
 
 // The durable and atomic_write atoms only declare intent.  The mint

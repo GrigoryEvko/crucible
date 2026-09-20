@@ -242,7 +242,7 @@ crucible/safety/_IsRecipeSpec.h:is_recipe_spec_smoke_test  — An inline smoke t
 
 # ── safety: wrappers ────────────────────────────────────────────────────
 
-crucible/safety/_Affine.h:drop  — The free function became a hidden friend of Qtt (fixy/Qtt.h:175), which is one drop for both grades instead of one per wrapper. An unqualified drop(std::move(x)) still resolves by argument-dependent lookup, and the qualified spelling has no successor.
+crucible/safety/_Affine.h:drop  — The free function became a hidden friend of Qtt (fixy/Qtt.h:175). That is one drop for both grades instead of one per wrapper, and the name can no longer be written for a type that is not a Qtt. An unqualified drop(std::move(x)) still resolves by argument-dependent lookup, and the qualified spelling has no successor. Eight mentions in five files use the qualified spelling today, so C2 meets a known list rather than eight surprises: crucible/fixy/Wrap.h:84 and crucible/fixy/Safety.h:19 re-export it with a using-declaration, test/test_fixy_mach_safety.cpp:28 and test/test_fixy_wrap.cpp:68 call it through a namespace alias, and test/test_fixy_umbrella.cpp:66-73 takes its address four times in two static assertions, which a hidden friend cannot answer at all.
 crucible/safety/_Linear.h:drop  — The same hidden friend as the affine one; fixy/Qtt.h:175 declares drop once for both grades.
 crucible/safety/_Machine.h:machine_transition  — The transition relation is no longer a trait; fixy/Machine.h:13 states it as edges beside the states they join.
 crucible/safety/_OwnedMmap.h:is_leak_grant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
