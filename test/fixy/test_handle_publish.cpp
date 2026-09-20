@@ -265,7 +265,10 @@ static_assert(std::is_copy_constructible_v<h::SetOnce<Payload>>);
 
 template <typename Body>
 [[nodiscard]] bool child_aborted(Body body) {
-    const pid_t pid = ::fork();
+    // SPAWN-PROCESS-OK: the child exists to die.  The double-publish abort is a
+    // runtime behaviour of a destructor, and std::abort ends the process
+    // that runs it, so the only way to observe it is from a parent.
+    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test, see above
     if (pid < 0) {
         std::fprintf(stderr, "fork failed\n");
         std::_Exit(2);
@@ -275,7 +278,10 @@ template <typename Body>
         std::_Exit(0);
     }
     int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
+    // SPAWN-PROCESS-OK: the wait belongs to the fork above; reading
+    // WIFSIGNALED from the status is what makes the abort observable,
+    // and is stricter than ctest's WILL_FAIL, which accepts any exit.
+    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: death test, see above
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }
