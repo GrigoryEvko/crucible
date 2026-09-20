@@ -8,13 +8,6 @@
 // grant::time::{clock_read, tsc_read, sleep} and their which_dim rows
 // are decoration: nothing outside their own self-test reads them.  Hw.h
 // came in for TscMode alone, which is declared below instead.
-//
-// The ctx gate on all three mints is currently decorative, reported as
-// #172.  ExecCtx<Cap, Row> has a public default constructor, so any
-// translation unit builds a full-authority context with no key, and
-// eff::IsExecCtx and eff::CtxCanMint both admit it.  The mints below
-// keep the old shape: the gate is worth what Ctx.h makes it worth, and
-// that repair belongs to Ctx.h.
 
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
@@ -130,9 +123,11 @@ template <TscMode Mode>
 // A multi-core mask still lets the thread migrate, and the counter is
 // per-core, so only a single-core pin makes two reads comparable.
 //
-// The pin it reads is forgeable, reported as #171: three public doors
-// mint a CpuPinned with no evidence of a pin, so this concept proves
-// the shape of the proof and not the pin.
+// What this concept proves is the SHAPE of the proof, not the pin.
+// CpuPinned has three public doors that hand one out with no evidence
+// of a sched_setaffinity call, so a reader that wants the pin itself
+// must take one from fixy::sched::mint_affinity, which returns a proof
+// only after the syscall succeeded.
 template <typename T>
 concept IsSingletonCpuPin = detail::is_cpu_pinned_v<std::remove_cvref_t<T>> && std::remove_cvref_t<T>::is_singleton_pin;
 
@@ -250,36 +245,12 @@ static_assert(std::is_same_v<TscReader<TscMode::SerializedPinned, SinglePin>::re
 
 static_assert(BoundedSleeper<1000000>::max_nanos == 1000000ULL);
 
-// The named contexts the old smoke test used, ColdInitCtx and
-// BgDrainCtx, belong to fixy/Ctx.h, which A11.3 (#110) writes.  These
-// two stand in until it lands, in the shape foundation's own Ctx.h
-// self-test uses for the same reason.  They are scaffolding, not a
-// second spelling of the named contexts.
-using InitWitness = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
-using BlockWitness =
-    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
-
-inline bool runtime_smoke_test() {
-    // Each witness is handed the capability it claims.  A context is no
-    // longer evidence of a capability — it carries one (#172, Door 1).
-    InitWitness init{eff::testing::init()};
-    BlockWitness blocking{eff::testing::test()};
-
-    auto boot_reader = mint_clock_reader<ClockSource_v::Boot>(init);
-    const auto t0 = boot_reader.read();
-    if (t0.peek() == 0) return false;  // a running system never reads zero here
-
-    auto sleeper = mint_bounded_sleep<1000>(blocking);
-    sleeper.sleep_for(0);
-    return true;
-}
-
-// The old smoke test read the TSC through a pin it minted for itself,
-// with no sched_setaffinity call on the path (old spelling
-// include/crucible/fixy/Time.h:286).  That is the forgery #171
-// describes, written by the tree that the proof exists to protect.  The
-// leg is not ported.  A TSC read needs a pin from fixy::mint_affinity,
-// which lives in fixy/os/Sched.h, so it belongs in a test translation
-// unit that includes both headers, not in this one.
+// The readers and the sleeper are exercised in test/fixy/test_os_time.cpp,
+// which is also where the TSC leg lives: a TSC read needs a pin from
+// fixy::sched::mint_affinity, and that lives in fixy/os/Sched.h, so the
+// case belongs in a translation unit that includes both headers.  The
+// old tree read the TSC through a pin its own smoke test minted for
+// itself with no sched_setaffinity on the path, which is the forgery
+// the proof exists to prevent.
 
 }  // namespace fixy::time::detail::v190_self_test

@@ -30,16 +30,16 @@
 // mint_affinity, which is a change to the published surface.
 //
 // row_hash_contribution is NOT ported.  The old specialization folds
-// the mask words and the posture into the federation key.  A6.2 (#96)
-// replaces all 52 such specializations with one fold over the Graded
-// nesting, and #96 waits behind #163.
+// the mask words and the posture into the federation key.  The rework
+// that replaces all 52 such specializations with one fold over the
+// Graded nesting has to land first, and that rework is itself blocked:
+// changing the fold changes every published federation key.
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 
 #include <concepts>
 #include <cstdint>
-#include <cstdlib>
 #include <type_traits>
 #include <utility>
 
@@ -151,8 +151,8 @@ static_assert(!std::is_same_v<PinnedC0, AutoC0>);
 static_assert(!std::is_same_v<PinnedC0, CpuPinned<kCore7, PinningPosture::PinnedExplicit, int>>);
 
 // The three row-hash distinctness assertions the old header carried are
-// not ported, because the specialization they read is not ported.  A6.2
-// (#96) restores both together.
+// not ported, because the specialization they read is not ported.  The
+// row-hash rework restores both together.
 
 [[nodiscard]] consteval bool consume_moves_out() noexcept {
     PinnedC0 p{99};
@@ -180,25 +180,5 @@ static_assert(admissible_tsc_proof<PinnedC0>, "a single-core EXPLICIT pin proof 
 static_assert(!admissible_tsc_proof<TwoBitC>, "a 2-core pin MUST be rejected (not a singleton).");
 static_assert(!admissible_tsc_proof<AutoC0>, "an AUTO pin MUST be rejected (a TSC reader needs an explicit, "
                                              "non-migrating pin).");
-
-inline void runtime_smoke_test() {
-    int seed = 21;
-    PinnedC0 p{seed * 2};
-    if (p.peek() != 42) std::abort();
-    p.peek_mut() = 9;
-    if (p.peek() != 9) std::abort();
-
-    auto m = mint_cpu_pinned<kCore7, PinningPosture::PinnedExplicit, unsigned long long>(
-        static_cast<unsigned long long>(seed));
-    if (std::move(m).consume() != 21) std::abort();
-
-    [[maybe_unused]] bool g1 = PinnedC0::is_singleton_pin;
-    [[maybe_unused]] bool g2 = TwoBitC::is_singleton_pin;
-    if (!g1 || g2) std::abort();
-
-    AutoC0 a{1};
-    PinnedC0 moved{std::move(a).consume()};
-    if (moved.peek() != 1) std::abort();
-}
 
 }  // namespace fixy::detail::cpu_pinned_self_test

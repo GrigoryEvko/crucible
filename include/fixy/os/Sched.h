@@ -11,11 +11,6 @@
 // thread_name} and their four which_dim rows are decoration: nothing
 // outside the header's own self-test reads them, so the port drops both
 // and the eleven assertions that read them.
-//
-// The ctx gate on every mint here is currently decorative, reported as
-// #172.  ExecCtx<Cap, Row> has a public default constructor, so any
-// translation unit builds a full-authority context with no key.  The
-// mints keep the old shape, because that repair belongs to Ctx.h.
 
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/SchedClass.h>
@@ -135,8 +130,8 @@ template <SchedulerPolicy_v Policy>
 template <typename Ctx, PinningPosture Posture>
 concept CtxFitsAffinityMint = eff::IsExecCtx<Ctx> && (Posture != PinningPosture::NotPinned);
 
-// The second conjunct is not a restatement of the enum's own range, and
-// A13.1 called for its deletion on the belief that it was.  It is the
+// The second conjunct is not a restatement of the enum's own range,
+// though it reads like one.  It is the
 // only compile-time rejection of a policy outside the enum: SchedClass
 // accepts any SchedulerPolicy_v value, including a cast one, and renders
 // it as the At<?> sentinel.  Without this conjunct,
@@ -147,8 +142,7 @@ template <typename Ctx, SchedulerPolicy_v Policy>
 concept CtxFitsSchedPolicyMint = eff::IsExecCtx<Ctx> && (detail::sched_policy_constant(Policy) >= 0);
 
 // The [-20, 19] bound here reads like a restatement of the one on
-// SchedPriority<Nice>, and A13.1 called for its deletion on that
-// reading.  It is not a restatement.  The mint names SchedPriority<Nice>
+// SchedPriority<Nice>.  It is not.  The mint names SchedPriority<Nice>
 // in its return type, so without this conjunct an out-of-range nice
 // reaches that return type during substitution, and a constraint
 // failure on a CLASS template is not in the immediate context of the
@@ -169,8 +163,10 @@ template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExpl
         [[unlikely]] {  // SYSCALL-CAP-OK: mint_affinity body, CtxFitsAffinityMint ctx-gate (effects::Init)
         return std::unexpected(errno);
     }
-    // This call is the one door that earns a CpuPinned, and #171 records
-    // that three public doors mint one without earning it.
+    // This call is the one door that earns a CpuPinned: the pin comes
+    // back only after sched_setaffinity succeeded.  Three public doors
+    // on CpuPinned itself hand one out with no such evidence, which is
+    // why a consumer that cares should demand a pin from here.
     return sf::mint_cpu_pinned<Mask, Posture, ProofUnit>(0);
 }
 
@@ -236,8 +232,8 @@ namespace fixy::sched::detail::v191_self_test {
 // The eleven grant-tag assertions the old self-test carried are not
 // ported, because the tags they read are not ported.
 
-// BgDrainCtx, ColdInitCtx and HotFgCtx belong to fixy/Ctx.h, which A11.3
-// (#110) writes.  These three stand in until it lands, in the shape
+// BgDrainCtx, ColdInitCtx and HotFgCtx belong to a fixy/Ctx.h the tree
+// does not have yet.  These three stand in until it lands, in the shape
 // foundation's own Ctx.h self-test uses.  They are scaffolding, not a
 // second spelling of the named contexts.
 using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
@@ -249,7 +245,7 @@ static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Fifo) == SCHED_FI
 static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Deadline) == SCHED_DEADLINE);
 
 // The kept conjunct, both arms.  Deleting it would turn the second pin
-// into a runtime EINVAL, which is why A13.1's deletion did not happen.
+// into a runtime EINVAL.
 static_assert(CtxFitsSchedPolicyMint<BgWitness, SchedulerPolicy_v::Fifo>);
 static_assert(!CtxFitsSchedPolicyMint<BgWitness, static_cast<SchedulerPolicy_v>(200)>,
               "a policy outside the enum has no SCHED_* constant, and this concept is the only thing that "
@@ -275,31 +271,5 @@ static_assert(CtxFitsRuntimeAffinity<BgWitness>);
 static_assert(CtxFitsRuntimeAffinity<InitWitness>);
 static_assert(!CtxFitsRuntimeAffinity<FgWitness>, "the Fg hot path owns no Bg or Init effect — it must not be "
                                                   "able to re-pin a thread.");
-
-inline bool runtime_smoke_test() {
-    // The witness is handed the capability it claims.  A context is no
-    // longer evidence of a capability — it carries one (#172, Door 1).
-    BgWitness bg{eff::testing::bg()};
-
-    // SCHED_OTHER and a nice value of 5 need no privilege. A thread may
-    // always lower its own priority.
-    auto policy = mint_scheduler_policy<SchedulerPolicy_v::Other>(bg);
-    if (!policy) return false;
-    if (policy->policy != SchedulerPolicy_v::Other) return false;
-
-    auto prio = mint_priority<5>(bg);
-    if (!prio) return false;
-    if (prio->nice != 5) return false;
-
-    // A self-pin to CPU 0 needs no privilege but depends on the cpuset. A
-    // restricted cpuset returns EINVAL, so the result is not asserted.
-    auto pin = mint_affinity<AffinityMask::single(0)>(bg);
-    if (pin && !pin->is_singleton_pin) return false;
-
-    if (!apply_affinity_to_cpu(bg, -1)) return false;
-    (void)apply_affinity_to_cpu(bg, 0);
-
-    return true;
-}
 
 }  // namespace fixy::sched::detail::v191_self_test

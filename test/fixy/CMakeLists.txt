@@ -537,3 +537,13 @@ fixy_neg_compile_test(neg_handle_publish_once_copied
   "use of deleted function"
   "fixy::handle::PublishOnce<T>::PublishOnce\\(const fixy::handle::PublishOnce<T>&\\)"
   "copies would duplicate channel state")
+
+# ── The fixy/os smoke tests, migrated out of the headers ─────────────
+#
+# Each of these used to be a `runtime_smoke_test` inside the header it
+# exercises, compiled into every translation unit that included it.
+# Removing them is also what let three entries leave
+# scripts/ctx-testing-boundary-allowlist.txt: the headers no longer name
+# foundation::effects::testing, and the guard fails on a stale entry.
+fixy_test(test_os_time)
+fixy_test(test_os_sched)

@@ -18,7 +18,6 @@
 #include <foundation/algebra/lattices/ClockSourceLattice.h>
 
 #include <concepts>
-#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -278,32 +277,6 @@ static_assert(!keeps_ticking_through_suspend<MonoU64>,
               "suspend, so a deadline measured against it under-counts the wall time "
               "spent across a suspend and resume.");
 static_assert(!keeps_ticking_through_suspend<RealU64>);
-
-// The arguments here are non-constant on purpose.  A pure static_assert
-// suite masks bugs that only appear when the body is instantiated for
-// runtime evaluation.
-inline void runtime_smoke_test() {
-    unsigned long long seed = 21;
-    BootU64 n{seed * 2};
-    if (n.peek() != 42) std::abort();
-    n.peek_mut() = 9;
-    if (n.peek() != 9) std::abort();
-
-    auto m = mint_clock_source<ClockSource_v::TscRaw, unsigned long long>(seed);
-    if (std::move(m).consume() != 21) std::abort();
-
-    BootU64 a{1}, b{2};
-    swap(a, b);
-    if (a.peek() != 2 || b.peek() != 1) std::abort();
-
-    [[maybe_unused]] bool g1 = BootU64::satisfies<ClockSource_v::Boot>;
-    [[maybe_unused]] bool g2 = MonoU64::satisfies<ClockSource_v::Boot>;
-    if (!g1 || g2) std::abort();
-
-    RealtimeClockBytes<unsigned long long> rt{123};
-    PmuBytes<unsigned long long> pmu{456};
-    if (rt.peek() != 123 || pmu.peek() != 456) std::abort();
-}
 
 }  // namespace detail::clock_source_self_test
 

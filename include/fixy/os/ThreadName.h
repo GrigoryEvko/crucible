@@ -110,20 +110,6 @@ static_assert(CtxIsInitPhase<::foundation::effects::Init>);
 static_assert(!CtxIsInitPhase<::foundation::effects::Bg>);
 static_assert(!CtxIsInitPhase<::foundation::effects::Test>);
 
-// Running this renames the calling thread.
-inline void runtime_smoke_test() {
-    auto init = ::foundation::effects::testing::init();
-    auto witness = mint_thread_name<"crux-smoke">(init);
-    // Both facts live in the witness type, not in the value, so they hold by
-    // construction: c_str and visible_length read the Name template argument.
-    // Stating them to the optimizer would inform nothing, and an invariant
-    // would check them only where NDEBUG is absent, so they are asserted at
-    // compile time, where they hold in every preset at no runtime cost.
-    static_assert(std::string_view{decltype(witness)::c_str()} == "crux-smoke");
-    static_assert(decltype(witness)::visible_length() == 10);
-    static_assert(IsThreadNamed<decltype(witness)>);
-}
-
 }  // namespace detail::thread_name_self_test
 
 }  // namespace fixy

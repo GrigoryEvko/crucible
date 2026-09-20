@@ -26,7 +26,6 @@
 
 #include <concepts>
 #include <cstdint>
-#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -233,32 +232,6 @@ concept hostable_on = Task::template runnable_on<PoolPolicy>;
 
 static_assert(hostable_on<OtherInt, SchedulerPolicy_v::Fifo>, "A FIFO pool MUST host an OTHER task.");
 static_assert(!hostable_on<FifoInt, SchedulerPolicy_v::Other>, "An OTHER pool MUST reject a FIFO task.");
-
-inline void runtime_smoke_test() {
-    int seed = 21;
-    FifoInt f{seed * 2};
-    if (f.peek() != 42) std::abort();
-    f.peek_mut() = 9;
-    if (f.peek() != 9) std::abort();
-
-    auto m = mint_sched_class<SchedulerPolicy_v::Other, int>(seed);
-    if (std::move(m).consume() != 21) std::abort();
-
-    FifoInt a{1}, b{2};
-    swap(a, b);
-    if (a.peek() != 2 || b.peek() != 1) std::abort();
-
-    [[maybe_unused]] bool g1 = FifoInt::runnable_on<SchedulerPolicy_v::Deadline>;
-    [[maybe_unused]] bool g2 = FifoInt::runnable_on<SchedulerPolicy_v::Other>;
-    if (!g1 || g2) std::abort();
-
-    DeadlineInt dl{seed};
-    if (dl.peek() != 21 || dl.runtime_ns != 5000) std::abort();
-
-    sched_class::Idle<int> idle_task{0};
-    sched_class::RoundRobin<int> rr_task{456};
-    if (idle_task.peek() != 0 || rr_task.peek() != 456) std::abort();
-}
 
 }  // namespace detail::sched_class_self_test
 
