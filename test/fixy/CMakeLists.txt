@@ -235,7 +235,89 @@ fixy_neg_compile_test(neg_fn_tier2_malformed_atom
   "fixy::fn<int, .anonymous.::not_an_atom>::tier2_atoms_ok_.+ evaluates to false")
 fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 4\\]"
+  "The axis graded twice here is Usage"
   "fixy::atom::copy, fixy::atom::affine>::tier4_unique_ok_.+ evaluates to false")
+
+# ── Task #112 (A11.5): the gate fixtures and the generated TU ─────────
+#
+# A11.4 stood a fixture on each rule and each corpus entry — the tier-5
+# half.  This is the rest of the gate: the doors a reader walks into on
+# the way to tier 5, and the combinatorial claims that are universal over
+# the atom catalog rather than one file per case.
+#
+# The duplicate-axis fixture above gained a third regex in the same
+# commit, because tier 4's message now SPELLS the axis the pack graded
+# twice — "The axis graded twice here is Usage" — instead of naming the
+# template that names it.  first_duplicated_axis_ always returned an axis
+# rather than a pack position; tier4_message_ in fixy/Reject.h is what
+# spends that, the way tier5_message_ spends the rule codes.
+#
+# The eight hand fixtures are the cases NOT already covered elsewhere in
+# this tree; the ones that were are listed in the commit message with the
+# fixture that covers each, so this block does not duplicate them.  Two
+# deserve naming here because the reason they are here is a gap rather
+# than a choice:
+#
+#   neg_role_io_row_under_foreground_ctx spells Row<IO> in its gate
+#   instead of lifting it from the binding's own Effect grade, because
+#   atom::with<Es...> carries no `lifts_to`.  Only the SyscallSurface
+#   atoms of fixy/atoms/Os.h lift, which is why the os mints can fold a
+#   pack into a required row and nothing else can.  Widening with<Es...>
+#   would tighten another stream's os gates, so the gap is recorded in
+#   the fixture and left for whoever owns that lift.
+#
+#   neg_secret_transform_returns_reference is the Secret escape that
+#   does NOT go through declassify.  Secret has no other public reader,
+#   so transform is the only route, and a mapping function returning a
+#   reference is the only way to walk around the policy tag.
+fixy_neg_compile_test(neg_fn_ctad_attempt
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 0\\]"
+  "fn_ctad_blocked_use_mint_fn>::tier0_not_ctad_sentinel_.+ evaluates to false")
+
+# Four payload shapes against one tier.  The second regex is what makes
+# them four fixtures rather than four copies: each floors on the OFFENDING
+# TYPE as the compiler spells it, so a fixture cannot pass by tripping a
+# sibling's case.
+fixy_neg_compile_test(neg_fn_payload_array
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 1\\]"
+  "fixy::fn<int \\[4\\]>::tier1_payload_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_fn_payload_reference
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 1\\]"
+  "fixy::fn<int&>::tier1_payload_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_fn_payload_const
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 1\\]"
+  "fixy::fn<const int>::tier1_payload_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_fn_payload_function
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 1\\]"
+  "fixy::fn<int\\(\\)>::tier1_payload_ok_.+ evaluates to false")
+
+# A role is an alias for a whole binding, so writing one inside a pack
+# asks for a grade that is itself a binding.  The second regex floors on
+# the expansion, which is how a reader sees what they actually wrote.
+fixy_neg_compile_test(neg_fn_role_alias_as_atom
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]"
+  "fixy::fn<int, fixy::fn<int, fixy::atom::copy> >::tier2_atoms_ok_.+ evaluates to false")
+
+# The context gate, refused at the call site rather than inside the body.
+# Both regexes name the row and the context in the compiler's own fully
+# qualified spelling, which the fixture writes as `fe::` throughout, so
+# neither can be satisfied by the quoted source.
+fixy_neg_compile_test(neg_role_io_row_under_foreground_ctx
+  "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::IO> >."
+  "required for the satisfaction of .Subrow<R, foundation::effects::row_type_of_t<Ctx> >."
+  "Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
+fixy_neg_compile_test(neg_secret_transform_returns_reference
+  "\\[Capture_Leak_Reference_Return\\] Secret::transform"
+  "f must return by value")
+
+# The combinatorial half, as one walk over the atom catalog instead of
+# the 566 files the old corpus spent on it.  Registered as a POSITIVE
+# test: the claims are static_asserts, so the build failing IS the
+# failure, and the run prints the shape of the input set — how many atoms
+# were walked, how many are refused alone and which they are, how many
+# axes contributed a same-axis pair, how many atoms carry a lift — so a
+# reader can judge whether the walk covered anything.
+fixy_test(rejections_generated)
 
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
 # names the clause and the two types it compared.

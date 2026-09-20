@@ -367,6 +367,34 @@ template <class T, class... Atoms>
 // corpus entry names itself and its citation, and the rules name their
 // codes, which are stable API a negative fixture greps.
 //
+// The tier-4 message, naming the axis the pack graded twice.
+//
+// first_duplicated_axis_ walks the axes rather than the pack precisely so
+// that the answer is an axis, and this is what spends that: the reader
+// gets "an axis carries one grade, and Usage carries two" rather than a
+// template whose name they then have to go read.  duplicate_atom_on<A>
+// still reaches the diagnostic through fn's refused_tag_, and carries the
+// insight provider; this is the sentence beside it.
+//
+// Reached only through the tier chain in fn, which has already
+// established that the payload is holdable and the pack is atoms.  The
+// guard here repeats that, because a static_assert message is
+// instantiated whatever the condition beside it concluded — that is the
+// same reason tier5_message_ opens with one.
+template <class... Atoms>
+[[nodiscard]] consteval std::string_view tier4_message_() noexcept {
+    constexpr std::size_t offender = first_duplicated_axis_<Atoms...>();
+    if constexpr (offender == ::fixy::axis_count) {
+        return "fixy::fn<Type, Atoms...> [tier 4]: not reached — no axis carries two grades.";
+    } else {
+        std::string text{"fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the pack must not "
+                         "name an axis twice.  The axis graded twice here is "};
+        text += ::fixy::axis_name(static_cast<Axis>(offender));
+        text += ", and fixy::duplicate_atom_on<Axis> carries its insight.";
+        return std::define_static_string(text);
+    }
+}
+
 // Reached only through the tier chain in fn, which has already
 // established that the pack is atoms and unique per axis.  The guard
 // here repeats that, because a static_assert message is instantiated
@@ -468,6 +496,17 @@ static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<int, 
 static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<void>(), "not reached"));
 static_assert(::fixy::detail::text_contains(
     detail::reject::tier5_message_<int, ::fixy::atom::copy, ::fixy::atom::affine>(), "tier 4 refused"));
+
+// The tier-4 message names the axis, not just the template that names
+// it.  Two packs on two different axes, so a message that spelled one
+// axis unconditionally would fail here.
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier4_message_<::fixy::atom::copy, ::fixy::atom::affine>(), "Usage"));
+static_assert(::fixy::detail::text_contains(
+    detail::reject::tier4_message_<::fixy::atom::mut_append, ::fixy::atom::mut_monotonic>(), "Mutation"));
+// And it says so rather than naming an axis when no axis is doubled.
+static_assert(::fixy::detail::text_contains(detail::reject::tier4_message_<>(), "not reached"));
+static_assert(::fixy::detail::text_contains(detail::reject::tier4_message_<::fixy::atom::copy>(), "not reached"));
 
 // Which tier refuses which pack, and the tag each selects.  One tier
 // fires per pack, so one message reaches the reader.

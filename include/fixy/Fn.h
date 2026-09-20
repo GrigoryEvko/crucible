@@ -183,10 +183,9 @@ class fn {
 
     // There is no tier 3.  An unmentioned axis is not an error.
 
+    // The message names the axis the pack graded twice, by name.
     static constexpr bool tier4_unique_ok_ = refused_at_ != detail::reject::Tier::Duplicate;
-    static_assert(tier4_unique_ok_, "fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the "
-                                    "pack must not name an axis twice.  fixy::duplicate_atom_on<Axis> "
-                                    "names the offending axis.");
+    static_assert(tier4_unique_ok_, detail::reject::tier4_message_<Atoms...>());
 
     // The message names the corpus entry that refused the pack with its
     // citation, the collision rules that refused it by code, or both.
