@@ -140,7 +140,7 @@ template <typename M>
 using state_of_t = typename std::remove_cvref_t<M>::state_type;
 
 template <typename T>
-inline constexpr bool is_machine_v = ::foundation::reflect::is_instance_of_v<T, ^^Machine>;
+inline constexpr bool is_machine_v = ::foundation::reflect::IsInstanceOf<T, ^^Machine>;
 
 // The state_type lookup is staged behind an is_machine_v bool parameter
 // rather than written as one conjunction: `&&` does not short-circuit
