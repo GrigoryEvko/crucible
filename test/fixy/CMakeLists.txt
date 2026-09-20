@@ -593,3 +593,23 @@ fixy_neg_compile_test(neg_os_cpu_pinned_copied
 # be off entirely, and copy_file_range refuses some filesystem pairs.
 fixy_test(test_os_mmap)
 fixy_test(test_os_io)
+
+# ── OwnedMmap has one door, and it is the one that maps ──────────────
+#
+# The constructor over an address was public, so a caller could claim a
+# mapping it never made — and since the destructor unmaps whatever it
+# holds, a stack address handed in was a stack address unmapped on scope
+# exit.  The constructor is private now and OwnedMmap::map_region
+# performs the ::mmap itself.
+#
+# Two routes, because the region is handed out inside Linear and the
+# generic mint_linear forwarder sits between the mints and the object.
+# The direct route fails on access; the forwarded route fails because
+# there is no reachable constructor to forward to.
+fixy_neg_compile_test(neg_owned_mmap_forged_address
+  "is private within this context"
+  "OwnedMmap\\(void\\*, std::size_t\\)")
+
+fixy_neg_compile_test(neg_owned_mmap_forged_through_mint_linear
+  "no matching function for call"
+  "mint_linear<.*::Region>\\(void\\*, long unsigned int\\)")

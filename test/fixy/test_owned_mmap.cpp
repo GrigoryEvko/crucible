@@ -1,3 +1,9 @@
+// Every mapping below comes from Region::map_region, because that is
+// the only door there is: the constructor that claims an address is
+// private, so a region exists only over what ::mmap returned.  These
+// cases used to call ::mmap themselves and wrap the result, which is
+// exactly the pattern the private constructor removed.
+//
 // Sentinel TU for fixy/OwnedMmap.h: the region is move-only, the leak
 // witness admits only the leak atom, and release binds to an rvalue.
 //
@@ -50,12 +56,13 @@ std::size_t page_bytes() {
 
 int check_live_mapping() {
     const std::size_t len = page_bytes();
-    void* addr = ::mmap(nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (addr == MAP_FAILED) return 0;  // mapping unavailable; nothing to check
+    auto mapped = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    if (!mapped) return 0;  // mapping unavailable; nothing to check
 
-    Region r{addr, len};
+    Region r = std::move(*mapped);
+    void* const addr = r.data();
     if (!r.is_mapped()) return 10;
-    if (r.data() != addr) return 11;
+    if (addr == MAP_FAILED) return 11;
     if (r.size() != len) return 12;
 
     // The destructor unmaps.  A second region moved from this one must
@@ -70,10 +77,11 @@ int check_live_mapping() {
 
 int check_release_hands_the_region_back() {
     const std::size_t len = page_bytes();
-    void* addr = ::mmap(nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (addr == MAP_FAILED) return 0;
+    auto mapped = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    if (!mapped) return 0;
 
-    Region r{addr, len};
+    Region r = std::move(*mapped);
+    void* const addr = r.data();
     auto [out_addr, out_len] = std::move(r).release(SampleLeak{});
     if (out_addr != addr) return 20;
     if (out_len != len) return 21;
@@ -86,16 +94,17 @@ int check_release_hands_the_region_back() {
 
 int check_move_assign_unmaps_the_replaced_region() {
     const std::size_t len = page_bytes();
-    void* first = ::mmap(nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (first == MAP_FAILED) return 0;
-    void* second = ::mmap(nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (second == MAP_FAILED) return 0;
+    auto first = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    if (!first) return 0;
+    auto second = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    if (!second) return 0;
 
-    Region a{first, len};
-    Region b{second, len};
+    Region a = std::move(*first);
+    Region b = std::move(*second);
+    void* const second_addr = b.data();
     a = std::move(b);
     if (b.is_mapped()) return 30;
-    if (a.data() != second) return 31;
+    if (a.data() != second_addr) return 31;
 
     return 0;
 }

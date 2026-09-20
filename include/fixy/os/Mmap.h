@@ -397,14 +397,16 @@ template <typename Tag, typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 mint_mmap(Ctx const&, int fd, std::size_t length, ::off_t offset = 0) noexcept {
     constexpr int prot = detail::fold_prot_bits<Atoms...>();
     constexpr int flags = detail::fold_share_flags<Atoms...>();
-    void* const addr =
-        ::mmap(nullptr, length, prot, flags, fd,
-               offset);  // SYSCALL-CAP-OK: mint_mmap ctx-gate (CtxFitsMmapMint: CtxAdmitsAtomRow, effects::IO+Block)
-    if (addr == MAP_FAILED) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
-    }
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>>;
-    return mint_linear<Region>(addr, length);
+    // The syscall lives with the region's only constructor, in
+    // fixy/OwnedMmap.h, so that no address but the kernel's can become a
+    // region.  What this mint owns is the gate above: which atoms, and
+    // which context.
+    auto region = Region::map_region(prot, flags, fd, length, offset);
+    if (!region) {
+        return std::unexpected{std::error_code{region.error(), std::system_category()}};
+    }
+    return mint_linear<Region>(std::move(*region));
 }
 
 // An anonymous mapping takes a descriptor of -1 and an offset of 0,
@@ -418,14 +420,12 @@ template <typename Tag, typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 mint_mmap_anon(Ctx const&, std::size_t length) noexcept {
     constexpr int prot = detail::fold_prot_bits<Atoms...>();
     constexpr int flags = detail::fold_share_flags<Atoms...>();
-    void* const addr = ::mmap(
-        nullptr, length, prot, flags, -1,
-        0);  // SYSCALL-CAP-OK: mint_mmap_anon ctx-gate (CtxFitsAnonMmapMint: CtxAdmitsAtomRow, effects::IO+Block)
-    if (addr == MAP_FAILED) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
-    }
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>>;
-    return mint_linear<Region>(addr, length);
+    auto region = Region::map_region(prot, flags, -1, length, 0);
+    if (!region) {
+        return std::unexpected{std::error_code{region.error(), std::system_category()}};
+    }
+    return mint_linear<Region>(std::move(*region));
 }
 
 template <typename Advice, typename Tag, typename Prot, typename Share, ::foundation::effects::IsExecCtx Ctx>
