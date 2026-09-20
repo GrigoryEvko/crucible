@@ -1652,6 +1652,17 @@ inline void print_system_info(FILE* out = stdout) {
         std::fclose(f);
     }
 
+    // The profile this binary was built with, or none.  The root
+    // CMakeLists.txt defines CRUCIBLE_PGO_PROFILE under CRUCIBLE_PGO=use
+    // as "<tier> <collected> <commit> <tree>".  A number from a profiled
+    // build and a number from a plain build are not comparable, and the
+    // report says which one it is.
+#ifdef CRUCIBLE_PGO_PROFILE
+    std::fprintf(out, "  pgo:       %s\n", CRUCIBLE_PGO_PROFILE);
+#else
+    std::fprintf(out, "  pgo:       none\n");
+#endif
+
 #ifdef __linux__
     const long nproc = sysconf(_SC_NPROCESSORS_ONLN);
     std::fprintf(out, "  cpus:      %ld online\n", nproc);

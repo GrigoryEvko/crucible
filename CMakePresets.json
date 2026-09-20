@@ -68,6 +68,17 @@
       }
     },
     {
+      "name": "pgo-release",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release, PGO applied, release conditions)",
+      "binaryDir": "${sourceDir}/build-pgo-release",
+      "cacheVariables": {
+        "CRUCIBLE_PGO": "use",
+        "CRUCIBLE_PGO_STRICT": "ON",
+        "CRUCIBLE_BENCH": "OFF"
+      }
+    },
+    {
       "name": "tsan",
       "inherits": "default",
       "displayName": "GCC 16 + ThreadSanitizer (AxRaceFree)",
@@ -85,6 +96,7 @@
     { "name": "bench",   "configurePreset": "bench", "jobs": 192 },
     { "name": "pgo-generate", "configurePreset": "pgo-generate", "jobs": 192 },
     { "name": "pgo",     "configurePreset": "pgo",   "jobs": 192 },
+    { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 192 },
     { "name": "tsan",    "configurePreset": "tsan", "jobs": 192 }
   ],
   "testPresets": [
@@ -97,6 +109,18 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 192 }
+    },
+    {
+      "name": "pgo",
+      "configurePreset": "pgo",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 192 }
+    },
+    {
+      "name": "pgo-release",
+      "configurePreset": "pgo-release",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": 192 }
     },

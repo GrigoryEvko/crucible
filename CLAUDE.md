@@ -1390,6 +1390,8 @@ cmake --preset pgo && cmake --build --preset pgo
 
 The tier is the name the compiler resolves native to (`znver5`, `sapphirerapids`; on aarch64 the `-mcpu=native` name), so the same two commands serve every host and no source file names the hardware. `CRUCIBLE_PGO=use` refuses a profile from a different compiler, tier or flag set, and a function whose control flow changed after collection stops the build with `-Wcoverage-mismatch`. Collect again. The CMake block in the root `CMakeLists.txt` holds the flag rationale.
 
+A release artifact is built with the `pgo-release` preset. It adds `CRUCIBLE_PGO_STRICT=ON`, which requires a profile collected at HEAD from a clean tree, and it builds no benches. The release process is: commit, `scripts/pgo-bootstrap.sh`, `cmake --preset pgo-release && cmake --build --preset pgo-release && ctest --preset pgo-release`, then archive `pgo/gcc-<version>/<tier>/` next to the artifact. The counters are an input of the binary. Every TU carries `CRUCIBLE_PGO_PROFILE` (tier, time, commit, tree state), and every bench report prints it as `pgo:`, so a number from a profiled build is never mistaken for a plain one. `ctest --preset pgo` is the proof that the profile-guided passes preserved every DetSafe result.
+
 Alternative (continuous profiling from production runs): **AutoFDO** via `-fauto-profile=<profile.afdo>` fed from `perf record`. Same wins, no instrumented build.
 
 ### Per-deployment microarchitecture targeting

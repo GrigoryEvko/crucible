@@ -56,6 +56,19 @@ endif()
 #           default and it is correct: a build that claims a profile it
 #           cannot apply is not a PGO build.  Collect again.
 #
+#           Every TU carries CRUCIBLE_PGO_PROFILE, the tier, time,
+#           commit and tree state of the profile it was built with, and
+#           the benches print it.  A binary can say which profile made
+#           it.  A new collection changes the stamp, so every TU
+#           recompiles against the new counters instead of only the
+#           objects something else made stale.
+#
+#           CRUCIBLE_PGO_STRICT=ON adds the two release conditions: the
+#           profile was collected at HEAD, from a clean tree.  A release
+#           artifact is built with it, and the profile directory is
+#           archived next to the artifact, because the counters are the
+#           input that makes the binary what it is.
+#
 # This block sits at the head of the file because it clears the
 # compiler launcher, and a target reads that variable when it is
 # created.  ccache with base_dir rewrites the source path to a
@@ -89,8 +102,11 @@ set(CRUCIBLE_PGO "off" CACHE STRING "Profile-guided optimization: off, generate 
 set_property(CACHE CRUCIBLE_PGO PROPERTY STRINGS off generate use)
 set(CRUCIBLE_PGO_DIR "${CMAKE_SOURCE_DIR}/pgo" CACHE PATH
   "Root of the profile directories, one for each compiler version and hardware tier")
+option(CRUCIBLE_PGO_STRICT
+  "With CRUCIBLE_PGO=use: the profile must be collected at HEAD from a clean tree" OFF)
 set(_CRUCIBLE_PGO_COMPILE_FLAGS)
 set(_CRUCIBLE_PGO_LINK_FLAGS)
+set(_CRUCIBLE_PGO_COMPILE_DEFINITIONS)
 
 if(NOT CRUCIBLE_PGO STREQUAL "off")
   if(NOT CRUCIBLE_PGO MATCHES "^(generate|use)$")
@@ -185,24 +201,47 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
       message(FATAL_ERROR "PGO: ${CRUCIBLE_PGO_PROFILE_DIR} has a TARGET record and no counter files. "
         "The instrumented benches were configured and not run. Run scripts/pgo-bootstrap.sh.")
     endif()
-    set(_crucible_pgo_collected "an unrecorded time")
-    set(_crucible_pgo_commit "an unrecorded commit")
+    # scripts/pgo-bootstrap.sh rewrites COLLECTION on every run, so a
+    # build after a collection reconfigures and the stamp below changes.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+      "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET"
+      "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION")
+    set(_crucible_pgo_collected "unrecorded")
+    set(_crucible_pgo_commit "unrecorded")
+    set(_crucible_pgo_tree "unrecorded")
     if(EXISTS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION")
       file(STRINGS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION" _crucible_pgo_collected REGEX "^collected=")
       file(STRINGS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION" _crucible_pgo_commit REGEX "^commit=")
+      file(STRINGS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION" _crucible_pgo_tree REGEX "^tree=")
       string(REGEX REPLACE "^collected=" "" _crucible_pgo_collected "${_crucible_pgo_collected}")
       string(REGEX REPLACE "^commit=" "" _crucible_pgo_commit "${_crucible_pgo_commit}")
-      execute_process(
-        COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse HEAD
-        OUTPUT_VARIABLE _crucible_pgo_head
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _crucible_pgo_head_result
-        ERROR_QUIET)
-      if(_crucible_pgo_head_result EQUAL 0 AND NOT _crucible_pgo_head STREQUAL _crucible_pgo_commit)
-        message(WARNING "PGO: the profile was collected at ${_crucible_pgo_commit} and HEAD is "
-          "${_crucible_pgo_head}. A function whose control flow changed between the two stops the "
-          "build with -Wcoverage-mismatch. Run scripts/pgo-bootstrap.sh again to collect at HEAD.")
+      string(REGEX REPLACE "^tree=" "" _crucible_pgo_tree "${_crucible_pgo_tree}")
+    endif()
+    execute_process(
+      COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse HEAD
+      OUTPUT_VARIABLE _crucible_pgo_head
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE _crucible_pgo_head_result
+      ERROR_QUIET)
+    if(NOT _crucible_pgo_head_result EQUAL 0)
+      set(_crucible_pgo_head "unknown")
+    endif()
+    if(CRUCIBLE_PGO_STRICT)
+      if(NOT _crucible_pgo_commit STREQUAL _crucible_pgo_head)
+        message(FATAL_ERROR "PGO strict: the profile was collected at ${_crucible_pgo_commit} and HEAD "
+          "is ${_crucible_pgo_head}. A release profile is collected at the commit it ships with. "
+          "Run scripts/pgo-bootstrap.sh at HEAD, or configure without CRUCIBLE_PGO_STRICT.")
       endif()
+      if(NOT _crucible_pgo_tree STREQUAL "clean")
+        message(FATAL_ERROR "PGO strict: the profile was collected from a tree recorded as "
+          "'${_crucible_pgo_tree}'. A release profile is collected from a clean tree, so that the "
+          "counters describe the commit and nothing else. Commit or discard the changes, then run "
+          "scripts/pgo-bootstrap.sh again.")
+      endif()
+    elseif(NOT _crucible_pgo_commit STREQUAL _crucible_pgo_head)
+      message(WARNING "PGO: the profile was collected at ${_crucible_pgo_commit} and HEAD is "
+        "${_crucible_pgo_head}. A function whose control flow changed between the two stops the "
+        "build with -Wcoverage-mismatch. Run scripts/pgo-bootstrap.sh again to collect at HEAD.")
     endif()
     set(_CRUCIBLE_PGO_COMPILE_FLAGS
       -fprofile-use=${CRUCIBLE_PGO_PROFILE_DIR}
@@ -210,8 +249,17 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
       -fprofile-partial-training
       -Wno-missing-profile
       -Wno-suggest-attribute=cold)
+    # The same flags at link time, because LTO applies the profile there.
+    # Without LTO the driver ignores them, so the day -flto lands in the
+    # release preset, PGO stays applied.
+    set(_CRUCIBLE_PGO_LINK_FLAGS
+      -fprofile-use=${CRUCIBLE_PGO_PROFILE_DIR}
+      -fprofile-prefix-path=${CMAKE_BINARY_DIR}
+      -fprofile-partial-training)
+    set(_CRUCIBLE_PGO_COMPILE_DEFINITIONS
+      "CRUCIBLE_PGO_PROFILE=\"${_crucible_pgo_tier} ${_crucible_pgo_collected} ${_crucible_pgo_commit} ${_crucible_pgo_tree}\"")
     message(STATUS "PGO: use, tier ${_crucible_pgo_tier}, ${_crucible_pgo_counter_count} counter files "
-      "collected ${_crucible_pgo_collected} at ${_crucible_pgo_commit}")
+      "collected ${_crucible_pgo_collected} at ${_crucible_pgo_commit} (${_crucible_pgo_tree} tree)")
   endif()
 endif()
 
@@ -1467,6 +1515,9 @@ if(_CRUCIBLE_PGO_COMPILE_FLAGS)
 endif()
 if(_CRUCIBLE_PGO_LINK_FLAGS)
   target_link_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_LINK_FLAGS})
+endif()
+if(_CRUCIBLE_PGO_COMPILE_DEFINITIONS)
+  target_compile_definitions(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_COMPILE_DEFINITIONS})
 endif()
 
 # ═══════════════════════════════════════════════════════════════
