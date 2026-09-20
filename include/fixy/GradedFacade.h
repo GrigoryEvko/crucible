@@ -23,10 +23,11 @@
 // member is static or a typedef.
 //
 // A wrapper whose value_type is not the substrate's says so by
-// declaring its own, which hides the base's.  AppendOnly is that case:
-// it wraps a container and grades the container, while its value_type
-// is the element.  value_type_decoupled in GradedTrait.h is the
-// trait that admits the mismatch.
+// declaring its own, which hides the base's, and by declaring the
+// member `static constexpr bool value_type_decoupled = true;`, which
+// is what GradedWrapper in GradedTrait.h reads to admit the mismatch.
+// AppendOnly is that case: it wraps a container and grades the
+// container, while its value_type is the element.
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>

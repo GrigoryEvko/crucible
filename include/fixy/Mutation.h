@@ -34,16 +34,18 @@ class WriteOnceNonNull;
 
 // Both traits are the one reflection query of foundation/reflect/Instance.h
 // asked of a different template.  The struct forms stay, because callers
-// read `::value` off them.
+// read `::value` off them.  Struct and value are each derived from the
+// concept, so neither is a door: a specialization of one changes what
+// its own readers see and nothing the concept answers.
 template <typename T>
-struct is_writeonce : std::bool_constant<::foundation::reflect::is_instance_of_v<T, ^^WriteOnce>> {};
+struct is_writeonce : std::bool_constant<::foundation::reflect::IsInstanceOf<T, ^^WriteOnce>> {};
 template <typename T>
-inline constexpr bool is_writeonce_v = is_writeonce<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_writeonce_v = ::foundation::reflect::IsInstanceOf<T, ^^WriteOnce>;
 
 template <typename T>
-struct is_writeoncenonnull : std::bool_constant<::foundation::reflect::is_instance_of_v<T, ^^WriteOnceNonNull>> {};
+struct is_writeoncenonnull : std::bool_constant<::foundation::reflect::IsInstanceOf<T, ^^WriteOnceNonNull>> {};
 template <typename T>
-inline constexpr bool is_writeoncenonnull_v = is_writeoncenonnull<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_writeoncenonnull_v = ::foundation::reflect::IsInstanceOf<T, ^^WriteOnceNonNull>;
 
 // Every constructor below is private.  The mint_* function declared
 // beside each class is its one door, and the concept on that door
@@ -108,11 +110,15 @@ class [[nodiscard]] AppendOnly
 public:
     // The one wrapper whose value_type is not the substrate's: it wraps
     // a container and grades the container, while what it holds is the
-    // element.  Declaring value_type here hides the base's, and
-    // value_type_decoupled in GradedTrait.h is what admits the
-    // mismatch.  modality and the two name forwarders still arrive from
+    // element.  Declaring value_type here hides the base's, and the
+    // member below is what tells GradedWrapper to admit the mismatch.
+    // It is a member, because a class body cannot be reopened from
+    // another translation unit the way a trait can be specialized from
+    // one.
+    // modality and the two name forwarders still arrive from
     // graded_facade.
     using value_type = T;
+    static constexpr bool value_type_decoupled = true;
     using storage_type = Storage<T>;
     using const_iterator = typename Storage<T>::const_iterator;
 
@@ -723,12 +729,3 @@ template <typename T>
 using MaxObserved = AtomicMonotonic<T, std::less<T>>;
 
 }  // namespace fixy
-
-// AppendOnly's user-facing value_type is the element T, while its
-// substrate grades the container Storage<T>. The specialization tells
-// the wrapper concept to skip the equality check between the two.
-
-namespace foundation::algebra {
-template <typename T, template <typename...> class Storage>
-struct value_type_decoupled<::fixy::AppendOnly<T, Storage>> : std::true_type {};
-}  // namespace foundation::algebra

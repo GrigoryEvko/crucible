@@ -69,7 +69,7 @@ static_assert(std::is_same_v<MaxObserved<std::uint32_t>, AtomicMonotonic<std::ui
 static_assert(fa::GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(fa::is_graded_wrapper_v<Monotonic<std::uint64_t>>);
 // AppendOnly's element value_type differs from the graded container's;
-// the value_type_decoupled specialization beside the wrapper admits it.
+// the value_type_decoupled member the wrapper declares admits it.
 static_assert(fa::value_type_decoupled_v<AppendOnly<int>>);
 static_assert(fa::GradedWrapper<AppendOnly<int>>);
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
