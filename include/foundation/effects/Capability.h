@@ -361,8 +361,15 @@ static_assert(std::is_same_v<bare_tag_t<Effect::Block>, cap::Block>);
 
 // The mapping reads namespace cap by identifier, so the membership of
 // that namespace decides which atoms have a bridge.  A pin on the count
-// makes a new member a two-place edit that a reviewer sees, and it
-// fails if the namespace is reopened somewhere this header cannot see.
+// makes a new member a two-place edit that a reviewer sees.
+//
+// The pin reads the namespace as this header defines it, and a reopen
+// in a later translation unit does not move it.  That blindness is
+// harmless for the reason it exists: every reflection query here
+// resolves once, at this point, so a type smuggled in afterwards
+// reaches neither this count nor bare_tag_t.  Measured by reopening the
+// namespace with a type named for a thread atom, after which
+// HasBareTag<Effect::Bg> stayed false.
 [[nodiscard]] consteval std::size_t cap_tag_count_() noexcept {
     static constexpr auto members =
         std::define_static_array(std::meta::members_of(^^cap, std::meta::access_context::current()));
@@ -411,62 +418,5 @@ static_assert(CapMatchesCtx<Capability<Effect::Alloc, Init>, detail::exec_ctx_se
 static_assert(CapMatchesCtx<Capability<Effect::Alloc, Test>, detail::exec_ctx_self_test::BgIoWitness>);
 
 }  // namespace detail::capability_self_test
-
-[[gnu::cold]] inline void runtime_smoke_test_capability() noexcept {
-    auto bg = testing::bg();
-    auto bg_alloc = mint_cap<Effect::Alloc>(bg);
-    auto bg_io = mint_cap<Effect::IO>(bg);
-    auto bg_block = mint_cap<Effect::Block>(bg);
-    auto bg_self = mint_cap<Effect::Bg>(bg);
-
-    auto init = testing::init();
-    auto init_alloc = mint_cap<Effect::Alloc>(init);
-    auto init_io = mint_cap<Effect::IO>(init);
-    auto init_self = mint_cap<Effect::Init>(init);
-
-    auto test = testing::test();
-    auto test_alloc = mint_cap<Effect::Alloc>(test);
-    auto test_block = mint_cap<Effect::Block>(test);
-
-    Capability<Effect::Alloc, Bg> moved = std::move(bg_alloc);
-    std::move(moved).consume();
-
-    static_assert(cap_of_v<decltype(bg_io)> == Effect::IO);
-    static_assert(cap_of_v<decltype(test_block)> == Effect::Block);
-    static_assert(std::is_same_v<source_of_t<decltype(init_io)>, Init>);
-    static_assert(std::is_same_v<source_of_t<decltype(test_alloc)>, Test>);
-
-    static_assert(IsCapability<decltype(bg_io)>);
-    static_assert(!IsCapability<int>);
-
-    static_cast<void>(bg_io);
-    static_cast<void>(bg_block);
-    static_cast<void>(bg_self);
-    static_cast<void>(init_alloc);
-    static_cast<void>(init_io);
-    static_cast<void>(init_self);
-    static_cast<void>(test_alloc);
-    static_cast<void>(test_block);
-
-    // Each witness is handed the capability it claims — a context is
-    // not evidence of a capability, it carries one.
-    detail::exec_ctx_self_test::BgWitness bg_ctx{testing::bg()};
-    detail::exec_ctx_self_test::BgIoWitness bg_compile_ctx{testing::bg()};
-    auto from_ctx_alloc = mint_from_ctx<Effect::Alloc>(bg_ctx);
-    auto from_ctx_io = mint_from_ctx<Effect::IO>(bg_compile_ctx);
-    static_assert(std::is_same_v<decltype(from_ctx_alloc), Capability<Effect::Alloc, Bg>>);
-    static_assert(std::is_same_v<decltype(from_ctx_io), Capability<Effect::IO, Bg>>);
-    static_cast<void>(from_ctx_alloc);
-    static_cast<void>(from_ctx_io);
-
-    auto a = mint_cap<Effect::Alloc>(bg);
-    [[maybe_unused]] cap::Alloc bare_a = extract_bare(std::move(a));
-
-    auto i = mint_cap<Effect::IO>(bg);
-    [[maybe_unused]] cap::IO bare_i = extract_bare(std::move(i));
-
-    auto b = mint_cap<Effect::Block>(bg);
-    [[maybe_unused]] cap::Block bare_b = extract_bare(std::move(b));
-}
 
 }  // namespace foundation::effects

@@ -25,7 +25,3 @@
 
 include/foundation/effects/Effect.h  — declares the namespace, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
 include/foundation/effects/Ctx.h  — the ExecCtx self-test builds each witness context, which after #172 Door 1 means handing it a real capability.
-include/foundation/effects/Capability.h  — the capability self-test mints from each source and drives mint_from_ctx over a background witness.
-include/fixy/os/ThreadName.h  — runtime smoke test needs an Init context to call the ported mint.
-include/fixy/os/Time.h  — runtime smoke test builds the init and blocking witnesses the clock and TSC readers are minted under.
-include/fixy/os/Sched.h  — runtime smoke test builds the background witness the scheduler mints are gated on.
