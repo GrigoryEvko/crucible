@@ -457,3 +457,23 @@ fixy_neg_compile_test(neg_sess_vigil_illegal_transition
   "static assertion failed"
   "fixy::session::diagnostic \\[VigilModeBridge_IllegalTransition\\]"
   "admitted_mode_transitions")
+
+# ── Task #119 (A15): the lock-free rings ─────────────────────────────
+#
+# The threaded half of this test is what checks the ordering claim, so
+# it is the half that means anything under the tsan preset.
+fixy_test(test_concurrent_rings)
+
+# A capacity that is not a power of two makes the mask drop bits, and
+# two live positions collide on one slot with nothing to detect it.
+fixy_neg_compile_test(neg_ring_capacity_not_power_of_two
+  "static assertion failed"
+  "fixy::concurrent::SpscRing<T, Capacity>: Capacity must be a power"
+  "index modulo Capacity")
+
+# A cell is overwritten in place and never destroyed, so a value that
+# owns anything leaks once per slot per lap.
+fixy_neg_compile_test(neg_ring_value_owns_a_resource
+  "template constraint failure"
+  "constraints not satisfied"
+  "satisfaction of .RingValue<T>.")
