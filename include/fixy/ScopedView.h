@@ -11,12 +11,20 @@
 // carrier may coexist.  Assignment is not, because reassigning a view
 // hides the state transition that should have re-minted it.
 //
+// A view carries a brand: the carrier's own when the carrier has one,
+// so the view is pinned to that instance, and a fresh one per mint
+// site otherwise.  A callee that wants a view of a particular carrier
+// asks for the carrier's brand, and a view of another carrier of the
+// same type fails to unify.  A view spelled without a brand is on the
+// erased identity, which is what every view was before brands.
+//
 // A carrier opts into the field audit by writing a static_assert on
 // no_scoped_view_field_check for its own type.
 //
 // Old spelling: include/crucible/safety/ScopedView.h.
 
 #include <fixy/Qtt.h>
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/reflect/Instance.h>
 
@@ -28,7 +36,7 @@
 
 namespace fixy {
 
-template <typename Carrier, typename Tag>
+template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class ScopedView;
 
 // The struct form stays because callers read `::value` off it. The
@@ -39,8 +47,42 @@ struct is_scoped_view : std::bool_constant<::foundation::reflect::is_instance_of
 template <typename T>
 inline constexpr bool is_scoped_view_v = is_scoped_view<std::remove_cvref_t<T>>::value;
 
-template <typename Carrier, typename Tag>
+// The brand a view of Carrier takes.
+template <typename Carrier, typename Fresh>
+using view_brand_t = ::foundation::brand::inherited_or_fresh_brand_t<Carrier, Fresh>;
+
+// The single point at which a state is asserted.  view_ok is found by
+// argument-dependent lookup on the carrier.
+//
+// The gate is a precondition and not a requires-clause because view_ok
+// inspects the carrier's run-time state rather than its type alone.
+// One consequence matters at call sites: overload resolution and
+// concepts cannot see the gate, so this factory looks callable
+// everywhere and only rejects when the precondition fires.
+// §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
+//
+// The fresh brand is the last template parameter, after the two the
+// call site can name, so `mint_view<Ready>(carrier)` is the whole
+// spelling and no caller can hand in a brand of its own choosing.
+template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+[[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
+mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{}));
+
+// Measured, not suspected: mint_view<Ready>(Carrier{}) compiled and
+// handed back a view of a carrier that was gone at the end of the
+// statement.  This twin is what refuses it.  The deduced parameter is a
+// const rvalue reference rather than a forwarding reference, so a
+// non-const lvalue carrier still reaches the factory above.
+template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>> mint_view(Carrier const&&) =
+    delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
+
+template <typename Carrier, typename Tag, typename Brand>
 class [[nodiscard]] ScopedView {
+    static_assert(::foundation::brand::IsBrand<Brand>, "ScopedView<Carrier, Tag, Brand>: Brand must be an empty "
+                                                       "class type: the carrier's own, a mint's fresh brand, or "
+                                                       "DefaultBrand.");
+
     // The pointer is const because the view is proof, not a handle.  A
     // method that mutates the carrier already holds its own reference.
     // Holding a const pointer is also what lets a const member
@@ -57,12 +99,14 @@ class [[nodiscard]] ScopedView {
     explicit ScopedView(Carrier const&&) =
         delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
-    template <typename Tag_, typename Carrier_>
-    friend constexpr ScopedView<Carrier_, Tag_> mint_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
+    template <typename Tag_, typename Carrier_, typename Fresh_>
+    friend constexpr ScopedView<Carrier_, Tag_, view_brand_t<Carrier_, Fresh_>>
+    mint_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 public:
     using carrier_type = Carrier;
     using tag_type = Tag;
+    using brand_type = Brand;
 
     // The private converting constructor already suppresses the
     // default one.  The explicit delete is here for its message: a
@@ -78,6 +122,12 @@ public:
     operator=(const ScopedView&) = delete("ScopedView is single-binding; assignment hides state transitions");
     ScopedView& operator=(ScopedView&&) = delete("ScopedView is single-binding; assignment hides state transitions");
     constexpr ~ScopedView() = default;
+
+    // Erasure, one way only: a view of one instance becomes a view on
+    // the erased identity.  Nothing gives an erased view a brand.
+    template <typename Other>
+        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
+    constexpr ScopedView(ScopedView<Carrier, Tag, Other> const& other) noexcept : ptr_{other.operator->()} {}
 
     [[nodiscard]] constexpr Carrier const* operator->() const noexcept { return ptr_; }
     [[nodiscard]] constexpr Carrier const& carrier() const noexcept { return *ptr_; }
@@ -99,29 +149,11 @@ public:
     static void operator delete[](void*, std::align_val_t) = delete;
 };
 
-// The single point at which a state is asserted.  view_ok is found by
-// argument-dependent lookup on the carrier.
-//
-// The gate is a precondition and not a requires-clause because view_ok
-// inspects the carrier's run-time state rather than its type alone.
-// One consequence matters at call sites: overload resolution and
-// concepts cannot see the gate, so this factory looks callable
-// everywhere and only rejects when the precondition fires.
-// §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
-template <typename Tag, typename Carrier>
-[[nodiscard]] constexpr ScopedView<Carrier, Tag> mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
-    pre(view_ok(c, std::type_identity<Tag>{})) {
-    return ScopedView<Carrier, Tag>{c};
+template <typename Tag, typename Carrier, typename Fresh>
+[[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
+mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
+    return ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>{c};
 }
-
-// Measured, not suspected: mint_view<Ready>(Carrier{}) compiled and
-// handed back a view of a carrier that was gone at the end of the
-// statement.  This twin is what refuses it.  The deduced parameter is a
-// const rvalue reference rather than a forwarding reference, so a
-// non-const lvalue carrier still reaches the factory above.
-template <typename Tag, typename Carrier>
-constexpr ScopedView<Carrier, Tag> mint_view(Carrier const&&) =
-    delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
 // A one-shot state proof, for a transition the holder must prove the
 // right to make and hands over rather than shares.  The token is gone
@@ -131,20 +163,23 @@ constexpr ScopedView<Carrier, Tag> mint_view(Carrier const&&) =
 // copyable views minted in parallel still read it.  Guard the
 // transition method with its own state precondition to cover a view
 // that has gone stale.
-template <typename Carrier, typename Tag>
-using LinearScopedView = Linear<ScopedView<Carrier, Tag>>;
+template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
+using LinearScopedView = Linear<ScopedView<Carrier, Tag, Brand>>;
 
 // §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
-template <typename Tag, typename Carrier>
-[[nodiscard]] constexpr LinearScopedView<Carrier, Tag>
+// The brand is passed through to mint_view by name, because a bare
+// `mint_view<Tag>(c)` here would draw a second fresh brand for the
+// inner call and the linear view would not carry this site's.
+template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+[[nodiscard]] constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
-    return mint_linear<ScopedView<Carrier, Tag>>(mint_view<Tag>(c));
+    return mint_linear<ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>>(mint_view<Tag, Carrier, Fresh>(c));
 }
 
 // The linear form carries its view further than the scoped one does, so
 // it needs the same twin and needs it more.
-template <typename Tag, typename Carrier>
-constexpr LinearScopedView<Carrier, Tag> mint_linear_view(Carrier const&&) =
+template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>> mint_linear_view(Carrier const&&) =
     delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
 template <typename T>
@@ -294,16 +329,59 @@ consteval bool no_scoped_view_field_check() {
 namespace detail {
 struct sv_test_carrier {};
 struct sv_test_tag {};
+struct sv_brand_a {};
+struct sv_brand_b {};
+// A carrier that carries a brand, so a view of it inherits the brand.
+struct sv_branded_carrier {
+    using brand_type = sv_brand_a;
+    int value = 1;
+};
+constexpr bool view_ok(sv_test_carrier const&, std::type_identity<sv_test_tag>) noexcept { return true; }
+constexpr bool view_ok(sv_branded_carrier const&, std::type_identity<sv_test_tag>) noexcept { return true; }
 }  // namespace detail
 
 static_assert(sizeof(ScopedView<detail::sv_test_carrier, detail::sv_test_tag>) == sizeof(void*),
               "ScopedView<C, T> must be exactly a Carrier pointer");
+static_assert(sizeof(ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>) == sizeof(void*),
+              "a branded view keeps the layout of an erased one");
 static_assert(std::is_trivially_copyable_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 static_assert(std::is_trivially_destructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 
 static_assert(is_scoped_view_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 static_assert(is_scoped_view_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag> const&>);
+static_assert(is_scoped_view_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>>);
 static_assert(!is_scoped_view_v<detail::sv_test_carrier>);
 static_assert(!is_scoped_view_v<void>);
+
+// The erasure runs one way, and a view of one brand is not a view of
+// another.
+static_assert(std::is_convertible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>,
+                                    ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
+static_assert(!std::is_constructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>,
+                                       ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
+static_assert(!std::is_constructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>,
+                                       ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_b>>);
+
+namespace detail::scoped_view_self_test {
+
+// Two mints of an unbranded carrier are two brands; a mint of a
+// branded carrier takes the carrier's brand; the linear form carries
+// the same brand as the scoped one minted beside it.
+[[nodiscard]] consteval bool mints_brand() noexcept {
+    sv_test_carrier plain{};
+    auto first = mint_view<sv_test_tag>(plain);
+    auto second = mint_view<sv_test_tag>(plain);
+    static_assert(!std::is_same_v<decltype(first), decltype(second)>, "two mint sites are two brands");
+    static_assert(::foundation::brand::IsBranded<decltype(first)>);
+    sv_branded_carrier branded{};
+    auto of_branded = mint_view<sv_test_tag>(branded);
+    static_assert(std::is_same_v<::foundation::brand::brand_of_t<decltype(of_branded)>, sv_brand_a>,
+                  "a view of a branded carrier takes the carrier's brand");
+    ScopedView<sv_test_carrier, sv_test_tag> erased = first;
+    return erased.operator->() == &plain && of_branded->value == 1;
+}
+static_assert(mints_brand());
+
+}  // namespace detail::scoped_view_self_test
 
 }  // namespace fixy

@@ -14,16 +14,23 @@
 namespace eff = foundation::effects;
 
 namespace {
-struct RegionWhole {};
+struct RegionWhole {
+    using permission_row = ::foundation::effects::Row<>;
+};
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
 // A body in the old shape: it takes the shard by rvalue and consumes it.
+// The shard's brand is the region's, so the body is written generic
+// over it, which is the shape a body that took the shard by reference
+// would also have.
 struct ConsumingBody {
-    void operator()(fixy::OwnedRegion<int, fixy::Slice<RegionWhole, 0>>&&) const noexcept {}
+    template <class Brand>
+    void operator()(fixy::OwnedRegion<int, fixy::Slice<RegionWhole, 0>, Brand>&&) const noexcept {}
 };
+using RegionBrand = ::foundation::brand::DefaultBrand;
 }  // namespace
 
-static_assert(fixy::spawn::CtxFitsParallelFor<2, BgCtx, int, RegionWhole, ConsumingBody>,
+static_assert(fixy::spawn::CtxFitsParallelFor<2, BgCtx, int, RegionWhole, RegionBrand, ConsumingBody>,
               "a body that consumes its shard must be refused: recombine needs every shard back to reissue "
               "the parent Permission, and the helper that rebuilt the parent from nothing is gone");
 

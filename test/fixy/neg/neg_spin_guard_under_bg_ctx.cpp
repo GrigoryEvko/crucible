@@ -9,7 +9,9 @@
 namespace eff = foundation::effects;
 
 namespace {
-struct GateTag {};
+struct GateTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 }  // namespace
 
@@ -17,6 +19,6 @@ int main() {
     BgCtx ctx{eff::testing::bg()};
     fixy::spin::SpinLock<GateTag> gate{};
     auto proof = foundation::permissions::mint_permission_root<GateTag>();
-    fixy::spin::SpinGuard<GateTag> guard{ctx, gate, proof};
+    fixy::spin::SpinGuard guard{ctx, gate, proof};
     return 0;
 }

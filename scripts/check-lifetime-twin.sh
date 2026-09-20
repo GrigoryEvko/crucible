@@ -78,18 +78,29 @@ TOKEN = "CRUCIBLE_LIFETIMEBOUND"
 # The name may carry an explicit template argument list, as a friend
 # declaration of a specialization does: `mint_read_view<Tag>(`.
 NAME_BEFORE_PAREN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^()<>]*>)?\s*\(")
+# A keyword followed by a parenthesis is not a declaration's name.  A
+# constrained twin reads `requires(...) constexpr auto f(T&&) = delete`,
+# and the first identifier before a parenthesis there is `requires`.
+KEYWORDS_BEFORE_PAREN = frozenset({"requires", "decltype", "sizeof", "alignof", "noexcept", "delete", "if",
+                                   "while", "for", "switch", "return", "static_assert", "typeid", "pre", "post"})
 DELETED = re.compile(r"=\s*delete\b")
 RVALUE_REF = re.compile(r"&&")
+
+def first_declaration_name(text: str) -> str:
+    """The first identifier before a parameter list that is not a keyword."""
+    for name in NAME_BEFORE_PAREN.findall(text):
+        if name not in KEYWORDS_BEFORE_PAREN:
+            return name
+    return ""
 
 def declaration_name(line: str) -> str:
     """The declaration's own name, read off the line holding the token."""
     head = line.split(TOKEN, 1)[0]
-    names = NAME_BEFORE_PAREN.findall(head)
     # The FIRST match is the declaration's own name.  A later one comes
     # from inside the parameter list, as in the array-of-reference
     # declarator `Borrowed(T (&array X)[N])`, where the last identifier
     # before a paren is the element type rather than the constructor.
-    return names[0] if names else ""
+    return first_declaration_name(head)
 
 def deleted_names(text: str) -> set[str]:
     """Names of deleted declarations whose parameter list takes an rvalue.
@@ -103,9 +114,9 @@ def deleted_names(text: str) -> set[str]:
             continue
         if not RVALUE_REF.search(chunk):
             continue
-        names = NAME_BEFORE_PAREN.findall(chunk)
-        if names:
-            found.add(names[0])
+        name = first_declaration_name(chunk)
+        if name:
+            found.add(name)
     return found
 
 sites, missing, unreadable = 0, [], []
@@ -149,8 +160,9 @@ self_test() {
     trap 'rm -rf "$tmp"' RETURN
     mkdir -p "$tmp/planted/inner"
 
-    # One site with its twin, one without.  The guard must report
-    # exactly the second.
+    # Two sites with their twins, one of them a constrained free
+    # function whose twin opens with a requires-clause, and one site
+    # without.  The guard must report exactly the last.
     cat >"$tmp/planted/inner/Planted.h" <<'EOF'
 #pragma once
 struct Carrier {};
@@ -158,6 +170,11 @@ struct Guarded {
     explicit Guarded(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
     explicit Guarded(Carrier const&&) = delete("planted twin");
 };
+template <class T>
+constexpr int planted_mint(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <class T>
+    requires(!std::is_lvalue_reference_v<T>)
+constexpr auto planted_mint(T&&) = delete("planted constrained twin");
 struct Unguarded {
     explicit Unguarded(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 };
@@ -167,8 +184,9 @@ EOF
     LIFETIME_TWIN_ROOTS="$tmp/planted" bash "${BASH_SOURCE[0]}" --quiet >"$out" 2>&1
     rc=$?
     set -e
-    if [[ $rc -eq 1 ]] && grep -q 'NO TWIN.*Unguarded' "$out" && ! grep -q 'NO TWIN.*Guarded(' "$out"; then
-        printf 'check-lifetime-twin --self-test: a claim without its twin is reported and a claim with one is not, as expected.\n'
+    if [[ $rc -eq 1 ]] && grep -q 'NO TWIN.*Unguarded' "$out" && ! grep -q 'NO TWIN.*Guarded(' "$out" \
+        && ! grep -q 'NO TWIN.*planted_mint' "$out"; then
+        printf 'check-lifetime-twin --self-test: a claim without its twin is reported, and a claim with one is not, including a twin behind a requires-clause, as expected.\n'
     else
         printf 'check-lifetime-twin --self-test: FAIL — expected exit 1 naming Unguarded (exit %s).\n' "$rc" >&2
         sed 's/^/    /' "$out" >&2

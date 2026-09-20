@@ -271,7 +271,11 @@ static void test_linear_view_mint_and_consume() {
     CRUCIBLE_TEST_REQUIRE(&inner.carrier() == &c);
 }
 
-static void transition_consume(LinearScopedView<DummyCarrier, dummy_state::Active>&& tok) noexcept {
+// The callee names the token's brand rather than the erased spelling:
+// a linear token cannot be erased by conversion, because a conversion
+// would copy what must be consumed.
+template <typename Brand>
+static void transition_consume(LinearScopedView<DummyCarrier, dummy_state::Active, Brand>&& tok) noexcept {
     // Consuming the token is the point: this models a one-shot operation
     // that is callable only while the caller still holds it.
     auto inner = std::move(tok).consume();

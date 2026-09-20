@@ -23,7 +23,11 @@
 namespace {
 
 struct TestFailure {};
-struct PlainTag {};
+struct PlainTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+// Declared and given no row, so the relation must refuse it.
+struct UndeclaredTag {};
 
 int total_passed = 0;
 int total_failed = 0;
@@ -51,22 +55,24 @@ struct BlockChild {};
 
 }  // namespace permission_row_compile_tags
 
+// The rows are edges of the closed relation, declared before the first
+// mint of the tags.
+namespace foundation::permissions::permission_rows {
+
+inline constexpr ::foundation::fail_closed::edge<
+    permission_row_compile_tags::Whole,
+    ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>
+    compile_whole{};
+inline constexpr ::foundation::fail_closed::edge<permission_row_compile_tags::IoChild,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
+    compile_io_child{};
+inline constexpr ::foundation::fail_closed::edge<permission_row_compile_tags::BlockChild,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::Block>>
+    compile_block_child{};
+
+}  // namespace foundation::permissions::permission_rows
+
 namespace foundation::permissions {
-
-template <>
-struct permission_row<permission_row_compile_tags::Whole> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
-
-template <>
-struct permission_row<permission_row_compile_tags::IoChild> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
-};
-
-template <>
-struct permission_row<permission_row_compile_tags::BlockChild> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
-};
 
 template <>
 struct splits_into<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
@@ -94,7 +100,9 @@ namespace {
 // pin that reading: what the tag concept accepts, that a second root
 // mint compiles, and that a token cannot be copied.
 namespace fixy_found_008_pin {
-struct EmptyTag {};
+struct EmptyTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 struct NonEmptyTag {
     int payload = 0;
 };
@@ -145,6 +153,12 @@ void test_permission_row_compile() {
     using NetworkBuffer = perm::tag::NetworkBufferTag;
 
     static_assert(perm::permission_row_empty_v<PlainTag>);
+    // The relation is closed: a tag with no declared row has none, is
+    // not empty-rowed, and is admitted by no context.  The previous
+    // primary template answered Row<> here.
+    static_assert(!perm::has_permission_row_v<UndeclaredTag>);
+    static_assert(!perm::permission_row_empty_v<UndeclaredTag>);
+    static_assert(!perm::CtxAdmitsPermission<UndeclaredTag, TestRunnerCtx>);
     static_assert(perm::CtxAdmitsPermission<HugePage, BgCompileCtx>);
     static_assert(!perm::CtxAdmitsPermission<HugePage, HotFgCtx>);
     static_assert(!perm::CtxAdmitsPermission<HugePage, BgDrainCtx>);

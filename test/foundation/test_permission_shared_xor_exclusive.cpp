@@ -44,7 +44,9 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-struct Region {};
+struct Region {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 static_assert(SharedPermission<Region>::confers_runtime_access == false,
               "SharedPermission must confer no runtime access");

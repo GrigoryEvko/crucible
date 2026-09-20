@@ -27,7 +27,9 @@ namespace {
 // own the background capability.
 using ForegroundCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
 
-struct GateTag {};
+struct GateTag {
+    using permission_row = eff::Row<>;
+};
 
 [[nodiscard]] int manual_acquire_and_release() {
     ForegroundCtx ctx{eff::testing::test()};
@@ -59,7 +61,7 @@ struct GateTag {};
     auto proof = perm::mint_permission_root<GateTag>();
 
     {
-        spin::SpinGuard<GateTag> guard{ctx, gate, proof};
+        spin::SpinGuard guard{ctx, gate, proof};
         if (!guard.was_acquired()) {
             std::fprintf(stderr, "the plain guard constructor did not acquire\n");
             return 1;
@@ -83,7 +85,7 @@ struct GateTag {};
     {
         // The gate is held, so the try guard must report that it did not
         // acquire, and must not release on destruction.
-        spin::SpinGuard<GateTag> guard{std::try_to_lock, ctx, gate, proof};
+        spin::SpinGuard guard{std::try_to_lock, ctx, gate, proof};
         if (guard.was_acquired()) {
             std::fprintf(stderr, "the try guard claimed a gate that was already held\n");
             return 1;
@@ -113,13 +115,13 @@ struct GateTag {};
     {
         std::jthread worker_a{[&] () noexcept {
             for (int i = 0; i < kPerThread; ++i) {
-                spin::SpinGuard<GateTag> guard{ctx, gate, proof_a};
+                spin::SpinGuard guard{ctx, gate, proof_a};
                 ++counter;
             }
         }};
         std::jthread worker_b{[&] () noexcept {
             for (int i = 0; i < kPerThread; ++i) {
-                spin::SpinGuard<GateTag> guard{ctx, gate, proof_b};
+                spin::SpinGuard guard{ctx, gate, proof_b};
                 ++counter;
             }
         }};

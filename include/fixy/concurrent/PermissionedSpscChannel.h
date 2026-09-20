@@ -36,14 +36,24 @@ namespace fixy::concurrent {
 // The triple is specialized for splitting at the foot of this file, so
 // a user tag takes no per-tag boilerplate.
 
+// A ring is memory the process already owns, so touching it through
+// either endpoint incurs no effect: the three tags declare the empty
+// row.  They are templates, so the row is a member rather than an edge.
+
 namespace spsc_tag {
 
 template <typename UserTag>
-struct Whole {};
+struct Whole {
+    using permission_row = ::foundation::effects::Row<>;
+};
 template <typename UserTag>
-struct Producer {};
+struct Producer {
+    using permission_row = ::foundation::effects::Row<>;
+};
 template <typename UserTag>
-struct Consumer {};
+struct Consumer {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 }  // namespace spsc_tag
 

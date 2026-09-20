@@ -186,6 +186,42 @@ template <std::meta::info Ns, class T>
     return false;
 }
 
+// The number of edges in Ns whose From is T.
+template <std::meta::info Ns, class T>
+[[nodiscard]] consteval std::size_t edge_count_from() noexcept {
+    static_assert(std::meta::is_namespace(Ns), "fail_closed::edge_count_from<Ns, T>: Ns must be the reflection "
+                                               "of a namespace, written ^^name.");
+    std::size_t count = 0;
+    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
+        if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) ++count;
+    }
+    return count;
+}
+
+// The To of the one edge in Ns whose From is T, for a relation that is
+// a function of its From.  Exactly one such edge must exist.  None is
+// an undeclared pair, and two is a relation that answers twice; both
+// are hard errors here rather than a primary template answering for
+// the author.
+template <std::meta::info Ns, class T>
+[[nodiscard]] consteval std::meta::info unique_target() noexcept {
+    static_assert(std::meta::is_namespace(Ns), "fail_closed::unique_target<Ns, T>: Ns must be the reflection of "
+                                               "a namespace, written ^^name.");
+    static_assert(edge_count_from<Ns, T>() != 0, "fail_closed::unique_target<Ns, T>: the relation declares no "
+                                                 "edge from T.  Declare `inline constexpr edge<T, To> name{};` "
+                                                 "in the relation's namespace before the first check against it.");
+    static_assert(edge_count_from<Ns, T>() < 2, "fail_closed::unique_target<Ns, T>: the relation declares more "
+                                                "than one edge from T, so it is not a function of T.  Remove "
+                                                "all but one.");
+    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
+        if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) return ends_of(m).to;
+    }
+    return ^^void;
+}
+
+template <std::meta::info Ns, class T>
+using unique_target_t = typename[:unique_target<Ns, T>():];
+
 // Which end of an edge a type must occupy for every_class_in_has_edge.
 enum class EdgeEnd : unsigned char {
     From,

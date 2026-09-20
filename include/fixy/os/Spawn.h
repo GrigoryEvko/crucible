@@ -292,10 +292,10 @@ template <typename Ctx, typename Parent, typename ChildrenTuple, typename Callab
 concept CtxFitsSpawn = detail::ctx_fits_spawn_helper<Ctx, Parent, ChildrenTuple, CallablesTuple>::value;
 
 // The call returns once every child has joined.
-template <typename... Children, typename Ctx, typename Parent, typename... Callables>
+template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsSpawn<Ctx, Parent, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
-[[nodiscard]] perm::Permission<Parent> mint_spawn(Ctx const& ctx, perm::Permission<Parent>&& parent,
-                                                 Callables&&... callables) noexcept {
+[[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, perm::Permission<Parent, Brand>&& parent,
+                                                        Callables&&... callables) noexcept {
     // Deviation 1.  The clause above has already checked each callable's
     // noexcept specification through foundation's gate; this is the
     // structural half, which foundation cannot express because the atom is
@@ -309,11 +309,11 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
 
 // The background capability is demanded even when N is one and no thread
 // is spawned, so the contract does not change shape with N.
-template <std::size_t N, typename Ctx, typename T, typename Whole, typename Body>
+template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
 concept CtxFitsParallelFor =
     (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
     && perm::CtxAdmitsPermission<Whole, Ctx>
-    && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>>&>
+    && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>, Brand>&>
     && (N == 1 || std::is_copy_constructible_v<Body>);
 
 namespace detail {
@@ -332,11 +332,11 @@ void run_shards_(Shards& shards, Body body, std::index_sequence<Is...>) noexcept
 
 // The call returns once every shard has run its body, and the region it
 // hands back is recombined from the shards.
-template <std::size_t N, typename Ctx, typename T, typename Whole, typename Body>
-    requires CtxFitsParallelFor<N, Ctx, T, Whole, Body>
-[[nodiscard]] ::fixy::OwnedRegion<T, Whole> mint_parallel_for(Ctx const& /*ctx*/,
-                                                              ::fixy::OwnedRegion<T, Whole>&& region,
-                                                              Body body) noexcept {
+template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+    requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& /*ctx*/,
+                                                                     ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+                                                                     Body body) noexcept {
     // The context is read by the constraint on the declaration and nowhere
     // else.  The fan-out below is driven by N alone.
     auto shards = std::move(region).template split_into<N>();
@@ -349,7 +349,7 @@ template <std::size_t N, typename Ctx, typename T, typename Whole, typename Body
 
     // Deviation 4: every shard is surrendered here, and their Slice
     // permissions are what reissue the parent's.
-    return ::fixy::OwnedRegion<T, Whole>::recombine(std::move(shards));
+    return ::fixy::OwnedRegion<T, Whole, Brand>::recombine(std::move(shards));
 }
 
 }  // namespace fixy::spawn

@@ -11,9 +11,15 @@
 #include <utility>
 
 namespace {
-struct Whole {};
-struct Left {};
-struct Right {};
+struct Whole {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Left {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Right {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 using FgCtx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 }  // namespace

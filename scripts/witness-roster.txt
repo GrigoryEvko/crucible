@@ -70,6 +70,22 @@ fixy::WriteOnce<int> | fixy/Mutation.h | fixy::WriteOnce<int>{} | private | clos
 fixy::WriteOnceNonNull<int*> | fixy/Mutation.h | fixy::WriteOnceNonNull<int*>{} | private | closed
 fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/MachineBridge.h | fixy::session::SessionFromMachine<int, fixy::session::End>{forge::rvalue<fixy::Machine<int>>()} | private | closed
 
+# -- Branded regions and borrows -------------------------------------
+#
+# Each of these carries a brand, the type that names one instance, and a
+# brand is only worth what its door is worth: a caller who can spell a
+# brand onto a second object has proved nothing.  So the branded
+# constructor is private behind fixy::detail::borrow_mint_t, which only
+# the mints hold, and the public constructors beside it are constrained
+# to the erased brand.  The expressions below hand the door its key and
+# are refused anyway, because the key is not the door.
+fixy::BorrowedRef<int> | fixy/Borrowed.h | fixy::BorrowedRef<int>{fixy::detail::borrow_mint_t{}, forge::lvalue<int>()} | private | closed
+fixy::Borrowed<int, int> | fixy/Borrowed.h | fixy::Borrowed<int, int>{fixy::detail::borrow_mint_t{}, std::span<int>{}} | private | closed
+# A region's constructor takes the base pointer and the count beside the
+# permission, so a forger who reaches it describes a region that need
+# not be the one the permission covers.
+fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/OwnedRegion.h | fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>{static_cast<int*>(nullptr), std::size_t{0}, forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()} | private | closed
+
 # -- OS handles: the constructor is the syscall, or it consumes one ---
 fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
 # A clock read on the replay-bound foreground path makes replay diverge,

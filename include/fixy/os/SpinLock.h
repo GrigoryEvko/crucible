@@ -50,6 +50,7 @@
 //     include/crucible/cntp/BackpressureRuntime.h) mint a Permission for
 //     their gate's tag at Stage C2e and use the witnessed guard.
 
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/effects/Ctx.h>
@@ -125,7 +126,7 @@ static_assert(sizeof(UnwitnessedSpinLock) >= 64, "the lock occupies a full cache
 // unconditional, which is why the type carries no is_always_lock_free
 // member to test.
 
-template <typename Tag>
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SpinGuard;
 
 // A context that may acquire the gate: one that exists, and one that does
@@ -158,26 +159,38 @@ public:
 
     // The two doors.  The context is read by the clause and by nothing
     // else; the proof is a compile-time witness and the body ignores it.
-    template <CtxMayAcquireSpin Ctx>
-    void lock_in(Ctx const& /*ctx*/, permission_t& proof) noexcept {
+    // The proof is taken under whatever brand it carries: the gate is
+    // keyed by its tag, and a permission of any instance of that tag
+    // witnesses the acquisition.
+    template <CtxMayAcquireSpin Ctx, typename Brand>
+    void lock_in(Ctx const& /*ctx*/, perm::Permission<Tag, Brand>& proof) noexcept {
         lock(proof);
     }
 
-    template <CtxMayAcquireSpin Ctx>
-    [[nodiscard]] bool try_lock_in(Ctx const& /*ctx*/, permission_t& proof) noexcept {
+    template <CtxMayAcquireSpin Ctx, typename Brand>
+    [[nodiscard]] bool try_lock_in(Ctx const& /*ctx*/, perm::Permission<Tag, Brand>& proof) noexcept {
         return try_lock(proof);
     }
 
     // Release costs the same witness acquisition did, per deviation 3.
-    void unlock(permission_t& /*proof*/) noexcept { substrate_.unlock(); }
+    template <typename Brand>
+    void unlock(perm::Permission<Tag, Brand>& /*proof*/) noexcept {
+        substrate_.unlock();
+    }
 
 private:
     // Private, per deviation 1: reaching these without a context is the
     // bypass the old header left open.  lock_in and try_lock_in are the
     // way in, and SpinGuard goes through them too.
-    void lock(permission_t& /*proof*/) noexcept { substrate_.lock(); }
+    template <typename Brand>
+    void lock(perm::Permission<Tag, Brand>& /*proof*/) noexcept {
+        substrate_.lock();
+    }
 
-    [[nodiscard]] bool try_lock(permission_t& /*proof*/) noexcept { return substrate_.try_lock(); }
+    template <typename Brand>
+    [[nodiscard]] bool try_lock(perm::Permission<Tag, Brand>& /*proof*/) noexcept {
+        return substrate_.try_lock();
+    }
 
     [[no_unique_address]] substrate_t substrate_{};
 };
@@ -197,11 +210,18 @@ static_assert(sizeof(SpinLock<spinlock_size_probe_::SizeProbe>) == sizeof(Unwitn
 
 // Copy and move are deleted: a second guard over the same lock would release
 // it twice and break the acquire/release pairing.
-template <typename Tag>
+//
+// The guard holds a reference to the proof for the release, so it
+// carries the proof's brand.  A proof minted by a root mint carries a
+// fresh brand, so the guard is deduced rather than spelled:
+// `SpinGuard guard{ctx, gate, proof};`.  The deduction guides below
+// are what make that spelling work.
+template <typename Tag, typename Brand>
 class SpinGuard {
 public:
     using lock_type = SpinLock<Tag>;
-    using permission_t = typename lock_type::permission_t;
+    using permission_t = perm::Permission<Tag, Brand>;
+    using brand_type = Brand;
 
     template <CtxMayAcquireSpin Ctx>
     explicit SpinGuard(Ctx const& ctx, lock_type& lock, permission_t& proof) noexcept : lock_{lock}, proof_{proof} {
@@ -230,6 +250,12 @@ private:
     permission_t& proof_;
     bool acquired_ = true;  // the plain constructor always acquires
 };
+
+template <typename Ctx, typename Tag, typename Brand>
+SpinGuard(Ctx const&, SpinLock<Tag>&, perm::Permission<Tag, Brand>&) -> SpinGuard<Tag, Brand>;
+
+template <typename Ctx, typename Tag, typename Brand>
+SpinGuard(std::try_to_lock_t, Ctx const&, SpinLock<Tag>&, perm::Permission<Tag, Brand>&) -> SpinGuard<Tag, Brand>;
 
 }  // namespace fixy::spin
 

@@ -442,11 +442,11 @@ template <typename Advice, typename Tag, typename Prot, typename Share, ::founda
 // the region usable, so the caller keeps it and may hand it back out
 // afterwards.
 template <typename Advice, typename RegionTag, typename Tag, typename Prot, typename Share,
-          ::foundation::effects::IsExecCtx Ctx>
+          ::foundation::effects::IsExecCtx Ctx, typename Brand>
     requires CtxFitsReleaseAwareAdvise<Ctx, Advice>
 [[nodiscard]] inline std::expected<void, std::error_code>
 advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share>& region,
-                     ::foundation::permissions::Permission<RegionTag> const& /*exclusive_proof*/) noexcept {
+                     ::foundation::permissions::Permission<RegionTag, Brand> const& /*exclusive_proof*/) noexcept {
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }

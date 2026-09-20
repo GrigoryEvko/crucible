@@ -8,9 +8,19 @@
 // one that has to be turned back into an exclusive, wants the pooled
 // share instead.
 //
+// A view carries the brand of the permission it was minted from, so it
+// proves something about that region and no other region of the same
+// tag.  A view minted from a branded permission cannot be presented
+// where a proof about a different instance is wanted: the brands fail
+// to unify, and the compiler refuses by deduction.  That is a second
+// refusal beside the deleted rvalue twin below, and the two catch
+// different mistakes: the twin refuses a borrow of a temporary, and
+// the brand refuses a borrow of the wrong object.
+//
 // Old spelling: include/crucible/permissions/ReadView.h, namespace
 // crucible::safety.
 
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/permissions/Permission.h>
 
@@ -20,10 +30,14 @@
 
 namespace foundation::permissions {
 
-template <typename Tag>
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class ReadView;
-template <typename Tag>
-[[nodiscard]] constexpr ReadView<Tag> mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+// The view inherits the permission's brand rather than minting one of
+// its own: a borrow proof is about the region it was borrowed from.
+template <typename Tag, typename Brand>
+[[nodiscard]] constexpr ReadView<Tag, Brand>
+mint_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // The twin that makes the lifetime bound above a rule rather than a
 // claim.  A const lvalue reference binds a temporary, so without this
@@ -32,8 +46,8 @@ template <typename Tag>
 // the statement.  That was measured, not suspected.  The rvalue
 // reference is the better match for a prvalue, so the call now names a
 // deleted function instead.
-template <typename Tag>
-constexpr ReadView<Tag> mint_read_view(Permission<Tag> const&&) =
+template <typename Tag, typename Brand>
+constexpr ReadView<Tag, Brand> mint_read_view(Permission<Tag, Brand> const&&) =
     delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
            "a name that outlives the view");
 
@@ -46,13 +60,25 @@ namespace host {
 struct BorrowIssuer;
 }  // namespace host
 
-template <typename Tag>
+template <typename Tag, typename Brand>
 class [[nodiscard]] ReadView {
+    static_assert(::foundation::brand::IsBrand<Brand>, "ReadView<Tag, Brand>: Brand must be an empty class type: "
+                                                       "the brand of the permission the view was minted from, or "
+                                                       "DefaultBrand.");
+
 public:
     using tag_type = Tag;
+    using brand_type = Brand;
 
     constexpr ReadView(const ReadView&) noexcept = default;
     constexpr ReadView(ReadView&&) noexcept = default;
+
+    // Erasure, one way only: a view of one instance becomes a view on
+    // the erased identity, so code written before brands keeps
+    // compiling.  Nothing gives an erased view a brand.
+    template <typename Other>
+        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
+    constexpr ReadView(ReadView<Tag, Other> const&) noexcept {}
 
     ReadView& operator=(const ReadView&) = delete(
         "ReadView is single-binding; rebinding hides lifetime relationships — construct a fresh view via mint_read_view");
@@ -81,7 +107,8 @@ private:
     // Every entry in the friend list below is another way to mint a
     // borrow.  Additions need review.
 
-    friend constexpr ReadView<Tag> mint_read_view<Tag>(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+    friend constexpr ReadView<Tag, Brand>
+    mint_read_view<Tag, Brand>(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
 
     // The session layer's borrow payload default-constructs a view
     // through this host type; see the declaration above.
@@ -92,17 +119,19 @@ private:
 // declared beside the first declaration is what enforces it, because no
 // compiler this project builds with honours a lifetime attribute.
 
-template <typename Tag>
-[[nodiscard]] constexpr ReadView<Tag> mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
+template <typename Tag, typename Brand>
+[[nodiscard]] constexpr ReadView<Tag, Brand>
+mint_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
     (void)p;
-    return ReadView<Tag>{};
+    return ReadView<Tag, Brand>{};
 }
 
-template <typename Tag, typename Body>
-    requires std::is_invocable_v<Body, ReadView<Tag>>
-[[nodiscard]] constexpr auto with_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND,
-                                            Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ReadView<Tag>>)
-    -> std::invoke_result_t<Body, ReadView<Tag>> {
+template <typename Tag, typename Brand, typename Body>
+    requires std::is_invocable_v<Body, ReadView<Tag, Brand>>
+[[nodiscard]] constexpr auto
+with_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND,
+               Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ReadView<Tag, Brand>>)
+    -> std::invoke_result_t<Body, ReadView<Tag, Brand>> {
     return body(mint_read_view(p));
 }
 
@@ -110,17 +139,26 @@ template <typename Tag, typename Body>
 // alive, so a temporary permission survives the call, but the view the
 // body receives proves a permission that is gone the moment the
 // statement ends, and a body that stores the view keeps the proof.
-template <typename Tag, typename Body>
-    requires std::is_invocable_v<Body, ReadView<Tag>>
-constexpr auto with_read_view(Permission<Tag> const&&, Body&&) =
+template <typename Tag, typename Brand, typename Body>
+    requires std::is_invocable_v<Body, ReadView<Tag, Brand>>
+constexpr auto with_read_view(Permission<Tag, Brand> const&&, Body&&) =
     delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
            "a name that outlives the call");
 
 namespace detail {
 struct read_view_test_tag {};
+struct read_view_brand_a {};
+struct read_view_brand_b {};
 }  // namespace detail
 
+namespace permission_rows {
+inline constexpr ::foundation::fail_closed::edge<detail::read_view_test_tag, ::foundation::effects::Row<>>
+    read_view_test{};
+}  // namespace permission_rows
+
 static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1, "ReadView<Tag> must be a 1-byte empty class");
+static_assert(sizeof(ReadView<detail::read_view_test_tag, detail::read_view_brand_a>) == 1,
+              "a branded view keeps the layout of an erased one");
 
 static_assert(std::is_trivially_copyable_v<ReadView<detail::read_view_test_tag>>,
               "ReadView<Tag> must be trivially copyable (zero-cost copy)");
@@ -135,5 +173,32 @@ static_assert(std::is_move_constructible_v<ReadView<detail::read_view_test_tag>>
               "ReadView<Tag> MUST be move-constructible");
 static_assert(!std::is_move_assignable_v<ReadView<detail::read_view_test_tag>>,
               "ReadView<Tag> must NOT be move-assignable (single-binding)");
+
+// The erasure runs one way, and a view of one brand is not a view of
+// another.
+static_assert(std::is_convertible_v<ReadView<detail::read_view_test_tag, detail::read_view_brand_a>,
+                                    ReadView<detail::read_view_test_tag>>,
+              "a branded view erases to the unbranded spelling");
+static_assert(!std::is_constructible_v<ReadView<detail::read_view_test_tag, detail::read_view_brand_a>,
+                                       ReadView<detail::read_view_test_tag>>,
+              "an erased view does not acquire a brand");
+static_assert(!std::is_constructible_v<ReadView<detail::read_view_test_tag, detail::read_view_brand_a>,
+                                       ReadView<detail::read_view_test_tag, detail::read_view_brand_b>>,
+              "a view of one brand is not a view of another");
+
+namespace detail::read_view_self_test {
+
+// A view minted from a branded permission carries that permission's
+// brand and no other.
+[[nodiscard]] consteval bool view_inherits_the_permission_brand() noexcept {
+    auto perm = mint_permission_root<read_view_test_tag>();
+    auto view = mint_read_view(perm);
+    return std::is_same_v<::foundation::brand::brand_of_t<decltype(view)>,
+                          ::foundation::brand::brand_of_t<decltype(perm)>>
+        && ::foundation::brand::IsBranded<decltype(view)>;
+}
+static_assert(view_inherits_the_permission_brand());
+
+}  // namespace detail::read_view_self_test
 
 }  // namespace foundation::permissions

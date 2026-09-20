@@ -1,0 +1,48 @@
+# scripts/brand-drain.txt — sites still on the erased brand, one count
+# per file.  Read by scripts/check-brand-drain.sh.  A count only goes
+# down: to add a site, write the brand instead.  Regenerate with
+# --refresh in the same commit that removes a site.
+include/fixy/Borrowed.h	57
+include/fixy/OwnedRegion.h	7
+include/fixy/Qtt.h	2
+include/fixy/ScopedView.h	8
+include/fixy/concurrent/PermissionedMpscChannel.h	6
+include/fixy/concurrent/PermissionedSpscChannel.h	8
+include/fixy/os/SpinLock.h	2
+include/foundation/permissions/Permission.h	54
+include/foundation/permissions/PermissionFork.h	4
+include/foundation/permissions/ReadView.h	9
+test/fixy/neg/neg_borrowed_from_a_temporary.cpp	1
+test/fixy/neg/neg_qtt_affine_over_shared_permission.cpp	1
+test/fixy/neg/neg_qtt_linear_over_permission.cpp	1
+test/fixy/neg/neg_scoped_view_escapes_through_private_member.cpp	1
+test/fixy/neg/neg_spawn_callable_carries_throws.cpp	2
+test/fixy/neg/neg_spawn_mint_parallel_for_ctx_lacks_bg.cpp	1
+test/fixy/neg/neg_spawn_mint_spawn_ctx_lacks_bg.cpp	2
+test/fixy/neg/neg_witness_borrowed_direct_construction.cpp	1
+test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp	1
+test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp	1
+test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction.cpp	1
+test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction.cpp	1
+test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction.cpp	1
+test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp	2
+test/fixy/neg/neg_witness_permissions_permission_direct_construction.cpp	1
+test/fixy/neg/neg_witness_permissions_readview_direct_construction.cpp	1
+test/fixy/neg/neg_witness_permissions_sharedpermission_direct_construction.cpp	1
+test/fixy/neg/neg_witness_permissions_sharedpermissionguard_direct_construction.cpp	2
+test/fixy/neg/neg_witness_permissions_sharedpermissionpool_direct_construction.cpp	1
+test/fixy/neg/neg_witness_scopedview_direct_construction.cpp	1
+test/fixy/test_borrowed.cpp	19
+test/fixy/test_cheat_probe.cpp	2
+test/fixy/test_os_spawn.cpp	4
+test/fixy/test_owned_region.cpp	19
+test/fixy/test_scoped_view.cpp	2
+test/foundation/neg/neg_brand_erased_token_does_not_rebrand.cpp	1
+test/foundation/neg/neg_permission_forged_without_key.cpp	1
+test/foundation/neg/neg_permission_fork_pack_does_not_partition.cpp	2
+test/foundation/neg/neg_permission_fork_without_bg.cpp	2
+test/foundation/test_brand.cpp	1
+test/foundation/test_permission_shared.cpp	22
+test/foundation/test_permission_shared_xor_exclusive.cpp	4
+test/foundation/test_permissions_compile.cpp	4
+test/foundation/test_read_view.cpp	23

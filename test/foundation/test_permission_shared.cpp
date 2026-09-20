@@ -38,8 +38,12 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-struct ConfigRegion {};
-struct MetricsRegion {};
+struct ConfigRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct MetricsRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 void test_compile_time_properties() {
     static_assert(sizeof(SharedPermission<ConfigRegion>) == 1);
@@ -337,8 +341,10 @@ void test_with_shared_read_helper() {
 void test_mint_permission_share() {
     auto exc = mint_permission_root<ConfigRegion>();
     auto shared = mint_permission_share(std::move(exc));
-    static_assert(std::is_same_v<decltype(shared), SharedPermission<ConfigRegion>>);
-    // Copyable now.
+    // The share carries the exclusive's tag and brand.
+    static_assert(IsSharedPermissionFor<decltype(shared), ConfigRegion>);
+    static_assert(::foundation::brand::IsBranded<decltype(shared)>);
+    // Copyable now, and erasable one way.
     SharedPermission<ConfigRegion> shared2 = shared;
     SharedPermission<ConfigRegion> shared3 = shared2;
     (void)shared3;

@@ -7,7 +7,9 @@
 #include <foundation/permissions/Permission.h>
 
 namespace {
-struct GateTag {};
+struct GateTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 }  // namespace
 
 int main() {

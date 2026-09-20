@@ -39,7 +39,9 @@ using IoBlockCtx =
 
 struct AnonRegion final {};
 struct FileRegion final {};
-struct DiscardRegion final {};
+struct DiscardRegion final {
+    using permission_row = eff::Row<>;
+};
 struct LeakedRegion final {};
 
 // The rationale a deliberate leak names.  Here the region is unmapped by

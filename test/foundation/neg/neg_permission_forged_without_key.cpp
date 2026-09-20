@@ -7,7 +7,9 @@
 
 namespace {
 
-struct ForgedTag {};
+struct ForgedTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 // The default constructor is gone: the passkey constructor is the only
 // one the class declares.

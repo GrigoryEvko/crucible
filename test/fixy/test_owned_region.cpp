@@ -66,8 +66,12 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-struct DataA {};
-struct DataB {};
+struct DataA {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct DataB {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 // One bump pointer over a fixed block: the smallest thing adopt asks
 // of an arena.
@@ -284,6 +288,35 @@ void test_split_then_rebuild_through_recombine() {
     }
 }
 
+// The brand travels with the region: a region minted from a branded
+// permission carries that brand, so do the shards of its split, so does
+// a borrow of it, and the recombined whole carries it back out.  The
+// erased spelling is reachable from each, one way.
+void test_brand_travels_through_split_and_recombine() {
+    static std::uint64_t storage[8] = {};
+    auto perm = mint_permission_root<DataA>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(perm)>;
+    auto region = ::fixy::mint_owned_region(storage, std::size_t{8}, std::move(perm));
+    static_assert(std::is_same_v<decltype(region), OwnedRegion<std::uint64_t, DataA, Brand>>);
+
+    auto borrow = ::fixy::mint_borrowed(region);
+    static_assert(::foundation::brand::SameBrand<decltype(borrow), decltype(region)>);
+    CRUCIBLE_TEST_REQUIRE(borrow.size() == 8);
+
+    auto [s0, s1] = std::move(region).split_into<2>();
+    static_assert(::foundation::brand::SameBrand<decltype(s0), decltype(borrow)>);
+    static_assert(::foundation::brand::SameBrand<decltype(s1), decltype(borrow)>);
+    CRUCIBLE_TEST_REQUIRE(s0.size() == 4 && s1.size() == 4);
+
+    auto whole = OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::tuple{std::move(s0), std::move(s1)});
+    static_assert(::foundation::brand::SameBrand<decltype(whole), decltype(borrow)>);
+    CRUCIBLE_TEST_REQUIRE(whole.size() == 8);
+    CRUCIBLE_TEST_REQUIRE(whole.data() == storage);
+
+    OwnedRegion<std::uint64_t, DataA> erased = std::move(whole);
+    CRUCIBLE_TEST_REQUIRE(erased.data() == storage);
+}
+
 // A zero-length request is the one arm of adopt that asks the arena for
 // nothing.  The region it returns has to answer as empty on all three
 // queries, because a null pointer with a non-zero count would read as a
@@ -312,6 +345,7 @@ int main() {
     run_test("test_split_uneven", test_split_uneven);
     run_test("test_split_smaller_than_n", test_split_smaller_than_n);
     run_test("test_split_then_rebuild_through_recombine", test_split_then_rebuild_through_recombine);
+    run_test("test_brand_travels_through_split_and_recombine", test_brand_travels_through_split_and_recombine);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

@@ -12,7 +12,9 @@ namespace eff = foundation::effects;
 namespace perm = foundation::permissions;
 
 namespace {
-struct RegionWhole {};
+struct RegionWhole {
+    using permission_row = ::foundation::effects::Row<>;
+};
 using FgCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
 std::array<int, 16> storage{};
 }  // namespace

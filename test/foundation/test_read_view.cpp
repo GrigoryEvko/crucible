@@ -39,11 +39,23 @@ void run_test(const char* name, F&& body) {
     }
 }
 
-struct ConfigData {};
-struct LoopBounds {};
-struct WorkerSlice {};
-struct WorkerSlice0 {};
-struct WorkerSlice1 {};
+// Every tag declares its row: the relation from tag to row is closed,
+// and a pure tag says so with Row<>.
+struct ConfigData {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct LoopBounds {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct WorkerSlice {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct WorkerSlice0 {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct WorkerSlice1 {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 void test_compile_time_properties() {
     // One byte, which is the minimum an empty class can occupy on its own.
@@ -77,8 +89,13 @@ void test_mint_read_view_basic() {
     auto perm = mint_permission_root<ConfigData>();
     auto view = mint_read_view(perm);
 
-    // A view carries no state, so its type is the only thing to check.
-    static_assert(std::is_same_v<decltype(view), ReadView<ConfigData>>);
+    // A view carries no state, so its type is the only thing to check:
+    // the tag is the permission's, and so is the brand.
+    static_assert(std::is_same_v<decltype(view)::tag_type, ConfigData>);
+    static_assert(::foundation::brand::SameBrand<decltype(view), decltype(perm)>);
+    // The erased spelling is still reachable, one way.
+    ReadView<ConfigData> erased = view;
+    (void)erased;
 }
 
 void test_multiple_views_coexist() {
@@ -154,9 +171,15 @@ void test_handle_composition_zero_cost() {
 }
 
 namespace fork_tags {
-struct Whole {};
-struct Left {};
-struct Right {};
+struct Whole {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Left {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Right {
+    using permission_row = ::foundation::effects::Row<>;
+};
 }  // namespace fork_tags
 
 }  // namespace

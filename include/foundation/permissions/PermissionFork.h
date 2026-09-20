@@ -162,10 +162,12 @@ constexpr void permission_fork_inline_(Ctx const& ctx, Children&& children, Call
 
 // The one body: split the parent, pack the callables, run them on the
 // arm the caller chose, and rebuild the parent once every body has
-// finished.
-template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename... Callables>
-constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>&& parent,
-                                              Callables&&... callables) noexcept {
+// finished.  The children carry the parent's brand into the bodies, and
+// the rebuilt parent carries it back out, so the region that returns
+// is the one that went in.
+template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+constexpr Permission<Parent, Brand> permission_fork_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
+                                                     Callables&&... callables) noexcept {
     permission_fork_check_<Spawn, Ctx, std::tuple<Children...>, std::tuple<Callables...>>();
 
     auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
@@ -186,27 +188,27 @@ constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>
     // the split above.  Do not factor this call out into a helper that
     // does not consume a Permission<Parent> — that is exactly the shape
     // which once made the parent forgeable from any translation unit.
-    return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
+    return ForkRebuildAccess::rebuild<Parent, Brand>(ForkRebuildKey{});
 }
 
 }  // namespace detail
 
-template <typename... Children, typename Ctx, typename Parent, typename... Callables>
+template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...>
           && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
-[[nodiscard]] Permission<Parent> mint_permission_fork(Ctx const& ctx, Permission<Parent>&& parent,
-                                                      Callables&&... callables) noexcept {
+[[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
+                                                             Callables&&... callables) noexcept {
     return detail::permission_fork_<true, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
 // The bodies run one after another on the calling thread, in child
 // order.  The split and the rebuild are the same as the spawning arm's,
 // so a body still holds its own child token and nothing else.
-template <typename... Children, typename Ctx, typename Parent, typename... Callables>
+template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
           && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
-[[nodiscard]] constexpr Permission<Parent> mint_permission_fork_inline(Ctx const& ctx, Permission<Parent>&& parent,
-                                                                       Callables&&... callables) noexcept {
+[[nodiscard]] constexpr Permission<Parent, Brand>
+mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
     return detail::permission_fork_<false, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 

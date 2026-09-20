@@ -27,11 +27,19 @@ namespace {
 // background work, so the context has to own Bg.
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
-struct Whole {};
-struct Left {};
-struct Right {};
+struct Whole {
+    using permission_row = eff::Row<>;
+};
+struct Left {
+    using permission_row = eff::Row<>;
+};
+struct Right {
+    using permission_row = eff::Row<>;
+};
 
-struct RegionWhole {};
+struct RegionWhole {
+    using permission_row = eff::Row<>;
+};
 
 }  // namespace
 
@@ -65,10 +73,12 @@ namespace {
         return 1;
     }
 
-    // The parent permission is back, which is what lets the caller keep
-    // using the region the children borrowed.
-    static_assert(std::is_same_v<decltype(rebuilt), perm::Permission<Whole>>,
-                  "mint_spawn must hand the parent Permission back.");
+    // The parent permission is back, under the brand it went in with,
+    // which is what lets the caller keep using the region the children
+    // borrowed.
+    static_assert(perm::IsPermissionFor<decltype(rebuilt), Whole>, "mint_spawn must hand the parent Permission back.");
+    static_assert(::foundation::brand::IsBranded<decltype(rebuilt)>,
+                  "the rebuilt parent carries the brand of the parent that was consumed");
     (void)rebuilt;
     return 0;
 }

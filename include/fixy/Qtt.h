@@ -30,6 +30,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/contracts/Armed.h>
+#include <foundation/permissions/Fwd.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -47,15 +48,8 @@
 // them the same way, in include/crucible/safety/_Linear.h:29.  A change
 // to either template's parameter list breaks this declaration at the
 // compile that follows, which is the intended failure.
-namespace foundation::permissions {
-
-template <typename Tag>
-class Permission;
-
-template <typename Tag>
-class SharedPermission;
-
-}  // namespace foundation::permissions
+// The declarations live in foundation/permissions/Fwd.h, which carries
+// the defaulted brand and nothing else.
 
 namespace fixy {
 

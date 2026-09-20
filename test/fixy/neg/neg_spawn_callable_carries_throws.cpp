@@ -16,9 +16,15 @@ namespace eff = foundation::effects;
 namespace perm = foundation::permissions;
 
 namespace {
-struct Whole {};
-struct Left {};
-struct Right {};
+struct Whole {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Left {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Right {
+    using permission_row = ::foundation::effects::Row<>;
+};
 struct SampleException {};
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 

@@ -6,7 +6,9 @@
 namespace eff = foundation::effects;
 
 namespace {
-struct GateTag {};
+struct GateTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 using ForegroundCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
 }  // namespace
 

@@ -41,6 +41,7 @@ foundation_test(test_capability)
 foundation_test(test_computation)
 foundation_test(test_diag)
 foundation_test(test_pinned)
+foundation_test(test_brand)
 
 # Negative-compile fixtures for the foundation layer.
 #
@@ -65,6 +66,20 @@ function(foundation_neg_compile_test name)
     message(FATAL_ERROR
       "foundation_neg_compile_test(${name}): two required-diagnostic "
       "regexes are the minimum (the reason and the project token); got ${_count}")
+  endif()
+  # CMake counts brackets when it splits a list, so a regex carrying an
+  # unbalanced `[` swallows the separator and the regex written after it.
+  # The merged regex then matches nothing and the fixture fails for a
+  # reason that names no defect.  ARGC counts what the caller wrote, and
+  # the list length counts what survived, so the two disagree exactly
+  # when a merge happened.
+  math(EXPR _written "${ARGC} - 1")
+  if(NOT _count EQUAL _written)
+    message(FATAL_ERROR
+      "foundation_neg_compile_test(${name}): ${_written} regexes were written "
+      "and ${_count} survived. An unbalanced `[` in one of them swallowed the "
+      "list separator and merged it with the next. Balance the bracket, or "
+      "match it with `.`")
   endif()
   add_executable(${name} EXCLUDE_FROM_ALL neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE foundation)
@@ -301,6 +316,70 @@ foundation_neg_compile_test(neg_signature_param_index_on_nullary
 foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
   "constraints not satisfied"
   "satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = .*NeedsIo.*ctx_cap::Fg")
+
+# ── Brands: identity per mint ────────────────────────────────────────
+#
+# A root mint gives every call site a fresh brand, and every derived
+# token carries it.  Each fixture below names one thing the brand
+# refuses, and its second regex is the compiler's own rendering of the
+# refusal, which the fixture source never spells: the two closure types
+# a callee's one Brand parameter was deduced to, the constraint on a
+# constructor that answered false, or a sentence from a header's
+# static_assert.  Every fixture was proven live by a mutant that
+# removes its mechanism and lets it compile.
+
+# Two tokens of one tag from two roots are two brands.
+foundation_neg_compile_test(neg_brand_permission_cross_brand
+  "no matching function for call to .same_region\\("
+  "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
+
+# A share carries the brand of its exclusive.
+foundation_neg_compile_test(neg_brand_shared_permission_cross_brand
+  "no matching function for call to .same_region\\("
+  "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
+
+# A borrow proof is about the region it was borrowed from: the refusal
+# by identity.
+foundation_neg_compile_test(neg_brand_read_view_proves_another_region
+  "no matching function for call to .read_under\\("
+  "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
+
+# A borrow proof of a temporary permission: the refusal by value
+# category, which is the deleted rvalue twin.
+foundation_neg_compile_test(neg_brand_read_view_from_temporary_permission
+  "use of deleted function"
+  "mint_read_view\\(const Permission<Tag, Brand>&&\\)"
+  "a borrow proof minted from a temporary permission outlives what it proves")
+
+# The children of two regions do not fold into one parent.
+foundation_neg_compile_test(neg_brand_combine_children_of_two_regions
+  "static assertion failed"
+  "the two children carry different brands, so they were split from two different regions of one tag"
+  "perm_brands_agree_<foundation::permissions::Permission<\\{anonymous\\}::Left")
+
+# The fresh brand sits after the argument pack, so a spelled brand is
+# read as a context and refused by the root's fit concept.
+foundation_neg_compile_test(neg_brand_root_mint_refuses_spelled_brand
+  "no matching function for call to .mint_permission_root<\\{anonymous\\}::Region, \\{anonymous\\}::HeldBrand>\\(\\)."
+  "constraints not satisfied"
+  "PermissionRootArgs<Tag, Args \\.\\.\\.>")
+
+# Erasure runs one way.
+foundation_neg_compile_test(neg_brand_erased_token_does_not_rebrand
+  "no matching function for call to .foundation::permissions::Permission<\\{anonymous\\}::Region, \\{anonymous\\}::HeldBrand>::Permission\\("
+  "requires \\(is_same_v<Brand, foundation::brand::DefaultBrand>\\) && \\(IsFreshBrand<Other>\\)")
+
+# ── The row relation is closed ───────────────────────────────────────
+
+# A tag with no declared row has none, and the root mint says so.
+foundation_neg_compile_test(neg_permission_row_undeclared_tag
+  "static assertion failed: mint_permission_root<Tag>: no effect row is declared for Tag"
+  "has_permission_row_v<\\{anonymous\\}::Undeclared>. evaluates to false")
+
+# One row has one source.
+foundation_neg_compile_test(neg_permission_row_declared_twice
+  "static assertion failed: permission_row: a tag declares its row twice"
+  "\\(\\(!\\(bool\\)by_edge\\) \\|\\| \\(!\\(bool\\)by_member\\)\\). evaluates to false")
 
 # ── Task #119 (A15): the row-mismatch message builder ────────────────
 #

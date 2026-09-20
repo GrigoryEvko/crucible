@@ -1,9 +1,22 @@
 #pragma once
 
-// Permission<Tag> mechanizes the frame rule of concurrent separation
-// logic.  Move-only linearity stands in for the separating conjunction:
-// at most one owner of a region exists at any moment, so two threads
-// holding permissions for disjoint tags provably cannot conflict.
+// Permission<Tag, Brand> mechanizes the frame rule of concurrent
+// separation logic.  Move-only linearity stands in for the separating
+// conjunction: at most one owner of a region exists at any moment, so
+// two threads holding permissions for disjoint tags provably cannot
+// conflict.
+//
+// The tag names a kind of region and the brand names one instance of
+// it.  A root mint gives every call site a fresh brand, so two regions
+// minted for one tag are two types, a token for one cannot stand in
+// for the other, and a borrow proof carries the identity of the region
+// it was minted from.  Every derived token inherits the brand of the
+// token it came from: the children of a split carry the parent's, a
+// combine demands that its children agree, and a share carries the
+// exclusive's.  foundation/Brand.h states the three facts a brand
+// rests on.  A spelling that names no brand is the erased identity
+// DefaultBrand, kept so that code written before brands means what it
+// meant; scripts/check-brand-drain.sh lists every such spelling.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code
@@ -35,12 +48,16 @@
 // headers are not carried, because neither header is ported and a
 // friend naming an absent type is an open door.
 
+#include <foundation/Brand.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 #include <foundation/diag/Catalog.h>
+#include <foundation/diag/FailClosed.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/permissions/Fwd.h>
+#include <foundation/reflect/Instance.h>
 
 #include <atomic>
 #include <concepts>
@@ -65,8 +82,8 @@ namespace foundation::permissions {
 template <typename T>
 concept PermissionTag = std::is_class_v<T> && std::is_empty_v<T>;
 
-template <typename Tag>
-class Permission;
+// Permission and SharedPermission are declared, with their defaulted
+// brand, in Fwd.h.
 
 namespace tag {
 
@@ -78,11 +95,9 @@ struct NetworkBufferTag {};
 
 }  // namespace tag
 
-template <typename Tag>
-class SharedPermission;
-template <typename Tag>
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionGuard;
-template <typename Tag>
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionPool;
 
 namespace detail {
@@ -96,9 +111,9 @@ struct ForkRebuildAccess;
 // mints delegate to and carries no constraint of its own, so it is the
 // one join primitive this header can name.  It is defined in
 // PermissionFork.h and is the only holder of the rebuild key.
-template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename... Callables>
-constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>&& parent,
-                                              Callables&&... callables) noexcept;
+template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+constexpr Permission<Parent, Brand> permission_fork_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
+                                                     Callables&&... callables) noexcept;
 }  // namespace detail
 
 // The declarative manifest of valid splits.  C++ has no orphan rule, so
@@ -168,45 +183,127 @@ struct all_distinct_tags_rec<Head, Rest...>
 template <typename... Children>
 inline constexpr bool all_distinct_tags_v = detail::all_distinct_tags_rec<Children...>::value;
 
+// ── The effect row of a permission tag ───────────────────────────────
+//
+// A tag's row is the set of effects that touching its region incurs,
+// and it is what a context must admit before a token for the tag can be
+// minted under it.  The relation from tag to row is closed: it is the
+// edge variables of the namespace below, or a `permission_row` member
+// the tag declares about itself, and nothing else.  A tag with neither
+// has no row, and every mint of it is a hard error naming the fix.
+//
+// The previous shape was a primary template answering Row<> for every
+// tag nobody had specialized it for.  Under that shape an unregistered
+// tag was a pure tag by default, so a region whose touches block or do
+// IO could be minted under the foreground context by the one omission
+// this relation now refuses to make for the author.
+//
+// Three sources, in this order of precedence:
+//   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
+//      form, which every_class_in_has_edge audits for the canonical tags;
+//   2. `using permission_row = Row<...>;` inside the tag, for a tag
+//      template such as a channel's Whole<UserTag>, whose instances
+//      cannot each be an edge;
+//   3. `using parent_type = Parent;` inside the tag, for a tag derived
+//      from another, such as a region shard, which has its parent's row.
+// A tag that declares both an edge and a member is an error, so one
+// row has one source.
+
+namespace permission_rows {
+
+inline constexpr ::foundation::fail_closed::edge<
+    tag::DiskSpilledRegionTag,
+    ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>
+    disk_spilled_region{};
+inline constexpr ::foundation::fail_closed::edge<tag::HugePageTag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
+    huge_page{};
+inline constexpr ::foundation::fail_closed::edge<tag::MmapRegionTag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
+    mmap_region{};
+inline constexpr ::foundation::fail_closed::edge<tag::GpuMemoryTag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::Alloc>>
+    gpu_memory{};
+inline constexpr ::foundation::fail_closed::edge<tag::NetworkBufferTag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
+    network_buffer{};
+
+}  // namespace permission_rows
+
+namespace detail {
+
 template <typename Tag>
-struct permission_row {
-    using type = ::foundation::effects::Row<>;
+concept DeclaresRowMember = requires { typename Tag::permission_row; };
+
+template <typename Tag>
+concept DerivedTag = requires { typename Tag::parent_type; };
+
+// The reflection of the tag's row, or of void when no source declares
+// one.  Kept consteval so the three sources are read once per tag.
+template <typename Tag>
+[[nodiscard]] consteval std::meta::info permission_row_source() noexcept {
+    constexpr bool by_edge = ::foundation::fail_closed::has_edge_from<^^permission_rows, Tag>();
+    constexpr bool by_member = DeclaresRowMember<Tag>;
+    static_assert(!(by_edge && by_member), "permission_row: a tag declares its row twice, as an edge in "
+                                           "foundation::permissions::permission_rows and as a permission_row "
+                                           "member.  One row has one source; remove one of them.");
+    if constexpr (by_edge) {
+        return ::foundation::fail_closed::unique_target<^^permission_rows, Tag>();
+    } else if constexpr (by_member) {
+        return ^^typename Tag::permission_row;
+    } else if constexpr (DerivedTag<Tag>) {
+        return permission_row_source<typename Tag::parent_type>();
+    } else {
+        return ^^void;
+    }
+}
+
+template <typename Tag>
+struct permission_row_lookup {
+    static_assert(permission_row_source<Tag>() != ^^void,
+                  "permission_row: no effect row is declared for this permission tag, so no token for it can "
+                  "be minted.  Declare one of: `inline constexpr foundation::fail_closed::edge<Tag, "
+                  "foundation::effects::Row<...>> name{};` in namespace foundation::permissions::permission_rows, "
+                  "or `using permission_row = foundation::effects::Row<...>;` inside the tag.  A pure tag "
+                  "declares Row<> explicitly.  Declare it before the first mint of the tag.");
+    using type = typename[:permission_row_source<Tag>():];
+    static_assert(std::is_void_v<type> || ::foundation::reflect::IsInstanceOf<type, ^^::foundation::effects::Row>,
+                  "permission_row: the row declared for this permission tag is not a foundation::effects::Row.");
 };
 
+}  // namespace detail
+
+// True when some source declares a row for Tag.  Read by the concepts,
+// so an undeclared tag fails a constraint rather than hard-erroring
+// inside it, and by the mints, which then name the fix.
 template <typename Tag>
-using permission_row_t = typename permission_row<Tag>::type;
+inline constexpr bool has_permission_row_v = detail::permission_row_source<Tag>() != ^^void;
 
 template <typename Tag>
-inline constexpr bool permission_row_empty_v = ::foundation::effects::row_size_v<permission_row_t<Tag>> == 0;
+using permission_row_t = typename detail::permission_row_lookup<Tag>::type;
+
+namespace detail {
+
+// False for a tag with no row, without naming the row, so one
+// undeclared tag reports the one assertion that names the fix rather
+// than a cascade behind it.
+template <typename Tag>
+[[nodiscard]] consteval bool permission_row_empty_() noexcept {
+    if constexpr (has_permission_row_v<Tag>) {
+        return ::foundation::effects::row_size_v<permission_row_t<Tag>> == 0;
+    } else {
+        return false;
+    }
+}
+
+}  // namespace detail
+
+template <typename Tag>
+inline constexpr bool permission_row_empty_v = detail::permission_row_empty_<Tag>();
 
 template <typename Tag, typename Ctx>
-concept CtxAdmitsPermission = ::foundation::effects::IsExecCtx<Ctx>
+concept CtxAdmitsPermission = ::foundation::effects::IsExecCtx<Ctx> && has_permission_row_v<Tag>
                            && ::foundation::effects::is_subrow_v<permission_row_t<Tag>, typename Ctx::row_type>;
-
-template <>
-struct permission_row<::foundation::permissions::tag::DiskSpilledRegionTag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
-
-template <>
-struct permission_row<::foundation::permissions::tag::HugePageTag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
-};
-
-template <>
-struct permission_row<::foundation::permissions::tag::MmapRegionTag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
-};
-
-template <>
-struct permission_row<::foundation::permissions::tag::GpuMemoryTag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::Alloc>;
-};
-
-template <>
-struct permission_row<::foundation::permissions::tag::NetworkBufferTag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
-};
 
 // The concepts below carry an Is prefix because a concept and a class
 // share one namespace lookup table, so a `concept Permission` would
@@ -217,17 +314,19 @@ namespace detail {
 template <typename T>
 struct is_permission_impl : std::false_type {};
 
-template <typename Tag>
-struct is_permission_impl<Permission<Tag>> : std::true_type {
+template <typename Tag, typename Brand>
+struct is_permission_impl<Permission<Tag, Brand>> : std::true_type {
     using tag_type = Tag;
+    using brand_type = Brand;
 };
 
 template <typename T>
 struct is_shared_permission_impl : std::false_type {};
 
-template <typename Tag>
-struct is_shared_permission_impl<SharedPermission<Tag>> : std::true_type {
+template <typename Tag, typename Brand>
+struct is_shared_permission_impl<SharedPermission<Tag, Brand>> : std::true_type {
     using tag_type = Tag;
+    using brand_type = Brand;
 };
 
 }  // namespace detail
@@ -271,6 +370,9 @@ concept PermArg = !std::is_lvalue_reference_v<A> && is_permission_v<A>;
 template <typename A>
 using perm_tag_t = typename is_permission_impl<std::remove_cvref_t<A>>::tag_type;
 
+template <typename A>
+using perm_brand_t = typename is_permission_impl<std::remove_cvref_t<A>>::brand_type;
+
 template <typename... Args>
 [[nodiscard]] consteval std::size_t leading_ctx_count() noexcept {
     std::size_t count = 0;
@@ -308,6 +410,29 @@ consteval auto perm_tags_(std::index_sequence<Is...>) noexcept
 template <typename... Args>
 using perm_tags_t =
     decltype(perm_tags_<Args...>(std::make_index_sequence<sizeof...(Args) - leading_ctx_count<Args...>()>{}));
+
+// The brand of a permission argument, or void for a context argument,
+// so a fold over a mixed argument list never asks a context for a brand.
+template <typename A>
+struct perm_brand_or_void {
+    using type = void;
+};
+
+template <typename A>
+    requires is_permission_v<A>
+struct perm_brand_or_void<A> {
+    using type = perm_brand_t<A>;
+};
+
+// True when every permission in Args past the leading contexts carries
+// the brand of the first one.  A combine of tokens from two instances
+// of one tag is what this refuses: the tags match, the regions do not.
+template <typename... Args>
+[[nodiscard]] consteval bool perm_brands_agree_() noexcept {
+    constexpr std::size_t n_ctx = leading_ctx_count<Args...>();
+    using First = perm_brand_t<Args...[n_ctx]>;
+    return ((!is_permission_v<Args> || std::is_same_v<typename perm_brand_or_void<Args>::type, First>) && ...);
+}
 
 template <typename Ctx, typename... Tags>
 inline constexpr bool ctx_admits_all_v = (CtxAdmitsPermission<Tags, std::remove_cvref_t<Ctx>> && ...);
@@ -365,25 +490,37 @@ concept PermissionShareArgs = detail::MintArgs<1, 1, Args...>
                            && (detail::leading_ctx_count<Args...>() == 0
                                || detail::ctx_admits_all_v<Args...[0], detail::perm_tag_t<Args...[1]>>);
 
-template <typename Tag, typename... Args>
+// The root mint is where a brand is born, so the fresh brand is its
+// last template parameter, after the argument pack.  A caller can name
+// the tag and nothing else: an explicit third argument is absorbed by
+// the pack and fails deduction, which is what stops a caller minting a
+// second token of an identity it already holds.  Every other mint
+// carries the brand of the token it consumes.
+
+template <typename Tag, typename... Args, typename Brand = CRUCIBLE_FRESH_BRAND>
     requires PermissionRootArgs<Tag, Args...>
-[[nodiscard]] constexpr Permission<Tag> mint_permission_root(Args const&...) noexcept;
+[[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept;
 
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
-[[nodiscard]] constexpr std::pair<Permission<L>, Permission<R>> mint_permission_split(Args&&...) noexcept;
+[[nodiscard]] constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
+                                  Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
+mint_permission_split(Args&&...) noexcept;
 
 template <typename In, typename... Args>
     requires PermissionCombineArgs<In, Args...>
-[[nodiscard]] constexpr Permission<In> mint_permission_combine(Args&&...) noexcept;
+[[nodiscard]] constexpr Permission<In, detail::perm_brand_t<Args...[sizeof...(Args) - 2]>>
+mint_permission_combine(Args&&...) noexcept;
 
 template <typename... Children, typename... Args>
     requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-[[nodiscard]] constexpr std::tuple<Permission<Children>...> mint_permission_split_n(Args&&...) noexcept;
+[[nodiscard]] constexpr std::tuple<Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
+mint_permission_split_n(Args&&...) noexcept;
 
 template <typename Parent, typename... Args>
     requires PermissionCombineNArgs<Parent, Args...>
-[[nodiscard]] constexpr Permission<Parent> mint_permission_combine_n(Args&&...) noexcept;
+[[nodiscard]] constexpr Permission<Parent, detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>>
+mint_permission_combine_n(Args&&...) noexcept;
 
 // The friendship that gates construction lives on this key rather than
 // inside Permission, for the reason Capability.h gives for cap_mint_key.
@@ -411,27 +548,34 @@ class perm_mint_key {
     // Every entry below is another way to forge authority over a
     // region.  Additions need review.  Each mint is one template, so
     // each is one entry, whether it is called with a context or
-    // without.
+    // without.  A friend declaration carries no default argument, so
+    // the root mint's fresh brand is spelled on the first declaration
+    // above and matched here by position.
 
-    template <typename Tag, typename... Args>
+    template <typename Tag, typename... Args, typename Brand>
         requires PermissionRootArgs<Tag, Args...>
-    friend constexpr Permission<Tag> mint_permission_root(Args const&...) noexcept;
+    friend constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept;
 
     template <typename L, typename R, typename... Args>
         requires PermissionSplitArgs<L, R, Args...>
-    friend constexpr std::pair<Permission<L>, Permission<R>> mint_permission_split(Args&&...) noexcept;
+    friend constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
+                               Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
+    mint_permission_split(Args&&...) noexcept;
 
     template <typename In, typename... Args>
         requires PermissionCombineArgs<In, Args...>
-    friend constexpr Permission<In> mint_permission_combine(Args&&...) noexcept;
+    friend constexpr Permission<In, detail::perm_brand_t<Args...[sizeof...(Args) - 2]>>
+    mint_permission_combine(Args&&...) noexcept;
 
     template <typename... Children, typename... Args>
         requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-    friend constexpr std::tuple<Permission<Children>...> mint_permission_split_n(Args&&...) noexcept;
+    friend constexpr std::tuple<Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
+    mint_permission_split_n(Args&&...) noexcept;
 
     template <typename Parent, typename... Args>
         requires PermissionCombineNArgs<Parent, Args...>
-    friend constexpr Permission<Parent> mint_permission_combine_n(Args&&...) noexcept;
+    friend constexpr Permission<Parent, detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>>
+    mint_permission_combine_n(Args&&...) noexcept;
 
     // The soundness gate on the post-join rebuild is its own passkey,
     // not this friendship, which only reaches the key.
@@ -444,21 +588,34 @@ class perm_mint_key {
 // defeats forward-declare-and-specialize as a way of avoiding this
 // header.
 
-template <typename Tag>
+template <typename Tag, typename Brand>
 class [[nodiscard]] Permission {
     static_assert(PermissionTag<Tag>, "Permission<Tag>: Tag must be an empty non-union class type "
                                       "(see PermissionTag concept above).  Pointers, references, "
                                       "primitives, enums, unions, and stateful classes are rejected. "
                                       "Per CSL convention, Tag is a phantom-type marker — typically "
                                       "an empty struct in a `tag::` namespace.");
+    static_assert(::foundation::brand::IsBrand<Brand>, "Permission<Tag, Brand>: Brand must be an empty class type: "
+                                                       "the closure of a mint's fresh lambda, or DefaultBrand.");
 
 public:
     using tag_type = Tag;
+    using brand_type = Brand;
 
     // Holding the key is the proof of authority, and only the five
     // mints and the post-join rebuild can make one, so this is the sole
     // route to a Permission.  Permission itself befriends nobody.
     explicit constexpr Permission(perm_mint_key) noexcept {}
+
+    // Erasure.  A token of one instance becomes a token on the erased
+    // identity, consuming the branded one, so code written before
+    // brands keeps compiling.  It runs in one direction only: nothing
+    // makes a branded token out of an erased one, and nothing rebrands
+    // a token, because either would mint an identity the caller does
+    // not hold.
+    template <typename Other>
+        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
+    constexpr Permission(Permission<Tag, Other>&&) noexcept {}
 
     Permission(const Permission&) = delete(
         "Permission<Tag>: linear — duplicating creates two simultaneous owners of the same region, breaking CSL's frame rule.  Use std::move to transfer.");
@@ -472,42 +629,56 @@ public:
 // Discards the token where letting it fall out of scope would read as
 // an oversight.
 
-template <typename Tag>
-constexpr void permission_drop(Permission<Tag>&&) noexcept {}
+template <typename Tag, typename Brand>
+constexpr void permission_drop(Permission<Tag, Brand>&&) noexcept {}
 
 // Reentrant by design.  The contract is a fresh token per call, not one
 // token per tag per program.  Soundness rides on each token's move-only
 // linearity at the scope that holds it, so two live tokens for one tag
-// are sound as long as neither is aliased.  Federation peer tags are the
-// exception: for them both overloads here are deleted, and admittance is
-// the only path to a token.
-template <typename Tag, typename... Args>
+// are sound as long as neither is aliased, and since each call site
+// mints its own brand the two are two types.  Federation peer tags are
+// the exception: for them both overloads here are deleted, and
+// admittance is the only path to a token.
+template <typename Tag, typename... Args, typename Brand>
     requires PermissionRootArgs<Tag, Args...>
-[[nodiscard]] constexpr Permission<Tag> mint_permission_root(Args const&...) noexcept {
-    static_assert(sizeof...(Args) == 1 || permission_row_empty_v<Tag>,
+[[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept {
+    static_assert(has_permission_row_v<Tag>, "mint_permission_root<Tag>: no effect row is declared for Tag, so "
+                                             "nothing says which contexts may own its region.  Declare an edge "
+                                             "in foundation::permissions::permission_rows or a permission_row "
+                                             "member on the tag; a pure tag declares Row<> explicitly.");
+    // A missing row is reported once, by the assertion above.
+    static_assert(!has_permission_row_v<Tag> || sizeof...(Args) == 1 || permission_row_empty_v<Tag>,
                   "mint_permission_root<Tag>() without an ExecCtx is only valid for "
                   "permission_row<Tag> == Row<>.  Effectful permission tags must be "
                   "minted with mint_permission_root<Tag>(ctx) so Ctx admits the tag's row.");
-    return Permission<Tag>{perm_mint_key{}};
+    return Permission<Tag, Brand>{perm_mint_key{}};
 }
 
-template <typename Tag, ::foundation::effects::IsExecCtx Ctx>
+template <typename Tag, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxAdmitsPermission<Tag, Ctx>
-[[nodiscard]] constexpr Permission<Tag> admit_permission(Ctx const&, Permission<Tag>&& perm) noexcept {
+[[nodiscard]] constexpr Permission<Tag, Brand> admit_permission(Ctx const&, Permission<Tag, Brand>&& perm) noexcept {
     return std::move(perm);
 }
 
-template <typename Tag, ::foundation::effects::IsExecCtx Ctx>
+template <typename Tag, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxAdmitsPermission<Tag, Ctx>
-[[nodiscard]] constexpr Permission<Tag> permission_handoff(Ctx const& ctx, Permission<Tag>&& perm) noexcept {
+[[nodiscard]] constexpr Permission<Tag, Brand> permission_handoff(Ctx const& ctx,
+                                                                  Permission<Tag, Brand>&& perm) noexcept {
     return admit_permission(ctx, std::move(perm));
 }
 
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
-[[nodiscard]] constexpr std::pair<Permission<L>, Permission<R>> mint_permission_split(Args&&...) noexcept {
+[[nodiscard]] constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
+                                  Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
+mint_permission_split(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(detail::leading_ctx_count<Args...>() != 0
+    using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
+    static_assert(has_permission_row_v<In> && has_permission_row_v<L> && has_permission_row_v<R>,
+                  "mint_permission_split<L, R>: a tag named here declares no effect row.  Declare an edge in "
+                  "foundation::permissions::permission_rows or a permission_row member on the tag.");
+    static_assert(!(has_permission_row_v<In> && has_permission_row_v<L> && has_permission_row_v<R>)
+                      || detail::leading_ctx_count<Args...>() != 0
                       || (permission_row_empty_v<In> && permission_row_empty_v<L> && permission_row_empty_v<R>),
                   "mint_permission_split<L, R>(Permission<In>&&) without ExecCtx is "
                   "only valid when parent and child permission rows are Row<>.  Use "
@@ -527,15 +698,26 @@ template <typename L, typename R, typename... Args>
                                              "splits_into<In, A, A> would mint two Permission<A> from one "
                                              "parent — two linear tokens for the SAME region, aliasing "
                                              "the very disjointness the CSL frame rule proves.");
-    return std::pair<Permission<L>, Permission<R>>{Permission<L>{perm_mint_key{}}, Permission<R>{perm_mint_key{}}};
+    return std::pair<Permission<L, Brand>, Permission<R, Brand>>{Permission<L, Brand>{perm_mint_key{}},
+                                                                 Permission<R, Brand>{perm_mint_key{}}};
 }
 
 template <typename In, typename... Args>
     requires PermissionCombineArgs<In, Args...>
-[[nodiscard]] constexpr Permission<In> mint_permission_combine(Args&&...) noexcept {
+[[nodiscard]] constexpr Permission<In, detail::perm_brand_t<Args...[sizeof...(Args) - 2]>>
+mint_permission_combine(Args&&...) noexcept {
     using L = detail::perm_tag_t<Args...[sizeof...(Args) - 2]>;
     using R = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(detail::leading_ctx_count<Args...>() != 0
+    using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 2]>;
+    static_assert(detail::perm_brands_agree_<Args...>(),
+                  "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&): the two children carry "
+                  "different brands, so they were split from two different regions of one tag.  Only the "
+                  "children of one split recombine into their parent.");
+    static_assert(has_permission_row_v<In> && has_permission_row_v<L> && has_permission_row_v<R>,
+                  "mint_permission_combine<In>: a tag named here declares no effect row.  Declare an edge in "
+                  "foundation::permissions::permission_rows or a permission_row member on the tag.");
+    static_assert(!(has_permission_row_v<In> && has_permission_row_v<L> && has_permission_row_v<R>)
+                      || detail::leading_ctx_count<Args...>() != 0
                       || (permission_row_empty_v<In> && permission_row_empty_v<L> && permission_row_empty_v<R>),
                   "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
                   "without ExecCtx is only valid for Row<> permission tags.");
@@ -544,14 +726,20 @@ template <typename In, typename... Args>
     static_assert(splits_into_authoring_witness_v<In, L, R>, "splits_into_authoring_witness<In, L, R> missing for "
                                                              "combine; declare it next to the splits_into "
                                                              "specialization.");
-    return Permission<In>{perm_mint_key{}};
+    return Permission<In, Brand>{perm_mint_key{}};
 }
 
 template <typename... Children, typename... Args>
     requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-[[nodiscard]] constexpr std::tuple<Permission<Children>...> mint_permission_split_n(Args&&...) noexcept {
+[[nodiscard]] constexpr std::tuple<Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
+mint_permission_split_n(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(detail::leading_ctx_count<Args...>() != 0
+    using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
+    static_assert(has_permission_row_v<In> && (has_permission_row_v<Children> && ...),
+                  "mint_permission_split_n<Children...>: a tag named here declares no effect row.  Declare an "
+                  "edge in foundation::permissions::permission_rows or a permission_row member on the tag.");
+    static_assert(!(has_permission_row_v<In> && (has_permission_row_v<Children> && ...))
+                      || detail::leading_ctx_count<Args...>() != 0
                       || (permission_row_empty_v<In> && (permission_row_empty_v<Children> && ...)),
                   "mint_permission_split_n<Children...>(Permission<In>&&) without ExecCtx "
                   "is only valid when every permission row is Row<>.  Use the ctx-bound "
@@ -567,7 +755,7 @@ template <typename... Children, typename... Args>
                                                     "splits_into_pack<In, A, A, ...> would mint two Permission<A> "
                                                     "from one parent — aliasing the same region across the "
                                                     "disjoint children the CSL frame rule promises.");
-    return std::tuple<Permission<Children>...>{Permission<Children>{perm_mint_key{}}...};
+    return std::tuple<Permission<Children, Brand>...>{Permission<Children, Brand>{perm_mint_key{}}...};
 }
 
 namespace detail {
@@ -577,6 +765,7 @@ struct combine_n_manifest;
 
 template <typename Parent, typename... Children>
 struct combine_n_manifest<Parent, std::tuple<Children...>> {
+    static constexpr bool rows_declared = has_permission_row_v<Parent> && (has_permission_row_v<Children> && ...);
     static constexpr bool rows_empty = permission_row_empty_v<Parent> && (permission_row_empty_v<Children> && ...);
     static constexpr bool declared = splits_into_pack_v<Parent, Children...>;
     static constexpr bool witnessed = splits_into_pack_authoring_witness_v<Parent, Children...>;
@@ -587,9 +776,19 @@ struct combine_n_manifest<Parent, std::tuple<Children...>> {
 
 template <typename Parent, typename... Args>
     requires PermissionCombineNArgs<Parent, Args...>
-[[nodiscard]] constexpr Permission<Parent> mint_permission_combine_n(Args&&...) noexcept {
+[[nodiscard]] constexpr Permission<Parent, detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>>
+mint_permission_combine_n(Args&&...) noexcept {
     using manifest = detail::combine_n_manifest<Parent, detail::perm_tags_t<Args...>>;
-    static_assert(detail::leading_ctx_count<Args...>() != 0 || manifest::rows_empty,
+    using Brand = detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>;
+    static_assert(detail::perm_brands_agree_<Args...>(),
+                  "mint_permission_combine_n<Parent, Children...>(...): the children carry different brands, "
+                  "so they were split from different regions of one tag.  Only the children of one split "
+                  "recombine into their parent.");
+    static_assert(manifest::rows_declared, "mint_permission_combine_n<Parent, Children...>: a tag named here "
+                                           "declares no effect row.  Declare an edge in "
+                                           "foundation::permissions::permission_rows or a permission_row "
+                                           "member on the tag.");
+    static_assert(!manifest::rows_declared || detail::leading_ctx_count<Args...>() != 0 || manifest::rows_empty,
                   "mint_permission_combine_n<Parent, Children...>(...) without ExecCtx "
                   "is only valid when every permission row is Row<>.");
     static_assert(manifest::declared, "mint_permission_combine_n<Parent, Children...>("
@@ -604,7 +803,7 @@ template <typename Parent, typename... Args>
                                       "requires the child tags to be PAIRWISE DISTINCT — folding "
                                       "two Permission<A> back into one parent would require two "
                                       "aliasing tokens to have existed.");
-    return Permission<Parent>{perm_mint_key{}};
+    return Permission<Parent, Brand>{perm_mint_key{}};
 }
 
 // Reissuing the parent after a structured join is sound because every
@@ -639,8 +838,10 @@ private:
     // for a tag the caller did not own, with no manifest, no context and
     // no token.  Keep this friend a function that CONSUMES a
     // Permission<Parent>.  A friend that takes nothing proves nothing.
-    template <bool USpawn, typename... UChildren, typename UCtx, typename UParent, typename... UCallables>
-    friend constexpr Permission<UParent> permission_fork_(UCtx const&, Permission<UParent>&&, UCallables&&...) noexcept;
+    template <bool USpawn, typename... UChildren, typename UCtx, typename UParent, typename UBrand,
+              typename... UCallables>
+    friend constexpr Permission<UParent, UBrand> permission_fork_(UCtx const&, Permission<UParent, UBrand>&&,
+                                                                  UCallables&&...) noexcept;
 };
 
 struct ForkRebuildAccess {
@@ -649,14 +850,15 @@ struct ForkRebuildAccess {
     // permission_fork_, which reached this point by consuming a
     // Permission<Parent> at the split.  Constraining T here would
     // restate that proof at a point which cannot see the children the
-    // parent was split into.
+    // parent was split into.  The brand is the consumed parent's, so
+    // the reissued token is the same identity that went in.
     //
     // That sentence holds only while the key's friend list names one
     // function that consumes a parent permission.  It was false in an
     // earlier shape, when the friend took no argument at all.
-    template <typename T>
-    [[nodiscard]] static constexpr Permission<T> rebuild(ForkRebuildKey) noexcept {
-        return Permission<T>{perm_mint_key{}};
+    template <typename T, typename Brand>
+    [[nodiscard]] static constexpr Permission<T, Brand> rebuild(ForkRebuildKey) noexcept {
+        return Permission<T, Brand>{perm_mint_key{}};
     }
 };
 
@@ -687,27 +889,34 @@ static_assert(std::is_empty_v<detail::ForkRebuildKey>, "ForkRebuildKey must stay
 //
 // The proof of a share and the lifetime of a share are separate objects
 // here: the token below is the proof, and the guard further down is the
-// lifetime.
+// lifetime.  Both carry the brand of the exclusive they came from, so a
+// share of one region is not a share of another region of the same tag.
 
 template <typename... Args>
     requires PermissionShareArgs<Args...>
-[[nodiscard]] constexpr SharedPermission<detail::perm_tag_t<Args...[sizeof...(Args) - 1]>>
+[[nodiscard]] constexpr SharedPermission<detail::perm_tag_t<Args...[sizeof...(Args) - 1]>,
+                                         detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>
 mint_permission_share(Args&&...) noexcept;
 
-template <typename Tag>
+template <typename Tag, typename Brand>
 class [[nodiscard]] SharedPermission {
+    static_assert(::foundation::brand::IsBrand<Brand>, "SharedPermission<Tag, Brand>: Brand must be an empty class "
+                                                       "type: the closure of a mint's fresh lambda, or DefaultBrand.");
+
     constexpr SharedPermission() noexcept = default;
 
-    template <typename T>
+    template <typename T, typename B>
     friend class SharedPermissionGuard;
 
     template <typename... Args>
         requires PermissionShareArgs<Args...>
-    friend constexpr SharedPermission<detail::perm_tag_t<Args...[sizeof...(Args) - 1]>>
+    friend constexpr SharedPermission<detail::perm_tag_t<Args...[sizeof...(Args) - 1]>,
+                                      detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>
     mint_permission_share(Args&&...) noexcept;
 
 public:
     using tag_type = Tag;
+    using brand_type = Brand;
 
     // The token confers nothing: the class is empty and exposes no
     // accessor.  The object that stands for a live shared read is the
@@ -729,6 +938,11 @@ public:
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
     using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, Tag>;
 
+    // Erasure, one way only, as on Permission.
+    template <typename Other>
+        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
+    constexpr SharedPermission(SharedPermission<Tag, Other> const&) noexcept {}
+
     constexpr SharedPermission(const SharedPermission&) noexcept = default;
     constexpr SharedPermission(SharedPermission&&) noexcept = default;
     constexpr SharedPermission& operator=(const SharedPermission&) noexcept = default;
@@ -741,15 +955,16 @@ public:
     [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
-template <typename Tag>
+template <typename Tag, typename Brand>
 class [[nodiscard]] SharedPermissionGuard {
-    SharedPermissionPool<Tag>* pool_ = nullptr;
+    SharedPermissionPool<Tag, Brand>* pool_ = nullptr;
 
-    constexpr explicit SharedPermissionGuard(SharedPermissionPool<Tag>& p) noexcept : pool_{&p} {}
-    friend class SharedPermissionPool<Tag>;
+    constexpr explicit SharedPermissionGuard(SharedPermissionPool<Tag, Brand>& p) noexcept : pool_{&p} {}
+    friend class SharedPermissionPool<Tag, Brand>;
 
 public:
     using tag_type = Tag;
+    using brand_type = Brand;
 
     SharedPermissionGuard(const SharedPermissionGuard&) =
         delete("RAII guard owns one outstanding share — copy would double-count");
@@ -779,9 +994,11 @@ public:
     // `pool.lend()->token()` calls through optional's operator->, which
     // yields a pointer, so the object expression is an lvalue and no
     // qualifier on this member can see the temporary behind it.
-    [[nodiscard]] constexpr SharedPermission<Tag> token() const& noexcept { return SharedPermission<Tag>{}; }
+    [[nodiscard]] constexpr SharedPermission<Tag, Brand> token() const& noexcept {
+        return SharedPermission<Tag, Brand>{};
+    }
 
-    constexpr SharedPermission<Tag> token() const&& =
+    constexpr SharedPermission<Tag, Brand> token() const&& =
         delete("a share proof minted from a temporary guard outlives the share; bind the guard to a name that "
                "outlives the token");
 
@@ -809,19 +1026,24 @@ struct no_ctx {};
 template <typename Tag, typename Ctx>
 concept PoolCtx = std::same_as<Ctx, detail::no_ctx> || CtxAdmitsPermission<Tag, Ctx>;
 
-template <typename Tag>
-class SharedPermissionPool : public ::foundation::Pinned<SharedPermissionPool<Tag>> {
+// The pool carries the brand of the exclusive it was built from, so its
+// shares are shares of that region and its upgrade hands that region
+// back.  `SharedPermissionPool pool{std::move(exc)};` deduces both.
+template <typename Tag, typename Brand>
+class SharedPermissionPool : public ::foundation::Pinned<SharedPermissionPool<Tag, Brand>> {
 public:
     using tag_type = Tag;
+    using brand_type = Brand;
 
     static constexpr std::uint64_t EXCLUSIVE_OUT_BIT = std::uint64_t{1} << 63;
     static constexpr std::uint64_t COUNT_MASK = EXCLUSIVE_OUT_BIT - std::uint64_t{1};
 
-    constexpr explicit SharedPermissionPool(Permission<Tag>&& exc) noexcept : parked_{std::move(exc)}, state_{0} {}
+    constexpr explicit SharedPermissionPool(Permission<Tag, Brand>&& exc) noexcept
+        : parked_{std::move(exc)}, state_{0} {}
 
     template <typename Ctx = detail::no_ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] std::optional<SharedPermissionGuard<Tag>> lend(Ctx const& = {}) noexcept {
+    [[nodiscard]] std::optional<SharedPermissionGuard<Tag, Brand>> lend(Ctx const& = {}) noexcept {
         static_assert(!std::same_as<Ctx, detail::no_ctx> || permission_row_empty_v<Tag>,
                       "SharedPermissionPool<Tag>::lend() without ExecCtx is only valid "
                       "for permission_row<Tag> == Row<>.  Effectful permission tags "
@@ -838,7 +1060,7 @@ public:
     // already incremented makes this compare-exchange fail.
     template <typename Ctx = detail::no_ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] std::optional<Permission<Tag>> try_upgrade(Ctx const& = {}) noexcept {
+    [[nodiscard]] std::optional<Permission<Tag, Brand>> try_upgrade(Ctx const& = {}) noexcept {
         static_assert(!std::same_as<Ctx, detail::no_ctx> || permission_row_empty_v<Tag>,
                       "SharedPermissionPool<Tag>::try_upgrade() without ExecCtx is only "
                       "valid for permission_row<Tag> == Row<>.  Effectful permission "
@@ -846,7 +1068,7 @@ public:
         return try_upgrade_raw_();
     }
 
-    void deposit_exclusive(Permission<Tag>&& exc) noexcept pre(!parked_.has_value()) {
+    void deposit_exclusive(Permission<Tag, Brand>&& exc) noexcept pre(!parked_.has_value()) {
         parked_ = std::move(exc);
         // The count is zero whenever the exclusive-out bit is set, so a
         // plain store of zero clears the bit without discarding a count.
@@ -863,7 +1085,7 @@ public:
     }
 
 private:
-    [[nodiscard]] std::optional<SharedPermissionGuard<Tag>> lend_raw_() noexcept {
+    [[nodiscard]] std::optional<SharedPermissionGuard<Tag, Brand>> lend_raw_() noexcept {
         std::uint64_t observed = state_.load(std::memory_order_acquire);
         for (;;) {
             if (observed & EXCLUSIVE_OUT_BIT) [[unlikely]] {
@@ -876,12 +1098,12 @@ private:
             // Acquire-release, so this count update synchronizes with
             // the compare-exchange in try_upgrade.
             if (state_.compare_exchange_weak(observed, desired, std::memory_order_acq_rel, std::memory_order_acquire)) {
-                return SharedPermissionGuard<Tag>{*this};
+                return SharedPermissionGuard<Tag, Brand>{*this};
             }
         }
     }
 
-    [[nodiscard]] std::optional<Permission<Tag>> try_upgrade_raw_() noexcept {
+    [[nodiscard]] std::optional<Permission<Tag, Brand>> try_upgrade_raw_() noexcept {
         std::uint64_t expected = 0;
         if (!state_.compare_exchange_strong(expected, EXCLUSIVE_OUT_BIT, std::memory_order_acq_rel,
                                             std::memory_order_acquire)) {
@@ -890,23 +1112,26 @@ private:
         // The parked permission is populated whenever the exclusive-out
         // bit is clear, and the exchange above just moved that bit from
         // clear to set, so the dereference here cannot be empty.
-        Permission<Tag> exc = std::move(*parked_);
+        Permission<Tag, Brand> exc = std::move(*parked_);
         parked_.reset();
         return exc;
     }
 
-    friend class SharedPermissionGuard<Tag>;
+    friend class SharedPermissionGuard<Tag, Brand>;
 
     // Holds a value exactly when the exclusive-out bit is clear.
-    std::optional<Permission<Tag>> parked_;
+    std::optional<Permission<Tag, Brand>> parked_;
 
     alignas(64) std::atomic<std::uint64_t> state_;
 };
 
+template <typename Tag, typename Brand>
+SharedPermissionPool(Permission<Tag, Brand>&&) -> SharedPermissionPool<Tag, Brand>;
+
 // Acquire-release, so the compare-exchange in try_upgrade observes this
 // decrement.
-template <typename Tag>
-inline SharedPermissionGuard<Tag>::~SharedPermissionGuard() {
+template <typename Tag, typename Brand>
+inline SharedPermissionGuard<Tag, Brand>::~SharedPermissionGuard() {
     if (pool_ != nullptr) {
         pool_->state_.fetch_sub(std::uint64_t{1}, std::memory_order_acq_rel);
     }
@@ -918,14 +1143,19 @@ inline SharedPermissionGuard<Tag>::~SharedPermissionGuard() {
 // the caller.
 template <typename... Args>
     requires PermissionShareArgs<Args...>
-[[nodiscard]] constexpr SharedPermission<detail::perm_tag_t<Args... [sizeof...(Args) - 1]>>
+[[nodiscard]] constexpr SharedPermission<detail::perm_tag_t<Args...[sizeof...(Args) - 1]>,
+                                         detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>
 mint_permission_share(Args&&...) noexcept {
     using Tag = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(detail::leading_ctx_count<Args...>() != 0 || permission_row_empty_v<Tag>,
+    using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
+    static_assert(has_permission_row_v<Tag>, "mint_permission_share: the tag declares no effect row.  Declare an "
+                                             "edge in foundation::permissions::permission_rows or a "
+                                             "permission_row member on the tag.");
+    static_assert(!has_permission_row_v<Tag> || detail::leading_ctx_count<Args...>() != 0 || permission_row_empty_v<Tag>,
                   "mint_permission_share(Permission<Tag>&&) without ExecCtx is only "
                   "valid for permission_row<Tag> == Row<>.  Effectful permission tags "
                   "must use mint_permission_share(ctx, Permission<Tag>&&).");
-    return SharedPermission<Tag>{};
+    return SharedPermission<Tag, Brand>{};
 }
 
 // Runs the body under a lent share.  A body that returns a value comes
@@ -942,11 +1172,15 @@ namespace detail {
         constexpr std::size_t n_ctx = leading_ctx_count<Args...>();
         if (n_ctx > 1 || sizeof...(Args) != n_ctx + 2) return false;
         using Pool = std::remove_cvref_t<Args...[n_ctx]>;
-        if constexpr (requires { typename Pool::tag_type; }) {
+        if constexpr (requires {
+                          typename Pool::tag_type;
+                          typename Pool::brand_type;
+                      }) {
             using Tag = typename Pool::tag_type;
-            if (!std::is_same_v<Pool, SharedPermissionPool<Tag>>) return false;
+            using Brand = typename Pool::brand_type;
+            if (!std::is_same_v<Pool, SharedPermissionPool<Tag, Brand>>) return false;
             if (!std::is_lvalue_reference_v<Args...[n_ctx]>) return false;
-            if (!std::is_invocable_v<Args...[n_ctx + 1], SharedPermission<Tag>>) return false;
+            if (!std::is_invocable_v<Args...[n_ctx + 1], SharedPermission<Tag, Brand>>) return false;
             if constexpr (n_ctx == 1) {
                 return CtxAdmitsPermission<Tag, std::remove_cvref_t<Args...[0]>>;
             } else {
@@ -958,23 +1192,26 @@ namespace detail {
     }
 
     template <typename... Args>
-    using shared_read_tag_t = typename std::remove_cvref_t<Args...[sizeof...(Args) - 2]>::tag_type;
+    using shared_read_pool_t = std::remove_cvref_t<Args...[sizeof...(Args) - 2]>;
 
     template <typename... Args>
-    using shared_read_result_t =
-        std::invoke_result_t<Args...[sizeof...(Args) - 1], SharedPermission<shared_read_tag_t<Args...>>>;
+    using shared_read_token_t = SharedPermission<typename shared_read_pool_t<Args...>::tag_type,
+                                                 typename shared_read_pool_t<Args...>::brand_type>;
+
+    template <typename... Args>
+    using shared_read_result_t = std::invoke_result_t<Args...[sizeof...(Args) - 1], shared_read_token_t<Args...>>;
 
     template <typename... Args>
     inline constexpr bool shared_read_nothrow_v =
-        std::is_nothrow_invocable_v<Args...[sizeof...(Args) - 1], SharedPermission<shared_read_tag_t<Args...>>>;
+        std::is_nothrow_invocable_v<Args...[sizeof...(Args) - 1], shared_read_token_t<Args...>>;
 
     template <typename... Args>
     auto with_shared_read_(Args && ... args) noexcept(shared_read_nothrow_v<Args...>) {
-        using Tag = shared_read_tag_t<Args...>;
+        using Pool = shared_read_pool_t<Args...>;
         using Body = Args...[sizeof...(Args) - 1];
         using Result = shared_read_result_t<Args...>;
         auto forwarded = std::forward_as_tuple(std::forward<Args>(args)...);
-        SharedPermissionPool<Tag>& pool = std::get<sizeof...(Args) - 2>(forwarded);
+        Pool& pool = std::get<sizeof...(Args) - 2>(forwarded);
         Body&& body = std::get<sizeof...(Args) - 1>(std::move(forwarded));
         auto guard_opt = [&] {
             if constexpr (leading_ctx_count<Args...>() == 1) {
@@ -1018,22 +1255,37 @@ struct seplog_test_right {};
 struct seplog_io_tag {};
 struct seplog_block_tag {};
 struct seplog_multi_effect_tag {};
+// Declared and never given a row, so the relation's answer for it is
+// the negative control below.
+struct seplog_undeclared_tag {};
+// A tag that declares its row as a member rather than as an edge.
+struct seplog_member_row_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
+};
+// A tag derived from another, which has its parent's row.
+struct seplog_derived_tag {
+    using parent_type = seplog_io_tag;
+};
 }  // namespace detail
 
-template <>
-struct permission_row<detail::seplog_io_tag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
-};
-
-template <>
-struct permission_row<detail::seplog_block_tag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
-};
-
-template <>
-struct permission_row<detail::seplog_multi_effect_tag> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
+namespace permission_rows {
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_tag, ::foundation::effects::Row<>>
+    seplog_test{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_left, ::foundation::effects::Row<>>
+    seplog_left{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_right, ::foundation::effects::Row<>>
+    seplog_right{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_io_tag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
+    seplog_io{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_block_tag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::Block>>
+    seplog_block{};
+inline constexpr ::foundation::fail_closed::edge<
+    detail::seplog_multi_effect_tag,
+    ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>
+    seplog_multi_effect{};
+}  // namespace permission_rows
 
 // The contexts here are the self-test witnesses of foundation/effects/Ctx.h,
 // in the shape of the named contexts the layer above defines: a background
@@ -1044,8 +1296,25 @@ using seplog_bg_compile_ctx = ::foundation::effects::detail::ctx_witnesses::BgIo
 using seplog_test_runner_ctx = ::foundation::effects::detail::ctx_witnesses::TestWitnessCtx;
 using seplog_hot_fg_ctx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 
+// The row relation, read in both directions.  The negative control is
+// the tag with no source: under the previous primary template it read
+// as a pure tag, and this cell is what would have caught that.
+static_assert(has_permission_row_v<detail::seplog_test_tag>);
 static_assert(permission_row_empty_v<detail::seplog_test_tag>);
+static_assert(!has_permission_row_v<detail::seplog_undeclared_tag>,
+              "a tag with no row source must have no row; a relation that answers for it is fail-open");
+static_assert(!CtxAdmitsPermission<detail::seplog_undeclared_tag, seplog_test_runner_ctx>,
+              "no context admits a tag with no row, not even the widest");
 static_assert(!permission_row_empty_v<detail::seplog_io_tag>);
+static_assert(std::is_same_v<permission_row_t<detail::seplog_member_row_tag>,
+                             ::foundation::effects::Row<::foundation::effects::Effect::Block>>,
+              "a permission_row member is a row source");
+static_assert(std::is_same_v<permission_row_t<detail::seplog_derived_tag>, permission_row_t<detail::seplog_io_tag>>,
+              "a derived tag has its parent's row");
+static_assert(::foundation::fail_closed::every_class_in_has_edge<^^permission_rows, ^^tag,
+                                                                 ::foundation::fail_closed::EdgeEnd::From>(),
+              "every canonical permission tag declares its row as an edge");
+static_assert(::foundation::fail_closed::every_edge_is_admitted<^^permission_rows>());
 static_assert(CtxAdmitsPermission<detail::seplog_io_tag, seplog_bg_compile_ctx>);
 static_assert(!CtxAdmitsPermission<detail::seplog_io_tag, seplog_hot_fg_ctx>);
 static_assert(!CtxAdmitsPermission<detail::seplog_block_tag, seplog_bg_compile_ctx>);
@@ -1063,21 +1332,39 @@ static_assert(CtxAdmitsPermission<::foundation::permissions::tag::NetworkBufferT
 // by this walk without a new assertion.
 namespace detail::seplog_roster {
 
-template <typename Tag>
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 [[nodiscard]] consteval bool token_is_sound() noexcept {
-    return sizeof(Permission<Tag>) == 1
-        && std::is_trivially_destructible_v<Permission<Tag>> && !std::is_copy_constructible_v<Permission<Tag>>
-        && !std::is_copy_assignable_v<Permission<Tag>> && std::is_move_constructible_v<Permission<Tag>>
-        && std::is_nothrow_move_constructible_v<Permission<Tag>>
+    using Token = Permission<Tag, Brand>;
+    return sizeof(Token) == 1 && std::is_trivially_destructible_v<Token> && !std::is_copy_constructible_v<Token>
+        && !std::is_copy_assignable_v<Token> && std::is_move_constructible_v<Token>
+        && std::is_nothrow_move_constructible_v<Token>
         // The key is the sole route in.  Both halves are load-bearing:
         // drop the first and a token is default-constructible by
         // anyone, drop the second and the mints cannot build one.
-        && !std::is_default_constructible_v<Permission<Tag>>
-        && std::is_constructible_v<Permission<Tag>, perm_mint_key>
+        && !std::is_default_constructible_v<Token> && std::is_constructible_v<Token, perm_mint_key>
         // Explicit, so that a copy of the key cannot convert itself
         // into a token without the construction being written out.
-        && !std::is_convertible_v<perm_mint_key, Permission<Tag>>;
+        && !std::is_convertible_v<perm_mint_key, Token>;
 }
+
+// The erasure runs one way.  A branded token converts to the erased
+// spelling; nothing converts an erased token to a brand, and nothing
+// converts one brand to another.
+struct brand_a {};
+struct brand_b {};
+static_assert(std::is_convertible_v<Permission<seplog_test_tag, brand_a>&&, Permission<seplog_test_tag>>,
+              "a branded token erases to the unbranded spelling");
+static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag>&&>,
+              "an erased token does not acquire a brand");
+static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag, brand_b>&&>,
+              "a token of one brand does not become a token of another");
+static_assert(!std::is_constructible_v<Permission<seplog_test_tag>, Permission<seplog_test_tag, brand_a> const&>,
+              "erasure consumes the branded token; a copy would leave two");
+static_assert(std::is_convertible_v<SharedPermission<seplog_test_tag, brand_a> const&,
+                                    SharedPermission<seplog_test_tag>>);
+static_assert(!std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>, SharedPermission<seplog_test_tag>>);
+static_assert(!std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>,
+                                       SharedPermission<seplog_test_tag, brand_b>>);
 
 // A translation unit that holds no friendship cannot make a key, so it
 // cannot reach the constructor above however it spells the call.
@@ -1097,6 +1384,8 @@ static_assert(std::is_empty_v<perm_mint_key>, "perm_mint_key must stay empty, so
             using Tag = [:member:];
             if (!PermissionTag<Tag>) sound = false;
             if (!token_is_sound<Tag>()) sound = false;
+            if (!token_is_sound<Tag, brand_a>()) sound = false;
+            if (!has_permission_row_v<Tag>) sound = false;
             if (permission_row_empty_v<Tag>) sound = false;
             if (!CtxAdmitsPermission<Tag, seplog_test_runner_ctx>) sound = false;
             if (CtxAdmitsPermission<Tag, seplog_hot_fg_ctx>) sound = false;
@@ -1111,6 +1400,17 @@ static_assert(every_canonical_tag_is_sound(), "a tag in permissions::tag is not 
 
 static_assert(token_is_sound<seplog_test_tag>(), "Permission<Tag> must be a 1-byte, trivially destructible, "
                                                  "non-copyable, nothrow-movable token");
+static_assert(token_is_sound<seplog_test_tag, brand_a>(), "a branded token keeps the layout of an erased one");
+
+// The root mint brands every call site, and the brand is not spellable.
+[[nodiscard]] consteval bool root_brands_are_fresh() noexcept {
+    auto first = mint_permission_root<seplog_test_tag>();
+    auto second = mint_permission_root<seplog_test_tag>();
+    constexpr bool distinct = !std::is_same_v<decltype(first), decltype(second)>;
+    constexpr bool branded = ::foundation::brand::IsBranded<decltype(first)>;
+    constexpr bool same_tag = IsPermissionFor<decltype(first), seplog_test_tag>;
+    return distinct && branded && same_tag;
+}
 
 }  // namespace detail::seplog_roster
 
@@ -1150,6 +1450,7 @@ static_assert(!std::is_move_constructible_v<SharedPermissionPool<detail::seplog_
 static_assert(is_permission_v<Permission<detail::seplog_test_tag>>);
 static_assert(is_permission_v<Permission<detail::seplog_test_tag>&&>);
 static_assert(is_permission_v<const Permission<detail::seplog_test_tag>&>);
+static_assert(is_permission_v<Permission<detail::seplog_test_tag, detail::seplog_roster::brand_a>>);
 static_assert(!is_permission_v<int>);
 static_assert(!is_permission_v<SharedPermission<detail::seplog_test_tag>>);
 static_assert(!is_permission_v<SharedPermissionGuard<detail::seplog_test_tag>>);
@@ -1163,6 +1464,7 @@ static_assert(!is_shared_permission_v<SharedPermissionGuard<detail::seplog_test_
 static_assert(IsPermission<Permission<detail::seplog_test_tag>>);
 static_assert(IsSharedPermission<SharedPermission<detail::seplog_test_tag>>);
 static_assert(IsPermissionFor<Permission<detail::seplog_test_tag>, detail::seplog_test_tag>);
+static_assert(IsPermissionFor<Permission<detail::seplog_test_tag, detail::seplog_roster::brand_a>, detail::seplog_test_tag>);
 static_assert(!IsPermissionFor<Permission<detail::seplog_test_tag>, detail::seplog_test_left>);
 static_assert(IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>, detail::seplog_test_tag>);
 static_assert(!IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>, detail::seplog_test_left>);
@@ -1218,12 +1520,34 @@ static_assert(std::is_same_v<detail::perm_tags_t<seplog_bg_drain_ctx const&, Per
                                                  Permission<detail::seplog_test_right>>,
                              std::tuple<detail::seplog_test_left, detail::seplog_test_right>>);
 
+// The brand agreement a combine demands: two children of one brand
+// agree, a context in front does not disturb the count, and children
+// of two brands do not.
+static_assert(detail::perm_brands_agree_<Permission<detail::seplog_test_left, detail::seplog_roster::brand_a>,
+                                         Permission<detail::seplog_test_right, detail::seplog_roster::brand_a>>());
+static_assert(detail::perm_brands_agree_<seplog_bg_drain_ctx const&,
+                                         Permission<detail::seplog_test_left, detail::seplog_roster::brand_a>,
+                                         Permission<detail::seplog_test_right, detail::seplog_roster::brand_a>>());
+static_assert(!detail::perm_brands_agree_<Permission<detail::seplog_test_left, detail::seplog_roster::brand_a>,
+                                          Permission<detail::seplog_test_right, detail::seplog_roster::brand_b>>());
+
 namespace detail {
 struct seplog_combine_n_parent {};
 struct seplog_combine_n_a {};
 struct seplog_combine_n_b {};
 struct seplog_combine_n_c {};
 }  // namespace detail
+
+namespace permission_rows {
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_parent, ::foundation::effects::Row<>>
+    seplog_combine_n_parent_row{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_a, ::foundation::effects::Row<>>
+    seplog_combine_n_a_row{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_b, ::foundation::effects::Row<>>
+    seplog_combine_n_b_row{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_c, ::foundation::effects::Row<>>
+    seplog_combine_n_c_row{};
+}  // namespace permission_rows
 
 template <>
 struct splits_into_pack<detail::seplog_combine_n_parent, detail::seplog_combine_n_a, detail::seplog_combine_n_b,
@@ -1236,13 +1560,20 @@ struct splits_into_pack_authoring_witness<detail::seplog_combine_n_parent, detai
 namespace detail {
 constexpr bool combine_n_round_trip() noexcept {
     auto whole = mint_permission_root<seplog_combine_n_parent>();
+    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
     auto [a, b, c] =
         mint_permission_split_n<seplog_combine_n_a, seplog_combine_n_b, seplog_combine_n_c>(std::move(whole));
+    // The children carry the parent's brand, and the rebuilt parent
+    // carries it back out.
+    static_assert(std::is_same_v<::foundation::brand::brand_of_t<decltype(a)>, WholeBrand>);
+    static_assert(std::is_same_v<::foundation::brand::brand_of_t<decltype(c)>, WholeBrand>);
     auto rebuilt = mint_permission_combine_n<seplog_combine_n_parent>(std::move(a), std::move(b), std::move(c));
+    static_assert(std::is_same_v<::foundation::brand::brand_of_t<decltype(rebuilt)>, WholeBrand>);
     (void)rebuilt;
     return true;
 }
 static_assert(combine_n_round_trip());
+static_assert(seplog_roster::root_brands_are_fresh());
 }  // namespace detail
 
 }  // namespace foundation::permissions
