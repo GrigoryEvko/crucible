@@ -110,8 +110,55 @@ static_assert(live_rules<at::dispatch::recurses<0>, at::cost_linear<4>>::D002_ok
 
 static_assert(col::pending_axis_count == 8);
 static_assert(col::pending_rule_count == 22);
-static_assert(col::live_rule_count == 10);
 static_assert(col::every_pending_axis_is_still_empty());
+
+// ---------------------------------------------------------------------
+// The corpus accounts for all 54 codes.
+//
+// The count below is the one number worth stating here, and it is stated
+// against the external catalog rather than against the roster: the first
+// shape of this file pinned live == roster - pending, which holds for any
+// roster and held while 22 rules were missing.  The three dispositions
+// are counted separately and must sum to the catalog's 54.
+
+static_assert(col::rule_corpus_size == 54);
+static_assert(col::live_rule_count == 11);
+
+[[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
+    std::size_t found = 0;
+    for (const col::corpus_entry& entry : col::rule_corpus) {
+        if (entry.disposition == wanted) ++found;
+    }
+    return found;
+}
+static_assert(corpus_entries_with(col::Disposition::Live) == 11);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 22);
+static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
+static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
+                  + corpus_entries_with(col::Disposition::Absent)
+              == col::rule_corpus_size);
+
+// No code appears twice, so the 54 are 54 distinct codes rather than a
+// list that happens to be 54 long.
+[[nodiscard]] consteval bool every_corpus_code_is_unique() noexcept {
+    for (std::size_t i = 0; i < col::rule_corpus_size; ++i) {
+        for (std::size_t j = i + 1; j < col::rule_corpus_size; ++j) {
+            if (col::rule_corpus[i].code == col::rule_corpus[j].code) return false;
+        }
+    }
+    return true;
+}
+static_assert(every_corpus_code_is_unique());
+
+// Every absent entry says what is missing, so an absence is a claim a
+// reader can check rather than a silence.
+[[nodiscard]] consteval bool every_absent_entry_gives_a_reason() noexcept {
+    for (const col::corpus_entry& entry : col::rule_corpus) {
+        if (entry.disposition == col::Disposition::Absent && entry.note.empty()) return false;
+    }
+    return true;
+}
+static_assert(every_absent_entry_gives_a_reason());
 
 // Each pending axis really has no atom, and each axis carrying a live
 // rule really has one.  Both halves, so the roster is not merely
@@ -150,7 +197,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != 8) return 1;
     if (col::pending_rule_count != 22) return 2;
-    if (col::live_rule_count != 10) return 3;
+    if (col::live_rule_count != 11) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -158,6 +205,23 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
         ++seen;
     }
     if (seen != col::pending_rule_count) return 5;
+
+    // The corpus accounts for every code, and says something about each.
+    std::size_t live = 0;
+    std::size_t pending = 0;
+    std::size_t absent = 0;
+    for (const col::corpus_entry& entry : col::rule_corpus) {
+        if (entry.code.empty() || entry.note.empty()) return 7;
+        switch (entry.disposition) {
+            case col::Disposition::Live: ++live; break;
+            case col::Disposition::Pending: ++pending; break;
+            case col::Disposition::Absent: ++absent; break;
+            default: return 8;
+        }
+    }
+    if (live != 11 || pending != 22 || absent != 21) return 9;
+    if (live + pending + absent != col::rule_corpus_size) return 10;
+    if (col::rule_corpus_size != 54) return 11;
 
     // The binding the rules admit still carries its value.
     const auto bound = ::fixy::mint_fn<int, at::borrow>(11);

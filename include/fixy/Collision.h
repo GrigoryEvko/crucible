@@ -187,6 +187,7 @@ enum class RuleCode : std::uint8_t {
     L006,  // linear x longjmp
     G002,  // thread-local x atomic representation
     D002,  // unbounded recursion x unbounded cost
+    P002,  // ghost x an emitting surface other than the effect row
     // Pending: the axis each waits on is named in pending_rules below.
     B001,
     H001,
@@ -283,7 +284,166 @@ inline constexpr pending_rule pending_rules[] = {
 };
 
 inline constexpr std::size_t pending_rule_count = sizeof(pending_rules) / sizeof(pending_rules[0]);
-inline constexpr std::size_t live_rule_count = std::meta::enumerators_of(^^RuleCode).size() - pending_rule_count;
+
+// ---------------------------------------------------------------------
+// The corpus: every rule code the old catalog defines, and what became
+// of each one here.
+//
+// This list is the external specification, written out by name.  That is
+// the whole point of it.  A rule that was never written is absent from
+// RuleCode, so any quantity computed FROM RuleCode — including a count —
+// agrees with itself for a roster of the wrong size and cannot see the
+// absence.  The first shape of this file pinned `live == roster - pending`,
+// which is arithmetic rather than a measurement, and it held at 32 of 54.
+//
+// The three pins below compare this list against the RuleCode enum and
+// against the members live_rules actually defines, so no one of the three
+// can drift without one of the others reporting it.
+//
+// Source: include/crucible/safety/CollisionCatalog.h, whose RuleCode enum
+// has 54 enumerators.
+
+enum class Disposition : std::uint8_t {
+    Live,     // implemented in live_rules below, and able to fire today
+    Pending,  // carried as a theorem, waiting on an axis that has no atom
+    Absent,   // not implemented; the note names what is missing
+};
+
+struct corpus_entry {
+    std::string_view code{};
+    Disposition disposition{};
+    std::string_view note{};
+};
+
+inline constexpr corpus_entry rule_corpus[] = {
+    // The eleven that fire today.
+    {"L002", Disposition::Live, "borrow x async"},
+    {"M012", Disposition::Live, "monotonic x concurrent without an atomic representation"},
+    {"P010", Disposition::Live, "ghost x an observable effect row"},
+    {"P002", Disposition::Live, "ghost x stdio or a syscall surface"},
+    {"L007", Disposition::Live, "borrow x Row<Bg>"},
+    {"T001", Disposition::Live, "capability x unverified trust"},
+    {"R002", Disposition::Live, "coroutine x borrow"},
+    {"R003", Disposition::Live, "coroutine x Row<Bg>"},
+    {"L006", Disposition::Live, "linear x longjmp"},
+    {"G002", Disposition::Live, "thread-local x atomic representation"},
+    {"D002", Disposition::Live, "unbounded recursion x unbounded cost"},
+
+    // The twenty-two waiting on an atomless axis.  pending_rules above
+    // carries the theorem and names the axis for each.
+    {"B001", Disposition::Pending, "Axis::Observability"},
+    {"H001", Disposition::Pending, "Axis::Regime"},
+    {"H002", Disposition::Pending, "Axis::Regime"},
+    {"H003", Disposition::Pending, "Axis::Regime"},
+    {"H010", Disposition::Pending, "Axis::Regime"},
+    {"R001", Disposition::Pending, "Axis::Regime"},
+    {"S001", Disposition::Pending, "Axis::Regime"},
+    {"W001", Disposition::Pending, "Axis::Regime"},
+    {"W002", Disposition::Pending, "Axis::Synchronization"},
+    {"F101", Disposition::Pending, "Axis::FpMode"},
+    {"F102", Disposition::Pending, "Axis::FpMode"},
+    {"F103", Disposition::Pending, "Axis::FpMode"},
+    {"F104", Disposition::Pending, "Axis::FpMode"},
+    {"F105", Disposition::Pending, "Axis::FpMode"},
+    {"V101", Disposition::Pending, "Axis::SimdIsa"},
+    {"V102", Disposition::Pending, "Axis::SimdIsa"},
+    {"V201", Disposition::Pending, "Axis::HwInstruction"},
+    {"V202", Disposition::Pending, "Axis::HwInstruction"},
+    {"V203", Disposition::Pending, "Axis::HwInstruction"},
+    {"V301", Disposition::Pending, "Axis::BarrierStrength"},
+    {"V401", Disposition::Pending, "Axis::BarrierStrength"},
+    {"V402", Disposition::Pending, "Axis::MemoryScope"},
+
+    // The twenty-one this layer cannot state.  Each note names the thing
+    // that is missing, so the entry is a claim someone can check rather
+    // than a gap someone has to notice.
+    //
+    // Four of them read a grade on the payload type.  live_rules receives
+    // the atom pack and not the payload: CollisionRules<fn<Type, Atoms...>>
+    // passes Atoms... alone, and Axis::Type is excluded from grades by
+    // design.  Wiring the payload in is a change to the shape of this
+    // file, not a rule.
+    {"C001", Disposition::Absent, "reads a ControlFlow tier on the payload; fixy/Bands.h ships no ControlFlowPinned"},
+    {"S011", Disposition::Absent, "reads a replay requirement, which rides on the payload as a DetSafe band"},
+    {"E044", Disposition::Absent, "reads a constant-time grade; fixy ships ct:: free functions, not a band or an axis"},
+    {"S010", Disposition::Absent, "reads a constant-time grade, as E044 does"},
+
+    // Five read an axis the 33 do not contain.
+    {"I002", Disposition::Absent, "reads an error-payload grade; no axis carries failure"},
+    {"I003", Disposition::Absent, "reads a constant-time grade and an error grade; neither exists"},
+    {"I004", Disposition::Absent, "reads a constant-time grade on a session send"},
+    {"M011", Disposition::Absent, "reads a failure path; no axis carries failure"},
+    {"F002", Disposition::Absent, "reads a termination budget; no axis carries one"},
+
+    // Five read an atom nobody has written.
+    {"D001", Disposition::Absent, "reads the callable family's signature; indirect_call<F> takes F as an opaque class"},
+    {"L003", Disposition::Absent, "separates a scoped from an unscoped spawn; no atom names a spawn"},
+    {"L004", Disposition::Absent, "reads whether the binding carries a Permission proof; no atom names one"},
+    {"P003", Disposition::Absent, "reads a fork-worker marker; no atom names one"},
+    {"N002", Disposition::Absent, "reads an exact-decimal kind; Axis::Precision carries f32, f64 and higham only"},
+
+    // Two are already covered by the atomless-axis list: their axis has
+    // no atom AND the rule compares two bindings, so neither half is
+    // available.  They are recorded here rather than in pending_rules
+    // because an atom on Axis::SimdIsa would still not make them fire.
+    {"V001", Disposition::Absent, "compares two vendor intrinsics in one pack; Axis::SimdIsa also has no atom"},
+    {"V002", Disposition::Absent, "compares two architecture trunks in one pack; Axis::SimdIsa also has no atom"},
+
+    // Four hold across several bindings.  live_rules is handed one
+    // binding's pack, so a corpus-level relation belongs to A11.3.
+    {"F001", Disposition::Absent, "a frame-level agreement across several bindings"},
+    {"L005", Disposition::Absent, "compares two linear bindings that share a region tag"},
+    {"S004", Disposition::Absent, "walks the init-dependency graph across every registered singleton"},
+
+    // One is discharged by construction, and one never had a theorem.
+    {"G001", Disposition::Absent,
+     "discharged: atom::global::thread_local_<StaticTag> requires the tag, so the untagged form this rule refused "
+     "cannot be named"},
+    {"M001", Disposition::Absent,
+     "the old catalog declares M001_DontNeedRequiresReleaseAware and ships no CRUCIBLE_COLLISION_DIAGNOSTIC for it, "
+     "so the code has a name and no theorem to port"},
+};
+
+inline constexpr std::size_t rule_corpus_size = sizeof(rule_corpus) / sizeof(rule_corpus[0]);
+
+namespace detail {
+
+[[nodiscard]] consteval bool corpus_lists_(std::string_view code) noexcept {
+    for (const corpus_entry& entry : rule_corpus) {
+        if (entry.code == code) return true;
+    }
+    return false;
+}
+
+[[nodiscard]] consteval bool corpus_ships_(std::string_view code) noexcept {
+    for (const corpus_entry& entry : rule_corpus) {
+        if (entry.code == code) return entry.disposition != Disposition::Absent;
+    }
+    return false;
+}
+
+[[nodiscard]] consteval std::size_t corpus_count_(Disposition wanted) noexcept {
+    std::size_t found = 0;
+    for (const corpus_entry& entry : rule_corpus) {
+        if (entry.disposition == wanted) ++found;
+    }
+    return found;
+}
+
+[[nodiscard]] consteval bool rule_code_names_(std::string_view code) noexcept {
+    bool found = false;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^RuleCode))) {
+        if (std::meta::identifier_of(enumerator) == code) found = true;
+    }
+#pragma GCC diagnostic pop
+    return found;
+}
+
+}  // namespace detail
+
+inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition::Live);
 
 // ---------------------------------------------------------------------
 // The gate that makes a pending rule impossible to forget.
@@ -316,8 +476,54 @@ static_assert(every_pending_axis_is_still_empty(),
               "pending_axes — or a family roster was added under fixy/atoms/ and never joined into "
               "collision::all_atom_roster, which makes its axes look empty.");
 
-static_assert(pending_rule_count == 22, "the pending-rule count is pinned; changing it is a deliberate act");
-static_assert(live_rule_count == 10, "the live-rule count is pinned; changing it is a deliberate act");
+// ---------------------------------------------------------------------
+// The corpus pins.
+//
+// Each compares two things that were written separately.  None computes
+// one side from the other.
+
+static_assert(rule_corpus_size == 54,
+              "fixy/Collision.h: the rule corpus must account for all 54 codes in the RuleCode enum of "
+              "include/crucible/safety/CollisionCatalog.h.  A code dropped from this list stops being "
+              "reported as absent, which is the failure this list exists to prevent.");
+
+// Every code the corpus says ships has an enumerator, and every code it
+// says is absent has none.  A rule written without a corpus entry, or
+// recorded as absent after being written, reddens here.
+[[nodiscard]] consteval bool corpus_and_rule_code_agree() noexcept {
+    for (const corpus_entry& entry : rule_corpus) {
+        const bool shipped = entry.disposition != Disposition::Absent;
+        if (detail::rule_code_names_(entry.code) != shipped) return false;
+    }
+    return true;
+}
+static_assert(corpus_and_rule_code_agree(),
+              "fixy/Collision.h: the rule corpus and the RuleCode enum disagree.  Either a code is in the enum "
+              "and the corpus records it as Absent, or the corpus records it as Live or Pending and the enum "
+              "does not name it.");
+
+// And the reverse direction, so an enumerator the corpus never heard of
+// cannot slip in.
+[[nodiscard]] consteval bool every_rule_code_is_in_the_corpus() noexcept {
+    bool complete = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^RuleCode))) {
+        complete = complete && detail::corpus_lists_(std::meta::identifier_of(enumerator));
+    }
+#pragma GCC diagnostic pop
+    return complete;
+}
+static_assert(every_rule_code_is_in_the_corpus(),
+              "fixy/Collision.h: a RuleCode enumerator is not listed in rule_corpus.  Add it with its "
+              "disposition, so the corpus stays the complete account of the 54 codes.");
+
+// pending_rules and the corpus are two hand-written lists of the same
+// set.  Comparing them catches an edit to one and not the other.
+static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
+              "fixy/Collision.h: pending_rules and the corpus disagree about how many rules are waiting on an "
+              "atomless axis.");
+
 static_assert(pending_axis_count == 8,
               "the count of atom-less axes is pinned: a change here means an axis gained or lost its "
               "first atom, which every_pending_axis_is_still_empty above reports in detail");
@@ -420,6 +626,13 @@ struct live_rules {
     static constexpr bool G002_ok = !(thread_local_state && atomic_repr);
     static constexpr bool D002_ok = !(recurses && unbounded_cost);
 
+    // P010 reads the effect row.  Two other axes also force emitted
+    // code, and a ghost binding that engages either is the same
+    // contradiction through a different door.
+    static constexpr bool emits_outside_the_row = G::template mentions<Axis::Stdio>
+                                               || G::template mentions<Axis::SyscallSurface>;
+    static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(L002_ok, "L002: borrow x async. A borrowed reference's lifetime is tied to the caller's frame "
                                "and cannot bridge a suspension or a hand-off to another thread. Scope the borrow "
@@ -447,13 +660,77 @@ struct live_rules {
                                "thread, so an atomic carrier inside it pays for synchronization nobody can observe.");
         static_assert(D002_ok, "D002: unbounded recursion x unbounded cost. Recursion with neither a depth bound nor "
                                "a cost bound is a stack overflow the type system could have refused.");
+        static_assert(P002_ok, "P002: ghost x an emitting surface. A ghost binding is erased at codegen, and a "
+                               "stdio write or a syscall is emitted code by definition. P010 catches this through "
+                               "the effect row; these two axes are the other doors to the same contradiction.");
         return L002_ok && M012_ok && P010_ok && L007_ok && T001_ok && R002_ok && R003_ok && L006_ok && G002_ok
-            && D002_ok;
+            && D002_ok && P002_ok;
     }
 
-    static constexpr bool valid =
-        L002_ok && M012_ok && P010_ok && L007_ok && T001_ok && R002_ok && R003_ok && L006_ok && G002_ok && D002_ok;
+    static constexpr bool valid = L002_ok && M012_ok && P010_ok && L007_ok && T001_ok && R002_ok && R003_ok && L006_ok
+                               && G002_ok && D002_ok && P002_ok;
 };
+
+// ---------------------------------------------------------------------
+// The pin that reads the implementation rather than the specification.
+//
+// live_rules names one `<code>_ok` member per rule it implements.  The
+// two checks below walk those members: the first asks that every code the
+// corpus calls Live has one, the second that no `_ok` member exists
+// without a Live entry.  Together they bind the corpus to the code that
+// actually runs, which is the step the original `live == roster - pending`
+// arithmetic skipped.
+
+namespace detail {
+
+[[nodiscard]] consteval bool member_is_the_gate_for_(std::meta::info member, std::string_view code) noexcept {
+    if (!std::meta::has_identifier(member)) return false;
+    const std::string_view id = std::meta::identifier_of(member);
+    return id.size() == code.size() + 3 && id.starts_with(code) && id.ends_with("_ok");
+}
+
+[[nodiscard]] consteval std::size_t implemented_rule_count_() noexcept {
+    std::size_t found = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : std::define_static_array(
+                      std::meta::members_of(^^live_rules<>, std::meta::access_context::unchecked()))) {
+        if constexpr (std::meta::has_identifier(member)) {
+            if constexpr (std::meta::identifier_of(member).ends_with("_ok")) {
+                ++found;
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return found;
+}
+
+[[nodiscard]] consteval bool every_live_entry_is_implemented_() noexcept {
+    for (const corpus_entry& entry : rule_corpus) {
+        if (entry.disposition != Disposition::Live) continue;
+        bool implemented = false;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+        template for (constexpr auto member : std::define_static_array(
+                          std::meta::members_of(^^live_rules<>, std::meta::access_context::unchecked()))) {
+            if (member_is_the_gate_for_(member, entry.code)) implemented = true;
+        }
+#pragma GCC diagnostic pop
+        if (!implemented) return false;
+    }
+    return true;
+}
+
+}  // namespace detail
+
+static_assert(detail::every_live_entry_is_implemented_(),
+              "fixy/Collision.h: the corpus records a rule as Live and live_rules defines no <code>_ok member "
+              "for it.  A rule is Live when it is written, not when it is listed.");
+
+static_assert(detail::implemented_rule_count_() == live_rule_count,
+              "fixy/Collision.h: live_rules defines a different number of <code>_ok members than the corpus "
+              "records as Live.  Either a rule was written without a corpus entry, or one entry names a rule "
+              "the implementation spells differently.");
 
 // ---------------------------------------------------------------------
 // The shape fn asks.
@@ -505,6 +782,14 @@ static_assert(!live_rules<::fixy::atom::borrow, ::fixy::atom::with<::foundation:
 static_assert(!live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine>::M012_ok);
 static_assert(live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine,
                          ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>::M012_ok);
+
+// P002 reaches the two emitting axes P010 does not read, so the pair it
+// refuses is one P010 admits.  Both halves alone are fine.
+static_assert(!live_rules<::fixy::atom::ghost, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P002_ok);
+static_assert(live_rules<::fixy::atom::ghost, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P010_ok,
+              "P002 must be the rule that catches this pair; if P010 already did, P002 would be redundant");
+static_assert(live_rules<::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P002_ok);
+static_assert(live_rules<::fixy::atom::ghost>::P002_ok);
 
 }  // namespace detail::collision_self_test
 
