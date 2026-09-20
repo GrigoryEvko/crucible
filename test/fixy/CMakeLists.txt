@@ -231,6 +231,25 @@ fixy_neg_compile_test(neg_rule_s001_stdio_hot
   "Collision rule\\(s\\) S001:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the wait family ────────────────────────────────────────
+#
+# Two rules that needed fixy/atoms/Sync.h.  W001 needed BOTH commits of
+# this task: it reads a tier and a wait strategy, so it stayed Pending
+# after Regime shipped and only fired once Synchronization did.
+#
+# W001's pack carries a cost grade and a refinement witness, like the
+# regime fixtures above, so it floors on W001 rather than on H001 or H002.
+# W002's does not need them: its premises are a Bg row and a spin, and
+# neither H rule reads a tier the pack never names.
+fixy_neg_compile_test(neg_rule_w001_hot_kernel_wait
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_w002_bg_row_core_burning_spin
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W002:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.

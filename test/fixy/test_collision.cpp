@@ -12,6 +12,10 @@
 #include <fixy/Collision.h>
 #include <fixy/Fn.h>
 
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Lift.h>
+#include <foundation/effects/Row.h>
+
 #include <cstddef>
 #include <meta>
 #include <type_traits>
@@ -26,6 +30,7 @@ using ::fixy::axis_traits;
 using col::grades;
 using col::live_rules;
 using Eff = ::foundation::effects::Effect;
+namespace fe = ::foundation::effects;
 
 // The test brings its own tag: the sample tag the family roster uses
 // lives in a detail namespace and is not the test's to name.
@@ -199,14 +204,67 @@ static_assert(live_rules<>::H001_ok && live_rules<>::H002_ok && live_rules<>::H0
 static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::valid);
 
 // ---------------------------------------------------------------------
+// The wait family, live since fixy/atoms/Sync.h (task #176).
+//
+// Both rules read one axis from opposite ends of its ladder, so the
+// interesting cells are the ones that show the LINE, not just the ends.
+
+// W001 hot x a kernel wait.  The three lowest grades trip it and the
+// three highest do not, which is the WaitLattice's own division.
+static_assert(!live_rules<at::regime::hot, at::sync::block, at::cost_constant,
+                          at::refined_with<hot_invariant>>::W001_ok);
+static_assert(!live_rules<at::regime::hot, at::sync::park, at::cost_constant,
+                          at::refined_with<hot_invariant>>::W001_ok);
+static_assert(!live_rules<at::regime::hot, at::sync::acquire_wait, at::cost_constant,
+                          at::refined_with<hot_invariant>>::W001_ok);
+static_assert(live_rules<at::regime::hot, at::sync::umwait_c01, at::cost_constant,
+                         at::refined_with<hot_invariant>>::W001_ok);
+static_assert(live_rules<at::regime::hot, at::sync::bounded_spin, at::cost_constant,
+                         at::refined_with<hot_invariant>>::W001_ok);
+static_assert(live_rules<at::regime::hot, at::sync::spin_pause, at::cost_constant,
+                         at::refined_with<hot_invariant>>::W001_ok);
+// Each half alone is fine: a cold body may block, and a hot body may wait
+// however it likes as long as it stays out of the kernel.
+static_assert(live_rules<at::sync::block>::W001_ok);
+static_assert(live_rules<at::regime::cold, at::sync::block>::W001_ok);
+static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+
+// W002 Row<Bg> x a spin that burns the core.  This is narrower than "not
+// a kernel wait" by exactly one grade, and UMWAIT is that grade: it halts
+// the core in C0.1 rather than spinning it, so a background body may use
+// it.  These three cells are the whole reason fixy/atoms/Sync.h carries
+// two predicates rather than one negating the other.
+static_assert(!live_rules<at::with<Eff::Bg>, at::sync::spin_pause>::W002_ok);
+static_assert(!live_rules<at::with<Eff::Bg>, at::sync::bounded_spin>::W002_ok);
+static_assert(live_rules<at::with<Eff::Bg>, at::sync::umwait_c01>::W002_ok,
+              "UMWAIT halts the core instead of burning it, so a background body may wait that way");
+static_assert(live_rules<at::with<Eff::Bg>, at::sync::park>::W002_ok);
+static_assert(live_rules<at::sync::spin_pause>::W002_ok, "a foreground spin is the intended hot-path wait");
+
+// The lift, read through the same atoms.  A kernel wait carries
+// Effect::Block into the row a context has to admit; a spin carries
+// nothing.  This is what makes the two rules and the context gates agree
+// rather than merely coexist.
+static_assert(std::is_same_v<fe::lift_row_t<at::sync::block>, fe::Row<Eff::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<at::sync::acquire_wait>, fe::Row<Eff::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<at::sync::spin_pause>, fe::Row<>>);
+static_assert(std::is_same_v<fe::lift_row_t<at::sync::umwait_c01>, fe::Row<>>);
+
+// Neither rule fires on a binding that names no strategy, which is what
+// keeps the Synchronization strict pole from meaning "spins".
+static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok
+              && live_rules<at::with<Eff::Bg>>::W002_ok);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
-// Sixteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
-// and S rules live (task #176).  The number moves once per axis this task
-// drains, and it is a literal rather than a floor because the three
-// dispositions partition a fixed 54-code catalog — a floor here would let
-// a rule fall out of all three and go unnoticed.
-static_assert(col::pending_rule_count == 16);
+// Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
+// and S rules live and fixy/atoms/Sync.h took W001 and W002 (task #176).
+// The number moves once per axis this task drains, and it is a literal
+// rather than a floor because the three dispositions partition a fixed
+// 54-code catalog — a floor here would let a rule fall out of all three
+// and go unnoticed.
+static_assert(col::pending_rule_count == 14);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -239,7 +297,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // are counted separately and must sum to the catalog's 54.
 
 static_assert(col::rule_corpus_size == 54);
-static_assert(col::live_rule_count == 17);
+static_assert(col::live_rule_count == 19);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -248,8 +306,8 @@ static_assert(col::live_rule_count == 17);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 17);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 16);
+static_assert(corpus_entries_with(col::Disposition::Live) == 19);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 14);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
@@ -316,8 +374,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 16) return 2;
-    if (col::live_rule_count != 17) return 3;
+    if (col::pending_rule_count != 14) return 2;
+    if (col::live_rule_count != 19) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -339,7 +397,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 17 || pending != 16 || absent != 21) return 9;
+    if (live != 19 || pending != 14 || absent != 21) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 54) return 11;
 

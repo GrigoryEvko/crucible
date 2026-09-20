@@ -49,6 +49,7 @@
 #include <fixy/atoms/Regime.h>
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
+#include <fixy/atoms/Sync.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Row.h>
@@ -132,7 +133,8 @@ using all_atom_roster =
                                        ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::os_atom_roster,
                                        ::fixy::atom::detail::regime_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
-                                       ::fixy::atom::detail::stdio_atom_roster>;
+                                       ::fixy::atom::detail::stdio_atom_roster,
+                                       ::fixy::atom::detail::sync_atom_roster>;
 
 namespace detail {
 
@@ -166,11 +168,10 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 //
 // Task #176 is draining this list, one axis per commit, because the
 // user's decision was to ship an atom for every axis rather than delete
-// any.  fixy/atoms/Regime.h left it first: the H, R and S families
-// below went live with it.
+// any.  fixy/atoms/Regime.h left it first, taking the H, R and S
+// families live; fixy/atoms/Sync.h left it second, taking W001 and W002.
 inline constexpr Axis pending_axes[] = {
-    Axis::Observability, Axis::Synchronization, Axis::FpMode,   Axis::HwInstruction,
-    Axis::BarrierStrength, Axis::SimdIsa,       Axis::MemoryScope,
+    Axis::Observability, Axis::FpMode, Axis::HwInstruction, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -238,15 +239,11 @@ inline constexpr pending_rule pending_rules[] = {
      "Bg observable surface with unbounded resource: declare space::Bounded<N> + cost::Linear<N>; a Bg-observable "
      "surface that may run unbounded is a back-pressure trap."},
     // H001, H002, H003, H010, R001 and S001 left this list when
-    // fixy/atoms/Regime.h shipped; each is a live_rules member below and
-    // a Live row in rule_corpus.  W001 stays because it reads two axes
-    // and only one of them gained atoms.
-    {RuleCode::W001, Axis::Synchronization,
-     "HotPath x kernel wait: a park or a futex wait costs 1-5 us against a 40 ns budget.  Regime has atoms now; "
-     "this waits on the wait-strategy grade, which is the other half of the premise."},
-    {RuleCode::W002, Axis::Synchronization,
-     "Bg row x active spin: a background-context body that spins burns a core that the scheduler could have given "
-     "to foreground work."},
+    // fixy/atoms/Regime.h shipped, and W001 and W002 when fixy/atoms/Sync.h
+    // did.  Each is a live_rules member below and a Live row in
+    // rule_corpus.  W001 needed both commits: it reads a tier AND a wait
+    // strategy, so the axis it waited on moved from Regime to
+    // Synchronization before it could fire.
     {RuleCode::F101, Axis::FpMode,
      "Replay x FP reassociation permitted: reassociation reorders the sum, so a replayed run produces different "
      "bits and DetSafe fails."},
@@ -334,14 +331,15 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"R001", Disposition::Live, "coroutine x hot"},
     {"S001", Disposition::Live, "stdio x hot"},
 
-    // The twenty-two waiting on an atomless axis.  pending_rules above
-    // carries the theorem and names the axis for each.
+    // The wait family, live since fixy/atoms/Sync.h shipped the six
+    // WaitStrategy atoms (task #176).  W001 reads a tier and a wait, so
+    // it needed both that commit and the Regime one.
+    {"W001", Disposition::Live, "hot x a kernel wait"},
+    {"W002", Disposition::Live, "Row<Bg> x a spin that burns the core"},
+
+    // The rest wait on an axis with no atom.  pending_rules above carries
+    // the theorem and names the axis for each.
     {"B001", Disposition::Pending, "Axis::Observability"},
-    // W001 reads Regime AND Synchronization.  Regime has atoms now, so
-    // the axis it still waits on is the other one, and it is registered
-    // against that rather than left against the axis it has.
-    {"W001", Disposition::Pending, "Axis::Synchronization"},
-    {"W002", Disposition::Pending, "Axis::Synchronization"},
     {"F101", Disposition::Pending, "Axis::FpMode"},
     {"F102", Disposition::Pending, "Axis::FpMode"},
     {"F103", Disposition::Pending, "Axis::FpMode"},
@@ -573,6 +571,27 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
 // predicate rather than reusing row_admits_observable_ above, which also
 // admits Block.  A blocking hot path is just as wrong, but it is W001's
 // theorem and W001 cites the futex cost, not the allocator's.
+// The two wait classifications, lifted from a grade to a type-level
+// answer.  The primaries are false because the strict pole of
+// Synchronization is not a wait at all: a binding that names no strategy
+// makes no claim about waiting, so neither rule fires on it.
+//
+// Both delegate to the consteval predicates in fixy/atoms/Sync.h rather
+// than re-listing the grades, because the atom lift reads those same two
+// functions.  A grade that moved sides would otherwise move for the lift
+// and not for the rules.
+template <class G>
+struct wait_enters_the_kernel_ : std::false_type {};
+template <class G>
+    requires requires { G::strategy; }
+struct wait_enters_the_kernel_<G> : std::bool_constant<::fixy::atom::sync::enters_the_kernel(G::strategy)> {};
+
+template <class G>
+struct wait_burns_the_core_ : std::false_type {};
+template <class G>
+    requires requires { G::strategy; }
+struct wait_burns_the_core_<G> : std::bool_constant<::fixy::atom::sync::burns_the_core(G::strategy)> {};
+
 template <class G>
 struct row_admits_alloc_or_io_ : std::false_type {};
 template <::foundation::effects::Effect... Es>
@@ -692,6 +711,30 @@ struct live_rules {
     static constexpr bool R001_ok = !(coroutine && hot);
     static constexpr bool S001_ok = !(G::template mentions<Axis::Stdio> && hot);
 
+    // ── The wait family, live since fixy/atoms/Sync.h ─────────────────
+    //
+    // Both read the same axis from opposite ends of its ladder, and the
+    // ladder's own header draws the line: the three lowest grades enter
+    // the kernel or the scheduler, the three highest stay in user space.
+    // A kernel wait is too slow for the hot path, and a core-burning spin
+    // is too expensive for a background one.
+    //
+    // The predicates come from fixy/atoms/Sync.h rather than being
+    // rewritten here, so the rules and the atom lift cannot disagree
+    // about where the line falls.
+    static constexpr bool kernel_wait =
+        detail::wait_enters_the_kernel_<typename G::template on<Axis::Synchronization>>::value;
+    static constexpr bool core_burning_spin =
+        detail::wait_burns_the_core_<typename G::template on<Axis::Synchronization>>::value;
+
+    static constexpr bool W001_ok = !(hot && kernel_wait);
+
+    // W002 reads burns_the_core rather than "not a kernel wait", which is
+    // narrower by one grade: UMWAIT halts the core in C0.1 instead of
+    // spinning it, so a background body may use it.  That grade is the
+    // whole reason the atom header carries two predicates instead of one.
+    static constexpr bool W002_ok = !(row_bg && core_burning_spin);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -725,7 +768,8 @@ struct live_rules {
             rule_verdict{R003_ok, "R003"}, rule_verdict{L006_ok, "L006"}, rule_verdict{G002_ok, "G002"},
             rule_verdict{D002_ok, "D002"}, rule_verdict{P002_ok, "P002"}, rule_verdict{H001_ok, "H001"},
             rule_verdict{H002_ok, "H002"}, rule_verdict{H003_ok, "H003"}, rule_verdict{H010_ok, "H010"},
-            rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"},
+            rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
+            rule_verdict{W002_ok, "W002"},
         };
     }
 
@@ -801,6 +845,12 @@ struct live_rules {
                                "at every suspension point, and one resume breaches the budget.");
         static_assert(S001_ok, "S001: stdio x hot. Buffered stdio takes a lock and may block. Neither belongs on a "
                                "path budgeted in nanoseconds.");
+        static_assert(W001_ok, "W001: hot x a kernel wait. A park or a futex wait costs 1-5 us because it is bounded "
+                               "by the scheduler, against a budget bounded by the cache-coherence fabric at 10-40 "
+                               "ns. Wait with a spin, or leave the hot path.");
+        static_assert(W002_ok, "W002: Row<Bg> x a spin that burns the core. A background body that spins holds a core "
+                               "the scheduler could have given to foreground work. Park, or use UMWAIT, which halts "
+                               "the core instead of spinning it.");
         return valid;
     }
 
