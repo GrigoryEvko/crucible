@@ -256,15 +256,71 @@ static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<ho
               && live_rules<at::with<Eff::Bg>>::W002_ok);
 
 // ---------------------------------------------------------------------
+// The observability family, live since fixy/atoms/Observe.h (task #176).
+//
+// Two theorems on one axis, and the cells below show they are two: each
+// pack trips one and not the other.
+
+// B002, the containment.  An observability row must be a Subrow of the
+// binding's effect row, because Observability names which PART of that row
+// is observation.  It is not a second row and cannot widen the first.
+static_assert(!live_rules<at::observe::surface<Eff::IO>>::B002_ok,
+              "a surface naming IO on a binding whose effect row is empty claims an effect it never declared");
+static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO>>::B002_ok,
+              "the same surface is admitted once the binding declares IO");
+static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO, Eff::Bg>>::B002_ok,
+              "a proper subset is containment too");
+static_assert(!live_rules<at::observe::surface<Eff::IO, Eff::Bg>, at::with<Eff::IO>>::B002_ok,
+              "one effect of the surface is outside the row, which is enough");
+static_assert(live_rules<at::observe::surface<>>::B002_ok, "the empty surface observes nothing and is contained");
+static_assert(live_rules<at::with<Eff::IO>>::B002_ok, "a binding with no surface observes nothing");
+static_assert(live_rules<>::B002_ok);
+
+// The strict pole on this axis is derived from Effect's, which is the
+// empty row, so "observes nothing" is what a binding claims by saying
+// nothing.  These two cells are that pole read from both sides.
+static_assert(!col::grades<>::mentions<Axis::Observability>);
+static_assert(col::grades<at::observe::surface<Eff::IO>>::mentions<Axis::Observability>);
+
+// B001, the back-pressure trap, which is the theorem this catalog already
+// recorded for the axis.  It is a different premise from B002's: a
+// background observable surface whose resource use is unbounded, where the
+// remedy the theorem names is space::Bounded plus cost::Linear.
+static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B001_ok,
+              "no cost grade at all is an unstated envelope, which is one of the three unbounded readings");
+static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_unbounded>::B001_ok);
+static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>,
+                          at::space_unbounded>::B001_ok);
+static_assert(live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>,
+                         at::space_bounded<4096>>::B001_ok,
+              "the remedy the theorem names: a bounded space and a linear cost");
+// Each premise alone stands down.
+static_assert(live_rules<at::with<Eff::Bg>, at::cost_unbounded>::B001_ok, "no surface, so nothing is observable");
+static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO>, at::cost_unbounded>::B001_ok,
+              "an unbounded foreground surface is not a back-pressure trap: the caller is the consumer");
+
+// The two theorems are independent, which is why both codes exist. The
+// first pack trips B002 and not B001; the second trips B001 and not B002.
+static_assert(!live_rules<at::observe::surface<Eff::IO>>::B002_ok
+              && live_rules<at::observe::surface<Eff::IO>>::B001_ok);
+static_assert(live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B002_ok
+              && !live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B001_ok);
+
+// A surface atom declares no lift, so it contributes nothing to the row a
+// context must admit.  That is the whole point of the containment: the
+// Effect grade stays the single authority for what the binding may do.
+static_assert(!fe::LiftsToRow<at::observe::surface<Eff::IO>>);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
 // and S rules live and fixy/atoms/Sync.h took W001 and W002 (task #176).
 // The number moves once per axis this task drains, and it is a literal
-// rather than a floor because the three dispositions partition a fixed
-// 54-code catalog — a floor here would let a rule fall out of all three
-// and go unnoticed.
-static_assert(col::pending_rule_count == 14);
+// rather than a floor because the three dispositions partition the
+// catalog — a floor here would let a rule fall out of all three and go
+// unnoticed.
+static_assert(col::pending_rule_count == 13);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -294,10 +350,16 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // against the external catalog rather than against the roster: the first
 // shape of this file pinned live == roster - pending, which holds for any
 // roster and held while 22 rules were missing.  The three dispositions
-// are counted separately and must sum to the catalog's 54.
+// are counted separately and must sum to the catalog's size.
+//
+// That size is 55, not 54: the 54 are inherited from the old catalog's
+// RuleCode enum and B002 was written in fixy/Collision.h by task #176,
+// which found two theorems on Axis::Observability where the old catalog
+// recorded one.  B001 kept its back-pressure theorem rather than being
+// reread as the containment rule, because the codes are stable API.
 
-static_assert(col::rule_corpus_size == 54);
-static_assert(col::live_rule_count == 19);
+static_assert(col::rule_corpus_size == 55);
+static_assert(col::live_rule_count == 21);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -306,8 +368,8 @@ static_assert(col::live_rule_count == 19);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 19);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 14);
+static_assert(corpus_entries_with(col::Disposition::Live) == 21);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 13);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
@@ -374,8 +436,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 14) return 2;
-    if (col::live_rule_count != 19) return 3;
+    if (col::pending_rule_count != 13) return 2;
+    if (col::live_rule_count != 21) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -397,9 +459,9 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 19 || pending != 14 || absent != 21) return 9;
+    if (live != 21 || pending != 13 || absent != 21) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
-    if (col::rule_corpus_size != 54) return 11;
+    if (col::rule_corpus_size != 55) return 11;
 
     // The binding the rules admit still carries its value.
     const auto bound = ::fixy::mint_fn<int, at::borrow>(11);

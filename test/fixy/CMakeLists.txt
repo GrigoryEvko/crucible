@@ -250,6 +250,27 @@ fixy_neg_compile_test(neg_rule_w002_bg_row_core_burning_spin
   "Collision rule\\(s\\) W002:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the observability family ───────────────────────────────
+#
+# Two rules on one axis, and they are two theorems rather than one read
+# two ways.  B002 is the containment — an observability row must be a
+# Subrow of the binding's effect row, because Observability names which
+# PART of the declared row is observation and is not a second row.  B001
+# is the back-pressure trap the catalog already recorded for this axis,
+# kept rather than overwritten because a rule code here is stable API.
+#
+# Each fixture's pack satisfies the other rule, which is what shows the
+# two are independent: B002's pack has no Bg row, and B001's declares Bg
+# on the Effect axis so its surface is contained.
+fixy_neg_compile_test(neg_rule_b002_surface_outside_effect_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) B002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_b001_bg_surface_unbounded
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) B001:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.

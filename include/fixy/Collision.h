@@ -45,6 +45,7 @@
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/atoms/Dispatch.h>
 #include <fixy/atoms/Global.h>
+#include <fixy/atoms/Observe.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Regime.h>
 #include <fixy/atoms/Stack.h>
@@ -130,7 +131,9 @@ struct grades {
 using all_atom_roster =
     ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
                                        ::fixy::atom::detail::dispatch_atom_roster,
-                                       ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::os_atom_roster,
+                                       ::fixy::atom::detail::global_atom_roster,
+                                       ::fixy::atom::detail::observe_atom_roster,
+                                       ::fixy::atom::detail::os_atom_roster,
                                        ::fixy::atom::detail::regime_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
                                        ::fixy::atom::detail::stdio_atom_roster,
@@ -171,7 +174,7 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 // any.  fixy/atoms/Regime.h left it first, taking the H, R and S
 // families live; fixy/atoms/Sync.h left it second, taking W001 and W002.
 inline constexpr Axis pending_axes[] = {
-    Axis::Observability, Axis::FpMode, Axis::HwInstruction, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
+    Axis::FpMode, Axis::HwInstruction, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -201,6 +204,11 @@ enum class RuleCode : std::uint8_t {
     P002,  // ghost x an emitting surface other than the effect row
     // Pending: the axis each waits on is named in pending_rules below.
     B001,
+    // B002 is NEW, not a renaming of B001.  B001's theorem is the
+    // back-pressure trap and it has its own remedy; the containment
+    // invariant below is a different theorem about the same axis, and the
+    // codes above are stable API that is never reused, so it gets its own.
+    B002,
     H001,
     H002,
     H003,
@@ -235,15 +243,13 @@ struct pending_rule {
 };
 
 inline constexpr pending_rule pending_rules[] = {
-    {RuleCode::B001, Axis::Observability,
-     "Bg observable surface with unbounded resource: declare space::Bounded<N> + cost::Linear<N>; a Bg-observable "
-     "surface that may run unbounded is a back-pressure trap."},
     // H001, H002, H003, H010, R001 and S001 left this list when
-    // fixy/atoms/Regime.h shipped, and W001 and W002 when fixy/atoms/Sync.h
-    // did.  Each is a live_rules member below and a Live row in
-    // rule_corpus.  W001 needed both commits: it reads a tier AND a wait
-    // strategy, so the axis it waited on moved from Regime to
-    // Synchronization before it could fire.
+    // fixy/atoms/Regime.h shipped, W001 and W002 when fixy/atoms/Sync.h
+    // did, and B001 with the new B002 when fixy/atoms/Observe.h did.  Each
+    // is a live_rules member below and a Live row in rule_corpus.  W001
+    // needed two of those commits: it reads a tier AND a wait strategy, so
+    // the axis it waited on moved from Regime to Synchronization before it
+    // could fire.
     {RuleCode::F101, Axis::FpMode,
      "Replay x FP reassociation permitted: reassociation reorders the sum, so a replayed run produces different "
      "bits and DetSafe fails."},
@@ -337,9 +343,17 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"W001", Disposition::Live, "hot x a kernel wait"},
     {"W002", Disposition::Live, "Row<Bg> x a spin that burns the core"},
 
+    // The observability family, live since fixy/atoms/Observe.h shipped
+    // the surface atom (task #176).  Two theorems, not one: B002 is the
+    // containment of the observability row in the effect row, and B001 is
+    // the back-pressure trap this catalog already recorded.  B002 is a new
+    // code rather than a rereading of B001, because the codes are stable
+    // API and the negative corpus greps them.
+    {"B001", Disposition::Live, "Row<Bg> x an observable surface x an unbounded resource"},
+    {"B002", Disposition::Live, "an observability row outside the binding's effect row"},
+
     // The rest wait on an axis with no atom.  pending_rules above carries
     // the theorem and names the axis for each.
-    {"B001", Disposition::Pending, "Axis::Observability"},
     {"F101", Disposition::Pending, "Axis::FpMode"},
     {"F102", Disposition::Pending, "Axis::FpMode"},
     {"F103", Disposition::Pending, "Axis::FpMode"},
@@ -482,10 +496,24 @@ static_assert(every_pending_axis_is_still_empty(),
 // Each compares two things that were written separately.  None computes
 // one side from the other.
 
-static_assert(rule_corpus_size == 54,
-              "fixy/Collision.h: the rule corpus must account for all 54 codes in the RuleCode enum of "
-              "include/crucible/safety/CollisionCatalog.h.  A code dropped from this list stops being "
-              "reported as absent, which is the failure this list exists to prevent.");
+// Fifty-four inherited codes plus one written here.
+//
+// The 54 come from the RuleCode enum of
+// include/crucible/safety/CollisionCatalog.h and the count is stated
+// against that external list, so a code dropped from this one stops being
+// reported as absent — the failure this list exists to prevent.
+//
+// B002 is the one addition, and it is an addition rather than a rereading
+// of an inherited code.  Task #176 gave Axis::Observability its atoms and
+// found two theorems where the old catalog recorded one: B001's
+// back-pressure trap, which it kept, and the containment of the
+// observability row in the effect row, which had no code.  Reusing B001
+// for the second would have discarded a theorem that has its own remedy,
+// and the codes are stable API precisely so that cannot happen quietly.
+static_assert(rule_corpus_size == 55,
+              "fixy/Collision.h: the rule corpus must account for the 54 codes inherited from the RuleCode "
+              "enum of include/crucible/safety/CollisionCatalog.h, plus B002, which is written here.  A code "
+              "dropped from this list stops being reported as absent.");
 
 // Every code the corpus says ships has an enumerator, and every code it
 // says is absent has none.  A rule written without a corpus entry, or
@@ -571,6 +599,44 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
 // predicate rather than reusing row_admits_observable_ above, which also
 // admits Block.  A blocking hot path is just as wrong, but it is W001's
 // theorem and W001 cites the futex cost, not the allocator's.
+// The Effect row and the Observability row, each extracted from its
+// grade.
+//
+// Effect's strict pole IS a Row already (axis_traits<Axis::Effect>::strict
+// is Row<>), so the pole and the atom both need an arm and the pole's is
+// the identity.  Observability's pole is derived from Effect's, so its
+// pole is that same empty row: a binding that names no surface observes
+// nothing.
+//
+// Neither primary fails open.  Both answer Row<> for a grade they do not
+// recognise, and Row<> is the strongest answer on the Effect side (a
+// binding that may do nothing) and the weakest on the Observability side
+// (a binding that observes nothing).  B002 compares them in the direction
+// that makes both of those safe: an unrecognised observability grade
+// claims to observe nothing and passes, and an unrecognised effect grade
+// permits nothing and refuses any surface.
+template <class G>
+struct effect_row_of_ {
+    using type = ::foundation::effects::Row<>;
+};
+template <::foundation::effects::Effect... Es>
+struct effect_row_of_<::fixy::atom::with<Es...>> {
+    using type = ::foundation::effects::Row<Es...>;
+};
+template <::foundation::effects::Effect... Es>
+struct effect_row_of_<::foundation::effects::Row<Es...>> {
+    using type = ::foundation::effects::Row<Es...>;
+};
+
+template <class G>
+struct observability_row_of_ {
+    using type = ::foundation::effects::Row<>;
+};
+template <::foundation::effects::Effect... Es>
+struct observability_row_of_<::fixy::atom::observe::surface<Es...>> {
+    using type = ::foundation::effects::Row<Es...>;
+};
+
 // The two wait classifications, lifted from a grade to a type-level
 // answer.  The primaries are false because the strict pole of
 // Synchronization is not a wait at all: a binding that names no strategy
@@ -735,6 +801,40 @@ struct live_rules {
     // whole reason the atom header carries two predicates instead of one.
     static constexpr bool W002_ok = !(row_bg && core_burning_spin);
 
+    // ── The observability family, live since fixy/atoms/Observe.h ─────
+    //
+    // Two theorems about one axis, and they are not the same theorem.
+    //
+    // B002 is the containment: the effects a binding declares OBSERVABLE
+    // must be effects it declared at all.  The Effect grade stays the
+    // single authority for what the binding may do, and Observability
+    // names which part of that row is observation rather than
+    // computation.  A surface naming an effect outside the Effect row
+    // would widen what the operation is permitted to do, and a passive
+    // surface that can do that is not passive — CLAUDE.md L15 says
+    // Observe records facts and does not enforce policy.
+    //
+    // B001 is the back-pressure trap, and it is the theorem the catalog
+    // recorded for this axis before any atom existed.  It is kept rather
+    // than overwritten: a rule code is stable API here, so B002 above is
+    // a new code rather than a reinterpretation of this one.
+    using observability_row = typename detail::observability_row_of_<
+        typename G::template on<Axis::Observability>>::type;
+    using effect_row = typename detail::effect_row_of_<typename G::template on<Axis::Effect>>::type;
+
+    static constexpr bool observes_something = G::template mentions<Axis::Observability>;
+    static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, effect_row>;
+
+    // "May run unbounded" reads three ways on this pack, and B001 refuses
+    // all three: an explicit unbounded cost, an unstated cost, or an
+    // explicit unbounded space grade.  The remedy the theorem names is
+    // the pair space::Bounded plus cost::Linear, so a binding that states
+    // neither is exactly the trap.
+    static constexpr bool space_unbounded =
+        std::is_same_v<typename G::template on<Axis::Space>, ::fixy::atom::space_unbounded>;
+    static constexpr bool may_run_unbounded = cost_unstated || unbounded_cost || space_unbounded;
+    static constexpr bool B001_ok = !(row_bg && observes_something && may_run_unbounded);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -769,7 +869,7 @@ struct live_rules {
             rule_verdict{D002_ok, "D002"}, rule_verdict{P002_ok, "P002"}, rule_verdict{H001_ok, "H001"},
             rule_verdict{H002_ok, "H002"}, rule_verdict{H003_ok, "H003"}, rule_verdict{H010_ok, "H010"},
             rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
-            rule_verdict{W002_ok, "W002"},
+            rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
         };
     }
 
@@ -851,6 +951,13 @@ struct live_rules {
         static_assert(W002_ok, "W002: Row<Bg> x a spin that burns the core. A background body that spins holds a core "
                                "the scheduler could have given to foreground work. Park, or use UMWAIT, which halts "
                                "the core instead of spinning it.");
+        static_assert(B001_ok, "B001: a Bg observable surface that may run unbounded is a back-pressure trap. The "
+                               "producer cannot see the consumer fall behind, because the surface exists to report "
+                               "facts and not to apply back pressure. Declare space::Bounded and cost::Linear.");
+        static_assert(B002_ok, "B002: an observability surface names an effect outside the binding's effect row. "
+                               "Observability names which PART of the declared row is observation; it is not a "
+                               "second row and cannot widen the first. Add the effect to the Effect grade if the "
+                               "operation really performs it, or drop it from the surface.");
         return valid;
     }
 
