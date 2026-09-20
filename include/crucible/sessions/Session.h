@@ -1115,7 +1115,7 @@ template <typename Proto, typename Resource, typename LoopCtx>
     Resource r,
     std::source_location loc = std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
     -> SessionHandle<Proto, Resource, LoopCtx> {
-    return SessionHandle<Proto, Resource, LoopCtx>{std::move(r), loc};
+    return SessionHandle<Proto, Resource, LoopCtx>{std::forward<Resource>(r), loc};
 }
 
 template <typename R, typename Resource, typename LoopCtx>
@@ -1130,18 +1130,18 @@ template <typename R, typename Resource, typename LoopCtx>
         // The body may itself begin with a Loop or a Continue, so this
         // recurses.  Forwarding `loc` keeps the outermost caller's site
         // rather than replacing it with this frame's.
-        return step_to_next<NextBody, Resource, LoopCtx>(std::move(r), loc);
+        return step_to_next<NextBody, Resource, LoopCtx>(std::forward<Resource>(r), loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
         using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, R>;
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
-        return step_to_next<InnerBody, Resource, InnerCtx>(std::move(r), loc);
+        return step_to_next<InnerBody, Resource, InnerCtx>(std::forward<Resource>(r), loc);
     } else {
         static_assert(is_head_v<R>, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
                                     "proto: unexpected protocol shape after resolution.  "
                                     "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
-        return make_session_handle<R, Resource, LoopCtx>(std::move(r), loc);
+        return make_session_handle<R, Resource, LoopCtx>(std::forward<Resource>(r), loc);
     }
 }
 
@@ -1162,7 +1162,7 @@ SessionHandle<End, Resource, LoopCtx> : public SessionHandleBase<End, SessionHan
 
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
+        : SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>{loc}, resource_{std::forward<Resource>(r)} {}
 
 public:
     using protocol = End;
@@ -1178,7 +1178,7 @@ public:
     // protocol has run to completion.
     [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
-        return std::move(resource_);
+        return std::forward<Resource>(resource_);
     }
 
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
@@ -1199,7 +1199,7 @@ class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx>
 
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Send<T, R>, SessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
+        : SessionHandleBase<Send<T, R>, SessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}, resource_{std::forward<Resource>(r)} {}
 
 public:
     using protocol = Send<T, R>;
@@ -1223,7 +1223,7 @@ public:
                                                    && std::is_nothrow_move_constructible_v<T>) {
         std::invoke(transport, resource_, std::move(value));
         this->mark_consumed_();
-        return detail::step_to_next<R, Resource, LoopCtx>(std::move(resource_));
+        return detail::step_to_next<R, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
@@ -1244,7 +1244,7 @@ class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx>
 
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Recv<T, R>, SessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
+        : SessionHandleBase<Recv<T, R>, SessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}, resource_{std::forward<Resource>(r)} {}
 
 public:
     using protocol = Recv<T, R>;
@@ -1267,7 +1267,7 @@ public:
                                           && std::is_nothrow_move_constructible_v<T>) {
         T value = std::invoke(transport, resource_);
         this->mark_consumed_();
-        auto next = detail::step_to_next<R, Resource, LoopCtx>(std::move(resource_));
+        auto next = detail::step_to_next<R, Resource, LoopCtx>(std::forward<Resource>(resource_));
         return std::pair{std::move(value), std::move(next)};
     }
 
@@ -1290,7 +1290,7 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Select<Branches...>, SessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc},
-          resource_{std::move(r)} {}
+          resource_{std::forward<Resource>(r)} {}
 
 public:
     using protocol = Select<Branches...>;
@@ -1334,7 +1334,7 @@ public:
         std::invoke(transport, resource_, I);
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
+        return detail::step_to_next<Chosen, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     // Advances the local handle WITHOUT telling the peer which branch
@@ -1352,7 +1352,7 @@ public:
                                                "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
+        return detail::step_to_next<Chosen, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1388,7 +1388,7 @@ class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx>
     constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Offer<Branches...>, SessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc},
-          resource_{std::move(r)} {}
+          resource_{std::forward<Resource>(r)} {}
 
 public:
     using protocol = Offer<Branches...>;
@@ -1423,7 +1423,7 @@ public:
     constexpr auto branch(Transport transport, Handler handler) && {
         const std::size_t idx = std::invoke(transport, resource_);
         this->mark_consumed_();
-        return dispatch_branch_(idx, std::move(resource_), std::move(handler),
+        return dispatch_branch_(idx, std::forward<Resource>(resource_), std::move(handler),
                                 std::make_index_sequence<sizeof...(Branches)>{});
     }
 
@@ -1441,7 +1441,7 @@ public:
                                                "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
+        return detail::step_to_next<Chosen, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1463,7 +1463,7 @@ private:
     template <std::size_t I>
     static constexpr auto make_branch_handle_(Resource r) {
         using B = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next<B, Resource, LoopCtx>(std::move(r));
+        return detail::step_to_next<B, Resource, LoopCtx>(std::forward<Resource>(r));
     }
 
     template <std::size_t... Is, typename Handler>
@@ -1484,7 +1484,7 @@ private:
             (
                 [&]() {
                     if (!dispatched && idx == Is) {
-                        std::invoke(std::move(handler), make_branch_handle_<Is>(std::move(res)));
+                        std::invoke(std::move(handler), make_branch_handle_<Is>(std::forward<Resource>(res)));
                         dispatched = true;
                     }
                 }(),
@@ -1495,7 +1495,7 @@ private:
             (
                 [&]() {
                     if (!dispatched && idx == Is) {
-                        result.emplace(std::invoke(std::move(handler), make_branch_handle_<Is>(std::move(res))));
+                        result.emplace(std::invoke(std::move(handler), make_branch_handle_<Is>(std::forward<Resource>(res))));
                         dispatched = true;
                     }
                 }(),
@@ -1596,11 +1596,11 @@ template <typename Proto, typename Resource>
         // Forwarding `loc` keeps the caller's site in the abandonment
         // diagnostic even though the unroll inserts an intermediate
         // handle whose own default location would otherwise win.
-        return detail::step_to_next<Body, Resource, Proto>(std::move(r), loc);
+        return detail::step_to_next<Body, Resource, Proto>(std::forward<Resource>(r), loc);
     } else {
         static_assert(!std::is_same_v<Proto, Continue>, "crucible::session::diagnostic [Continue_Without_Loop]: "
                                                         "proto: Continue cannot be the top-level protocol.");
-        return detail::make_session_handle<Proto, Resource, void>(std::move(r), loc);
+        return detail::make_session_handle<Proto, Resource, void>(std::forward<Resource>(r), loc);
     }
 }
 
