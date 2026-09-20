@@ -14,6 +14,7 @@
 // of static_asserts masks the bugs that appear when a body is
 // instantiated for runtime evaluation rather than folded.
 
+#include <fixy/Mutation.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
@@ -138,11 +139,62 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
     return 0;
 }
 
+// The two things #183 restored, exercised.  A reader minted off the
+// replay path never returns a value lower than the last one it returned,
+// and the clamp holds when handed the regression no real clock produces.
+// The gate's refusal of a foreground context is a compile-time fact and
+// lives in test/fixy/neg/neg_os_clock_reader_foreground_ctx.cpp; here
+// the gate admits a background and an init context.
+[[nodiscard]] int monotonic_reader_never_regresses() {
+    BgWitness bg{eff::testing::bg()};
+    InitWitness init{eff::testing::init()};
+
+    auto monotonic = fixy::time::mint_clock_reader<fixy::ClockSource_v::Monotonic>(bg);
+    auto realtime = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
+
+    const auto first = monotonic.read();
+    const auto second = monotonic.read();
+    if (second.peek() < first.peek()) {
+        std::fprintf(stderr, "the monotonic reader returned a lower value on its second read\n");
+        return 1;
+    }
+    if (realtime.read().peek() == 0) {
+        std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
+        return 1;
+    }
+
+    // Two consecutive reads of a working clock cannot show the clamp
+    // doing anything, so it is driven on its own with the sequence the
+    // kernel promises never to send: a value below the floor.  The floor
+    // wins, and a later value above it advances it.
+    std::uint64_t high = 1000;
+    std::uint64_t low = 500;
+    auto last_returned = fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    if (fixy::time::clamp_non_decreasing(last_returned, high) != high) {
+        std::fprintf(stderr, "the clamp did not pass a value above the floor through\n");
+        return 1;
+    }
+    if (fixy::time::clamp_non_decreasing(last_returned, low) != high) {
+        std::fprintf(stderr, "the clamp let a regressing value through\n");
+        return 1;
+    }
+    if (fixy::time::clamp_non_decreasing(last_returned, high + low) != high + low) {
+        std::fprintf(stderr, "the clamp did not advance past a stale floor\n");
+        return 1;
+    }
+    if (last_returned.get() != high + low) {
+        std::fprintf(stderr, "the floor did not record the highest value returned\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (const int rc = clock_source_values_round_trip(); rc != 0) return rc;
     if (const int rc = readers_and_sleeper_run(); rc != 0) return rc;
     if (const int rc = tsc_read_through_an_earned_pin(); rc != 0) return rc;
+    if (const int rc = monotonic_reader_never_regresses(); rc != 0) return rc;
     return 0;
 }

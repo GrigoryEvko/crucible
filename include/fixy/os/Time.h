@@ -8,7 +8,15 @@
 // grant::time::{clock_read, tsc_read, sleep} and their which_dim rows
 // are decoration: nothing outside their own self-test reads them.  Hw.h
 // came in for TscMode alone, which is declared below instead.
+//
+// Two things the old tree carried elsewhere, in safety/_Mutation.h's
+// MonotonicClock, are here now: the gate that keeps a clock read off the
+// replay-bound foreground path, and the clamp that keeps two reads
+// through one reader from regressing.  Neither came with the first port
+// of this header, because its source never had them, and the wrapper
+// port that dropped the class did not say so.
 
+#include <fixy/Mutation.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
 #include <foundation/Platform.h>
@@ -140,19 +148,106 @@ template <TscMode Mode>
 template <typename T>
 concept IsSingletonCpuPin = detail::is_cpu_pinned_v<std::remove_cvref_t<T>> && std::remove_cvref_t<T>::is_singleton_pin;
 
+// Whether the kernel promises the clock never steps backward.  Realtime
+// can be set, and the two CPU-time clocks are per-thread and per-process
+// accumulators that one reader may be asked to read from more than one
+// thread, so a clamp on either would invent an ordering that does not
+// exist.  The three non-decreasing clocks are clamped.
+[[nodiscard]] consteval bool is_non_decreasing(ClockSource_v source) noexcept {
+    switch (source) {
+        case ClockSource_v::Monotonic:
+        case ClockSource_v::MonotonicRaw:
+        case ClockSource_v::Boot:
+            return true;
+        case ClockSource_v::Realtime:
+        case ClockSource_v::ThreadCpu:
+        case ClockSource_v::ProcessCpu:
+        case ClockSource_v::TscRaw:
+        case ClockSource_v::TscSerialized:
+        case ClockSource_v::PmuCounter:
+        case ClockSource_v::PtpHwClock:
+            return false;
+        default:
+            return false;
+    }
+}
+
+// The clamp safety/_Mutation.h's MonotonicClock carried, verbatim in
+// effect: if the underlying clock goes backward, the previously observed
+// value is returned instead, so two reads through one reader never
+// regress.  Detecting the clock fault is the host monitoring layer's
+// job, not this one's.  It is a free function over the caller's floor so
+// that a test can hand it a regressing value, which no real clock will.
+[[nodiscard]] inline std::uint64_t clamp_non_decreasing(sf::AtomicMonotonic<std::uint64_t>& last,
+                                                        std::uint64_t raw) noexcept {
+    (void)last.try_advance(raw);
+    const std::uint64_t observed = last.get();
+    return observed > raw ? observed : raw;
+}
+
+// Reading a clock on the replay-bound foreground path makes replay
+// diverge across machines, so a reader is minted only by a context that
+// owns Bg, Init or Test.  The name is the one safety/_Mutation.h gave
+// this gate; it holds for every clock-backed source, because the replay
+// argument does not depend on which clock diverges.
+template <typename Ctx>
+concept CtxFitsMonotonicClock =
+    eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Init, eff::Effect::Test>;
+
+template <typename Ctx, ClockSource_v Source>
+concept CtxFitsClockReaderMint = CtxFitsMonotonicClock<Ctx> && ClockBacked<Source>;
+
 template <ClockSource_v Source>
     requires ClockBacked<Source>
 struct ClockReader final {
     using result_type = sf::ClockSource<Source, std::uint64_t>;
     static constexpr ClockSource_v source = Source;
+    static constexpr bool is_clamped = is_non_decreasing(Source);
 
     [[nodiscard]] result_type read() const noexcept {
         std::timespec now{};
         (void)::clock_gettime(clockid_for(Source), &now);
-        return result_type{static_cast<std::uint64_t>(now.tv_sec) * 1000000000ULL
-                           + static_cast<std::uint64_t>(now.tv_nsec)};
+        const std::uint64_t raw = static_cast<std::uint64_t>(now.tv_sec) * 1000000000ULL
+                                  + static_cast<std::uint64_t>(now.tv_nsec);
+        if constexpr (is_clamped) {
+            return result_type{clamp_non_decreasing(last_, raw)};
+        } else {
+            return result_type{raw};
+        }
     }
+
+private:
+    // One door.  The mint's requires-clause is the whole gate, and the
+    // mint is the only friend, so a reader cannot be built anywhere the
+    // evidence of being off the replay path was not checked.
+    constexpr ClockReader() noexcept : last_{make_clamp_state()} {}
+
+    template <ClockSource_v S, eff::IsExecCtx Ctx>
+        requires CtxFitsClockReaderMint<Ctx, S>
+    friend constexpr ClockReader<S> mint_clock_reader(Ctx const&) noexcept;
+
+    // The floor of every value this reader has returned.  Advancing it is
+    // the read's own bookkeeping, which is why it is mutable behind a
+    // const read; AtomicMonotonic is pinned, so a clamped reader is pinned
+    // with it and has one address for the lifetime of its floor.  An
+    // unclamped reader carries nothing and stays a value.
+    struct NoClamp final {};
+    using clamp_state = std::conditional_t<is_clamped, sf::AtomicMonotonic<std::uint64_t>, NoClamp>;
+
+    static constexpr clamp_state make_clamp_state() noexcept {
+        if constexpr (is_clamped) {
+            return sf::mint_atomic_monotonic<std::uint64_t>(0);
+        } else {
+            return NoClamp{};
+        }
+    }
+
+    mutable clamp_state last_;
 };
+
+// The name safety/_Mutation.h gave the clamped, gated monotonic reader.
+// It names the same thing here.
+using MonotonicClock = ClockReader<ClockSource_v::Monotonic>;
 
 // The reader owns the pin proof for its whole lifetime, so the pin cannot be
 // released while a read is still possible.
@@ -198,9 +293,6 @@ struct BoundedSleeper final {
     }
 };
 
-template <typename Ctx, ClockSource_v Source>
-concept CtxFitsClockReaderMint = eff::IsExecCtx<Ctx> && ClockBacked<Source>;
-
 template <typename Ctx, TscMode Mode, typename PinT>
 concept CtxFitsTscReaderMint = eff::IsExecCtx<Ctx> && (Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>;
 
@@ -210,7 +302,7 @@ concept CtxFitsBoundedSleepMint = eff::CtxCanMint<Ctx, eff::Effect::Block> && (M
 template <ClockSource_v Source, eff::IsExecCtx Ctx>
     requires CtxFitsClockReaderMint<Ctx, Source>
 [[nodiscard]] constexpr ClockReader<Source> mint_clock_reader(Ctx const&) noexcept {
-    return {};
+    return ClockReader<Source>{};
 }
 
 template <TscMode Mode, eff::IsExecCtx Ctx, typename PinT>
@@ -253,6 +345,34 @@ static_assert(std::is_same_v<TscReader<TscMode::SerializedPinned, SinglePin>::re
                              sf::TscSerializedBytes<std::uint64_t>>);
 
 static_assert(BoundedSleeper<1000000>::max_nanos == 1000000ULL);
+
+// The gate and the clamp, as properties of the types.  A foreground
+// context is refused at the mint and a background one admitted; the
+// three non-decreasing sources are clamped and Realtime is not; the
+// reader's one door is the mint, so it is neither default- nor
+// copy-constructible from outside, and a clamped reader has one address
+// because its floor does.  The behaviour under a sequence of reads, and
+// the clamp fed a regressing value, are in test/fixy/test_os_time.cpp;
+// the two refusals are test/fixy/neg/neg_os_clock_reader_*.cpp.
+using ForegroundCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
+using BackgroundCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
+static_assert(!CtxFitsMonotonicClock<ForegroundCtx>);
+static_assert(CtxFitsMonotonicClock<BackgroundCtx>);
+static_assert(!CtxFitsClockReaderMint<ForegroundCtx, ClockSource_v::Monotonic>);
+static_assert(CtxFitsClockReaderMint<BackgroundCtx, ClockSource_v::Monotonic>);
+static_assert(!CtxFitsClockReaderMint<BackgroundCtx, ClockSource_v::TscRaw>);
+
+static_assert(std::is_same_v<MonotonicClock, ClockReader<ClockSource_v::Monotonic>>);
+static_assert(MonotonicClock::is_clamped);
+static_assert(ClockReader<ClockSource_v::MonotonicRaw>::is_clamped);
+static_assert(ClockReader<ClockSource_v::Boot>::is_clamped);
+static_assert(!ClockReader<ClockSource_v::Realtime>::is_clamped);
+
+static_assert(!std::is_default_constructible_v<MonotonicClock>);
+static_assert(!std::is_copy_constructible_v<MonotonicClock>);
+static_assert(!std::is_move_constructible_v<MonotonicClock>);
+static_assert(!std::is_default_constructible_v<ClockReader<ClockSource_v::Realtime>>);
+static_assert(std::is_copy_constructible_v<ClockReader<ClockSource_v::Realtime>>);
 
 // The readers and the sleeper are exercised in test/fixy/test_os_time.cpp,
 // which is also where the TSC leg lives: a TSC read needs a pin from

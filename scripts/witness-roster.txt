@@ -72,6 +72,10 @@ fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/Machin
 
 # -- OS handles: the constructor is the syscall, or it consumes one ---
 fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
+# A clock read on the replay-bound foreground path makes replay diverge,
+# so the reader's one door is mint_clock_reader, gated on a context that
+# owns Bg, Init or Test (#183).
+fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic> | fixy/os/Time.h | fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic>{} | private | closed
 fixy::OwnedMmap<int, int, int> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, int, int>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
 fixy::io::IoUringRing | fixy/os/Io.h | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}} | private | closed
 fixy::fs::OwnedFd | fixy/os/Fs.h | fixy::fs::OwnedFd{3} | private | closed

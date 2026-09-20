@@ -34,8 +34,10 @@
 # Entries whose sentence begins "Deferred to" are not drops.  They are
 # gaps with a task number, kept here so the guard stays runnable while
 # the task is open; each drains when the task lands.  Today: the five
-# named contexts (#110), the fork's spawn context (#116), and the
-# monotonic clock's gate and clamp (#183).
+# named contexts (#110) and the fork's spawn context (#116).  The
+# monotonic clock's gate and clamp (#183) were the first to drain: the
+# names came back to fixy/os/Time.h as a port, and the guard reported
+# the two entries obsolete.
 
 # ── algebra ─────────────────────────────────────────────────────────────
 
@@ -219,8 +221,6 @@ crucible/safety/_IsRecipeSpec.h:is_recipe_spec_smoke_test  — An inline smoke t
 # ── safety: wrappers ────────────────────────────────────────────────────
 
 crucible/safety/_Machine.h:machine_transition  — The transition relation is no longer a trait; fixy/Machine.h:13 states it as edges beside the states they join.
-crucible/safety/_Mutation.h:CtxFitsMonotonicClock  — Deferred to #183: ClockReader<Monotonic> in fixy/os/Time.h mints with no capability gate, so the foreground-path rejection this concept carried is not yet re-established.
-crucible/safety/_Mutation.h:MonotonicClock  — Deferred to #183: the class's AtomicMonotonic clamp, which kept a replayed timestamp from regressing, has no counterpart in fixy/os/Time.h.
 crucible/safety/_OwnedMmap.h:is_leak_grant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
 crucible/safety/_OwnedMmap.h:IsLeakGrant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
 crucible/safety/_OwnedMmap.h:is_leak_grant_v  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
