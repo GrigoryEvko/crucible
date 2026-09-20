@@ -48,6 +48,26 @@
       }
     },
     {
+      "name": "pgo-generate",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release, PGO instrumented)",
+      "binaryDir": "${sourceDir}/build-pgo-generate",
+      "cacheVariables": {
+        "CRUCIBLE_PGO": "generate",
+        "CRUCIBLE_BENCH": "ON"
+      }
+    },
+    {
+      "name": "pgo",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release, PGO applied)",
+      "binaryDir": "${sourceDir}/build-pgo",
+      "cacheVariables": {
+        "CRUCIBLE_PGO": "use",
+        "CRUCIBLE_BENCH": "ON"
+      }
+    },
+    {
       "name": "tsan",
       "inherits": "default",
       "displayName": "GCC 16 + ThreadSanitizer (AxRaceFree)",
@@ -63,6 +83,8 @@
     { "name": "analyzer", "configurePreset": "analyzer", "jobs": 192 },
     { "name": "release", "configurePreset": "release", "jobs": 192 },
     { "name": "bench",   "configurePreset": "bench", "jobs": 192 },
+    { "name": "pgo-generate", "configurePreset": "pgo-generate", "jobs": 192 },
+    { "name": "pgo",     "configurePreset": "pgo",   "jobs": 192 },
     { "name": "tsan",    "configurePreset": "tsan", "jobs": 192 }
   ],
   "testPresets": [

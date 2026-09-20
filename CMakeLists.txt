@@ -32,6 +32,189 @@ elseif(CRUCIBLE_USE_CCACHE)
   message(STATUS "ccache: not found on PATH — proceeding without launcher")
 endif()
 
+# ═══════════════════════════════════════════════════════════════
+# Profile-guided optimization: CRUCIBLE_PGO = off | generate | use
+#
+# One tree, one profile for each hardware tier, and no flag that names
+# the hardware.  The tier is the name the compiler resolves native to
+# (x86: znver5, sapphirerapids; aarch64: the -mcpu=native name).  A
+# Zen 5 host and a Sapphire Rapids host collect and consume their own
+# profile from the same commands.  The profile directory is
+#
+#     ${CRUCIBLE_PGO_DIR}/gcc-<major>.<minor>/<tier>/
+#
+# generate  Instruments every target that links crucible_dialect.  A
+#           bench writes its counters into the profile directory when
+#           it exits.  scripts/pgo-bootstrap.sh drives this mode from
+#           configure to the COLLECTION record.
+#
+# use       Reads the counters.  The profile must exist for this tier,
+#           and its TARGET record must be equal to what this
+#           configuration would write, or configuration stops.  A
+#           function whose control flow changed after collection stops
+#           the build with -Wcoverage-mismatch.  That is the GCC
+#           default and it is correct: a build that claims a profile it
+#           cannot apply is not a PGO build.  Collect again.
+#
+# This block sits at the head of the file because it clears the
+# compiler launcher, and a target reads that variable when it is
+# created.  ccache with base_dir rewrites the source path to a
+# relative form, GCC folds the source path into every function's
+# lineno checksum, and the rewrite is not the same when -fprofile-use
+# is on the line.  The use build then reports "source locations have
+# changed" for functions nobody touched.  Measured on this tree: the
+# same compile without the launcher reports none.  A PGO build runs
+# the compiler directly.  The flags this block computes are applied
+# to crucible_dialect next to its other C++26 options.
+#
+# The generate build and the use build have different build
+# directories.  GCC keys each counter file by the object path, so
+# -fprofile-prefix-path strips each build's own root from that path.
+# Without it the use build looks for keys the generate build never
+# wrote.
+#
+# -fprofile-update=atomic, because the benches are threaded and a torn
+# counter is an incorrect branch probability.  -fprofile-partial-
+# training, because the profile comes from the bench suite: a function
+# the suite did not run is optimized as usual, not shrunk as cold.
+# -Wno-missing-profile for the same reason, because CRUCIBLE_WERROR
+# would stop every test TU that has no counters.  -Wno-suggest-
+# attribute=cold, because the profile is what makes the compiler sure
+# a function is cold, and an attribute that repeats the profile adds
+# nothing.
+#
+# crucible_perf does not link crucible_dialect and is not profiled.
+# ═══════════════════════════════════════════════════════════════
+set(CRUCIBLE_PGO "off" CACHE STRING "Profile-guided optimization: off, generate or use")
+set_property(CACHE CRUCIBLE_PGO PROPERTY STRINGS off generate use)
+set(CRUCIBLE_PGO_DIR "${CMAKE_SOURCE_DIR}/pgo" CACHE PATH
+  "Root of the profile directories, one for each compiler version and hardware tier")
+set(_CRUCIBLE_PGO_COMPILE_FLAGS)
+set(_CRUCIBLE_PGO_LINK_FLAGS)
+
+if(NOT CRUCIBLE_PGO STREQUAL "off")
+  if(NOT CRUCIBLE_PGO MATCHES "^(generate|use)$")
+    message(FATAL_ERROR "CRUCIBLE_PGO is '${CRUCIBLE_PGO}'. The values are off, generate and use.")
+  endif()
+  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(FATAL_ERROR "PGO is wired for GCC. The compiler is ${CMAKE_CXX_COMPILER_ID}.")
+  endif()
+  if(CMAKE_CXX_COMPILER_LAUNCHER)
+    message(STATUS "PGO: the compiler launcher (${CMAKE_CXX_COMPILER_LAUNCHER}) is not used for this build")
+  endif()
+  set(CMAKE_CXX_COMPILER_LAUNCHER "")
+  set(CMAKE_C_COMPILER_LAUNCHER "")
+
+  # The tier is the name the compiler gives the silicon of this host.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set(_crucible_pgo_native_flag -march=native)
+    set(_crucible_pgo_tier_option "-march=")
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(_crucible_pgo_native_flag -mcpu=native)
+    set(_crucible_pgo_tier_option "-mcpu=")
+  else()
+    message(FATAL_ERROR "PGO tier detection covers x86_64 and aarch64. "
+      "CMAKE_SYSTEM_PROCESSOR is '${CMAKE_SYSTEM_PROCESSOR}'.")
+  endif()
+  execute_process(
+    COMMAND "${CMAKE_CXX_COMPILER}" ${_crucible_pgo_native_flag} -Q --help=target
+    OUTPUT_VARIABLE _crucible_pgo_target_help
+    ERROR_VARIABLE _crucible_pgo_target_error
+    RESULT_VARIABLE _crucible_pgo_target_result)
+  if(NOT _crucible_pgo_target_result EQUAL 0)
+    message(FATAL_ERROR "PGO tier detection: "
+      "'${CMAKE_CXX_COMPILER} ${_crucible_pgo_native_flag} -Q --help=target' failed:\n"
+      "${_crucible_pgo_target_error}")
+  endif()
+  if(NOT _crucible_pgo_target_help MATCHES "\n[ \t]*${_crucible_pgo_tier_option}[ \t]+([^ \t\r\n]+)")
+    message(FATAL_ERROR "PGO tier detection: the --help=target output has no "
+      "'${_crucible_pgo_tier_option}' line with a value. The compiler did not resolve native to a name.")
+  endif()
+  set(_crucible_pgo_tier "${CMAKE_MATCH_1}")
+  if(_crucible_pgo_tier STREQUAL "native")
+    message(FATAL_ERROR "PGO tier detection: the compiler reports '${_crucible_pgo_tier_option}native' "
+      "unresolved, so the tier has no name.")
+  endif()
+  # The tier name is for the directory and for the reader.  The pin is
+  # the full target option set, which two hosts with the same name but
+  # a different feature set do not share.
+  string(SHA256 _crucible_pgo_fingerprint "${_crucible_pgo_target_help}")
+  string(REGEX MATCH "^[0-9]+\\.[0-9]+" _crucible_pgo_gcc_version "${CMAKE_CXX_COMPILER_VERSION}")
+  set(CRUCIBLE_PGO_TIER "${_crucible_pgo_tier}" CACHE INTERNAL "The hardware tier of this host")
+  set(CRUCIBLE_PGO_PROFILE_DIR "${CRUCIBLE_PGO_DIR}/gcc-${_crucible_pgo_gcc_version}/${_crucible_pgo_tier}"
+    CACHE INTERNAL "The profile directory this configuration writes or reads")
+
+  # TARGET is what the generate configuration writes and what the use
+  # configuration must find, byte for byte.
+  string(TOUPPER "${CMAKE_BUILD_TYPE}" _crucible_pgo_config)
+  string(JOIN "\n" _crucible_pgo_target_record
+    "compiler=${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+    "processor=${CMAKE_SYSTEM_PROCESSOR}"
+    "tier=${_crucible_pgo_tier}"
+    "fingerprint=${_crucible_pgo_fingerprint}"
+    "build_type=${CMAKE_BUILD_TYPE}"
+    "cxx_flags=${CMAKE_CXX_FLAGS}"
+    "cxx_flags_config=${CMAKE_CXX_FLAGS_${_crucible_pgo_config}}")
+  string(APPEND _crucible_pgo_target_record "\n")
+
+  if(CRUCIBLE_PGO STREQUAL "generate")
+    file(MAKE_DIRECTORY "${CRUCIBLE_PGO_PROFILE_DIR}")
+    file(WRITE "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET" "${_crucible_pgo_target_record}")
+    set(_CRUCIBLE_PGO_COMPILE_FLAGS
+      -fprofile-generate=${CRUCIBLE_PGO_PROFILE_DIR}
+      -fprofile-update=atomic
+      -fprofile-prefix-path=${CMAKE_BINARY_DIR})
+    set(_CRUCIBLE_PGO_LINK_FLAGS
+      -fprofile-generate=${CRUCIBLE_PGO_PROFILE_DIR})
+    message(STATUS "PGO: generate, tier ${_crucible_pgo_tier}, gcc ${_crucible_pgo_gcc_version}, "
+      "profile directory ${CRUCIBLE_PGO_PROFILE_DIR}")
+  else()
+    if(NOT EXISTS "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET")
+      message(FATAL_ERROR "PGO: no profile for tier ${_crucible_pgo_tier} at ${CRUCIBLE_PGO_PROFILE_DIR}. "
+        "Run scripts/pgo-bootstrap.sh on a host of this tier, or set CRUCIBLE_PGO=off.")
+    endif()
+    file(READ "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET" _crucible_pgo_recorded_target)
+    if(NOT _crucible_pgo_recorded_target STREQUAL _crucible_pgo_target_record)
+      message(FATAL_ERROR "PGO: the profile at ${CRUCIBLE_PGO_PROFILE_DIR} was collected for a different "
+        "target. Recorded:\n${_crucible_pgo_recorded_target}\nThis configuration:\n${_crucible_pgo_target_record}"
+        "Run scripts/pgo-bootstrap.sh again with the flags you build with.")
+    endif()
+    file(GLOB _crucible_pgo_counter_files "${CRUCIBLE_PGO_PROFILE_DIR}/*.gcda")
+    list(LENGTH _crucible_pgo_counter_files _crucible_pgo_counter_count)
+    if(_crucible_pgo_counter_count EQUAL 0)
+      message(FATAL_ERROR "PGO: ${CRUCIBLE_PGO_PROFILE_DIR} has a TARGET record and no counter files. "
+        "The instrumented benches were configured and not run. Run scripts/pgo-bootstrap.sh.")
+    endif()
+    set(_crucible_pgo_collected "an unrecorded time")
+    set(_crucible_pgo_commit "an unrecorded commit")
+    if(EXISTS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION")
+      file(STRINGS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION" _crucible_pgo_collected REGEX "^collected=")
+      file(STRINGS "${CRUCIBLE_PGO_PROFILE_DIR}/COLLECTION" _crucible_pgo_commit REGEX "^commit=")
+      string(REGEX REPLACE "^collected=" "" _crucible_pgo_collected "${_crucible_pgo_collected}")
+      string(REGEX REPLACE "^commit=" "" _crucible_pgo_commit "${_crucible_pgo_commit}")
+      execute_process(
+        COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse HEAD
+        OUTPUT_VARIABLE _crucible_pgo_head
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _crucible_pgo_head_result
+        ERROR_QUIET)
+      if(_crucible_pgo_head_result EQUAL 0 AND NOT _crucible_pgo_head STREQUAL _crucible_pgo_commit)
+        message(WARNING "PGO: the profile was collected at ${_crucible_pgo_commit} and HEAD is "
+          "${_crucible_pgo_head}. A function whose control flow changed between the two stops the "
+          "build with -Wcoverage-mismatch. Run scripts/pgo-bootstrap.sh again to collect at HEAD.")
+      endif()
+    endif()
+    set(_CRUCIBLE_PGO_COMPILE_FLAGS
+      -fprofile-use=${CRUCIBLE_PGO_PROFILE_DIR}
+      -fprofile-prefix-path=${CMAKE_BINARY_DIR}
+      -fprofile-partial-training
+      -Wno-missing-profile
+      -Wno-suggest-attribute=cold)
+    message(STATUS "PGO: use, tier ${_crucible_pgo_tier}, ${_crucible_pgo_counter_count} counter files "
+      "collected ${_crucible_pgo_collected} at ${_crucible_pgo_commit}")
+  endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -250,6 +433,15 @@ target_compile_options(crucible_dialect INTERFACE
   -freflection
   -fcontracts
 )
+
+# The CRUCIBLE_PGO block at the head of this file computes these.  Both
+# lists are empty when CRUCIBLE_PGO is off.
+if(_CRUCIBLE_PGO_COMPILE_FLAGS)
+  target_compile_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_COMPILE_FLAGS})
+endif()
+if(_CRUCIBLE_PGO_LINK_FLAGS)
+  target_link_options(crucible_dialect INTERFACE ${_CRUCIBLE_PGO_LINK_FLAGS})
+endif()
 
 # FIXY-V-094 — crucible_fp_strict INTERFACE library defines THE FLOOR
 # for FP discipline across every consumer of `crucible`.  PUBLIC link

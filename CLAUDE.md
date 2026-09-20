@@ -1007,11 +1007,13 @@ Common flags +
 
 ### Release preset
 
-The `release` preset in CMakePresets.json sets `-O1 -march=native -DNDEBUG -g`
-plus the common flags and `-fcontract-evaluation-semantic=observe`. The rest of
-the list below is the target shape, not what ships: `-O3`, `-mtune=native`,
-`-flto=auto`, the Graphite passes and PGO are not wired. Read the preset, not
-this block, when you need to know what a Release binary was built with.
+The `release` preset in CMakePresets.json sets `-O1 -march=native -DNDEBUG -g`,
+but CMake appends `CMAKE_CXX_FLAGS_RELEASE` (`-O3 -DNDEBUG`) after it and GCC
+takes the last `-O`, so every Release TU compiles at `-O3`. The common flags
+and `-fcontract-evaluation-semantic=observe` apply. PGO is wired through
+`CRUCIBLE_PGO` (§VIII). `-mtune=native`, `-flto=auto` and the Graphite passes
+are not wired. Read the preset and a compile line, not this block, when you
+need to know what a Release binary was built with.
 
 ```
 Common flags +
@@ -1378,15 +1380,15 @@ Rule: if a `[[unlikely]]` block has more than 8 lines of non-trivial work, outli
 Release builds are profile-guided; non-PGO release is a dev build, not production. Typical gain on branchy code: **5-15%**.
 
 ```bash
-# 1. Instrumented build
-cmake --preset release -DCRUCIBLE_PGO=generate && cmake --build --preset release
+# 1. Collect the profile for this host's tier: configures pgo-generate,
+#    builds the benches, runs them, writes pgo/gcc-<version>/<tier>/
+scripts/pgo-bootstrap.sh
 
-# 2. Run the bench suite under production workload
-./build/bench/bench_dispatch && ./build/bench/bench_trace_ring
-
-# 3. Rebuild with profile
-cmake --preset release -DCRUCIBLE_PGO=use && cmake --build --preset release
+# 2. Build with it
+cmake --preset pgo && cmake --build --preset pgo
 ```
+
+The tier is the name the compiler resolves native to (`znver5`, `sapphirerapids`; on aarch64 the `-mcpu=native` name), so the same two commands serve every host and no source file names the hardware. `CRUCIBLE_PGO=use` refuses a profile from a different compiler, tier or flag set, and a function whose control flow changed after collection stops the build with `-Wcoverage-mismatch`. Collect again. The CMake block in the root `CMakeLists.txt` holds the flag rationale.
 
 Alternative (continuous profiling from production runs): **AutoFDO** via `-fauto-profile=<profile.afdo>` fed from `perf record`. Same wins, no instrumented build.
 
