@@ -647,15 +647,32 @@ public:
     using resource_type = Resource;
     using loop_ctx = LoopCtx;
 
-    static constexpr std::size_t branch_count = sizeof...(Branches);
+    // Read from the protocol rather than re-derived from this class's
+    // own pack.  `Offer<Sender<Role>, Bs...>` matches this
+    // specialization with `Branches... = {Sender<Role>, Bs...}`, so
+    // `sizeof...(Branches)` counts the sender annotation as a branch
+    // while Protocol.h's own partial specialization does not.  The two
+    // then disagree about one type: `Offer<Sender<R>, B0, B1>` reports
+    // 2 through the protocol and 3 through the handle, `pick_local<0>`
+    // selects the annotation instead of the first branch, and the
+    // dispatch bounds check admits a peer label one past the last real
+    // branch.  Deriving both the count and the branch list from
+    // `protocol` leaves exactly one place that decides what a branch
+    // is, and that place is the combinator that owns the annotation.
+    using branches = typename protocol::branches_tuple;
+
+    static constexpr std::size_t branch_count = protocol::branch_count;
 
     // Mirror of the Select guard.  No peer label decodes to a valid
-    // branch here.
+    // branch here.  An `Offer<Sender<Role>>` carrying an annotation and
+    // no branch reaches this too, because the count excludes the tag.
     static_assert(branch_count > 0, "fixy::session::diagnostic [Empty_Choice_Combinator]: "
                                     "SessionHandle<Offer<>>: cannot construct a runnable handle "
                                     "on Offer<> with zero branches — there is no label the peer "
-                                    "can send.  See mint_session_handle for the full diagnostic "
-                                    "and remediation.");
+                                    "can send.  A sender-annotated Offer<Sender<Role>> reaches "
+                                    "this as well: the annotation names the signalling role and "
+                                    "is not a branch.  See mint_session_handle for the full "
+                                    "diagnostic and remediation.");
 
     constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept
@@ -678,7 +695,7 @@ public:
         const std::size_t idx = std::invoke(transport, resource_);
         this->mark_consumed_();
         return dispatch_branch_(idx, std::forward<Resource>(resource_), std::move(handler),
-                                std::make_index_sequence<sizeof...(Branches)>{});
+                                std::make_index_sequence<branch_count>{});
     }
 
     // Assumes branch I WITHOUT receiving the peer's label.  The name
@@ -688,13 +705,15 @@ public:
     // pipeline whose branch is fixed at compile time on both sides.
     template <std::size_t I>
     [[nodiscard]] constexpr auto pick_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        static_assert(I < sizeof...(Branches), "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
-                                               "SessionHandle<Offer<...>>::pick_local<I>(): branch index "
-                                               "I is out of range for this Offer position.  The protocol "
-                                               "has fewer branches than the index requested; verify I < "
-                                               "branch_count at the call site.");
+        static_assert(I < branch_count, "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                        "SessionHandle<Offer<...>>::pick_local<I>(): branch index "
+                                        "I is out of range for this Offer position.  The protocol "
+                                        "has fewer branches than the index requested; verify I < "
+                                        "branch_count at the call site.  On a sender-annotated "
+                                        "Offer<Sender<Role>, B0, ...> the annotation is not a "
+                                        "branch, so B0 is index 0.");
         this->mark_consumed_();
-        using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
+        using Chosen = std::tuple_element_t<I, branches>;
         return detail::step_to_next<Chosen, Resource, LoopCtx, Policy>(std::forward<Resource>(resource_));
     }
 
@@ -716,13 +735,13 @@ public:
 private:
     template <std::size_t I>
     static constexpr auto make_branch_handle_(Resource r) {
-        using B = std::tuple_element_t<I, std::tuple<Branches...>>;
+        using B = std::tuple_element_t<I, branches>;
         return detail::step_to_next<B, Resource, LoopCtx, Policy>(std::forward<Resource>(r));
     }
 
     template <std::size_t... Is, typename Handler>
     static constexpr auto dispatch_branch_(std::size_t idx, Resource res, Handler handler, std::index_sequence<Is...>) {
-        if (idx >= sizeof...(Branches)) [[unlikely]] {
+        if (idx >= branch_count) [[unlikely]] {
             std::abort();
         }
 
