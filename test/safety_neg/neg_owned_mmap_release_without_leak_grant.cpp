@@ -27,7 +27,7 @@
 //   "no matching function" / "constraints not satisfied" /
 //   "IsLeakGrant" / "is_leak_grant".
 
-#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/_OwnedMmap.h>
 
 #include <utility>
 

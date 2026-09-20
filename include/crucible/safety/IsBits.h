@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 
 #include <cstdlib>
 #include <type_traits>

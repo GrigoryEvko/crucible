@@ -27,7 +27,7 @@
 // constraint fires at template instantiation; no fallback overload
 // exists for at<99>().
 
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 
 namespace saf = crucible::safety;
 

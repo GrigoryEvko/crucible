@@ -5,7 +5,7 @@
 // the other way round.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/_Secret.h>  // for DeclassificationPolicy concept
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionSubtype.h>

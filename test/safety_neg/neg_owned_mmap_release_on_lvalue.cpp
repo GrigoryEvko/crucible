@@ -36,7 +36,7 @@
 // Expected diagnostic family (matched by CMakeLists regex):
 //   "no matching function" / "cannot bind" / "rvalue" / "ref-qualif".
 
-#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/_OwnedMmap.h>
 #include <crucible/fixy/Mmap.h>  // pulls grant::leak::resource specialization
 
 namespace {

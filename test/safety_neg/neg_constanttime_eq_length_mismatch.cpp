@@ -27,7 +27,7 @@
 //
 // U-141 — Class M fixture (closes ConstantTime slice of #146 A8-P2).
 
-#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/_ConstantTime.h>
 
 #include <cstddef>
 #include <span>

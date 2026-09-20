@@ -5,7 +5,7 @@
 // #134 the static_assert fires `[Checked_Capacity_Overflow]` at
 // the first overflowing step.
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include <cstddef>
 #include <limits>

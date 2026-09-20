@@ -38,7 +38,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 #include <crucible/safety/ClockSource.h>
 
 #include <chrono>

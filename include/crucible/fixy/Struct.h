@@ -4,8 +4,8 @@
 // keyword.
 
 #include <crucible/Saturate.h>
-#include <crucible/safety/Checked.h>
-#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/_Checked.h>
+#include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>

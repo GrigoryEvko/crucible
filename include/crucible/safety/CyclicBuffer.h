@@ -9,8 +9,8 @@
 // size would under-report a full ring.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Cyclic.h>
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_Cyclic.h>
+#include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_Mutation.h>
 
 #include <cstddef>

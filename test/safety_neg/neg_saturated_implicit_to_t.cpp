@@ -27,7 +27,7 @@
 // initialization" pointing at the implicit T = Saturated<T>
 // assignment.
 
-#include <crucible/safety/Saturated.h>
+#include <crucible/safety/_Saturated.h>
 
 namespace saf = crucible::safety;
 

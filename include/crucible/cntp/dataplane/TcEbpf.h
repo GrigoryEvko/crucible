@@ -5,7 +5,7 @@
 // standing in for a kernel map.
 
 #include <crucible/cntp/dataplane/Xdp.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/_Tagged.h>
 

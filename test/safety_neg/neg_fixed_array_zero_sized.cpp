@@ -21,7 +21,7 @@
 // the FixedArray<int, 0> instantiation.  The (N > 0) requires-clause
 // on the primary template fires before the body is substituted.
 
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 
 namespace saf = crucible::safety;
 

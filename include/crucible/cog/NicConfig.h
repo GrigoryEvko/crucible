@@ -13,7 +13,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/_Tagged.h>

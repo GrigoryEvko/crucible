@@ -24,7 +24,7 @@
 // constraints are not satisfied" / "no matching template" pointing
 // at Saturated<MyStruct> instantiation.
 
-#include <crucible/safety/Saturated.h>
+#include <crucible/safety/_Saturated.h>
 
 namespace saf = crucible::safety;
 

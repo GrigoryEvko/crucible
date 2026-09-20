@@ -12,7 +12,7 @@
 #include <crucible/safety/AlignedBuffer.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/HugePageBuffer.h>
-#include <crucible/safety/OwnedFile.h>
+#include <crucible/safety/_OwnedFile.h>
 #include <crucible/safety/PublishCommit.h>
 
 #include <cstdint>

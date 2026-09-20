@@ -5,7 +5,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>

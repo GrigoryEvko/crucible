@@ -12096,7 +12096,7 @@ crucible_neg_compile_test(neg_fd_errno_shaped_negative
 crucible_neg_compile_test(neg_file_handle_errno_shaped_negative
     "non-constant condition|__builtin_trap|contract violation|static assertion")
 
-# FIXY-V-032 HS14 floor — OwnedFile (safety/OwnedFile.h) is the RAII
+# FIXY-V-032 HS14 floor — OwnedFile (safety/_OwnedFile.h) is the RAII
 # wrapper for std::FILE* mirroring FileHandle's int-fd discipline.
 # Exclusive ownership = copy-ctor + copy-assign deleted with the
 # structured reason string.  Two fixtures pin the two boundaries.
@@ -12105,7 +12105,7 @@ crucible_neg_compile_test(neg_owned_file_copy_rejected
 crucible_neg_compile_test(neg_owned_file_copy_assign_rejected
     "use of deleted function|deleted|copy|double-close")
 
-# FIXY-V-231 HS14 floor — OwnedMmap (safety/OwnedMmap.h) is the RAII
+# FIXY-V-231 HS14 floor — OwnedMmap (safety/_OwnedMmap.h) is the RAII
 # wrapper for mmap'd (addr, len) pairs, paralleling OwnedFile / FileHandle.
 # Exclusive ownership = copy-ctor + copy-assign deleted with the structured
 # reason string; phantom Tag is load-bearing for overload resolution.

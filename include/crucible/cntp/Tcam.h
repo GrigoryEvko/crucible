@@ -5,7 +5,7 @@
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>

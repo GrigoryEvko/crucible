@@ -40,7 +40,7 @@
 // FIXY-U-154 — closes the FixedArray slice of #146 A8-P2 (wrapper
 // had ZERO neg-compile fixtures before this ship).
 
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 
 #include <cstdint>
 

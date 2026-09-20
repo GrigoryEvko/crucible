@@ -9,7 +9,7 @@
 #include <crucible/cntp/Pacing.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>

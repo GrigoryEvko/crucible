@@ -46,7 +46,7 @@
 #include <crucible/ledger/Competence.h>
 #include <crucible/ledger/HostFingerprint.h>
 #include <crucible/ledger/Verdict.h>
-#include <crucible/safety/Path.h>
+#include <crucible/safety/_Path.h>
 #include <crucible/safety/sanitize/PathTraversal.h>
 
 #include <unistd.h>

@@ -3,7 +3,7 @@
 #include <crucible/perf/detail/BpfLoader.h>
 
 #include <crucible/safety/_Mutation.h>
-#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/_OwnedMmap.h>
 #include <crucible/safety/_Pinned.h>
 
 #include <linux/perf_event.h>

@@ -18,7 +18,7 @@
 // Expected diagnostic family (matched by CMakeLists regex):
 //   "use of deleted function" / "deleted" / "copy" / "double-close".
 
-#include <crucible/safety/OwnedFile.h>
+#include <crucible/safety/_OwnedFile.h>
 
 #include <cstdio>
 

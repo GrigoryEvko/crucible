@@ -19,7 +19,7 @@
 // constraints are not satisfied" / "no matching template" pointing at
 // the Cyclic<int, 8> instantiation (unsigned_integral<int> is false).
 
-#include <crucible/safety/Cyclic.h>
+#include <crucible/safety/_Cyclic.h>
 
 namespace saf = crucible::safety;
 

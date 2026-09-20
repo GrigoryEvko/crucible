@@ -4,7 +4,7 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_Stale.h>

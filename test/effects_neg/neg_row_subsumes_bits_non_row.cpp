@@ -14,7 +14,7 @@
 // the row_subsumes_bits<int>(...) call site.
 
 #include <crucible/effects/EffectRowProjection.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;

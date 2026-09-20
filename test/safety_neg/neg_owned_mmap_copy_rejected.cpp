@@ -27,7 +27,7 @@
 // Expected diagnostic family (matched by CMakeLists regex):
 //   "use of deleted function" / "deleted" / "copy" / "double-unmap".
 
-#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/_OwnedMmap.h>
 
 namespace {
 // Distinct empty struct tag — per-call-site identity discipline.

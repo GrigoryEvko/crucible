@@ -37,7 +37,7 @@
 // FIXY-U-154 — second of the FixedArray pair (closes its slice of
 // #146 A8-P2).
 
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 
 #include <cstdint>
 

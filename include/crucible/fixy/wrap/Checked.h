@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include <cstddef>
 #include <cstdint>

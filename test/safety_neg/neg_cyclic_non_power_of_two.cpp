@@ -18,7 +18,7 @@
 // constraints are not satisfied" / "no matching template" pointing at
 // the Cyclic<uint32_t, 6> instantiation.
 
-#include <crucible/safety/Cyclic.h>
+#include <crucible/safety/_Cyclic.h>
 
 namespace saf = crucible::safety;
 

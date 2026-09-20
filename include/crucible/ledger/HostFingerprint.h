@@ -38,7 +38,7 @@
 #include <crucible/concurrent/Topology.h>
 #include <crucible/handles/FileHandle.h>
 #include <crucible/mimic/CogMimic.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Tagged.h>
 
 #if defined(__aarch64__)

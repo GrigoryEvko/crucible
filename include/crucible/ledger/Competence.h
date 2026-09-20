@@ -24,7 +24,7 @@
 
 #include <crucible/concurrent/Topology.h>
 #include <crucible/ledger/HostFingerprint.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 
 #include <algorithm>
 #include <cstddef>

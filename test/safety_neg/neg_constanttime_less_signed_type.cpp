@@ -26,7 +26,7 @@
 // U-141 — first neg-compile pair for ct::* (closes the ConstantTime
 // slice of backlog #146 A8-P2 alongside U-140's Machine coverage).
 
-#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/_ConstantTime.h>
 
 #include <cstdint>
 

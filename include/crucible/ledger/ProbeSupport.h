@@ -48,7 +48,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/ledger/Ledger.h>
-#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/_OwnedMmap.h>
 
 #include <bench_harness.h>
 

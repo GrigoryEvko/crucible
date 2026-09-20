@@ -28,7 +28,7 @@
 // site.  The (sizeof...(Args) == N) constraint fires; no other
 // in_place ctor overload matches.
 
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 
 #include <utility>
 

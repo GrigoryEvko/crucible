@@ -2,7 +2,7 @@
 // across add, sub, mul, div, mod, neg, abs and the shifts. Every signed
 // overflow corner and the divide-by-zero path is exercised.
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include "test_assert.h"
 #include <cstdint>

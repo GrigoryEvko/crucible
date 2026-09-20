@@ -23,7 +23,7 @@
 // "__builtin_trap", "contract violation", or equivalent — anything
 // proving the consteval invocation was refused.
 
-#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/_ConstantTime.h>
 
 #include <array>
 #include <cstddef>

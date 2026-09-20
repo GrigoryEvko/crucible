@@ -6,7 +6,7 @@
 // turning a previously-silent compile-time multiplication bug into a
 // build error with a grep-discoverable diagnostic prefix.
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include <cstddef>
 

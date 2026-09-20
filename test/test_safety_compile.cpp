@@ -15,22 +15,22 @@
 // headers do; this is only the guarantee that their assertions run.
 
 #include <crucible/safety/_AllocClass.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
 #include <crucible/safety/Budgeted.h>
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 #include <crucible/safety/_CipherTier.h>
-#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/FixedArray.h>
+#include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/_Linear.h>
@@ -48,7 +48,7 @@
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/Saturated.h>
+#include <crucible/safety/_Saturated.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Safety.h>
 #include <crucible/safety/_ScopedView.h>

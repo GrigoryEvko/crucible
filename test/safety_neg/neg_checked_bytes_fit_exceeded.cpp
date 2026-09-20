@@ -5,7 +5,7 @@
 // naming the budget-fit discipline — used for arena page sizes,
 // cache-line budgets, permission-carrier footprint limits, etc.
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include <cstdint>
 

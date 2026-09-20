@@ -40,7 +40,7 @@
 // Expected diagnostic family (matched by CMakeLists regex):
 //   "cannot convert" / "no matching function" / "deduced conflicting".
 
-#include <crucible/safety/OwnedMmap.h>
+#include <crucible/safety/_OwnedMmap.h>
 
 #include <utility>
 

@@ -6,7 +6,7 @@
 // diagnostic name covers both directions of integer-domain
 // violation).
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include <cstddef>
 

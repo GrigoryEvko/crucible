@@ -12,7 +12,7 @@
 // declarations in one namespace is not a redeclaration, so the umbrella's own
 // declarations stay compatible.
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/Saturated.h>
+#include <crucible/safety/_Saturated.h>
 #include <version>
 
 namespace crucible::fixy::wrap {

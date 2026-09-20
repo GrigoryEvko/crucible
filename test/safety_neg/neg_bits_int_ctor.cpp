@@ -22,7 +22,7 @@
 // rejected because scoped enum classes do NOT implicitly convert
 // from integer literals.
 
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 
 namespace saf = crucible::safety;
 

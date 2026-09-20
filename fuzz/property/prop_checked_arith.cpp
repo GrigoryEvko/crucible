@@ -39,7 +39,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/Checked.h>
+#include <crucible/safety/_Checked.h>
 
 #include <cstdint>
 #include <limits>

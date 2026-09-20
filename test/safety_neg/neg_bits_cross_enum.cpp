@@ -25,7 +25,7 @@
 // same-instantiation pairs (no implicit conversion exists between
 // distinct Bits<E> instantiations).
 
-#include <crucible/safety/Bits.h>
+#include <crucible/safety/_Bits.h>
 
 namespace saf = crucible::safety;
 
