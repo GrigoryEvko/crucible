@@ -69,6 +69,7 @@
 #include <foundation/algebra/Modality.h>
 
 #include <concepts>
+#include <meta>
 #include <source_location>
 #include <string_view>
 #include <type_traits>
@@ -180,6 +181,15 @@ using DefaultAbandonmentPolicy =
 // assertion keeps meaning if the default above is ever re-decided.
 inline constexpr bool default_policy_checks_abandonment = DefaultAbandonmentPolicy::checks_abandonment;
 
+// The tree's one spelling of a type's name.  Every diagnostic that
+// prints a protocol, and the concept's own name check below, read this,
+// so a handle cannot report one spelling while a diagnostic prints
+// another.  display_string_of is the same primitive foundation/reflect/
+// Hash.h uses for stable_name_of, and it returns a view into the
+// program's constant data.
+template <typename T>
+inline constexpr std::string_view type_display_name_v = std::meta::display_string_of(^^T);
+
 // ── The Stepping wrapper contract ────────────────────────────────────
 //
 // leq on this modality is protocol subtyping, so the grade of a handle
@@ -189,12 +199,12 @@ inline constexpr bool default_policy_checks_abandonment = DefaultAbandonmentPoli
 // stepping wrapper cannot be correct without: it reports the Stepping
 // modality, it names a protocol and a resource, and it is linear.
 //
-// The name forwarders repeat GradedWrapper's cheat closure, and for
-// the same reason.  A wrapper can define protocol_name() with a body
-// that returns something else, and then every diagnostic in the tree
-// reports a protocol the handle does not have.  Comparing the reported
-// name against the name of the type it claims closes that: the only
-// way to satisfy the comparison is to actually forward.
+// The name forwarder repeats GradedWrapper's cheat closure, and for the
+// same reason.  A wrapper can define protocol_name() with a body that
+// returns something else, and then every diagnostic in the tree reports
+// a protocol the handle does not have.  Comparing the reported name
+// against the name of the type it claims closes that: the only way to
+// satisfy the comparison is to actually forward.
 
 template <typename H>
 concept SteppingGraded = requires {
@@ -205,6 +215,11 @@ concept SteppingGraded = requires {
 
     { H::protocol_name() } noexcept -> std::same_as<std::string_view>;
     { H::is_terminal() } noexcept -> std::same_as<bool>;
+
+    // The cheat closure.  A handle that renders its protocol any other
+    // way fails here rather than shipping a diagnostic that names the
+    // wrong protocol.
+    requires(H::protocol_name() == type_display_name_v<typename H::protocol_type>);
 
     // The handle's own answer must agree with the protocol trait.  A
     // handle that reported itself terminal while sitting at a Send

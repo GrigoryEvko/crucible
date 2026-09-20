@@ -369,6 +369,11 @@ fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
 # reserved ModalityKind::Stepping for and never wrote down.
 fixy_test(test_session_protocol)
 
+# Handle.h is the runtime half.  The test forks a child to prove the
+# abandonment policy's destructor really runs, so a passing run prints
+# one abandonment banner on stderr from that child.
+fixy_test(test_session_handle)
+
 # A channel whose two endpoints are not duals has no deadlock-freedom
 # guarantee.  Both operands here are individually well-formed, so the
 # refusal can only come from the duality clause.
@@ -384,3 +389,22 @@ fixy_neg_compile_test(neg_sess_compose_at_branch_no_choice
   "static assertion failed"
   "fixy::session::diagnostic \\[Branch_Compose_No_Choice\\]"
   "compose_at_branch_t<P, I, Q>")
+
+# HS14 for mint_session_handle.  Its requires-clause is the whole
+# admission gate, so each clause gets a fixture that fails through it
+# and through no other: an ill-formed protocol, a well-formed protocol
+# that is not runnable, and a resource whose address is not stable.
+fixy_neg_compile_test(neg_sess_mint_ill_formed
+  "no matching function for call to .mint_session_handle"
+  "constraints not satisfied"
+  "is_well_formed_v<Proto>")
+
+fixy_neg_compile_test(neg_sess_mint_empty_choice
+  "no matching function for call to .mint_session_handle"
+  "constraints not satisfied"
+  "is_empty_choice_v<Proto>")
+
+fixy_neg_compile_test(neg_sess_mint_unpinned_reference
+  "no matching function for call to .mint_session_handle"
+  "constraints not satisfied"
+  "satisfaction of .SessionResource<Resource>.")
