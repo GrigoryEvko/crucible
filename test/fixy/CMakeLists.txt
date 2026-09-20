@@ -408,3 +408,52 @@ fixy_neg_compile_test(neg_sess_mint_unpinned_reference
   "no matching function for call to .mint_session_handle"
   "constraints not satisfied"
   "satisfaction of .SessionResource<Resource>.")
+
+# ── Task #118 (A14.2): the machine and Vigil-mode session bridges ────
+fixy_test(test_session_bridges)
+
+# HS14 for mint_session_from_machine: one fixture per clause of its
+# gate — the protocol it will mint handles over, and the arguments it
+# builds the state from.
+fixy_neg_compile_test(neg_sess_machine_bridge_ill_formed
+  "no matching function for call to .mint_session_from_machine"
+  "constraints not satisfied"
+  "is_well_formed_v<Proto>")
+
+fixy_neg_compile_test(neg_sess_machine_bridge_state_args
+  "no matching function for call to .mint_session_from_machine"
+  "constraints not satisfied"
+  "is_constructible_v<State")
+
+# HS14 for mint_atomic_session: the cell's read shape, and the protocol.
+fixy_neg_compile_test(neg_sess_atomic_not_a_cell
+  "no matching function for call to .mint_atomic_session"
+  "constraints not satisfied"
+  "satisfaction of .AtomicMachineCell<Cell>.")
+
+fixy_neg_compile_test(neg_sess_atomic_ill_formed
+  "no matching function for call to .mint_atomic_session"
+  "constraints not satisfied"
+  "is_well_formed_v<Proto>")
+
+# HS14 for mint_vigil_mode_bridge.  Its gate is one clause, so the two
+# fixtures separate the two ways to fail it: an unrelated type, and a
+# cell that satisfies the structural concept and is still refused —
+# which is what says the gate is nominal rather than structural.
+fixy_neg_compile_test(neg_sess_vigil_bridge_wrong_cell
+  "no matching function for call to .mint_vigil_mode_bridge"
+  "satisfaction of .CanMintVigilModeBridge<Cell>."
+  "long unsigned int")
+
+fixy_neg_compile_test(neg_sess_vigil_bridge_lookalike_cell
+  "no matching function for call to .mint_vigil_mode_bridge"
+  "satisfaction of .CanMintVigilModeBridge<Cell>."
+  "LookalikeCell")
+
+# The transition relation itself: DIVERGED has no edge in either
+# direction, so forming the transition type is where the pair is
+# refused.
+fixy_neg_compile_test(neg_sess_vigil_illegal_transition
+  "static assertion failed"
+  "fixy::session::diagnostic \\[VigilModeBridge_IllegalTransition\\]"
+  "admitted_mode_transitions")
