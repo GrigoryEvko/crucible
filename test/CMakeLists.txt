@@ -15723,5 +15723,26 @@ set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
   ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
   LABELS "ci_guard;stage-A1")
 
+# parse_clean owns the one question every AST gate depends on: does the file
+# parse at all.  The AST gates read a tree-sitter parse from the pinned kit
+# rather than scan text, so a file that does not parse is a silent hole in all
+# of them at once.  The gate fails in three directions — an unadmitted parse
+# error, a roster entry whose file parses clean now, and a roster entry naming
+# a path that no longer exists — so the roster in scripts/tsast.py cannot rot.
+#
+# Exit 3 (the pinned kit is absent) is a SKIP here, the way frozen_tree skips a
+# shallow clone.  A developer who has not run scripts/install-tree-sitter.sh
+# gets the instruction rather than a failure.  CI installs the kit in both the
+# guards job and the build job, so CI always enforces.
+add_test(NAME parse_clean_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-parse-clean.py --self-test)
+add_test(NAME parse_clean
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-parse-clean.py)
+add_test(NAME tsast_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/tsast.py --self-test)
+set_tests_properties(parse_clean parse_clean_self_test tsast_self_test PROPERTIES
+    LABELS "ci_guard;ast")
+set_tests_properties(parse_clean tsast_self_test PROPERTIES SKIP_RETURN_CODE 3)
+
 add_subdirectory(foundation)
 add_subdirectory(fixy)

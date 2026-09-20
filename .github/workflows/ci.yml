@@ -123,6 +123,15 @@ jobs:
           bash scripts/check-clang-format.sh --self-test
           bash scripts/check-clang-format.sh
 
+      # parse_clean owns the question every AST gate depends on: does the file
+      # parse. A file that does not parse is a silent hole in all of them at
+      # once, so this runs before any gate that reads an AST.
+      - name: AST parse coverage (self-test + scan)
+        run: |
+          python3 scripts/tsast.py --self-test
+          python3 scripts/check-parse-clean.py --self-test
+          python3 scripts/check-parse-clean.py
+
       - name: trait injection guard (self-test + scan)
         run: |
           bash scripts/check-trait-injection.sh --self-test
