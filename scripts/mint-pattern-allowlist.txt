@@ -165,6 +165,14 @@ include/crucible/fixy/Mmap.h:mint_mmap_anon:constexpr-ok
 include/crucible/fixy/Sched.h:mint_affinity:constexpr-ok
 include/crucible/fixy/Sched.h:mint_priority:constexpr-ok
 include/crucible/fixy/Sched.h:mint_scheduler_policy:constexpr-ok
+
+# ── fixy/os/Sched.h — the ported copies of the three entries above.
+# The carve-out is the same one and for the same reason: each body
+# issues a scheduling syscall, so the factory cannot be constexpr.
+# Both sets stand until the old tree is deleted.
+include/fixy/os/Sched.h:mint_affinity:constexpr-ok
+include/fixy/os/Sched.h:mint_priority:constexpr-ok
+include/fixy/os/Sched.h:mint_scheduler_policy:constexpr-ok
 include/crucible/fixy/spawn/Spawn.h:mint_parallel_for:constexpr-ok
 include/crucible/fixy/spawn/Spawn.h:mint_spawn:constexpr-ok
 
