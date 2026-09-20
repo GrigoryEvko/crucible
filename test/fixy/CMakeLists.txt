@@ -706,6 +706,33 @@ fixy_neg_compile_test(neg_stage_shape_value_preserving_on_non_stage
   "use of invalid variable template"
   "the expression .\\(arity_v<FnPtr>\\) >= 2 \\[with FnPtr = &nullary_body\\(\\)\\]. evaluated to .false.")
 
+# ── Task #189: the payload row is fail-closed ─────────────────────────
+#
+# The extractor is entirely compile-time, so this test is first the
+# sentinel that compiles its static_assert wall: until Stage.h lands,
+# nothing else includes the header.  It also pins the three roster
+# cardinalities, which is what makes a new payload family a two-place
+# edit a reviewer sees.
+fixy_test(test_payload_row)
+#
+# The old extractor's primary template answered Row<> for a payload
+# nobody classified, and an empty row means "needs no capability", so an
+# unrecognised wrapper satisfied every context.  Its own header said so.
+# The primary is a static_assert now, and these two fixtures are what
+# stands on it.  The first probes a wrapper holding an int, where Row<>
+# would have been right for the wrong reason; the second probes the same
+# wrapper holding a computation engaged at Row<Bg>, where Row<> would
+# have let a foreground context admit a background effect.  A check that
+# read the wrapper's contents rather than its family would pass the
+# first and fail the second, so both are required.  The type arrives in
+# the substitution note, which the fixture source does not contain.
+fixy_neg_compile_test(neg_payload_row_unclassified_wrapper
+  "static assertion failed: payload_row<T>: T is a class template specialization whose family is on none of the "
+  "with T = \\{anonymous\\}::UnclassifiedWrapper<int>")
+fixy_neg_compile_test(neg_payload_row_unclassified_hides_effect
+  "static assertion failed: payload_row<T>: T is a class template specialization whose family is on none of the "
+  "with T = \\{anonymous\\}::UnclassifiedWrapper<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >")
+
 # ── Task #119 (A15): the publication handles ─────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a
