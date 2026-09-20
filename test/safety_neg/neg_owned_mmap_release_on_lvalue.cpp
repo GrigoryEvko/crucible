@@ -37,7 +37,7 @@
 //   "no matching function" / "cannot bind" / "rvalue" / "ref-qualif".
 
 #include <crucible/safety/_OwnedMmap.h>
-#include <crucible/fixy/Mmap.h>  // pulls grant::leak::resource specialization
+#include <crucible/fixy/_Mmap.h>  // pulls grant::leak::resource specialization
 
 namespace {
 struct ProbeRegion {};

@@ -19,7 +19,7 @@
 // Expected diagnostic: rationale_nonempty_v / static assertion
 //                      failed / Rationale must be non-empty.
 
-#include <crucible/fixy/spawn/SpawnGrant.h>
+#include <crucible/fixy/spawn/_SpawnGrant.h>
 
 namespace neg_fixy_v_204_grant_empty_rationale {
 

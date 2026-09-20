@@ -3,7 +3,7 @@
 // values the compiler cannot fold, so the same projection is exercised as a
 // real bit-cast at runtime.
 
-#include <crucible/fixy/fp/Canonicalize.h>
+#include <crucible/fixy/fp/_Canonicalize.h>
 #include <crucible/NumericalRecipe.h>
 
 #include <bit>

@@ -24,7 +24,7 @@
 //                      / associated constraints / requires-clause /
 //                      `is_same_v` references the six declared tags.
 
-#include <crucible/fixy/spawn/JoinPolicy.h>
+#include <crucible/fixy/spawn/_JoinPolicy.h>
 
 namespace neg_fixy_v_203_join_imposter_struct {
 

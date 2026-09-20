@@ -13,7 +13,7 @@
 // SpinGuard<Tag>::SpinGuard(SpinLock<Tag>&) — only the
 // (SpinLock<Tag>&, Permission<Tag>&) overload exists.
 
-#include <crucible/fixy/concurrent/SpinLock.h>
+#include <crucible/fixy/concurrent/_SpinLock.h>
 
 struct GateTag {};
 

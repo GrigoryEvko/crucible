@@ -287,7 +287,7 @@ add_library(crucible_dialect INTERFACE)
 add_library(crucible STATIC
   src/ContractHandler.cpp
   src/_DiagRuntime.cpp
-  src/fixy/Fs.cpp
+  src/fixy/_Fs.cpp
   src/canopy/HyParView.cpp
   src/canopy/Lifeguard.cpp
   src/canopy/Plumtree.cpp

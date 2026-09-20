@@ -24,7 +24,7 @@
 // type_tree_contains_throws|crucible::fixy::ctrl::throws".
 
 #include <crucible/permissions/_PermissionFork.h>
-#include <crucible/fixy/ctrl/Throws.h>
+#include <crucible/fixy/ctrl/_Throws.h>
 
 namespace neg_permission_fork_callable_carrying_cvref_throws_rejected {
 

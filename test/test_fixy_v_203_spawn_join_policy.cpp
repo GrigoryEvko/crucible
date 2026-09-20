@@ -2,7 +2,7 @@
 // in. Compiling this file runs the included header's own static_asserts
 // under the project warning flags.
 
-#include <crucible/fixy/spawn/JoinPolicy.h>
+#include <crucible/fixy/spawn/_JoinPolicy.h>
 
 #include <cstdint>
 #include <type_traits>

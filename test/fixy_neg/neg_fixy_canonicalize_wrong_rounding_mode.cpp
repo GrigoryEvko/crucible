@@ -40,7 +40,7 @@
 // Expected diagnostic: "RoundingMode::RN" OR "round-to-nearest" OR
 // "static assertion failed".
 
-#include <crucible/fixy/fp/Canonicalize.h>
+#include <crucible/fixy/fp/_Canonicalize.h>
 #include <crucible/NumericalRecipe.h>
 
 namespace fp = crucible::fixy::fp;

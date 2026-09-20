@@ -383,7 +383,7 @@ namespace crash = ::crucible::safety::crash;
 
 }  // namespace crucible::fixy::wrap
 
-#include <crucible/fixy/Fs.h>
+#include <crucible/fixy/_Fs.h>
 
 namespace crucible::fixy::wrap::fs {
 
@@ -412,7 +412,7 @@ using ::crucible::fixy::fs::mint_durable_append_file;
 
 }  // namespace crucible::fixy::wrap::fs
 
-#include <crucible/fixy/Mmap.h>
+#include <crucible/fixy/_Mmap.h>
 
 namespace crucible::fixy::wrap::mmap {
 
@@ -438,7 +438,7 @@ using ::crucible::fixy::mmap::advise_release_aware;
 
 }  // namespace crucible::fixy::wrap::mmap
 
-#include <crucible/fixy/Io.h>
+#include <crucible/fixy/_Io.h>
 
 namespace crucible::fixy::wrap::io {
 
@@ -483,7 +483,7 @@ using ::crucible::fixy::cipher::pack;
 
 }  // namespace crucible::fixy::wrap::cipher
 
-#include <crucible/fixy/CipherDurable.h>
+#include <crucible/fixy/_CipherDurable.h>
 
 namespace crucible::fixy::wrap::cipher::durable {
 

@@ -4,7 +4,7 @@
 // templates forwarding here share a single wrapper, instead of emitting an
 // inline copy of it per instantiation.
 
-#include <crucible/fixy/Fs.h>
+#include <crucible/fixy/_Fs.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>

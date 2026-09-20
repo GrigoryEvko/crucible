@@ -20,7 +20,7 @@
 // Effect::Bg).
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/concurrent/SpinLock.h>
+#include <crucible/fixy/concurrent/_SpinLock.h>
 #include <crucible/permissions/_Permission.h>
 
 struct GateTag {};

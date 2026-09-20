@@ -18,7 +18,7 @@
 // Expected diagnostic: JoinPolicyGrantsCoherent / constraints not
 //                      satisfied / detach_with.
 
-#include <crucible/fixy/spawn/SpawnGrant.h>
+#include <crucible/fixy/spawn/_SpawnGrant.h>
 
 namespace neg_fixy_v_204_grant_detached_missing {
 

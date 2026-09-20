@@ -15,7 +15,7 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/grant/_Ctrl.h>
-#include <crucible/fixy/spawn/JoinPolicy.h>
+#include <crucible/fixy/spawn/_JoinPolicy.h>
 
 #include <cstddef>
 #include <type_traits>

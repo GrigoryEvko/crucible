@@ -22,7 +22,7 @@
 // Expected diagnostic: IsJoinMechanismTag / constraints not satisfied
 //                      / associated constraints / requires-clause.
 
-#include <crucible/fixy/spawn/JoinPolicy.h>
+#include <crucible/fixy/spawn/_JoinPolicy.h>
 
 namespace neg_fixy_v_203_concept_rejects_non_tag {
 

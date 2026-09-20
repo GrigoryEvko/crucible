@@ -231,3 +231,30 @@ crucible/safety/_Secret.h:kCount  — A hand-written cardinality pin; the roster
 crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterMatchesCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple became the namespace admitted_retags of fail-closed edges in fixy/Tagged.h.
+
+# ── fixy/os, A13.2 / A13.3 / A13.4 (#114, #115, #116) ───────────────────
+#
+# The four rows whose sentence names a successor are renames, not losses.
+# The drops file has no channel for a rename, so they are recorded here
+# with the new name in the sentence; #185 gives the guard that channel.
+crucible/fixy/_CipherDurable.h:CtxFitsWarmWriterMint  — Ported as CtxFitsDurableMint<Ctx, Stance, Extras...> in fixy/os/CipherDurable.h:116, which folds three textually identical concepts into one parameterised by the stance.
+crucible/fixy/_CipherDurable.h:CtxFitsColdWriterMint  — Ported as CtxFitsDurableMint, the same fold; see the warm-writer entry.
+crucible/fixy/_CipherDurable.h:CtxFitsHeadAdvancerMint  — Ported as CtxFitsDurableMint, the same fold; see the warm-writer entry.
+crucible/fixy/_Fs.h:CtxAdmitsIoBlock  — Ported as fs::CtxAdmitsFs in fixy/os/Fs.h:219, and where the gate now derives the row from the atom pack rather than naming IO and Block by hand, as CtxAdmitsAtomRow in fixy/os/Io.h and fixy/os/Mmap.h, with mmap::CtxAdmitsAdvise beside it.
+crucible/fixy/_Fs.h:TmpFile  — A placeholder for the dirfd surface atomicity::LinkAtomic needed, refused by the old open gate on every call it was given; with LinkAtomic gone it has nothing left to be a placeholder for (fixy/os/Fs.h:27).
+crucible/fixy/_Fs.h:Directory  — The tag folded O_DIRECTORY and nothing gated or consumed it; the capability survives, because OwnedFd::open_directory sets that bit itself (fixy/os/Fs.h:27).
+crucible/fixy/_Fs.h:NonBlock  — The tag folded O_NONBLOCK and had no consumer anywhere in the old tree (fixy/os/Fs.h:27).
+crucible/fixy/_Fs.h:LinkAtomic  — A hard ENOSYS in the old commit body, probe-confirmed on the development host, and cold_writer_stance pinned it, so every cold commit failed before a filesystem was consulted; fixy/os/CipherDurable.h:13 pins atomicity::Rename in its place and records the probe.
+crucible/fixy/_Fs.h:Msync  — The tag was selectable and always returned EINVAL, and the old comment beside it said a memory-mapped flush goes through the mmap surface instead: no msync call exists in either tree, so that surface was never there. Nothing regressed, and the missing flush is unimplemented work tracked as #186.
+crucible/fixy/_Io.h:Synchronous  — An engine tag the old mint already refused, as that header's own self-test asserts; engine_is_io_uring_v is ported with a false primary, so it refuses this tag and any other added later (fixy/os/Io.h:22).
+crucible/fixy/_Io.h:Aio  — The same, and the old comment records that review policy forbids libaio (fixy/os/Io.h:22).
+crucible/fixy/_Io.h:Splice  — A zerocopy tag the old zerocopy_is_simple_transfer_v refused, asserted false by that header's own self-test; the predicate is ported with a false primary (fixy/os/Io.h:22).
+crucible/fixy/_Io.h:MsgZerocopy  — The same shape and the same self-test as Splice (fixy/os/Io.h:22).
+crucible/fixy/_Io.h:zerocopy_is_none  — Gone with the zerocopy::None tag it existed to refuse; the surviving conjunct answers false for every tag but the two accepted ones, which the new self-test pins (fixy/os/Io.h:47).
+crucible/fixy/_Io.h:zerocopy_is_none_v  — The value spelling of the same predicate, gone with it.
+crucible/fixy/_Mmap.h:release_aware  — The grant was dead: the old concept read CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice> and named neither the grant nor its RegionTag, so the tag was a parameter no gate read. The Permission argument on advise_release_aware is what admits the dangerous advice, and it is still there (fixy/os/Mmap.h:38).
+crucible/fixy/_Mmap.h:with_advice  — Nothing lifts an advice tag, because advise takes an Advice directly and never an atom, so the grant was decoration; the advice tags themselves are ported into fixy::mmap::advice in fixy/atoms/Os.h (fixy/os/Mmap.h:25).
+crucible/fixy/concurrent/_SpinLock.h:cache_tier_hot  — A namespace-scope constant that restated SpinLock<Tag>::cache_tier, which is ported; nothing read it (fixy/os/SpinLock.h:45).
+crucible/fixy/concurrent/_SpinLock.h:fixy_spinlock_runtime_smoke_test  — A smoke function compiled into every including translation unit and called by nothing, which is the shape #178 removed throughout; its cases are test/fixy/test_os_spinlock.cpp, which ctest runs.
+crucible/fixy/spawn/_SpawnGrant.h:fork_parent  — A grant whose comment said it threaded the parent identity through the pack so the coherence check could read it without the call site retyping it; JoinPolicyGrantsCoherent read neither it nor its parent_tag, and nothing else read it either (fixy/os/Spawn.h:20).
+crucible/fixy/spawn/_SpawnGrant.h:exec_ctx  — The same, for the execution context: a parameter no gate consumed (fixy/os/Spawn.h:20).

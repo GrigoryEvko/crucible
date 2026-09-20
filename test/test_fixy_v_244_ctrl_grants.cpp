@@ -4,7 +4,7 @@
 // neither header can make about itself.
 
 #include <crucible/fixy/grant/_Ctrl.h>
-#include <crucible/fixy/ctrl/Throws.h>
+#include <crucible/fixy/ctrl/_Throws.h>
 
 #include <type_traits>
 

@@ -22,7 +22,7 @@
 // Expected diagnostic: JoinPolicyGrantsCoherent / constraints not
 //                      satisfied / subprocess.
 
-#include <crucible/fixy/spawn/SpawnGrant.h>
+#include <crucible/fixy/spawn/_SpawnGrant.h>
 
 namespace neg_fixy_v_204_grant_forked_missing {
 

@@ -6,7 +6,7 @@
 
 #include <crucible/Philox.h>
 #include <crucible/algebra/lattices/FpModeLattice.h>
-#include <crucible/fixy/fp/Polynomial.h>
+#include <crucible/fixy/fp/_Polynomial.h>
 
 #include <bit>
 #include <cmath>

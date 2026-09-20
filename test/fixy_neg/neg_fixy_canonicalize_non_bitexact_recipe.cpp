@@ -37,7 +37,7 @@
 // Expected diagnostic: "BITEXACT_TC or BITEXACT_STRICT" OR
 // "is_bitexact" OR "static assertion failed".
 
-#include <crucible/fixy/fp/Canonicalize.h>
+#include <crucible/fixy/fp/_Canonicalize.h>
 #include <crucible/NumericalRecipe.h>
 
 namespace fp = crucible::fixy::fp;

@@ -48,7 +48,7 @@ FROZEN_PATHS=(
     include/crucible/handles/
     include/crucible/concurrent/
     include/crucible/Fixy.h
-    src/fixy/Fs.cpp
+    src/fixy/_Fs.cpp
     examples/fn/
 )
 
@@ -188,7 +188,7 @@ case "${1:-}" in
         printf '// old\n' >"$tmp_root/include/crucible/safety/Old.h"
         printf '// gone\n' >"$tmp_root/include/crucible/fixy/Gone.h"
         printf '// renamed\n' >"$tmp_root/include/crucible/fixy/Renamed.h"
-        printf '// fs\n' >"$tmp_root/src/fixy/Fs.cpp"
+        printf '// fs\n' >"$tmp_root/src/fixy/_Fs.cpp"
         printf '// keep\n' >"$tmp_root/examples/fn/keep.cpp"
         printf '#pragma once\n#include <crucible/safety/Twin.h>\n// ported\n' >"$tmp_root/include/crucible/safety/Ported.h"
         printf '#pragma once\n// twin\n' >"$tmp_root/include/crucible/safety/Twin.h"
@@ -222,7 +222,7 @@ case "${1:-}" in
         printf '// new\n' >"$tmp_root/include/crucible/safety/New.h"
         git -C "$tmp_root" mv "include/crucible/fixy/Renamed.h" "include/crucible/fixy/Moved.h"
         printf '// new layer\n' >"$tmp_root/include/foundation/Fine.h"
-        printf '// edited\n' >"$tmp_root/src/fixy/Fs.cpp"
+        printf '// edited\n' >"$tmp_root/src/fixy/_Fs.cpp"
         # The superseded marking: Twin.h is marked, Ported.h is marked and its
         # include follows, Includer.h stays but its include follows.  All three
         # pass.  Tampered.h is marked AND edited, which is not a marking.
@@ -244,7 +244,7 @@ case "${1:-}" in
         grep -qF 'include/crucible/safety/Old.h' "$out" || fail "modify under a frozen dir not caught"
         grep -qF 'include/crucible/safety/New.h' "$out" || fail "untracked add under a frozen dir not caught"
         grep -qF 'include/crucible/fixy/Moved.h' "$out" || fail "rename into a frozen dir not caught"
-        grep -qF 'src/fixy/Fs.cpp' "$out" || fail "modify of a frozen single file not caught"
+        grep -qF 'src/fixy/_Fs.cpp' "$out" || fail "modify of a frozen single file not caught"
         if grep -qF 'violation: include/crucible/fixy/Gone.h' "$out"; then fail "a deletion was flagged"; fi
         if grep -qF 'include/foundation/Fine.h' "$out"; then fail "an add in the new tree was flagged"; fi
         if grep -qF '_Twin.h' "$out"; then fail "a plain superseded marking was flagged"; fi

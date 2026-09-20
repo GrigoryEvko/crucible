@@ -18,7 +18,7 @@
 // Expected diagnostic: splits_into_pack / CtxFitsSpawn /
 // CtxFitsPermissionFork constraint is not satisfied.
 
-#include <crucible/fixy/spawn/Spawn.h>
+#include <crucible/fixy/spawn/_Spawn.h>
 
 namespace neg_fixy_spawn_mint_spawn_no_splits {
 

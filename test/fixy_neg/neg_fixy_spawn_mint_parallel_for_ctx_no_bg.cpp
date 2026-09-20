@@ -23,7 +23,7 @@
 // Expected diagnostic: CtxFitsParallelFor / CtxOwnsCapability /
 // row_contains_v constraint is not satisfied.
 
-#include <crucible/fixy/spawn/Spawn.h>
+#include <crucible/fixy/spawn/_Spawn.h>
 #include <crucible/permissions/_Permission.h>
 
 namespace neg_fixy_spawn_mint_parallel_for_ctx_no_bg {

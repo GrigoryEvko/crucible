@@ -5,7 +5,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/concurrent/SpinLock.h>
+#include <crucible/fixy/concurrent/_SpinLock.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
 

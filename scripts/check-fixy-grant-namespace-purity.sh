@@ -22,14 +22,14 @@
 #                                                    (superseded by fixy/Atom.h).
 #   * include/crucible/fixy/Fp.h                  — V-092 FpMode axis-specialized catalog
 #                                                    (12 with_fp_* parametric grants + fp_strict_ieee).
-#   * include/crucible/fixy/Fs.h                  — V-224 SyscallSurface axis-specialized
+#   * include/crucible/fixy/_Fs.h                  — V-224 SyscallSurface axis-specialized
 #                                                    catalog (4 fs::* parametric grants:
 #                                                    mode<>/with_flag<>/durable<>/atomic_write<>).
-#   * include/crucible/fixy/Mmap.h                 — V-225 SyscallSurface axis-specialized
+#   * include/crucible/fixy/_Mmap.h                 — V-225 SyscallSurface axis-specialized
 #                                                    catalog (5 mmap::* parametric/leaf grants:
 #                                                    with_prot<>/with_share<>/with_advice<>/
 #                                                    trusted_jit/release_aware<>).
-#   * include/crucible/fixy/Io.h                   — V-226 SyscallSurface axis-specialized
+#   * include/crucible/fixy/_Io.h                   — V-226 SyscallSurface axis-specialized
 #                                                    catalog (5 io::* parametric grants:
 #                                                    engine<>/zerocopy<>/ring_flag<>/
 #                                                    sq_entries<N>/cq_entries<N>).
@@ -265,7 +265,7 @@ while IFS=: read -r file line text; do
             # validation concepts.
             continue
             ;;
-        include/crucible/fixy/Fs.h)
+        include/crucible/fixy/_Fs.h)
             # V-224 SyscallSurface axis-specialized catalog (4 fs::*
             # parametric grants: mode<>/with_flag<>/durable<>/atomic_write<>
             # routing the filesystem open-flag / sync-op / atomicity tiers
@@ -274,7 +274,7 @@ while IFS=: read -r file line text; do
             # structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/Mmap.h)
+        include/crucible/fixy/_Mmap.h)
             # V-225 SyscallSurface axis-specialized catalog (5 mmap::*
             # grants: with_prot<>/with_share<>/with_advice<>/trusted_jit/
             # release_aware<> routing the mmap-prot / share-mode / madvise
@@ -284,7 +284,7 @@ while IFS=: read -r file line text; do
             # structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/Io.h)
+        include/crucible/fixy/_Io.h)
             # V-226 SyscallSurface axis-specialized catalog (5 io::*
             # grants: engine<>/zerocopy<>/ring_flag<>/sq_entries<N>/
             # cq_entries<N> routing the async-engine / zerocopy /
@@ -326,7 +326,7 @@ while IFS=: read -r file line text; do
             # does NOT extend grant_base hierarchy.
             continue
             ;;
-        include/crucible/fixy/spawn/SpawnGrant.h)
+        include/crucible/fixy/spawn/_SpawnGrant.h)
             # V-204 spawn engagement-grant catalog (5 spawn::grant::* grants:
             # detach_with<R>/syscall_only<R>/subprocess<R>/fork_parent<Tag>/
             # exec_ctx<Ctx> → DimensionAxis::Protocol).  The grant_base

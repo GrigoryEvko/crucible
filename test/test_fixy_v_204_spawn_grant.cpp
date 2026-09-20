@@ -3,7 +3,7 @@
 // consumer can see the grant, plus the coherence concept that pairs a
 // join mechanism with the grant family it requires.
 
-#include <crucible/fixy/spawn/SpawnGrant.h>
+#include <crucible/fixy/spawn/_SpawnGrant.h>
 
 #include <type_traits>
 

@@ -150,18 +150,18 @@ include/crucible/cntp/dataplane/Xdp.h:mint_bpf_map_spec:requires-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 
 # ── fixy/ syscall / resource mints ───────────────────────────────────
-include/crucible/fixy/CipherDurable.h:mint_cold_writer:constexpr-ok
-include/crucible/fixy/CipherDurable.h:mint_head_advancer:constexpr-ok
-include/crucible/fixy/CipherDurable.h:mint_warm_writer:constexpr-ok
-include/crucible/fixy/Fs.h:mint_durable_append_file:constexpr-ok
-include/crucible/fixy/Fs.h:mint_durable_append_file:requires-ok
-include/crucible/fixy/Fs.h:mint_durable_truncate_file:constexpr-ok
-include/crucible/fixy/Fs.h:mint_durable_truncate_file:requires-ok
-include/crucible/fixy/Fs.h:mint_file:constexpr-ok
-include/crucible/fixy/Io.h:mint_io_uring_ring:constexpr-ok
-include/crucible/fixy/Io.h:mint_zerocopy_transfer:constexpr-ok
-include/crucible/fixy/Mmap.h:mint_mmap:constexpr-ok
-include/crucible/fixy/Mmap.h:mint_mmap_anon:constexpr-ok
+include/crucible/fixy/_CipherDurable.h:mint_cold_writer:constexpr-ok
+include/crucible/fixy/_CipherDurable.h:mint_head_advancer:constexpr-ok
+include/crucible/fixy/_CipherDurable.h:mint_warm_writer:constexpr-ok
+include/crucible/fixy/_Fs.h:mint_durable_append_file:constexpr-ok
+include/crucible/fixy/_Fs.h:mint_durable_append_file:requires-ok
+include/crucible/fixy/_Fs.h:mint_durable_truncate_file:constexpr-ok
+include/crucible/fixy/_Fs.h:mint_durable_truncate_file:requires-ok
+include/crucible/fixy/_Fs.h:mint_file:constexpr-ok
+include/crucible/fixy/_Io.h:mint_io_uring_ring:constexpr-ok
+include/crucible/fixy/_Io.h:mint_zerocopy_transfer:constexpr-ok
+include/crucible/fixy/_Mmap.h:mint_mmap:constexpr-ok
+include/crucible/fixy/_Mmap.h:mint_mmap_anon:constexpr-ok
 include/crucible/fixy/Sched.h:mint_affinity:constexpr-ok
 include/crucible/fixy/Sched.h:mint_priority:constexpr-ok
 include/crucible/fixy/Sched.h:mint_scheduler_policy:constexpr-ok
@@ -212,8 +212,14 @@ include/fixy/os/CipherDurable.h:mint_head_advancer:constexpr-ok
 # to be declared before it is named.  Deleting the declaration would
 # reopen the forgery the friendship closes.
 include/fixy/os/CpuPinned.h:mint_affinity:constexpr-ok
-include/crucible/fixy/spawn/Spawn.h:mint_parallel_for:constexpr-ok
-include/crucible/fixy/spawn/Spawn.h:mint_spawn:constexpr-ok
+include/crucible/fixy/spawn/_Spawn.h:mint_parallel_for:constexpr-ok
+include/crucible/fixy/spawn/_Spawn.h:mint_spawn:constexpr-ok
+# The ported pair, §XXI carve-out cx=thread.  Neither can be constexpr and
+# mean it: mint_spawn starts one jthread per child, and mint_parallel_for
+# does the same for every shard but the single-shard case.  A constexpr on
+# either would claim a compile-time cost for a call that schedules threads.
+include/fixy/os/Spawn.h:mint_parallel_for:constexpr-ok
+include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
 
 # ── fixy/Substr.h concept-constrained-param endpoint/session mints ────
 include/crucible/fixy/Substr.h:mint_mpsc_consumer_endpoint:requires-ok

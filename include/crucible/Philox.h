@@ -9,7 +9,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/fixy/fp/Polynomial.h>
+#include <crucible/fixy/fp/_Polynomial.h>
 
 #include <array>
 #include <cmath>

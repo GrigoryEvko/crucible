@@ -3,7 +3,7 @@
 // floor is not engaged for downstream consumers, and the cross-vendor
 // bit-exactness invariants lose their guarantee without any build failure.
 
-#include <crucible/fixy/fp/Canonicalize.h>
+#include <crucible/fixy/fp/_Canonicalize.h>
 
 #include <bit>
 #include <cmath>
