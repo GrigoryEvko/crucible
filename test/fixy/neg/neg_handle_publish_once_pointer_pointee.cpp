@@ -4,11 +4,12 @@
 // handle the caller meant, and every observer then reads a live pointer
 // through a dangling one.
 //
-// This fixture is the standing witness for task #18.  The guard this
-// replaced read `is_pointer_v<T*> || is_same_v<T, T>`, whose second
-// disjunct is true for every T: it admitted this exact instantiation
-// and enforced nothing.  A guard that went tautological again would
-// make this fixture stop failing.
+// This fixture is the standing witness that the guard is not
+// tautological.  The guard this replaced read
+// `is_pointer_v<T*> || is_same_v<T, T>`, whose second disjunct is true
+// for every T: it admitted this exact instantiation and enforced
+// nothing.  A guard that went tautological again would make this
+// fixture stop failing.
 //
 // PublishOnce<Payload> compiles, so the pointee is what is refused, not
 // the type.
