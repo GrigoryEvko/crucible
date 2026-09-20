@@ -105,16 +105,16 @@ static_assert(s::is_empty_choice_v<s::Loop<s::Recv<Msg, s::Offer<>>>>);
 
 // ── Composition ──────────────────────────────────────────────────────
 
-static_assert(std::is_same_v<s::compose_t<s::Send<Msg, s::End>, s::Recv<Ack, s::End>>,
-                             s::Send<Msg, s::Recv<Ack, s::End>>>);
+static_assert(
+    std::is_same_v<s::compose_t<s::Send<Msg, s::End>, s::Recv<Ack, s::End>>, s::Send<Msg, s::Recv<Ack, s::End>>>);
 // Continue marks a loop-back, not an end, so composition leaves it be.
 static_assert(std::is_same_v<s::compose_t<s::Continue, s::End>, s::Continue>);
 // Uniform composition reaches every branch.
 static_assert(std::is_same_v<s::compose_t<s::Select<s::End, s::End>, s::Recv<Ack, s::End>>,
                              s::Select<s::Recv<Ack, s::End>, s::Recv<Ack, s::End>>>);
 // The sender tag survives and is not treated as a branch to compose into.
-static_assert(std::is_same_v<s::compose_t<s::Offer<s::Sender<Alice>, s::End>, s::End>,
-                             s::Offer<s::Sender<Alice>, s::End>>);
+static_assert(
+    std::is_same_v<s::compose_t<s::Offer<s::Sender<Alice>, s::End>, s::End>, s::Offer<s::Sender<Alice>, s::End>>);
 
 // Branch-asymmetric composition touches one branch and leaves the rest.
 static_assert(std::is_same_v<s::compose_at_branch_t<s::Select<s::End, s::End>, 0, s::Recv<Ack, s::End>>,
