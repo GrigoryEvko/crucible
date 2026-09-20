@@ -1805,3 +1805,16 @@ fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
   "use of deleted function"
   "mint_witnessed_at\\(const session::SessionHandle<Proto, Resource, LoopCtx, Policy>&&"
   "the protocol position the borrow would name is already gone")
+
+# ── The escape surface, reflected ─────────────────────────────────────
+#
+# The compiler reads each wrapper's member return types through
+# std::meta, so a member that hands out a raw reference or pointer under
+# an unsanctioned name fails to compile however it is spelled.  This TU
+# is the assertion; the neg fixture proves it fires on a door spelled
+# with a trailing return, the shape a text scan is most likely to miss.
+fixy_test(test_escape_reflection)
+
+fixy_neg_compile_test(neg_escape_unsanctioned_member
+  "a public member of this type returns a raw reference or pointer that is not a"
+  "concept foundation::reflect::RawEscapesSanctioned")

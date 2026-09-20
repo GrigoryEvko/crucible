@@ -201,6 +201,16 @@ public:
     // this returns.
     [[nodiscard]] int get() const noexcept { return fd_; }
 
+    // The inverse door: ownership leaves with the descriptor, and the
+    // close becomes the caller's.  Only what this handle owns can leave
+    // it, and a released handle is left owning nothing, so its
+    // destructor closes nothing.  This is the fd twin of
+    // OwnedFile::release, and the one explicit, discouraged way the raw
+    // descriptor escapes: a caller that wants to hand the fd to a C API
+    // that will own it spells release() and the loss of ownership is in
+    // view, rather than the fd leaking out through a bare accessor.
+    [[nodiscard]] int release() noexcept { return std::exchange(fd_, -1); }
+
 private:
     void close_() noexcept {
         if (fd_ >= 0) {

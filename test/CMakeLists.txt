@@ -568,6 +568,19 @@ add_test(NAME trait_guard
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
 set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
   LABELS "ci_guard")
+
+# The coarse, tree-wide net for the escape surface: every public
+# function that hands out a raw reference or pointer is a sanctioned
+# accessor, mint, discouraged hatch, or a ledgered exception.  The
+# unbreakable member-function half is the compiled reflection probe
+# test_escape_reflection; this script covers the free-function residue
+# reflection cannot walk.
+add_test(NAME escape_doors_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.sh --self-test)
+add_test(NAME escape_doors
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.sh --quiet)
+set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
+  LABELS "ci_guard")
 # fixy-A2-014: regression guard for the SessionPersistence.h include-lift.
 # Probes `g++ -H` to verify the bridge header does not transitively pull
 # Cipher.h / MerkleDag.h / Arena.h / FederationProtocol.h / etc.  Without

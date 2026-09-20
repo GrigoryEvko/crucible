@@ -1,0 +1,18 @@
+# scripts/escape-doors.txt — the escape surface the guard locks.
+# Read by scripts/check-escape-doors.sh.
+#
+# hatch-total pins the count of discouraged, type-checked escape
+# hatches (from_raw, from_raw_nonnull, into_raw, release,
+# declassify).  A new hatch raises the count and reds CI until the
+# pin is raised in the same commit, so a hatch is never added
+# quietly.  Removing a hatch lowers it and is refreshed here too.
+#
+# Each `path:name  reason` line admits one bare door: a raw escape
+# that is neither an accessor nor a mint nor a hatch, but is safe
+# for the stated reason.  The list only shrinks — a bare door is
+# reclassified, never added.  Regenerate with --refresh in the same
+# commit that removes one.
+hatch-total 1
+include/fixy/OwnedRegion.h:alloc_array  arena allocation door: carves a T* from the region's own block and is gated by an effects::Alloc capability token; provenance is *this and the token is the explicit, discouraged key
+include/fixy/concurrent/Topology.h:instance  singleton accessor: returns a reference to a function-static const Topology; static lifetime, cannot dangle
+include/foundation/effects/Computation.h:extract  within-object accessor: returns a reference to the carried value; provenance is the Computation itself, so the reference lives as long as it does
