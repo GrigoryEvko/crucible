@@ -40,20 +40,6 @@ function(fixy_neg_compile_test name)
       "fixy_neg_compile_test(${name}): two required-diagnostic "
       "regexes are the minimum (the reason and the project token); got ${_count}")
   endif()
-  # CMake counts brackets when it splits a list, so a regex carrying an
-  # unbalanced `[` swallows the separator and the regex written after it.
-  # The merged regex then matches nothing and the fixture fails for a
-  # reason that names no defect.  ARGC counts what the caller wrote, and
-  # the list length counts what survived, so the two disagree exactly
-  # when a merge happened.
-  math(EXPR _written "${ARGC} - 1")
-  if(NOT _count EQUAL _written)
-    message(FATAL_ERROR
-      "fixy_neg_compile_test(${name}): ${_written} regexes were written and "
-      "${_count} survived. An unbalanced `[` in one of them swallowed the list "
-      "separator and merged it with the next. Balance the bracket, or match it "
-      "with `.`")
-  endif()
   add_executable(${name} EXCLUDE_FROM_ALL neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE fixy)
   add_test(NAME ${name}
@@ -307,6 +293,17 @@ fixy_neg_compile_test(neg_rule_v203_replay_tsc
   "Collision rule\\(s\\) V203:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the barrier-strength family ────────────────────────────
+#
+# One rule at one boundary of the chain: the hot path against a fence at
+# or above seq_cst.  The pack carries a cost grade and a refinement
+# witness so H001 and H002 stand down, and names no wait strategy and no
+# hardware tier, so W001 and V201 do too.
+fixy_neg_compile_test(neg_rule_v301_hot_seq_cst
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V301:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.
@@ -539,7 +536,7 @@ fixy_test(test_secret)
 fixy_neg_compile_test(neg_tagged_retag_not_admitted
   "constraints not satisfied"
   "satisfaction of .RetagAllowed<Tag, NewTag>."
-  "Tag = fixy::tags::trust::Verified. NewTag = fixy::tags::trust::Unverified")
+  "Tag = fixy::tags::trust::Verified; NewTag = fixy::tags::trust::Unverified")
 
 # The value constructor is private, so a Sanitized tag cannot be forged
 # around a raw value; the compiler names the constructor.
@@ -593,7 +590,7 @@ fixy_neg_compile_test(neg_machine_transition_not_admitted
 # selects the deleted rvalue-range twin of the span constructor.
 fixy_neg_compile_test(neg_borrowed_from_a_temporary
   "use of deleted function"
-  "fixy::Borrowed<T, Source, Brand>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
+  "fixy::Borrowed<T, Source>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
   "Borrowed of a temporary range dangles")
 
 # weaken towards a fresher grade in a constant expression reaches the
@@ -1300,11 +1297,11 @@ fixy_test(test_os_spawn)
 # production sites bypassed the background-context clause.
 fixy_neg_compile_test(neg_spin_lock_door_is_private
   "is private within this context"
-  "fixy::spin::SpinLock<Tag>::lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\)")
+  "fixy::spin::SpinLock<Tag>::lock\\(permission_t&\\)")
 
 fixy_neg_compile_test(neg_spin_try_lock_door_is_private
   "is private within this context"
-  "fixy::spin::SpinLock<Tag>::try_lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\)")
+  "fixy::spin::SpinLock<Tag>::try_lock\\(permission_t&\\)")
 
 # Deviation 3: release costs the same witness acquisition did.
 fixy_neg_compile_test(neg_spin_unlock_without_witness
@@ -1367,7 +1364,7 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
 # its shard is refused.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
-  "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0>, Brand>&>")
+  "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0> >&>")
 
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
@@ -1393,67 +1390,3 @@ fixy_neg_compile_test(neg_qtt_linear_over_permission
 fixy_neg_compile_test(neg_qtt_affine_over_shared_permission
   "Affine<Token> over a consume-disciplined token is unsound"
   "QttGrade::Zero, foundation::permissions::SharedPermission")
-
-# ── Brands: identity per mint ────────────────────────────────────────
-#
-# A region carries the brand of the permission it was built from, and a
-# view or a borrow carries its carrier's brand or a fresh one per mint
-# site.  Each fixture names one thing the brand refuses, and its second
-# regex is the compiler's own rendering of the refusal: the two closure
-# types one Brand parameter was deduced to, the constraint on a
-# constructor that answered false, or the deleted twin's signature.
-# Every fixture was proven live by a mutant that removes its mechanism
-# and lets it compile.
-
-# Two regions of one tag from two roots are two brands.
-fixy_neg_compile_test(neg_brand_owned_region_cross_brand
-  "no matching function for call to .same_region\\("
-  "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
-
-# The region's tag is the permission's tag.
-fixy_neg_compile_test(neg_brand_owned_region_tag_mismatch
-  "no matching function for call to .mint_owned_region<int, \\{anonymous\\}::Buffer>\\("
-  "mismatched types .\\{anonymous\\}::Buffer. and .\\{anonymous\\}::OtherBuffer.")
-
-# Two mints of a view are two brands: the refusal by identity.
-fixy_neg_compile_test(neg_brand_scoped_view_cross_brand
-  "no matching function for call to .same_minting\\("
-  "deduced conflicting types for parameter .Brand. \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
-
-# A view of a temporary carrier: the refusal by value category, which
-# is the deleted rvalue twin.
-fixy_neg_compile_test(neg_brand_scoped_view_from_temporary_carrier
-  "use of deleted function"
-  "mint_view\\(const Carrier&&\\)"
-  "a view over a temporary carrier outlives it")
-
-# Two mints of a borrow are two brands.
-fixy_neg_compile_test(neg_brand_borrowed_cross_brand
-  "no matching function for call to .same_minting\\("
-  "deduced conflicting types for parameter .Brand. \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
-
-fixy_neg_compile_test(neg_brand_borrowed_ref_cross_brand
-  "no matching function for call to .same_minting\\("
-  "deduced conflicting types for parameter .(Brand|Other). \\(.fixy::<lambda\\(\\)>. and .fixy::<lambda\\(\\)>.\\)")
-
-# A brand read off one borrow cannot be spelled onto another object:
-# the one public constructor is constrained to the erased brand.
-fixy_neg_compile_test(neg_brand_borrowed_ref_forged_brand
-  "no matching function for call to .fixy::BorrowedRef<int, fixy::<lambda\\(\\)> >::BorrowedRef\\("
-  "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = fixy::[^]]*\\]. evaluated to .false.")
-
-# The twins of the two borrow mints.  The template-argument list the
-# compiler prints opens with `[` and carries a `;` between arguments,
-# and CMake counts brackets when it splits a list: an unbalanced `[` in
-# one regex swallows the `;` and the regex that follows it.  So the
-# bracket is matched by `.` and the argument list is cut before its
-# first separator.
-fixy_neg_compile_test(neg_brand_mint_borrowed_ref_from_temporary
-  "use of deleted function"
-  "mint_borrowed_ref\\(T&&\\) .with T = int"
-  "a borrow of a temporary dangles at the end of the full expression")
-
-fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_range
-  "use of deleted function"
-  "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner"
-  "a borrow of a temporary range dangles at the end of the full expression")

@@ -405,6 +405,54 @@ static_assert(!rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V203
 static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
 
 // ---------------------------------------------------------------------
+// The barrier-strength family, live since fixy/atoms/Barrier.h (task #176).
+//
+// One rule at one boundary of the chain.  The cost and refinement atoms
+// silence H001 and H002 on every hot cell.
+
+static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);
+
+// V301 hot x a fence at or above SeqCst.
+static_assert(!live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
+                          at::refined_with<hot_invariant>>::V301_ok);
+static_assert(!live_rules<at::regime::hot, at::barrier::full_fence, at::cost_constant,
+                          at::refined_with<hot_invariant>>::V301_ok,
+              "the standalone fence is above seq_cst on the ladder, so the hot path refuses it too");
+static_assert(live_rules<at::regime::hot, at::barrier::acq_rel, at::cost_constant,
+                         at::refined_with<hot_invariant>>::V301_ok,
+              "acq_rel is one MOV each way on x86 and is what a hot SPSC ring is made of");
+static_assert(live_rules<at::regime::hot, at::barrier::release_store, at::cost_constant,
+                         at::refined_with<hot_invariant>>::V301_ok);
+static_assert(live_rules<at::regime::hot, at::barrier::compiler_barrier, at::cost_constant,
+                         at::refined_with<hot_invariant>>::V301_ok,
+              "a compiler barrier emits no instruction");
+static_assert(live_rules<at::barrier::seq_cst>::V301_ok, "not hot, so a full fence is ordinary");
+static_assert(live_rules<at::regime::warm, at::barrier::full_fence>::V301_ok);
+static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok,
+              "no strength named: the binding provides no fence, and there is nothing to refuse");
+static_assert(live_rules<>::V301_ok);
+
+// The fixture's pack trips V301 and nothing else: the two hot rules its
+// cost and refinement atoms answer, the wait rule, and the hardware rule
+// all stand down.
+static_assert(live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
+                         at::refined_with<hot_invariant>>::H001_ok
+              && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
+                            at::refined_with<hot_invariant>>::H002_ok
+              && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
+                            at::refined_with<hot_invariant>>::W001_ok
+              && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
+                            at::refined_with<hot_invariant>>::V201_ok);
+
+// The two `tier` families do not answer for each other: a hardware tier
+// is not a fence strength, and a fence strength is not a hardware tier.
+static_assert(live_rules<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
+                         at::refined_with<hot_invariant>>::V301_ok,
+              "the top of the hardware ladder is not a fence");
+static_assert(live_rules<at::barrier::full_fence>::V201_ok && live_rules<at::barrier::full_fence>::V202_ok,
+              "the top of the fence ladder is not a hardware tier");
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
@@ -413,7 +461,7 @@ static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
 // rather than a floor because the three dispositions partition the
 // catalog — a floor here would let a rule fall out of all three and go
 // unnoticed.
-static_assert(col::pending_rule_count == 10);
+static_assert(col::pending_rule_count == 9);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -452,7 +500,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 24);
+static_assert(col::live_rule_count == 25);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -461,8 +509,8 @@ static_assert(col::live_rule_count == 24);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 24);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 10);
+static_assert(corpus_entries_with(col::Disposition::Live) == 25);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 9);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
@@ -529,8 +577,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 10) return 2;
-    if (col::live_rule_count != 24) return 3;
+    if (col::pending_rule_count != 9) return 2;
+    if (col::live_rule_count != 25) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -552,7 +600,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 24 || pending != 10 || absent != 21) return 9;
+    if (live != 25 || pending != 9 || absent != 21) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 

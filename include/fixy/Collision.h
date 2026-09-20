@@ -55,6 +55,7 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/Bands.h>
+#include <fixy/atoms/Barrier.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/atoms/Dispatch.h>
 #include <fixy/atoms/Global.h>
@@ -143,7 +144,8 @@ struct grades {
 // join below is the complete picture.
 
 using all_atom_roster =
-    ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
+    ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster,
+                                       ::fixy::atom::detail::barrier_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
                                        ::fixy::atom::detail::dispatch_atom_roster,
                                        ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::hw_atom_roster,
                                        ::fixy::atom::detail::observe_atom_roster,
@@ -188,7 +190,7 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 // any.  fixy/atoms/Regime.h left it first, taking the H, R and S
 // families live; fixy/atoms/Sync.h left it second, taking W001 and W002.
 inline constexpr Axis pending_axes[] = {
-    Axis::FpMode, Axis::BarrierStrength, Axis::SimdIsa, Axis::MemoryScope,
+    Axis::FpMode, Axis::SimdIsa, Axis::MemoryScope,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -278,10 +280,13 @@ inline constexpr pending_rule pending_rules[] = {
     {RuleCode::V101, Axis::SimdIsa,
      "Replay x a pinned SIMD ISA: a vector width chosen per host makes the reduction order host-dependent."},
     {RuleCode::V102, Axis::SimdIsa, "SIMD width exceeds the pinned ISA: the emitted vector does not fit the trunk."},
-    // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped.
-    {RuleCode::V301, Axis::BarrierStrength,
-     "HotPath x a full fence: a seq_cst fence drains the store buffer and costs ~30 ns on x86."},
-    {RuleCode::V401, Axis::BarrierStrength,
+    // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped, and
+    // V301 when fixy/atoms/Barrier.h did.
+    //
+    // V401 reads a scope AND a strength, so like W001 it moved axis when
+    // the first of its two shipped: it waited on BarrierStrength until
+    // Barrier.h, and waits on MemoryScope now.
+    {RuleCode::V401, Axis::MemoryScope,
      "Memory scope at or above cluster with a barrier below acq_rel: the publication reaches further than the fence "
      "orders."},
     {RuleCode::V402, Axis::MemoryScope,
@@ -366,6 +371,10 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"V202", Disposition::Live, "the PrivilegedMsr tier x an effect row with no Init"},
     {"V203", Disposition::Live, "a replay-deterministic payload x a tier at or above NonDeterministicTsc"},
 
+    // The barrier-strength family, live since fixy/atoms/Barrier.h shipped
+    // the seven BarrierStrength atoms (task #176).
+    {"V301", Disposition::Live, "hot x a fence at or above SeqCst"},
+
     // The rest wait on an axis with no atom.  pending_rules above carries
     // the theorem and names the axis for each.
     {"F101", Disposition::Pending, "Axis::FpMode"},
@@ -375,8 +384,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"F105", Disposition::Pending, "Axis::FpMode"},
     {"V101", Disposition::Pending, "Axis::SimdIsa"},
     {"V102", Disposition::Pending, "Axis::SimdIsa"},
-    {"V301", Disposition::Pending, "Axis::BarrierStrength"},
-    {"V401", Disposition::Pending, "Axis::BarrierStrength"},
+    {"V401", Disposition::Pending, "Axis::MemoryScope"},
     {"V402", Disposition::Pending, "Axis::MemoryScope"},
 
     // The twenty-one this layer cannot state.  Each note names the thing
@@ -684,6 +692,21 @@ template <::fixy::atom::hw::HwInstruction Floor, class G>
                                                      ::fixy::atom::hw::HwInstruction>
 struct hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or_above(G::tier, Floor)> {};
 
+// The provided fence strength, read against a floor.  The primary is
+// false: a binding that names no strength provides no fence, so there
+// is nothing for V301 to refuse on it.  The chain order comes from
+// fixy/atoms/Barrier.h's own at_or_above, which is the lattice's leq in
+// its admission direction, so a rule cannot invert the ladder.  Both
+// this and hw_at_or_above_ read a member named `tier`; the type check
+// in the constraint is what keeps each from answering for the other's
+// atoms.
+template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
+struct barrier_at_or_above_ : std::false_type {};
+template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
+    requires requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>,
+                                                     ::foundation::algebra::lattices::BarrierStrength>
+struct barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier::at_or_above(G::tier, Floor)> {};
+
 // Whether the Effect row carries Init, which is the context V202 asks a
 // privileged tier to be reached from.  Same shape as row_admits_bg_.
 template <class G>
@@ -931,6 +954,19 @@ struct rules_of {
     static constexpr bool V202_ok = !(hw_privileged && !row_init);
     static constexpr bool V203_ok = !(replay_deterministic && hw_nondeterministic);
 
+    // ── The barrier-strength family, live since fixy/atoms/Barrier.h ──
+    //
+    // One rule, read at one boundary of the chain.  A seq_cst fence or
+    // the standalone full fence drains the store buffer, and the hot
+    // path's budget is bounded by the cache-coherence fabric, not by a
+    // drain.  A release store and an acquire load are one MOV each on
+    // x86 and are what the SPSC ring is made of, so the floor sits above
+    // them and above acq_rel.
+    static constexpr bool barrier_seq_cst_or_above = detail::barrier_at_or_above_<
+        ::foundation::algebra::lattices::BarrierStrength::SeqCst, typename G::template on<Axis::BarrierStrength>>::value;
+
+    static constexpr bool V301_ok = !(hot && barrier_seq_cst_or_above);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -967,6 +1003,7 @@ struct rules_of {
             rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
             rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
             rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
+            rule_verdict{V301_ok, "V301"},
         };
     }
 
@@ -1066,6 +1103,10 @@ struct rules_of {
                                "NonDeterministicTsc. The payload's DetSafe band claims the same bits on every "
                                "replay; a timestamp counter differs per run by construction. Lower the band, or "
                                "drop the tier.");
+        static_assert(V301_ok, "V301: hot x a fence at or above SeqCst. A seq_cst fence drains the store buffer, "
+                               "about 30 ns on x86, against a budget bounded by the cache-coherence fabric at 10-40 "
+                               "ns. Publish with a release store and read with an acquire load, or leave the hot "
+                               "path.");
         return valid;
     }
 
