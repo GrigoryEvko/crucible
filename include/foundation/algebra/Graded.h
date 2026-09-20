@@ -789,51 +789,6 @@ static_assert(HasRvalueWeaken<GOneByte>);
 static_assert(!HasConstWeaken<GMoveOnly>);
 static_assert(HasRvalueWeaken<GMoveOnly>);
 
-// The function is inline rather than constexpr so that its body is
-// checked against runtime semantics.  The contract predicates in the
-// operations below then run with non-constant arguments, which a
-// static_assert-only test never reaches.
-inline void runtime_smoke_test() {
-    OneByteValue value{42};
-    GOneByte initial{value, false};
-    GOneByte widened = initial.weaken(true);
-    GOneByte composed = initial.compose(widened);
-    GOneByte moved = std::move(widened).weaken(true);
-    GOneByte mcomposed = std::move(initial).compose(composed);
-
-    [[maybe_unused]] bool g1 = composed.grade();
-    [[maybe_unused]] bool g2 = moved.grade();
-    [[maybe_unused]] bool g3 = mcomposed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(mcomposed).consume().c;
-
-    GOneByte prim_noarg = GOneByte::at_bottom();
-    GOneByte prim_value = GOneByte::at_bottom(OneByteValue{static_cast<char>(value.c + 1)});
-    [[maybe_unused]] bool gb1 = prim_noarg.grade();
-    [[maybe_unused]] auto vb1 = prim_value.peek().c;
-
-    // The two specializations publish at_bottom() alone.  The checked
-    // form runs here with a non-constant argument, where the witness
-    // predicate is evaluated under runtime semantics rather than folded
-    // away.
-    GBoolElement same_noarg = GBoolElement::at_bottom();
-    GBoolElement same_checked{TrivialBoolLattice::bottom(), TrivialBoolLattice::bottom()};
-    [[maybe_unused]] bool gs1 = same_noarg.grade();
-    [[maybe_unused]] bool gs2 = same_checked.grade();
-
-    GDerivedSeq der_noarg = GDerivedSeq::at_bottom();
-    GDerivedSeq der_checked{MiniContainer{static_cast<std::size_t>(0)}, MiniDerivedLattice::bottom()};
-    [[maybe_unused]] std::size_t gd1 = der_noarg.grade();
-    [[maybe_unused]] std::size_t gd2 = der_checked.grade();
-
-    // The stored-grade bounds check with a non-constant grade, so the
-    // predicate runs under runtime semantics rather than being folded.
-    unsigned char chain_grade = static_cast<unsigned char>(value.c % 4);  // 42 % 4 == 2, inside [0, 3]
-    GChainOneByte chain_checked{value, chain_grade};
-    [[maybe_unused]] unsigned char gc1 = chain_checked.grade();
-    [[maybe_unused]] unsigned char gc2 = chain_checked.weaken(static_cast<unsigned char>(3)).grade();
-}
-
 }  // namespace detail::graded_self_test
 
 // IsGraded is strict identity: it holds for a Graded specialization

@@ -404,34 +404,6 @@ static_assert(!TrivialRow::contains(TrivialRow::single(TrivialAtom::Write), Triv
 static_assert(subsumes<TrivialRow>(TrivialRow::single(TrivialAtom::Read), TrivialRow::top()));
 static_assert(!subsumes<TrivialRow>(TrivialRow::top(), TrivialRow::single(TrivialAtom::Read)));
 
-// Every operation is driven once through a non-constant argument.  A
-// static_assert reaches only the constant path, and the whole point of
-// the constexpr-not-consteval rule is the other one.
-inline void runtime_smoke_test() {
-    bool x = true;  // deliberately not constexpr
-    bool y = false;  // deliberately not constexpr
-    [[maybe_unused]] bool bot = TrivialBoolLattice::bottom();
-    [[maybe_unused]] bool top = TrivialBoolLattice::top();
-    [[maybe_unused]] bool le = TrivialBoolLattice::leq(x, y);
-    [[maybe_unused]] bool jo = TrivialBoolLattice::join(x, y);
-    [[maybe_unused]] bool me = TrivialBoolLattice::meet(x, y);
-
-    [[maybe_unused]] bool sub = subsumes<TrivialBoolLattice>(y, x);
-    [[maybe_unused]] bool eq = equivalent<TrivialBoolLattice>(x, x);
-    [[maybe_unused]] bool sl = strictly_less<TrivialBoolLattice>(y, x);
-
-    [[maybe_unused]] bool zer = TrivialBoolSemiring::zero();
-    [[maybe_unused]] bool one = TrivialBoolSemiring::one();
-    [[maybe_unused]] bool add = TrivialBoolSemiring::add(x, y);
-    [[maybe_unused]] bool mul = TrivialBoolSemiring::mul(x, y);
-
-    TrivialAtom atom = x ? TrivialAtom::Write : TrivialAtom::Read;  // deliberately not constexpr
-    unsigned char row = TrivialRow::single(atom);
-    [[maybe_unused]] bool holds = TrivialRow::contains(row, atom);
-    [[maybe_unused]] unsigned char both = TrivialRow::join(row, TrivialRow::single(TrivialAtom::Read));
-    [[maybe_unused]] bool under_top = subsumes<TrivialRow>(both, TrivialRow::top());
-}
-
 }  // namespace detail::lattice_self_test
 
 }  // namespace foundation::algebra

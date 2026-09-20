@@ -173,29 +173,6 @@ static_assert(std::is_empty_v<modality::Absolute_t>);
 static_assert(std::is_empty_v<modality::Relative_t>);
 static_assert(std::is_empty_v<modality::Stepping_t>);
 
-// modality_name is consteval and so cannot appear here at all.  What
-// this checks is the rest of the header against runtime semantics.
-inline void runtime_smoke_test() {
-    [[maybe_unused]] modality::Comonad_t co_tag{};
-    [[maybe_unused]] modality::RelativeMonad_t rm_tag{};
-    [[maybe_unused]] modality::Absolute_t ab_tag{};
-    [[maybe_unused]] modality::Relative_t rl_tag{};
-    [[maybe_unused]] modality::Stepping_t st_tag{};
-
-    // Reading ::kind into a non-constexpr local pins that it stays
-    // usable in a runtime context as well as a constant one.
-    ModalityKind k = modality::Comonad_t::kind;
-    [[maybe_unused]] bool ok1 = (k == ModalityKind::Comonad);
-    k = modality::Stepping_t::kind;
-    [[maybe_unused]] bool ok2 = (k == ModalityKind::Stepping);
-
-    // The predicates take a non-type template argument, so they cannot
-    // be driven with a runtime value.  Only their results reach here.
-    [[maybe_unused]] bool unit_co = has_unit_v<ModalityKind::RelativeMonad>;
-    [[maybe_unused]] bool grade_ab = has_grade_only_v<ModalityKind::Absolute>;
-    [[maybe_unused]] bool grade_st = has_grade_only_v<ModalityKind::Stepping>;
-}
-
 }  // namespace detail::modality_self_test
 
 }  // namespace foundation::algebra

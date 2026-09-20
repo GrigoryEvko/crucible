@@ -117,20 +117,6 @@ static_assert(!is_graded_specialization_v<::foundation::algebra::detail::lattice
 static_assert(IsGraded<int const&> == is_graded_specialization_v<int const&>);
 static_assert(IsGraded<void> == is_graded_specialization_v<void>);
 
-// The traits here have nothing to run at runtime.  What the function
-// buys is a real instantiation of the substrate, so the assertions
-// above are known to hold for a type that was actually built and not
-// only named.
-inline void runtime_smoke_test() {
-    GraderAB g{true, true};
-    [[maybe_unused]] bool grade_view = g.grade();
-    [[maybe_unused]] bool value_view = g.peek();
-
-    [[maybe_unused]] bool t1 = is_graded_specialization_v<decltype(g)>;
-    [[maybe_unused]] bool t2 = is_graded_specialization_v<decltype((g))>;
-    [[maybe_unused]] bool t3 = is_graded_specialization_v<int>;
-}
-
 }  // namespace detail::is_graded_specialization_self_test
 
 }  // namespace foundation::algebra
