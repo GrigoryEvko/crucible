@@ -794,34 +794,6 @@ set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
 # of the hashing-path roots, so a violation three headers down is
 # caught, and it catches the forward-declaration dodge.  No allowlist
 # by design — an exception here is a DetSafe violation with paperwork.
-# The tree is clang-format clean and stays clean.  The repo .clang-format
-# is explicit rather than inherited so a formatter upgrade cannot silently
-# move the style; this is the other half of that bargain.
-#
-# The guard runs the formatter SEQUENTIALLY in batches, and its header says
-# why at length: clang-format 23 needs glibc 2.44 against this host's 2.43,
-# so it runs in a container that SELinux-relabels the bind mount on every
-# invocation.  Eight of those in parallel race on the relabel, the losers
-# cannot read .clang-format, and they fall back to LLVM default style and
-# report almost the whole tree as dirty.  Measured: `-P 8` claimed 2690 of
-# 3333 files in 52 s wall and 121 minutes of system time; the same scan
-# batched and serial takes 12 s and finds the truth.
-add_test(NAME clang_format_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-clang-format.sh
-          --self-test)
-add_test(NAME clang_format
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-clang-format.sh)
-# RESOURCE_LOCK serializes these two against each other.  They are the
-# only two tests that run the containerized formatter, and running them
-# concurrently reproduces the exact relabel race the guard's header warns
-# about — the self-test relabels its planted tree while the scan relabels
-# the repo, one loses, and the loser reports the whole tree as drifting.
-# Witnessed: `ctest -R clang_format -j 4` failed the scan, and the same
-# scan passed twice in isolation.  A guard that flakes under the -j every
-# other run uses would be worse than no guard.
-set_tests_properties(clang_format clang_format_self_test PROPERTIES
-    LABELS "ci_guard"
-    RESOURCE_LOCK "clang_format_container")
 add_test(NAME detsafe_ledger_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.sh
           --self-test)
@@ -829,6 +801,26 @@ add_test(NAME detsafe_ledger
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.sh)
 set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
     LABELS "ci_guard;hw-66")
+
+# Formatting is not gated, and the absence is deliberate.  A clang_format
+# guard ran here and was removed.
+#
+# clang-format 23 needs glibc 2.44 against this host's 2.43, so it ran in a
+# container that SELinux-relabels the bind mount on every invocation.
+# Concurrent invocations race on that relabel.  A loser cannot read
+# .clang-format, silently falls back to LLVM default style, and reports
+# most of the tree as dirty.  The guard's output could not reveal this:
+# the line that says so, "Error reading /w/.clang-format: Permission
+# denied", does not match the shape it greps for, while every consequent
+# "<path>.h: Permission denied" does and counts as drift.  Three runs over
+# one unchanged tree reported 531, 912 and 2.
+#
+# Serializing the two tests against each other was not enough, because
+# anything else invoking the formatter races them too.  The same mechanism
+# reaches the opposite verdict just as easily: a batch producing no output
+# reads as a clean scan.  A guard that can silently pass is worse than no
+# guard, and style is not worth that.
+
 # FIXY-V-210 process-spawn discipline (Agent 7 migration item 10 —
 # closes the regression-prevention surface for raw fork/exec/
 # posix_spawn/system/popen calls landing in production code).
