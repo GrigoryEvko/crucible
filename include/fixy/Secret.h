@@ -77,6 +77,26 @@ concept AdmittedDeclassification =
     && ::foundation::fail_closed::Admitted<^^tags::secret_policy::admitted_policies,
                                            tags::secret_policy::admitted_policies::classified, Policy>;
 
+// The three rules transform() places on its callable.  Each is its
+// own concept, so a refusal names the rule that was broken instead of
+// the bare fact that constraints were not satisfied.
+//
+// A reference return would alias the payload.  The storage is moved
+// from by the time the caller reads the alias, and the alias carries
+// no policy tag, which is the one thing declassify<Policy>() exists to
+// require.  A void return has nothing to rewrap.  The likely intent is
+// an observation of the payload, and an observation also belongs
+// behind a policy.
+template <typename F, typename T>
+concept TransformReturnsByValue = !std::is_reference_v<std::invoke_result_t<F, T&&>>;
+
+template <typename F, typename T>
+concept TransformReturnsNonVoid = !std::is_void_v<std::invoke_result_t<F, T&&>>;
+
+template <typename F, typename T>
+concept SecretTransformer =
+    std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>;
+
 template <typename T>
 class Secret;
 
@@ -140,11 +160,14 @@ public:
     // the duration of the call, so the intended use is a stateless
     // transformation such as a decode or a hash fold.
     //
-    // The requires-clause turns an uncallable argument into a concept
-    // failure at the call site rather than a deduction failure inside
-    // the result-type computation.
+    // The rules on the callable are constraints, not assertions in the
+    // body.  A callable that breaks one never reaches the trailing
+    // return type, so Secret<T&> is never named, and a caller's
+    // requires-expression reads false instead of stopping the build.
+    // The two assertions below restate the rules for a reader of this
+    // body, as declassify() does, and cannot fire.
     template <typename F>
-        requires std::invocable<F, T&&>
+        requires SecretTransformer<F, T>
     [[nodiscard]] constexpr auto transform(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T&&>)
         -> Secret<std::invoke_result_t<F, T&&>> {
         using R = std::invoke_result_t<F, T&&>;

@@ -10,13 +10,18 @@
 // classified storage with no policy named.  The reference would also
 // dangle: transform is rvalue-qualified and consumes the payload, so the
 // storage it aliases is moved-from by the time the caller reads it.  The
-// static_assert inside transform refuses it and names both halves.
+// constraint TransformReturnsByValue refuses the call by name, before
+// the trailing return type would name Secret<int&>.
 //
-// The sibling fixtures cover the other two routes: neg_secret_copy
-// duplicates the wrapper, and neg_secret_declassify_unlisted_policy
-// names a policy with no edge in the admitted relation.
+// The sibling fixtures cover the other routes: neg_secret_copy
+// duplicates the wrapper, neg_secret_declassify_unlisted_policy names a
+// policy with no edge in the admitted relation, and
+// neg_secret_transform_returns_void hands transform a callable with
+// nothing to rewrap.
 
 #include <fixy/Secret.h>
+
+#include <utility>
 
 namespace {
 

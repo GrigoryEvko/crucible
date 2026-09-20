@@ -408,9 +408,18 @@ fixy_neg_compile_test(neg_role_io_row_under_foreground_ctx
   "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::IO> >."
   "required for the satisfaction of .Subrow<R, foundation::effects::row_type_of_t<Ctx> >."
   "Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
+#   Both refusals are constraints (#191), so the diagnostic names the
+#   concept that failed and the atomic expression that decided it, and
+#   Secret<int&> is never named because deduction stops before the
+#   trailing return type.
 fixy_neg_compile_test(neg_secret_transform_returns_reference
-  "\\[Capture_Leak_Reference_Return\\] Secret::transform"
-  "f must return by value")
+  "no matching function for call to .fixy::Secret<int>::transform\\("
+  "required for the satisfaction of .TransformReturnsByValue<F, T>."
+  "the expression .!\\(is_reference_v<typename std::invoke_result<F, T&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_secret_transform_returns_void
+  "no matching function for call to .fixy::Secret<int>::transform\\("
+  "required for the satisfaction of .TransformReturnsNonVoid<F, T>."
+  "the expression .!\\(is_void_v<typename std::invoke_result<F, T&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
 
 # The combinatorial half, as one walk over the atom catalog instead of
 # the 566 files the old corpus spent on it.  Registered as a POSITIVE
