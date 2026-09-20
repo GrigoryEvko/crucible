@@ -31,6 +31,7 @@
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/LifetimeLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
+#include <foundation/algebra/lattices/RecipeFamilyLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
@@ -188,9 +189,19 @@ static_assert(pin_enum<ClockSource>(clock_source_pins), "ClockSource drifted fro
 inline constexpr std::array<enum_pin, 3> lifetime_pins{{{"PER_REQUEST", 0}, {"PER_PROGRAM", 1}, {"PER_FLEET", 2}}};
 static_assert(pin_enum<Lifetime>(lifetime_pins), "Lifetime drifted from lifetime_pins.");
 
+// A recipe family is part of a KernelCache key: the (content_hash,
+// device_capability) slot a compiled kernel lands in is derived from the
+// NumericalRecipe pinned on it.  The old tree never pinned this enum;
+// these pin the values it arrived with.  None is the bottom sentinel and
+// Any the top one, so the last two values are 254 and 255, and a new
+// family takes the next free value after BlockStable.
+inline constexpr std::array<enum_pin, 6> recipe_family_pins{
+    {{"Linear", 0}, {"Pairwise", 1}, {"Kahan", 2}, {"BlockStable", 3}, {"None", 254}, {"Any", 255}}};
+static_assert(pin_enum<RecipeFamily>(recipe_family_pins), "RecipeFamily drifted from recipe_family_pins.");
+
 // The walk answers no for each way a table and its enum can disagree.
 // Without these, a pin_enum that answered yes for everything would leave
-// all twelve assertions above green and pin nothing.
+// all thirteen assertions above green and pin nothing.
 namespace pin_enum_self_test {
 
 enum class Probe : std::uint8_t {
