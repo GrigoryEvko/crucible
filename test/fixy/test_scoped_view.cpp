@@ -236,8 +236,10 @@ static void test_state_transition_remints() {
 }
 
 // The linear wrapper holds one const pointer, so the composition adds no
-// storage at all over the view it wraps.
-static_assert(sizeof(LinearScopedView<DummyCarrier, dummy_state::Active>) == sizeof(void*),
+// storage at all over the view it wraps.  That is the untracked build's
+// claim: fixy/Qtt.h's consume tracker adds one byte of state on purpose.
+static_assert(::fixy::qtt_consume_tracked
+                  || sizeof(LinearScopedView<DummyCarrier, dummy_state::Active>) == sizeof(void*),
               "LinearScopedView<C, T> must remain single-pointer-sized");
 
 // The reflective audit has to see through the wrapper's single member to

@@ -22,9 +22,13 @@ namespace forge {
 // returns: the fixture is compiled, never run.
 template <class T> [[gnu::noinline]] T& lvalue() noexcept { std::abort(); }
 template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
+
+// The brand a branded spelling in the roster line names.  It is empty,
+// which is all foundation::brand::IsBrand asks of a brand.
+struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag>{forge::lvalue<fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>>()};
+    [[maybe_unused]] auto forged = fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag, forge::brand>{forge::lvalue<fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag, forge::brand>>()};
     return 0;
 }

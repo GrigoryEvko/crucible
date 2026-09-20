@@ -3,8 +3,11 @@
 // and the mutating accessors write through a live wrapper without
 // spending the usage the grade counts.
 //
-// There is no runtime double-consume check to exercise; the header
-// states the decision.
+// This is the tracker-off half of the header.  The runtime checks that
+// make the grade exactly-once rather than at-most-once live behind
+// CRUCIBLE_QTT_TRACK_CONSUME and are exercised in test_qtt_tracked.cpp;
+// here they are absent by construction, which is what the size and
+// triviality claims below are worth.
 
 #include <fixy/Qtt.h>
 
@@ -27,6 +30,11 @@ struct TwoWords {
     std::uint64_t lo = 0;
     std::uint64_t hi = 0;
 };
+
+// This TU is the tracker-off sentinel, and says so rather than
+// discovering it in a size mismatch.
+static_assert(!::fixy::qtt_consume_tracked,
+              "test_qtt is the tracker-off sentinel; the tracker-on claims live in test_qtt_tracked.cpp");
 
 // Regime 1: the grade is empty and collapses under EBO.
 static_assert(sizeof(Linear<int>) == sizeof(int));

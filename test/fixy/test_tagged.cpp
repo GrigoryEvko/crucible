@@ -51,9 +51,12 @@ static_assert(sizeof(Tagged<int, source::X86Pinned>) == sizeof(int),
               "ArchPinned<Arch> must EBO-collapse in Tagged. The tag is phantom and carries no storage.");
 static_assert(alignof(Tagged<Config, source::Sanitized>) == alignof(Config));
 
-// Two regime-1 wrappers stacked collapse to the payload.
+// Two regime-1 wrappers stacked collapse to the payload.  The collapse
+// is the untracked build's: fixy/Qtt.h's consume tracker puts one byte
+// of state inside Linear on purpose, and Tagged still adds none.
 using TaggedLinear = Tagged<::fixy::Linear<int>, VerificationTag>;
-static_assert(sizeof(TaggedLinear) == sizeof(int));
+static_assert(::fixy::qtt_consume_tracked || sizeof(TaggedLinear) == sizeof(int));
+static_assert(sizeof(TaggedLinear) == sizeof(::fixy::Linear<int>));
 static_assert(!std::is_copy_constructible_v<TaggedLinear>,
               "Tagged<Linear<T>, Tag> must preserve Linear's move-only discipline");
 static_assert(std::is_move_constructible_v<TaggedLinear>);

@@ -18,12 +18,59 @@
 // The grade is a static property of the wrapper and is not derived
 // from the bytes of T, so peek_mut and swap cannot violate it.
 //
-// The deleted copy and the rvalue-qualified consume are the whole
-// linearity guarantee: a second consume of the same lvalue after
-// std::move is not detected at runtime.  A Debug-only consumed flag was
-// rejected because it makes sizeof(Linear<T>) depend on NDEBUG, and the
-// release preset links a library built with NDEBUG against tests built
-// without it.
+// The deleted copy and the rvalue-qualified consume are half the
+// linearity guarantee, and only half.  They make a copy unspellable and
+// make a second consume of the same lvalue require an explicit
+// std::move, which is the at-most-once discipline.  That is Affine.
+// Exactly-once needs two facts no signature carries: a second consume
+// through std::move must be refused, and a value that reaches the end
+// of its scope with the obligation still open must be reported.  Both
+// read one bit of state per wrapper.
+//
+// That bit used to be rejected here, and the reason given was sound as
+// far as it went.  A member keyed on NDEBUG changes sizeof(Linear<T>),
+// the release preset builds the library with NDEBUG and builds the
+// tests without it, and the two then disagree about the layout with
+// nothing to say so.  The repair is not to drop the bit.  It is to
+// stop keying on NDEBUG and to make the disagreement loud.
+//
+//   - CRUCIBLE_QTT_TRACK_CONSUME is the key, and the build system sets
+//     it once per preset for every target in it, so a library and the
+//     tests that link it cannot differ inside one build.
+//   - CRUCIBLE_QTT_ABI puts [[gnu::abi_tag]] on the class while the
+//     bit is on, so a Qtt that crosses a translation-unit boundary
+//     between a tracked build and an untracked one is an undefined
+//     reference rather than a silent layout mismatch.  Measured on GCC
+//     16.2.1: two objects compiled with the key at different settings
+//     fail to link, naming the tagged type, and two compiled with it at
+//     the same setting link.
+//
+// With the bit off the wrapper is what it was.  sizeof(Linear<T>) ==
+// sizeof(T), the move is trivial and the destructor is trivial, because
+// the state lives in a base that is empty and collapses.
+//
+// What the bit reads, once it is on:
+//
+//   - A second consume, through std::move or through a source the move
+//     already emptied.
+//   - A read or a write through a wrapper that has been consumed.
+//   - A Linear reaching the end of its scope with the obligation open.
+//   - Move assignment over a live Linear.  `a = std::move(b)` releases
+//     whatever `a` held through T's own move assignment, and that is a
+//     discharge by neither consume nor drop.  It is the scope end
+//     reached one line earlier, so it is reported the same way.
+//
+// And what it still does not see, stated rather than implied:
+//
+//   - A T whose own destructor releases the resource.  Destruction is a
+//     real discharge there, and the tracker cannot tell it from an
+//     abandoned obligation.  Such a value is Affine, and spelling it
+//     Linear is what the destructor check surfaces rather than what it
+//     accuses.
+//   - A consume whose RESULT is discarded.  The obligation moves into
+//     the returned T, and the tracker stops following it there.
+//   - Anything at all in a build with the key off, which is every build
+//     that ships.  The key arms one test target today.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>
@@ -51,6 +98,19 @@
 // The declarations live in foundation/permissions/Fwd.h, which carries
 // the defaulted brand and nothing else.
 
+// The consume tracker's key.  A preset sets it for every target at
+// once; a bare include that never sees it gets the off build, and the
+// ABI tag below is what keeps the two from meeting quietly.
+#ifndef CRUCIBLE_QTT_TRACK_CONSUME
+#define CRUCIBLE_QTT_TRACK_CONSUME 0
+#endif
+
+#if CRUCIBLE_QTT_TRACK_CONSUME
+#define CRUCIBLE_QTT_ABI [[gnu::abi_tag("qtt_tracked")]]
+#else
+#define CRUCIBLE_QTT_ABI
+#endif
+
 namespace fixy {
 
 namespace detail {
@@ -62,11 +122,104 @@ concept IsConsumeBound = std::same_as<decltype(Grade), ::foundation::algebra::la
                       && (Grade == ::foundation::algebra::lattices::QttGrade::One
                           || Grade == ::foundation::algebra::lattices::QttGrade::Zero);
 
+// The reporter, out of line and cold so the checked build carries one
+// predictable branch on the hot path and nothing else.  The site string
+// is __PRETTY_FUNCTION__ from the caller, which names the grade and the
+// wrapped type, so the message identifies the wrapper rather than this
+// header.
+[[noreturn]] CRUCIBLE_COLD inline void fail_consume(const char* what, const char* site, int line) noexcept {
+    ::foundation::detail::fail_invariant(what, site, "include/fixy/Qtt.h", line);
+}
+
+// The consume state, carried as a base rather than a member so that
+// Qtt's own special members stay defaulted in both builds and the off
+// build keeps its trivial move and its trivial destructor.
+//
+// The base is what makes the two builds one body of code: every check
+// below is a call on the base, and the off base answers every call with
+// nothing.  Neither Qtt nor any caller reads
+// CRUCIBLE_QTT_TRACK_CONSUME, and the on arm is a template rather than
+// a preprocessor arm, so it is parsed in every build and cannot rot
+// behind a key nobody sets.
+template <auto Grade, class T, bool Tracked>
+    requires IsConsumeBound<Grade>
+class ConsumeTrackerImpl {
+protected:
+    // A wrapper that cannot see its own state answers that it is live,
+    // because an unchecked build must never refuse a legitimate use.
+    [[nodiscard]] static constexpr bool consume_live() noexcept { return true; }
+    static constexpr void mark_consumed(const char*, int) noexcept {}
+    static constexpr void require_live(const char*, const char*, int) noexcept {}
+    static constexpr void swap_consume_state(ConsumeTrackerImpl&) noexcept {}
+};
+
+template <auto Grade, class T>
+    requires IsConsumeBound<Grade>
+class ConsumeTrackerImpl<Grade, T, true> {
+protected:
+    constexpr ConsumeTrackerImpl() noexcept = default;
+
+    // A move carries the obligation across and leaves none behind, so
+    // the source's destructor is silent and a later use of the source
+    // is caught.
+    constexpr ConsumeTrackerImpl(ConsumeTrackerImpl&& other) noexcept : live_{other.live_} { other.live_ = false; }
+
+    // Assignment over a live wrapper ends that wrapper's obligation
+    // through T's move assignment, which discharges nothing.  It is the
+    // destructor case reached one line earlier.
+    constexpr ConsumeTrackerImpl& operator=(ConsumeTrackerImpl&& other) noexcept {
+        report_open_obligation_(__PRETTY_FUNCTION__, __LINE__);
+        live_ = other.live_;
+        other.live_ = false;
+        return *this;
+    }
+
+    ConsumeTrackerImpl(const ConsumeTrackerImpl&) = delete("a linearity token is not copyable");
+    ConsumeTrackerImpl& operator=(const ConsumeTrackerImpl&) = delete("a linearity token is not copyable");
+
+    constexpr ~ConsumeTrackerImpl() { report_open_obligation_(__PRETTY_FUNCTION__, __LINE__); }
+
+    [[nodiscard]] constexpr bool consume_live() const noexcept { return live_; }
+
+    constexpr void mark_consumed(const char* site, int line) noexcept {
+        require_live("consumed twice", site, line);
+        live_ = false;
+    }
+
+    constexpr void require_live(const char* what, const char* site, int line) const noexcept {
+        if (!live_) [[unlikely]] fail_consume(what, site, line);
+    }
+
+    constexpr void swap_consume_state(ConsumeTrackerImpl& other) noexcept {
+        const bool mine = live_;
+        live_ = other.live_;
+        other.live_ = mine;
+    }
+
+private:
+    // Only the exactly-once grade owes a discharge.  An Affine value
+    // that is never consumed is a first-class outcome, so the check is
+    // the grade's and not the tracker's.
+    constexpr void report_open_obligation_(const char* site, int line) const noexcept {
+        if constexpr (Grade == ::foundation::algebra::lattices::QttGrade::One) {
+            if (live_) [[unlikely]] fail_consume("linear obligation never discharged", site, line);
+        } else {
+            (void)site;
+            (void)line;
+        }
+    }
+
+    bool live_ = true;
+};
+
+template <auto Grade, class T>
+using ConsumeTracker = ConsumeTrackerImpl<Grade, T, CRUCIBLE_QTT_TRACK_CONSUME != 0>;
+
 }  // namespace detail
 
 template <auto Grade, class T>
     requires detail::IsConsumeBound<Grade>
-class Qtt;
+class CRUCIBLE_QTT_ABI Qtt;
 
 template <class T>
 using Linear = Qtt<::foundation::algebra::lattices::QttGrade::One, T>;
@@ -148,8 +301,10 @@ template <class T, class... Args>
 
 template <auto Grade, class T>
     requires detail::IsConsumeBound<Grade>
-class [[nodiscard]] Qtt : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
-                                               ::foundation::algebra::lattices::QttSemiring::At<Grade>, T> {
+class CRUCIBLE_QTT_ABI [[nodiscard]] Qtt
+    : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                           ::foundation::algebra::lattices::QttSemiring::At<Grade>, T>,
+      private detail::ConsumeTracker<Grade, T> {
     // Placed in the class body so the diagnostic surfaces at the user's
     // instantiation site rather than inside the substrate.
     static_assert(Grade != ::foundation::algebra::lattices::QttGrade::One || !is_already_linear_v<T>,
@@ -207,17 +362,36 @@ public:
     Qtt& operator=(Qtt&&) = default;
     ~Qtt() = default;
 
+    // The usage the grade counts is spent here, and only here.  In a
+    // tracked build the state is read before it is spent, so a second
+    // consume through std::move is reported rather than moving out of
+    // an already moved-from value.
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        this->mark_consumed(__PRETTY_FUNCTION__, __LINE__);
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr const T& peek() const& noexcept { return impl_.peek(); }
+    // Reading a consumed wrapper is use-after-consume in the plainest
+    // form, so both accessors ask the same question the consume does.
+    [[nodiscard]] constexpr const T& peek() const& noexcept {
+        this->require_live("read after consume", __PRETTY_FUNCTION__, __LINE__);
+        return impl_.peek();
+    }
 
     // Prefer consume and reconstruct over this when the change is
     // semantic rather than incidental.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept {
+        this->require_live("written after consume", __PRETTY_FUNCTION__, __LINE__);
+        return impl_.peek_mut();
+    }
 
-    constexpr void swap(Qtt& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    // The obligations travel with the values, so the state swaps too.
+    // Neither side has to be live: a swap of a consumed wrapper against
+    // a live one is how a caller hands an obligation on.
+    constexpr void swap(Qtt& other) noexcept(std::is_nothrow_swappable_v<T>) {
+        impl_.swap(other.impl_);
+        this->swap_consume_state(other);
+    }
 
     friend constexpr void swap(Qtt& a, Qtt& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
@@ -229,7 +403,9 @@ public:
         if constexpr (Grade == ::foundation::algebra::lattices::QttGrade::One) {
             (void)std::move(x).consume();
         } else {
-            (void)x;
+            // A deliberate discard is a discharge, so the state records
+            // it and a use after this drop reads as use-after-consume.
+            x.mark_consumed(__PRETTY_FUNCTION__, __LINE__);
         }
     }
 };
@@ -246,13 +422,35 @@ template <class T, class... Args>
     return Affine<T>{std::in_place, std::forward<Args>(args)...};
 }
 
-static_assert(sizeof(Linear<int>) == sizeof(int));
-static_assert(sizeof(Linear<void*>) == sizeof(void*));
-static_assert(sizeof(Linear<long long>) == sizeof(long long));
+// What the tracker costs, named once so a caller and a test can read
+// the same answer instead of each testing the macro.
+inline constexpr bool qtt_consume_tracked = CRUCIBLE_QTT_TRACK_CONSUME != 0;
 
-static_assert(sizeof(Affine<int>) == sizeof(int));
-static_assert(sizeof(Affine<void*>) == sizeof(void*));
-static_assert(sizeof(Affine<long long>) == sizeof(long long));
+// Both builds are pinned, and each pin is written so the other build
+// cannot satisfy it by accident.
+//
+// Off: the grade is empty, the tracker is empty, and the wrapper is the
+// value.  This is the shape every hot path was measured against.
+static_assert(qtt_consume_tracked || sizeof(Linear<int>) == sizeof(int));
+static_assert(qtt_consume_tracked || sizeof(Linear<void*>) == sizeof(void*));
+static_assert(qtt_consume_tracked || sizeof(Linear<long long>) == sizeof(long long));
+static_assert(qtt_consume_tracked || sizeof(Affine<int>) == sizeof(int));
+static_assert(qtt_consume_tracked || sizeof(Affine<void*>) == sizeof(void*));
+static_assert(qtt_consume_tracked || sizeof(Affine<long long>) == sizeof(long long));
+static_assert(qtt_consume_tracked || std::is_trivially_destructible_v<Linear<int>>);
+static_assert(qtt_consume_tracked || std::is_trivially_move_constructible_v<Linear<int>>);
+
+// On: the state is one bool, so the wrapper grows by at most the
+// alignment it has to round up to.  A tracker that quietly grew past
+// one byte fails here rather than in a cache-miss profile.
+static_assert(!qtt_consume_tracked || sizeof(Linear<int>) <= sizeof(int) + alignof(int));
+static_assert(!qtt_consume_tracked || sizeof(Linear<void*>) <= sizeof(void*) + alignof(void*));
+static_assert(!qtt_consume_tracked || sizeof(Affine<long long>) <= sizeof(long long) + alignof(long long));
+
+// And on, the wrapper is no longer trivial, which is the fact that
+// makes the destructor able to say anything at all.
+static_assert(!qtt_consume_tracked || !std::is_trivially_destructible_v<Linear<int>>);
+static_assert(!qtt_consume_tracked || !std::is_trivially_destructible_v<Affine<int>>);
 
 static_assert(Linear<int>::modality == ::foundation::algebra::ModalityKind::Absolute);
 static_assert(Affine<int>::modality == ::foundation::algebra::ModalityKind::Absolute);

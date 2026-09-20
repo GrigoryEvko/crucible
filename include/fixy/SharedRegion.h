@@ -267,11 +267,19 @@ static_assert(std::is_copy_constructible_v<Read>, "a read is a value, and the he
 static_assert(std::is_same_v<Read::brand_type, Erased>);
 
 // A shared region holds its address, so it is neither copied nor moved.
-using Shared = SharedRegion<int, probe_tag>;
+//
+// The door's claim is spelled at a named brand rather than at the
+// erased one.  A region left at the old arity is DefaultBrand, which
+// scripts/check-brand-drain.sh counts and does not let a new file add,
+// and the claim reads the same at either brand.
+struct probe_brand {};
+using Shared = SharedRegion<int, probe_tag, probe_brand>;
 static_assert(!std::is_copy_constructible_v<Shared>);
 static_assert(!std::is_move_constructible_v<Shared>);
-static_assert(std::is_constructible_v<Shared, OwnedRegion<int, probe_tag>&&>, "the door consumes the exclusive");
-static_assert(!std::is_constructible_v<Shared, OwnedRegion<int, probe_tag>&>, "and consumes it, rather than borrowing");
+static_assert(std::is_constructible_v<Shared, OwnedRegion<int, probe_tag, probe_brand>&&>,
+              "the door consumes the exclusive");
+static_assert(!std::is_constructible_v<Shared, OwnedRegion<int, probe_tag, probe_brand>&>,
+              "and consumes it, rather than borrowing");
 
 }  // namespace detail::shared_region_self_test
 

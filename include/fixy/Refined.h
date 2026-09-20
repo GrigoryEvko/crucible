@@ -1140,7 +1140,12 @@ static_assert(all_collapse_to_value<
               MinSize<8, std::array<int, 16>>, DivisibleByN<4, std::size_t>, CacheLineAligned<int>,
               HugePageAligned<std::byte>>());
 
-static_assert(sizeof(LinearRefined<non_null, void*>) == sizeof(void*), "LinearRefined must collapse to sizeof(T)");
+// Both wrappers are regime 1, so the composition is the payload.  The
+// claim is the untracked build's: with fixy/Qtt.h's consume tracker on,
+// Linear carries one byte of state on purpose and this collapse is the
+// thing that build gives up.
+static_assert(::fixy::qtt_consume_tracked || sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
+              "LinearRefined must collapse to sizeof(T)");
 
 // The atomic and the composed refinements alike satisfy the wrapper
 // concept, so that a future revision of a combinator that disturbs the

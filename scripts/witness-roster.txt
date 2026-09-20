@@ -89,7 +89,7 @@ fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/OwnedRe
 # the exclusive region, which is the evidence.  The forging expression
 # offers the region without surrendering it, which is what a forger who
 # wanted to keep reading it exclusively would write.
-fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/SharedRegion.h | fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag>{forge::lvalue<fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag>>()} | deleted | closed
+fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag> | fixy/SharedRegion.h | fixy::SharedRegion<int, foundation::permissions::tag::HugePageTag, forge::brand>{forge::lvalue<fixy::OwnedRegion<int, foundation::permissions::tag::HugePageTag, forge::brand>>()} | deleted | closed
 # The read the three axes agreed on.  Its constructor is private behind
 # a key only mint_shared_read holds, because a read built beside the
 # mint would carry a brand, a share and a row that nobody weighed.
