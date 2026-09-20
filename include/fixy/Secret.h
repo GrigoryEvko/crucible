@@ -222,16 +222,19 @@ static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
 // The detection surface of the old IsSecret.h.  One reflection query
 // answers it, and the value type is read off the wrapper's own typedef,
 // so there is no primary-plus-specialization ladder to keep in step
-// with the class.
+// with the class.  The concept is the question; the value spelling is
+// derived from it and read by nothing that gates, because a variable
+// template can be explicitly specialized from any translation unit and
+// a concept cannot.
 
 template <typename T>
-inline constexpr bool is_secret_v = ::foundation::reflect::is_instance_of_v<T, ^^Secret>;
+concept IsSecret = ::foundation::reflect::IsInstanceOf<T, ^^Secret>;
 
 template <typename T>
-concept IsSecret = is_secret_v<T>;
+inline constexpr bool is_secret_v = IsSecret<T>;
 
 template <typename T>
-    requires is_secret_v<T>
+    requires IsSecret<T>
 using secret_value_t = typename std::remove_cvref_t<T>::value_type;
 
 namespace detail::secret_self_test {
