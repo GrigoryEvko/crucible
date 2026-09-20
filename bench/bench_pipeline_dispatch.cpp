@@ -1,5 +1,5 @@
 #include <crucible/concurrent/Pipeline.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include "bench_harness.h"

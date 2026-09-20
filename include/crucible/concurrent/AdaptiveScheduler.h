@@ -4,7 +4,7 @@
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/concurrent/SpinLock.h>
 #include <crucible/concurrent/Substrate.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/concurrent/scheduler/Policies.h>
 #include <crucible/safety/_Pinned.h>
 

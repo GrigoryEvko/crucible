@@ -58,7 +58,7 @@
 // helper-thread entry does fire in Release, since Release evaluates
 // contracts at `observe` and the handler does not return.
 
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/ledger/ProbeSupport.h>
 
 #include <algorithm>

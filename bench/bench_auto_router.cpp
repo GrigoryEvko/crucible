@@ -6,7 +6,7 @@
 // this target should become noisy immediately.
 
 #include <crucible/concurrent/AutoRouter.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/safety/Simd.h>
 
 #include "bench_harness.h"

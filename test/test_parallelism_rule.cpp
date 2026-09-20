@@ -4,7 +4,7 @@
 // pinning the values one machine happens to produce.
 
 #include <crucible/concurrent/ParallelismRule.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 
 #include <cstdio>
 #include <cstdlib>

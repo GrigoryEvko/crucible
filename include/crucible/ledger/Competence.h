@@ -22,7 +22,7 @@
 // would leave the runtime with nothing; refusing to *trust* leaves it with
 // the conservative path, which is always available.
 
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/ledger/HostFingerprint.h>
 #include <crucible/safety/_Bits.h>
 

@@ -12,7 +12,7 @@
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/Substrate.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 
 #include <cstddef>
 #include <cstdint>

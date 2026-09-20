@@ -897,6 +897,16 @@ fixy_neg_compile_test(neg_payload_row_unclassified_hides_effect
   "static assertion failed: payload_row<T>: T is a class template specialization whose family is on none of the "
   "with T = \\{anonymous\\}::UnclassifiedWrapper<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >")
 
+# ── Task #119 (A15): the machine topology ─────────────────────────────
+#
+# The sysfs probe Pipeline::run reads for its cache sizes and its
+# affinity.  The machine under test is unknown, so every assertion is
+# structural: it bounds a value or relates two, and never pins a number.
+# The test keeps the file name of the one it is ported from and carries
+# a suffix, because test/CMakeLists.txt still registers test_topology
+# and a CMake target name is global.
+fixy_test(test_topology_fixy test_topology.cpp)
+
 # ── Task #119 (A15): the publication handles ─────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a

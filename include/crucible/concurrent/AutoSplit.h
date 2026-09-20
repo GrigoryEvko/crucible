@@ -2,7 +2,7 @@
 
 #include <crucible/concurrent/AdaptiveScheduler.h>
 #include <crucible/concurrent/AutoRouter.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_IsAllocClass.h>

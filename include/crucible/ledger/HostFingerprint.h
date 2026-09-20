@@ -35,7 +35,7 @@
 // check-detsafe-ledger.sh asserts the include closure stays disjoint.
 
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/handles/FileHandle.h>
 #include <crucible/mimic/CogMimic.h>
 #include <crucible/safety/_Bits.h>

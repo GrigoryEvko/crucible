@@ -34,7 +34,7 @@
 // a fraction of that many CPUs, which is worse than staying sequential.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 
 #include <algorithm>
 #include <cstddef>

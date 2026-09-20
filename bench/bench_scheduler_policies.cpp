@@ -47,7 +47,7 @@
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/fixy/Time.h>  // FIXY-V-202
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>

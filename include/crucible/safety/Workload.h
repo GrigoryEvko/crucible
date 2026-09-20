@@ -8,7 +8,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ParallelismRule.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/permissions/_Permission.h>
 

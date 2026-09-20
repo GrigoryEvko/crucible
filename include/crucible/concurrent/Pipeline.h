@@ -23,7 +23,7 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Stage.h>
-#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/_Topology.h>
 #include <crucible/concurrent/WorkingSet.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/_EffectRow.h>
