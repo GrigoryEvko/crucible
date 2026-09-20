@@ -89,6 +89,18 @@
 # A namespace alias (`namespace x = fixy::tags::admitted_retags;`) does
 # not match, and cannot add a member either.
 #
+# ── The pattern is the SHAPE, not the name ───────────────────────────
+#
+# Every row matches the construct its diagnostic names and nothing
+# else: a specialization is `template <...> struct X<`, a reopening is
+# `namespace ...X {`.  A bare `struct X<` or `namespace X` is a mention,
+# and mentions are everywhere — doc blocks, and ledgers such as
+# scripts/port-drops.txt, whose lines are neither comments nor
+# Markdown.  The guard once matched `namespace admitted_retags` and
+# read four ledger lines as forgeries; the fix was the regex, because a
+# claim wider than its pattern is measured by the pattern.  The
+# --self-test plants a prose ledger that must stay silent.
+#
 # ── Authoring sets are PER TRAIT ─────────────────────────────────────
 #
 # A single shared whitelist would be a downgrade: admitting sessions/
@@ -166,17 +178,23 @@ USAGE
 # refactor deletes the old tree.
 substrate_paths='include/crucible/algebra/* include/foundation/algebra/* include/fixy/* include/crucible/safety/* include/crucible/permissions/* include/crucible/handles/* test/test_concept_cheat_probe.cpp'
 
+# A specialization, explicit or partial, always carries a template
+# header, and the header cannot contain a brace or a semicolon.  The
+# scan is multiline, so the header may sit on the line above the
+# struct.  A reopening is the namespace name followed by its brace.
+spec='template\s*<[^{};]*>\s*(struct|class)\s+'
+
 scan_table=(
-    "substrate|(struct|class)\s+(is_graded_specialization|value_type_decoupled|graded_modality|is_numerical_tier_impl)\s*<|${substrate_paths}"
-    "retag_policy|(struct|class)\s+retag_policy\s*<|include/crucible/safety/_Tagged.h include/crucible/safety/source/*.h test/*"
-    "machine_transition|((struct|class)\s+machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/_Machine.h include/fixy/Machine.h test/*"
-    "predicate_implies|(struct|class)\s+predicate_implies\s*<|include/crucible/safety/_Refined.h include/crucible/safety/_RefinedAlgebra.h test/*"
-    "survivor_registry|(struct|class)\s+survivor_registry\s*<|include/crucible/permissions/PermissionInherit.h include/crucible/fixy/Bridge.h test/*"
-    "is_subsort|(struct|class)\s+is_subsort\s*<|include/crucible/sessions/*.h test/*"
-    "admitted_retags|namespace\s+(fixy::tags::)?admitted_retags\b|include/fixy/Tagged.h test/*"
-    "admitted_policies|namespace\s+(fixy::tags::secret_policy::|secret_policy::)?admitted_policies\b|include/fixy/Secret.h test/*"
-    "admitted_transitions|namespace\s+(fixy::machine::|machine::)?admitted_transitions\b|include/fixy/Machine.h test/*"
-    "admitted_implications|namespace\s+(fixy::refined::|refined::)?admitted_implications\b|include/fixy/Refined.h test/*"
+    "substrate|${spec}(is_graded_specialization|value_type_decoupled|graded_modality|is_numerical_tier_impl)\s*<|${substrate_paths}"
+    "retag_policy|${spec}retag_policy\s*<|include/crucible/safety/_Tagged.h include/crucible/safety/source/*.h test/*"
+    "machine_transition|(${spec}machine_transition\s*<|CRUCIBLE_ALLOW_MACHINE_TRANSITION\s*\()|include/crucible/safety/_Machine.h include/fixy/Machine.h test/*"
+    "predicate_implies|${spec}predicate_implies\s*<|include/crucible/safety/_Refined.h include/crucible/safety/_RefinedAlgebra.h test/*"
+    "survivor_registry|${spec}survivor_registry\s*<|include/crucible/permissions/PermissionInherit.h include/crucible/fixy/Bridge.h test/*"
+    "is_subsort|${spec}is_subsort\s*<|include/crucible/sessions/*.h test/*"
+    "admitted_retags|namespace\s+(fixy::tags::)?admitted_retags\s*\{|include/fixy/Tagged.h test/*"
+    "admitted_policies|namespace\s+(fixy::tags::secret_policy::|secret_policy::)?admitted_policies\s*\{|include/fixy/Secret.h test/*"
+    "admitted_transitions|namespace\s+(fixy::machine::|machine::)?admitted_transitions\s*\{|include/fixy/Machine.h test/*"
+    "admitted_implications|namespace\s+(fixy::refined::|refined::)?admitted_implications\s*\{|include/fixy/Refined.h test/*"
 )
 
 case "${1:-}" in
@@ -415,6 +433,20 @@ inline constexpr ::foundation::fail_closed::edge<positive, non_negative> planted
 }  // namespace fixy::refined::admitted_implications
 EXEMPT
 
+        # ── the prose ledger: every name, no shape ───────────────────
+        # Lines that are neither comments nor Markdown, in a file the
+        # scan reaches, citing each relation the way scripts/port-drops.txt
+        # does.  None of them is a specialization or a reopening, and
+        # none may fire.
+        mkdir -p "$tmp_root/scripts"
+        planted_ledger='scripts/planted-ledger.txt'
+        cat >"$tmp_root/$planted_ledger" <<'LEDGER'
+crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple became the namespace admitted_retags of fail-closed edges; struct retag_policy<From, To> went with it.
+crucible/safety/_Secret.h:All  — The policy roster tuple became the namespace admitted_policies of fail-closed edges in fixy/Secret.h.
+crucible/safety/_Refined.h:predicate_implies  — fixy/Refined.h admits an edge only from the namespace admitted_implications, never from struct predicate_implies<P, Q>.
+crucible/safety/_Machine.h:machine_transition  — The edge set is the namespace admitted_transitions; class machine_transition<From, To> and struct is_subsort<T, U> are gone, and struct is_graded_specialization<W> with them.
+LEDGER
+
         scanner_stderr="$(mktemp)"
 
         self_test_fail() {
@@ -432,25 +464,33 @@ EXEMPT
 
         # Every planted violation must be named, at its exact line.  A
         # regex that drifts off one relation still greens the other
-        # five, so each is asserted individually.
+        # five, so each is asserted individually.  A specialization is
+        # reported at its template header, the line the match starts on.
         for expect in \
-            "$planted_substrate:8" \
-            "$planted_retag:5" \
+            "$planted_substrate:7" \
+            "$planted_retag:4" \
             "$planted_machine:4" \
-            "$planted_machine:7" \
-            "$planted_implies:4" \
-            "$planted_survivor:4" \
-            "$planted_subsort:4" \
+            "$planted_machine:6" \
+            "$planted_implies:3" \
+            "$planted_survivor:3" \
+            "$planted_subsort:3" \
             "$planted_retags:3" \
             "$planted_retags:7" \
             "$planted_policies:3" \
             "$planted_transitions:3" \
             "$planted_implications:3"
         do
-            if ! grep -qF "$expect" "$scanner_stderr"; then
+            if ! grep -qF "at $expect" "$scanner_stderr"; then
                 self_test_fail "expected diagnostic for $expect missing."
             fi
         done
+
+        # The prose ledger names every relation and must not fire once:
+        # a mention is not a specialization, and the ledger is the file
+        # that turned the guard red when its pattern was the name.
+        if grep -qF "at $planted_ledger:" "$scanner_stderr"; then
+            self_test_fail 'a prose mention in a ledger was flagged as a specialization.'
+        fi
 
         # The pure-comment citation on line 9 of the retag fixture must
         # be filtered out.
@@ -489,7 +529,7 @@ EXEMPT
         done
 
         rm -f "$scanner_stderr"
-        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured.\n' >&2
+        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured, and a prose ledger naming every relation stays silent.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -522,7 +562,10 @@ for row in "${scan_table[@]}"; do
     pattern="${rest%|*}"
     read -r -a allowed_globs <<<"${rest##*|}"
 
-    while IFS=: read -r file line text; do
+    # --vimgrep prints one record per match, at the line the match
+    # starts on, so a header-plus-struct specialization is one
+    # diagnostic and not one per line it spans.
+    while IFS=: read -r file line _column text; do
         rel="${file#"$scan_root"/}"
 
         # Skip pure-comment lines.  These trait names are cited in
@@ -541,7 +584,7 @@ for row in "${scan_table[@]}"; do
         printf 'trait_guard[%s]: authoring set is: %s\n' "$label" "${allowed_globs[*]}" >&2
         status=1
     done < <(
-        rg -n --no-heading --multiline --pcre2 \
+        rg --vimgrep --no-heading --multiline --pcre2 \
             --glob '!build/**' \
             --glob '!build-*/**' \
             --glob '!cmake-build-*/**' \
