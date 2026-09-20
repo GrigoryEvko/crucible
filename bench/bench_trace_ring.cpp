@@ -1,6 +1,7 @@
 // TraceRing SPSC hot path — per-sample tail-latency benchmark.
 
 #include <cstdio>
+#include <memory>
 
 #include <crucible/TraceRing.h>
 
@@ -17,9 +18,12 @@ int main() {
     std::printf("  Ring capacity: %u entries\n", crucible::TraceRing::CAPACITY);
     std::printf("\n");
 
+    // A TraceRing is 6 MiB and the stack is 8 MiB.  Each ring lives on
+    // the heap, as it does in Vigil.  The address of the ring has no
+    // effect on the timed loop.
     bench::Report reports[] = {
         [&] {
-            crucible::TraceRing ring;
+            auto ring = std::make_unique<crucible::TraceRing>();
             crucible::TraceRing::Entry e{};
             uint64_t h = 0;
             // NOTE: body performs ring.reset() inside the timed region when
@@ -28,40 +32,40 @@ int main() {
             // this trade-off.
             return bench::run("ring.try_append (+reset-on-full)", [&] {
                 e.schema_hash = crucible::SchemaHash{++h};
-                const bool ok = ring.try_append(e);
+                const bool ok = ring->try_append(e);
                 bench::do_not_optimize(ok);
-                if (!ok) ring.reset();  // prevent full-ring saturation
+                if (!ok) ring->reset();  // prevent full-ring saturation
             });
         }(),
         [&] {
-            crucible::TraceRing ring;
+            auto ring = std::make_unique<crucible::TraceRing>();
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
             // Same (+reset-on-full) trade-off as above; entry stays constant
             // so we measure the pure hot-path cost without ++h.
             return bench::run("ring.try_append (+reset-on-full, const entry)", [&] {
-                const bool ok = ring.try_append(e);
+                const bool ok = ring->try_append(e);
                 bench::do_not_optimize(ok);
-                if (!ok) ring.reset();
+                if (!ok) ring->reset();
             });
         }(),
         [&] {
-            crucible::TraceRing ring;
+            auto ring = std::make_unique<crucible::TraceRing>();
             return bench::run("ring.size()", [&] {
-                const auto s = ring.size();
+                const auto s = ring->size();
                 bench::do_not_optimize(s);
             });
         }(),
         [&] {
-            crucible::TraceRing ring;
+            auto ring = std::make_unique<crucible::TraceRing>();
             return bench::run("ring.total_produced()", [&] {
-                const auto s = ring.total_produced();
+                const auto s = ring->total_produced();
                 bench::do_not_optimize(s);
             });
         }(),
         [&] {
-            crucible::TraceRing ring;
-            return bench::run("ring.reset()", [&] { ring.reset(); });
+            auto ring = std::make_unique<crucible::TraceRing>();
+            return bench::run("ring.reset()", [&] { ring->reset(); });
         }(),
     };
 
