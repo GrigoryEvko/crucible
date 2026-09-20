@@ -22,9 +22,26 @@
 # frozen headers gained the same underscore.  The comparison normalizes both
 # sides by stripping that underscore, so any other edit still fails.
 #
+# A second exception is a soundness mirror.  A frozen file can hold a
+# live bug that the new tree has ALREADY fixed.  The old code keeps
+# hurting until Stage D deletes it, and a mirror of that fix carries no
+# divergence risk, because the same fix already exists in the new tree.
+# scripts/frozen-soundness-mirrors.txt admits one such edit per line, in
+# the shape `path — new-tree fix reference — reason`.  A
+# MODIFY under a frozen path whose path is listed is admitted, with a
+# note that names the ledger and the reason.  Only a modify is admitted.
+# An add, a rename into a frozen path and an untracked file stay
+# rejected, because a mirror edits a file that is already here.
+#
+# The ledger is fail-closed against its own rot, the way
+# check-allowlist-keys.sh is.  An entry that names a path outside every
+# frozen directory, or a path that does not exist, fails the guard and
+# names the entry.  A ledger that cannot admit the wrong thing is what
+# lets this exception weaken the freeze without dissolving it.
+#
 # Exit status:
 #   0 — clean
-#   1 — an add or modify under a frozen path
+#   1 — an add or modify under a frozen path, or a rotted ledger entry
 #   2 — bad invocation / not a git tree / self-test failure
 #   3 — the freeze base is not in this clone (shallow checkout); ctest skips
 
@@ -51,6 +68,11 @@ FROZEN_PATHS=(
     src/fixy/_Fs.cpp
     examples/fn/
 )
+
+# The soundness-mirror ledger, relative to the repository root.  One
+# admitted edit per line, in the shape `path — new-tree fix reference —
+# reason`.  A '#' line is a comment, and a blank line is skipped.
+FROZEN_MIRROR_LEDGER="scripts/frozen-soundness-mirrors.txt"
 
 usage() {
     cat >&2 <<'USAGE'
@@ -127,6 +149,72 @@ is_frozen() {
     return 1
 }
 
+# Removes the whitespace at the two ends of $1.
+trim_whitespace() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+# Prints one "path<TAB>reason" line for each entry in the ledger of $1
+# (the repository root).  The path is the field before the first
+# em-dash, the reason the field after the last one.  A comment line and
+# a blank line produce nothing.
+mirror_ledger_entries() {
+    local repo="$1" ledger="$1/$FROZEN_MIRROR_LEDGER" line path reason
+    [[ -f "$ledger" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            ''|'#'*) continue ;;
+        esac
+        [[ -z "${line//[[:space:]]/}" ]] && continue
+        path="$(trim_whitespace "${line%%—*}")"
+        reason="$(trim_whitespace "${line##*—}")"
+        [[ -n "$path" ]] || continue
+        printf '%s\t%s\n' "$path" "$reason"
+    done <"$ledger"
+}
+
+# True when $2 (a repo-relative path) is admitted by the ledger of $1.
+is_soundness_mirror() {
+    local repo="$1" want="$2" path reason
+    while IFS=$'\t' read -r path reason; do
+        [[ "$path" == "$want" ]] && return 0
+    done < <(mirror_ledger_entries "$repo")
+    return 1
+}
+
+# Prints the reason the ledger of $1 gives for admitting $2.
+mirror_reason() {
+    local repo="$1" want="$2" path reason
+    while IFS=$'\t' read -r path reason; do
+        if [[ "$path" == "$want" ]]; then
+            printf '%s' "$reason"
+            return 0
+        fi
+    done < <(mirror_ledger_entries "$repo")
+    return 1
+}
+
+# Fails when the ledger of $1 names a path that is not frozen, or a path
+# that does not exist.  Either one admits no real edit and hides a typo,
+# so the scan refuses to trust the ledger until both hold.  Prints every
+# bad entry.  Returns 1 when any entry is bad.
+validate_ledger() {
+    local repo="$1" rc=0 path reason
+    while IFS=$'\t' read -r path reason; do
+        if ! is_frozen "$path"; then
+            printf 'SOUNDNESS-MIRROR-LEDGER: %s — not under a frozen directory, so a mirror admission means nothing.  Name the frozen file, or remove the entry.\n' "$path" >&2
+            rc=1
+        elif [[ ! -f "$repo/$path" ]]; then
+            printf 'SOUNDNESS-MIRROR-LEDGER: %s — does not exist, so the entry admits no edit and hides a typo.  Re-key it onto the surviving path, or prune it.\n' "$path" >&2
+            rc=1
+        fi
+    done < <(mirror_ledger_entries "$repo")
+    return "$rc"
+}
+
 scan() {
     # $1 = repo root, $2 = base commit.  Prints violations to stderr.
     local repo="$1" base="$2" rc=0 status path dest
@@ -138,6 +226,10 @@ scan() {
         printf 'check-frozen-tree: the freeze base %s is not in this clone (shallow checkout?).  Fetch full history (fetch-depth: 0 in CI).\n' "$base" >&2
         return 3
     fi
+    # The ledger is read before the scan trusts it, so a rotted entry
+    # fails the guard even when no frozen path changed.  This is the
+    # fail-closed half of the soundness-mirror exception.
+    validate_ledger "$repo" || rc=1
     # Committed + uncommitted, against the base.  -z keeps paths with spaces
     # intact; status letters: A M D R C T.
     while IFS= read -r -d '' status && IFS= read -r -d '' path; do
@@ -156,9 +248,17 @@ scan() {
                 ;;
             *)
                 if is_frozen "$path" && ! is_marking_of_base "$repo" "$base" "$path"; then
-                    printf 'FROZEN violation: %s — %s under a frozen path.  The old substrate only shrinks; put the change in the new tree.  The one permitted edit is an include of a frozen header gaining the _ marking.\n' \
-                        "$path" "$status" >&2
-                    rc=1
+                    if [[ "$status" == M* ]] && is_soundness_mirror "$repo" "$path"; then
+                        # A modify the ledger admits.  Only a modify, and
+                        # only a listed one: an add, a type change or an
+                        # unlisted modify falls through to the violation.
+                        printf 'check-frozen-tree: ADMITTED soundness mirror: %s — %s (per %s).\n' \
+                            "$path" "$(mirror_reason "$repo" "$path")" "$FROZEN_MIRROR_LEDGER" >&2
+                    else
+                        printf 'FROZEN violation: %s — %s under a frozen path.  The old substrate only shrinks; put the change in the new tree.  The one permitted edit is an include of a frozen header gaining the _ marking, or a modify listed in %s.\n' \
+                            "$path" "$status" "$FROZEN_MIRROR_LEDGER" >&2
+                        rc=1
+                    fi
                 fi
                 ;;
         esac
@@ -194,6 +294,7 @@ case "${1:-}" in
         printf '#pragma once\n// twin\n' >"$tmp_root/include/crucible/safety/Twin.h"
         printf '#pragma once\n#include <crucible/safety/Twin.h>\n// still frozen\n' >"$tmp_root/include/crucible/safety/Includer.h"
         printf '#pragma once\n// tampered\n' >"$tmp_root/include/crucible/safety/Tampered.h"
+        printf '#pragma once\n// mirror base\n' >"$tmp_root/include/crucible/safety/Mirror.h"
         # A header at the root of include/crucible/, and a frozen file that
         # includes it.  Every other fixture here includes through a
         # subdirectory, which is why a normalizer that required one went
@@ -238,6 +339,14 @@ case "${1:-}" in
         # crucible/.
         git -C "$tmp_root" mv "include/crucible/Root.h" "include/crucible/_Root.h"
         printf '#pragma once\n#include <crucible/_Root.h>\n// roots includer\n' >"$tmp_root/include/crucible/safety/RootIncluder.h"
+        # A soundness mirror: a content edit to a frozen file that the
+        # ledger admits.  It must pass where the unledgered edit to Old.h
+        # above fails.  The ledger holds only this one valid entry, so the
+        # planted scan also proves a good ledger passes validation.
+        printf '#pragma once\n// mirror edited\n' >"$tmp_root/include/crucible/safety/Mirror.h"
+        mkdir -p "$tmp_root/scripts"
+        printf '# self-test ledger\ninclude/crucible/safety/Mirror.h — include/foundation/safety/Mirror.h — a live bug the new tree already fixed\n' \
+            >"$tmp_root/scripts/frozen-soundness-mirrors.txt"
         git -C "$tmp_root" add -A
         rc=0; scan "$tmp_root" "$base" 2>"$out" || rc=$?
         [[ "$rc" -eq 1 ]] || fail "planted tree reported $rc, want 1"
@@ -252,6 +361,16 @@ case "${1:-}" in
         if grep -qF 'safety/Includer.h' "$out"; then fail "an include-only edit following a marking was flagged"; fi
         if grep -qF 'RootIncluder.h' "$out"; then fail "an include-only edit following the marking of a root-level header was flagged"; fi
         grep -qF '_Tampered.h' "$out" || fail "a marking that also edits content was not caught"
+        # The ledgered mirror passes where the unledgered Old.h fails, and
+        # a valid ledger raises no rot of its own during the scan.
+        grep -qF 'ADMITTED soundness mirror: include/crucible/safety/Mirror.h' "$out" \
+            || fail "a ledgered modify was not admitted"
+        if grep -qF 'violation: include/crucible/safety/Mirror.h' "$out"; then
+            fail "a ledgered modify was flagged as a violation"
+        fi
+        if grep -qF 'SOUNDNESS-MIRROR-LEDGER:' "$out"; then
+            fail "a valid ledger entry was reported as rot"
+        fi
         # Exactly five edits were planted to violate.  Naming each of the
         # five and clearing each of the five permitted shapes still lets a
         # sixth report through on a path the arms above never look at, so
@@ -259,7 +378,34 @@ case "${1:-}" in
         violation_count="$(grep -c 'FROZEN violation:' "$out" || true)"
         [[ "$violation_count" -eq 5 ]] || fail "expected exactly 5 violations, got $violation_count"
         rm -f "$out"
-        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean.\n' >&2
+
+        # Fail-closed on the ledger's own rot.  validate_ledger is the
+        # guard's ledger check, and the scan runs it first, so a bad entry
+        # fails the whole guard.  Two negative controls, tested directly so
+        # the planted violations above cannot mask the result.
+        out2="$(mktemp)"
+        fail2() {
+            printf 'check-frozen-tree: SELF-TEST FAILED — %s\n' "$1" >&2
+            printf '── ledger stderr ───\n%s\n────────────────────\n' "$(cat "$out2")" >&2
+            rm -f "$out2"; exit 2
+        }
+        # A ledger entry naming a path that does not exist.
+        printf 'include/crucible/safety/Ghost.h — ref — names a file that is not here\n' \
+            >"$tmp_root/scripts/frozen-soundness-mirrors.txt"
+        rc=0; validate_ledger "$tmp_root" 2>"$out2" || rc=$?
+        [[ "$rc" -ne 0 ]] || fail2 "a ledger entry for a nonexistent path did not fail"
+        grep -qF 'SOUNDNESS-MIRROR-LEDGER: include/crucible/safety/Ghost.h' "$out2" \
+            || fail2 "the nonexistent-path ledger entry was not named"
+        # A ledger entry naming a real file that is not under a frozen dir.
+        printf 'include/foundation/Fine.h — ref — a real file, but not frozen\n' \
+            >"$tmp_root/scripts/frozen-soundness-mirrors.txt"
+        rc=0; validate_ledger "$tmp_root" 2>"$out2" || rc=$?
+        [[ "$rc" -ne 0 ]] || fail2 "a ledger entry for a non-frozen path did not fail"
+        grep -qF 'SOUNDNESS-MIRROR-LEDGER: include/foundation/Fine.h' "$out2" \
+            || fail2 "the non-frozen ledger entry was not named"
+        rm -f "$out2"
+
+        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean; a ledgered soundness mirror admitted, and a dead or non-frozen ledger entry rejected.\n' >&2
         exit 0
         ;;
     "") ;;
