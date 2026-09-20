@@ -538,9 +538,12 @@ static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
               "fixy/Collision.h: pending_rules and the corpus disagree about how many rules are waiting on an "
               "atomless axis.");
 
-static_assert(pending_axis_count == 8,
-              "the count of atom-less axes is pinned: a change here means an axis gained or lost its "
-              "first atom, which every_pending_axis_is_still_empty above reports in detail");
+// There is deliberately no `pending_axis_count == 8` pin here.  It would
+// be derived from the array it counts, and the biconditional above
+// already fixes the SET by name against the atom catalog: an axis dropped
+// from pending_axes while still atomless fails it, and an axis added while
+// it has an atom fails it too.  The count could therefore never fail on
+// its own, and a pin that cannot fail reads as a second check.
 
 // ---------------------------------------------------------------------
 // Reading a grade.

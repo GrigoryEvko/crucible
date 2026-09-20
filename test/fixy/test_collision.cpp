@@ -52,7 +52,7 @@ static_assert(live_rules<>::valid);
 static_assert(live_rules<>::validate());
 static_assert(live_rules<>::L002_ok && live_rules<>::M012_ok && live_rules<>::P010_ok && live_rules<>::L007_ok
               && live_rules<>::T001_ok && live_rules<>::R002_ok && live_rules<>::R003_ok && live_rules<>::L006_ok
-              && live_rules<>::G002_ok && live_rules<>::D002_ok);
+              && live_rules<>::G002_ok && live_rules<>::D002_ok && live_rules<>::P002_ok);
 
 // ---------------------------------------------------------------------
 // Each rule refuses its pair and admits each half.  Both directions per
@@ -105,12 +105,42 @@ static_assert(live_rules<at::dispatch::recurses<0>>::D002_ok);
 static_assert(live_rules<at::cost_unbounded>::D002_ok);
 static_assert(live_rules<at::dispatch::recurses<0>, at::cost_linear<4>>::D002_ok);
 
+// P002 ghost x an emitting surface the effect row does not name.  The
+// pair P010 admits is the pair P002 refuses, which is why both exist.
+static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P002_ok);
+static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stderr>>::P002_ok);
+static_assert(live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P010_ok,
+              "a stdio write is not an effect-row effect, so P010 cannot see it");
+static_assert(live_rules<at::ghost>::P002_ok);
+static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>>::P002_ok);
+static_assert(live_rules<at::copy, at::stdio::write<at::stdio::streams::Stdout>>::P002_ok,
+              "only the ghost grade makes an emitted write a contradiction");
+
 // ---------------------------------------------------------------------
 // The pending roster.
 
-static_assert(col::pending_axis_count == 8);
 static_assert(col::pending_rule_count == 22);
 static_assert(col::every_pending_axis_is_still_empty());
+
+// pending_axes is a hand-written list, so the pin on its length compares
+// it against the atom catalog rather than against its own size.  Counting
+// the atomless axes independently also catches a duplicate entry, which a
+// length of 8 would otherwise hide.
+[[nodiscard]] consteval std::size_t axes_without_an_atom() noexcept {
+    std::size_t found = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
+        constexpr Axis axis = [:member:];
+        if constexpr (axis != Axis::Type) {
+            if constexpr (!col::axis_has_an_atom<axis>) ++found;
+        }
+    }
+#pragma GCC diagnostic pop
+    return found;
+}
+static_assert(col::pending_axis_count == axes_without_an_atom(),
+              "pending_axes must list exactly the axes with no atom, once each");
 
 // ---------------------------------------------------------------------
 // The corpus accounts for all 54 codes.
@@ -195,7 +225,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
-    if (col::pending_axis_count != 8) return 1;
+    if (col::pending_axis_count != axes_without_an_atom()) return 1;
     if (col::pending_rule_count != 22) return 2;
     if (col::live_rule_count != 11) return 3;
 
