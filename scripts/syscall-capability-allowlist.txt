@@ -34,7 +34,8 @@ include/foundation/Platform.h:int fd = ::open("/proc/self/status", O_RDONLY | O_
 include/foundation/Platform.h:ssize_t n = ::read(fd, buf, sizeof(buf) - 1);  — effects::Init via foundation::detail::is_debugger_present (read /proc/self/status)
 include/foundation/Platform.h:::close(fd);  — effects::Init via foundation::detail::is_debugger_present (close /proc/self/status)
 include/crucible/concurrent/AdaptiveScheduler.h:if (::sched_setaffinity(0, sizeof(set), &set) == 0) {  — effects::Init via NumaThreadPool worker pinning (sched_setaffinity, surfaced by the unqualified-call branch)
-include/crucible/concurrent/Topology.h:if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) {  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch)
+include/crucible/concurrent/_Topology.h:if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) {  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch); the header was underscored by 517a43a6 and this is the same site under its superseded name
+include/fixy/concurrent/Topology.h:if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) {  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch), the ported copy of the entry above
 include/crucible/fixy/_Io.h:::munmap(sqes_, sqes_size_);  — effects::IO via IoUringRing::release_ (munmap SQEs, RAII, cap inherited)
 include/crucible/fixy/_Io.h:::munmap(cq_ring_, cq_size_);  — effects::IO via IoUringRing::release_ (munmap CQ ring, RAII, cap inherited)
 include/crucible/fixy/_Io.h:::munmap(sq_ring_, sq_size_);  — effects::IO via IoUringRing::release_ (munmap SQ ring, RAII, cap inherited)

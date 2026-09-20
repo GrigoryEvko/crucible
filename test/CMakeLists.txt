@@ -15670,5 +15670,19 @@ add_test(NAME syscall_allowlist_prose
 set_tests_properties(syscall_allowlist_prose syscall_allowlist_prose_self_test PROPERTIES
     LABELS "ci_guard;stage-A1")
 
+# allowlist_keys runs over every scripts/*allowlist*.txt and holds the one
+# property none of the owning guards can hold once it breaks: the path half
+# of each key names a file that exists.  When a port underscores a header
+# and adds a copy beside it, a key on the old path exempts nothing AND the
+# owning guard can no longer locate the site it was written for, so the
+# guard goes quiet rather than loud.  That happened twice in Stage A before
+# this ran.
+add_test(NAME allowlist_keys_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-allowlist-keys.sh --self-test)
+add_test(NAME allowlist_keys
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-allowlist-keys.sh)
+set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
+    LABELS "ci_guard;stage-A1")
+
 add_subdirectory(foundation)
 add_subdirectory(fixy)

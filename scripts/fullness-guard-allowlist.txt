@@ -68,13 +68,16 @@
 #   observe/SdcDetect.h        the cogs_ linear search -> CogSlot.
 #   observe/SyntheticProbe.h   find_peer() -> PeerSlot; retires :278,
 #                              :291 and :327 together.
-#   safety/diag/RowMismatch.h  `start` is a scan cursor, not a lookup
+#   diag/RowMismatch.h         `start` is a scan cursor, not a lookup
 #                              result.  A none()-carrying index is the
 #                              wrong shape for a cursor; this one wants
 #                              the scan to return an explicit
 #                              found/exhausted result instead.
 #
-# All six live under include/crucible/, so the edit does not belong to
+# The RowMismatch row is now two: 5b0ad895 underscored the original and
+# added the foundation copy, and an entry is keyed by path, so one site
+# in two files needs two entries.  Six of the seven live under
+# include/crucible/, so the edit does not belong to
 # whoever owns this file.  It is recorded here so the next reader does
 # not reach for a refinement and find it does not fit.
 
@@ -83,4 +86,5 @@ include/crucible/observe/SdcDetect.h:294 — not-found sentinel. `index` comes f
 include/crucible/observe/SyntheticProbe.h:278 — not-found sentinel. find_peer() returns peers_.size() on a miss; the `||` short-circuits before peers_[peer_index].
 include/crucible/observe/SyntheticProbe.h:291 — not-found sentinel, same shape as :278.
 include/crucible/observe/SyntheticProbe.h:327 — not-found sentinel, same shape as :278.
-include/crucible/safety/diag/RowMismatch.h:82 — not-found sentinel. `start` is a scan cursor that reaches pretty.size() only when the scan ran off the end; the guard returns before any indexing.
+include/crucible/safety/diag/_RowMismatch.h:82 — not-found sentinel. `start` is a scan cursor that reaches pretty.size() only when the scan ran off the end; the guard returns before any indexing.  The header was underscored by 5b0ad895 and this is the same site under its superseded name.
+include/foundation/diag/RowMismatch.h:85 — not-found sentinel, the ported copy of the entry above.
