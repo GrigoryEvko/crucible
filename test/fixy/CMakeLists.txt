@@ -508,3 +508,27 @@ fixy_neg_compile_test(neg_channel_foreign_tag_permission
   "cannot convert"
   "spsc_tag::Producer<.*TraceTag"
   "spsc_tag::Producer<.*MetaTag")
+
+# ── Task #119 (A15): the publication handles ─────────────────────────
+#
+# The double-publish abort is deliberately not a contract clause — a
+# hot-path TU sets the contract semantic to ignore, where a clause
+# elides and the second publish quietly no-ops.  Observing an abort
+# needs a process that can die, so a passing run prints one
+# PublishOnceDoublePublish banner from the child.
+fixy_test(test_handle_publish)
+
+# The standing witness for task #18: the guard that admitted
+# PublishOnce<int*> and enforced nothing.  A guard that went
+# tautological again would make this fixture stop failing.
+fixy_neg_compile_test(neg_handle_publish_once_pointer_pointee
+  "static assertion failed"
+  "PublishOnce<T> hands off a T\\*, so T is the pointee"
+  "write PublishOnce<Foo>")
+
+# The slot is a channel identity; a copy gives two slots where the
+# publisher believes there is one.
+fixy_neg_compile_test(neg_handle_publish_once_copied
+  "use of deleted function"
+  "fixy::handle::PublishOnce<T>::PublishOnce\\(const fixy::handle::PublishOnce<T>&\\)"
+  "copies would duplicate channel state")
