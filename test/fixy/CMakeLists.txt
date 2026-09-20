@@ -546,6 +546,25 @@ fixy_neg_compile_test(neg_handle_publish_once_copied
 # scripts/ctx-testing-boundary-allowlist.txt: the headers no longer name
 # foundation::effects::testing, and the guard fails on a stale entry.
 fixy_test(test_os_time)
+
+# The gate and the clamp safety/_Mutation.h's MonotonicClock carried,
+# restored to fixy/os/Time.h (#183).  A clock read on the replay-bound
+# foreground path makes replay diverge across machines, so the reader is
+# minted only by a context owning Bg, Init or Test, and its constructor
+# is private with the mint as its only friend.  The first fixture is a
+# foreground context refused at the mint: the second regex names the
+# ported gate and the third the three effects it demanded, as the
+# compiler spells them, which the source does not.  The second fixture
+# is direct construction through the ported name, refused as private;
+# the constructor is matched with its parentheses, which a brace-spelled
+# fixture never contains.
+fixy_neg_compile_test(neg_os_clock_reader_foreground_ctx
+  "no matching function for call to .mint_clock_reader<foundation::algebra::lattices::ClockSource::Monotonic>\\(const \\{anonymous\\}::ForegroundCtx&\\)"
+  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init, foundation::effects::Effect::Test\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_clock_reader_direct_ctor
+  "is private within this context"
+  "ClockReader\\(\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic\\]")
 fixy_test(test_os_sched)
 
 # ── The pin proof has one door ───────────────────────────────────────
@@ -613,6 +632,27 @@ fixy_neg_compile_test(neg_owned_mmap_forged_address
 fixy_neg_compile_test(neg_owned_mmap_forged_through_mint_linear
   "no matching function for call"
   "mint_linear<.*::Region>\\(void\\*, long unsigned int\\)")
+
+# ── OwnedFile has two doors, and both are the ones that open ─────────
+#
+# The same defect as OwnedMmap, over a FILE*: the constructor was public
+# and the destructor fcloses whatever it holds, so `OwnedFile{stdin}`
+# closed standard input on scope exit.  The constructor is private now
+# and OwnedFile::open_path / open_temporary perform the open themselves.
+#
+# Two routes, for the reason given above the mmap pair: the generic
+# mint_linear forwarder sits between any mint and the object, so the
+# forwarded route fails on the absence of a constructor to forward to.
+# The second regex of each is the token GCC prints, taken from its
+# output: the typedef name FILE, and an lvalue reference because stdin
+# is an lvalue.
+fixy_neg_compile_test(neg_owned_file_forged_stream
+  "is private within this context"
+  "OwnedFile\\(FILE\\*\\)")
+
+fixy_neg_compile_test(neg_owned_file_forged_through_mint_linear
+  "no matching function for call"
+  "mint_linear<fixy::OwnedFile>\\(FILE\\*&\\)")
 
 # ── The file surface and the three durable writers ───────────────────
 #
@@ -693,3 +733,74 @@ fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_ctx_lacks_block
 fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_write
   "no matching function for call"
   "mint_head_advancer<fixy::atom::fs::atomic_write<fixy::fs::atomicity::Rename> >\\(\\{anonymous\\}::IoBlockCtx&")
+
+# ── The witness roster: one fixture per closed line ──────────────────
+#
+# scripts/witness-roster.txt names every type that attests to a fact it
+# cannot see, and scripts/check-witness-roster.sh --gen writes
+# neg/neg_witness_<slug>_direct_construction.cpp for each closed line.
+# This loop reads the same roster and registers each fixture with the
+# two regexes the roster implies: the refusal reason it states, and the
+# refused constructor as the compiler prints it — with parentheses,
+# which a brace-spelled fixture never contains, so the source cannot
+# satisfy its own gate.  The slug and the base name are derived here
+# exactly as the generator derives them; the guard's self-test checks
+# that ctest registers precisely the fixtures on disk.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${CMAKE_SOURCE_DIR}/scripts/witness-roster.txt)
+file(STRINGS ${CMAKE_SOURCE_DIR}/scripts/witness-roster.txt _witness_lines)
+foreach(_witness_line IN LISTS _witness_lines)
+  string(STRIP "${_witness_line}" _witness_line)
+  if(_witness_line STREQUAL "" OR _witness_line MATCHES "^#")
+    continue()
+  endif()
+  string(REPLACE "|" ";" _witness_fields "${_witness_line}")
+  list(LENGTH _witness_fields _witness_field_count)
+  if(NOT _witness_field_count EQUAL 5)
+    message(FATAL_ERROR
+      "scripts/witness-roster.txt: expected 5 fields separated by '|', "
+      "got ${_witness_field_count}: ${_witness_line}")
+  endif()
+  list(GET _witness_fields 0 _witness_type)
+  list(GET _witness_fields 3 _witness_reason)
+  list(GET _witness_fields 4 _witness_status)
+  string(STRIP "${_witness_type}" _witness_type)
+  string(STRIP "${_witness_reason}" _witness_reason)
+  string(STRIP "${_witness_status}" _witness_status)
+  if(NOT _witness_status STREQUAL "closed")
+    continue()
+  endif()
+  # The same derivation as the generator's qualify(): strip every
+  # template argument list, innermost first, and drop the root
+  # namespace.  fixy::Secret<int> -> Secret, and the compiler prints
+  # `Secret(` when it refuses the constructor;
+  # fixy::concurrent::PermissionedMpscChannel<int, 8>::ProducerHandle
+  # -> concurrent_permissionedmpscchannel_producerhandle, which keeps
+  # the two channels' handles apart.
+  set(_witness_stripped "${_witness_type}")
+  set(_witness_previous "")
+  while(NOT _witness_stripped STREQUAL _witness_previous)
+    set(_witness_previous "${_witness_stripped}")
+    string(REGEX REPLACE "<[^<>]*>" "" _witness_stripped "${_witness_stripped}")
+  endwhile()
+  string(REGEX REPLACE "^(fixy|foundation)::" "" _witness_stripped "${_witness_stripped}")
+  string(REGEX REPLACE "^.*::" "" _witness_base "${_witness_stripped}")
+  string(TOLOWER "${_witness_stripped}" _witness_slug)
+  string(REGEX REPLACE "[^a-z0-9]+" "_" _witness_slug "${_witness_slug}")
+  string(REGEX REPLACE "^_+" "" _witness_slug "${_witness_slug}")
+  string(REGEX REPLACE "_+$" "" _witness_slug "${_witness_slug}")
+  if(_witness_reason STREQUAL "private")
+    set(_witness_why "is private within this context")
+  elseif(_witness_reason STREQUAL "deleted")
+    set(_witness_why "use of deleted function")
+  elseif(_witness_reason STREQUAL "no-match")
+    set(_witness_why "no matching function for call")
+  else()
+    message(FATAL_ERROR
+      "scripts/witness-roster.txt: a closed entry's reason must be "
+      "private, deleted or no-match; got '${_witness_reason}' on: ${_witness_line}")
+  endif()
+  fixy_neg_compile_test(neg_witness_${_witness_slug}_direct_construction
+    "${_witness_why}"
+    "\\b${_witness_base}\\(")
+endforeach()

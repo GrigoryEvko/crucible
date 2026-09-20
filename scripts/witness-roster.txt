@@ -1,0 +1,84 @@
+# scripts/witness-roster.txt -- every type in the new tree that attests
+# to a fact it cannot see, and the door it keeps.
+#
+# Read by scripts/check-witness-roster.sh (the walk, the generator and
+# the drift check) and by test/fixy/CMakeLists.txt (one negative-compile
+# test per closed line).  This file is the only place a witness is
+# named.
+#
+#   <type> | <header> | <forging expression> | <reason> | <status>
+#
+# type        the CLASS as a caller spells it, template arguments
+#             included -- not an alias, because the second regex is the
+#             last name segment and the compiler prints the class it
+#             refused (Linear<int> is refused as Qtt(...)).
+# header      relative to include/
+# expression  the raw data a forger would hand the constructor.
+#             forge::lvalue<T>() and forge::rvalue<T>() stand in for a
+#             T& and a T&& the forger would have to hold.
+# reason      private | deleted | no-match -- the refusal the fixture
+#             must see.  For an open entry, the task that owns the hole.
+# status      closed -- a fixture is generated and must be rejected
+#             open   -- a known hole; no fixture, tolerated by the walk
+#
+# A line is closed only after the expression was compiled and refused
+# with exactly one error carrying the reason and `<Base>(`.
+
+# -- Effect contexts and their keys ----------------------------------
+foundation::effects::Bg | foundation/effects/Effect.h | foundation::effects::Bg{} | private | closed
+foundation::effects::Init | foundation/effects/Effect.h | foundation::effects::Init{} | private | closed
+foundation::effects::Test | foundation/effects/Effect.h | foundation::effects::Test{} | private | closed
+foundation::effects::detail::ctx_mint::bg_key | foundation/effects/Effect.h | foundation::effects::detail::ctx_mint::bg_key{} | private | closed
+foundation::effects::detail::ctx_mint::init_key | foundation/effects/Effect.h | foundation::effects::detail::ctx_mint::init_key{} | private | closed
+foundation::effects::detail::ctx_mint::test_key | foundation/effects/Effect.h | foundation::effects::detail::ctx_mint::test_key{} | private | closed
+foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>> | foundation/effects/Ctx.h | foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>>{} | no-match | closed
+foundation::effects::cap_mint_key | foundation/effects/Capability.h | foundation::effects::cap_mint_key{} | private | closed
+foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg> | foundation/effects/Capability.h | foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg>{} | no-match | closed
+
+# -- Permissions -----------------------------------------------------
+foundation::permissions::perm_mint_key | foundation/permissions/Permission.h | foundation::permissions::perm_mint_key{} | private | closed
+foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{} | no-match | closed
+foundation::permissions::detail::ForkRebuildKey | foundation/permissions/Permission.h | foundation::permissions::detail::ForkRebuildKey{} | private | closed
+foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{} | private | closed
+foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()} | private | closed
+foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation/permissions/ReadView.h | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{} | private | closed
+# The pool's only constructor consumes the exclusive permission it
+# parks: there is no pool without the evidence.
+foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{} | no-match | closed
+
+# -- Session and channel handles: the owner hands them out -----------
+fixy::session::SessionHandle<fixy::session::End, int*> | fixy/session/Handle.h | fixy::session::SessionHandle<fixy::session::End, int*>{forge::rvalue<int*>()} | private | closed
+fixy::concurrent::PermissionedSpscChannel<int, 8>::ProducerHandle | fixy/concurrent/PermissionedSpscChannel.h | fixy::concurrent::PermissionedSpscChannel<int, 8>::ProducerHandle{forge::lvalue<fixy::concurrent::PermissionedSpscChannel<int, 8>>(), forge::rvalue<foundation::permissions::Permission<fixy::concurrent::spsc_tag::Producer<void>>>()} | private | closed
+fixy::concurrent::PermissionedSpscChannel<int, 8>::ConsumerHandle | fixy/concurrent/PermissionedSpscChannel.h | fixy::concurrent::PermissionedSpscChannel<int, 8>::ConsumerHandle{forge::lvalue<fixy::concurrent::PermissionedSpscChannel<int, 8>>(), forge::rvalue<foundation::permissions::Permission<fixy::concurrent::spsc_tag::Consumer<void>>>()} | private | closed
+fixy::concurrent::PermissionedMpscChannel<int, 8>::ProducerHandle | fixy/concurrent/PermissionedMpscChannel.h | fixy::concurrent::PermissionedMpscChannel<int, 8>::ProducerHandle{forge::lvalue<fixy::concurrent::PermissionedMpscChannel<int, 8>>(), forge::rvalue<foundation::permissions::SharedPermissionGuard<fixy::concurrent::mpsc_tag::Producer<void>>>()} | private | closed
+fixy::concurrent::PermissionedMpscChannel<int, 8>::ConsumerHandle | fixy/concurrent/PermissionedMpscChannel.h | fixy::concurrent::PermissionedMpscChannel<int, 8>::ConsumerHandle{forge::lvalue<fixy::concurrent::PermissionedMpscChannel<int, 8>>(), forge::rvalue<foundation::permissions::Permission<fixy::concurrent::mpsc_tag::Consumer<void>>>()} | private | closed
+
+# -- fixy value wrappers ---------------------------------------------
+fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> | fixy/Qtt.h | fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>{std::in_place, 42} | private | closed
+fixy::Refinement<fixy::positive, int, false> | fixy/Refined.h | fixy::Refinement<fixy::positive, int, false>{42} | no-match | closed
+fixy::Secret<int> | fixy/Secret.h | fixy::Secret<int>{42} | private | closed
+fixy::Tagged<int, fixy::tags::source::External> | fixy/Tagged.h | fixy::Tagged<int, fixy::tags::source::External>{42} | private | closed
+fixy::fn<int> | fixy/Fn.h | fixy::fn<int>{42} | private | closed
+fixy::Machine<int> | fixy/Machine.h | fixy::Machine<int>{42} | private | closed
+fixy::ScopedView<int, int> | fixy/ScopedView.h | fixy::ScopedView<int, int>{forge::lvalue<int const>()} | private | closed
+fixy::AppendOnly<int> | fixy/Mutation.h | fixy::AppendOnly<int>{} | private | closed
+fixy::OrderedAppendOnly<int> | fixy/Mutation.h | fixy::OrderedAppendOnly<int>{} | private | closed
+fixy::Monotonic<int> | fixy/Mutation.h | fixy::Monotonic<int>{0} | private | closed
+fixy::BoundedMonotonic<int, 10> | fixy/Mutation.h | fixy::BoundedMonotonic<int, 10>{0} | private | closed
+fixy::AtomicMonotonic<int> | fixy/Mutation.h | fixy::AtomicMonotonic<int>{0} | private | closed
+fixy::WriteOnce<int> | fixy/Mutation.h | fixy::WriteOnce<int>{} | private | closed
+fixy::WriteOnceNonNull<int*> | fixy/Mutation.h | fixy::WriteOnceNonNull<int*>{} | private | closed
+fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/MachineBridge.h | fixy::session::SessionFromMachine<int, fixy::session::End>{forge::rvalue<fixy::Machine<int>>()} | private | closed
+
+# -- OS handles: the constructor is the syscall, or it consumes one ---
+fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
+fixy::OwnedMmap<int, int, int> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, int, int>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
+fixy::io::IoUringRing | fixy/os/Io.h | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}} | private | closed
+fixy::fs::OwnedFd | fixy/os/Fs.h | fixy::fs::OwnedFd{3} | private | closed
+fixy::fs::Dirfd | fixy/os/Fs.h | fixy::fs::Dirfd{forge::rvalue<fixy::fs::OwnedFd>()} | private | closed
+fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance> | fixy/os/CipherDurable.h | fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance>{forge::rvalue<fixy::fs::OwnedFd>()} | private | closed
+
+# -- Known holes -----------------------------------------------------
+# OwnedFile takes any FILE* and fcloses it on destruction; the fix is
+# a private constructor and a static factory that fopens, as OwnedFd.
+fixy::OwnedFile | fixy/OwnedFile.h | fixy::OwnedFile{stdout} | #184 | open

@@ -615,6 +615,26 @@ add_test(NAME mint_pattern
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh)
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
   LABELS "ci_guard;FIXY-U-003")
+# The witness roster.  Every type that attests to a fact it cannot see
+# — a pin, a mapping, a descriptor, a permission, a context — is named
+# in scripts/witness-roster.txt with the expression a forger would
+# write, and test/fixy/CMakeLists.txt stands one generated fixture on
+# each closed line.  --check walks include/fixy and include/foundation
+# and fails when a class showing a door shape — a mint_ friend, a
+# passkey, a static factory, a named friend or a friend class beside a
+# closed constructor — is absent from the roster, and fails when a
+# fixture on disk is not what its roster line produces.  The self-test compiles a
+# planted public-constructor witness with this build's flags and must
+# see it COMPILE, which is the red the guard exists to raise.
+add_test(NAME witness_roster_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.sh
+          --self-test)
+set_tests_properties(witness_roster_self_test PROPERTIES
+  ENVIRONMENT "WITNESS_BUILD_DIR=${CMAKE_BINARY_DIR}")
+add_test(NAME witness_roster
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.sh --check)
+set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
+  LABELS "ci_guard;A13")
 # fixy-L-03 #1519 — Permission<Tag> long-lived-struct antipattern
 # guard (Permission.h:144-148 doc-block, CLAUDE.md §IX).  Every
 # Permission<*> declared as a class/struct member MUST be on a line
