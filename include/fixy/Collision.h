@@ -38,10 +38,23 @@
 // from the pack alone and never needs fn complete.  fn is forward
 // declared here for the partial specialization and nothing more.
 //
+// ---------------------------------------------------------------------
+// Why rules_of<Payload, Atoms...> takes the payload, and still not fn
+//
+// Four rules pair a grade with the payload's replay claim, which is the
+// DetSafe band the payload carries and nothing in the pack.  So the
+// rules take the payload as a template parameter of their own.  That is
+// the fn's FIRST template parameter, read directly from the partial
+// specialisation, and never a member of the fn: reading fn::type_t would
+// complete fn, and the cycle above closes.  live_rules<Atoms...> is the
+// same struct with void for the payload, under which every payload rule
+// stands down, so a pack-only cell keeps meaning what it says.
+//
 // Old spelling: include/crucible/safety/CollisionCatalog.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
+#include <fixy/Bands.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/atoms/Dispatch.h>
 #include <fixy/atoms/Global.h>
@@ -599,6 +612,29 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
 // predicate rather than reusing row_admits_observable_ above, which also
 // admits Block.  A blocking hot path is just as wrong, but it is W001's
 // theorem and W001 cites the futex cost, not the allocator's.
+// The payload's replay claim.
+//
+// A payload carrying a DetSafe band at PhiloxRng or Pure claims that its
+// bytes are replay-deterministic: the same inputs give the same bits on
+// any host.  That claim is what F101, F102, V101 and V203 pair with a
+// grade that falsifies it — an FP mode that reorders a sum, an ISA pin
+// that makes the reduction order host-dependent, a timestamp read.
+//
+// The old catalog carried this premise as marks_replay_required, a
+// marker trait with a false_type primary that nothing ever specialised,
+// so none of those four rules fired structurally in the old tree either.
+// fixy/Collision.h's corpus already re-read the premise as the band; this
+// is the read.  The primary is false: a payload with no band claims
+// nothing about replay, and every replay rule stands down for it.  void,
+// the pack-only view's payload, takes that primary.
+template <class Payload>
+struct replay_deterministic_ : std::false_type {};
+template <class Payload>
+    requires ::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>
+struct replay_deterministic_<Payload>
+    : std::bool_constant<::foundation::algebra::lattices::DetSafeLattice::leq(
+          ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier)> {};
+
 // The Effect row and the Observability row, each extracted from its
 // grade.
 //
@@ -694,8 +730,24 @@ struct is_recursing_<::fixy::atom::dispatch::recurses<MaxDepth>> : std::true_typ
 // theorem, carried from the old catalog with its citation, because the
 // message is what a reader gets.
 
-template <class... Atoms>
-struct live_rules {
+// The rules over one binding: its payload and its pack.
+//
+// Most rules read the pack alone, through grades<Atoms...>.  Four read
+// the PAYLOAD as well — F101, F102, V101 and V203 each pair a grade with
+// a replay claim, and the replay claim is the DetSafe band the payload
+// carries, not anything in the pack.  So the struct takes the payload as
+// its first parameter, and `live_rules<Atoms...>` below is the pack-only
+// view with the payload set to void, under which every payload rule
+// stands down.  The two names are one struct: there is one verdicts()
+// list, and a rule cannot be in the pack view and out of the bound one.
+//
+// Payload is the fn's first template parameter, never the fn.  Reading a
+// member of the fn from here would complete it, and fn's body asserts
+// this file's ValidComposition, which reads this struct — GCC reports
+// the cycle as "satisfaction of atomic constraint depends on itself".
+// Reading the payload type completes only the payload.
+template <class Payload, class... Atoms>
+struct rules_of {
     using G = grades<Atoms...>;
 
     static constexpr bool borrow = std::is_same_v<typename G::template on<Axis::Usage>, ::fixy::atom::borrow>;
@@ -749,6 +801,12 @@ struct live_rules {
     // budgeted in nanoseconds and also admit an unbounded cost, a
     // background row, buffered stdio, or a coroutine suspension.
     static constexpr bool hot = std::is_same_v<typename G::template on<Axis::Regime>, ::fixy::atom::regime::hot>;
+
+    // The one premise read from the payload rather than the pack: the
+    // DetSafe band's claim that the bytes are replay-deterministic.  See
+    // detail::replay_deterministic_ for what the claim is and where the
+    // old catalog left it.  False under the pack-only view.
+    static constexpr bool replay_deterministic = detail::replay_deterministic_<Payload>::value;
     static constexpr bool row_alloc_or_io =
         detail::row_admits_alloc_or_io_<typename G::template on<Axis::Effect>>::value;
 
@@ -979,6 +1037,12 @@ struct live_rules {
     }();
 };
 
+// The pack-only view.  Every rule that reads the payload stands down
+// under void, so a cell written against the pack alone means what it
+// says: this pack, with any payload, is or is not a contradiction.
+template <class... Atoms>
+using live_rules = rules_of<void, Atoms...>;
+
 // ---------------------------------------------------------------------
 // The pin that reads the implementation rather than the specification.
 //
@@ -1002,7 +1066,7 @@ namespace detail {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^live_rules<>, std::meta::access_context::unchecked()))) {
+                      std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked()))) {
         if constexpr (std::meta::has_identifier(member)) {
             if constexpr (std::meta::identifier_of(member).ends_with("_ok")) {
                 ++found;
@@ -1020,7 +1084,7 @@ namespace detail {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
         template for (constexpr auto member : std::define_static_array(
-                          std::meta::members_of(^^live_rules<>, std::meta::access_context::unchecked()))) {
+                          std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked()))) {
             if (member_is_the_gate_for_(member, entry.code)) implemented = true;
         }
 #pragma GCC diagnostic pop
@@ -1052,7 +1116,7 @@ namespace detail {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
-                      std::meta::members_of(^^live_rules<>, std::meta::access_context::unchecked()))) {
+                      std::meta::members_of(^^rules_of<void>, std::meta::access_context::unchecked()))) {
         if constexpr (std::meta::has_identifier(member)) {
             constexpr std::string_view id = std::meta::identifier_of(member);
             if constexpr (id.size() > 3 && id.ends_with("_ok")) {
@@ -1093,7 +1157,7 @@ struct CollisionRules {
 };
 
 template <class Type, class... Atoms>
-struct CollisionRules<::fixy::fn<Type, Atoms...>> : live_rules<Atoms...> {};
+struct CollisionRules<::fixy::fn<Type, Atoms...>> : rules_of<Type, Atoms...> {};
 
 }  // namespace collision
 

@@ -9,6 +9,7 @@
 // observed that way could not be tested at all — only the whole TU
 // failing would show it, which says nothing about which rule fired.
 
+#include <fixy/Bands.h>
 #include <fixy/Collision.h>
 #include <fixy/Fn.h>
 
@@ -29,6 +30,7 @@ using ::fixy::Axis;
 using ::fixy::axis_traits;
 using col::grades;
 using col::live_rules;
+using col::rules_of;
 using Eff = ::foundation::effects::Effect;
 namespace fe = ::foundation::effects;
 
@@ -310,6 +312,40 @@ static_assert(live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B002
 // context must admit.  That is the whole point of the containment: the
 // Effect grade stays the single authority for what the binding may do.
 static_assert(!fe::LiftsToRow<at::observe::surface<Eff::IO>>);
+
+// ---------------------------------------------------------------------
+// The payload read (task #176, ahead of the FpMode, SimdIsa and
+// HwInstruction atoms that pair with it).
+//
+// Four rules pair a grade with the payload's replay claim, and the claim
+// is the DetSafe band the payload carries.  rules_of<Payload, Atoms...>
+// reads it; live_rules<Atoms...> is the pack-only view with void for the
+// payload.  These cells are the witness that the read exists and reads
+// the right thing, ahead of any rule consuming it: a structural change
+// with nothing observable is the shape this migration keeps refusing.
+using DetTier = ::fixy::DetSafeTier_v;
+template <DetTier Tier>
+using det = ::fixy::DetSafe<Tier, int>;
+
+// The two replay-deterministic tiers claim; the five below them do not.
+static_assert(rules_of<det<DetTier::Pure>>::replay_deterministic);
+static_assert(rules_of<det<DetTier::PhiloxRng>>::replay_deterministic);
+static_assert(!rules_of<det<DetTier::MonotonicClockRead>>::replay_deterministic,
+              "a monotonic clock is bounded within one run and says nothing across runs");
+static_assert(!rules_of<det<DetTier::WallClockRead>>::replay_deterministic);
+static_assert(!rules_of<det<DetTier::NonDeterministicSyscall>>::replay_deterministic);
+
+// A payload with no band claims nothing, and so does the pack-only view.
+static_assert(!rules_of<int>::replay_deterministic);
+static_assert(!rules_of<void>::replay_deterministic);
+static_assert(!live_rules<>::replay_deterministic, "live_rules is rules_of<void, ...>");
+static_assert(std::is_same_v<live_rules<at::copy>, rules_of<void, at::copy>>);
+
+// The read alone refuses nothing: no live rule consumes it yet, so a
+// replay-deterministic payload with an empty pack is accepted.  The
+// rules that consume it arrive with their axes, and each names this
+// member.
+static_assert(rules_of<det<DetTier::Pure>>::valid);
 
 // ---------------------------------------------------------------------
 // The pending roster.

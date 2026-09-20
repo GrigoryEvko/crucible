@@ -153,11 +153,13 @@ concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() 
 // Tier 5: the collision rules and the corpus.
 //
 // The collision rules, folded in fixy/Collision.h.  A rule reads the
-// pack and nothing else, which is why this delegates the pack rather
-// than the fn: a rule that completed fn would recurse through fn's own
-// assertion of this concept.
+// payload and the pack and nothing else, which is why this delegates
+// those two rather than the fn: a rule that completed fn would recurse
+// through fn's own assertion of this concept.  The payload is read for
+// one premise only, the DetSafe band's replay claim, and it is the fn's
+// first template parameter rather than a member of the fn.
 template <class T, class... Atoms>
-concept ValidComposition = ::fixy::collision::live_rules<Atoms...>::valid;
+concept ValidComposition = ::fixy::collision::rules_of<T, Atoms...>::valid;
 
 // The refused-combination corpus, folded in fixy/Corpus.h.  An entry
 // reads the same resolved grades a rule does, and never fn, for the
@@ -407,7 +409,7 @@ template <class T, class... Atoms>
         return "fixy::fn<Type, Atoms...> [tier 5]: not reached — tier 4 refused this pack.";
     } else {
         using Entry = corpus_tag_or_void_t<T, Atoms...>;
-        constexpr std::string_view codes = ::fixy::collision::live_rules<Atoms...>::failing_codes();
+        constexpr std::string_view codes = ::fixy::collision::rules_of<T, Atoms...>::failing_codes();
         std::string text{"fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};
         if constexpr (!std::is_void_v<Entry>) {
             text += "Corpus entry ";
