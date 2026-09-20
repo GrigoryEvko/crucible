@@ -6,6 +6,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <type_traits>
 
@@ -82,12 +84,67 @@ void every_accessor_runs_at_run_time() {
     [[maybe_unused]] auto test_ctx = fe::testing::test();
 }
 
+// The rest of Row.h is consteval-only.  This body is the one place the
+// row types are instantiated as runtime objects, so a canonicalization
+// change that dragged in a non-trivial default constructor fails here.
+void row_types_run_at_run_time() {
+    using namespace ::foundation::effects;
+    using namespace ::foundation::effects::detail::effect_row_self_test;
+    [[maybe_unused]] Row<Effect::Bg> r_bg{};
+    [[maybe_unused]] Row<Effect::Bg, Effect::IO> r_bg_io{};
+    [[maybe_unused]] EmptyRow r_empty{};
+
+    [[maybe_unused]] auto sz1 = sizeof(r_bg);
+    [[maybe_unused]] auto sz2 = sizeof(r_empty);
+
+    [[maybe_unused]] std::size_t n_bg = decltype(r_bg)::size;
+    [[maybe_unused]] std::size_t n_bg_io = decltype(r_bg_io)::size;
+    [[maybe_unused]] std::size_t n_empty = EmptyRow::size;
+}
+
+// Every accessor is called here with non-constant arguments.  The
+// static_assert wall in the header only proves the constant-evaluated
+// path.
+void effect_row_lattice_runs_at_run_time() noexcept {
+    using namespace ::foundation::effects;
+    using L = EffectRowLattice;
+    using EL = L::element_type;
+
+    [[maybe_unused]] EL b = L::bottom();
+    [[maybe_unused]] EL t = L::top();
+
+    [[maybe_unused]] bool ok_le = L::leq(b, t);
+    [[maybe_unused]] EL u = L::join(b, t);
+    [[maybe_unused]] EL i = L::meet(b, t);
+
+    [[maybe_unused]] auto nm = ::foundation::algebra::lattice_name<L>();
+
+    [[maybe_unused]] EL d_pure = row_descriptor_v<Row<>>;
+    [[maybe_unused]] EL d_alloc = row_descriptor_v<Row<Effect::Alloc>>;
+
+    Effect atom = ok_le ? Effect::IO : Effect::Alloc;  // deliberately not constexpr
+    [[maybe_unused]] EL one = L::single(atom);
+    [[maybe_unused]] bool holds = L::contains(L::join(d_alloc, one), atom);
+
+    using AtAlloc = L::template At<Effect::Alloc>;
+    using AtAB = L::template At<Effect::Alloc, Effect::IO>;
+
+    [[maybe_unused]] auto at_b = AtAlloc::bottom();
+    [[maybe_unused]] auto at_t = AtAlloc::top();
+    [[maybe_unused]] bool at_le = AtAlloc::leq(at_b, at_t);
+    [[maybe_unused]] auto at_join = AtAlloc::join(at_b, at_t);
+    [[maybe_unused]] auto at_meet = AtAlloc::meet(at_b, at_t);
+    [[maybe_unused]] auto at_nm = AtAlloc::name();
+    [[maybe_unused]] std::uint64_t at_bits = AtAlloc::bits();
+    [[maybe_unused]] std::uint64_t ab_bits = AtAB::bits();
+}
+
 }  // namespace
 
 int main() {
     every_accessor_runs_at_run_time();
-    fe::detail::effect_row_self_test::runtime_smoke_test();
-    fe::runtime_smoke_test_lattice();
+    row_types_run_at_run_time();
+    effect_row_lattice_runs_at_run_time();
 
     auto bg = fe::testing::bg();
     auto init = fe::testing::init();
