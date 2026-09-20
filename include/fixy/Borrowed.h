@@ -245,40 +245,41 @@ public:
 // The detection surface of the old IsBorrowed.h and IsBorrowedRef.h,
 // plus the same question asked of WeakRef.  One reflection query
 // answers each, and the associated types are read off the wrapper's
-// own typedefs.
+// own typedefs.  Each concept is the question; the value spelling
+// beside it is derived from it and read by nothing that gates.
 
 template <typename T>
-inline constexpr bool is_borrowed_v = ::foundation::reflect::is_instance_of_v<T, ^^Borrowed>;
+concept IsBorrowed = ::foundation::reflect::IsInstanceOf<T, ^^Borrowed>;
 
 template <typename T>
-concept IsBorrowed = is_borrowed_v<T>;
+inline constexpr bool is_borrowed_v = IsBorrowed<T>;
 
 template <typename T>
-    requires is_borrowed_v<T>
+    requires IsBorrowed<T>
 using borrowed_value_t = typename std::remove_cvref_t<T>::element_type;
 
 template <typename T>
-    requires is_borrowed_v<T>
+    requires IsBorrowed<T>
 using borrowed_source_t = typename std::remove_cvref_t<T>::source_type;
 
 template <typename T>
-inline constexpr bool is_borrowed_ref_v = ::foundation::reflect::is_instance_of_v<T, ^^BorrowedRef>;
+concept IsBorrowedRef = ::foundation::reflect::IsInstanceOf<T, ^^BorrowedRef>;
 
 template <typename T>
-concept IsBorrowedRef = is_borrowed_ref_v<T>;
+inline constexpr bool is_borrowed_ref_v = IsBorrowedRef<T>;
 
 template <typename T>
-    requires is_borrowed_ref_v<T>
+    requires IsBorrowedRef<T>
 using borrowed_ref_value_t = typename std::remove_cvref_t<T>::element_type;
 
 template <typename T>
-inline constexpr bool is_weak_ref_v = ::foundation::reflect::is_instance_of_v<T, ^^WeakRef>;
+concept IsWeakRef = ::foundation::reflect::IsInstanceOf<T, ^^WeakRef>;
 
 template <typename T>
-concept IsWeakRef = is_weak_ref_v<T>;
+inline constexpr bool is_weak_ref_v = IsWeakRef<T>;
 
 template <typename T>
-    requires is_weak_ref_v<T>
+    requires IsWeakRef<T>
 using weak_ref_value_t = typename std::remove_cvref_t<T>::element_type;
 
 namespace detail::borrowed_layout {
