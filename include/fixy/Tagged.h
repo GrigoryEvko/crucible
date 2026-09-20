@@ -281,16 +281,17 @@ static_assert(sizeof(Tagged<long, tags::access::AppendOnly>) == sizeof(long));
 // The detection surface of the old IsTagged.h.  One reflection query
 // answers it, and the associated types are read off the wrapper's own
 // typedefs, so there is no primary-plus-specialization ladder to keep
-// in step with the class.
+// in step with the class.  The concept is the question; the value
+// spelling is derived from it and read by nothing that gates.
 
 template <typename T>
-inline constexpr bool is_tagged_v = ::foundation::reflect::is_instance_of_v<T, ^^Tagged>;
+concept IsTagged = ::foundation::reflect::IsInstanceOf<T, ^^Tagged>;
 
 template <typename T>
-concept IsTagged = is_tagged_v<T>;
+inline constexpr bool is_tagged_v = IsTagged<T>;
 
 template <typename T>
-    requires is_tagged_v<T>
+    requires IsTagged<T>
 using tagged_value_t = typename std::remove_cvref_t<T>::value_type;
 
 template <typename T>
