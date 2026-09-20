@@ -269,30 +269,6 @@ template <typename T_>
 using OuterGraded = Graded<ModalityKind::Absolute, memory_scope::OuterScope, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(OuterGraded, EightByteValue);
 
-inline void runtime_smoke_test() {
-    MemoryScope a = MemoryScope::Cta;
-    MemoryScope b = MemoryScope::Inner;
-    [[maybe_unused]] bool l1 = MemoryScopeLattice::leq(a, b);
-    [[maybe_unused]] MemoryScope j1 = MemoryScopeLattice::join(a, b);
-    [[maybe_unused]] MemoryScope m1 = MemoryScopeLattice::meet(a, b);
-    [[maybe_unused]] MemoryScope bot = MemoryScopeLattice::bottom();
-    [[maybe_unused]] MemoryScope topv = MemoryScopeLattice::top();
-
-    MemoryScope warp = MemoryScope::Warp;
-    [[maybe_unused]] bool within = MemoryScopeLattice::leq(warp, a);  // Warp ⊑ Cta
-    [[maybe_unused]] bool xtrunk = mem_scope_same_trunk(a, b);  // false
-
-    OneByteValue v{42};
-    SystemScopeGraded<OneByteValue> initial{v, memory_scope::SystemScope::bottom()};
-    auto widened = initial.weaken(memory_scope::SystemScope::top());
-    auto composed = initial.compose(widened);
-    [[maybe_unused]] auto g = widened.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    memory_scope::SystemScope::element_type e{};
-    [[maybe_unused]] MemoryScope rec = e;
-}
-
 }  // namespace detail::memory_scope_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

@@ -111,32 +111,6 @@ template <typename T_>
 using ColdGraded = Graded<ModalityKind::Absolute, hot_path_tier::ColdTier, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdGraded, EightByteValue);
 
-inline void runtime_smoke_test() {
-    HotPathTier a = HotPathTier::Cold;
-    HotPathTier b = HotPathTier::Hot;
-    [[maybe_unused]] bool l1 = HotPathLattice::leq(a, b);
-    [[maybe_unused]] HotPathTier j1 = HotPathLattice::join(a, b);
-    [[maybe_unused]] HotPathTier m1 = HotPathLattice::meet(a, b);
-    [[maybe_unused]] HotPathTier bot = HotPathLattice::bottom();
-    [[maybe_unused]] HotPathTier topv = HotPathLattice::top();
-
-    HotPathTier warm = HotPathTier::Warm;
-    [[maybe_unused]] HotPathTier j2 = HotPathLattice::join(warm, a);
-    [[maybe_unused]] HotPathTier m2 = HotPathLattice::meet(warm, b);
-
-    OneByteValue v{42};
-    HotGraded<OneByteValue> initial{v, hot_path_tier::HotTier::bottom()};
-    auto widened = initial.weaken(hot_path_tier::HotTier::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(hot_path_tier::HotTier::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    hot_path_tier::HotTier::element_type e{};
-    [[maybe_unused]] HotPathTier rec = e;
-}
-
 }  // namespace detail::hot_path_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

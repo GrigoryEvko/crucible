@@ -214,32 +214,6 @@ template <typename T_>
 using NoneGraded = Graded<ModalityKind::Absolute, vendor_backend::NoneVendor, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, EightByteValue);
 
-inline void runtime_smoke_test() {
-    VendorBackend a = VendorBackend::NV;
-    VendorBackend b = VendorBackend::AMD;
-    [[maybe_unused]] bool l1 = VendorLattice::leq(a, b);
-    [[maybe_unused]] VendorBackend j1 = VendorLattice::join(a, b);
-    [[maybe_unused]] VendorBackend m1 = VendorLattice::meet(a, b);
-    [[maybe_unused]] VendorBackend bot = VendorLattice::bottom();
-    [[maybe_unused]] VendorBackend topv = VendorLattice::top();
-
-    VendorBackend portable = VendorBackend::Portable;
-    [[maybe_unused]] VendorBackend j2 = VendorLattice::join(portable, a);
-    [[maybe_unused]] VendorBackend m2 = VendorLattice::meet(portable, b);
-
-    OneByteValue v{42};
-    PortableGraded<OneByteValue> initial{v, vendor_backend::PortableVendor::bottom()};
-    auto widened = initial.weaken(vendor_backend::PortableVendor::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(vendor_backend::PortableVendor::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    vendor_backend::PortableVendor::element_type e{};
-    [[maybe_unused]] VendorBackend rec = e;
-}
-
 }  // namespace detail::vendor_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

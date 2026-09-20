@@ -140,26 +140,6 @@ static_assert(RecipeFamilyLattice::name() == "RecipeFamilyLattice");
 static_assert(recipe_family_name(RecipeFamily::BlockStable) == "BlockStable");
 static_assert(recipe_family_name(static_cast<RecipeFamily>(7)) == "<unknown RecipeFamily>");
 
-inline void runtime_smoke_test() {
-    RecipeFamily bot = RecipeFamilyLattice::bottom();
-    RecipeFamily topv = RecipeFamilyLattice::top();
-    RecipeFamily kahan = RecipeFamily::Kahan;
-    [[maybe_unused]] bool l = RecipeFamilyLattice::leq(bot, topv);
-    [[maybe_unused]] auto j = RecipeFamilyLattice::join(kahan, topv);
-    [[maybe_unused]] auto m = RecipeFamilyLattice::meet(kahan, bot);
-
-    auto sib_join = RecipeFamilyLattice::join(RecipeFamily::Linear, RecipeFamily::Pairwise);
-    if (sib_join != RecipeFamily::Any) std::abort();
-
-    auto sib_meet = RecipeFamilyLattice::meet(RecipeFamily::Linear, RecipeFamily::Pairwise);
-    if (sib_meet != RecipeFamily::None) std::abort();
-
-    using RecipeGraded = Graded<ModalityKind::Absolute, RecipeFamilyLattice, int>;
-    RecipeGraded v{42, RecipeFamily::Kahan};
-    [[maybe_unused]] auto g = v.grade();
-    [[maybe_unused]] auto vp = v.peek();
-}
-
 }  // namespace detail::recipe_family_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

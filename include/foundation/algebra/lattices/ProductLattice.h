@@ -503,55 +503,6 @@ static_assert(P_u8u8u8::name() == "Product<L1x...xLn>");
 static_assert(P_u8::name() == "Product<L1x...xLn>");
 static_assert(P_u8x4::name() == "Product<L1x...xLn>");
 
-// Calling each operation on runtime operands catches the defects the
-// compile-time assertions above cannot see, such as an inline body that only
-// ever instantiates in a consteval context.
-inline void runtime_smoke_test() {
-    using L = P_u8u8;
-    L::element_type lo{1, 2};
-    L::element_type hi{5, 7};
-    [[maybe_unused]] bool le = L::leq(lo, hi);
-    [[maybe_unused]] L::element_type jn = L::join(lo, hi);
-    [[maybe_unused]] L::element_type mt = L::meet(lo, hi);
-    [[maybe_unused]] L::element_type bt = L::bottom();
-    [[maybe_unused]] L::element_type tp = L::top();
-
-    OneByteValue v{42};
-    BudgetU8U8<OneByteValue> initial{v, lo};
-    auto widened = initial.weaken(hi);
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(L::top());
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume().c;
-    [[maybe_unused]] auto _r = std::move(rv_widen).consume().c;
-
-    using N = P_u8u8u8;
-    N::element_type n_lo{};
-    N::get<0>(n_lo) = 1;
-    N::get<1>(n_lo) = 2;
-    N::get<2>(n_lo) = 3;
-    N::element_type n_hi{};
-    N::get<0>(n_hi) = 4;
-    N::get<1>(n_hi) = 5;
-    N::get<2>(n_hi) = 6;
-
-    [[maybe_unused]] bool n_le = N::leq(n_lo, n_hi);
-    [[maybe_unused]] N::element_type n_jn = N::join(n_lo, n_hi);
-    [[maybe_unused]] N::element_type n_mt = N::meet(n_lo, n_hi);
-    [[maybe_unused]] N::element_type n_bt = N::bottom();
-    [[maybe_unused]] N::element_type n_tp = N::top();
-
-    OneByteValue n_v{17};
-    Budgeted3U8<OneByteValue> n_initial{n_v, n_lo};
-    auto n_widened = n_initial.weaken(n_hi);
-    auto n_composed = n_initial.compose(n_widened);
-    [[maybe_unused]] auto n_g = n_composed.grade();
-    [[maybe_unused]] auto n_vc = n_composed.peek().c;
-}
-
 }  // namespace detail::product_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

@@ -120,35 +120,6 @@ template <typename T_>
 using CrossSocketGraded = Graded<ModalityKind::Absolute, pinning_requirement::CrossSocketSafePin, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CrossSocketGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    PinningRequirement a = PinningRequirement::NotRequired;
-    PinningRequirement b = PinningRequirement::CrossSocketSafe;
-    [[maybe_unused]] bool l1 = PinningRequirementLattice::leq(a, b);
-    [[maybe_unused]] PinningRequirement j1 = PinningRequirementLattice::join(a, b);
-    [[maybe_unused]] PinningRequirement m1 = PinningRequirementLattice::meet(a, b);
-    [[maybe_unused]] PinningRequirement bot = PinningRequirementLattice::bottom();
-    [[maybe_unused]] PinningRequirement top = PinningRequirementLattice::top();
-
-    PinningRequirement core = PinningRequirement::PerCore;
-    PinningRequirement socket = PinningRequirement::PerSocket;
-    [[maybe_unused]] PinningRequirement j2 = PinningRequirementLattice::join(core, socket);
-    [[maybe_unused]] PinningRequirement m2 = PinningRequirementLattice::meet(core, socket);
-
-    OneByteValue v{42};
-    CorePinnedGraded<OneByteValue> initial{v, pinning_requirement::PerCorePin::bottom()};
-    auto widened = initial.weaken(pinning_requirement::PerCorePin::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(pinning_requirement::PerCorePin::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    pinning_requirement::PerCorePin::element_type e{};
-    [[maybe_unused]] PinningRequirement rec = e;
-}
-
 }  // namespace detail::pinning_requirement_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

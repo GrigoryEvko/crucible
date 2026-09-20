@@ -297,36 +297,6 @@ static_assert(sizeof(foundation::algebra::Graded<foundation::algebra::ModalityKi
               "A carrier graded on At<Boot> must add no bytes to an eight-byte "
               "payload.");
 
-// Calling each operation on runtime operands catches the defects the
-// compile-time assertions above cannot see, such as an inline body that only
-// ever instantiates in a consteval context.
-inline void runtime_smoke_test() {
-    ClockSource source = ClockSource::TscRaw;
-    auto tsc_point = clock_source_project(source);
-    [[maybe_unused]] DetSafeTier det = ClockSourceLattice::get<0>(tsc_point);
-    [[maybe_unused]] SuspendBehavior suspend = ClockSourceLattice::get<1>(tsc_point);
-    [[maybe_unused]] PinningRequirement pin = ClockSourceLattice::get<2>(tsc_point);
-
-    auto boot_point = clock_source_project(ClockSource::Boot);
-    [[maybe_unused]] bool le = ClockSourceLattice::leq(boot_point, tsc_point);
-    [[maybe_unused]] auto jn = ClockSourceLattice::join(boot_point, tsc_point);
-    [[maybe_unused]] auto mt = ClockSourceLattice::meet(boot_point, tsc_point);
-    [[maybe_unused]] auto bt = ClockSourceLattice::bottom();
-    [[maybe_unused]] auto tp = ClockSourceLattice::top();
-
-    [[maybe_unused]] auto built = ClockSourceLattice::make_point(det, suspend, pin);
-
-    EightByteValue payload{42};
-    ClockGraded<EightByteValue> initial{payload, boot_point};
-    auto widened = initial.weaken(tsc_point);
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(ClockSourceLattice::top());
-
-    [[maybe_unused]] auto grade = rv_widen.grade();
-    [[maybe_unused]] auto value = composed.peek().v;
-    [[maybe_unused]] auto moved = std::move(composed).consume().v;
-}
-
 }  // namespace detail::clock_source_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

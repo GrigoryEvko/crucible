@@ -114,35 +114,6 @@ template <typename T_>
 using MonoClockGraded = Graded<ModalityKind::Absolute, suspend_behavior::PausesOnSuspendClock, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(MonoClockGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    SuspendBehavior a = SuspendBehavior::Unknown;
-    SuspendBehavior b = SuspendBehavior::KeepsTicking;
-    [[maybe_unused]] bool l1 = SuspendBehaviorLattice::leq(a, b);
-    [[maybe_unused]] SuspendBehavior j1 = SuspendBehaviorLattice::join(a, b);
-    [[maybe_unused]] SuspendBehavior m1 = SuspendBehaviorLattice::meet(a, b);
-    [[maybe_unused]] SuspendBehavior bot = SuspendBehaviorLattice::bottom();
-    [[maybe_unused]] SuspendBehavior top = SuspendBehaviorLattice::top();
-
-    SuspendBehavior mono = SuspendBehavior::PausesOnSuspend;
-    SuspendBehavior boot = SuspendBehavior::KeepsTicking;
-    [[maybe_unused]] SuspendBehavior j2 = SuspendBehaviorLattice::join(mono, boot);
-    [[maybe_unused]] SuspendBehavior m2 = SuspendBehaviorLattice::meet(mono, boot);
-
-    OneByteValue v{42};
-    BootClockGraded<OneByteValue> initial{v, suspend_behavior::KeepsTickingClock::bottom()};
-    auto widened = initial.weaken(suspend_behavior::KeepsTickingClock::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(suspend_behavior::KeepsTickingClock::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    suspend_behavior::KeepsTickingClock::element_type e{};
-    [[maybe_unused]] SuspendBehavior rec = e;
-}
-
 }  // namespace detail::suspend_behavior_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

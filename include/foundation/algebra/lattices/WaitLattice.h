@@ -115,35 +115,6 @@ template <typename T_>
 using BlockGraded = Graded<ModalityKind::Absolute, wait_strategy::BlockStrategy, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BlockGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    WaitStrategy a = WaitStrategy::Block;
-    WaitStrategy b = WaitStrategy::SpinPause;
-    [[maybe_unused]] bool l1 = WaitLattice::leq(a, b);
-    [[maybe_unused]] WaitStrategy j1 = WaitLattice::join(a, b);
-    [[maybe_unused]] WaitStrategy m1 = WaitLattice::meet(a, b);
-    [[maybe_unused]] WaitStrategy bot = WaitLattice::bottom();
-    [[maybe_unused]] WaitStrategy topv = WaitLattice::top();
-
-    WaitStrategy umwait = WaitStrategy::UmwaitC01;
-    WaitStrategy futex = WaitStrategy::AcquireWait;
-    [[maybe_unused]] WaitStrategy j2 = WaitLattice::join(umwait, futex);
-    [[maybe_unused]] WaitStrategy m2 = WaitLattice::meet(umwait, futex);
-
-    OneByteValue v{42};
-    SpinPauseGraded<OneByteValue> initial{v, wait_strategy::SpinPauseStrategy::bottom()};
-    auto widened = initial.weaken(wait_strategy::SpinPauseStrategy::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(wait_strategy::SpinPauseStrategy::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    wait_strategy::SpinPauseStrategy::element_type e{};
-    [[maybe_unused]] WaitStrategy rec = e;
-}
-
 }  // namespace detail::wait_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

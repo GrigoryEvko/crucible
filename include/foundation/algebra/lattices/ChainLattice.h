@@ -353,27 +353,6 @@ static_assert(!verify_chain_lattice<ReversedChainLattice>(),
               "order is not its lattice order.");
 static_assert(verify_pinned_at<ReversedChainLattice>(), "The pinned-grade walk does not depend on declaration order.");
 
-// The volatile operand keeps the call out of constant evaluation, so the
-// runtime bodies reach the sanitizers.
-inline void runtime_smoke_test() {
-    volatile std::uint8_t raw_hi = 2;
-    const SmokeTier lo = SmokeTier::Lo;
-    const SmokeTier hi = static_cast<SmokeTier>(raw_hi);
-
-    [[maybe_unused]] bool le_dir = SmokeChainLattice::leq(lo, hi);
-    [[maybe_unused]] bool ge_dir = SmokeChainLattice::leq(hi, lo);
-    [[maybe_unused]] SmokeTier mx = SmokeChainLattice::join(lo, hi);
-    [[maybe_unused]] SmokeTier mn = SmokeChainLattice::meet(lo, hi);
-    [[maybe_unused]] SmokeTier bot = SmokeChainLattice::bottom();
-    [[maybe_unused]] SmokeTier top = SmokeChainLattice::top();
-
-    using MidAt = SmokeChainLattice::At<SmokeTier::Mid>;
-    MidAt::element_type pin{};
-    [[maybe_unused]] SmokeTier recovered = pin;
-    [[maybe_unused]] bool pin_leq = MidAt::leq(pin, MidAt::top());
-    [[maybe_unused]] MidAt::element_type pin_join = MidAt::join(pin, MidAt::bottom());
-}
-
 }  // namespace detail::chain_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

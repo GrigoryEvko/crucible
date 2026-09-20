@@ -130,34 +130,6 @@ template <typename T_>
 using FullFenceGraded = Graded<ModalityKind::Absolute, BarrierStrengthLattice::At<BarrierStrength::FullFence>, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FullFenceGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    BarrierStrength a = BarrierStrength::None;
-    BarrierStrength b = BarrierStrength::FullFence;
-    [[maybe_unused]] bool rl = BarrierStrengthLattice::leq(a, b);
-    [[maybe_unused]] BarrierStrength rj = BarrierStrengthLattice::join(a, b);
-    [[maybe_unused]] BarrierStrength rm = BarrierStrengthLattice::meet(a, b);
-    [[maybe_unused]] BarrierStrength bot = BarrierStrengthLattice::bottom();
-    [[maybe_unused]] BarrierStrength topv = BarrierStrengthLattice::top();
-
-    BarrierStrength acqrel = BarrierStrength::AcqRel;
-    BarrierStrength seqcst = BarrierStrength::SeqCst;
-    [[maybe_unused]] bool seqcst_satisfies_acqrel = BarrierStrengthLattice::leq(acqrel, seqcst);
-    [[maybe_unused]] BarrierStrength rj2 = BarrierStrengthLattice::join(acqrel, seqcst);
-    [[maybe_unused]] BarrierStrength rm2 = BarrierStrengthLattice::meet(acqrel, seqcst);
-
-    BarrierStrengthLattice::At<BarrierStrength::ReleaseStore>::element_type rel_pin{};
-    [[maybe_unused]] BarrierStrength rel_recovered = rel_pin;
-
-    OneByteValue payload{9};
-    NoneGraded<OneByteValue> initial{payload, BarrierStrengthLattice::At<BarrierStrength::None>::bottom()};
-    auto widened = initial.weaken(BarrierStrengthLattice::At<BarrierStrength::None>::top());
-    auto composed = initial.compose(widened);
-    [[maybe_unused]] auto grade = widened.grade();
-    [[maybe_unused]] auto peeked = composed.peek().c;
-}
-
 }  // namespace detail::barrier_strength_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

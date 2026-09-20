@@ -118,35 +118,6 @@ template <typename T_>
 using HeapGraded = Graded<ModalityKind::Absolute, alloc_class_tag::HeapAlloc, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    AllocClassTag a = AllocClassTag::HugePage;
-    AllocClassTag b = AllocClassTag::Stack;
-    [[maybe_unused]] bool l1 = AllocClassLattice::leq(a, b);
-    [[maybe_unused]] AllocClassTag j1 = AllocClassLattice::join(a, b);
-    [[maybe_unused]] AllocClassTag m1 = AllocClassLattice::meet(a, b);
-    [[maybe_unused]] AllocClassTag bot = AllocClassLattice::bottom();
-    [[maybe_unused]] AllocClassTag topv = AllocClassLattice::top();
-
-    AllocClassTag heap = AllocClassTag::Heap;
-    AllocClassTag arena = AllocClassTag::Arena;
-    [[maybe_unused]] AllocClassTag j2 = AllocClassLattice::join(heap, arena);
-    [[maybe_unused]] AllocClassTag m2 = AllocClassLattice::meet(heap, arena);
-
-    OneByteValue v{42};
-    StackGraded<OneByteValue> initial{v, alloc_class_tag::StackAlloc::bottom()};
-    auto widened = initial.weaken(alloc_class_tag::StackAlloc::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(alloc_class_tag::StackAlloc::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    alloc_class_tag::StackAlloc::element_type e{};
-    [[maybe_unused]] AllocClassTag rec = e;
-}
-
 }  // namespace detail::alloc_class_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

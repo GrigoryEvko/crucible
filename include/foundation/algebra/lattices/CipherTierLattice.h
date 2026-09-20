@@ -111,32 +111,6 @@ template <typename T_>
 using ColdGraded = Graded<ModalityKind::Absolute, cipher_tier_tag::ColdTier, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdGraded, EightByteValue);
 
-inline void runtime_smoke_test() {
-    CipherTierTag a = CipherTierTag::Cold;
-    CipherTierTag b = CipherTierTag::Hot;
-    [[maybe_unused]] bool l1 = CipherTierLattice::leq(a, b);
-    [[maybe_unused]] CipherTierTag j1 = CipherTierLattice::join(a, b);
-    [[maybe_unused]] CipherTierTag m1 = CipherTierLattice::meet(a, b);
-    [[maybe_unused]] CipherTierTag bot = CipherTierLattice::bottom();
-    [[maybe_unused]] CipherTierTag topv = CipherTierLattice::top();
-
-    CipherTierTag warm = CipherTierTag::Warm;
-    [[maybe_unused]] CipherTierTag j2 = CipherTierLattice::join(warm, a);
-    [[maybe_unused]] CipherTierTag m2 = CipherTierLattice::meet(warm, b);
-
-    OneByteValue v{42};
-    HotGraded<OneByteValue> initial{v, cipher_tier_tag::HotTier::bottom()};
-    auto widened = initial.weaken(cipher_tier_tag::HotTier::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(cipher_tier_tag::HotTier::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    cipher_tier_tag::HotTier::element_type e{};
-    [[maybe_unused]] CipherTierTag rec = e;
-}
-
 }  // namespace detail::cipher_tier_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

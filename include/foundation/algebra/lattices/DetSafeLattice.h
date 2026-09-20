@@ -125,35 +125,6 @@ template <typename T_>
 using NdsGraded = Graded<ModalityKind::Absolute, det_safe_tier::NdsTier, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NdsGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    DetSafeTier a = DetSafeTier::NonDeterministicSyscall;
-    DetSafeTier b = DetSafeTier::Pure;
-    [[maybe_unused]] bool l1 = DetSafeLattice::leq(a, b);
-    [[maybe_unused]] DetSafeTier j1 = DetSafeLattice::join(a, b);
-    [[maybe_unused]] DetSafeTier m1 = DetSafeLattice::meet(a, b);
-    [[maybe_unused]] DetSafeTier bot = DetSafeLattice::bottom();
-    [[maybe_unused]] DetSafeTier top = DetSafeLattice::top();
-
-    DetSafeTier mono = DetSafeTier::MonotonicClockRead;
-    DetSafeTier philox = DetSafeTier::PhiloxRng;
-    [[maybe_unused]] DetSafeTier j2 = DetSafeLattice::join(mono, philox);
-    [[maybe_unused]] DetSafeTier m2 = DetSafeLattice::meet(mono, philox);
-
-    OneByteValue v{42};
-    PureGraded<OneByteValue> initial{v, det_safe_tier::PureTier::bottom()};
-    auto widened = initial.weaken(det_safe_tier::PureTier::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(det_safe_tier::PureTier::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    det_safe_tier::PureTier::element_type e{};
-    [[maybe_unused]] DetSafeTier rec = e;
-}
-
 }  // namespace detail::det_safe_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

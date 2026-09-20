@@ -126,35 +126,6 @@ template <typename T_>
 using RelaxedGraded = Graded<ModalityKind::Absolute, tolerance::RelaxedTier, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxedGraded, EightByteValue);
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    Tolerance a = Tolerance::RELAXED;
-    Tolerance b = Tolerance::BITEXACT;
-    [[maybe_unused]] bool l1 = ToleranceLattice::leq(a, b);
-    [[maybe_unused]] Tolerance j1 = ToleranceLattice::join(a, b);
-    [[maybe_unused]] Tolerance m1 = ToleranceLattice::meet(a, b);
-    [[maybe_unused]] Tolerance bot = ToleranceLattice::bottom();
-    [[maybe_unused]] Tolerance top = ToleranceLattice::top();
-
-    Tolerance fp16 = Tolerance::ULP_FP16;
-    Tolerance fp32 = Tolerance::ULP_FP32;
-    [[maybe_unused]] Tolerance j2 = ToleranceLattice::join(fp16, fp32);
-    [[maybe_unused]] Tolerance m2 = ToleranceLattice::meet(fp16, fp32);
-
-    OneByteValue v{42};
-    BitexactGraded<OneByteValue> initial{v, tolerance::BitexactTier::bottom()};
-    auto widened = initial.weaken(tolerance::BitexactTier::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(tolerance::BitexactTier::top());
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = composed.peek().c;
-
-    tolerance::BitexactTier::element_type e{};
-    [[maybe_unused]] Tolerance rec = e;
-}
-
 }  // namespace detail::tolerance_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

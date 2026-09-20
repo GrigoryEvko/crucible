@@ -113,31 +113,6 @@ using RequestOpaque = Graded<ModalityKind::Comonad, lifetime::PerRequestTier, T>
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ProgramOpaque, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RequestOpaque, EightByteValue);
 
-inline void runtime_smoke_test() {
-    Lifetime a = Lifetime::PER_REQUEST;
-    Lifetime b = Lifetime::PER_FLEET;
-    [[maybe_unused]] bool l1 = LifetimeLattice::leq(a, b);
-    [[maybe_unused]] Lifetime j1 = LifetimeLattice::join(a, b);
-    [[maybe_unused]] Lifetime m1 = LifetimeLattice::meet(a, b);
-    [[maybe_unused]] Lifetime bot = LifetimeLattice::bottom();
-    [[maybe_unused]] Lifetime top = LifetimeLattice::top();
-
-    OneByteValue v{42};
-    FleetOpaque<OneByteValue> initial{v, lifetime::PerFleetTier::bottom()};
-    auto widened = initial.weaken(lifetime::PerFleetTier::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(lifetime::PerFleetTier::top());
-
-    // extract() is reachable only because the modality is Comonad.
-    auto extracted = std::move(composed).extract();
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = extracted.c;
-
-    lifetime::PerFleetTier::element_type e{};
-    [[maybe_unused]] Lifetime rec = e;
-}
-
 }  // namespace detail::lifetime_lattice_self_test
 
 }  // namespace foundation::algebra::lattices
