@@ -570,7 +570,7 @@ fixy_neg_compile_test(neg_machine_transition_not_admitted
 # selects the deleted rvalue-range twin of the span constructor.
 fixy_neg_compile_test(neg_borrowed_from_a_temporary
   "use of deleted function"
-  "fixy::Borrowed<T, Source, Brand>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
+  "fixy::Borrowed<T, Source>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
   "Borrowed of a temporary range dangles")
 
 # weaken towards a fresher grade in a constant expression reaches the
@@ -1277,11 +1277,11 @@ fixy_test(test_os_spawn)
 # production sites bypassed the background-context clause.
 fixy_neg_compile_test(neg_spin_lock_door_is_private
   "is private within this context"
-  "fixy::spin::SpinLock<Tag>::lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\)")
+  "fixy::spin::SpinLock<Tag>::lock\\(permission_t&\\)")
 
 fixy_neg_compile_test(neg_spin_try_lock_door_is_private
   "is private within this context"
-  "fixy::spin::SpinLock<Tag>::try_lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\)")
+  "fixy::spin::SpinLock<Tag>::try_lock\\(permission_t&\\)")
 
 # Deviation 3: release costs the same witness acquisition did.
 fixy_neg_compile_test(neg_spin_unlock_without_witness
