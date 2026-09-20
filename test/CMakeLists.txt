@@ -15740,9 +15740,17 @@ add_test(NAME parse_clean
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-parse-clean.py)
 add_test(NAME tsast_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/tsast.py --self-test)
-set_tests_properties(parse_clean parse_clean_self_test tsast_self_test PROPERTIES
+# mintmodel derives the §XXI mint surface from the parse tree, for the guard and
+# for the inventory. Its self-test plants one fixture carrying every shape the
+# model must tell apart, and four of its cases are negative controls: a deleted
+# overload, a constructor of a class whose name starts with mint_, a
+# trailing-underscore helper, and a friend re-declaration that must not count
+# as a second site.
+add_test(NAME mintmodel_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/mintmodel.py --self-test)
+set_tests_properties(parse_clean parse_clean_self_test tsast_self_test mintmodel_self_test PROPERTIES
     LABELS "ci_guard;ast")
-set_tests_properties(parse_clean tsast_self_test PROPERTIES SKIP_RETURN_CODE 3)
+set_tests_properties(parse_clean tsast_self_test mintmodel_self_test PROPERTIES SKIP_RETURN_CODE 3)
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)
