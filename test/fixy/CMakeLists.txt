@@ -106,6 +106,18 @@ fixy_test(test_fn)
 # on.  The per-rule negative fixtures arrive with A11.4.
 fixy_test(test_collision)
 
+# ── Task #110 (A11.3): the corpus, the roles, the insights, the contexts
+# Six refused combinations wired into tier 5, seven roles over the
+# atoms, one generated insight provider per axis plus six by hand, and
+# the five production contexts.  The per-entry negative fixtures arrive
+# with A11.4.
+fixy_test(test_corpus)
+fixy_test(test_role)
+fixy_test(test_insights)
+# test_ctx is foundation's sentinel for ExecCtx; this one is fixy's for
+# the five named contexts.
+fixy_test(test_contexts)
+
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
 # names the clause and the two types it compared.
 fixy_neg_compile_test(neg_atom_cv_qualified_rejected

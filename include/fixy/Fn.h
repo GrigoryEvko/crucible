@@ -186,12 +186,12 @@ class fn {
                                     "pack must not name an axis twice.  fixy::duplicate_atom_on<Axis> "
                                     "names the offending axis.");
 
+    // The message is the corpus entry's own when the corpus refused the
+    // pack, citation included, and names the rule file otherwise.
     static constexpr bool tier5_composition_ok_ = !tier0_not_ctad_sentinel_ || !tier1_payload_ok_ || !tier2_atoms_ok_
                                                || !tier4_unique_ok_
                                                || (NotInCorpus<Type, Atoms...> && ValidComposition<Type, Atoms...>);
-    static_assert(tier5_composition_ok_, "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "
-                                         "A collision rule (fixy/Collision.h) or a corpus entry "
-                                         "(fixy/Corpus.h) names the pair.");
+    static_assert(tier5_composition_ok_, detail::reject::tier5_message_<Type, Atoms...>());
 
     // Naming the tags puts their class names into the compiler's
     // instantiation trail, beside the message above.  A passing pack

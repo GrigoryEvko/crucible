@@ -33,6 +33,7 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/Collision.h>
+#include <fixy/Corpus.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 
@@ -150,11 +151,6 @@ concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() 
 // ---------------------------------------------------------------------
 // Tier 5: the collision rules and the corpus.
 //
-// The collision rules are live.  NotInCorpus is still satisfied by
-// everything until A11.3 writes the refused-combination corpus, so the
-// tier is wired and landing that header is a change to one concept
-// rather than a change to the gate.
-//
 // The collision rules, folded in fixy/Collision.h.  A rule reads the
 // pack and nothing else, which is why this delegates the pack rather
 // than the fn: a rule that completed fn would recurse through fn's own
@@ -162,9 +158,11 @@ concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() 
 template <class T, class... Atoms>
 concept ValidComposition = ::fixy::collision::live_rules<Atoms...>::valid;
 
-// TODO(A11.3): replace with the walk over the refused-combination corpus.
+// The refused-combination corpus, folded in fixy/Corpus.h.  An entry
+// reads the same resolved grades a rule does, and never fn, for the
+// same reason.
 template <class T, class... Atoms>
-concept NotInCorpus = true;
+concept NotInCorpus = !::fixy::corpus::is_in_corpus_v<T, Atoms...>;
 
 // ---------------------------------------------------------------------
 // The whole gate.  This is what the negative corpus asserts against and
@@ -297,6 +295,38 @@ using malformed_tag_or_void_t = [:detail::reject::malformed_tag_or_void_<Atoms..
 template <class T>
 using payload_tag_or_void_t = std::conditional_t<IsAcceptedPayload<T>, void, unholdable_payload<T>>;
 
+// The corpus entry a refused pack matched, or void.  The entries are
+// diagnostic tags in their own right, so the same mechanism names them.
+template <class T, class... Atoms>
+using corpus_tag_or_void_t = ::fixy::corpus::matched_entry_or_void_t<T, Atoms...>;
+
+namespace detail::reject {
+
+// The tier-5 message.  When the corpus refused the pack it names the
+// entry and carries its citation; otherwise a collision rule did, and
+// the message says where the theorem is.  The corpus is consulted only
+// on a pack tiers 2 and 4 admit, because its walk reads every atom's
+// axis, and a static_assert message is instantiated whatever the
+// condition.
+template <class T, class... Atoms>
+[[nodiscard]] consteval std::string_view tier5_message_() noexcept {
+    // Two nested conditions rather than one conjunction: a concept-id in
+    // an ordinary expression is checked whatever its neighbour says, and
+    // the uniqueness walk reads each atom's axis.
+    if constexpr (AllAtomsWellFormed<Atoms...>) {
+        if constexpr (UniqueAtomPerAxis<Atoms...>) {
+            using Entry = corpus_tag_or_void_t<T, Atoms...>;
+            if constexpr (!std::is_void_v<Entry>) {
+                return Entry::full_diagnostic();
+            }
+        }
+    }
+    return "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused by a collision rule.  fixy/Collision.h "
+           "names the pair and carries the theorem.";
+}
+
+}  // namespace detail::reject
+
 // ---------------------------------------------------------------------
 // The header proves its own gates here, so a reader sees what each one
 // admits and what it refuses without leaving the file.
@@ -332,6 +362,28 @@ static_assert(IsAccepted<int, ::fixy::atom::borrow>);
 static_assert(IsAccepted<int, ::fixy::atom::coroutine>);
 static_assert(!IsAccepted<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>, "R002 and L002 refuse this pair");
 static_assert(!IsAccepted<int, ::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>, "T001 refuses it");
+
+// The corpus reaches the gate through the same tier.  An IO row with
+// no Security atom is a classified value on an observable channel, and
+// the pack that names the public grade is the same binding admitted.
+// No collision rule reads this pair, so the refusal is the corpus's.
+static_assert(!IsAccepted<int, ::fixy::atom::with_io>, "classified_io_without_declassify refuses this pack");
+static_assert(IsAccepted<int, ::fixy::atom::with_io, ::fixy::atom::as_public>);
+static_assert(std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io>,
+                             ::fixy::corpus::classified_io_without_declassify>);
+static_assert(std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io, ::fixy::atom::as_public>, void>);
+
+// The tier-5 message names the entry on a corpus refusal and the rule
+// file otherwise, and is well formed on a pack the earlier tiers
+// refuse, because fn instantiates it whatever the condition.
+static_assert(::fixy::corpus::detail::text_contains_(detail::reject::tier5_message_<int, ::fixy::atom::with_io>(),
+                                                     "classified_io_without_declassify"));
+static_assert(::fixy::corpus::detail::text_contains_(
+    detail::reject::tier5_message_<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>(), "fixy/Collision.h"));
+static_assert(::fixy::corpus::detail::text_contains_(detail::reject::tier5_message_<int, not_an_atom>(),
+                                                     "fixy/Collision.h"));
+static_assert(::fixy::corpus::detail::text_contains_(
+    detail::reject::tier5_message_<int, ::fixy::atom::copy, ::fixy::atom::affine>(), "fixy/Collision.h"));
 
 // The duplicate walk answers with an axis, and the tag it selects names
 // that axis.  Two atoms on one axis is the case; two atoms on two axes
