@@ -24,7 +24,7 @@
 // no viable.
 
 #include <crucible/algebra/lattices/_PinningRequirementLattice.h>
-#include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
+#include <crucible/algebra/lattices/_SchedulerPolicyLattice.h>
 
 using namespace crucible::algebra::lattices;
 

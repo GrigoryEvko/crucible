@@ -20,7 +20,7 @@
 #include <cstdint>  // LatticeNameProbeElement::v
 #include <functional>  // std::less, for the MonotoneLattice probe instantiation
 
-#include <crucible/algebra/lattices/AffinityLattice.h>
+#include <crucible/algebra/lattices/_AffinityLattice.h>
 #include <crucible/algebra/lattices/_AllocClassLattice.h>
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 #include <crucible/algebra/lattices/BitsBudgetLattice.h>
@@ -53,7 +53,7 @@
 #include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h>
-#include <crucible/algebra/lattices/SchedulerPolicyLattice.h>
+#include <crucible/algebra/lattices/_SchedulerPolicyLattice.h>
 #include <crucible/algebra/lattices/_SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/SimdIsaLattice.h>
 #include <crucible/algebra/lattices/StackUseLattice.h>

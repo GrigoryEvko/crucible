@@ -19,7 +19,7 @@
 //
 // [GCC-CONSTEXPR-BOUNDS] — out-of-range core rejected at consteval.
 
-#include <crucible/algebra/lattices/AffinityLattice.h>
+#include <crucible/algebra/lattices/_AffinityLattice.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -20,7 +20,7 @@
 
 #include <crucible/safety/CpuPinned.h>
 
-#include <crucible/algebra/lattices/AffinityLattice.h>
+#include <crucible/algebra/lattices/_AffinityLattice.h>
 
 using namespace crucible::safety;
 using AffinityMask = ::crucible::algebra::lattices::AffinityMask;

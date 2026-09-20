@@ -12,7 +12,7 @@
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/_Modality.h>
-#include <crucible/algebra/lattices/AffinityLattice.h>
+#include <crucible/algebra/lattices/_AffinityLattice.h>
 #include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/_AllocClassLattice.h>
 #include <crucible/algebra/lattices/BitsBudgetLattice.h>

@@ -14,7 +14,7 @@
 // separate run-time question that the pinning site answers.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/AffinityLattice.h>
+#include <crucible/algebra/lattices/_AffinityLattice.h>
 #include <crucible/safety/diag/RowHashFold.h>
 
 #include <concepts>
