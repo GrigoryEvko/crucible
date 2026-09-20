@@ -109,8 +109,16 @@ public:
     explicit BorrowedRef(T&&) = delete("BorrowedRef of a temporary dangles at the end of the full expression; "
                                        "bind the object to a name first");
 
-    [[nodiscard]] static constexpr BorrowedRef from_raw_nonnull(T* p CRUCIBLE_LIFETIMEBOUND) noexcept
-        pre(p != nullptr) {
+    // Unenforceable by construction, and that is why the annotation is
+    // absent rather than decorative.  The hazard is the POINTEE's
+    // lifetime, and a pointer parameter cannot see it: every argument
+    // is a prvalue, so no deleted rvalue twin can tell a pointer to a
+    // live object from a pointer to a dead one.  The constructor above
+    // takes T& and has its twin, and that is the door to use whenever
+    // the caller has an object rather than an address.  This factory is
+    // the address door, for a pointer that arrived from C, and the
+    // caller owns the lifetime argument.
+    [[nodiscard]] static constexpr BorrowedRef from_raw_nonnull(T* p) noexcept pre(p != nullptr) {
         return BorrowedRef{from_raw_tag_t{}, p};
     }
 
@@ -140,7 +148,12 @@ public:
 
     constexpr explicit Borrowed(span_type span CRUCIBLE_LIFETIMEBOUND) noexcept : span_{span} {}
 
-    constexpr Borrowed(T* data CRUCIBLE_LIFETIMEBOUND, std::size_t count) noexcept : span_{data, count} {}
+    // Unenforceable by construction, like BorrowedRef::from_raw_nonnull:
+    // the hazard is the lifetime of what data points at, every pointer
+    // argument is a prvalue, and no overload can separate the two cases.
+    // The span and array constructors above carry their twins; this is
+    // the pointer-and-count door for a C boundary.
+    constexpr Borrowed(T* data, std::size_t count) noexcept : span_{data, count} {}
 
     template <std::size_t N>
     constexpr explicit Borrowed(T (&array CRUCIBLE_LIFETIMEBOUND)[N]) noexcept : span_{array, N} {}
@@ -214,8 +227,12 @@ public:
     explicit WeakRef(T&&) = delete("WeakRef of a temporary dangles at the end of the full expression; "
                                    "bind the object to a name first");
 
-    // Null is a valid input here, so there is no precondition.
-    [[nodiscard]] static constexpr WeakRef from_raw(T* p CRUCIBLE_LIFETIMEBOUND) noexcept {
+    // Null is a valid input here, so there is no precondition.  The
+    // lifetime claim is unenforceable for the same reason as
+    // BorrowedRef::from_raw_nonnull, so it is stated here rather than
+    // annotated: a pointer parameter cannot tell a live pointee from a
+    // dead one, and the T& constructor above is the door that can.
+    [[nodiscard]] static constexpr WeakRef from_raw(T* p) noexcept {
         return WeakRef{from_raw_tag_t{}, p};
     }
 

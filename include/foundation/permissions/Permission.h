@@ -762,9 +762,28 @@ public:
 
     ~SharedPermissionGuard();
 
-    [[nodiscard]] constexpr SharedPermission<Tag> token() const CRUCIBLE_LIFETIMEBOUND noexcept {
-        return SharedPermission<Tag>{};
-    }
+    // The ref-qualifier pair is the enforcement, not a lifetime
+    // annotation.  The token this returns is a proof that the guard's
+    // share is outstanding, so it must not be minted from a guard that
+    // is about to die: `(*pool.lend()).token()` would hand back a proof
+    // of a share released at the end of the statement.  No annotation
+    // can be written on the implicit object parameter at all, so the
+    // qualifier carries the claim instead.
+    //
+    // Measured: `const&` alone does NOT close this, because a const
+    // lvalue reference binds an rvalue, so a const-ref-qualified member
+    // is callable on a temporary.  Only the deleted `const&&` twin
+    // refuses it, which is the same mechanism the borrow factories use.
+    //
+    // One route stays open and is stated rather than hidden:
+    // `pool.lend()->token()` calls through optional's operator->, which
+    // yields a pointer, so the object expression is an lvalue and no
+    // qualifier on this member can see the temporary behind it.
+    [[nodiscard]] constexpr SharedPermission<Tag> token() const& noexcept { return SharedPermission<Tag>{}; }
+
+    constexpr SharedPermission<Tag> token() const&& =
+        delete("a share proof minted from a temporary guard outlives the share; bind the guard to a name that "
+               "outlives the token");
 
     [[nodiscard]] constexpr bool holds_share() const noexcept { return pool_ != nullptr; }
 };

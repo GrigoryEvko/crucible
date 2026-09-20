@@ -540,6 +540,17 @@ set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 
+# Every site that claims a lifetime bound carries the deleted overload
+# that enforces it.  CRUCIBLE_LIFETIMEBOUND expands to nothing on the
+# only compiler this tree builds with, so the claim is checked here
+# rather than by an attribute no compiler reads.
+add_test(NAME lifetime_twin_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.sh --self-test)
+add_test(NAME lifetime_twin
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.sh --quiet)
+set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
+  LABELS "ci_guard")
+
 add_test(NAME trait_guard_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh
           --self-test)

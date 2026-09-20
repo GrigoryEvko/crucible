@@ -49,6 +49,14 @@ class [[nodiscard]] ScopedView {
 
     constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept : ptr_{&c} {}
 
+    // The twin that makes the bound above a rule.  A const lvalue
+    // reference binds a temporary, so the view would hold a pointer to
+    // a carrier that died at the end of the statement.  The rvalue
+    // reference is the better match for a prvalue, so such a call names
+    // a deleted function instead.
+    explicit ScopedView(Carrier const&&) =
+        delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
+
     template <typename Tag_, typename Carrier_>
     friend constexpr ScopedView<Carrier_, Tag_> mint_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
@@ -106,6 +114,15 @@ template <typename Tag, typename Carrier>
     return ScopedView<Carrier, Tag>{c};
 }
 
+// Measured, not suspected: mint_view<Ready>(Carrier{}) compiled and
+// handed back a view of a carrier that was gone at the end of the
+// statement.  This twin is what refuses it.  The deduced parameter is a
+// const rvalue reference rather than a forwarding reference, so a
+// non-const lvalue carrier still reaches the factory above.
+template <typename Tag, typename Carrier>
+constexpr ScopedView<Carrier, Tag> mint_view(Carrier const&&) =
+    delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
+
 // A one-shot state proof, for a transition the holder must prove the
 // right to make and hands over rather than shares.  The token is gone
 // after it is consumed, so the transition happens at most once.
@@ -123,6 +140,12 @@ template <typename Tag, typename Carrier>
 mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
     return mint_linear<ScopedView<Carrier, Tag>>(mint_view<Tag>(c));
 }
+
+// The linear form carries its view further than the scoped one does, so
+// it needs the same twin and needs it more.
+template <typename Tag, typename Carrier>
+constexpr LinearScopedView<Carrier, Tag> mint_linear_view(Carrier const&&) =
+    delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
 template <typename T>
 consteval bool contains_scoped_view();

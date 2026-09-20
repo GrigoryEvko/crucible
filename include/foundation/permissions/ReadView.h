@@ -25,6 +25,18 @@ class ReadView;
 template <typename Tag>
 [[nodiscard]] constexpr ReadView<Tag> mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
 
+// The twin that makes the lifetime bound above a rule rather than a
+// claim.  A const lvalue reference binds a temporary, so without this
+// overload `mint_read_view(mint_permission_root<Tag>())` compiled and
+// handed back a borrow proof for a permission that died at the end of
+// the statement.  That was measured, not suspected.  The rvalue
+// reference is the better match for a prvalue, so the call now names a
+// deleted function instead.
+template <typename Tag>
+constexpr ReadView<Tag> mint_read_view(Permission<Tag> const&&) =
+    delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
+           "a name that outlives the view");
+
 // The session layer's borrow payload embeds a view as the recipient's
 // read proof for one protocol step and default-constructs it, which its
 // own accounting of permissions makes sound.  That layer is above this
@@ -76,10 +88,9 @@ private:
     friend struct ::foundation::permissions::host::BorrowIssuer;
 };
 
-// The lifetime bound the parameter's attribute announces is not
-// enforced.  The attribute macro expands to nothing on this compiler, so
-// a view minted from a temporary permission compiles and then dangles.
-// Review is what catches it.
+// The annotation on the parameter is the claim.  The deleted twin
+// declared beside the first declaration is what enforces it, because no
+// compiler this project builds with honours a lifetime attribute.
 
 template <typename Tag>
 [[nodiscard]] constexpr ReadView<Tag> mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
@@ -94,6 +105,16 @@ template <typename Tag, typename Body>
     -> std::invoke_result_t<Body, ReadView<Tag>> {
     return body(mint_read_view(p));
 }
+
+// The same twin for the scoped form.  The body runs while the view is
+// alive, so a temporary permission survives the call, but the view the
+// body receives proves a permission that is gone the moment the
+// statement ends, and a body that stores the view keeps the proof.
+template <typename Tag, typename Body>
+    requires std::is_invocable_v<Body, ReadView<Tag>>
+constexpr auto with_read_view(Permission<Tag> const&&, Body&&) =
+    delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
+           "a name that outlives the call");
 
 namespace detail {
 struct read_view_test_tag {};

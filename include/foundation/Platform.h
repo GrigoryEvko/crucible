@@ -93,20 +93,35 @@ static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -f
 #define CRUCIBLE_ASSERT_CAPABILITY(cap)
 #endif
 
-// The guard is mandatory, not cosmetic. GCC does not merely ignore an unknown
-// [[clang::...]] or [[gsl::...]] attribute, it warns on it.
-
-#if defined(__clang__)
-#define CRUCIBLE_LIFETIMEBOUND [[clang::lifetimebound]]
-#define CRUCIBLE_OWNER [[gsl::Owner]]
-#define CRUCIBLE_POINTER [[gsl::Pointer]]
-#define CRUCIBLE_UNSAFE_BUFFER_USAGE [[clang::unsafe_buffer_usage]]
-#else
+// These four expand to nothing, on every build this project produces,
+// and that is stated here rather than left to be discovered.
+//
+// The previous definition guarded a clang attribute behind
+// `#if defined(__clang__)`, which read as "two compilers, one of them
+// arms this".  Both halves were false.  GCC 16 is the only supported
+// compiler, and it recognises none of these: __has_cpp_attribute
+// answers 0 for clang::lifetimebound, gnu::lifetimebound, the
+// unqualified lifetimebound, gsl::Owner, gsl::Pointer and
+// clang::unsafe_buffer_usage.  So 121 annotated sites across the two
+// trees had never once been armed, and the shape of the definition hid
+// that behind a compiler nobody builds with.
+//
+// CRUCIBLE_LIFETIMEBOUND is therefore a CLAIM, not a mechanism.  What
+// enforces it is ordinary C++ that GCC does honour: a deleted overload
+// taking an rvalue reference in the annotated position, which refuses a
+// temporary at the call site.  scripts/check-lifetime-twin.sh reads the
+// token and requires that overload, so the claim is checked even though
+// no compiler understands it.  Where no overload can refuse the
+// argument, as with a raw pointer whose pointee's lifetime no overload
+// set can see, the site states the reason instead and carries no
+// annotation: an annotation that enforces nothing is a decoration.
+//
+// The other three have no consumer in this tree and are kept as names
+// so a clang build, if one is ever made, does not fail to compile.
 #define CRUCIBLE_LIFETIMEBOUND
 #define CRUCIBLE_OWNER
 #define CRUCIBLE_POINTER
 #define CRUCIBLE_UNSAFE_BUFFER_USAGE
-#endif
 
 // The name says relocatable but the check is trivially-copyable. Trivial
 // relocatability is a strictly larger set and is not portable across the
