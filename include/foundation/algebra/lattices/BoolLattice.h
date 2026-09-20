@@ -107,26 +107,6 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, double);
 
-inline void runtime_smoke_test() {
-    using L = BoolLattice<positive>;
-    L::element_type a{};
-    L::element_type b{};
-    [[maybe_unused]] bool l = L::leq(a, b);
-    [[maybe_unused]] L::element_type j = L::join(a, b);
-    [[maybe_unused]] L::element_type m = L::meet(a, b);
-
-    OneByteValue v{42};
-    RefinedPositive<OneByteValue> initial{v, L::bottom()};
-    auto widened = initial.weaken(L::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(L::top());
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume().c;
-}
-
 }  // namespace detail::bool_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

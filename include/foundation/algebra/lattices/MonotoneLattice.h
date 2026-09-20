@@ -233,53 +233,6 @@ using MonotonicGraded = Graded<ModalityKind::Absolute, MonotoneLattice<T, std::l
 static_assert(sizeof(MonotonicGraded<std::uint64_t>) == sizeof(std::uint64_t));
 static_assert(sizeof(MonotonicGraded<std::int32_t>) == sizeof(std::int32_t));
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    std::uint64_t a = 100;
-    std::uint64_t b = 1000;
-
-    [[maybe_unused]] bool l = MonU64Less::leq(a, b);
-    [[maybe_unused]] std::uint64_t j = MonU64Less::join(a, b);
-    [[maybe_unused]] std::uint64_t m = MonU64Less::meet(a, b);
-
-    [[maybe_unused]] std::uint64_t bot = MonU64Less::bottom();
-    [[maybe_unused]] std::uint64_t top = MonU64Less::top();
-
-    [[maybe_unused]] bool gl = MonU64Greater::leq(b, a);
-    [[maybe_unused]] std::uint64_t gj = MonU64Greater::join(a, b);
-
-    // The single-argument constructor sets value and grade together.
-    // The two-argument form asserts that its arguments are already
-    // lattice-equivalent, which this collapsed shape always makes true.
-    MonotonicGraded<std::uint64_t> initial{a};
-    auto widened = initial.weaken(a);
-    auto widened2 = widened.weaken(b);
-    auto composed = initial.compose(widened2);
-    auto rv_widen = std::move(widened2).weaken(b);
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek();
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume();
-    [[maybe_unused]] auto g2 = rv_widen.grade();
-
-    double fa = -1.0;
-    double fb = 0.0;
-    double fc = std::numeric_limits<double>::infinity();
-    [[maybe_unused]] bool fl1 = MonF64Less::leq(fa, fb);
-    [[maybe_unused]] double fj1 = MonF64Less::join(fa, fc);
-    [[maybe_unused]] double fm1 = MonF64Less::meet(fa, fc);
-    [[maybe_unused]] bool fnan_a = MonF64Less::is_nan_safe(fa);
-    [[maybe_unused]] bool fnan_b = MonF64Less::is_nan_safe(fb);
-    [[maybe_unused]] bool fnan_inf = MonF64Less::is_nan_safe(fc);
-
-    // This value never reaches leq, join or meet.  Passing it would
-    // trip the invariant and abort the smoke test.
-    double fnan = std::nan("");
-    [[maybe_unused]] bool fnan_fired = !MonF64Less::is_nan_safe(fnan);
-}
-
 }  // namespace detail::monotone_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

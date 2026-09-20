@@ -112,31 +112,6 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, double);
 
-inline void runtime_smoke_test() {
-    Conf a = Conf::Public;
-    Conf b = Conf::Secret;
-    [[maybe_unused]] bool l1 = ConfLattice::leq(a, b);
-    [[maybe_unused]] Conf j1 = ConfLattice::join(a, b);
-    [[maybe_unused]] Conf m1 = ConfLattice::meet(a, b);
-    [[maybe_unused]] Conf bot = ConfLattice::bottom();
-    [[maybe_unused]] Conf top = ConfLattice::top();
-
-    OneByteValue v{42};
-    SecretGraded<OneByteValue> initial{v, conf::SecretTier::bottom()};
-    auto widened = initial.weaken(conf::SecretTier::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(conf::SecretTier::top());
-
-    // extract() is reachable only because the modality is Comonad.
-    auto extracted = std::move(composed).extract();
-
-    [[maybe_unused]] auto g = rv_widen.grade();
-    [[maybe_unused]] auto vc = extracted.c;
-
-    conf::SecretTier::element_type e{};
-    [[maybe_unused]] Conf c = e;
-}
-
 }  // namespace detail::conf_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

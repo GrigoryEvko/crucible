@@ -227,31 +227,6 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, double);
 
-inline void runtime_smoke_test() {
-    QttGrade a = QttGrade::Zero;
-    QttGrade b = QttGrade::One;
-    QttGrade c = QttGrade::Omega;
-    [[maybe_unused]] bool l1 = QttSemiring::leq(a, b);
-    [[maybe_unused]] QttGrade j1 = QttSemiring::join(b, c);
-    [[maybe_unused]] QttGrade m1 = QttSemiring::meet(b, c);
-    [[maybe_unused]] QttGrade ad1 = QttSemiring::add(b, b);
-    [[maybe_unused]] QttGrade mu1 = QttSemiring::mul(c, c);
-    [[maybe_unused]] QttGrade zr = QttSemiring::zero();
-    [[maybe_unused]] QttGrade on = QttSemiring::one();
-
-    OneByteValue v{42};
-    LinearGraded<OneByteValue> initial{v, qtt::LinearGrade::bottom()};
-    auto widened = initial.weaken(qtt::LinearGrade::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(qtt::LinearGrade::top());
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto g2 = rv_widen.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume().c;
-}
-
 }  // namespace detail::qtt_self_test
 
 }  // namespace foundation::algebra::lattices

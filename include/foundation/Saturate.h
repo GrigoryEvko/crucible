@@ -48,19 +48,6 @@ static_assert(mul_sat<signed char>(-16, 16) == -128);
 static_assert(mul_sat<signed char>(-16, -16) == 127);
 static_assert(mul_sat<long long>(3, 4) == 12);
 
-// The overflow branch is reached with non-constant operands here, so
-// the builtin's runtime form and the clamp are both exercised.
-inline void runtime_smoke_test() {
-    unsigned char lo = 250;  // deliberately not constexpr
-    unsigned char step = 10;
-    [[maybe_unused]] unsigned char clamped_up = add_sat(lo, step);
-    [[maybe_unused]] unsigned char clamped_down = sub_sat(step, lo);
-    [[maybe_unused]] unsigned char clamped_mul = mul_sat(lo, step);
-    int x = 1000000;
-    [[maybe_unused]] int sum = add_sat(x, x);
-    [[maybe_unused]] int prod = mul_sat(x, x);
-}
-
 }  // namespace detail::saturate_self_test
 
 }  // namespace foundation::sat

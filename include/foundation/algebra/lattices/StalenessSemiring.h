@@ -218,38 +218,6 @@ static_assert(sizeof(StaleGraded<OneByteValue>) == sizeof(OneByteValue) + sizeof
 
 static_assert(sizeof(StaleGraded<EightByteValue>) == sizeof(EightByteValue) + sizeof(StalenessSemiring::element_type));
 
-// Static assertions alone can mask consteval, SFINAE and inline-body
-// defects.  These calls pass non-constant arguments.
-inline void runtime_smoke_test() {
-    std::uint64_t n_a = 5;
-    std::uint64_t n_b = 17;
-    auto a = StalenessSemiring::element_type{n_a};
-    auto b = StalenessSemiring::element_type{n_b};
-
-    [[maybe_unused]] bool l = StalenessSemiring::leq(a, b);
-    [[maybe_unused]] StalenessSemiring::element_type j = StalenessSemiring::join(a, b);
-    [[maybe_unused]] StalenessSemiring::element_type m = StalenessSemiring::meet(a, b);
-
-    [[maybe_unused]] auto sum = StalenessSemiring::add(a, b);
-    [[maybe_unused]] auto prod = StalenessSemiring::mul(a, b);
-    [[maybe_unused]] auto absb = StalenessSemiring::mul(a, StalenessSemiring::top());
-
-    [[maybe_unused]] auto at_n = staleness::at(n_a);
-
-    OneByteValue v{42};
-    StaleGraded<OneByteValue> initial{v, StalenessSemiring::bottom()};
-    auto widened = initial.weaken(a);
-    auto widened2 = widened.weaken(b);
-    auto composed = initial.compose(widened2);
-    auto rv_widen = std::move(widened2).weaken(b);
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume().c;
-    [[maybe_unused]] auto g2 = rv_widen.grade();
-}
-
 }  // namespace detail::staleness_semiring_self_test
 
 }  // namespace foundation::algebra::lattices

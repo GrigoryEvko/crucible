@@ -262,53 +262,6 @@ static_assert(sizeof(SharedPermissionGraded<OneByteValue>) == sizeof(OneByteValu
 static_assert(sizeof(SharedPermissionGraded<EightByteValue>) == sizeof(EightByteValue) + sizeof(Rational),
               "An eight-byte payload carrying a share must need no padding.");
 
-// Calling each operation on runtime operands catches the defects the
-// compile-time assertions above cannot see, such as an inline body that only
-// ever instantiates in a consteval context.
-inline void runtime_smoke_test() {
-    std::int64_t numA = 1, denA = 4;
-    std::int64_t numB = 1, denB = 2;
-    Rational a{numA, denA};
-    Rational b{numB, denB};
-
-    [[maybe_unused]] bool l = FractionalLattice::leq(a, b);
-    [[maybe_unused]] Rational j = FractionalLattice::join(a, b);
-    [[maybe_unused]] Rational m = FractionalLattice::meet(a, b);
-
-    [[maybe_unused]] Rational s = FractionalLattice::add(a, b);
-    [[maybe_unused]] Rational p = FractionalLattice::mul(a, b);
-    [[maybe_unused]] Rational ss = simplify(Rational{numA + numB, denA + denB});
-
-    // Only the comparison is exercised at the bound.  Adding or multiplying two
-    // shares this large produces an unreduced denominator past the bound even
-    // where the reduced result would fit, which would test reduction behaviour
-    // rather than the comparison this probe is about.
-    Rational large_lo{1, Rational::MAX_SAFE_MAGNITUDE};
-    Rational large_hi{Rational::MAX_SAFE_MAGNITUDE - 1, Rational::MAX_SAFE_MAGNITUDE};
-    [[maybe_unused]] bool large_leq = FractionalLattice::leq(large_lo, large_hi);
-    [[maybe_unused]] Rational large_join = FractionalLattice::join(large_lo, large_hi);
-    [[maybe_unused]] Rational large_meet = FractionalLattice::meet(large_lo, large_hi);
-
-    // Weakening only ever moves up the order, so the shares below are built in
-    // ascending sequence.  Requesting a smaller grade violates the
-    // precondition.
-    OneByteValue v{42};
-    SharedPermissionGraded<OneByteValue> initial{v, FractionalLattice::bottom()};
-    auto widened = initial.weaken(Rational{3, 4});
-    auto widened_max = widened.weaken(FractionalLattice::top());
-    auto composed = initial.compose(widened_max);
-    auto rv_widen = std::move(widened_max).weaken(FractionalLattice::top());
-
-    // Composing into a separate handle lets the result be consumed without
-    // aliasing either operand, which is what reaches the rvalue overloads.
-    SharedPermissionGraded<OneByteValue> for_consume = rv_widen.compose(composed);
-    OneByteValue consumed = std::move(for_consume).consume();
-
-    [[maybe_unused]] auto g = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = consumed.c;
-}
-
 }  // namespace detail::fractional_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

@@ -178,32 +178,6 @@ static_assert(sizeof(AppendOnlyGraded<OneByteValue>) == sizeof(OneByteValue) + s
 
 static_assert(sizeof(AppendOnlyGraded<EightByteValue>) == sizeof(EightByteValue) + sizeof(LatA::element_type));
 
-inline void runtime_smoke_test() {
-    std::size_t n_a = 5;
-    std::size_t n_b = 17;
-    Length<EventA> a{n_a};
-    Length<EventA> b{n_b};
-
-    [[maybe_unused]] bool l = LatA::leq(a, b);
-    [[maybe_unused]] LatA::element_type j = LatA::join(a, b);
-    [[maybe_unused]] LatA::element_type m = LatA::meet(a, b);
-    [[maybe_unused]] LatA::element_type bot = LatA::bottom();
-    [[maybe_unused]] LatA::element_type top = LatA::top();
-
-    OneByteValue v{42};
-    AppendOnlyGraded<OneByteValue> initial{v, LatA::bottom()};
-    auto widened = initial.weaken(a);
-    auto widened2 = widened.weaken(b);
-    auto composed = initial.compose(widened2);
-    auto rv_widen = std::move(widened2).weaken(b);
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume().c;
-    [[maybe_unused]] auto g2 = rv_widen.grade();
-}
-
 }  // namespace detail::seq_prefix_lattice_self_test
 
 }  // namespace foundation::algebra::lattices

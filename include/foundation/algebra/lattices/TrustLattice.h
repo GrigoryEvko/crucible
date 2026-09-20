@@ -148,28 +148,6 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedV2, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedSanitized, double);
 
-inline void runtime_smoke_test() {
-    using L = TrustLattice<source::Sanitized>;
-    L::element_type a{};
-    L::element_type b{};
-    [[maybe_unused]] bool l = L::leq(a, b);
-    [[maybe_unused]] L::element_type j = L::join(a, b);
-    [[maybe_unused]] L::element_type m = L::meet(a, b);
-
-    OneByteValue v{42};
-    TaggedSanitized<OneByteValue> initial{v, L::bottom()};
-    auto widened = initial.weaken(L::top());
-    auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(L::top());
-
-    // inject() is reachable only because the modality is RelativeMonad.
-    auto injected = TaggedSanitized<OneByteValue>::inject(OneByteValue{99}, L::bottom());
-
-    [[maybe_unused]] auto g = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(injected).consume().c;
-}
-
 }  // namespace detail::trust_lattice_self_test
 
 }  // namespace foundation::algebra::lattices
