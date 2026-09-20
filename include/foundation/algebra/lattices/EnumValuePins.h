@@ -44,7 +44,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace foundation::algebra::lattices::detail::found_046_enum_value_pins {
+namespace foundation::algebra::lattices::detail::enum_value_pins {
 
 // One expected enumerator: the identifier as it is written, and the value
 // the persisted format pins it to.
@@ -220,4 +220,4 @@ static_assert(!pin_enum<Probe>(duplicated), "A table that names one enumerator t
 
 }  // namespace pin_enum_self_test
 
-}  // namespace foundation::algebra::lattices::detail::found_046_enum_value_pins
+}  // namespace foundation::algebra::lattices::detail::enum_value_pins
