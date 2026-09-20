@@ -64,12 +64,20 @@ USAGE
 }
 
 # Strips the superseded marking from include lines so that a file and its
-# marked twin compare equal.  Only includes of the frozen tree are touched.
+# marked twin compare equal.  Only includes of the old tree are touched.
+#
+# The directory part is optional.  It was `crucible/.*/`, which needs an
+# intermediate directory, so an include of a header at the root of
+# include/crucible/ was never normalized and a frozen file that followed
+# such a marking read as an ordinary edit.  Marking include/crucible/
+# Saturate.h reported three violations for one permitted include rewrite
+# each.  A header sits at the root of that tree as legitimately as in a
+# subdirectory, and the rule names neither.
 normalize_stream() {
     local line
     while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ "$line" =~ ^([[:space:]]*#[[:space:]]*include[[:space:]]*\<crucible/.*/)_([^/>]+\>.*)$ ]]; then
-            printf '%s\n' "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+        if [[ "$line" =~ ^([[:space:]]*#[[:space:]]*include[[:space:]]*\<crucible/([^>]*/)?)_([^/>]+\>.*)$ ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}${BASH_REMATCH[3]}"
         else
             printf '%s\n' "$line"
         fi
@@ -186,6 +194,12 @@ case "${1:-}" in
         printf '#pragma once\n// twin\n' >"$tmp_root/include/crucible/safety/Twin.h"
         printf '#pragma once\n#include <crucible/safety/Twin.h>\n// still frozen\n' >"$tmp_root/include/crucible/safety/Includer.h"
         printf '#pragma once\n// tampered\n' >"$tmp_root/include/crucible/safety/Tampered.h"
+        # A header at the root of include/crucible/, and a frozen file that
+        # includes it.  Every other fixture here includes through a
+        # subdirectory, which is why a normalizer that required one went
+        # unnoticed.
+        printf '#pragma once\n// root\n' >"$tmp_root/include/crucible/Root.h"
+        printf '#pragma once\n#include <crucible/Root.h>\n// roots includer\n' >"$tmp_root/include/crucible/safety/RootIncluder.h"
         git -C "$tmp_root" add -A
         git -C "$tmp_root" -c user.name=selftest -c user.email=selftest@invalid commit -q -m base
         base="$(git -C "$tmp_root" rev-parse HEAD)"
@@ -218,6 +232,12 @@ case "${1:-}" in
         printf '#pragma once\n#include <crucible/safety/_Twin.h>\n// still frozen\n' >"$tmp_root/include/crucible/safety/Includer.h"
         git -C "$tmp_root" mv "include/crucible/safety/Tampered.h" "include/crucible/safety/_Tampered.h"
         printf '#pragma once\n// tampered, and edited\n' >"$tmp_root/include/crucible/safety/_Tampered.h"
+        # The root-level marking: Root.h is not frozen and may be marked
+        # freely, and the frozen file that includes it follows.  That is the
+        # permitted edit, on a header with no directory between it and
+        # crucible/.
+        git -C "$tmp_root" mv "include/crucible/Root.h" "include/crucible/_Root.h"
+        printf '#pragma once\n#include <crucible/_Root.h>\n// roots includer\n' >"$tmp_root/include/crucible/safety/RootIncluder.h"
         git -C "$tmp_root" add -A
         rc=0; scan "$tmp_root" "$base" 2>"$out" || rc=$?
         [[ "$rc" -eq 1 ]] || fail "planted tree reported $rc, want 1"
@@ -229,7 +249,8 @@ case "${1:-}" in
         if grep -qF 'include/foundation/Fine.h' "$out"; then fail "an add in the new tree was flagged"; fi
         if grep -qF '_Twin.h' "$out"; then fail "a plain superseded marking was flagged"; fi
         if grep -qF '_Ported.h' "$out"; then fail "a superseded marking whose include followed was flagged"; fi
-        if grep -qF 'Includer.h' "$out"; then fail "an include-only edit following a marking was flagged"; fi
+        if grep -qF 'safety/Includer.h' "$out"; then fail "an include-only edit following a marking was flagged"; fi
+        if grep -qF 'RootIncluder.h' "$out"; then fail "an include-only edit following the marking of a root-level header was flagged"; fi
         grep -qF '_Tampered.h' "$out" || fail "a marking that also edits content was not caught"
         # Exactly five edits were planted to violate.  Naming each of the
         # five and clearing each of the five permitted shapes still lets a
