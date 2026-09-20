@@ -528,8 +528,44 @@ LEDGER
             fi
         done
 
+        # ── The build-tree exclude holds from any working directory ──
+        #
+        # The scan root is absolute and ripgrep matches --glob against
+        # paths relative to the CURRENT directory, so the `build/**`
+        # excludes only name the build tree while the cwd is the repo
+        # root.  ctest runs this script with the cwd inside the build
+        # tree, where they named nothing, and every generated artifact
+        # under it was scanned: a stale Testing/Temporary/LastTest.log
+        # holding the text of a negative-compile fixture's expected
+        # diagnostic read as a forbidden specialization, so the guard
+        # failed on its own suite's output.
+        #
+        # The axis plants exactly that artifact and runs the scanner
+        # from inside the build tree.  Without the anchoring subshell
+        # around rg, this fires.
+        planted_build_root="$tmp_root/build/Testing/Temporary"
+        mkdir -p "$planted_build_root" "$tmp_root/build/test"
+        {
+            printf 'filler\n'
+            cat "$tmp_root/$planted_policies"
+        } >"$planted_build_root/LastTest.log"
+
+        # The planted violation fixtures are still on disk, so the
+        # scanner exits 1 either way here and the exit code says
+        # nothing.  What distinguishes the two cases is whether the
+        # build artifact is among the paths it reports.
+        build_cwd_stderr="$(mktemp)"
+        (cd "$tmp_root/build/test" \
+         && CRUCIBLE_TRAIT_INJECTION_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$build_cwd_stderr" || true)
+        if grep -qF 'build/Testing/Temporary/LastTest.log' "$build_cwd_stderr"; then
+            rm -f "$build_cwd_stderr"
+            self_test_fail 'the build-tree exclude does not hold when the scanner runs from inside the build tree, so a generated artifact was scanned as source.'
+        fi
+        rm -f "$build_cwd_stderr"
+
         rm -f "$scanner_stderr"
-        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured, and a prose ledger naming every relation stays silent.\n' >&2
+        printf 'check-trait-injection: self-test passed — substrate injection + 5 fail-closed relations (retag_policy, machine_transition incl. macro form, predicate_implies, survivor_registry, is_subsort) + 4 fail-closed namespaces (admitted_retags, admitted_policies, admitted_transitions, admitted_implications) each caught, per-trait authoring-location exemptions + comment filter + namespace-alias filter honoured, a prose ledger naming every relation stays silent, and the build-tree exclude holds with the cwd inside the build tree.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -584,7 +620,19 @@ for row in "${scan_table[@]}"; do
         printf 'trait_guard[%s]: authoring set is: %s\n' "$label" "${allowed_globs[*]}" >&2
         status=1
     done < <(
-        rg --vimgrep --no-heading --multiline --pcre2 \
+        # The scan root is absolute, and ripgrep matches --glob against
+        # paths relative to the CURRENT DIRECTORY rather than to the root
+        # it was handed.  Run from the repo root the `build/**` excludes
+        # name the build tree; run from inside it, as ctest does, they
+        # name a `build` under the build tree, which does not exist, and
+        # every generated artifact under it is scanned instead.  That is
+        # how a stale Testing/Temporary/LastTest.log holding the text of
+        # a negative-compile fixture's expected diagnostic was read as a
+        # forbidden specialization.
+        #
+        # The subshell anchors the globs where they read.  It does not
+        # change what is scanned, because the scan root stays absolute.
+        cd "$root" && rg --vimgrep --no-heading --multiline --pcre2 \
             --glob '!build/**' \
             --glob '!build-*/**' \
             --glob '!cmake-build-*/**' \
