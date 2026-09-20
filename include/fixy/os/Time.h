@@ -123,11 +123,19 @@ template <TscMode Mode>
 // A multi-core mask still lets the thread migrate, and the counter is
 // per-core, so only a single-core pin makes two reads comparable.
 //
-// What this concept proves is the SHAPE of the proof, not the pin.
-// CpuPinned has three public doors that hand one out with no evidence
-// of a sched_setaffinity call, so a reader that wants the pin itself
-// must take one from fixy::sched::mint_affinity, which returns a proof
-// only after the syscall succeeded.
+// This concept reads the mask off the type, and the type is now enough.
+// CpuPinned has one constructor, it is private, and its sole friend is
+// fixy::sched::mint_affinity, which hands a proof back only after
+// sched_setaffinity returned 0 for that same mask.  So a PinT that
+// satisfies this concept was pinned, and the gate stands on the pin
+// rather than on the shape of a token anyone could build.
+//
+// It did not, until the doors were closed.  Three public constructors
+// and a free mint built one out of nothing, and a forged single-core
+// pin passed this concept on a thread that could migrate — which makes
+// two TSC reads two different counters, with no crash and no diagnostic
+// to say so.  test/fixy/neg/neg_os_cpu_pinned_*.cpp is the standing
+// witness on each closed route.
 template <typename T>
 concept IsSingletonCpuPin = detail::is_cpu_pinned_v<std::remove_cvref_t<T>> && std::remove_cvref_t<T>::is_singleton_pin;
 

@@ -55,6 +55,11 @@ struct SchedPriority final {
 
 namespace detail {
 
+// fill_cpu_set moved to fixy/os/CpuPinned.h, beside the pin proof it
+// serves.  mint_affinity was its only caller, and the proof's sole
+// constructor is now private to that mint, so the syscall and the type
+// it authorizes have to share a header.
+
 [[nodiscard]] consteval int sched_policy_constant(SchedulerPolicy_v policy) noexcept {
     switch (policy) {
         case SchedulerPolicy_v::Idle:
@@ -71,17 +76,6 @@ namespace detail {
             return SCHED_DEADLINE;
         default:
             return -1;
-    }
-}
-
-// AffinityMask::kBits is smaller than CPU_SETSIZE, so every set bit is a
-// valid CPU_SET index and the loop needs no bound check of its own.
-CRUCIBLE_INLINE void fill_cpu_set(AffinityMask mask, cpu_set_t& set) noexcept {
-    CPU_ZERO(&set);
-    for (std::uint16_t core = 0; core < AffinityMask::kBits; ++core) {
-        if (((mask.words[core / 64] >> (core % 64)) & 1ULL) != 0ULL) {
-            CPU_SET(static_cast<std::size_t>(core), &set);
-        }
     }
 }
 
@@ -127,8 +121,11 @@ template <SchedulerPolicy_v Policy>
 
 }  // namespace detail
 
-template <typename Ctx, PinningPosture Posture>
-concept CtxFitsAffinityMint = eff::IsExecCtx<Ctx> && (Posture != PinningPosture::NotPinned);
+// CtxFitsAffinityMint moved to fixy/os/CpuPinned.h with mint_affinity's
+// declaration, which had to move because the proof names that mint as
+// its sole friend and a friend must already have been declared.  The
+// name is unqualified below through `using sf::CtxFitsAffinityMint`, so
+// every call site reads as it did.
 
 // The second conjunct is not a restatement of the enum's own range,
 // though it reads like one.  It is the
@@ -153,21 +150,23 @@ concept CtxFitsSchedPolicyMint = eff::IsExecCtx<Ctx> && (detail::sched_policy_co
 template <typename Ctx, int Nice>
 concept CtxFitsPriorityMint = eff::IsExecCtx<Ctx> && (Nice >= -20 && Nice <= 19);
 
-// §XXI carve-out: cx=alloc — setting affinity is a kernel side effect.
-template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExplicit, eff::IsExecCtx Ctx>
-    requires CtxFitsAffinityMint<Ctx, Posture>
-[[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, ProofUnit>, int> mint_affinity(Ctx const&) noexcept {
-    cpu_set_t set;
-    detail::fill_cpu_set(Mask, set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: mint_affinity body, CtxFitsAffinityMint ctx-gate (effects::Init)
-        return std::unexpected(errno);
+// The definition of the mint declared in fixy/os/CpuPinned.h.  It lives
+// here, beside the other scheduling mints, and it is the sole friend of
+// CpuPinned's only constructor.  The default template argument belongs
+// to the declaration and must not be repeated, and the requires-clause
+// is spelled exactly as it is there so the two match.
+//
+// This is the one door that earns a CpuPinned.  The proof comes back
+// only after sched_setaffinity returned 0 for this same mask, and no
+// other path to one exists: the three public constructors the port
+// inherited are gone.
+template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
+    requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
+[[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, int> mint_affinity(Ctx const&) noexcept {
+    if (const int failure = sf::detail::pin_calling_thread(Mask); failure != 0) [[unlikely]] {
+        return std::unexpected(failure);
     }
-    // This call is the one door that earns a CpuPinned: the pin comes
-    // back only after sched_setaffinity succeeded.  Three public doors
-    // on CpuPinned itself hand one out with no such evidence, which is
-    // why a consumer that cares should demand a pin from here.
-    return sf::mint_cpu_pinned<Mask, Posture, ProofUnit>(0);
+    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0};
 }
 
 // Deadline admission requires runtime < deadline <= period. The SchedClass

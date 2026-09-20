@@ -173,6 +173,14 @@ include/crucible/fixy/Sched.h:mint_scheduler_policy:constexpr-ok
 include/fixy/os/Sched.h:mint_affinity:constexpr-ok
 include/fixy/os/Sched.h:mint_priority:constexpr-ok
 include/fixy/os/Sched.h:mint_scheduler_policy:constexpr-ok
+
+# mint_affinity is DECLARED in fixy/os/CpuPinned.h and defined in
+# fixy/os/Sched.h, so the guard sees its signature twice and both sites
+# need the same carve-out.  The split is not arbitrary: CpuPinned names
+# this mint as the sole friend of its only constructor, and a friend has
+# to be declared before it is named.  Deleting the declaration would
+# reopen the forgery the friendship closes.
+include/fixy/os/CpuPinned.h:mint_affinity:constexpr-ok
 include/crucible/fixy/spawn/Spawn.h:mint_parallel_for:constexpr-ok
 include/crucible/fixy/spawn/Spawn.h:mint_spawn:constexpr-ok
 

@@ -12,6 +12,12 @@
 // lattice, that two clock sources or two scheduling classes are
 // distinct types.  Those fire wherever the type is used.
 //
+// The pin leg below performs a real sched_setaffinity, and it has to.
+// CpuPinned has one constructor, it is private, and mint_affinity is its
+// sole friend, so there is no way to reach the accessors without pinning
+// the thread.  That is the point of the type, and a test that got around
+// it would be testing a shape the shipped code does not have.
+//
 // The arguments below are non-constant on purpose.  A suite made only
 // of static_asserts masks the bugs that appear when a body is
 // instantiated for runtime evaluation rather than folded.
@@ -32,11 +38,12 @@ namespace ml = foundation::algebra::lattices;
 namespace {
 
 inline constexpr ml::AffinityMask kCore0 = ml::AffinityMask::single(0);
-inline constexpr ml::AffinityMask kCore7 = ml::AffinityMask::single(7);
 inline constexpr ml::AffinityMask kTwoBit = ml::AffinityMask::range(0, 1);
 
+// TwoBitC is named for its singleton answer alone and is never built.
+// Nothing can build it: mint_affinity is the only constructor, and this
+// file never asks it for a two-core mask.
 using PinnedC0 = fixy::CpuPinned<kCore0, fixy::PinningPosture::PinnedExplicit, int>;
-using AutoC0 = fixy::CpuPinned<kCore0, fixy::PinningPosture::PinnedAuto, int>;
 using TwoBitC = fixy::CpuPinned<kTwoBit, fixy::PinningPosture::PinnedExplicit, int>;
 
 using FifoInt = fixy::SchedClass<fixy::SchedulerPolicy_v::Fifo, int>;
@@ -48,24 +55,53 @@ using DeadlineInt = fixy::SchedClass<fixy::SchedulerPolicy_v::Deadline, int, 500
 // it claims: a context is not evidence of a capability, it carries one.
 using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
-[[nodiscard]] int pin_proof_values_round_trip() {
-    int seed = 21;
+// Every pin here is earned.  CpuPinned has one constructor, it is
+// private, and fixy::sched::mint_affinity is its sole friend, so the
+// only way into this leg is a sched_setaffinity that returned 0.  The
+// leg therefore really re-pins the calling thread, and restores the full
+// mask on the way out so the later legs run unpinned.
+[[nodiscard]] int pin_proof_round_trips_through_an_earned_pin() {
+    BgWitness bg{eff::testing::bg()};
 
-    PinnedC0 pin{seed * 2};
-    if (pin.peek() != 42) {
-        std::fprintf(stderr, "a pin proof did not carry its value\n");
+    auto pin = fixy::sched::mint_affinity<kCore0>(bg);
+    if (!pin) {
+        // A restricted cpuset returns EINVAL and CPU 0 may be outside
+        // it.  That is the environment, not a defect.
+        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n", pin.error());
+        return 0;
+    }
+
+    // The proof's payload is a unit: mint_affinity seeds it with zero
+    // and the authority lives in the type, not the value.
+    if (pin->peek() != 0) {
+        std::fprintf(stderr, "an earned pin did not carry its unit payload\n");
         return 1;
     }
-    pin.peek_mut() = 9;
-    if (pin.peek() != 9) {
+    pin->peek_mut() = 9;
+    if (pin->peek() != 9) {
         std::fprintf(stderr, "peek_mut did not write through\n");
         return 1;
     }
 
-    auto minted = fixy::mint_cpu_pinned<kCore7, fixy::PinningPosture::PinnedExplicit, unsigned long long>(
-        static_cast<unsigned long long>(seed));
-    if (std::move(minted).consume() != 21) {
-        std::fprintf(stderr, "consume did not move the value out\n");
+    // Moving transfers the claim rather than copying it, so the moved-to
+    // proof is the same proof.  The copy operations are deleted, so this
+    // cannot be anything else.
+    PinnedC0 moved{std::move(*pin)};
+    if (std::move(moved).consume() != 9) {
+        std::fprintf(stderr, "consume did not move the value out of an earned pin\n");
+        return 1;
+    }
+
+    // The posture is a parameter of the mint, and asking for the weaker
+    // one under-claims rather than over-claims.
+    auto auto_pin = fixy::sched::mint_affinity<kCore0, fixy::PinningPosture::PinnedAuto>(bg);
+    if (!auto_pin) {
+        std::fprintf(stderr, "an auto-posture pin failed where the explicit one succeeded (errno %d)\n",
+                     auto_pin.error());
+        return 1;
+    }
+    if (decltype(auto_pin)::value_type::posture != fixy::PinningPosture::PinnedAuto) {
+        std::fprintf(stderr, "the minted pin named a posture the caller did not ask for\n");
         return 1;
     }
 
@@ -79,13 +115,8 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    // An auto pin's value moves into an explicit one; the postures are
-    // distinct types, so this is a move of the carried value, not a
-    // reinterpretation of the proof.
-    AutoC0 auto_pin{1};
-    PinnedC0 moved{std::move(auto_pin).consume()};
-    if (moved.peek() != 1) {
-        std::fprintf(stderr, "the value did not survive the move between postures\n");
+    if (!fixy::sched::apply_affinity_to_cpu(bg, -1)) {
+        std::fprintf(stderr, "restoring the full affinity mask after the pin leg failed\n");
         return 1;
     }
     return 0;
@@ -204,7 +235,7 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
 }  // namespace
 
 int main() {
-    if (const int rc = pin_proof_values_round_trip(); rc != 0) return rc;
+    if (const int rc = pin_proof_round_trips_through_an_earned_pin(); rc != 0) return rc;
     if (const int rc = sched_class_values_round_trip(); rc != 0) return rc;
     if (const int rc = thread_name_reaches_the_kernel(); rc != 0) return rc;
     if (const int rc = scheduler_mints_reach_the_kernel(); rc != 0) return rc;

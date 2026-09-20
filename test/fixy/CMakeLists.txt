@@ -547,3 +547,36 @@ fixy_neg_compile_test(neg_handle_publish_once_copied
 # foundation::effects::testing, and the guard fails on a stale entry.
 fixy_test(test_os_time)
 fixy_test(test_os_sched)
+
+# ── The pin proof has one door ───────────────────────────────────────
+#
+# CpuPinned asserts the thread was pinned to its mask.  Three public
+# constructors and one free mint used to hand one out with no evidence,
+# and a forged single-core pin satisfies IsSingletonCpuPin, which is the
+# whole gate on TscReader — so a forged pin reads a per-core counter
+# across cores and the replay silently stops reproducing.
+#
+# fixy::sched::mint_affinity is the sole friend of the sole constructor
+# now.  One fixture per closed route, because closing three and leaving
+# the fourth open is the failure this discipline keeps finding.  Each
+# second regex is a string the diagnostic carries and the fixture source
+# does not, so the source echo cannot satisfy its own gate.
+fixy_neg_compile_test(neg_os_cpu_pinned_value_ctor
+  "is private within this context"
+  "CpuPinned\\(Unit\\)")
+
+fixy_neg_compile_test(neg_os_cpu_pinned_default_ctor
+  "use of deleted function"
+  "a default-constructed CpuPinned would claim a pin nobody performed")
+
+fixy_neg_compile_test(neg_os_cpu_pinned_in_place_ctor
+  "no matching function for call"
+  "CpuPinned\\(<brace-enclosed initializer list>\\)")
+
+fixy_neg_compile_test(neg_os_cpu_pinned_free_mint
+  "is not a member of"
+  "mint_cpu_pinned. is not a member of .fixy")
+
+fixy_neg_compile_test(neg_os_cpu_pinned_copied
+  "use of deleted function"
+  "a pin proof cannot be duplicated")
