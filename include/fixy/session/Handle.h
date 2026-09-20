@@ -859,10 +859,20 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
     }
 }
 
-// Channel construction carries both endpoints' execution contexts, so
-// that the row, vendor, epoch and permission gates run against both
-// local protocols rather than only one.  The resource-only form is
-// deleted because it can check neither.
+// Channel construction is meant to carry both endpoints' execution
+// contexts, so that the row, vendor, epoch and permission gates run
+// against both local protocols rather than only one.  The resource-only
+// form is deleted because it carries neither and so could check
+// neither.
+//
+// What the ctx-bound form checks TODAY is weaker than that sentence
+// reads.  Task #174: ExecCtx has a public default constructor and is
+// friended by every capability tag, so a caller can build a context
+// claiming any capability and any row and satisfy a ctx gate on demand.
+// Until that is closed, a ctx-bound mint constrains the SHAPE of the
+// call, not the authority behind it.  The deletion below stands on its
+// own either way: a form with no context cannot check a context even in
+// principle.
 
 template <typename Proto, typename ResourceA, typename ResourceB>
 void mint_channel(ResourceA, ResourceB) noexcept =

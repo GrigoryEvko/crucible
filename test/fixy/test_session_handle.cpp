@@ -5,10 +5,21 @@
 // abandonment policies produce, and the exact type a step lands on.
 // The runtime half walks a protocol end to end and then forks a child
 // to prove that the Enforced policy's destructor really aborts on an
-// abandoned handle and that the Off policy's really does not.  The fork
-// is what makes the policy decision testable: nothing short of running
-// the destructor can distinguish a policy that checks from a comment
-// that says it does.
+// abandoned handle and that the Off policy's really does not.
+//
+// The fork is not decoration, and what it checks is not a compile-time
+// property.  Whether a policy claims to check is compile-time —
+// Policy::checks_abandonment, asserted above.  Whether the DESTRUCTOR
+// acts on that claim is runtime, and the two can disagree silently:
+// the ported source had two independent kill switches for one
+// decision, a tracker that returned a hardcoded "consumed" and a
+// destructor body inside `#ifndef NDEBUG`.  Either one alone flipped
+// leaves a build whose constant says "checking" and whose destructor
+// does nothing, and no static_assert can see that.  The only way to
+// observe a std::abort is to run it somewhere the failure is
+// recoverable, which is a child process.  Reading WIFSIGNALED from the
+// wait status is also stricter than ctest's WILL_FAIL, which would
+// accept any non-zero exit.
 
 #include <fixy/session/Handle.h>
 
