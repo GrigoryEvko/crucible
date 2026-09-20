@@ -122,6 +122,25 @@ struct Populate final {};  // prefaults every page
 struct HugeTLB final {};  // 2 MiB pages
 }  // namespace share
 
+// The madvise tags.  Nothing lifts them — advise takes an Advice
+// directly, never an atom — so they are tags and not atoms, and they live
+// here rather than in fixy/os/Mmap.h beside their only consumer so that
+// the one walk at the foot of this header covers all ten tag namespaces.
+// Their MADV_* values are in fixy/os/Mmap.h, which is the only place that
+// can name them, and so is the clause that every tag here has one.
+namespace advice {
+struct HugePage final {};
+struct NoHugePage final {};
+struct Collapse final {};
+struct Sequential final {};
+struct Random final {};
+struct WillNeed final {};
+struct DontNeed final {};
+struct Free final {};
+struct WipeOnFork final {};
+struct DontDump final {};
+}  // namespace advice
+
 }  // namespace fixy::mmap
 
 namespace fixy::atom {
@@ -301,6 +320,7 @@ inline constexpr std::meta::info os_tag_namespaces[] = {
     ^^::fixy::io::engine,    ^^::fixy::io::zerocopy, ^^::fixy::io::ring_flag,
     ^^::fixy::fs::open_mode, ^^::fixy::fs::flag,     ^^::fixy::fs::sync_op,
     ^^::fixy::fs::atomicity, ^^::fixy::mmap::prot,   ^^::fixy::mmap::share,
+    ^^::fixy::mmap::advice,
 };
 
 // Every member of the roster lifts to exactly the row given.
@@ -356,7 +376,7 @@ template <std::meta::info Ns>
     return count;
 }
 
-// Every one of the nine namespaces, walked.
+// Every one of the ten namespaces, walked.
 [[nodiscard]] consteval bool every_os_tag_namespace_holds_only_tags_() noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -390,13 +410,13 @@ static_assert(every_roster_member_lifts_to_<mmap_atom_roster, mmap_row>());
 static_assert(every_roster_member_lifts_to_<leak_atom_roster, leak_row>());
 
 static_assert(every_os_tag_namespace_holds_only_tags_(),
-              "fixy/atoms/Os.h: a class declared in one of the nine tag namespaces has state, is not "
+              "fixy/atoms/Os.h: a class declared in one of the ten tag namespaces has state, is not "
               "final, or is an atom.  A tag is an empty final type and nothing else.");
 
 // The walk sees whatever is declared, so it cannot notice a tag that
 // was deleted.  This count is what does.  Raise it when a namespace
 // gains a tag, and say which one in the commit.
-static_assert(os_tag_count_() == 35, "fixy/atoms/Os.h: the nine tag namespaces hold a different number of tags "
+static_assert(os_tag_count_() == 45, "fixy/atoms/Os.h: the ten tag namespaces hold a different number of tags "
                                      "than this pin records.  A new tag raises the count; a tag that "
                                      "disappeared is a deletion somebody has to justify.");
 

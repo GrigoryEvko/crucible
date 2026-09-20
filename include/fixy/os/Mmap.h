@@ -22,13 +22,13 @@
 //     to something else, and the derived one is the one that stays
 //     right.
 //
-//  3. The advice tags live here rather than in fixy/atoms/Os.h, because
-//     nothing lifts them: advise takes an Advice directly, never an
-//     atom, so the old with_advice grant was decoration in the same
-//     sense the sched grants were.  The walk at the foot of this header
-//     is the same shape Os.h runs over its nine namespaces.  When the
-//     owner of Os.h next touches it, ^^::fixy::mmap::advice belongs in
-//     os_tag_namespaces so one walk covers all ten.
+//  3. The old with_advice grant is gone, because nothing lifts an advice
+//     tag: advise takes an Advice directly, never an atom, so the grant
+//     was decoration in the same sense the sched grants were.  The tags
+//     themselves are declared in fixy/atoms/Os.h beside the other nine
+//     tag namespaces, so the one walk there covers all ten.  Their MADV_*
+//     values stay here, and so does the only clause that walk cannot
+//     express: that every tag declared there has one.
 //
 //  4. is_leak_grant is not here.  fixy/OwnedMmap.h already took that
 //     witness to fixy::atom::IsLeakAtom, which is one reflection query
@@ -90,22 +90,10 @@ namespace fixy::mmap {
 // plain advise surface refuses it and the release-aware one takes a
 // witness.
 //
-// These tags are read by advise and by nothing else, so they are
-// declared beside it.  The prot and share tags they sit next to belong
-// to fixy/atoms/Os.h instead, because an atom takes those as arguments.
-
-namespace advice {
-struct HugePage final {};
-struct NoHugePage final {};
-struct Collapse final {};
-struct Sequential final {};
-struct Random final {};
-struct WillNeed final {};
-struct DontNeed final {};
-struct Free final {};
-struct WipeOnFork final {};
-struct DontDump final {};
-}  // namespace advice
+// The advice tags are declared in fixy/atoms/Os.h with the other nine tag
+// namespaces.  What is here is what only this header can express: each
+// tag's MADV_* value, and the clause that every tag declared there has
+// one.
 
 // Write and execute are never both set: prot::Exec carries read and
 // execute only.  A JIT that has to stage writes maps the same pages
@@ -628,13 +616,12 @@ static_assert(advice_value_v<NotAnAdvice> == -1);
 static_assert(!CtxFitsSafeAdvise<IoBlockCtx, NotAnAdvice>);
 static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice>);
 
-// Every class declared in fixy::mmap::advice is an empty final type
-// that is not an atom: the shape of a tag.  This is the walk Os.h runs
-// over its nine namespaces, run here over the tenth, because the advice
-// tags live beside the function that reads them rather than beside the
-// atoms.  When Os.h next changes, ^^::fixy::mmap::advice belongs in its
-// os_tag_namespaces and this walk can go.
-[[nodiscard]] consteval bool every_advice_class_is_tag_() noexcept {
+// The shape of every class in fixy::mmap::advice — empty, final, not an
+// atom — is checked by the one walk in fixy/atoms/Os.h, which covers all
+// ten tag namespaces.  What that walk cannot check is the clause below:
+// advice_value_v is declared here, so only here can a walk ask whether
+// every tag has a MADV_* value rather than the -1 sentinel.
+[[nodiscard]] consteval bool every_advice_class_has_a_value_() noexcept {
     static constexpr auto members =
         std::define_static_array(std::meta::members_of(^^::fixy::mmap::advice, std::meta::access_context::unchecked()));
 #pragma GCC diagnostic push
@@ -643,7 +630,6 @@ static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice>);
         if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
                       && std::meta::is_class_type(member)) {
             using T = [:member:];
-            if constexpr (!std::is_empty_v<T> || !std::is_final_v<T> || ::fixy::atom::IsAtom<T>) return false;
             if (advice_value_v<T> < 0) return false;
         }
     }
@@ -651,25 +637,13 @@ static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice>);
     return true;
 }
 
-[[nodiscard]] consteval std::size_t advice_tag_count_() noexcept {
-    std::size_t count = 0;
-    for (const auto member :
-         std::meta::members_of(^^::fixy::mmap::advice, std::meta::access_context::unchecked())) {
-        if (!std::meta::is_type(member) || std::meta::is_type_alias(member) || !std::meta::is_class_type(member))
-            continue;
-        ++count;
-    }
-    return count;
-}
+static_assert(every_advice_class_has_a_value_(),
+              "fixy/os/Mmap.h: a tag declared in fixy::mmap::advice has no MADV_* value, so advice_value_v "
+              "answers the -1 sentinel for it and every gate refuses it.  Add its value to advice_value "
+              "below, or delete the tag from fixy/atoms/Os.h.");
 
-static_assert(every_advice_class_is_tag_(),
-              "fixy/os/Mmap.h: a class declared in fixy::mmap::advice has state, is not final, is an atom, or "
-              "has no MADV_* value.  A tag is an empty final type with a value and nothing else.");
-
-// The walk sees whatever is declared, so it cannot notice a tag that was
-// deleted.  This count is what does.
-static_assert(advice_tag_count_() == 10, "fixy/os/Mmap.h: fixy::mmap::advice holds a different number of tags than "
-                                         "this pin records.  A new advice raises it; one that disappeared is a "
-                                         "deletion somebody has to justify.");
+// The count of tags in this namespace is pinned with the other nine in
+// fixy/atoms/Os.h, because a walk cannot notice a tag that was deleted and
+// one total covers all ten.
 
 }  // namespace fixy::mmap::detail::mmap_surface_invariants
