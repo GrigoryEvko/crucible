@@ -31,8 +31,9 @@
 
 namespace fixy::sched {
 
-// The old tree read these names out of crucible::safety, which is fixy
-// now.  Keeping the alias keeps every use site below spelled as it was.
+// The old tree read these names out of its safety namespace, which is
+// fixy now.  Keeping the alias keeps every use site below spelled as it
+// was.
 namespace sf = ::fixy;
 namespace eff = ::foundation::effects;
 namespace ml = ::foundation::algebra::lattices;

@@ -613,3 +613,83 @@ fixy_neg_compile_test(neg_owned_mmap_forged_address
 fixy_neg_compile_test(neg_owned_mmap_forged_through_mint_linear
   "no matching function for call"
   "mint_linear<.*::Region>\\(void\\*, long unsigned int\\)")
+
+# ── The file surface and the three durable writers ───────────────────
+#
+# Neither header, nor the two they were ported from, ever had a
+# positive test; sixteen negative fixtures said what the gates refuse
+# and nothing about what the mints do — which is how the cold writer
+# shipped pinned to a commit that returned ENOSYS on every call.  The
+# test runs the whole sequence in an mkdtemp directory, and its second
+# leg is that path: it now has to reach the target.
+fixy_test(test_fs)
+
+# The sixteen fixtures, ported from the old tree's v_224 / v_226 / v_228
+# families and renamed for what each refuses.  Every second regex is a
+# string the compiler emits and the fixture source does not: the
+# anonymous-namespace prefix on the context type, the libstdc++ inline
+# namespace on the path type, or the deduced call with its `> >`
+# spacing.  So the source echo cannot satisfy its own gate.
+fixy_neg_compile_test(neg_os_fs_mint_file_ctx_lacks_block
+  "no matching function for call"
+  "mint_file<.*>\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
+  "no matching function for call"
+  "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")
+
+fixy_neg_compile_test(neg_os_fs_mint_file_empty_atoms
+  "no matching function for call"
+  "mint_file<>\\(\\{anonymous\\}::IoBlockCtx&")
+
+fixy_neg_compile_test(neg_os_fs_mint_file_external_path
+  "no matching function for call"
+  "Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+
+fixy_neg_compile_test(neg_os_fs_sync_none
+  "no matching function for call"
+  "sync<fixy::fs::sync_op::None>\\(\\{anonymous\\}::IoBlockCtx&, fixy::fs::OwnedFd&\\)")
+
+fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
+  "no matching function for call"
+  "commit_atomic<fixy::fs::atomicity::Rename>\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+
+fixy_neg_compile_test(neg_os_fs_durable_append_ctx_lacks_block
+  "no matching function for call"
+  "mint_durable_append_file\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_fs_durable_append_external_path
+  "no matching function for call"
+  "mint_durable_append_file\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+
+fixy_neg_compile_test(neg_os_fs_durable_truncate_ctx_lacks_block
+  "no matching function for call"
+  "mint_durable_truncate_file\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_fs_durable_truncate_external_path
+  "no matching function for call"
+  "mint_durable_truncate_file\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+
+fixy_neg_compile_test(neg_os_cipher_durable_warm_writer_ctx_lacks_block
+  "no matching function for call"
+  "mint_warm_writer<>\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_cipher_durable_warm_writer_extras_engage_mode
+  "no matching function for call"
+  "mint_warm_writer<fixy::atom::fs::mode<fixy::fs::open_mode::WriteCreate> >\\(\\{anonymous\\}::IoBlockCtx&")
+
+fixy_neg_compile_test(neg_os_cipher_durable_cold_writer_ctx_lacks_block
+  "no matching function for call"
+  "mint_cold_writer<>\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_cipher_durable_cold_writer_extras_engage_durable
+  "no matching function for call"
+  "mint_cold_writer<fixy::atom::fs::durable<fixy::fs::sync_op::Fdatasync> >\\(\\{anonymous\\}::IoBlockCtx&")
+
+fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_ctx_lacks_block
+  "no matching function for call"
+  "mint_head_advancer<>\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_write
+  "no matching function for call"
+  "mint_head_advancer<fixy::atom::fs::atomic_write<fixy::fs::atomicity::Rename> >\\(\\{anonymous\\}::IoBlockCtx&")

@@ -188,6 +188,23 @@ include/fixy/os/Mmap.h:mint_mmap_anon:constexpr-ok
 include/fixy/os/Io.h:mint_io_uring_ring:constexpr-ok
 include/fixy/os/Io.h:mint_zerocopy_transfer:constexpr-ok
 
+# ── fixy/os/{Fs,CipherDurable}.h — the ported copies of the fs and
+# durable entries above.  Each body opens a file, so the factory cannot
+# be constexpr.  The two durable mints carried a `requires-ok` entry in
+# the old tree because they had no requires-clause of their own; they
+# have one now, so only the constexpr carve-out remains.
+#
+# The three CipherDurable mints are DECLARED before the handle they
+# return and defined after it, because the handle names them as the
+# sole friends of its only constructor.  The guard sees each signature
+# twice; one name-keyed entry covers both.
+include/fixy/os/Fs.h:mint_file:constexpr-ok
+include/fixy/os/Fs.h:mint_durable_append_file:constexpr-ok
+include/fixy/os/Fs.h:mint_durable_truncate_file:constexpr-ok
+include/fixy/os/CipherDurable.h:mint_warm_writer:constexpr-ok
+include/fixy/os/CipherDurable.h:mint_cold_writer:constexpr-ok
+include/fixy/os/CipherDurable.h:mint_head_advancer:constexpr-ok
+
 # mint_affinity is DECLARED in fixy/os/CpuPinned.h and defined in
 # fixy/os/Sched.h, so the guard sees its signature twice and both sites
 # need the same carve-out.  The split is not arbitrary: CpuPinned names
