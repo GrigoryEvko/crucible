@@ -464,6 +464,14 @@ crucible_test(test_merkle_dag)
 crucible_test(test_merkle_dag_visualizer)
 set_target_properties(test_merkle_dag_visualizer PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 crucible_test(test_memory_plan)
+# The DetSafe gate CLAUDE.md §XIII names first.  Labelled so it can be run
+# on its own against a build whose codegen changed — a profile-guided build
+# is the case that motivated it — and so that the reason a red line matters
+# is attached to the test rather than remembered.  Exit codes, no assertion
+# macro, for the same reason test_serialize_release_gate uses them.
+crucible_test(test_bit_exact_replay_invariant)
+set_tests_properties(test_bit_exact_replay_invariant PROPERTIES
+  LABELS "determinism;axiom-detsafe")
 crucible_test(test_serialize)
 # fix-11 — release-mode (NDEBUG) witness: malformed wire bytes are rejected
 # by Serialize.h's hard read_gated branch even when the Refined ctor pre()
