@@ -202,53 +202,6 @@ static_assert(can_bits_to_string<TF>);
 static_assert(!can_bits_to_string<int>, "bits_to_string requires a scoped enum.  int does not satisfy "
                                         "ScopedEnum, so std::underlying_type_t<int> is itself ill-formed.");
 
-inline void runtime_smoke_test() {
-    char buf[64] = {};
-
-    U empty = 0;
-    if (bits_to_string<TF>(empty, buf, sizeof(buf)) != 0) std::abort();
-    if (buf[0] != '\0') std::abort();
-
-    U a = mask_of({TF::Alpha});
-    auto na = bits_to_string<TF>(a, buf, sizeof(buf));
-    if (na != 5) std::abort();
-    if (std::string_view{buf} != "Alpha") std::abort();
-
-    U abc = mask_of({TF::Alpha, TF::Beta, TF::Gamma});
-    auto nabc = bits_to_string<TF>(abc, buf, sizeof(buf));
-    if (std::string_view{buf} != "Alpha|Beta|Gamma") std::abort();
-    if (nabc != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
-
-    U ab = mask_of({TF::Alpha, TF::Beta});
-    auto nab = bits_to_string<TF>(ab, buf, sizeof(buf));
-    if (std::string_view{buf} != "Alpha|Beta") std::abort();
-    if (nab != 10) std::abort();
-
-    char small[8] = {};
-    auto nt = bits_to_string<TF>(ab, small, sizeof(small));
-    if (nt != 10) std::abort();
-    if (std::string_view{small} != "Alpha|B") std::abort();
-    if (small[7] != '\0') std::abort();
-
-    auto np = bits_to_string<TF>(abc, nullptr, 0);
-    if (np != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
-
-    {
-        char tight[11] = {};
-        auto nfit = bits_to_string<TF>(mask_of({TF::Alpha, TF::Beta}), tight, sizeof(tight));
-        if (nfit != 10) std::abort();
-        if (std::string_view{tight} != "Alpha|Beta") std::abort();
-        if (tight[10] != '\0') std::abort();
-    }
-    {
-        char short_buf[10] = {};
-        auto nshort = bits_to_string<TF>(mask_of({TF::Alpha, TF::Beta}), short_buf, sizeof(short_buf));
-        if (nshort != 10) std::abort();
-        if (std::string_view{short_buf} != "Alpha|Bet") std::abort();
-        if (short_buf[9] != '\0') std::abort();
-    }
-}
-
 }  // namespace detail::reflected_self_test
 
 }  // namespace foundation::reflect

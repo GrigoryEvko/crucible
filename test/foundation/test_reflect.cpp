@@ -9,12 +9,15 @@
 
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Enumerate.h>
 #include <foundation/reflect/Hash.h>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 
@@ -116,11 +119,130 @@ static_assert(make_non_zero_hash(0xDEADBEEFCAFEBABEULL) != 0);
 static_assert(make_non_zero_hash(0x9E3779B97F4A7C15ULL) != 0);
 static_assert(make_non_zero_hash(0xFFFFFFFFFFFFFFFFULL) != 0);
 
+// Each body below was an inline smoke test in its header, compiled into
+// every translation unit that included it.  They are moved verbatim,
+// and the function-scope using-directives reproduce the name lookup
+// each had inside its header.  The static_assert walls stayed behind.
+//
+// The enum-name body had no caller anywhere in the tree before this
+// one.  EnumName.h was split out of Enumerate.h to break an include
+// cycle, and the split carried the self test across without giving the
+// new header a caller, so the body was compiled everywhere and run
+// nowhere.  The next person splitting a header should check the same
+// thing: a self test follows the code it tests, not the file it
+// started in.
+
+void enumerate_runs_at_run_time() {
+    using namespace ::foundation::reflect;
+    using namespace ::foundation::reflect::detail::reflected_self_test;
+    char buf[64] = {};
+
+    U empty = 0;
+    if (bits_to_string<TF>(empty, buf, sizeof(buf)) != 0) std::abort();
+    if (buf[0] != '\0') std::abort();
+
+    U a = mask_of({TF::Alpha});
+    auto na = bits_to_string<TF>(a, buf, sizeof(buf));
+    if (na != 5) std::abort();
+    if (std::string_view{buf} != "Alpha") std::abort();
+
+    U abc = mask_of({TF::Alpha, TF::Beta, TF::Gamma});
+    auto nabc = bits_to_string<TF>(abc, buf, sizeof(buf));
+    if (std::string_view{buf} != "Alpha|Beta|Gamma") std::abort();
+    if (nabc != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
+
+    U ab = mask_of({TF::Alpha, TF::Beta});
+    auto nab = bits_to_string<TF>(ab, buf, sizeof(buf));
+    if (std::string_view{buf} != "Alpha|Beta") std::abort();
+    if (nab != 10) std::abort();
+
+    char small[8] = {};
+    auto nt = bits_to_string<TF>(ab, small, sizeof(small));
+    if (nt != 10) std::abort();
+    if (std::string_view{small} != "Alpha|B") std::abort();
+    if (small[7] != '\0') std::abort();
+
+    auto np = bits_to_string<TF>(abc, nullptr, 0);
+    if (np != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
+
+    {
+        char tight[11] = {};
+        auto nfit = bits_to_string<TF>(mask_of({TF::Alpha, TF::Beta}), tight, sizeof(tight));
+        if (nfit != 10) std::abort();
+        if (std::string_view{tight} != "Alpha|Beta") std::abort();
+        if (tight[10] != '\0') std::abort();
+    }
+    {
+        char short_buf[10] = {};
+        auto nshort = bits_to_string<TF>(mask_of({TF::Alpha, TF::Beta}), short_buf, sizeof(short_buf));
+        if (nshort != 10) std::abort();
+        if (std::string_view{short_buf} != "Alpha|Bet") std::abort();
+        if (short_buf[9] != '\0') std::abort();
+    }
+}
+
+void enum_name_runs_at_run_time() {
+    using namespace ::foundation::reflect;
+    using namespace ::foundation::reflect::detail::enum_name_self_test;
+    if (enumerator_name(TF::None) != "None") std::abort();
+    if (enumerator_name(TF::Alpha) != "Alpha") std::abort();
+    if (enumerator_name(TF::Delta) != "Delta") std::abort();
+    if (enumerator_name(TF::AlphaBeta) != "AlphaBeta") std::abort();
+
+    auto fancy = static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha) | static_cast<std::uint8_t>(TF::Delta));
+    if (!enumerator_name(fancy).empty()) std::abort();
+
+    // enum_name runs under runtime semantics here, with the sentinel
+    // read from static storage.
+    if (enum_name(fancy) != "<unknown TestFlags>") std::abort();
+    if (enum_name(TF::Gamma) != "Gamma") std::abort();
+    if (enum_count<TF> != 6) std::abort();
+
+    int counter = 0;
+    for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++counter; });
+    if (counter != 6) std::abort();
+
+    int single_bit_counter = 0;
+    for_each_single_bit_enumerator<TF>([&](TF, std::string_view) noexcept { ++single_bit_counter; });
+    if (single_bit_counter != 4) std::abort();
+}
+
+void stable_name_runs_at_run_time() noexcept {
+    using namespace ::foundation::reflect;
+    volatile std::uint64_t sink = 0;
+    sink ^= stable_type_id<int>;
+    sink ^= stable_type_id<float>;
+    sink ^= stable_type_id<double>;
+    sink ^= stable_type_id<void>;
+    sink ^= stable_type_id<unsigned char>;
+    sink ^= stable_type_id<long>;
+    sink ^= stable_type_id<short>;
+    (void)sink;
+
+    volatile std::size_t name_sink = 0;
+    name_sink ^= stable_name_of<int>.size();
+    name_sink ^= stable_name_of<float>.size();
+    name_sink ^= stable_name_of<void>.size();
+    (void)name_sink;
+
+    using sorted2 = canonicalize_pack_t<int, float>;
+    using sorted2b = canonicalize_pack_t<float, int>;
+    bool const same = std::is_same_v<sorted2, sorted2b>;
+    volatile bool sink_b = same;
+    (void)sink_b;
+
+    auto const fn_ptr = +[](int) noexcept -> int { return 0; };
+    volatile std::uint64_t fid_sink = stable_function_id<+[](int) noexcept -> int { return 0; }>;
+    fid_sink ^= std::bit_cast<std::uintptr_t>(fn_ptr);
+    (void)fid_sink;
+}
+
 }  // namespace
 
 int main() {
-    fr::detail::reflected_self_test::runtime_smoke_test();
-    fr::runtime_smoke_test_stable_name();
+    enumerate_runs_at_run_time();
+    enum_name_runs_at_run_time();
+    stable_name_runs_at_run_time();
 
     int volatile sink = 0;
 

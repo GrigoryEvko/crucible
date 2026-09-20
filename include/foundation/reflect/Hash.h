@@ -321,33 +321,4 @@ static_assert(combine_ids(1, 2) != combine_ids(2, 1));
 // runtime context, through volatile sinks the optimizer cannot fold,
 // keeps that path honest.
 
-inline void runtime_smoke_test_stable_name() noexcept {
-    volatile std::uint64_t sink = 0;
-    sink ^= stable_type_id<int>;
-    sink ^= stable_type_id<float>;
-    sink ^= stable_type_id<double>;
-    sink ^= stable_type_id<void>;
-    sink ^= stable_type_id<unsigned char>;
-    sink ^= stable_type_id<long>;
-    sink ^= stable_type_id<short>;
-    (void)sink;
-
-    volatile std::size_t name_sink = 0;
-    name_sink ^= stable_name_of<int>.size();
-    name_sink ^= stable_name_of<float>.size();
-    name_sink ^= stable_name_of<void>.size();
-    (void)name_sink;
-
-    using sorted2 = canonicalize_pack_t<int, float>;
-    using sorted2b = canonicalize_pack_t<float, int>;
-    bool const same = std::is_same_v<sorted2, sorted2b>;
-    volatile bool sink_b = same;
-    (void)sink_b;
-
-    auto const fn_ptr = +[](int) noexcept -> int { return 0; };
-    volatile std::uint64_t fid_sink = stable_function_id<+[](int) noexcept -> int { return 0; }>;
-    fid_sink ^= std::bit_cast<std::uintptr_t>(fn_ptr);
-    (void)fid_sink;
-}
-
 }  // namespace foundation::reflect

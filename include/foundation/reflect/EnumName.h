@@ -197,30 +197,6 @@ static_assert(count_single_bit_enumerators() == 4);
 }
 static_assert(single_bit_iteration_yields_declaration_order());
 
-inline void runtime_smoke_test() {
-    if (enumerator_name(TF::None) != "None") std::abort();
-    if (enumerator_name(TF::Alpha) != "Alpha") std::abort();
-    if (enumerator_name(TF::Delta) != "Delta") std::abort();
-    if (enumerator_name(TF::AlphaBeta) != "AlphaBeta") std::abort();
-
-    auto fancy = static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha) | static_cast<std::uint8_t>(TF::Delta));
-    if (!enumerator_name(fancy).empty()) std::abort();
-
-    // enum_name runs under runtime semantics here, with the sentinel
-    // read from static storage.
-    if (enum_name(fancy) != "<unknown TestFlags>") std::abort();
-    if (enum_name(TF::Gamma) != "Gamma") std::abort();
-    if (enum_count<TF> != 6) std::abort();
-
-    int counter = 0;
-    for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++counter; });
-    if (counter != 6) std::abort();
-
-    int single_bit_counter = 0;
-    for_each_single_bit_enumerator<TF>([&](TF, std::string_view) noexcept { ++single_bit_counter; });
-    if (single_bit_counter != 4) std::abort();
-}
-
 }  // namespace detail::enum_name_self_test
 
 }  // namespace foundation::reflect
