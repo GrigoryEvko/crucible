@@ -609,7 +609,7 @@ add_test(NAME contract_cite_regression
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
           --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
 set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
-  LABELS "ci_guard;CONTRACT-131")
+  LABELS "ci_guard")
 # CONTRACT-125: per-procedure cite-ratio policy enforcer.  For every
 # decide::* procedure in the catalog, asks "≥ 2 production cites
 # within 180 days of introduction?".  Recently-introduced procedures
@@ -627,7 +627,7 @@ add_test(NAME contract_decide_cite_ratio_self_test
 add_test(NAME contract_decide_cite_ratio
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.sh)
 set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
-  LABELS "ci_guard;CONTRACT-125")
+  LABELS "ci_guard")
 # CONTRACT-120: Layer-C subsumption guard.  Catches double-enforcement
 # of a Refined<Pred, T> parameter via in-body CRUCIBLE_PRE that re-tests
 # the same predicate on the same parameter — the type-level proof
@@ -642,7 +642,7 @@ add_test(NAME refined_pre_subsumption_self_test
 add_test(NAME refined_pre_subsumption
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
-  LABELS "ci_guard;CONTRACT-120")
+  LABELS "ci_guard")
 # FIXY-U-001 Phase F discipline gate (misc/16_05_2026_fixy.md §4
 # Phase F).  scripts/check-fixy-discipline.sh enforces the
 # greenfield rule: directories opted into CRUCIBLE_FIXY_ONLY must
@@ -660,7 +660,7 @@ add_test(NAME fixy_discipline_self_test
 add_test(NAME fixy_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh)
 set_tests_properties(fixy_discipline fixy_discipline_self_test PROPERTIES
-  LABELS "ci_guard;FIXY-U-001")
+  LABELS "ci_guard")
 # FIXY-U-003 §XXI Universal Mint Pattern compliance scanner.  Today's
 # Phase 1 check: every mint_<noun>( factory definition MUST carry the
 # [[nodiscard]] attribute on the same line or the immediately
@@ -678,7 +678,7 @@ add_test(NAME mint_pattern_self_test
 add_test(NAME mint_pattern
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py)
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
-  LABELS "ci_guard;ast;FIXY-U-003")
+  LABELS "ci_guard;ast")
 set_tests_properties(mint_pattern PROPERTIES SKIP_RETURN_CODE 3)
 # The witness roster.  Every type that attests to a fact it cannot see
 # — a pin, a mapping, a descriptor, a permission, a context — is named
@@ -699,7 +699,7 @@ set_tests_properties(witness_roster_self_test PROPERTIES
 add_test(NAME witness_roster
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.sh --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
-  LABELS "ci_guard;A13")
+  LABELS "ci_guard")
 # fixy-L-03 #1519 — Permission<Tag> long-lived-struct antipattern
 # guard (Permission.h:144-148 doc-block, CLAUDE.md §IX).  Every
 # Permission<*> declared as a class/struct member MUST be on a line
@@ -718,7 +718,7 @@ add_test(NAME permission_storage_self_test
 add_test(NAME permission_storage
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
-  LABELS "ci_guard;fixy-L-03")
+  LABELS "ci_guard")
 # FIXY-U-097 std::vector::reserve ban enforcement (CLAUDE.md §IV
 # opt-out matrix).  scripts/check-no-reserve.sh flags every NEW
 # `.reserve(` / `->reserve(` call site outside the allowlist; 12
@@ -733,7 +733,7 @@ add_test(NAME no_reserve_self_test
 add_test(NAME no_reserve
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh)
 set_tests_properties(no_reserve no_reserve_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-097")
+    LABELS "ci_guard")
 # FIXY-V-237 raw C++ file-stream ban in band-3 dirs (Agent 9 Phase F6).
 # scripts/check-no-raw-ofstream.sh flags any std::[basic_][oi]?fstream
 # use or `#include <fstream>` in the eight fixy-only band-3 subsystems
@@ -749,7 +749,7 @@ add_test(NAME no_raw_ofstream_self_test
 add_test(NAME no_raw_ofstream
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh)
 set_tests_properties(no_raw_ofstream no_raw_ofstream_self_test PROPERTIES
-    LABELS "ci_guard;fixy-V-237")
+    LABELS "ci_guard")
 # FIXY-V-264 hardware-axis grant-declaration presence gate (Agent 11 Tier
 # 2 #17).  scripts/check-fixy-hw-discipline.sh asserts the four Tier-2
 # sites (SwissTable swiss_hw / Fec fec_hw / TraceRing tracering_hw /
@@ -764,7 +764,7 @@ add_test(NAME fixy_hw_discipline_self_test
 add_test(NAME fixy_hw_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh)
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
-    LABELS "ci_guard;fixy-V-264")
+    LABELS "ci_guard")
 # FIXY-U-105 reinterpret_cast ban enforcement (CLAUDE.md §III opt-out
 # matrix).  scripts/check-no-reinterpret-cast.sh flags every NEW
 # `reinterpret_cast<` call site outside the allowlist; 20 grandfathered
@@ -781,7 +781,7 @@ add_test(NAME no_reinterpret_cast_self_test
 add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-105")
+    LABELS "ci_guard")
 # FIXY-V-094 fast-math-family flag ban enforcement (CLAUDE.md §V "NEVER"
 # matrix + cmake/FpStrict.cmake floor).  scripts/check-no-ffast-math.sh
 # is the per-TU guard against `#pragma GCC optimize("fast-math")` or
@@ -799,7 +799,7 @@ add_test(NAME no_ffast_math_self_test
 add_test(NAME no_ffast_math
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.sh)
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
-    LABELS "ci_guard;fixy-V-094")
+    LABELS "ci_guard")
 # FIXY-U-096z migration lock-in.  The FIXY-U-096* sweep brought 14
 # top-level include/crucible/*.h headers to literal-zero `safety::`
 # (reaching the substrate only through the fixy:: umbrella).
@@ -816,7 +816,7 @@ add_test(NAME fixy_clean_headers_self_test
 add_test(NAME fixy_clean_headers
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh)
 set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-096z")
+    LABELS "ci_guard")
 # FIXY-V-006 axis-numbering CI guard.  FX dim numbering (FX dim 1..22)
 # diverges from substrate DimensionAxis ordinal (0..23) because FX dim
 # 12 Clock Domain and FX dim 17 FP Order were dropped per fixy.md
@@ -830,7 +830,7 @@ add_test(NAME fixy_dim_prose_self_test
 add_test(NAME fixy_dim_prose
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh)
 set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
-    LABELS "ci_guard;fixy-V-006")
+    LABELS "ci_guard")
 # FIXY-U-100 syscall capability discipline (closes fixy-A5-016
 # regression-prevention surface).  scripts/check-syscall-capability.sh
 # flags every NEW direct Linux syscall invocation outside the allowlist
@@ -847,7 +847,7 @@ add_test(NAME syscall_capability_self_test
 add_test(NAME syscall_capability
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-100")
+    LABELS "ci_guard")
 # oob-62 fullness discipline.  `if (count == Capacity) return false;` reads
 # as a bounds check but only rejects the exact boundary: a count already
 # past Capacity compares unequal, the guard passes, and the next push
@@ -924,7 +924,7 @@ add_test(NAME spawn_discipline_self_test
 add_test(NAME spawn_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-spawn-discipline.sh)
 set_tests_properties(spawn_discipline spawn_discipline_self_test PROPERTIES
-    LABELS "ci_guard;fixy-V-210")
+    LABELS "ci_guard")
 
 # foundation::effects::testing returns minted capabilities with no gate,
 # and a capability is what every ctx-bound mint checks for.  Effect.h says
@@ -990,7 +990,7 @@ add_test(NAME row_contains_discipline_self_test
 add_test(NAME row_contains_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.sh)
 set_tests_properties(row_contains_discipline row_contains_discipline_self_test
-    PROPERTIES LABELS "ci_guard;fixy-U-101")
+    PROPERTIES LABELS "ci_guard")
 # FIXY-U-104 fixy::is:: alias-parity enforcement (closes fixy-L-05 +
 # fixy-L-06 going forward).  scripts/check-isx-parity.sh diffs the
 # public `_v` traits + `_t` slot-extractor aliases in safety/Is*.h
@@ -1007,7 +1007,7 @@ add_test(NAME isx_parity_self_test
 add_test(NAME isx_parity
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.sh)
 set_tests_properties(isx_parity isx_parity_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-104")
+    LABELS "ci_guard")
 # FIXY-U-087 stub-vs-live deprecation discipline (fixy-A5-001 / A5-002 / A5-025
 # / A5-042).  scripts/check-stub-discipline.sh pairs every honesty marker
 # (`inline constexpr bool *_implemented = false` / `*_attached = false`) with a
@@ -1023,7 +1023,7 @@ add_test(NAME stub_discipline_self_test
 add_test(NAME stub_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh)
 set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-087")
+    LABELS "ci_guard")
 # FIXY-U-086 cross-thread atomic sibling-assert discipline (CLAUDE.md §IX
 # + fixy-A5-029).  scripts/check-lock-free-asserts.sh flags any
 # `std::atomic<T>` declaration in canopy/cntp/topology/warden that lacks
@@ -1040,7 +1040,7 @@ add_test(NAME lock_free_asserts_self_test
 add_test(NAME lock_free_asserts
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.sh)
 set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
-    LABELS "ci_guard;fixy-U-086")
+    LABELS "ci_guard")
 # FIXY-U-106 wire: gen-mint-inventory.sh self-test + --check drift gate.
 # Complementary to test_fixy_mint_inventory (the structural CI gate of
 # U-002) — the script surfaces the WHOLE substrate-mint table with §XXI
@@ -1069,7 +1069,7 @@ add_test(NAME mint_inventory_check_floor
 set_tests_properties(mint_inventory_self_test
                      mint_inventory_check
                      mint_inventory_check_floor PROPERTIES
-    LABELS "ci_guard;fixy-U-106;fixy-FOUND-140")
+    LABELS "ci_guard")
 # FIXY-FOUND-050 — single combine_ids source of truth.  This guard
 # existed but was registered NOWHERE: not in ctest, not in CI.  It had
 # therefore never run, and its own header rotted (it cited
@@ -1082,7 +1082,7 @@ add_test(NAME no_combine_ids_duplicate
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.sh)
 set_tests_properties(no_combine_ids_duplicate
                      no_combine_ids_duplicate_self_test PROPERTIES
-    LABELS "ci_guard;FIXY-FOUND-050")
+    LABELS "ci_guard")
 # ci_guard label-coverage gate.  `ctest -L ci_guard` is the LOCAL
 # pre-merge check; a guard registered without the label is silently
 # skipped by it, so the gate reports a pass having never run that
@@ -1131,7 +1131,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
       "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
   set_tests_properties(row_hash_golden_diff PROPERTIES
-      LABELS "ci_guard;fixy-FOUND-052")
+      LABELS "ci_guard")
 endif()
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
@@ -1245,7 +1245,7 @@ crucible_test(test_federation_permission)
 crucible_test(attack_federation_forgery
               safety_attack/attack_federation_forgery.cpp)
 set_tests_properties(attack_federation_forgery PROPERTIES
-    LABELS "safety_attack;fixy-CR-02")
+    LABELS "safety_attack")
 
 # fixy-CR-03 positive-attack regression — proves the V1 self-signed
 # federation handshake is REPLAYABLE today.  Orthogonal to forgery:
@@ -1259,7 +1259,7 @@ set_tests_properties(attack_federation_forgery PROPERTIES
 crucible_test(attack_federation_replay
               safety_attack/attack_federation_replay.cpp)
 set_tests_properties(attack_federation_replay PROPERTIES
-    LABELS "safety_attack;fixy-CR-03")
+    LABELS "safety_attack")
 
 # fixy-CR-04 positive-attack regression — proves the V1
 # mint_federation_admittance accepts ANY const-ref to a
@@ -1277,7 +1277,7 @@ set_tests_properties(attack_federation_replay PROPERTIES
 crucible_test(attack_federation_authority_bypass
               safety_attack/attack_federation_authority_bypass.cpp)
 set_tests_properties(attack_federation_authority_bypass PROPERTIES
-    LABELS "safety_attack;fixy-CR-04")
+    LABELS "safety_attack")
 
 # fixy-CR-05 positive-attack regression — proves the V1 splits_into
 # trait is user-extensible.  A malicious downstream TU specializes
@@ -1294,7 +1294,7 @@ set_tests_properties(attack_federation_authority_bypass PROPERTIES
 crucible_test(attack_federation_cross_org_escalation
               safety_attack/attack_federation_cross_org_escalation.cpp)
 set_tests_properties(attack_federation_cross_org_escalation PROPERTIES
-    LABELS "safety_attack;fixy-CR-05")
+    LABELS "safety_attack")
 
 # fixy-CR-09 positive-attack regression — proves the namespace
 # `crucible::fixy::grant` is openable by foreign translation units
@@ -1309,7 +1309,7 @@ set_tests_properties(attack_federation_cross_org_escalation PROPERTIES
 crucible_test(attack_fixy_grant_namespace_reopen
               safety_attack/attack_fixy_grant_namespace_reopen.cpp)
 set_tests_properties(attack_fixy_grant_namespace_reopen PROPERTIES
-    LABELS "safety_attack;fixy-CR-09")
+    LABELS "safety_attack")
 
 # fixy-CR-09 namespace-purity CI guard — enforces that ONLY
 # include/crucible/fixy/Grant.h opens namespace crucible::fixy::grant
@@ -1326,7 +1326,7 @@ add_test(NAME fixy_grant_namespace_purity
          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 set_tests_properties(fixy_grant_namespace_purity
                      fixy_grant_namespace_purity_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard;fixy-CR-09")
+    LABELS "safety_attack;ci_guard")
 
 # fixy-A1-018 splits_into orphan-specialization guard — enforces that
 # `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children...>`
