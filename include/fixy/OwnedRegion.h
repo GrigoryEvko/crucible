@@ -211,14 +211,16 @@ auto OwnedRegion<T, Tag>::split_into_impl_(std::index_sequence<Is...>) && noexce
 // than left to a primary template, which would hand back void for an
 // unrelated argument instead of failing.
 
+// The concept is the question; the value spelling is derived from it
+// and read by nothing that gates.
 template <typename T>
-inline constexpr bool is_owned_region_v = ::foundation::reflect::is_instance_of_v<T, ^^OwnedRegion>;
+concept IsOwnedRegion = ::foundation::reflect::IsInstanceOf<T, ^^OwnedRegion>;
 
 template <typename T>
-concept IsOwnedRegion = is_owned_region_v<T>;
+inline constexpr bool is_owned_region_v = IsOwnedRegion<T>;
 
 template <typename T>
-    requires is_owned_region_v<T>
+    requires IsOwnedRegion<T>
 using owned_region_value_t = typename std::remove_cvref_t<T>::value_type;
 
 template <typename T>
