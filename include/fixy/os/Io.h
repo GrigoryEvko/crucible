@@ -19,17 +19,24 @@
 //  2. The context gate reads the row off the pack rather than naming IO
 //     and Block by hand.  Same answer today, pinned below.
 //
-//  3. Six tags did not come across, because fixy/atoms/Os.h ported only
-//     the tags a mint accepts: engine::{Synchronous, Aio},
-//     zerocopy::{None, Splice, MsgZerocopy} and ring_flag::Default stay
-//     in the old tree.  The predicates that refused them are ported
-//     anyway, with false primaries: engine_is_io_uring_v and
+//  3. Six tags did not come across.  Five of them are tags a mint
+//     refused: engine::{Synchronous, Aio} and zerocopy::{None, Splice,
+//     MsgZerocopy}, each of which the old header's own self-test asserts
+//     the gate answered false for.  The predicates that refused them are
+//     ported anyway, with false primaries: engine_is_io_uring_v and
 //     zerocopy_is_simple_transfer_v answer false for every tag they were
 //     not told about, so a tag added to either namespace later is
 //     refused on the day it appears rather than on the day somebody
 //     remembers to extend a gate.  Three old negative fixtures named
 //     those tags and cannot be written here; the predicates are what
 //     stands in their place.
+//
+//     The sixth, ring_flag::Default, is a different case, and grouping it
+//     with the five said something false about it.  The old mint DID
+//     accept it: ring_flag_bits mapped it to zero, so it set up a ring
+//     with no setup bits.  A pack that names no ring-flag atom sets up
+//     the identical ring, which is why the tag is not here.  Nothing is
+//     lost and nothing was refused.
 //
 //  4. IoUringRing's constructor is private and mint_io_uring_ring is its
 //     sole friend.  The old one was public and took a descriptor and

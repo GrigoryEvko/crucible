@@ -467,6 +467,12 @@ template <eff::IsExecCtx Ctx>
     return Dirfd{std::move(*fd)};
 }
 
+// The read-only open, spelled once.  The old header exported the same
+// alias over its grant, and include/crucible/fixy/Wrap.h re-exports it,
+// so a port that dropped it would leave that re-export with no target at
+// Stage C.
+using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
+
 // The durable and atomic_write atoms only declare intent.  The mint
 // opens the file.  The caller still calls sync<Fsync> after writing and
 // then commit_atomic<Rename> to move the result into place.
