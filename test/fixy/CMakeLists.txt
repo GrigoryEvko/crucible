@@ -314,6 +314,22 @@ fixy_neg_compile_test(neg_rule_v401_wide_scope_weak_fence
   "Collision rule\\(s\\) V401:"
   "${_fixy_tier5_member}")
 
+# ── Task #176: the SIMD-ISA family ────────────────────────────────────
+#
+# Two rules.  V101 refuses on the payload, as V203 does: a replay-
+# deterministic band against an ISA pinned to one vendor trunk.  V402
+# reads two axes of the pack, a trunk-pinned scope against a trunk-pinned
+# ISA, and it is the rule the old catalog carried as a marker trait no
+# atom ever set.  Neither fixture is hot, so the regime rules stand down.
+fixy_neg_compile_test(neg_rule_v101_replay_pinned_isa
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V101:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_v402_scope_across_trunk
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V402:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.

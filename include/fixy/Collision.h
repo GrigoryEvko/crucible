@@ -64,6 +64,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Regime.h>
 #include <fixy/atoms/Scope.h>
+#include <fixy/atoms/Simd.h>
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
@@ -153,6 +154,7 @@ using all_atom_roster =
                                        ::fixy::atom::detail::os_atom_roster,
                                        ::fixy::atom::detail::regime_atom_roster,
                                        ::fixy::atom::detail::scope_atom_roster,
+                                       ::fixy::atom::detail::simd_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
                                        ::fixy::atom::detail::stdio_atom_roster,
                                        ::fixy::atom::detail::sync_atom_roster>;
@@ -189,10 +191,12 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 //
 // Task #176 is draining this list, one axis per commit, because the
 // user's decision was to ship an atom for every axis rather than delete
-// any.  fixy/atoms/Regime.h left it first, taking the H, R and S
-// families live; fixy/atoms/Sync.h left it second, taking W001 and W002.
+// any.  Regime.h left first, taking the H, R and S families live; then
+// Sync.h with W001 and W002, Observe.h with B001 and the new B002, Hw.h
+// with the three V2 rules, Barrier.h with V301, Scope.h with V401, and
+// Simd.h with V101 and V402.  One axis is left.
 inline constexpr Axis pending_axes[] = {
-    Axis::FpMode, Axis::SimdIsa,
+    Axis::FpMode,
 };
 
 inline constexpr std::size_t pending_axis_count = sizeof(pending_axes) / sizeof(pending_axes[0]);
@@ -240,8 +244,17 @@ enum class RuleCode : std::uint8_t {
     F103,
     F104,
     F105,
+    // V102 has no enumerator, and the pin below is why: this enum holds
+    // exactly the codes a rule in this file can be named by, and an
+    // Absent code is named only by the corpus, as a string.  The
+    // twenty-one codes that were Absent from the start have never had one
+    // either.  V102 was briefly here while it was Pending, because a
+    // pending rule keeps its code against the day its axis gains an atom;
+    // when fixy/atoms/Simd.h shipped and it still could not fire, it
+    // joined the Absent list and gave its enumerator up.  Nothing renamed
+    // and nothing reused: the corpus still carries the string, with the
+    // reason it cannot fire.
     V101,
-    V102,
     V201,
     V202,
     V203,
@@ -279,19 +292,13 @@ inline constexpr pending_rule pending_rules[] = {
      "ConstantTime x denormal inputs honored: denormal arithmetic is slower on most silicon, which leaks the "
      "operand through timing."},
     {RuleCode::F105, Axis::FpMode, "ConstantTime x subnormals preserved: same leak as F104 on the result side."},
-    {RuleCode::V101, Axis::SimdIsa,
-     "Replay x a pinned SIMD ISA: a vector width chosen per host makes the reduction order host-dependent."},
-    {RuleCode::V102, Axis::SimdIsa, "SIMD width exceeds the pinned ISA: the emitted vector does not fit the trunk."},
     // V201, V202 and V203 left this list when fixy/atoms/Hw.h shipped,
-    // V301 when fixy/atoms/Barrier.h did, and V401 when fixy/atoms/Scope.h
-    // did.  V401 read a scope AND a strength, so like W001 it moved axis
-    // between those two commits.
-    //
-    // V402 reads a scope AND a pinned ISA, so it moves the same way: it
-    // waited on MemoryScope until Scope.h, and waits on SimdIsa now.
-    {RuleCode::V402, Axis::SimdIsa,
-     "Memory scope across an architecture trunk: two vendor trunks meet only at the shared bottom and top, so a "
-     "scope pinned on one does not compose with the other."},
+    // V301 when fixy/atoms/Barrier.h did, V401 when fixy/atoms/Scope.h
+    // did, and V101 with V402 when fixy/atoms/Simd.h did.  V401 and V402
+    // each read two axes, so like W001 each moved axis between the two
+    // commits that shipped them.  V102 left for the Absent list in
+    // rule_corpus: it reads a SIMD width, which no atom or band carries,
+    // so an atom on its axis did not make it fire.
 };
 
 inline constexpr std::size_t pending_rule_count = sizeof(pending_rules) / sizeof(pending_rules[0]);
@@ -380,6 +387,13 @@ inline constexpr corpus_entry rule_corpus[] = {
     // two of the new axes together.
     {"V401", Disposition::Live, "a scope at or above Cluster x a fence below AcqRel"},
 
+    // The SIMD-ISA family, live since fixy/atoms/Simd.h shipped the
+    // fifteen SimdIsa atoms (task #176).  V101 is the second rule to
+    // consume the payload's replay claim, and V402 the second to read
+    // two of the new axes together.
+    {"V101", Disposition::Live, "a replay-deterministic payload x an ISA pinned to one trunk"},
+    {"V402", Disposition::Live, "a trunk-pinned scope x a trunk-pinned ISA that do not cohere"},
+
     // The rest wait on an axis with no atom.  pending_rules above carries
     // the theorem and names the axis for each.
     {"F101", Disposition::Pending, "Axis::FpMode"},
@@ -387,13 +401,17 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"F103", Disposition::Pending, "Axis::FpMode"},
     {"F104", Disposition::Pending, "Axis::FpMode"},
     {"F105", Disposition::Pending, "Axis::FpMode"},
-    {"V101", Disposition::Pending, "Axis::SimdIsa"},
-    {"V102", Disposition::Pending, "Axis::SimdIsa"},
-    {"V402", Disposition::Pending, "Axis::SimdIsa"},
 
-    // The twenty-one this layer cannot state.  Each note names the thing
+    // The twenty-two this layer cannot state.  Each note names the thing
     // that is missing, so the entry is a claim someone can check rather
     // than a gap someone has to notice.
+    //
+    // One of them waited in pending_rules until task #176 gave its axis an
+    // atom, and moved here rather than going live, because the atom was
+    // not what it was missing: V102 reads a SIMD width against the ISA,
+    // and the width a body emits is not the instruction set it was
+    // emitted for.
+    {"V102", Disposition::Absent, "reads a pinned SIMD width against the ISA; no atom or band carries a width"},
     //
     // Four of them read a grade on the payload type.  live_rules receives
     // the atom pack and not the payload: CollisionRules<fn<Type, Atoms...>>
@@ -489,6 +507,11 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 // atom leaves the set and fires this, naming the rules to wire.  A
 // family roster forgotten from all_atom_roster makes an axis look empty
 // and fires it too.
+//
+// Task #176 emptied pending_axes, so only the second direction can fire
+// now, and it is the one worth keeping: the assertion currently reads
+// "every axis but Type has an atom", and a family header that stops being
+// joined into the roster takes that claim down.
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -510,8 +533,8 @@ static_assert(every_pending_axis_is_still_empty(),
               "fixy/Collision.h: the pending-rule roster is out of date.  Either an axis listed in "
               "collision::pending_axes has gained its first atom — in which case the rules registered against it in "
               "collision::pending_rules can now fire and must be written as live rules, and the axis removed from "
-              "pending_axes — or a family roster was added under fixy/atoms/ and never joined into "
-              "collision::all_atom_roster, which makes its axes look empty.");
+              "pending_axes — or, since task #176 emptied both lists, a family roster under fixy/atoms/ is no longer "
+              "joined into collision::all_atom_roster, which makes its axes look empty.");
 
 // ---------------------------------------------------------------------
 // The corpus pins.
@@ -588,12 +611,12 @@ static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
               "fixy/Collision.h: pending_rules and the corpus disagree about how many rules are waiting on an "
               "atomless axis.");
 
-// There is deliberately no `pending_axis_count == 8` pin here.  It would
-// be derived from the array it counts, and the biconditional above
-// already fixes the SET by name against the atom catalog: an axis dropped
-// from pending_axes while still atomless fails it, and an axis added while
-// it has an atom fails it too.  The count could therefore never fail on
-// its own, and a pin that cannot fail reads as a second check.
+// There is deliberately no pin on pending_axis_count here.  It would be
+// derived from the array it counts, and the biconditional above already
+// fixes the SET by name against the atom catalog: an axis dropped from
+// pending_axes while still atomless fails it, and an axis added while it
+// has an atom fails it too.  The count could therefore never fail on its
+// own, and a pin that cannot fail reads as a second check.
 
 // ---------------------------------------------------------------------
 // Reading a grade.
@@ -724,6 +747,37 @@ template <::foundation::algebra::lattices::MemoryScope Floor, class G>
     requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
                                                       ::foundation::algebra::lattices::MemoryScope>
 struct scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at_or_above(G::scope, Floor)> {};
+
+// The two trunk readings V402 composes, and the ISA pin V101 reads.
+// Each primary is false: a binding that names no scope or no ISA pins
+// no trunk, so the rules have nothing to refuse on it.  The trunk
+// predicates come from fixy/atoms/Scope.h and fixy/atoms/Simd.h, so the
+// division is read from one place per axis.
+template <class G>
+struct scope_trunk_pinned_ : std::false_type {};
+template <class G>
+    requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
+                                                      ::foundation::algebra::lattices::MemoryScope>
+struct scope_trunk_pinned_<G> : std::bool_constant<::fixy::atom::scope::is_trunk_pinned(G::scope)> {};
+
+template <class G>
+struct scope_on_host_trunk_ : std::false_type {};
+template <class G>
+    requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
+                                                      ::foundation::algebra::lattices::MemoryScope>
+struct scope_on_host_trunk_<G> : std::bool_constant<::fixy::atom::scope::on_host_trunk(G::scope)> {};
+
+template <class G>
+struct isa_trunk_pinned_ : std::false_type {};
+template <class G>
+    requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
+struct isa_trunk_pinned_<G> : std::bool_constant<::fixy::atom::simd::is_trunk_pinned(G::isa)> {};
+
+template <class G>
+struct isa_on_arm_trunk_ : std::false_type {};
+template <class G>
+    requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
+struct isa_on_arm_trunk_<G> : std::bool_constant<::fixy::atom::simd::on_arm_trunk(G::isa)> {};
 
 // Whether the Effect row carries Init, which is the context V202 asks a
 // privileged tier to be reached from.  Same shape as row_admits_bg_.
@@ -1003,6 +1057,32 @@ struct rules_of {
 
     static constexpr bool V401_ok = !(scope_cluster_or_above && !barrier_acq_rel_or_above);
 
+    // ── The SIMD-ISA family, live since fixy/atoms/Simd.h ─────────────
+    //
+    // Two trunks again, and two rules.  V101 is the second rule to
+    // consume the payload's replay claim: a body emitted for one vendor's
+    // vector width reduces in that width's order, and a payload claiming
+    // the same bits on every host cannot come out of it.  Scalar pins
+    // nothing and Portable is by definition one kernel for every set, so
+    // both stand down.
+    //
+    // V402 is the coherence of a pinned scope with a pinned ISA, and it
+    // is structural where the old rule was a marker no atom ever set.
+    // The host shareability trunk — Inner and Outer, the DMB ISH/OSH
+    // family — is the ARM trunk's, so it coheres with an ARM ISA and with
+    // nothing else; the accelerator trunk is GPU scope and coheres with
+    // no host ISA at all.  The shared points on either axis cohere with
+    // anything.
+    static constexpr bool isa_pinned = detail::isa_trunk_pinned_<typename G::template on<Axis::SimdIsa>>::value;
+    static constexpr bool isa_arm = detail::isa_on_arm_trunk_<typename G::template on<Axis::SimdIsa>>::value;
+    static constexpr bool scope_pinned =
+        detail::scope_trunk_pinned_<typename G::template on<Axis::MemoryScope>>::value;
+    static constexpr bool scope_host = detail::scope_on_host_trunk_<typename G::template on<Axis::MemoryScope>>::value;
+    static constexpr bool trunks_cohere = scope_host && isa_arm;
+
+    static constexpr bool V101_ok = !(replay_deterministic && isa_pinned);
+    static constexpr bool V402_ok = !(scope_pinned && isa_pinned && !trunks_cohere);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -1039,7 +1119,8 @@ struct rules_of {
             rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
             rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
             rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
-            rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"},
+            rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"}, rule_verdict{V101_ok, "V101"},
+            rule_verdict{V402_ok, "V402"},
         };
     }
 
@@ -1147,6 +1228,14 @@ struct rules_of {
                                "further than the fence orders, so a reader on another block can observe the write "
                                "before the data the writer published ahead of it. Fence with acq_rel or stronger, "
                                "or narrow the scope.");
+        static_assert(V101_ok, "V101: a replay-deterministic payload x an ISA pinned to one trunk. A body emitted "
+                               "for one vendor's vector width reduces in that width's order, so its bits differ "
+                               "per host; the payload's DetSafe band claims the same bits on every replay. Emit "
+                               "Scalar or Portable, or lower the band.");
+        static_assert(V402_ok, "V402: a trunk-pinned scope x a trunk-pinned ISA that do not cohere. The host "
+                               "shareability scopes are the ARM DMB ISH/OSH family and the accelerator scopes are "
+                               "GPU scope; an x86 ISA has neither and an ARM ISA has only the first. Pin the scope "
+                               "and the ISA on one trunk, or leave one at its shared point.");
         return valid;
     }
 

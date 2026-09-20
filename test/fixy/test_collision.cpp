@@ -492,6 +492,47 @@ static_assert(!live_rules<at::regime::hot, at::scope::system, at::barrier::seq_c
                             at::refined_with<hot_invariant>>::V401_ok);
 
 // ---------------------------------------------------------------------
+// The SIMD-ISA family, live since fixy/atoms/Simd.h (task #176).
+//
+// Two trunks again, and two rules.  V101 reads the payload, so its cells
+// use rules_of; V402 reads two axes of the pack, so its use live_rules.
+
+static_assert(col::axis_has_an_atom<Axis::SimdIsa>);
+
+// V101 a replay-deterministic payload x an ISA pinned to one trunk.
+static_assert(!rules_of<det<DetTier::Pure>, at::simd::avx2>::V101_ok);
+static_assert(!rules_of<det<DetTier::Pure>, at::simd::sve2>::V101_ok, "either trunk pins a width");
+static_assert(!rules_of<det<DetTier::PhiloxRng>, at::simd::avx512bw>::V101_ok);
+static_assert(rules_of<det<DetTier::Pure>, at::simd::scalar>::V101_ok, "the shared bottom pins no trunk");
+static_assert(rules_of<det<DetTier::Pure>, at::simd::portable>::V101_ok,
+              "the shared top is one kernel for every set, so it pins no trunk either");
+static_assert(rules_of<det<DetTier::WallClockRead>, at::simd::avx2>::V101_ok,
+              "a payload that already admits a wall-clock read claims nothing a vector width could break");
+static_assert(rules_of<int, at::simd::avx2>::V101_ok, "no band, no claim");
+static_assert(live_rules<at::simd::avx2>::V101_ok, "the pack-only view cannot see a payload");
+
+// V402 a trunk-pinned scope x a trunk-pinned ISA that do not cohere.
+static_assert(!live_rules<at::simd::avx2, at::scope::inner>::V402_ok,
+              "the host shareability scopes are the ARM fence family, and this ISA is x86");
+static_assert(!live_rules<at::simd::avx2, at::scope::cta>::V402_ok, "an accelerator scope with a host ISA");
+static_assert(!live_rules<at::simd::sve2, at::scope::gpu>::V402_ok, "an accelerator scope with an ARM host ISA");
+static_assert(live_rules<at::simd::neon, at::scope::inner>::V402_ok, "the one coherent pairing");
+static_assert(live_rules<at::simd::sve, at::scope::outer>::V402_ok);
+static_assert(live_rules<at::simd::avx2, at::scope::thread>::V402_ok, "the shared bottom coheres with anything");
+static_assert(live_rules<at::simd::avx2, at::scope::system>::V402_ok, "and so does the shared top");
+static_assert(live_rules<at::simd::scalar, at::scope::cta>::V402_ok, "an unpinned ISA coheres with anything");
+static_assert(live_rules<at::simd::portable, at::scope::inner>::V402_ok);
+static_assert(live_rules<at::scope::cta>::V402_ok, "no ISA named");
+static_assert(live_rules<at::simd::avx2>::V402_ok, "no scope named");
+static_assert(live_rules<>::V402_ok);
+
+// The one coherent pairing still answers to V401, which is the other
+// rule reading a scope: Inner is on the host trunk, so it is below the
+// cluster floor and V401 stands down whatever the fence.
+static_assert(live_rules<at::simd::neon, at::scope::inner>::V401_ok
+              && live_rules<at::simd::neon, at::scope::inner>::V402_ok);
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
@@ -500,7 +541,7 @@ static_assert(!live_rules<at::regime::hot, at::scope::system, at::barrier::seq_c
 // rather than a floor because the three dispositions partition the
 // catalog — a floor here would let a rule fall out of all three and go
 // unnoticed.
-static_assert(col::pending_rule_count == 8);
+static_assert(col::pending_rule_count == 5);
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -539,7 +580,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 26);
+static_assert(col::live_rule_count == 28);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -548,9 +589,9 @@ static_assert(col::live_rule_count == 26);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 26);
-static_assert(corpus_entries_with(col::Disposition::Pending) == 8);
-static_assert(corpus_entries_with(col::Disposition::Absent) == 21);
+static_assert(corpus_entries_with(col::Disposition::Live) == 28);
+static_assert(corpus_entries_with(col::Disposition::Pending) == 5);
+static_assert(corpus_entries_with(col::Disposition::Absent) == 22);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent)
               == col::rule_corpus_size);
@@ -581,8 +622,11 @@ static_assert(every_absent_entry_gives_a_reason());
 // rule really has one.  Both halves, so the roster is not merely
 // self-consistent.
 static_assert(!col::axis_has_an_atom<Axis::FpMode>);
-// MemoryScope moved sides when fixy/atoms/Scope.h shipped, as Regime did
-// below; the V401 cells above are what it bought.
+// SimdIsa moved sides when fixy/atoms/Simd.h shipped, as Regime did
+// below; the V101 and V402 cells above are what it bought.
+static_assert(col::axis_has_an_atom<Axis::SimdIsa>);
+static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);
+static_assert(col::axis_has_an_atom<Axis::HwInstruction>);
 static_assert(col::axis_has_an_atom<Axis::MemoryScope>);
 static_assert(col::axis_has_an_atom<Axis::Usage>);
 static_assert(col::axis_has_an_atom<Axis::Effect>);
@@ -618,8 +662,8 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
-    if (col::pending_rule_count != 8) return 2;
-    if (col::live_rule_count != 26) return 3;
+    if (col::pending_rule_count != 5) return 2;
+    if (col::live_rule_count != 28) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -641,7 +685,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 26 || pending != 8 || absent != 21) return 9;
+    if (live != 28 || pending != 5 || absent != 22) return 9;
     if (live + pending + absent != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 
