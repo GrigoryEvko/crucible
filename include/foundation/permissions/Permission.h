@@ -90,12 +90,15 @@ class ForkRebuildKey;
 struct ForkRebuildAccess;
 
 // A friend declaration of a constrained function template must repeat
-// the constraint exactly.  Friending the structured-join primitives
-// directly would therefore drag their whole requires-clauses, and every
-// type those clauses name, into this header.  The rebuild routes
-// through this constraint-free helper instead.
-template <typename Parent>
-[[nodiscard]] constexpr Permission<Parent> rebuild_parent_after_fork_() noexcept;
+// the constraint exactly, so the public mints cannot be friended here
+// without dragging their whole requires-clauses, and every type those
+// clauses name, into this header.  permission_fork_ is the body those
+// mints delegate to and carries no constraint of its own, so it is the
+// one join primitive this header can name.  It is defined in
+// PermissionFork.h and is the only holder of the rebuild key.
+template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename... Callables>
+constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>&& parent,
+                                              Callables&&... callables) noexcept;
 }  // namespace detail
 
 // The declarative manifest of valid splits.  C++ has no orphan rule, so
@@ -620,46 +623,42 @@ class ForkRebuildKey {
 private:
     constexpr ForkRebuildKey() noexcept = default;
 
-    template <typename UParent>
-    friend constexpr Permission<UParent> rebuild_parent_after_fork_() noexcept;
+    // permission_fork_ is the sole friend, and that friendship is the
+    // whole gate.  It is reached only through mint_permission_fork or
+    // its inline sibling, each of which takes the parent Permission by
+    // rvalue and consumes it at the split.  A caller holding the key has
+    // therefore already surrendered the very permission the rebuild
+    // hands back.
+    //
+    // Until the fix for #169 the friend was a nullary free function
+    // template at namespace scope, `rebuild_parent_after_fork_`.  It
+    // took no argument, carried no constraint, and was itself friended
+    // to build the key, so the chain was a closed loop whose entry point
+    // any translation unit could call:
+    // `detail::rebuild_parent_after_fork_<AnyTag>()` minted a Permission
+    // for a tag the caller did not own, with no manifest, no context and
+    // no token.  Keep this friend a function that CONSUMES a
+    // Permission<Parent>.  A friend that takes nothing proves nothing.
+    template <bool USpawn, typename... UChildren, typename UCtx, typename UParent, typename... UCallables>
+    friend constexpr Permission<UParent> permission_fork_(UCtx const&, Permission<UParent>&&, UCallables&&...) noexcept;
 };
 
 struct ForkRebuildAccess {
-    // rebuild carries no constraint on T, and that is deliberate: the
-    // key is the gate, and only rebuild_parent_after_fork_ can build
-    // one, so the reachable set of T is whatever that function is
-    // instantiated with.  Constraining T here would restate a proof the
-    // fork already made, at a point that cannot see the children the
+    // rebuild carries no constraint on T because the proof lives in the
+    // key rather than here.  The only holder of a key is
+    // permission_fork_, which reached this point by consuming a
+    // Permission<Parent> at the split.  Constraining T here would
+    // restate that proof at a point which cannot see the children the
     // parent was split into.
     //
-    // READ THE NOTE BELOW BEFORE RELYING ON THAT SENTENCE.  It is true
-    // of this function and false of the chain it sits in.
+    // That sentence holds only while the key's friend list names one
+    // function that consumes a parent permission.  It was false before
+    // the fix for #169, when the friend took no argument at all.
     template <typename T>
     [[nodiscard]] static constexpr Permission<T> rebuild(ForkRebuildKey) noexcept {
         return Permission<T>{perm_mint_key{}};
     }
 };
-
-// This function is callable from any translation unit, for any tag, and
-// mints a Permission for it.  Nothing gates it: it is not constrained,
-// and the passkey it passes is one it is itself friended to build.  So
-// the key confines ForkRebuildAccess::rebuild and confines nothing else,
-// and `rebuild_parent_after_fork_<AnyTag>()` is a mint that needs no
-// manifest, no context and no token.
-//
-// It is reached that way on purpose today: fixy/OwnedRegion.h calls it
-// the public door and rebuilds a joined region through it, because the
-// structured-parallel helpers that used to do the rebuild are not
-// ported.  Closing it is therefore not a change to this header alone.
-//
-// Whoever closes it needs a predicate that admits a genuine post-join
-// parent and refuses a stranger.  `splits_into_pack_v<Parent,
-// Children...>` is that predicate, and it needs the children, which
-// this signature does not carry.
-template <typename Parent>
-[[nodiscard]] constexpr Permission<Parent> rebuild_parent_after_fork_() noexcept {
-    return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
-}
 
 }  // namespace detail
 
@@ -673,9 +672,9 @@ template <typename Parent>
 // a Permission for an arbitrary tag.  It had no assertion at all until
 // this one.
 static_assert(!std::is_default_constructible_v<detail::ForkRebuildKey>,
-              "The default constructor of ForkRebuildKey must not be public.  Only "
-              "rebuild_parent_after_fork_ is friended to build one, and that friendship is the whole "
-              "gate on ForkRebuildAccess::rebuild.");
+              "The default constructor of ForkRebuildKey must not be public.  Only permission_fork_ "
+              "is friended to build one, and that friendship is the whole gate on "
+              "ForkRebuildAccess::rebuild.");
 static_assert(std::is_empty_v<detail::ForkRebuildKey>, "ForkRebuildKey must stay empty, so that passing it "
                                                        "costs nothing.");
 

@@ -239,12 +239,11 @@ void test_split_smaller_than_n() {
 }
 
 // The join the old parallel helpers performed, spelled out once: every
-// shard writes its own slice index over its range, the shards are
-// dropped, and the parent comes back through the public door with the
-// permission the structured join reissues.  The post-join scan shows
-// both that no shard wrote outside its range and that no element went
-// unwritten.
-void test_split_then_rebuild_through_wrap() {
+// shard writes its own slice index over its range, and the shards are
+// then surrendered to recombine, which folds their Slice permissions
+// back into the parent's.  The post-join scan shows both that no shard
+// wrote outside its range and that no element went unwritten.
+void test_split_then_rebuild_through_recombine() {
     Arena arena;
     constexpr std::size_t N = 800;  // 8 × 100, exact division
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, N, mint_permission_root<DataA>());
@@ -271,9 +270,12 @@ void test_split_then_rebuild_through_wrap() {
         },
         shards);
 
-    auto recombined = OwnedRegion<std::uint64_t, DataA>::wrap(
-        base, count, ::foundation::permissions::detail::rebuild_parent_after_fork_<DataA>());
+    auto recombined = OwnedRegion<std::uint64_t, DataA>::recombine(std::move(shards));
 
+    // recombine derives both from the shards rather than being told, so
+    // check it recovered the extent the split started from.
+    CRUCIBLE_TEST_REQUIRE(recombined.data() == base);
+    CRUCIBLE_TEST_REQUIRE(recombined.size() == count);
     CRUCIBLE_TEST_REQUIRE(recombined.size() == N);
     for (std::size_t shard = 0; shard < 8; ++shard) {
         for (std::size_t i = 0; i < 100; ++i) {
@@ -296,7 +298,7 @@ int main() {
     run_test("test_split_into_chunk_math", test_split_into_chunk_math);
     run_test("test_split_uneven", test_split_uneven);
     run_test("test_split_smaller_than_n", test_split_smaller_than_n);
-    run_test("test_split_then_rebuild_through_wrap", test_split_then_rebuild_through_wrap);
+    run_test("test_split_then_rebuild_through_recombine", test_split_then_rebuild_through_recombine);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

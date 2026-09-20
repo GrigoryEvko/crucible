@@ -14,9 +14,14 @@
 // safety/Workload.h so they could rebuild the parent region after a
 // join through a private static.  Those helpers are not ported, and a
 // friend naming an absent function is an open door, so the friends
-// and the static are gone.  A join rebuilds the parent through the
-// public door instead: `wrap(base, count, rebuild_parent_after_fork_<Whole>())`,
-// with the same passkey-gated permission the old static reached for.
+// and the static are gone.  A join rebuilds the parent by surrendering
+// the shards to `recombine`, which combines their Slice permissions
+// back into the parent's.
+//
+// It briefly did so through `rebuild_parent_after_fork_<Whole>()`
+// instead.  That helper took no argument, so it proved nothing, and it
+// minted a Permission for any tag from any translation unit.  It is
+// gone (#169).  A rebuild has to consume the thing it reissues.
 //
 // Old spelling: include/crucible/safety/OwnedRegion.h, the detection
 // surface of include/crucible/safety/IsOwnedRegion.h and the Slice half
@@ -135,6 +140,28 @@ public:
     // distinct Slice tag, so the element types differ.
     template <std::size_t N>
     [[nodiscard]] auto split_into() && noexcept;
+
+    // The inverse of split_into.  Every shard is surrendered here, and
+    // their Slice permissions are combined back into the parent's, so
+    // the shards themselves are the proof that the whole is exclusively
+    // owned again.  mint_permission_combine_n checks that the shard tags
+    // mirror a declared splits_into_pack, so a tuple assembled from
+    // somewhere other than a real split does not combine.
+    //
+    // This is the only way to recover a parent permission after a split.
+    // There is deliberately no nullary rebuild: one that took no
+    // argument would prove nothing, and the previous such helper minted
+    // a Permission for any tag from any translation unit (#169).
+    template <std::size_t... Is>
+    [[nodiscard]] static OwnedRegion recombine(std::tuple<OwnedRegion<T, Slice<Tag, Is>>...>&& shards) noexcept {
+        static_assert(sizeof...(Is) > 0, "recombine() needs at least one shard.");
+        // Shard 0 starts at offset 0, so its base is the whole's base.
+        T* const base = std::get<0>(shards).base_;
+        std::size_t const total = (std::size_t{0} + ... + std::get<Is>(shards).count_);
+        return OwnedRegion{
+            base, total,
+            ::foundation::permissions::mint_permission_combine_n<Tag>(std::move(std::get<Is>(shards).perm_)...)};
+    }
 
 private:
     template <std::size_t N, std::size_t... Is>

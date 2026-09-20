@@ -180,7 +180,14 @@ constexpr Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>
                                 std::index_sequence_for<Children...>{});
     }
 
-    return rebuild_parent_after_fork_<Parent>();
+    // This scope is the sole friend of ForkRebuildKey, so this is the
+    // only place the key can be built.  The proof that the reissue is
+    // legitimate is that `parent` was taken by rvalue and consumed at
+    // the split above.  Do not factor this call out into a helper that
+    // does not consume a Permission<Parent> — that is exactly the shape
+    // which made the parent forgeable from any translation unit before
+    // the fix for #169.
+    return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
 }
 
 }  // namespace detail

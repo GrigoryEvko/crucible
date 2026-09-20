@@ -112,6 +112,23 @@ foundation_neg_compile_test(neg_permission_forged_without_key
   "no matching function for call to"
   "Permission<.*ForgedTag>::Permission")
 
+# The post-join rebuild key is the whole gate on reissuing a parent, and
+# ForkRebuildAccess::rebuild<T> is public and unconstrained, so the key's
+# private constructor is what stands between a caller and a Permission
+# for an arbitrary tag.  The second regex proves the refusal names that
+# key and not some other private member.
+foundation_neg_compile_test(neg_permission_fork_rebuild_key_unreachable
+  "is private within this context"
+  "ForkRebuildKey")
+
+# The companion: the nullary door that made the parent forgeable from any
+# TU must stay deleted.  Its predecessor fixture asserted a name that had
+# already been renamed, so it proved a rename rather than a closure; this
+# one names the symbol that actually shipped.
+foundation_neg_compile_test(neg_permission_fork_rebuild_no_nullary_door
+  "is not a member of"
+  "rebuild_parent_after_fork_")
+
 # A thread atom has no value-level tag, so the one extract_bare template
 # leaves the overload set by substitution failure on HasBareTag.  The
 # first regex proves the call found no candidate, and the second proves
