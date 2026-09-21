@@ -1,0 +1,370 @@
+[
+  {
+    "_comment": "End-to-end cost of the PyTorch vessel on a real training loop: the step a user writes, through the binding, the dispatcher, the recording kernel and the Vigil. Every (workload, arm) pair runs in its own process, because the dispatch library's schema table is a process-global static.",
+    "_comment2": "10 runs per pair, one clock read per iteration. The percentiles are pooled over every sample of every run; p50_spread is the run-to-run spread of the per-run p50, which is what the gate reads. max is the worst iteration observed. The mean is absent by rule.",
+    "_comment3": "A real loop holds its shapes constant, so the Vigil records the first iterations and replays the rest. RECORD is therefore a startup cost and COMPILED is the steady state, and only the latter's tail describes a running job.",
+    "_comment4": "gate=1 means the run-to-run spread of p50 stayed at or below 5%. gate=0 means the host was contended and the row is void.",
+    "_comment5": "No fast-path row. Measured from the source: call_recording in record_kernel.h calls Op::redispatch on every path and discards the result of dispatch_op_pure, so a replayed operation still executes eagerly. This tier adds cost rather than removing it. A shadow tensor type would let a replayed op return a handle without reaching the kernel; the vessel has none, and nothing here approximates it.",
+    "_comment6": "add1 is a microbenchmark, not a workload. It is kept because it isolates the per-op cost that the models bury under real arithmetic. Read the models for what the vessel costs a loop.",
+    "host": {
+      "cpu_model": "AMD EPYC 9655 96-Core Processor",
+      "cpu_count": 376,
+      "isolated_cpus": "88-95",
+      "affinity": [
+        88
+      ],
+      "pinned_cpu": 88,
+      "governor": "performance",
+      "pinned_thread_siblings": "88",
+      "offline_cpus": "280-287",
+      "benchtune": "active",
+      "kernel": "7.1.4-202.fc44.x86_64",
+      "torch": "2.15.0a0+git8be2400",
+      "python": "3.14.7",
+      "torch_num_threads": 1,
+      "build_dir": "build-vesselbench"
+    },
+    "name": "",
+    "p50_ns": 0,
+    "p99_ns": 0,
+    "p999_ns": 0,
+    "max_ns": 0,
+    "gate": 0
+  },
+  {
+    "_workload": "mlp_train",
+    "ops_per_iteration": 73
+  },
+  {
+    "name": "mlp_train [INACTIVE, PyTorch alone]",
+    "p50_ns": 164859,
+    "p99_ns": 168651,
+    "p999_ns": 174414,
+    "max_ns": 307768,
+    "p50_ns_per_op": 2258.3,
+    "ops_per_iteration": 73,
+    "runs": 10,
+    "samples_total": 10000,
+    "p50_spread": 0.018,
+    "gate": 1
+  },
+  {
+    "name": "mlp_train [RECORD, first iterations after attach]",
+    "p50_ns": 353252,
+    "p99_ns": 1311982,
+    "p999_ns": 7488696,
+    "max_ns": 60087092,
+    "p50_ns_per_op": 4839.1,
+    "ops_per_iteration": 73,
+    "runs": 10,
+    "samples_total": 902,
+    "p50_spread": 0.4657,
+    "gate": 0,
+    "_note": "a startup cost: a real loop pays it once, over 391 attaches here because one attach offers only the iterations before the region is built",
+    "_variance": "The spread is in what this row measures, not in the host: the control held 1.80% on the same host in the same session. Recording races the background thread building the region, so its cost varies by nature."
+  },
+  {
+    "name": "mlp_train [COMPILED, steady state, region replays]",
+    "p50_ns": 205978,
+    "p99_ns": 211066,
+    "p999_ns": 213641,
+    "max_ns": 297006,
+    "p50_ns_per_op": 2821.6,
+    "ops_per_iteration": 73,
+    "runs": 10,
+    "samples_total": 10000,
+    "p50_spread": 0.0212,
+    "gate": 1,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
+  },
+  {
+    "name": "mlp_train: RECORD - INACTIVE [startup cost per iteration]",
+    "p50_ns": 188393,
+    "p99_ns": 1143331,
+    "p999_ns": 7314282,
+    "max_ns": null,
+    "p50_ns_per_op": 2580.7,
+    "p50_overhead_pct": 114.28,
+    "ops_per_iteration": 73,
+    "gate": 0,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "name": "mlp_train: COMPILED - INACTIVE [steady-state cost per iteration]",
+    "p50_ns": 41119,
+    "p99_ns": 42415,
+    "p999_ns": 39227,
+    "max_ns": null,
+    "p50_ns_per_op": 563.3,
+    "p50_overhead_pct": 24.94,
+    "ops_per_iteration": 73,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "_vigil_state": {
+      "record": {
+        "compiled": true,
+        "compiled_iterations": 0,
+        "diverged": 0,
+        "active_num_ops": 172,
+        "bg_iterations": 1
+      },
+      "compiled": {
+        "compiled": true,
+        "compiled_iterations": 1117,
+        "diverged": 0,
+        "active_num_ops": 172,
+        "bg_iterations": 1
+      }
+    },
+    "_record_samples_per_attach": {
+      "min": 1,
+      "median": 2,
+      "max": 55
+    },
+    "_compiled_runs_interrupted": 0,
+    "_compiled_divergences": 0
+  },
+  {
+    "_workload": "mlp_infer",
+    "ops_per_iteration": 11
+  },
+  {
+    "name": "mlp_infer [INACTIVE, PyTorch alone]",
+    "p50_ns": 38554,
+    "p99_ns": 39099,
+    "p999_ns": 40286,
+    "max_ns": 70177,
+    "p50_ns_per_op": 3504.9,
+    "ops_per_iteration": 11,
+    "runs": 10,
+    "samples_total": 40000,
+    "p50_spread": 0.0226,
+    "gate": 1
+  },
+  {
+    "name": "mlp_infer [RECORD, first iterations after attach]",
+    "p50_ns": 60217,
+    "p99_ns": 254907,
+    "p999_ns": 511181,
+    "max_ns": 5236093,
+    "p50_ns_per_op": 5474.3,
+    "ops_per_iteration": 11,
+    "runs": 10,
+    "samples_total": 2000,
+    "p50_spread": 0.0275,
+    "gate": 1,
+    "_note": "a startup cost: a real loop pays it once, over 96 attaches here because one attach offers only the iterations before the region is built"
+  },
+  {
+    "name": "mlp_infer [COMPILED, steady state, region replays]",
+    "p50_ns": 54187,
+    "p99_ns": 59831,
+    "p999_ns": 60464,
+    "max_ns": 61999,
+    "p50_ns_per_op": 4926.1,
+    "ops_per_iteration": 11,
+    "runs": 7,
+    "samples_total": 28000,
+    "p50_spread": 0.1008,
+    "gate": 0,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append",
+    "_variance": "The spread is in what this row measures, not in the host: the control held 2.26% on the same host in the same session. Recording races the background thread building the region, so its cost varies by nature."
+  },
+  {
+    "name": "mlp_infer: RECORD - INACTIVE [startup cost per iteration]",
+    "p50_ns": 21663,
+    "p99_ns": 215808,
+    "p999_ns": 470895,
+    "max_ns": null,
+    "p50_ns_per_op": 1969.4,
+    "p50_overhead_pct": 56.19,
+    "ops_per_iteration": 11,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "name": "mlp_infer: COMPILED - INACTIVE [steady-state cost per iteration]",
+    "p50_ns": 15633,
+    "p99_ns": 20732,
+    "p999_ns": 20178,
+    "max_ns": null,
+    "p50_ns_per_op": 1421.2,
+    "p50_overhead_pct": 40.55,
+    "ops_per_iteration": 11,
+    "gate": 0,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "_vigil_state": {
+      "record": {
+        "compiled": false,
+        "compiled_iterations": 3,
+        "diverged": 173,
+        "active_num_ops": 12,
+        "bg_iterations": 190
+      },
+      "compiled": {
+        "compiled": true,
+        "compiled_iterations": 16446,
+        "diverged": 8223,
+        "active_num_ops": 12,
+        "bg_iterations": 32
+      }
+    },
+    "_record_samples_per_attach": {
+      "min": 0,
+      "median": 2,
+      "max": 196
+    },
+    "_compiled_runs_interrupted": 3,
+    "_compiled_divergences": 111959
+  },
+  {
+    "_workload": "add1",
+    "ops_per_iteration": 1
+  },
+  {
+    "name": "add1 [INACTIVE, PyTorch alone]",
+    "p50_ns": 752,
+    "p99_ns": 792,
+    "p999_ns": 1080,
+    "max_ns": 9188,
+    "p50_ns_per_op": 752.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 1000000,
+    "p50_spread": 0.0266,
+    "gate": 1
+  },
+  {
+    "name": "add1 [harness floor, clock read only]",
+    "p50_ns": 50,
+    "p99_ns": 60,
+    "p999_ns": 70,
+    "max_ns": 1346,
+    "p50_ns_per_op": 50.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 1000000,
+    "p50_spread": 0.0,
+    "gate": 1,
+    "_note": "the part of every sample that is not the workload"
+  },
+  {
+    "name": "add1 [RECORD, first iterations after attach]",
+    "p50_ns": 921,
+    "p99_ns": 1178,
+    "p999_ns": 2367,
+    "max_ns": 198225,
+    "p50_ns_per_op": 921.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 20000,
+    "p50_spread": 0.0424,
+    "gate": 1,
+    "_note": "a startup cost: a real loop pays it once, over 560 attaches here because one attach offers only the iterations before the region is built"
+  },
+  {
+    "name": "add1 [COMPILED, steady state, region replays]",
+    "p50_ns": 930,
+    "p99_ns": 970,
+    "p999_ns": 1158,
+    "max_ns": 241076,
+    "p50_ns_per_op": 930.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 1000000,
+    "p50_spread": 0.0227,
+    "gate": 1,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
+  },
+  {
+    "name": "add1: RECORD - INACTIVE [startup cost per iteration]",
+    "p50_ns": 169,
+    "p99_ns": 386,
+    "p999_ns": 1287,
+    "max_ns": null,
+    "p50_ns_per_op": 169.0,
+    "p50_overhead_pct": 22.47,
+    "ops_per_iteration": 1,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "name": "add1: COMPILED - INACTIVE [steady-state cost per iteration]",
+    "p50_ns": 178,
+    "p99_ns": 178,
+    "p999_ns": 78,
+    "max_ns": null,
+    "p50_ns_per_op": 178.0,
+    "p50_overhead_pct": 23.67,
+    "ops_per_iteration": 1,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "_vigil_state": {
+      "record": {
+        "compiled": false,
+        "compiled_iterations": 0,
+        "diverged": 0,
+        "active_num_ops": 0,
+        "bg_iterations": 14
+      },
+      "compiled": {
+        "compiled": true,
+        "compiled_iterations": 20020,
+        "diverged": 0,
+        "active_num_ops": 5,
+        "bg_iterations": 2
+      }
+    },
+    "_record_samples_per_attach": {
+      "min": 0,
+      "median": 60,
+      "max": 60
+    },
+    "_compiled_runs_interrupted": 0,
+    "_compiled_divergences": 0
+  },
+  {
+    "_perf_stat": [
+      {
+        "workload": "mlp_train",
+        "arm": "record",
+        "events": {
+          "cycles:u": 11316886321.0,
+          "instructions:u": 11118398600.0,
+          "L1-dcache-load-misses:u": 447508257.0
+        },
+        "paranoid": "2",
+        "insn_per_cycle": 0.982
+      },
+      {
+        "workload": "mlp_train",
+        "arm": "compiled",
+        "events": {
+          "cycles:u": 17529209884.0,
+          "instructions:u": 17101221241.0,
+          "L1-dcache-load-misses:u": 340270857.0
+        },
+        "paranoid": "2",
+        "insn_per_cycle": 0.976
+      },
+      {
+        "workload": "mlp_train",
+        "arm": "inactive",
+        "events": {
+          "cycles:u": 7376831727.0,
+          "instructions:u": 12688549417.0,
+          "L1-dcache-load-misses:u": 318629944.0
+        },
+        "paranoid": "2",
+        "insn_per_cycle": 1.72
+      }
+    ],
+    "_perf_note": "Counters over the whole arm process, interpreter startup included, so this is a profile of the arm and not a per-iteration decomposition. A `:u` suffix means the host counts user mode only."
+  }
+]
