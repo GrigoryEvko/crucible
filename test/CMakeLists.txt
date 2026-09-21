@@ -1133,6 +1133,29 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
   set_tests_properties(row_hash_golden_diff PROPERTIES
       LABELS "ci_guard")
 endif()
+
+# The same witness for the foundation fold, which the entry above does not
+# cover: that binary includes crucible/safety and names no foundation
+# header, so it witnesses the superseded per-wrapper fold alone.
+#
+# The foundation fold carries the wider exposure of the two. It replaced
+# fifty-two per-wrapper salts with one fold over the graded shape, and the
+# lattice identity is one of that fold's three inputs, so every graded
+# wrapper folds a reflected name where a handful used to. The multi-axis
+# binding in fixy/Fn.h folds such an identity for every axis but two.
+#
+# Gated on x86_64 for the reason the entry above is gated: the payload
+# lines fold display_string_of, so the absolute matrix is bit-stable only
+# within one (arch, compiler, stdlib) tuple. The golden's own header
+# prints the toolchain tag, so a diff says which of the two it was.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+  add_test(NAME row_hash_foundation_golden_diff
+    COMMAND bash -c
+      "set -e; \"$<TARGET_FILE:dump_row_hashes_foundation>\" > \"${CMAKE_BINARY_DIR}/row_hash_foundation_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_foundation_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_foundation_dump_current.txt\""
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+  set_tests_properties(row_hash_foundation_golden_diff PROPERTIES
+      LABELS "ci_guard")
+endif()
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)

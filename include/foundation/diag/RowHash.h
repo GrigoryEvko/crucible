@@ -45,20 +45,44 @@
 // is not ported here and its old header is not marked, so a reader
 // looking for row_hash_with_grade finds it where it has always been.
 //
-// Portability bound, and the fold widens it. These hashes agree only
-// within one compiler, standard library and ABI. The arithmetic, the
-// effect enum values and the salts are all portable, but a lattice's
-// identity is derived from a reflected name, and that name is
-// implementation-specific. Under the old per-wrapper salts only a
-// handful of wrapper kinds folded such a name; under one fold every
-// graded wrapper does. Two peers on different toolchains can therefore
-// compute different hashes for one type, or collide two types onto one
-// slot if their names happen to hash alike. The bare hash is a safe join
-// key only among peers on one toolchain. Peers that are not must key
-// through federation_key_with_toolchain, which makes the two toolchains
-// disjoint by construction. The toolchain is deliberately kept out of
-// row_hash_contribution itself, because folding it in would move every
-// hash already published.
+// Portability bound, and it is not one bound but three. The arithmetic,
+// the effect enum values and the salts are portable. A lattice identity
+// comes from a reflected name, and that name is implementation-specific.
+// So each specialisation below owns its own answer. A consumer that
+// reads one blanket answer guards the wrong half.
+//
+// The row specialisation is portable. It folds the underlying values of
+// an append-only enum through pure arithmetic, and it reaches no
+// reflected name at all. A peer on another toolchain computes the same
+// value for the same row.
+//
+// The graded fold is not portable, and the port widened that. Under the
+// old per-wrapper salts a handful of wrapper kinds folded a reflected
+// name. Under one fold every graded wrapper does, because the lattice
+// identity is one of the fold's three inputs. The multi-axis binding in
+// fixy/Fn.h folds such a name for every axis but two.
+//
+// The carrier is portable exactly when both of its halves are.
+//
+// So two peers on different toolchains can compute different hashes for
+// one graded type. Or they can collide two graded types onto one slot,
+// when their names happen to hash alike. A miss is safe and a hit is
+// not, and nothing here selects between them. Peers that may differ must
+// key through federation_key_with_toolchain, which makes the two
+// toolchains disjoint by construction.
+//
+// The toolchain stays out of row_hash_contribution, and the reason is
+// the row specialisation rather than any hash already published. The
+// live federation key reaches that specialisation alone, because
+// crucible/cipher/ComputationCacheFederation.h constrains its row half
+// to an effect row. That value is portable today. To fold the toolchain
+// in unconditionally would make the one portable half non-portable, in
+// exchange for a guarantee the caller already takes per key.
+//
+// A cross-build witness covers the rest. tools/dump_row_hashes.cpp
+// prints this fold from a separate binary and CI diffs the output
+// against a committed golden, because a self-test in one translation
+// unit cannot see a reflected name move underneath it.
 
 #include <foundation/algebra/Modality.h>
 #include <foundation/effects/Effect.h>
@@ -204,6 +228,27 @@ inline constexpr std::uint64_t EMPTY_ROW_HASH = cardinality_seed(0);
 // machine running one toolchain and differs across toolchains by
 // construction. That is exactly the discriminator a cross-toolchain
 // federation key needs, and it stays out of the row hash itself.
+//
+// Two ABI macros that the documented tuple names are absent here, and
+// measurement settles both.
+//
+// __GXX_ABI_VERSION moves under -fabi-version while display_string_of
+// returns a byte-identical spelling. Measured on this toolchain at 1021,
+// 1018 and 1015, against one spelling of std::string and of int. The
+// macro governs mangled names, which this fold never reads. To fold it in
+// would separate peers that share one reflected-name universe.
+//
+// _GLIBCXX_USE_CXX11_ABI has one admissible value in any translation unit
+// that can compute a hash at all. bits/version.h gates
+// __glibcxx_reflection on that macro, so the old ABI declares no
+// display_string_of and compiles none of this. The macro does reach a
+// type spelling where it is live, because std::string prints under the
+// __cxx11 inline namespace. That gate is what closes the hole, not the
+// spelling.
+//
+// __GLIBCXX__ is a release date, so a point release that renames nothing
+// still moves this tag. That direction is a miss rather than a collision,
+// and the miss is the safe one.
 [[nodiscard]] consteval std::uint64_t federation_toolchain_id() noexcept {
     std::uint64_t h = FNV1A_OFFSET_BASIS;
     h = combine_ids(h, static_cast<std::uint64_t>(__GNUC__));

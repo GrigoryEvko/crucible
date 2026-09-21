@@ -1,0 +1,39 @@
+# foundation row_hash cross-build witness
+# format-version:  1
+# matrix-size:     31
+# fold-seed:       0xf0117a11eda11a5e
+# fold-anchor:     0x5c4cdadc8d81222b
+# toolchain-tag:   0x531f2bb4b45652c8
+# (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
+# (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
+G01_Linear               0x1d459776daf5970d
+G02_Affine               0xd157e337354fe86e
+G03_TaggedVerified       0xda909da3bd58d721
+G04_TaggedUnverified     0x1190638994f0134f
+G05_Secret               0x8f5cca9d55d191e3
+G06_Stale                0xea17b720e30d1981
+G07_Monotonic            0x68684f50bf7b7f9b
+G08_RefinedPositive      0x7bb5f13f3acc0d61
+G09_RefinedNonNegative   0xdf17cc3a0c8a1516
+N01_StaleOfTagged        0x1f1e8ea13d936f27
+N02_TaggedOfStale        0xfdb28e9bfea3654c
+R01_RowEmpty             0xefd01f60ba992926
+R02_RowBg                0x008a519814c8fc81
+R03_RowIo                0x6fbfd0f707b63bec
+R04_RowBgIo              0x3a57703490bfba7f
+R05_RowIoBg              0x3a57703490bfba7f
+C01_CompEmpty            0x49a55be1cfc23fb0
+C02_CompBg               0x3ace35615f0f9243
+C03_CompNested           0x44ae5b8b654b243f
+B01_FnStrictPole         0x4ef9a43e8f6bc2ff
+B02_FnClassified         0x4ef9a43e8f6bc2ff
+B03_FnSecret             0x1c0979fc154d15e7
+B04_FnInternal           0x3ab76aec6ebbe87b
+B05_FnPublic             0xac728c1cee9e0a8e
+B06_FnUnverified         0x968c6c4824c481f2
+B07_FnDoublePayload      0x4ef9a43e8f6bc2ff
+S01_PureLinear           0x4ef9a43e8f6bc2ff
+S02_PureCopy             0xf7744749b767d412
+S03_IoFunction           0x28e2d1651e4cd671
+S04_BgWorker             0x12e21a941a44e678
+S05_CtCrypto             0x1c0979fc154d15e7

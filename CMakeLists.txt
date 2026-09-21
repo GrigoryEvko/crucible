@@ -512,6 +512,22 @@ add_executable(dump_row_hashes
 )
 target_link_libraries(dump_row_hashes PRIVATE crucible)
 
+# The same witness for the foundation fold, which replaced the fifty-two
+# per-wrapper salts with one fold over the graded shape.  Every graded
+# wrapper now folds a reflected lattice name where a handful used to, so
+# the exposure this guards is wider than the tool above guards.
+#
+# It links fixy rather than crucible, and that is the reason it is a
+# second binary instead of more entries in the first.  Each tree ships its
+# own Platform.h and its own CRUCIBLE_PRE family, so one translation unit
+# naming both redefines five macros and resolves them by include order.  A
+# witness against TU-context fragility must not carry a TU context that no
+# production build runs.
+add_executable(dump_row_hashes_foundation
+  tools/dump_row_hashes_foundation.cpp
+)
+target_link_libraries(dump_row_hashes_foundation PRIVATE fixy)
+
 # #66 — the one-shot writer for the hardware-capability ledger.
 #
 # Fingerprints the host, judges whether the host is fit to measure
