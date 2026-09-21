@@ -37,8 +37,11 @@
 #include <fixy/Fn.h>
 #include <fixy/Reject.h>
 #include <fixy/Tags.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
 
+#include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace fixy::role {
@@ -157,5 +160,121 @@ static_assert(std::is_same_v<::fixy::role::PublicEmit<int, ::fixy::tags::secret_
 static_assert(std::is_same_v<::fixy::role::SecretConsumer<int, ::fixy::tags::secret_policy::AuditedLogging>::grade_on<
                                  Axis::Security>,
                              ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>);
+
+// ---------------------------------------------------------------------
+// Two roles must never share a federation cache slot.
+//
+// A cache key pairs a content hash with a row hash.  The content hash
+// answers "which computation", the row hash answers "under which
+// discipline".  Two roles over one payload compute the same thing under
+// different disciplines, so the row hash is the only half that can tell
+// them apart, and a kernel compiled for one is not safe to serve for the
+// other.  A pure copy may be shared between installations; a binding
+// that performs IO and emits publicly may not.
+//
+// These pin one pair per axis-family rather than every pair, because a
+// pair is what a regression produces: a fold that drops an axis collapses
+// exactly the roles that differ only on it.  The last one separates a
+// binding from the payload it carries, which is the collapse a fold that
+// returns its input would produce.
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::PureCopy<int>> != 0,
+              "PureCopy<int> must contribute a non-zero federation cache row hash.  Zero is what "
+              "the primary template answers for a type carrying no row, so a binding that folds "
+              "to zero is indistinguishable from its own bare payload.");
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::IoFunction<int>> != 0,
+              "IoFunction<int> must contribute a non-zero federation cache row hash.");
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::PureCopy<int>>
+                  != ::foundation::diag::row_hash_contribution_v<::fixy::role::IoFunction<int>>,
+              "PureCopy<int> and IoFunction<int> must take disjoint federation cache slots.  They "
+              "carry the same payload and differ on the Effect and Security axes: one is a pure "
+              "copy, the other performs IO and emits publicly.  One slot for both serves a kernel "
+              "compiled under the pure discipline to a caller that does IO.");
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::PureLinear<int>>
+                  != ::foundation::diag::row_hash_contribution_v<::fixy::role::PureCopy<int>>,
+              "PureLinear<int> and PureCopy<int> differ on the Usage axis alone — strict linear "
+              "against copy — so the fold must read that axis.");
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::BgWorker<int>>
+                  != ::foundation::diag::row_hash_contribution_v<::fixy::role::IoFunction<int>>,
+              "BgWorker<int> declares {Bg, Alloc} and IoFunction<int> declares {IO}, so the fold "
+              "must read the effect row and not merely whether one was declared.");
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::CtCrypto<int>>
+                  != ::foundation::diag::row_hash_contribution_v<::fixy::role::PureLinear<int>>,
+              "CtCrypto<int> and PureLinear<int> differ on the Security axis alone: one names the "
+              "secret level through an atom, the other takes the same level as its strict pole.  "
+              "The fold reads the grade as spelled, so the two take separate slots.");
+
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::PureLinear<int>>
+                  != ::foundation::diag::row_hash_contribution_v<int>,
+              "A binding must not share a slot with the payload it carries.  The payload answers "
+              "the primary template's zero, so this fails exactly when the fold over the axes is "
+              "missing and the binding falls through to that primary too.");
+
+// ---------------------------------------------------------------------
+// No role reaches the zero slot, over every role there is.
+//
+// The pairs above pin one axis-family each, which is what a regression
+// produces.  This is the floor under all of them, and it is the check
+// that would have caught the row-hash fold going missing in the first
+// place: with no fold, every role answers the primary template's zero and
+// every row below reddens at once.
+//
+// Zero is a sound floor and not an arbitrary one.  It is the answer the
+// primary template gives a type carrying no row, so a binding that folds
+// to zero is not merely sharing a slot with another binding, it is
+// sharing one with every bare payload in the tree.
+//
+// The roster is read out of the namespace rather than listed here, so a
+// role added above is covered the moment it is declared.  A hand list is
+// how this check would rot: a role added without a row appended is a role
+// the floor does not cover, and nothing would say so.
+
+// The two arities a role can have.  A role takes the payload alone, or a
+// policy beside it, and can_substitute answers which without the roster
+// having to declare it.  A shape neither form instantiates is counted
+// unproven rather than skipped, so a third arity reddens the coverage
+// assertion below instead of slipping past it.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+[[nodiscard]] consteval std::size_t roles_declared() noexcept {
+    return std::meta::members_of(^^::fixy::role, std::meta::access_context::current()).size();
+}
+
+[[nodiscard]] consteval std::size_t roles_off_the_zero_slot() noexcept {
+    std::size_t proven = 0;
+    static constexpr auto role_members =
+        std::define_static_array(std::meta::members_of(^^::fixy::role, std::meta::access_context::current()));
+    template for (constexpr auto role_member : role_members) {
+        constexpr auto payload = ^^int;
+        constexpr auto policy = ^^::fixy::tags::secret_policy::WireSerialize;
+        if constexpr (std::meta::can_substitute(role_member, {payload})) {
+            using Binding = [:std::meta::substitute(role_member, {payload}):];
+            if (::foundation::diag::row_hash_contribution_v<Binding> != 0) ++proven;
+        } else if constexpr (std::meta::can_substitute(role_member, {payload, policy})) {
+            using Binding = [:std::meta::substitute(role_member, {payload, policy}):];
+            if (::foundation::diag::row_hash_contribution_v<Binding> != 0) ++proven;
+        }
+    }
+    return proven;
+}
+
+#pragma GCC diagnostic pop
+
+static_assert(roles_declared() > 0, "the roster reflected out of fixy::role is empty, so the floor below proves "
+                                    "nothing.  Either every role moved out of the namespace, or the reflection "
+                                    "query stopped seeing alias templates.");
+
+static_assert(roles_off_the_zero_slot() == roles_declared(),
+              "Every role must contribute a non-zero federation cache row hash.  A role at zero shares "
+              "a slot with every bare payload in the tree, which is what happens when the fold over the "
+              "axes in fixy/Fn.h is missing.  This also reddens for a role whose arity is neither the "
+              "payload alone nor a payload and a policy, because such a role is not instantiated here "
+              "and so is not proven.");
 
 }  // namespace fixy::detail::role_self_test

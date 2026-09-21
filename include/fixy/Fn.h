@@ -28,10 +28,14 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/Reject.h>
+#include <fixy/Tags.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/reflect/Hash.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -321,12 +325,128 @@ concept CtxAdmitsBinding =
     ::foundation::effects::IsExecCtx<Ctx> && is_fn_v<F>
     && ::foundation::effects::CtxAdmits<Ctx, binding_row_t<F>>;
 
-// TODO(A6.2): the row-hash contribution.  Folding the 33 resolved
-// grades into a federation cache key needs foundation/reflect/RowHash.h,
-// which is blocked because the fold changes published keys.  The old
-// tree folded only the axes at or after Synchronization, so whatever
-// lands here will change the key regardless; that decision belongs with
-// A6.2 and not here.
+// ---------------------------------------------------------------------
+// The federation cache key of a binding.
+//
+// A cache key pairs a content hash with a row hash.  The content hash
+// says which computation; the row hash says under which discipline.  A
+// binding is exactly a discipline over a payload, so the row hash is the
+// only half of the key that can tell two bindings over one payload apart.
+//
+// Without a specialisation here a binding reaches the primary template in
+// foundation/diag/RowHash.h, which answers zero.  Zero is the right
+// answer for a payload carrying no row and the wrong answer for a
+// binding: every binding in the tree would share one slot, and a kernel
+// compiled for a pure copy would be served to a caller that performs IO
+// and emits publicly.  That is a soundness failure rather than a cache
+// inefficiency, because the two disciplines are not interchangeable.
+//
+// The fold cannot be the graded one.  That fold reads a single modality,
+// a single lattice and a payload, which is what a one-axis carrier
+// publishes; a binding publishes a grade per axis and is the resolver
+// across them, so it has no singular lattice and no singular modality to
+// offer.  It folds its own axes instead.
+//
+// The roster is derived from the Axis enum rather than listed, so an axis
+// added to the table folds in without an edit here.  A listed roster is
+// how the old tree lost axes: it spelled nineteen template parameters by
+// hand, and an axis outside that list could not reach the key at all.
+//
+// Three shapes of grade fold three ways.
+//
+// The Type axis carries the payload, which may itself be a row-bearing
+// wrapper stack, so it recurses through the same contribution.  A bare
+// payload contributes zero there and the remaining axes carry the
+// discrimination, which is deliberate: payload identity belongs to the
+// content hash, the other half of the key.
+//
+// The Effect axis folds through the row rather than through the grade's
+// type, and that is what makes the key a function of the effect SET.  A
+// row is a set of atoms, `with<Bg, Alloc>` and `with<Alloc, Bg>` are
+// distinct types naming one set, and the row specialisation sorts and
+// dedups.  Reading the grade's type instead would give those two spellings
+// two slots for one discipline.  It also collapses the axis's two legal
+// grade shapes onto one answer, the stated `with<Es...>` and the bare row
+// its strict pole leaves behind, which is what fixy/Atom.h already
+// promises about them: an empty stated pack and the strict pole mean the
+// same thing.
+//
+// Every other axis folds the reflected identity of its resolved grade.
+// That is the only canonical identity an atom publishes — an atom carries
+// no meaning beyond the axis it engages, by fixy/Atom.h's own words — and
+// it discriminates a parametric atom by its argument, so a
+// declassification under one policy takes a different slot from the same
+// declassification under another.  Where a grade has two spellings that
+// denote one claim, an atom naming a level and the strict pole at that
+// same level, this reads them as two.  The cost of that is a cache miss
+// and never a wrong hit, and closing it would need an equivalence over
+// grades that no axis publishes today.
+//
+// What does not fold in is whether the pack MENTIONED an axis.  Two
+// bindings whose resolved grades agree make the same claim, and whether
+// one wrote the atom out is a diagnostic distinction rather than an
+// identity one.  Folding it would split one discipline across two slots.
+//
+// The combiner is order-sensitive, so the walk is in enumerator order and
+// nothing sorts it.  That order is the enum's, which is append-only for
+// the same reason: a new axis at the end leaves every existing key where
+// it was, and a renumbering moves all of them.
+//
+// Portability is the bound foundation/diag/RowHash.h sets out. A grade's
+// identity comes from a reflected name, so these keys agree only among
+// peers on one toolchain, and peers that are not must key through
+// federation_key_with_toolchain.
+
+namespace detail::row_hash {
+
+// An expansion statement redeclares its variable per expansion and each
+// declaration shadows the one before, the same shape the resolver above
+// suppresses for the same reason.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+template <class Binding>
+[[nodiscard]] consteval std::uint64_t fold_axes_() noexcept {
+    std::uint64_t h = ::foundation::diag::detail::WRAPPER_MULTI_AXIS_BINDING_TAG;
+    // The range is materialised into a static array because the
+    // reflection query returns a vector, whose allocation is not a
+    // constant in the context an expansion statement needs.
+    static constexpr auto axis_members = std::define_static_array(std::meta::enumerators_of(^^Axis));
+    template for (constexpr auto axis_member : axis_members) {
+        constexpr Axis axis = [:axis_member:];
+        using Grade = typename Binding::template grade_on<axis>;
+        if constexpr (axis == Axis::Type) {
+            h = ::foundation::diag::detail::combine_ids(h, ::foundation::diag::row_hash_contribution_v<Grade>);
+        } else if constexpr (axis == Axis::Effect) {
+            h = ::foundation::diag::detail::combine_ids(
+                h, ::foundation::diag::row_hash_contribution_v<atom::effect_row_of_t<Grade>>);
+        } else {
+            h = ::foundation::diag::detail::combine_ids(h, ::foundation::reflect::stable_type_id<Grade>);
+        }
+    }
+    return h;
+}
+
+#pragma GCC diagnostic pop
+
+}  // namespace detail::row_hash
+
+}  // namespace fixy
+
+// The specialisation lives on this side of the layer boundary because
+// foundation may name only foundation and the standard library, while
+// fixy may name foundation.  A binding is a fixy type, so the only place
+// the two can meet is here.
+namespace foundation::diag {
+
+template <class Type, class... Atoms>
+struct row_hash_contribution<::fixy::fn<Type, Atoms...>> {
+    static constexpr std::uint64_t value = ::fixy::detail::row_hash::fold_axes_<::fixy::fn<Type, Atoms...>>();
+};
+
+}  // namespace foundation::diag
+
+namespace fixy {
 
 // ---------------------------------------------------------------------
 // The header proves its own claims here.
@@ -431,6 +551,68 @@ static_assert(std::is_default_constructible_v<fn<int, atom::copy>>);
 static_assert(is_fn_v<fn<int>>);
 static_assert(is_fn_v<const fn<int, atom::copy>&>);
 static_assert(!is_fn_v<int>);
+
+// ---------------------------------------------------------------------
+// What the fold over the axes owes the federation cache.
+
+namespace fd_ = ::foundation::diag;
+namespace fe_ = ::foundation::effects;
+
+// A binding is off the zero slot, which is where the primary template
+// leaves anything it does not recognise.  A binding that landed there
+// would share one slot with every bare type in the tree.
+static_assert(fd_::row_hash_contribution_v<fn<int>> != 0);
+static_assert(fd_::row_hash_contribution_v<int> == 0);
+static_assert(fd_::row_hash_contribution_v<fn<int>> != fd_::row_hash_contribution_v<int>);
+
+// The binding does not satisfy the graded fold's shape, and must not: it
+// publishes a grade per axis rather than one lattice and one modality.
+// This is the assertion that would red if someone gave it a synthetic
+// product lattice to make the generic fold apply.
+static_assert(!fd_::GradedShaped<fn<int>>);
+static_assert(!fd_::GradedShaped<fn<int, atom::copy>>);
+
+// One atom on one axis moves the key, and two grades on one axis take
+// separate slots.  Between them these say the fold reads the resolved
+// grade and not merely the pack's length.
+static_assert(fd_::row_hash_contribution_v<fn<int, atom::copy>> != fd_::row_hash_contribution_v<fn<int>>);
+static_assert(fd_::row_hash_contribution_v<fn<int, atom::affine>> != fd_::row_hash_contribution_v<fn<int, atom::copy>>);
+static_assert(fd_::row_hash_contribution_v<fn<int, atom::affine, atom::mut_append>>
+              != fd_::row_hash_contribution_v<fn<int, atom::affine>>);
+
+// The Effect axis folds the row, so the key is a function of the effect
+// SET.  These two spellings are distinct types naming one set, and one
+// slot for both is the whole reason the axis does not fold its grade's
+// type.
+static_assert(
+    fd_::row_hash_contribution_v<fn<int, atom::with<fe_::Effect::Bg, fe_::Effect::Alloc>, atom::as_public>>
+        == fd_::row_hash_contribution_v<fn<int, atom::with<fe_::Effect::Alloc, fe_::Effect::Bg>, atom::as_public>>,
+    "the Effect axis must fold as a set: two orderings of one row are one discipline and "
+    "belong in one slot");
+
+// A stated empty row and the strict pole it leaves behind are the same
+// claim, which fixy/Atom.h says of them, so they take one slot.  This is
+// also where the fold states that it ignores whether the pack MENTIONED
+// an axis: one of these two mentions Effect and the other does not, and
+// their resolved grades agree.
+static_assert(fn<int, atom::with<>>::mentions_axis<Axis::Effect>);
+static_assert(!fn<int>::mentions_axis<Axis::Effect>);
+static_assert(fd_::row_hash_contribution_v<fn<int, atom::with<>>> == fd_::row_hash_contribution_v<fn<int>>,
+              "an axis mentioned and an axis defaulted to the same grade are one discipline; "
+              "mentioning must not split the slot");
+
+// The key is blind to a bare payload, deliberately.  Payload identity
+// belongs to the content hash, the other half of a cache key, and the
+// Type axis recurses so that a payload which does carry a row reaches the
+// key instead of being dropped.
+static_assert(fd_::row_hash_contribution_v<fn<int>> == fd_::row_hash_contribution_v<fn<double>>,
+              "the row hash discriminates disciplines, not payload types");
+
+// A parametric atom is discriminated by its argument, so an emission
+// under one policy does not reuse the slot of an emission under another.
+static_assert(fd_::row_hash_contribution_v<fn<int, atom::declassify<tags::secret_policy::WireSerialize>>>
+                  != fd_::row_hash_contribution_v<fn<int, atom::declassify<tags::secret_policy::AuditedLogging>>>,
+              "a declassification's policy is part of its identity");
 
 }  // namespace detail::fn_self_test
 

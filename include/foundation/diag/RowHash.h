@@ -93,15 +93,34 @@ using ::foundation::reflect::combine_ids;
 using ::foundation::reflect::fmix64;
 using ::foundation::reflect::detail::FNV1A_OFFSET_BASIS;
 
-// Two salts, because two types in this scheme are not graded wrappers.
-// The row is the grade itself rather than a carrier of one, and the
+// Three types in this scheme are not graded wrappers, so three salts sit
+// here. The row is the grade itself rather than a carrier of one, and the
 // computation carrier pairs a row with a payload without pinning a
-// lattice. Everything else reaches the fold below.
+// lattice; neither of those needs a constant, because the cardinality
+// seed and the row-then-payload order already separate them. Everything
+// else reaches the fold below, with the one exception the second constant
+// names.
 //
-// A salt owns a distinct high byte and nothing ors into the low bytes of
-// either, because neither type has a tier to encode. Changing a salt
-// already in use moves every hash published under it.
+// A salt owns a distinct high byte, and only the graded salt ors anything
+// into its low bytes, because only a graded wrapper has one tier to
+// encode. Changing a salt already in use moves every hash published
+// under it, so a new salt takes the next free high byte rather than
+// reshaping one that is spoken for.
 inline constexpr std::uint64_t WRAPPER_GRADED_TAG = 0x0100000000000000ULL;
+
+// The salt of a multi-axis binding, which is the one carrier in the tree
+// that cannot reach the graded fold below.
+//
+// That fold reads one modality, one lattice and one payload, because
+// Graded is a one-axis substrate. A binding over the axis table is the
+// resolver across those axes: it publishes a grade per axis and so has no
+// singular lattice type and no singular modality to publish. Giving it
+// one would mean inventing a product lattice and naming a modality it
+// does not have, which relocates the same problem into that lattice's
+// canonical id. It carries its own specialisation instead, folding its
+// resolved grades in axis order, and this salt is what keeps that fold
+// off the zero slot when every axis happens to contribute zero.
+inline constexpr std::uint64_t WRAPPER_MULTI_AXIS_BINDING_TAG = 0x0200000000000000ULL;
 
 // The sort is quadratic. The array holds one entry per effect atom and
 // the universe is capped well below the point where that matters, which
