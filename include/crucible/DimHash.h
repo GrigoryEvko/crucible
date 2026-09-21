@@ -54,9 +54,12 @@ namespace crucible::detail {
     using simd::i64x8;
     using simd::u64x8;
 
-    // The full width is loaded even for a descriptor of lower rank: the
-    // lanes past its dimension count are zero-initialized, so the read stays
-    // in bounds and the unused terms fold to zero.
+    // The full width is loaded even for a descriptor of lower rank. The read
+    // stays in bounds because each block is exactly the lane count wide, and
+    // the values past the dimension count never reach the result: the
+    // reduction below is masked to that count. So this routine does not
+    // depend on the tail lanes being zero, and a reader looking for what does
+    // will find it named in TensorMeta.h.
     //
     // The load is the element-aligned form. The descriptor is aligned for
     // its element type and no further, so the vector-aligned form would be

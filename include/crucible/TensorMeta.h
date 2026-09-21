@@ -97,8 +97,20 @@ static_assert(std::is_standard_layout_v<TensorDimArray>);
 [[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept { return dim.value(); }
 
 struct TensorMeta {
-    // The lanes past ndim are hashed along with the used ones, so they must
-    // start at zero or two equal tensors hash differently.
+    // The lanes past ndim must start at zero, and the reason is the wire
+    // image rather than any hash. write_meta in Serialize.h writes both
+    // blocks at their full width, so a tail lane holding anything but zero
+    // makes two otherwise equal descriptors serialize to different bytes,
+    // which is the one thing that file exists to prevent.
+    //
+    // Every hash masks instead, so none of them depends on the tail:
+    // dim_hash_simd loads the full width and reduces under a prefix mask of
+    // ndim, dim_hash_scalar loops to ndim, and the recording kernel's shape
+    // hash takes ndim lanes. Do not cite a hash as the reason here.
+    //
+    // Each block also carries its own lane initializer, so a descriptor is
+    // zeroed by default-construction whether or not its holder writes braces.
+    // Removing the braces at a holder saves nothing.
     TensorDimArray sizes{};
     TensorDimArray strides{};
     ExternalDataPtr data_ptr{nullptr};
