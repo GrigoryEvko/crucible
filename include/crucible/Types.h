@@ -303,6 +303,73 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RowHash);
 // carrying an effect, is not, and letting them share a slot breaks that
 // silently. Both are persistent hashes, so the whole key is stable across
 // processes for as long as the format version holds.
+//
+// The name points at the wrong consumer. The in-process KernelCache never uses
+// this type. That cache takes the two hashes as separate parameters
+// (MerkleDag.h:895) and holds three separate atomics for each slot
+// (MerkleDag.h:700). It keeps them apart on purpose, because the hot lookup
+// reads one field at a time in probe order (MerkleDag.h:710-714). Do not pack
+// this type into that slot. Three static_assert statements pin the slot at 24
+// bytes (MerkleDag.h:706-708).
+//
+// Every consumer of this type puts a key on the federation wire:
+//   - ComputationCacheFederation.h:130 builds one from a function and a row
+//   - FederationProtocol.h:226 writes one, and :303 reads one back
+//   - Cipher.h:524 builds one for a session event.
+//
+// The in-process cache and the wire want opposite properties from the row
+// half. The difference decides the effect of a row collision.
+//
+// For the cache the row half is the discriminator, and it must be unique.
+// MerkleDag.h:1381 supplies a row-blind region content hash and a row, so one
+// content hash occupies one slot for each discipline (MerkleDag.h:669-673).
+// The probe finds a slot from the content alone (MerkleDag.h:902) and then
+// filters on an exact row compare (MerkleDag.h:920-922). A row mismatch
+// continues the probe and ends at a miss, which is the intent. A row collision
+// returns the kernel of another discipline, which is a defect.
+//
+// For the wire the row half repeats what the content half already holds.
+// ComputationCache.h:144 folds the row into the content hash. The purpose of
+// that fold is family separation and not discrimination
+// (ComputationCache.h:130-131, :141-143). A row collision alone causes no
+// damage there, because the content halves already differ.
+//
+// The fail directions differ too. The content half has a check after the match
+// on both paths. The cache refuses a zero content hash (MerkleDag.h:897) and
+// reserves UINT64_MAX (MerkleDag.h:932-934). The wire hashes the payload again
+// and compares the content half (FederationProtocol.h:20-22, :272-273).
+// Nothing checks the row half after a match on either path. The row half rests
+// on injectivity alone.
+//
+// test_row_hash_distinctness.cpp supplies that injectivity at compile time. It
+// asserts pairwise distinctness across a 44-entry wrapper by stance matrix, it
+// refuses a collision with a reserved value, and it pins the fold anchor. A
+// collision in that matrix stops the build.
+//
+// A check after the match in the cache probe would add no guarantee, and it is
+// not available at that site. The probe already compares the full 64-bit row.
+// The cache receives the row as an opaque hash, and no second witness of the
+// row identity reaches it. Such a witness needs a wider parameter list and a
+// wider slot, and the 24-byte pins above refuse both.
+//
+// The cost, measured on cpu88 of the bench host over 12 runs of
+// bench_kernel_cache, worst value of each run: the live lookup gives p50
+// 1.39 ns, p99 1.39 ns, p99.9 1.74 ns and max 2.55 ns, at approximately 3.6
+// cycles. The worst coefficient of variation is 2.2%, and the spread of p50
+// across runs is 3.0%. A second acquire load and compare for each probe is a
+// large part of 3.6 cycles.
+//
+// The row-sibling scenario of the same bench gives a coefficient of variation
+// of 45%, which makes it not valid as a latency number. It still shows the
+// shape: 128 rows for one content hash form one probe chain, because the slot
+// index uses the content alone.
+//
+// The zero refusal of the wire does not cover the row half. is_zero() below
+// needs both halves at zero. So an entry with a non-zero content hash and
+// RowHash{0} passes the refusal on write (FederationProtocol.h:231-233) and on
+// read (FederationProtocol.h:307-309). This is correct. RowHash{0} is the
+// bare-type baseline and a valid key (MerkleDag.h:672-673), and it is the row
+// value with the most traffic in the shipped code (MerkleDag.h:1381).
 struct KernelCacheKey {
     ContentHash content_hash{};
     RowHash row_hash{};
