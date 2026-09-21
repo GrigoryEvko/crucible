@@ -28,6 +28,7 @@ Usage:
 """
 
 import ctypes
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -81,10 +82,22 @@ def _fnv1a(data: bytes) -> int:
 # =====================================================================
 
 def _find_lib(name: str) -> str | None:
-    """Search for a Crucible .so in common build directories."""
+    """Search for a Crucible .so in common build directories.
+
+    CRUCIBLE_BUILD_DIR names one directory to search before the usual
+    ones. It exists because several agents share one worktree and each
+    builds into its own directory, so the shared names below are not
+    where a given run's libraries are. The value is a path, absolute or
+    relative to the repository root.
+    """
     base = Path(__file__).resolve().parent.parent.parent
-    for d in ("build", "build-default", "build-gcc", "build-release"):
-        p = base / d / "lib" / name
+    searched = []
+    override = os.environ.get("CRUCIBLE_BUILD_DIR")
+    if override:
+        searched.append(Path(override) if Path(override).is_absolute() else base / override)
+    searched += [base / d for d in ("build", "build-default", "build-gcc", "build-release")]
+    for d in searched:
+        p = d / "lib" / name
         if p.exists():
             return str(p)
     return None

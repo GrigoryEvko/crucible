@@ -28,10 +28,28 @@ set_target_properties(crucible_vessel PROPERTIES
 set(TORCH_DIR "" CACHE PATH "Path to PyTorch source tree (fork with DispatchKey::Crucible)")
 
 if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
-    add_library(crucible_dispatch SHARED crucible_fallback.cpp)
+    # register.cpp holds one unboxed recording kernel per ATen operator and the
+    # boxed fallback keeps catching everything no kernel claims, so the two
+    # belong in one library: they share the Vigil handle in PyTorch's TLS, the
+    # training-phase thread_local, and the metadata bridge in record_kernel.h.
+    # Splitting them would give each .so its own copy of the header-only
+    # Crucible and its own phase variable.
+    add_library(crucible_dispatch SHARED crucible_fallback.cpp register.cpp)
 
     # crucible is INTERFACE (header-only) — compiles into this target's ABI.
-    target_link_libraries(crucible_dispatch PRIVATE crucible)
+    # foundation is the sibling substrate's runtime: record_kernel.h binds the
+    # recording step through a ::fixy role, and fixy is an INTERFACE target
+    # over foundation, whose contract handler the binding's own checks reach.
+    target_link_libraries(crucible_dispatch PRIVATE crucible fixy)
+
+    # register.cpp instantiates a kernel for each of the 3110 operators in one
+    # translation unit. Measured on the development host: 2 minutes 35 seconds
+    # and 11.1 GB of peak resident set. The pool has depth one, so a -j24 build
+    # cannot schedule this beside another copy of itself and exhaust the
+    # machine. Ninja is the only generator that honours a pool; every other one
+    # ignores the property, which loses the limit but not the build.
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS crucible_heavy_tu=1)
+    set_property(TARGET crucible_dispatch PROPERTY JOB_POOL_COMPILE crucible_heavy_tu)
 
     # PyTorch headers from the built fork.
     #

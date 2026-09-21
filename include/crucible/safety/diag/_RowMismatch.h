@@ -489,13 +489,13 @@ static_assert(buffer_ends_with(sample_msg, "\n"));
 // Buffer ends with the docs line, fully.
 static_assert(buffer_ends_with(sample_msg, L7_LINE));
 
-constexpr auto& cached_msg = row_mismatch_message_v<HotPathViolation, &sample_fn, int, float, double>;
+inline constexpr auto& cached_msg = row_mismatch_message_v<HotPathViolation, &sample_fn, int, float, double>;
 
-constexpr auto& cached_msg2 = row_mismatch_message_v<DetSafeLeak, &sample_fn, int, float, double>;
+inline constexpr auto& cached_msg2 = row_mismatch_message_v<DetSafeLeak, &sample_fn, int, float, double>;
 
 // Caching: same template instantiation → same address (linker
 // collapses inline constexpr to one definition).
-constexpr auto& cached_msg_again = row_mismatch_message_v<HotPathViolation, &sample_fn, int, float, double>;
+inline constexpr auto& cached_msg_again = row_mismatch_message_v<HotPathViolation, &sample_fn, int, float, double>;
 static_assert(&cached_msg == &cached_msg_again);
 
 static_assert(buffer_substring_at(cached_msg, L1_PREFIX.size(), HotPathViolation::name));

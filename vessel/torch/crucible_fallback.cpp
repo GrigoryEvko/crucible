@@ -14,6 +14,12 @@
 // Loaded via torch.ops.load_library() -- the TORCH_LIBRARY_IMPL registration
 // fires on dlopen, no explicit init needed.
 
+// First, and before every crucible/ include below: record_kernel.h parses the
+// two sibling substrates in a fixed order so each keeps its own spelling of the
+// five CRUCIBLE_ macros the two Platform.h files define differently, and it
+// refuses to compile after one of them.
+#include "record_kernel.h"
+
 #include <c10/core/CrucibleState.h>
 
 #include <ATen/core/dispatch/Dispatcher.h>
@@ -42,52 +48,29 @@
 namespace {
 
 // =====================================================================
-// FNV-1a 64-bit
+// The bridge this path shares with the unboxed kernels
 //
-// Must produce identical hashes to vessel_api.cpp's crucible_hash_string
-// and crucible_hash_shapes.  Same offset basis, same prime, same byte
-// order -- hash("aten::mm.default") here == hash("aten::mm.default") in
+// FNV-1a, the metadata fill, the shape hash, the slot limits and the training
+// phase all live in record_kernel.h. Two spellings of any of them would let the
+// boxed and the unboxed path write different entries for one operation, which
+// is the property the whole design rests on. The names are pulled in here so
+// the call sites below read as they did when the definitions were local.
+//
+// The hashes must also match vessel_api.cpp's crucible_hash_string and
+// crucible_hash_shapes, so that hash("aten::mm.default") is the same value in
 // the Python ctypes path.
 // =====================================================================
 
-static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
-static constexpr uint64_t FNV_PRIME = 0x100000001b3ULL;
-
-[[nodiscard]] static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h = FNV_OFFSET) {
-    const auto* p = static_cast<const uint8_t*>(data);
-    for (size_t i = 0; i < len; i++) {
-        h ^= p[i];
-        h *= FNV_PRIME;
-    }
-    return h;
-}
-
-[[nodiscard]] static uint64_t fnv1a_str(const char* s, size_t len) { return fnv1a_bytes(s, len); }
-
-// =====================================================================
-// Extraction result: strong-typed intermediate from IValue stack
-//
-// Separates "what we extracted from PyTorch" from "how we feed Vigil."
-// Every field has a semantic type -- no raw uint16_t counts.
-// =====================================================================
-
-// Number of tensor metas extracted from one op's args/returns.
-struct MetaCount {
-    uint16_t inputs = 0;
-    uint16_t outputs = 0;
-
-    [[nodiscard]] uint32_t total() const { return static_cast<uint32_t>(inputs) + outputs; }
-};
-
-// Up to 5 scalar arguments, bitcast to int64_t.
-struct ScalarArgs {
-    int64_t values[5]{};
-    uint16_t count = 0;
-
-    void push(int64_t v) {
-        if (count < 5) values[count++] = v;
-    }
-};
+using crucible::vessel::fnv1a_bytes;
+using crucible::vessel::fnv1a_str;
+using crucible::vessel::kFnvOffset;
+using crucible::vessel::kFnvPrime;
+using crucible::vessel::MAX_INLINE_METAS;
+using crucible::vessel::MetaCount;
+using crucible::vessel::ScalarArgs;
+using crucible::vessel::compute_shape_hash;
+using crucible::vessel::fill_meta;
+using crucible::vessel::training_phase;
 
 // =====================================================================
 // Schema hash cache
@@ -147,17 +130,17 @@ struct SchemaInfo {
 
     // Cache miss: compute FNV-1a over "namespace::name.overload".
     const auto& name = op.operator_name();
-    uint64_t h = FNV_OFFSET;
+    uint64_t h = kFnvOffset;
     for (char c : name.name) {
         h ^= static_cast<uint8_t>(c);
-        h *= FNV_PRIME;
+        h *= kFnvPrime;
     }
     if (!name.overload_name.empty()) {
         h ^= static_cast<uint8_t>('.');
-        h *= FNV_PRIME;
+        h *= kFnvPrime;
         for (char c : name.overload_name) {
             h ^= static_cast<uint8_t>(c);
-            h *= FNV_PRIME;
+            h *= kFnvPrime;
         }
     }
 
@@ -197,213 +180,6 @@ struct SchemaInfo {
 }
 
 // =====================================================================
-// Training phase TLS
-//
-// Set by Python controller to distinguish forward/backward/optimizer.
-// Lives in the dispatch lib (no PyTorch patch needed). The fallback
-// reads this and packs it into op_flags bits 2-3.
-// =====================================================================
-
-static thread_local uint8_t s_training_phase = 0;
-
-// =====================================================================
-// Shape hash
-//
-// FNV-1a over (ndim, sizes[0..ndim-1]) per input tensor.
-// Identical to vessel_api.cpp crucible_hash_shapes().
-// =====================================================================
-
-// Must produce identical hashes to vessel_api.cpp::crucible_hash_shapes().
-// Chain: for each tensor, fold ndim (1 byte) then sizes (ndim * 8 bytes)
-// into a single continuous FNV-1a accumulator.
-[[nodiscard]] static crucible::ShapeHash compute_shape_hash(const crucible::TensorMeta* metas, uint16_t n_inputs) {
-    uint64_t h = FNV_OFFSET;
-    for (uint16_t i = 0; i < n_inputs; i++) {
-        // Hash ndim as separator (1 byte), continuing the chain.
-        h = fnv1a_bytes(&metas[i].ndim, 1, h);
-        // Hash sizes[0..ndim-1], continuing the chain.  `sizes` is a
-        // TensorDimArray, whose lanes stay plain int64_t precisely so a bulk
-        // reader can take the block without a copy; `raw_data()` is that
-        // reader.  Only the write path goes through the refined TensorDim.
-        const uint32_t nbytes = static_cast<uint32_t>(metas[i].ndim) * static_cast<uint32_t>(sizeof(int64_t));
-        h = fnv1a_bytes(metas[i].sizes.raw_data(), nbytes, h);
-    }
-    return crucible::ShapeHash{h};
-}
-
-// =====================================================================
-// Tensor metadata extraction
-//
-// Fill all 168B of crucible::TensorMeta from an at::Tensor.
-// Handles strided and non-strided layouts.
-//
-// Fields filled:
-//   Core (144B): sizes[8], strides[8], data_ptr, ndim, dtype,
-//                device_type, device_idx, layout, requires_grad,
-//                flags, output_nr
-//   Extended (24B): storage_offset, version, storage_nbytes, grad_fn_hash
-// =====================================================================
-
-static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
-    meta = {};  // zero-init (InitSafe -- NSDMI defaults)
-    if (!t.defined()) return;
-
-    // -- Core fields --------------------------------------------------
-
-    const auto ndim = static_cast<uint8_t>(std::min(t.dim(), static_cast<int64_t>(8)));
-    meta.ndim = ndim;
-
-    const auto sizes = t.sizes();
-    for (uint8_t d = 0; d < ndim; d++)
-        meta.sizes[d] = ::crucible::tensor_dim(sizes[d]);
-
-    const bool strided = (t.layout() == c10::Layout::Strided);
-    if (strided) {
-        const auto strides = t.strides();
-        for (uint8_t d = 0; d < ndim; d++)
-            meta.strides[d] = ::crucible::tensor_dim(strides[d]);
-        // The storage address crosses the ATen boundary here, so it enters
-        // as source::External: hashed and compared as an opaque cookie,
-        // never dereferenced, until some later validator retags it.
-        meta.data_ptr = ::crucible::external_data_ptr(t.data_ptr());
-    }
-
-    // #161: c10 and crucible enums mirror ordinals by design
-    // (Types.h documents the invariant).  `std::bit_cast` makes the
-    // ordinal-reinterpretation explicit — the previous
-    // `static_cast<crucible::X>(static_cast<int8_t>(c10_value))` was
-    // a double narrowing conversion that silently truncated any future
-    // c10 enum value escaping int8_t range and looked like an
-    // ordinary value conversion.  bit_cast is pure bit reinterpretation;
-    // sizeof-mismatch is a compile error, not a runtime surprise.
-    //
-    // Static-assert the size and every mirrored ordinal so a c10 renumber —
-    // past int8_t overflow or into a previously-hole ordinal — fails the
-    // build instead of silently corrupting tensor metadata.
-    static_assert(sizeof(c10::ScalarType) == sizeof(crucible::ScalarType));
-    static_assert(sizeof(c10::DeviceType) == sizeof(crucible::DeviceType));
-    static_assert(sizeof(c10::Layout) == sizeof(crucible::Layout));
-
-    // Every scalar type Crucible names, checked one by one.  A single
-    // sampled ordinal did not witness the invariant the bit_cast rests on:
-    // it only witnessed one lane of it.  The per-type message names the
-    // type that drifted, which a folded check could not.
-#define CRUCIBLE_MIRROR_SCALAR(name)                                                                             \
-    static_assert(static_cast<int8_t>(c10::ScalarType::name) == static_cast<int8_t>(crucible::ScalarType::name), \
-                  "c10::ScalarType::" #name " ordinal drifted from the crucible mirror")
-    CRUCIBLE_MIRROR_SCALAR(Byte);
-    CRUCIBLE_MIRROR_SCALAR(Char);
-    CRUCIBLE_MIRROR_SCALAR(Short);
-    CRUCIBLE_MIRROR_SCALAR(Int);
-    CRUCIBLE_MIRROR_SCALAR(Long);
-    CRUCIBLE_MIRROR_SCALAR(Half);
-    CRUCIBLE_MIRROR_SCALAR(Float);
-    CRUCIBLE_MIRROR_SCALAR(Double);
-    CRUCIBLE_MIRROR_SCALAR(ComplexHalf);
-    CRUCIBLE_MIRROR_SCALAR(ComplexFloat);
-    CRUCIBLE_MIRROR_SCALAR(ComplexDouble);
-    CRUCIBLE_MIRROR_SCALAR(Bool);
-    CRUCIBLE_MIRROR_SCALAR(BFloat16);
-    CRUCIBLE_MIRROR_SCALAR(Float8_e5m2);
-    CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fn);
-    CRUCIBLE_MIRROR_SCALAR(Float8_e5m2fnuz);
-    CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fnuz);
-#undef CRUCIBLE_MIRROR_SCALAR
-
-    // Undefined is the one deliberate divergence, so it must not be
-    // bit_cast.  c10 appends Undefined after the last scalar type, which
-    // puts it at a large positive ordinal; Crucible uses -1 as a sentinel
-    // so that "no dtype" sorts outside the value range instead of inside
-    // it.  Asserting the two equal was false, and it is the assert that
-    // was wrong, not the enums.  Assert the divergence instead, plus the
-    // property that makes the explicit map below total: every c10 ordinal
-    // is non-negative, so the -1 sentinel can never collide with one.
-    static_assert(static_cast<int8_t>(crucible::ScalarType::Undefined) < 0,
-                  "the crucible Undefined sentinel must stay negative so it cannot alias a c10 ordinal");
-    static_assert(static_cast<int16_t>(c10::ScalarType::Undefined) >= 0,
-                  "c10 scalar ordinals must stay non-negative for the sentinel to be disjoint");
-    static_assert(static_cast<int16_t>(c10::ScalarType::Undefined)
-                      != static_cast<int16_t>(crucible::ScalarType::Undefined),
-                  "if c10 ever adopts -1 for Undefined, drop the explicit map below and bit_cast it");
-
-    static_assert(static_cast<int8_t>(c10::DeviceType::CUDA) == static_cast<int8_t>(crucible::DeviceType::CUDA),
-                  "c10::DeviceType::CUDA ordinal drifted from crucible mirror");
-    static_assert(static_cast<int8_t>(c10::Layout::Strided) == static_cast<int8_t>(crucible::Layout::Strided),
-                  "c10::Layout::Strided ordinal drifted from crucible mirror");
-
-    // The mirror is exact for every named type, so bit_cast carries them.
-    // Undefined is mapped, because its two ordinals differ by design.
-    //
-    // A dtype that c10 names and Crucible does not — a quantized type, a
-    // narrow integer width, one of the newer FP8 variants — still
-    // bit_casts to an ordinal that matches no crucible enumerator.  The
-    // enum has a fixed underlying type, so the value is well-defined
-    // rather than UB, and it round-trips through the trace unchanged.
-    // Widening the mirror is a Types.h change, which this file does not own.
-    const auto scalar_type = t.scalar_type();
-    meta.dtype = (scalar_type == c10::ScalarType::Undefined) ? crucible::ScalarType::Undefined
-                                                             : std::bit_cast<crucible::ScalarType>(scalar_type);
-    meta.device_type = std::bit_cast<crucible::DeviceType>(t.device().type());
-    // c10::DeviceIndex is already int8_t (c10/core/Device.h).  Direct
-    // copy on the present-branch; literal -1 on the absent-branch.
-    meta.device_idx = t.device().has_index() ? t.device().index() : int8_t{-1};
-    meta.layout = std::bit_cast<crucible::Layout>(t.layout());
-
-    // -- Extended fields (autograd + storage) --------------------------
-
-    meta.requires_grad = t.requires_grad();
-
-    uint8_t flags = 0;
-    if (t.is_leaf()) flags |= crucible::meta_flags::IS_LEAF;
-    if (strided && t.is_contiguous()) flags |= crucible::meta_flags::IS_CONTIGUOUS;
-    if (t.is_neg()) flags |= crucible::meta_flags::IS_NEG;
-    if (t.is_conj()) flags |= crucible::meta_flags::IS_CONJ;
-
-    auto* impl = t.unsafeGetTensorImpl();
-    auto* am = impl->autograd_meta();
-    if (am) {
-        auto* node = torch::autograd::impl::grad_fn_unsafe(t);
-        if (node) {
-            flags |= crucible::meta_flags::HAS_GRAD_FN;
-            const auto& gfn_name = node->name();
-            // The value derives from an autograd node name, which is local
-            // to one process, so it carries hash_family::FamilyB and must
-            // never key anything that outlives the run.
-            meta.grad_fn_hash = ::crucible::grad_fn_hash(fnv1a_str(gfn_name.data(), gfn_name.size()));
-        }
-        meta.output_nr = static_cast<uint8_t>(torch::autograd::impl::get_autograd_meta(t)->output_nr_ & 0xFF);
-    }
-
-    // View detection: check autograd is_view_ flag first (catches expand,
-    // as_strided, narrow etc. that share storage base and zero offset).
-    // Fall back to data_ptr != storage_base and storage_offset != 0 checks
-    // for non-autograd views.
-    if (am && static_cast<torch::autograd::AutogradMeta*>(am)->is_view_) flags |= crucible::meta_flags::IS_VIEW;
-
-    if (strided && impl->has_storage()) {
-        auto* storage_base = impl->storage().data_ptr().get();
-        if (storage_base != nullptr && t.data_ptr() != static_cast<char*>(storage_base)) {
-            flags |= crucible::meta_flags::IS_VIEW;
-        }
-        meta.storage_nbytes = static_cast<uint32_t>(impl->storage().nbytes() & 0xFFFFFFFF);
-    }
-    if (strided && t.storage_offset() != 0) {
-        flags |= crucible::meta_flags::IS_VIEW;
-        meta.storage_offset = t.storage_offset();
-    }
-
-    meta.flags = flags;
-
-    // c10's version counter is already uint32_t (TensorImpl.h), so the old
-    // mask-and-narrow was a no-op the compiler rejects as a useless cast.
-    // Assert the width instead: if a future c10 widens it, the build fails
-    // here rather than silently truncating a version into a false match.
-    static_assert(std::is_same_v<decltype(impl->version_counter().current_version()), uint32_t>,
-                  "c10 version counter width drifted — re-check the TensorMeta.version narrowing");
-    meta.version = impl->version_counter().current_version();
-}
-
-// =====================================================================
 // Scalar extraction
 //
 // Bitcast non-tensor scalars to int64_t for TraceRing::Entry.
@@ -422,8 +198,6 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 // Returns MetaCount (how many input metas were written).
 // Output metas are appended AFTER redispatch (need actual results).
 // =====================================================================
-
-static constexpr uint32_t MAX_INLINE_METAS = 32;
 
 struct ExtractionResult {
     MetaCount counts;
@@ -619,7 +393,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
     if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
     if (is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
-    flags |= (s_training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT;
+    flags |= (training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT;
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     entry.op_flags = flags;
 
@@ -801,9 +575,9 @@ CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() { return c10::CrucibleSt
 // forward/backward/optimizer passes. Packed into op_flags bits 2-3.
 // Lives in the dispatch lib — no PyTorch patch needed.
 
-CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase) { s_training_phase = phase & 0x3; }
+CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase) { training_phase = phase & 0x3; }
 
-CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() { return s_training_phase; }
+CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() { return training_phase; }
 
 // ── Schema table accessors ──────────────────────────────────────────
 //

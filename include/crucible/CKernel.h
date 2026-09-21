@@ -352,7 +352,76 @@ register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::ta
     table->register_op(table->mint_mutable_view(), schema_hash.value(), id);
 }
 
+// ---------------------------------------------------------------------
+// The compile-time classification a framework adapter owns.
+//
+// The table above is filled at run time, one register_op call per schema,
+// and it is capped at CKERNEL_TABLE_CAP with an abort on overflow. That cap
+// is sized for the schemas an adapter discovers as it runs. It is not sized
+// for a framework's whole operator set: the PyTorch adapter's generated
+// table classifies 344 operators, so registering them would abort before
+// the first iteration completed.
+//
+// An adapter that knows its operator set at compile time therefore does not
+// register it. It publishes a sorted, immutable array once, and this file
+// reads that array before the run-time table. No cap, no abort, and the cap
+// above keeps the meaning it was written with.
+//
+// The array stays with the adapter rather than moving here. A schema hash of
+// an ATen operator is PyTorch's fact, and this header is the vendor-neutral
+// taxonomy every adapter maps onto; carrying one framework's 344 hashes here
+// would put a framework's operator set below the layer that abstracts it.
+
+struct StaticCKernelTable {
+    // Sorted by schema_hash, so classify_static below can bisect it.
+    const CKernelEntry* entries = nullptr;
+    uint32_t count = 0;
+};
+
+namespace detail {
+// Constant-initialized, so it has no dynamic initializer to order against
+// the adapter that publishes into it and no guard variable to race on.
+inline constinit std::atomic<const StaticCKernelTable*> static_ckernel_table_{nullptr};
+}  // namespace detail
+
+// Publishing is a release store, and classify_static reads with acquire, so a
+// reader that observes the pointer also observes every entry the adapter
+// wrote before it. The adapter publishes from its load-time initializer,
+// before the background thread starts draining.
+//
+// The array must outlive the process's classifying readers. A `constexpr`
+// array with static storage duration satisfies that; a local does not.
+inline void publish_static_ckernel_table(const StaticCKernelTable& table CRUCIBLE_LIFETIMEBOUND) noexcept {
+    CRUCIBLE_PRE(table.entries != nullptr || table.count == 0u);
+    detail::static_ckernel_table_.store(&table, std::memory_order_release);
+}
+
+// OPAQUE when no adapter has published, which is every build that links no
+// framework adapter, and OPAQUE when the published array does not name this
+// schema. Both answers are the same answer the run-time table gives on a
+// miss, so the fallback below is reached in exactly those two cases.
+[[nodiscard, gnu::pure]] inline CKernelId classify_static(SchemaHash schema_hash) noexcept {
+    const StaticCKernelTable* table = detail::static_ckernel_table_.load(std::memory_order_acquire);
+    if (table == nullptr) [[unlikely]]
+        return CKernelId::OPAQUE;
+    uint32_t lo = 0, hi = table->count;
+    while (lo < hi) {
+        const uint32_t mid = lo + (hi - lo) / 2;
+        if (table->entries[mid].schema_hash == schema_hash) return table->entries[mid].id;
+        if (table->entries[mid].schema_hash < schema_hash)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return CKernelId::OPAQUE;
+}
+
+// The published array first, the run-time table second. An adapter that
+// publishes a classification for a schema and also registers one for it gets
+// the published answer, which is the one its own generator derived.
 [[nodiscard, gnu::pure]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {
+    const CKernelId from_static = classify_static(schema_hash);
+    if (from_static != CKernelId::OPAQUE) return from_static;
     return global_ckernel_table().value()->classify(schema_hash);
 }
 
