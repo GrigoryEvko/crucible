@@ -31,9 +31,9 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # register.cpp holds one unboxed recording kernel per ATen operator and the
     # boxed fallback keeps catching everything no kernel claims, so the two
     # belong in one library: they share the Vigil handle in PyTorch's TLS, the
-    # training-phase thread_local, and the metadata bridge in record_kernel.h.
+    # backward-window thread_local, and the metadata bridge in record_kernel.h.
     # Splitting them would give each .so its own copy of the header-only
-    # Crucible and its own phase variable.
+    # Crucible and its own backward-window counter.
     add_library(crucible_dispatch SHARED crucible_fallback.cpp register.cpp)
 
     # crucible is INTERFACE (header-only) — compiles into this target's ABI.

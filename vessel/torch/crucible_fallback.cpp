@@ -50,11 +50,12 @@ namespace {
 // =====================================================================
 // The bridge this path shares with the unboxed kernels
 //
-// FNV-1a, the metadata fill, the shape hash, the slot limits and the training
-// phase all live in record_kernel.h. Two spellings of any of them would let the
-// boxed and the unboxed path write different entries for one operation, which
-// is the property the whole design rests on. The names are pulled in here so
-// the call sites below read as they did when the definitions were local.
+// FNV-1a, the metadata fill, the shape hash, the slot limits and the phase
+// derivation all live in record_kernel.h. Two spellings of any of them would
+// let the boxed and the unboxed path write different entries for one
+// operation, which is the property the whole design rests on. The names are
+// pulled in here so the call sites below read as they did when the definitions
+// were local.
 //
 // The hashes must also match vessel_api.cpp's crucible_hash_string and
 // crucible_hash_shapes, so that hash("aten::mm.default") is the same value in
@@ -68,9 +69,11 @@ using crucible::vessel::kFnvPrime;
 using crucible::vessel::MAX_INLINE_METAS;
 using crucible::vessel::MetaCount;
 using crucible::vessel::ScalarArgs;
+using crucible::vessel::backward_depth;
 using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
-using crucible::vessel::training_phase;
+using crucible::vessel::is_foreach_op_name;
+using crucible::vessel::phase_flag_bits;
 
 // =====================================================================
 // Schema hash cache
@@ -84,10 +87,15 @@ using crucible::vessel::training_phase;
 // typical models (<500 unique ops).
 // =====================================================================
 
-// Per-op cached info: schema hash + is_mutable flag.
-// SchemaHash (16B slot) + is_mutable parallel array (1B) = 34KB total.
-// Fits comfortably in L1d (48KB Zen 4). The parallel array avoids
+// Per-op cached info: schema hash, is_mutable flag, is_foreach flag.
+// SchemaHash (16B slot) + two parallel arrays of 1B = 36KB total.
+// Fits comfortably in L1d (48KB Zen 4). The parallel arrays avoid
 // bloating slots to 24B which would spill L1d.
+//
+// Both flags are properties of the operator rather than of the operation, so
+// both are computed once at the cache miss below. is_foreach is a substring
+// search over the operator name, which the unboxed path answers at compile
+// time; caching it here keeps the hot boxed path at one array index.
 //
 // `key` carries the c10::OperatorHandle pointer that PyTorch handed
 // to us across the boxed-fallback ABI.  GAPS-096 wraps it in
@@ -116,10 +124,12 @@ static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
 static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
 static thread_local bool schema_is_mutable[SCHEMA_CACHE_CAP]{};
+static thread_local bool schema_is_foreach[SCHEMA_CACHE_CAP]{};
 
 struct SchemaInfo {
     crucible::SchemaHash hash;
     bool is_mutable = false;
+    bool is_foreach = false;
 };
 
 [[nodiscard]] static SchemaInfo get_schema_info(const c10::OperatorHandle& op, const c10::FunctionSchema& schema) {
@@ -129,7 +139,7 @@ struct SchemaInfo {
     const auto idx = (std::bit_cast<std::uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
     auto& slot = schema_cache[idx];
     if (slot.key.value() == &op) [[likely]]
-        return {slot.hash, schema_is_mutable[idx]};
+        return {slot.hash, schema_is_mutable[idx], schema_is_foreach[idx]};
 
     // Cache miss: compute FNV-1a over "namespace::name.overload".
     const auto& name = op.operator_name();
@@ -171,6 +181,11 @@ struct SchemaInfo {
     // argument has AliasInfo with isWrite() == true.
     const bool mutable_op = schema.is_mutable();
 
+    // Half of what the phase derivation reads to name an operation an
+    // optimizer operation. The overload never carries the infix, so the base
+    // name is the whole question.
+    const bool foreach_op = is_foreach_op_name(name.name);
+
     // Re-tag at the FFI source: the OperatorHandle pointer just
     // crossed the boxed-fallback boundary, so it carries source::External
     // until something downstream proves otherwise.  Construction is
@@ -179,7 +194,8 @@ struct SchemaInfo {
     slot.key = ExternalOpKey{&op};
     slot.hash = schema_hash;
     schema_is_mutable[idx] = mutable_op;
-    return {schema_hash, mutable_op};
+    schema_is_foreach[idx] = foreach_op;
+    return {schema_hash, mutable_op, foreach_op};
 }
 
 // =====================================================================
@@ -385,7 +401,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     auto [counts, scalars] = extract_inputs(*stack, args_begin, num_args, inline_metas);
 
     // -- Compute hashes + mutability -----------------------------------
-    const auto [schema_hash, is_mutable] = get_schema_info(op, schema);
+    const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(op, schema);
     const auto shape_hash = compute_shape_hash(inline_metas, counts.inputs);
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------
@@ -407,7 +423,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
     if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
     if (is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
-    flags |= (training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT;
+    flags |= phase_flag_bits(is_foreach);
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     entry.op_flags = flags;
 
@@ -596,8 +612,9 @@ CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode();
 CRUCIBLE_API void* crucible_dispatch_get_tls_context();
 CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash);
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope();
-CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase);
-CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase();
+CRUCIBLE_API void crucible_dispatch_backward_enter();
+CRUCIBLE_API void crucible_dispatch_backward_exit();
+CRUCIBLE_API uint32_t crucible_dispatch_backward_depth();
 CRUCIBLE_API uint32_t crucible_dispatch_schema_count();
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name);
 
@@ -619,15 +636,35 @@ CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) {
 
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() { return c10::CrucibleState::get_tls_state().scope_hash(); }
 
-// ── Training phase TLS ─────────────────────────────────────────────
+// ── The backward window ─────────────────────────────────────────────
 //
-// Thread-local training phase, set by Python controller to distinguish
-// forward/backward/optimizer passes. Packed into op_flags bits 2-3.
-// Lives in the dispatch lib — no PyTorch patch needed.
+// The wrapper CrucibleNative installs over Tensor.backward brackets each
+// backward pass with these two calls, and record_kernel.h derives the BACKWARD
+// phase from a non-zero depth. Lives in the dispatch lib — no PyTorch patch
+// needed.
+//
+// The counter is owned here rather than in Python so that neither bound can be
+// crossed from outside: `enter` saturates at the maximum instead of wrapping to
+// zero and ending a window that is still open, and `exit` stops at zero instead
+// of wrapping to the maximum and leaving every later operation labelled
+// backward. Both bounds are unreachable from a matched bracket. They are here
+// for the caller that is not matched, whose trace is then short of a phase bit
+// rather than wrong about every one that follows.
+//
+// Not atomic: the counter is thread-local, one thread writes it, and that same
+// thread is the only reader.
 
-CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase) { training_phase = phase & 0x3; }
+CRUCIBLE_API void crucible_dispatch_backward_enter() {
+    if (backward_depth != UINT32_MAX) [[likely]]
+        backward_depth++;
+}
 
-CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() { return training_phase; }
+CRUCIBLE_API void crucible_dispatch_backward_exit() {
+    if (backward_depth != 0) [[likely]]
+        backward_depth--;
+}
+
+CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() { return backward_depth; }
 
 // ── Schema table accessors ──────────────────────────────────────────
 //

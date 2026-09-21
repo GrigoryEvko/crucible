@@ -343,16 +343,86 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
 }
 
 // =====================================================================
-// Training phase
+// The backward window
 //
-// Set by the Python controller to tell forward from backward from optimizer,
-// and packed into bits 2 and 3 of op_flags. One definition for both recording
-// paths: two copies would let them write different phase bits into one trace.
-// Zero-initialized, so there is no initializer to order and no guard variable
-// on the path that reads it.
+// The depth of the backward window this thread is inside. CrucibleNative wraps
+// Tensor.backward and counts up on entry and down on exit, so a non-zero depth
+// says that every operation arriving here belongs to a backward pass. It is
+// the one phase signal the recording paths cannot read off the operation
+// itself, and derive_training_phase() below is the only reader.
+//
+// A counter rather than a flag, because a double backward pass nests one
+// window inside another, and the inner exit must not end the outer window.
+//
+// Thread-local. A recording session holds the autograd engine on the thread
+// that called backward(), so the window and the operations it produces are on
+// one thread. A caller that reaches the engine another way runs backward
+// operations on a worker thread, where this counter reads zero — and the
+// producer question in recording_vigil() turns that thread away before any
+// phase is derived, so the phase it would have derived reaches no trace.
+//
+// One definition for both recording paths: two copies would let them write
+// different phase bits into one trace. Zero-initialized, so there is no
+// initializer to order and no guard variable on the path that reads it.
 // =====================================================================
 
-inline thread_local uint8_t training_phase = 0;
+inline thread_local uint32_t backward_depth = 0;
+
+// =====================================================================
+// Training phase
+//
+// Derived from what the runtime is doing when the operation arrives, and
+// packed into bits 2 and 3 of op_flags.
+//
+// The backward window is asked first. It is the most specific of the three
+// signals, and an operation inside a backward window belongs to that window
+// whatever else is true of it.
+//
+// The optimizer is read off two facts together. A `_foreach_` operator is one
+// of the fused multi-tensor kernels the optimizers of this runtime are built
+// on, and gradients are off across an optimizer step. Either fact alone is
+// weaker: a model can call a `_foreach_` operator in its own forward pass
+// under grad, and grad is off across an inference forward pass too.
+//
+// That conjunction is narrow, and what it costs is named here rather than left
+// for a reader to find. An optimizer step also emits operations that are not
+// `_foreach_`, and a step built on single-tensor kernels emits none at all.
+// Those operations derive FORWARD. So OPTIMIZER on an operation is evidence
+// and FORWARD on one is the absence of evidence.
+//
+// Measured over one recorded period of a small transformer under SGD with
+// momentum: on cuda:0 the step is three fused calls and all three carry the
+// label, and on the host the same step is 87 single-tensor calls and none of
+// them does. The runtime picks between the two forms per device inside the
+// step, so which one a step takes is not a property this file can read.
+//
+// Narrow and derived is still the better trade. These bits are a label: the
+// content hash folds the schema hash, the tensor metadata and the scalars and
+// never reads op_flags, so no phase can move a region's identity, its cache
+// key or a replay guard. What reads them is a reader of the trace —
+// Serialize.h carries them to the file and TraceVisualizer.h splits the
+// forward and backward columns on them. A label is worth having only if it
+// says the same thing about the same computation every time, and a phase the
+// caller set by hand said whatever that caller had remembered to call. Two
+// loops over one model labelled one computation two ways, and the label of the
+// loop that skipped a call was silently FORWARD throughout.
+// =====================================================================
+
+[[nodiscard]] inline crucible::TrainingPhase derive_training_phase(bool is_foreach) noexcept {
+    if (backward_depth != 0) return crucible::TrainingPhase::BACKWARD;
+    if (is_foreach && !c10::GradMode::is_enabled()) return crucible::TrainingPhase::OPTIMIZER;
+    return crucible::TrainingPhase::FORWARD;
+}
+
+// True for the fused multi-tensor operators. 452 names in aten_op_table.h carry
+// this infix: the `aten::_foreach_*` family, and the two
+// `aten::_amp_foreach_non_finite_check_and_unscale` overloads. The second pair
+// belongs to the gradient scaler rather than to a fused update, and it runs
+// inside an optimizer step with gradients off, so the phase it derives is the
+// one it should have.
+[[nodiscard]] constexpr bool is_foreach_op_name(std::string_view name) noexcept {
+    return name.contains("_foreach_");
+}
 
 // Everything below DispatchKey::Crucible, which is the backend that computes
 // the operation. The constructor is constexpr, so this costs no initializer.
@@ -859,31 +929,37 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
     return vigil;
 }
 
-// Bits 2 and 3 of op_flags.
-[[nodiscard]] inline uint8_t phase_flag_bits() noexcept {
-    return static_cast<uint8_t>((training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT);
+// Bits 2 and 3 of op_flags. `is_foreach` is a property of the operator, which
+// the unboxed path knows at compile time and the boxed path caches beside the
+// schema hash.
+[[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach) noexcept {
+    const auto phase = static_cast<uint8_t>(derive_training_phase(is_foreach));
+    return static_cast<uint8_t>((phase & 0x3) << crucible::op_flag::PHASE_SHIFT);
 }
 
 // The five bits of per-operation context. Mutability is a template parameter
 // here and a parsed schema on the boxed path; the generator derives it from
 // the same alias annotation FunctionSchema::is_mutable() reads, and the two
-// were compared over the 3765 aten schemas the fork registers.
-template <bool IsMutable>
+// were compared over the 3765 aten schemas the fork registers. The same split
+// holds for the fused-kernel question the phase derivation asks: a template
+// parameter here, a cached name search on the boxed path, one operator name
+// behind both.
+template <bool IsMutable, bool IsForeach>
 [[nodiscard]] uint8_t entry_op_flags(c10::DispatchKeySet dispatch_keys) noexcept {
     uint8_t flags = 0;
     if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
     if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
     if constexpr (IsMutable) flags |= crucible::op_flag::IS_MUTABLE;
-    flags |= phase_flag_bits();
+    flags |= phase_flag_bits(IsForeach);
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     return flags;
 }
 
 // Builds the entry and hands it to the Vigil. The schema hash arrives as an
 // argument rather than as a template parameter so that one instantiation
-// serves every operator of the same capacity and mutability, which is around
-// sixty rather than 3110.
-template <bool IsMutable, uint32_t Capacity>
+// serves every operator of the same capacity, mutability and kernel family,
+// which is around a hundred rather than 3110.
+template <bool IsMutable, bool IsForeach, uint32_t Capacity>
 void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHash schema_hash,
                         crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil* vigil,
                         crucible::ScopeHash scope_hash) {
@@ -893,7 +969,7 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
     entry.num_inputs = recording.counts.inputs;
     entry.num_outputs = recording.counts.outputs;
     entry.num_scalar_args = recording.scalars.count;
-    entry.op_flags = entry_op_flags<IsMutable>(dispatch_keys);
+    entry.op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
     for (uint16_t i = 0; i < recording.scalars.count; i++)
         entry.scalar_values[i] = recording.scalars.values[i];
 
@@ -948,6 +1024,11 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
     static constexpr crucible::SchemaHash kSchemaHash{aten_op_table[TableIndex].schema_hash};
     static constexpr bool kIsMutable = aten_op_table[TableIndex].is_mutable;
+
+    // One of the fused multi-tensor kernels, which is half of what the phase
+    // derivation reads to name an operation an optimizer operation. Constant
+    // here, so the derivation folds to a grad-mode question on this path.
+    static constexpr bool kIsForeach = is_foreach_op_name(aten_op_table[TableIndex].name);
 
     // Exact when no argument is a tensor list: one slot per tensor argument.
     static constexpr uint32_t kInputBound =
@@ -1004,7 +1085,8 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
         if constexpr (std::is_void_v<Ret>) {
             Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
-            append_trace_entry<kIsMutable>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, scope_hash);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil,
+                                                       scope_hash);
         } else if constexpr (std::is_reference_v<Ret>) {
             // An in-place or out= operator returns a reference to an argument
             // the caller owns, which outlives this frame. The result is held
@@ -1014,12 +1096,14 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
             // DispatchKeySet by value.
             auto* result = &Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, *result);
-            append_trace_entry<kIsMutable>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, scope_hash);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil,
+                                                       scope_hash);
             return *result;
         } else {
             Ret result = Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, result);
-            append_trace_entry<kIsMutable>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, scope_hash);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil,
+                                                       scope_hash);
             return result;
         }
     }

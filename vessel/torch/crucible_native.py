@@ -11,13 +11,12 @@ Requires:
   - libcrucible_dispatch.so (C++ fallback + TLS accessors)
 
 Usage:
-    from crucible_native import CrucibleNative
+    from crucible_native import attach
 
     model = torchvision.models.resnet18()
     x = torch.randn(4, 3, 224, 224)
 
-    with CrucibleNative(verbose=True) as ctx:
-        ctx.track_modules(model)
+    with attach(model, optimizer, device="cuda:0") as ctx:
         for i in range(3):  # 1 warmup + 2 for iteration detection
             optimizer.zero_grad()
             out = model(x)
@@ -25,18 +24,37 @@ Usage:
             loss.backward()
             optimizer.step()
         ctx.export_trace("resnet18.crtrace")
+
+attach() takes over what a caller used to do by hand: it enables the dispatch
+key, installs the module scope hooks for the recording phase and takes them off
+again at activation, keeps torch.compile off the attached model, and wraps
+Tensor.backward so that the runtime can see where a backward pass starts and
+ends.  The phase of an operation is derived from that, not declared:
+
+  BACKWARD   inside the extent of the Tensor.backward wrapper
+  OPTIMIZER  a fused `_foreach_` kernel with gradients off
+  FORWARD    anything else
+
+The derivation lives in vessel/torch/record_kernel.h, which is the one copy
+both recording paths read.
 """
 
 import contextlib
 import ctypes
+import logging
 import os
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 if TYPE_CHECKING:
     import torch.nn as nn
+    import torch.optim as optim
+
+
+log = logging.getLogger(__name__)
 
 
 # =====================================================================
@@ -111,7 +129,8 @@ def _find_lib(name: str) -> str | None:
 class _VesselLib:
     """Ctypes wrapper for libcrucible_vessel.so — Vigil lifecycle + queries."""
 
-    def __init__(self, lib_path: str | None = None):
+    def __init__(self, lib_path: str | None = None) -> None:
+        """Load the vessel library and check its ABI stamp."""
         path = lib_path or _find_lib("libcrucible_vessel.so")
         if path is None:
             raise RuntimeError(
@@ -121,7 +140,7 @@ class _VesselLib:
         self._setup()
         self._check_abi(path)
 
-    def _check_abi(self, path: str):
+    def _check_abi(self, path: str) -> None:
         """Verify the loaded .so's CRUCIBLE_VESSEL_ABI_VERSION matches
         EXPECTED_ABI_VERSION.  Raises CrucibleAbiMismatchError on
         drift — usually means the .so was rebuilt with a different
@@ -137,7 +156,8 @@ class _VesselLib:
                 f"Rebuild Crucible after a vessel_api.h change:\n"
                 f"  cmake --build --preset default")
 
-    def _setup(self):
+    def _setup(self) -> None:
+        """Declare the restype and argtypes of every symbol this class calls."""
         L = self._lib
 
         # ABI version (declared first so _check_abi can call it).
@@ -177,39 +197,51 @@ class _VesselLib:
         L.crucible_register_schema_name.argtypes = [ctypes.c_uint64, ctypes.c_char_p]
 
     def create(self) -> int:
+        """Create a Vigil and return its opaque handle."""
         return self._lib.crucible_create()
 
-    def destroy(self, h: int):
+    def destroy(self, h: int) -> None:
+        """Destroy the Vigil behind one handle."""
         self._lib.crucible_destroy(h)
 
-    def flush(self, h: int):
+    def flush(self, h: int) -> None:
+        """Wait until the background thread has drained the ring."""
         self._lib.crucible_flush(h)
 
     def is_compiled(self, h: int) -> bool:
+        """True once the Vigil replays a region instead of recording one."""
         return bool(self._lib.crucible_is_compiled(h))
 
     def compiled_iterations(self, h: int) -> int:
+        """The number of iterations the Vigil has replayed."""
         return self._lib.crucible_compiled_iterations(h)
 
     def diverged_count(self, h: int) -> int:
+        """The number of times a replayed operation failed its guard."""
         return self._lib.crucible_diverged_count(h)
 
     def bg_iterations(self, h: int) -> int:
+        """The number of iteration boundaries the background thread found."""
         return self._lib.crucible_bg_iterations(h)
 
     def ring_size(self, h: int) -> int:
+        """The number of entries waiting in the TraceRing."""
         return self._lib.crucible_ring_size(h)
 
     def metalog_size(self, h: int) -> int:
+        """The number of entries waiting in the MetaLog."""
         return self._lib.crucible_metalog_size(h)
 
     def export_crtrace(self, h: int, path: str) -> bool:
+        """Write the active region to one .crtrace file."""
         return bool(self._lib.crucible_export_crtrace(h, path.encode()))
 
     def active_num_ops(self, h: int) -> int:
+        """The number of operations in the active region."""
         return self._lib.crucible_active_num_ops(h)
 
-    def register_schema_name(self, schema_hash: int, name: str):
+    def register_schema_name(self, schema_hash: int, name: str) -> None:
+        """Put one operator name into this library's copy of the SchemaTable."""
         self._lib.crucible_register_schema_name(
             ctypes.c_uint64(schema_hash), name.encode("utf-8"))
 
@@ -221,7 +253,8 @@ class _VesselLib:
 class _DispatchLib:
     """Ctypes wrapper for libcrucible_dispatch.so — TLS state + scope."""
 
-    def __init__(self, lib_path: str | None = None):
+    def __init__(self, lib_path: str | None = None) -> None:
+        """Load the dispatch library, which activates the C++ fallback."""
         path = lib_path or _find_lib("libcrucible_dispatch.so")
         if path is None:
             raise RuntimeError(
@@ -236,7 +269,8 @@ class _DispatchLib:
         self._lib = ctypes.CDLL(path)
         self._setup()
 
-    def _setup(self):
+    def _setup(self) -> None:
+        """Declare the restype and argtypes of every symbol this class calls."""
         L = self._lib
 
         # TLS mode/context
@@ -255,11 +289,14 @@ class _DispatchLib:
         L.crucible_dispatch_get_tls_scope.restype = ctypes.c_uint64
         L.crucible_dispatch_get_tls_scope.argtypes = []
 
-        # TLS training phase (op_flags bits 2-3)
-        L.crucible_dispatch_set_training_phase.restype = None
-        L.crucible_dispatch_set_training_phase.argtypes = [ctypes.c_uint8]
-        L.crucible_dispatch_get_training_phase.restype = ctypes.c_uint8
-        L.crucible_dispatch_get_training_phase.argtypes = []
+        # The backward window, from which the C++ side derives the BACKWARD
+        # phase into op_flags bits 2-3.
+        L.crucible_dispatch_backward_enter.restype = None
+        L.crucible_dispatch_backward_enter.argtypes = []
+        L.crucible_dispatch_backward_exit.restype = None
+        L.crucible_dispatch_backward_exit.argtypes = []
+        L.crucible_dispatch_backward_depth.restype = ctypes.c_uint32
+        L.crucible_dispatch_backward_depth.argtypes = []
 
         # Schema table accessors (for bridging to vessel lib before export)
         L.crucible_dispatch_schema_count.restype = ctypes.c_uint32
@@ -271,25 +308,40 @@ class _DispatchLib:
             ctypes.POINTER(ctypes.c_char_p),
         ]
 
-    def set_training_phase(self, phase: int):
-        self._lib.crucible_dispatch_set_training_phase(ctypes.c_uint8(phase))
+    def backward_enter(self) -> None:
+        """Open a backward window on this thread."""
+        self._lib.crucible_dispatch_backward_enter()
 
-    def set_mode(self, mode: int):
+    def backward_exit(self) -> None:
+        """Close the innermost backward window on this thread."""
+        self._lib.crucible_dispatch_backward_exit()
+
+    def backward_depth(self) -> int:
+        """How many backward windows are open on this thread."""
+        return self._lib.crucible_dispatch_backward_depth()
+
+    def set_mode(self, mode: int) -> None:
+        """Set the CrucibleState TLS mode for this thread."""
         self._lib.crucible_dispatch_set_tls_mode(ctypes.c_uint8(mode))
 
-    def set_context(self, ctx: int):
+    def set_context(self, ctx: int) -> None:
+        """Set the CrucibleState TLS Vigil handle for this thread."""
         self._lib.crucible_dispatch_set_tls_context(ctypes.c_void_p(ctx))
 
-    def set_scope(self, scope_hash: int):
+    def set_scope(self, scope_hash: int) -> None:
+        """Set the scope hash the next recorded operations carry."""
         self._lib.crucible_dispatch_set_tls_scope(ctypes.c_uint64(scope_hash))
 
     def get_mode(self) -> int:
+        """The CrucibleState TLS mode of this thread."""
         return self._lib.crucible_dispatch_get_tls_mode()
 
     def get_scope(self) -> int:
+        """The scope hash of this thread."""
         return self._lib.crucible_dispatch_get_tls_scope()
 
     def schema_count(self) -> int:
+        """The number of operators this library has recorded a name for."""
         return self._lib.crucible_dispatch_schema_count()
 
     def schema_entries(self) -> list[tuple[int, str]]:
@@ -313,8 +365,13 @@ class _DispatchLib:
 # DispatchKey::Crucible accessor
 # =====================================================================
 
-def _get_crucible_dispatch_key():
-    """Get DispatchKey::Crucible from the PyTorch fork, or None."""
+def _get_crucible_dispatch_key() -> Any:
+    """Get DispatchKey::Crucible from the PyTorch fork, or None.
+
+    The fork exposes the key on the Python enum, which is the first branch.
+    The string lookup behind it serves a fork that carries the key in C++
+    without the enum entry.
+    """
     import torch._C as _C
     try:
         return _C.DispatchKey.Crucible
@@ -340,25 +397,35 @@ def _get_crucible_dispatch_key():
 class CrucibleNative:
     """Context manager for native C++ Crucible dispatch.
 
-    On __enter__:
+    attach() is the way in.  Constructing this class directly gives the same
+    controller without a model bound to it, which is what a session that only
+    wants the dispatch key does.
+
+    On activation:
       1. Load libcrucible_dispatch.so (registers TORCH_LIBRARY_IMPL fallback)
       2. Create Vigil via vessel C API
       3. Set CrucibleState TLS: mode=RECORD, context=vigil*
       4. Enable DispatchKey::Crucible in this thread's TLS
 
     While active:
-      - Every ATen op goes through crucibleFallback() in C++
-      - track_modules() installs scope hooks for module hierarchy
+      - Every ATen op goes through the recording kernels or crucibleFallback()
+      - Scope hooks carry the module hierarchy, until the Vigil activates
       - Vigil records to TraceRing, bg thread builds DAG
-      - A backward pass runs on this thread alone while the Vigil
-        records, so the whole backward window reaches the ring
+      - The Tensor.backward wrapper marks the backward window, from which the
+        C++ side derives the phase, and holds the autograd engine on this
+        thread so that the whole window reaches the ring
 
-    On __exit__:
+    On deactivation:
       5. Disable DispatchKey::Crucible
       6. Clear TLS state
       7. Give the autograd engine its worker threads back
-      8. Remove scope hooks
-      9. Destroy Vigil
+      8. Restore Tensor.backward and the attached model
+      9. Remove scope hooks
+      10. Destroy Vigil
+
+    The TLS mode is a two-state gate for the C++ side: INACTIVE or not.  RECORD
+    is what activation sets and the Vigil owns the move from recording a region
+    to replaying one, which is_compiled() reports.
     """
 
     # CrucibleMode ordinals (must match c10::CrucibleMode enum)
@@ -367,15 +434,10 @@ class CrucibleNative:
     COMPILED = 2
     DIVERGED = 3
 
-    # TrainingPhase ordinals (packed into op_flags bits 2-3)
-    PHASE_FORWARD   = 0
-    PHASE_BACKWARD  = 1
-    PHASE_OPTIMIZER = 2
-    PHASE_OTHER     = 3
-
     def __init__(self, *, vessel_lib_path: str | None = None,
                  dispatch_lib_path: str | None = None,
-                 verbose: bool = False):
+                 verbose: bool = False) -> None:
+        """Prepare a controller.  Nothing is loaded until it is activated."""
         self._vessel_lib_path = vessel_lib_path
         self._dispatch_lib_path = dispatch_lib_path
         self._verbose = verbose
@@ -383,18 +445,46 @@ class CrucibleNative:
         self._vessel: _VesselLib | None = None
         self._dispatch: _DispatchLib | None = None
         self._handle: int = 0
-        self._dispatch_key = None
+        self._dispatch_key: Any = None
+        self._active: bool = False
 
         # Scope tracking state
-        self._hook_handles: list = []
+        self._hook_handles: list[Any] = []
         self._scope_names: dict[int, str] = {}  # hash -> module path
+
+        # What attach() bound, and what has to be given back on the way out.
+        # The scope model is held apart from the bound one: the hooks follow
+        # whichever hierarchy track_modules was given, and only the bound
+        # model's forward carries the compile mark to take off again.
+        self._model: "nn.Module | None" = None
+        self._scope_model: "nn.Module | None" = None
+        self._optimizer: "optim.Optimizer | None" = None
+        self._loader: Iterable[Any] | None = None
+        self._device: torch.device | None = None
+        self._model_forward_disabled: bool = False
+        self._tensor_backward: Callable[..., Any] | None = None
 
         # The live autograd-serialisation guard, or None when the engine
         # keeps its worker threads.  One slot, so arming twice is a no-op
         # and no path restores the flag twice.
-        self._mt_guard = None
+        self._mt_guard: Any = None
 
-    def __enter__(self):
+        # How many backward windows ran with the engine on this thread.  The
+        # count is the evidence that the guard armed for each one, which no
+        # later query can recover: by the time a loop asks, the guard of every
+        # window it ran is already released.
+        self._serialised_windows: int = 0
+
+    def __enter__(self) -> "CrucibleNative":
+        """Activate the controller, or return it unchanged if already active.
+
+        attach() hands back an active controller, so `with attach(model) as ctx`
+        reaches an already-active one here.  Returning it rather than loading a
+        second Vigil is what makes the two spellings one thing.
+        """
+        if self._active:
+            return self
+
         self._dispatch_key = _get_crucible_dispatch_key()
         if self._dispatch_key is None:
             raise RuntimeError(
@@ -405,24 +495,54 @@ class CrucibleNative:
         self._vessel = _VesselLib(self._vessel_lib_path)
         self._handle = self._vessel.create()
 
-        # Load dispatch lib (C++ fallback + TLS accessors)
-        self._dispatch = _DispatchLib(self._dispatch_lib_path)
+        # From here the Vigil exists and owns a background thread, so every
+        # later step that can fail has to give it back.  Loading the dispatch
+        # library is the step that does fail in practice: it is the one built
+        # only when the build was given a PyTorch tree, so a session against a
+        # partial build reaches exactly this line.
+        try:
+            # Load dispatch lib (C++ fallback + TLS accessors)
+            self._dispatch = _DispatchLib(self._dispatch_lib_path)
 
-        # Set CrucibleState TLS: mode=RECORD, context=vigil handle
-        self._dispatch.set_mode(self.RECORD)
-        self._dispatch.set_context(self._handle)
+            # Set CrucibleState TLS: mode=RECORD, context=vigil handle
+            self._dispatch.set_mode(self.RECORD)
+            self._dispatch.set_context(self._handle)
 
-        # Enable DispatchKey::Crucible in this thread
-        import torch._C as _C
-        _C._dispatch_tls_set_dispatch_key_included(
-            self._dispatch_key, True)
+            # Enable DispatchKey::Crucible in this thread
+            import torch._C as _C
+            _C._dispatch_tls_set_dispatch_key_included(
+                self._dispatch_key, True)
+
+            self._wrap_tensor_backward()
+        except BaseException:
+            self._teardown()
+            raise
+
+        self._active = True
 
         if self._verbose:
-            print(f"[crucible] native dispatch active, vigil={self._handle:#x}")
+            log.info("[crucible] native dispatch active, vigil=%#x", self._handle)
 
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: Any) -> None:
+        """Deactivate the controller and give the runtime back as it was."""
+        self.detach()
+
+    def detach(self) -> None:
+        """Take the recorder off the runtime.  Safe to call more than once."""
+        if not self._active:
+            return
+        self._active = False
+        self._teardown()
+
+    def _teardown(self) -> None:
+        """Undo each step of the activation, in the reverse order.
+
+        A process that attached and detached is left as it was found.  Every
+        step is written to be safe on a half-built controller, because the
+        activation calls this when one of its own steps fails.
+        """
         # Disable dispatch key (stops fallback from firing)
         if self._dispatch_key is not None:
             try:
@@ -443,6 +563,12 @@ class CrucibleNative:
         # behavior of code that is no longer being recorded.
         self._disarm_backward_serialisation()
 
+        # Give back Tensor.backward and the model's own forward.  Both are
+        # process-wide or caller-visible, so leaving either in place would
+        # change code this session no longer records.
+        self._restore_tensor_backward()
+        self._restore_model_forward()
+
         # Remove scope hooks
         self._remove_hooks()
 
@@ -452,11 +578,190 @@ class CrucibleNative:
             self._handle = 0
 
         if self._verbose:
-            print("[crucible] native dispatch deactivated")
+            log.info("[crucible] native dispatch deactivated")
+
+    # ── What attach() binds ──────────────────────────────────────────
+
+    def bind(self, model: "nn.Module",
+             optimizer: "optim.Optimizer | None" = None,
+             loader: Iterable[Any] | None = None,
+             device: "torch.device | str | None" = None) -> None:
+        """Bind one training loop's parts to this controller.
+
+        The model is moved to the device when one is named, kept out of the
+        reach of torch.compile, and tracked for module scope.  The optimizer
+        and the loader are held for reference and for the check below.
+
+        Call this on an active controller.  attach() does it for the caller.
+        """
+        if not self._active:
+            raise RuntimeError("bind() requires an active CrucibleNative")
+
+        self._model = model
+        self._optimizer = optimizer
+        self._loader = loader
+
+        if device is not None:
+            self._device = torch.device(device)
+            model.to(self._device)
+
+        self._disable_model_compile(model)
+        self.track_modules(model)
+        self._warn_if_optimizer_phase_is_invisible(optimizer)
+
+    def _disable_model_compile(self, model: "nn.Module") -> None:
+        """Keep torch.compile off the attached model.
+
+        Crucible is the compiler for this model: it records the operations the
+        model dispatches and replays them from a region of its own.  A dynamo
+        graph would capture those operations before the dispatcher sees them,
+        so the recorder would be handed a compiled artifact instead of the
+        model, and the region would describe the artifact.
+
+        The mark goes on the model's own forward rather than on a returned
+        wrapper, so it holds for the caller's object.  torch.compile() applied
+        to this model later then finds a forward it must not trace.
+        """
+        model.forward = torch.compiler.disable(model.forward)
+        self._model_forward_disabled = True
+
+    def _restore_model_forward(self) -> None:
+        """Take the compile mark off the attached model's forward."""
+        if not self._model_forward_disabled:
+            return
+        self._model_forward_disabled = False
+        model = self._model
+        if model is not None:
+            # The mark is an instance attribute shadowing the bound method, so
+            # deleting it uncovers the class's own forward.
+            model.__dict__.pop("forward", None)
+
+    def _warn_if_optimizer_phase_is_invisible(
+            self, optimizer: "optim.Optimizer | None") -> None:
+        """Say so when this optimizer asked for single-tensor kernels.
+
+        The OPTIMIZER phase is derived from a fused `_foreach_` kernel with
+        gradients off, so a step built on single-tensor kernels carries the
+        FORWARD phase bits instead.  The step is still recorded and replayed
+        correctly; only the label is lost.
+
+        What this check reads is the one case that is visible from here: a group
+        that asked for foreach=False outright.  A group that left the choice to
+        the runtime is not covered, because the runtime makes it per device
+        inside the step and a CPU step commonly resolves to single-tensor
+        kernels.  So silence here is not a promise that the step will carry the
+        OPTIMIZER label.
+        """
+        if optimizer is None:
+            return
+        groups = optimizer.param_groups
+        if groups and all(group.get("foreach") is False for group in groups):
+            log.warning(
+                "[crucible] %s asked for foreach=False, so its step emits no "
+                "_foreach_ kernel and its operations carry the FORWARD phase",
+                type(optimizer).__name__)
+
+    # ── The backward window ──────────────────────────────────────────
+    #
+    # The phase of an operation is derived in C++ (record_kernel.h), and the
+    # one fact the derivation cannot read off the operation is whether a
+    # backward pass is running.  This wrapper is where that fact comes from:
+    # the window is the dynamic extent of Tensor.backward, bracketed by a
+    # counter in the dispatch library.
+    #
+    # The extent is a better signal than the thread the operation arrived on,
+    # and it is the serialisation below that makes it so.  Thread identity used
+    # to be the only option, because a backward pass over accelerator tensors
+    # ran on a device worker thread and a flag on the calling thread would have
+    # missed every operation of it.  With the engine held on the calling
+    # thread, the window and the operations it produces are on one thread, so
+    # the flag sees all of them.  The counter stays thread-local so that a
+    # caller who reaches the engine another way is merely short of a phase bit
+    # instead of labelling another thread's forward pass backward.
+    #
+    # Wrapping the class rather than the tensor is what makes this work for a
+    # caller who writes loss.backward() and nothing else.  torch.autograd.grad
+    # and a direct torch.autograd.backward call are not covered; a loop that
+    # uses either wraps it in recording_backward() to get the serialisation,
+    # and its backward operations carry the FORWARD phase bits.
+
+    def _wrap_tensor_backward(self) -> None:
+        """Wrap Tensor.backward for the lifetime of this controller."""
+        if self._tensor_backward is not None:
+            return
+        original = torch.Tensor.backward
+        self._tensor_backward = original
+        controller = self
+        # Bound once, as the scope hooks bind it: the wrapper is installed
+        # after the library is loaded and removed before the controller lets go
+        # of it, so the handle cannot go away underneath a call.
+        dispatch = self._dispatch
+
+        def backward(tensor: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+            """Run one backward pass inside a marked, serialised window."""
+            with controller.recording_backward():
+                dispatch.backward_enter()
+                try:
+                    return original(tensor, *args, **kwargs)
+                finally:
+                    dispatch.backward_exit()
+                    controller.sync_scope_hooks()
+
+        torch.Tensor.backward = backward  # type: ignore[method-assign]
+
+    def _restore_tensor_backward(self) -> None:
+        """Put the runtime's own Tensor.backward back."""
+        original, self._tensor_backward = self._tensor_backward, None
+        if original is not None:
+            torch.Tensor.backward = original  # type: ignore[method-assign]
+
+    def backward_depth(self) -> int:
+        """How many backward windows are open on this thread."""
+        return self._dispatch.backward_depth() if self._dispatch else 0
+
+    @property
+    def serialised_backward_windows(self) -> int:
+        """How many backward windows ran with the engine on this thread.
+
+        A loop reads this to check that every window it ran was serialised.
+        The guard of a finished window is already released, so the count is the
+        only record that it was ever armed.
+        """
+        return self._serialised_windows
 
     # ── Module scope tracking ────────────────────────────────────────
 
-    def track_modules(self, model: "nn.Module", backward_hooks: bool = False):
+    def sync_scope_hooks(self) -> None:
+        """Match the scope hooks to the mode the Vigil is in.
+
+        The hooks exist to put a module path on each recorded operation.  A
+        replayed operation records nothing and carries no scope, so from
+        activation onward each hook is a Python call per module per iteration
+        that reaches a value nobody reads.  Removing them also gives
+        nn.Module._call_impl its no-hooks fast path back.
+
+        The reverse direction matters as much.  A divergence puts the Vigil
+        back to recording, and a session that only ever took hooks off would
+        record every later region without a module path on any operation.  So
+        this reads the mode and installs or removes to match it.
+
+        The scope hash is not part of the region content hash, so neither
+        direction can turn into a divergence of its own.
+
+        The backward wrapper calls this once per iteration.  A loop with no
+        backward pass calls it itself.
+        """
+        if self._scope_model is None:
+            return
+        compiled = self.is_compiled()
+        if compiled and self._hook_handles:
+            self._remove_hooks()
+            if self._verbose:
+                log.info("[crucible] region activated, scope hooks removed")
+        elif not compiled and not self._hook_handles:
+            self.track_modules(self._scope_model)
+
+    def track_modules(self, model: "nn.Module", backward_hooks: bool = False) -> None:
         """Install scope hooks on all modules for hierarchy tracking.
 
         Each hook sets the CrucibleState TLS scope_hash to the FNV-1a hash
@@ -472,6 +777,7 @@ class CrucibleNative:
             raise RuntimeError("track_modules() requires active CrucibleNative context")
 
         self._remove_hooks()  # clean any previous hooks
+        self._scope_model = model
 
         for name, module in model.named_modules():
             if not name:
@@ -493,22 +799,29 @@ class CrucibleNative:
         if self._verbose:
             n_modules = len(self._scope_names)
             kind = "fwd+bwd" if backward_hooks else "fwd-only"
-            print(f"[crucible] tracking {n_modules} modules "
-                  f"({len(self._hook_handles)} hooks, {kind})")
+            log.info("[crucible] tracking %d modules (%d hooks, %s)",
+                     n_modules, len(self._hook_handles), kind)
 
-    def _make_forward_hook(self, scope_hash: int):
+    def _make_forward_hook(self, scope_hash: int) -> Callable[..., None]:
+        """Build the forward pre-hook that names one module's scope."""
         dispatch = self._dispatch
-        def hook(module, input):
+
+        def hook(module: "nn.Module", input: Any) -> None:
+            """Set the scope hash the next recorded operations carry."""
             dispatch.set_scope(scope_hash)
         return hook
 
-    def _make_backward_hook(self, scope_hash: int):
+    def _make_backward_hook(self, scope_hash: int) -> Callable[..., None]:
+        """Build the backward pre-hook that names one module's scope."""
         dispatch = self._dispatch
-        def hook(module, grad_output):
+
+        def hook(module: "nn.Module", grad_output: Any) -> None:
+            """Set the scope hash the next recorded operations carry."""
             dispatch.set_scope(scope_hash)
         return hook
 
-    def _remove_hooks(self):
+    def _remove_hooks(self) -> None:
+        """Remove every scope hook this controller installed."""
         for h in self._hook_handles:
             h.remove()
         self._hook_handles.clear()
@@ -533,8 +846,8 @@ class CrucibleNative:
         if num_ops == 0:
             if self._verbose:
                 bg_iters = self._vessel.bg_iterations(self._handle)
-                print(f"[crucible] no active region (bg_iterations={bg_iters})")
-                print("[crucible] need 2+ complete iterations for detection")
+                log.info("[crucible] no active region (bg_iterations=%d)", bg_iters)
+                log.info("[crucible] need 2+ complete iterations for detection")
             return False
 
         # Bridge schema names from dispatch lib to vessel lib.
@@ -547,12 +860,12 @@ class CrucibleNative:
         ok = self._vessel.export_crtrace(self._handle, path)
         if self._verbose:
             if ok:
-                print(f"[crucible] exported {num_ops} ops to {path}")
+                log.info("[crucible] exported %d ops to %s", num_ops, path)
             else:
-                print(f"[crucible] export failed: {path}")
+                log.error("[crucible] export failed: %s", path)
         return ok
 
-    def _bridge_schema_names(self):
+    def _bridge_schema_names(self) -> None:
         """Copy schema names from dispatch lib's table to vessel lib's table.
 
         Both libraries have independent copies of global_schema_table()
@@ -566,35 +879,42 @@ class CrucibleNative:
         for schema_hash, name in entries:
             self._vessel.register_schema_name(schema_hash, name)
         if self._verbose and entries:
-            print(f"[crucible] bridged {len(entries)} schema names "
-                  f"from dispatch lib to vessel lib")
+            log.info("[crucible] bridged %d schema names from dispatch lib "
+                     "to vessel lib", len(entries))
 
     # ── Queries ──────────────────────────────────────────────────────
 
-    def flush(self):
+    def flush(self) -> None:
         """Wait until bg thread has fully processed all recorded ops."""
         if self._vessel and self._handle:
             self._vessel.flush(self._handle)
 
     def is_compiled(self) -> bool:
+        """True once the Vigil replays a region instead of recording one."""
         return bool(self._vessel and self._vessel.is_compiled(self._handle))
 
     def compiled_iterations(self) -> int:
+        """The number of iterations the Vigil has replayed."""
         return self._vessel.compiled_iterations(self._handle) if self._vessel else 0
 
     def diverged_count(self) -> int:
+        """The number of times a replayed operation failed its guard."""
         return self._vessel.diverged_count(self._handle) if self._vessel else 0
 
     def bg_iterations(self) -> int:
+        """The number of iteration boundaries the background thread found."""
         return self._vessel.bg_iterations(self._handle) if self._vessel else 0
 
     def ring_size(self) -> int:
+        """The number of entries waiting in the TraceRing."""
         return self._vessel.ring_size(self._handle) if self._vessel else 0
 
     def metalog_size(self) -> int:
+        """The number of entries waiting in the MetaLog."""
         return self._vessel.metalog_size(self._handle) if self._vessel else 0
 
     def active_num_ops(self) -> int:
+        """The number of operations in the active region."""
         return self._vessel.active_num_ops(self._handle) if self._vessel else 0
 
     # ── Autograd engine serialisation ────────────────────────────────
@@ -638,17 +958,19 @@ class CrucibleNative:
     # aten::_foreach_mul_.Scalar from the optimizer.
     #
     # Replaying a stream needs the same single producer that recorded it.
-    # That is the rule the condition here encodes.
+    # That is the rule the Tensor.backward wrapper encodes: it arms the guard
+    # across every window, whichever mode the Vigil is in.
 
-    def _arm_backward_serialisation(self):
+    def _arm_backward_serialisation(self) -> None:
         """Make the next backward pass run on this thread alone."""
         if self._mt_guard is not None:
             return
         guard = torch.autograd.set_multithreading_enabled(False)
         guard.__enter__()
         self._mt_guard = guard
+        self._serialised_windows += 1
 
-    def _disarm_backward_serialisation(self):
+    def _disarm_backward_serialisation(self) -> None:
         """Give the backward pass its worker threads back."""
         guard, self._mt_guard = self._mt_guard, None
         if guard is not None:
@@ -660,14 +982,15 @@ class CrucibleNative:
         return self._mt_guard is not None
 
     @contextlib.contextmanager
-    def recording_backward(self):
+    def recording_backward(self) -> Iterator["CrucibleNative"]:
         """Serialise the autograd engine across one backward pass.
 
-        A loop that does not call set_training_phase wraps backward() in
-        this instead:
+        The Tensor.backward wrapper uses this, so a loop that writes
+        loss.backward() gets it without asking.  A loop that reaches the engine
+        another way asks for it:
 
             with ctx.recording_backward():
-                loss.backward()
+                torch.autograd.backward(loss)
 
         The body runs on one thread whether the Vigil records the window or
         replays it.  Refer to the note above.
@@ -683,34 +1006,61 @@ class CrucibleNative:
             if armed_here:
                 self._disarm_backward_serialisation()
 
-    def set_training_phase(self, phase: int):
-        """Set the training phase for subsequent ops (op_flags bits 2-3).
-
-        Call this between training phases so the trace records which ops
-        belong to forward, backward, or optimizer passes:
-
-            ctx.set_training_phase(ctx.PHASE_FORWARD)
-            out = model(x)
-            ctx.set_training_phase(ctx.PHASE_BACKWARD)
-            loss.backward()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
-            optimizer.step()
-
-        The backward phase also serialises the autograd engine, which is
-        what puts the backward window of an accelerator model into the
-        trace and what keeps a replayed iteration walking the same
-        operations.  Refer to the note above this method.  A loop that
-        never calls this keeps the default engine, and its trace keeps the
-        backward gap.
-        """
-        if phase == self.PHASE_BACKWARD:
-            self._arm_backward_serialisation()
-        else:
-            self._disarm_backward_serialisation()
-        if self._dispatch:
-            self._dispatch.set_training_phase(phase)
-
     @property
     def scope_names(self) -> dict[int, str]:
         """Map of scope_hash -> module path for all tracked modules."""
         return self._scope_names
+
+
+# =====================================================================
+# attach — the way in
+# =====================================================================
+
+def attach(model: "nn.Module",
+           optimizer: "optim.Optimizer | None" = None,
+           loader: Iterable[Any] | None = None,
+           device: "torch.device | str | None" = None,
+           *,
+           verbose: bool = False,
+           vessel_lib_path: str | None = None,
+           dispatch_lib_path: str | None = None) -> CrucibleNative:
+    """Put the recorder on one training loop and return the live controller.
+
+    The controller comes back active, so both spellings work:
+
+        ctx = attach(model, optimizer, device="cuda:0")
+        ...
+        ctx.detach()
+
+        with attach(model, optimizer, device="cuda:0") as ctx:
+            ...
+
+    Args:
+        model: The model to record.  attach moves it to the device when one is
+            named, keeps torch.compile off it, and tracks its module hierarchy
+        optimizer: The optimizer of the loop, held for reference and checked
+            against the phase derivation.  None when the loop has none
+        loader: The data source of the loop, held for reference.  Nothing reads
+            it yet: absorbing the input pipeline is a later layer of the runtime
+        device: Where the model runs.  None leaves the model where it is, which
+            is what a loop that places its own parameters wants
+        verbose: Log the lifecycle of the recorder
+        vessel_lib_path: An explicit path to libcrucible_vessel.so
+        dispatch_lib_path: An explicit path to libcrucible_dispatch.so
+
+    Returns:
+        The active controller
+
+    Raises:
+        RuntimeError: If the PyTorch build carries no DispatchKey::Crucible
+    """
+    controller = CrucibleNative(vessel_lib_path=vessel_lib_path,
+                                dispatch_lib_path=dispatch_lib_path,
+                                verbose=verbose)
+    controller.__enter__()
+    try:
+        controller.bind(model, optimizer, loader, device)
+    except BaseException:
+        controller.detach()
+        raise
+    return controller

@@ -5,26 +5,52 @@ Uses DispatchKey::Crucible to intercept ALL ATen ops (forward, backward,
 optimizer) at ~100ns/op.  SD 1.5 UNet: ~860M params, cross-attention,
 U-shaped encoder/decoder with skip connections.
 
+attach() enables the key, tracks the module hierarchy and wraps
+Tensor.backward, so the loop is the loop a reader already writes.  The phase
+of each operation is derived from that rather than declared.
+
+Requires diffusers.
+
 Output: traces/sd15_unet.crtrace
 
 Usage:
     PYTHONPATH=~/Downloads/pytorch python record_sd15_unet.py
 """
 
+import logging
 import sys
 import time
+from pathlib import Path
 
 import torch
 
-from crucible_native import CrucibleNative
+from crucible_native import attach
 
 
-def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "traces/sd15_unet.crtrace"
+log = logging.getLogger("crucible.record_sd15_unet")
 
-    print("=" * 60)
-    print("Crucible Vessel — SD 1.5 UNet (native C++ dispatch)")
-    print("=" * 60)
+
+def configure_logging() -> None:
+    """Send this script's report and the recorder's log to stdout."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    for name in ("crucible.record_sd15_unet", "crucible_native"):
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+
+
+def main() -> None:
+    """Train the SD 1.5 UNet for four iterations and export the region."""
+    configure_logging()
+    out_path = Path(sys.argv[1] if len(sys.argv) > 1
+                    else "traces/sd15_unet.crtrace")
+
+    log.info("=" * 60)
+    log.info("Crucible Vessel — SD 1.5 UNet (native C++ dispatch)")
+    log.info("=" * 60)
 
     from diffusers import UNet2DConditionModel
 
@@ -60,7 +86,7 @@ def main():
     model.train()
 
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Model: SD 1.5 UNet, {n_params:,} params")
+    log.info("Model: SD 1.5 UNet, %s params", f"{n_params:,}")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     torch.manual_seed(42)
@@ -71,32 +97,26 @@ def main():
     encoder_hidden_states = torch.randn(batch, 77, 768)
     target_noise = torch.randn_like(latents)
 
-    with CrucibleNative(verbose=True) as ctx:
-        ctx.track_modules(model)
-
+    with attach(model, optimizer, verbose=True) as ctx:
         for i in range(4):
             t0 = time.perf_counter()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.zero_grad()
-            ctx.set_training_phase(ctx.PHASE_FORWARD)
             pred = model(latents, timesteps, encoder_hidden_states).sample
             loss = torch.nn.functional.mse_loss(pred, target_noise)
-            ctx.set_training_phase(ctx.PHASE_BACKWARD)
             loss.backward()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.step()
             dt = (time.perf_counter() - t0) * 1000
-            print(f"  iter {i}: loss={loss.item():.4f} ({dt:.1f}ms) "
-                  f"bg_iters={ctx.bg_iterations()} compiled={ctx.is_compiled()}")
+            log.info("  iter %d: loss=%.4f (%.1fms) bg_iters=%d compiled=%s",
+                     i, loss.item(), dt, ctx.bg_iterations(), ctx.is_compiled())
 
-        ok = ctx.export_trace(out_path)
+        ok = ctx.export_trace(str(out_path))
         num_ops = ctx.active_num_ops()
 
     if ok:
-        import os
-        sz = os.path.getsize(out_path)
-        print(f"\n  {out_path}: {sz:,} bytes, {num_ops} ops")
-    print("=" * 60)
+        log.info("")
+        log.info("  %s: %s bytes, %d ops", out_path,
+                 f"{out_path.stat().st_size:,}", num_ops)
+    log.info("=" * 60)
 
 
 if __name__ == "__main__":

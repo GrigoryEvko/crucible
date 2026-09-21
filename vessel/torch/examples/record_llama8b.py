@@ -5,26 +5,52 @@ Uses DispatchKey::Crucible to intercept ALL ATen ops (forward, backward,
 optimizer) at ~100ns/op.  Llama 3.1 8B: 32 layers, GQA (32Q/8KV), RoPE,
 SwiGLU, ~8.03B params.  Uses batch=1, seq=128 to fit in CPU RAM.
 
+attach() enables the key, tracks the module hierarchy and wraps
+Tensor.backward, so the loop is the loop a reader already writes.  The phase
+of each operation is derived from that rather than declared.
+
+Requires transformers.
+
 Output: traces/llama8b.crtrace
 
 Usage:
     PYTHONPATH=~/Downloads/pytorch python record_llama8b.py
 """
 
+import logging
 import sys
 import time
+from pathlib import Path
 
 import torch
 
-from crucible_native import CrucibleNative
+from crucible_native import attach
 
 
-def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "traces/llama8b.crtrace"
+log = logging.getLogger("crucible.record_llama8b")
 
-    print("=" * 60)
-    print("Crucible Vessel — Llama 3.1 8B (native C++ dispatch)")
-    print("=" * 60)
+
+def configure_logging() -> None:
+    """Send this script's report and the recorder's log to stdout."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    for name in ("crucible.record_llama8b", "crucible_native"):
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+
+
+def main() -> None:
+    """Train Llama 3.1 8B for four iterations and export the region."""
+    configure_logging()
+    out_path = Path(sys.argv[1] if len(sys.argv) > 1
+                    else "traces/llama8b.crtrace")
+
+    log.info("=" * 60)
+    log.info("Crucible Vessel — Llama 3.1 8B (native C++ dispatch)")
+    log.info("=" * 60)
 
     from transformers import LlamaForCausalLM, LlamaConfig
 
@@ -46,7 +72,8 @@ def main():
     model.train()
 
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Model: Llama 3.1 8B (32L, d=4096, h=32, kv=8), {n_params:,} params")
+    log.info("Model: Llama 3.1 8B (32L, d=4096, h=32, kv=8), %s params",
+             f"{n_params:,}")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
     torch.manual_seed(42)
@@ -55,31 +82,26 @@ def main():
     input_ids = torch.randint(0, config.vocab_size, (1, seq_len))
     labels = input_ids.clone()
 
-    with CrucibleNative(verbose=True) as ctx:
-        ctx.track_modules(model)
-
+    with attach(model, optimizer, verbose=True) as ctx:
         for i in range(4):
             t0 = time.perf_counter()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.zero_grad()
-            ctx.set_training_phase(ctx.PHASE_FORWARD)
             out = model(input_ids, labels=labels)
-            ctx.set_training_phase(ctx.PHASE_BACKWARD)
             out.loss.backward()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.step()
             dt = (time.perf_counter() - t0) * 1000
-            print(f"  iter {i}: loss={out.loss.item():.4f} ({dt:.1f}ms) "
-                  f"bg_iters={ctx.bg_iterations()} compiled={ctx.is_compiled()}")
+            log.info("  iter %d: loss=%.4f (%.1fms) bg_iters=%d compiled=%s",
+                     i, out.loss.item(), dt, ctx.bg_iterations(),
+                     ctx.is_compiled())
 
-        ok = ctx.export_trace(out_path)
+        ok = ctx.export_trace(str(out_path))
         num_ops = ctx.active_num_ops()
 
     if ok:
-        import os
-        sz = os.path.getsize(out_path)
-        print(f"\n  {out_path}: {sz:,} bytes, {num_ops} ops")
-    print("=" * 60)
+        log.info("")
+        log.info("  %s: %s bytes, %d ops", out_path,
+                 f"{out_path.stat().st_size:,}", num_ops)
+    log.info("=" * 60)
 
 
 if __name__ == "__main__":

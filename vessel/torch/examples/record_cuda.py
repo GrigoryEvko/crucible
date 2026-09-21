@@ -4,10 +4,10 @@
 A backward pass runs on the thread that called backward() for host
 tensors, and on a per-device worker thread for accelerator tensors. The
 ring is single-producer, so every thread but the first is turned away and
-the window it produced is missing from the trace. CrucibleNative closes
-that by serialising the autograd engine across every backward window it
-records or replays. This script measures the result instead of taking it
-on faith.
+the window it produced is missing from the trace. attach() closes that
+with its Tensor.backward wrapper, which serialises the autograd engine
+across every backward window the Vigil records or replays. This script
+measures the result instead of taking it on faith.
 
 Three arms, and the shapes are the point:
 
@@ -32,6 +32,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -42,13 +43,36 @@ import torch
 import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from crucible_native import CrucibleNative  # noqa: E402
+from crucible_native import attach  # noqa: E402
+
+
+log = logging.getLogger("crucible.record_cuda")
+
+
+def configure_logging(verbose: bool) -> None:
+    """Send this script's report and the recorder's log to stdout.
+
+    One handler for both loggers, so the two streams interleave in the order
+    they were written. The format carries the message alone, because the lines
+    below are the report of this script rather than a diagnostic trail.
+    """
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    for name, level in (("crucible.record_cuda", logging.INFO),
+                        ("crucible_native",
+                         logging.INFO if verbose else logging.WARNING)):
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.addHandler(handler)
+        logger.setLevel(level)
+        logger.propagate = False
 
 
 class Block(nn.Module):
     """One pre-norm transformer block with self-attention and an MLP."""
 
-    def __init__(self, d_model: int, n_heads: int, d_ff: int):
+    def __init__(self, d_model: int, n_heads: int, d_ff: int) -> None:
+        """Build the two norms, the attention and the MLP of one block."""
         super().__init__()
         self.ln1 = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
@@ -57,7 +81,8 @@ class Block(nn.Module):
             nn.Linear(d_model, d_ff), nn.GELU(), nn.Linear(d_ff, d_model)
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Attention and the MLP, each around a residual connection."""
         h = self.ln1(x)
         x = x + self.attn(h, h, h, need_weights=False)[0]
         return x + self.mlp(self.ln2(x))
@@ -68,7 +93,8 @@ class MiniGPT(nn.Module):
 
     def __init__(self, vocab: int, d_model: int, n_heads: int,
                  n_layers: int, d_ff: int, max_seq: int,
-                 host_embedding: bool = False):
+                 host_embedding: bool = False) -> None:
+        """Build the embeddings, the blocks, the final norm and the head."""
         super().__init__()
         self.tok_emb = nn.Embedding(vocab, d_model)
         self.pos_emb = nn.Embedding(max_seq, d_model)
@@ -84,7 +110,8 @@ class MiniGPT(nn.Module):
         # two threads.
         self.host_embedding = host_embedding
 
-    def forward(self, idx):
+    def forward(self, idx: torch.Tensor) -> torch.Tensor:
+        """Embed the tokens, run the blocks, and project to the vocabulary."""
         _, seq_len = idx.shape
         if self.host_embedding:
             tok = self.tok_emb(idx.to("cpu")).to(idx.device)
@@ -131,42 +158,51 @@ def run_arm(device: str, iters: int, out_path: str, verbose: bool,
     idx = torch.randint(0, 128, (4, 16), device=device)
     tgt = torch.randint(0, 128, (4, 16), device=device)
 
-    serialised_iters = 0
-    with CrucibleNative(verbose=verbose) as ctx:
-        ctx.track_modules(model)
+    # No device argument: run_arm has already placed the parameters, and the
+    # host_embedding arm placed one of them somewhere else on purpose. attach
+    # leaves a model where it is when no device is named, which is what that
+    # split needs.
+    with attach(model, opt, verbose=verbose) as ctx:
         for i in range(iters):
             t0 = time.perf_counter()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             opt.zero_grad()
-            ctx.set_training_phase(ctx.PHASE_FORWARD)
             logits = model(idx)
             loss = loss_fn(logits.reshape(-1, 128), tgt.reshape(-1))
-            ctx.set_training_phase(ctx.PHASE_BACKWARD)
-            # The guard must hold the engine on this thread for every
+            windows_before = ctx.serialised_backward_windows
+            loss.backward()
+            # The wrapper must hold the engine on this thread for every
             # backward window, the replayed ones included. A replayed
             # dispatch records nothing but it does advance the replay
             # cursor, and a window that keeps its worker threads never
             # reaches that cursor, so the first op after the window fails
             # its guard. A silent failure to arm would show up only as a
-            # divergence much later, so it is checked here.
-            assert ctx.backward_serialised, (
-                "the backward phase did not serialise the autograd engine"
+            # divergence much later, so it is checked here, once per window.
+            #
+            # The count is what the check reads. The guard is released by the
+            # time this line runs, so its own state can no longer say whether
+            # the window it covered was serialised.
+            assert ctx.serialised_backward_windows == windows_before + 1, (
+                "the backward window did not serialise the autograd engine"
             )
-            serialised_iters += int(ctx.backward_serialised)
-            loss.backward()
-            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             assert not ctx.backward_serialised, (
-                "leaving the backward phase must give the engine its "
+                "leaving the backward window must give the engine its "
                 "worker threads back"
+            )
+            # The C++ side derives the BACKWARD phase from this counter, so a
+            # window that closed must leave it at zero. A counter stuck above
+            # zero would label every later operation backward.
+            assert ctx.backward_depth() == 0, (
+                "the backward window did not close"
             )
             opt.step()
             if device.startswith("cuda"):
                 torch.cuda.synchronize(device)
             dt = (time.perf_counter() - t0) * 1000
-            print(f"    iter {i}: loss={loss.item():.4f} ({dt:6.1f} ms) "
-                  f"bg_iters={ctx.bg_iterations()} "
-                  f"compiled={ctx.is_compiled()}")
+            log.info("    iter %d: loss=%.4f (%6.1f ms) bg_iters=%d "
+                     "compiled=%s", i, loss.item(), dt, ctx.bg_iterations(),
+                     ctx.is_compiled())
 
+        serialised_iters = ctx.serialised_backward_windows
         schemas = {name for _, name in ctx._dispatch.schema_entries()}
         result = {
             "device": device,
@@ -263,36 +299,40 @@ def compare(cpu: dict, arm: dict, iters: int, label: str) -> bool:
     floor_ok = (cpu["num_ops"] > 0
                 and arm["num_ops"] >= REGION_FLOOR * cpu["num_ops"])
 
-    print(f"--- {label} against the cpu control ---")
-    print(f"  schemas: cpu={len(cpu['schemas'])} {label}={len(arm['schemas'])}")
-    print(f"  region_ops: cpu={cpu['num_ops']} {label}={arm['num_ops']} "
-          f"({ratio:.1%} of the control, floor {REGION_FLOOR:.0%})")
-    print(f"  backward windows serialised: {arm['serialised_iters']} of {iters}")
-    print(f"  recorded on cpu but not here: {len(missing)}  "
-          f"({len(missing) - len(gap)} device-specific, {len(gap)} a gap)")
+    log.info("--- %s against the cpu control ---", label)
+    log.info("  schemas: cpu=%d %s=%d",
+             len(cpu["schemas"]), label, len(arm["schemas"]))
+    log.info("  region_ops: cpu=%d %s=%d (%.1f%% of the control, floor %.0f%%)",
+             cpu["num_ops"], label, arm["num_ops"], ratio * 100,
+             REGION_FLOOR * 100)
+    log.info("  backward windows serialised: %d of %d",
+             arm["serialised_iters"], iters)
+    log.info("  recorded on cpu but not here: %d  (%d device-specific, %d a gap)",
+             len(missing), len(missing) - len(gap), len(gap))
     for name in missing:
-        print(f"      - {name}")
+        log.info("      - %s", name)
     if extra:
-        print(f"  recorded here but not on cpu: {len(extra)}")
+        log.info("  recorded here but not on cpu: %d", len(extra))
         for name in extra:
-            print(f"      + {name}")
+            log.info("      + %s", name)
     if backward_gap:
-        print(f"  MISSING BACKWARD SCHEMAS: {len(backward_gap)}")
+        log.info("  MISSING BACKWARD SCHEMAS: %d", len(backward_gap))
         for name in backward_gap:
-            print(f"      {name}")
-    print(f"  missing backward schemas = {len(backward_gap)} "
-          f"[{'PASS' if backward_ok else 'FAIL'}]")
-    print(f"  replay: compiled={arm['compiled']} diverged={arm['diverged']} "
-          f"[{'PASS' if replay_ok else 'FAIL'}]")
-    print(f"  every backward window serialised "
-          f"[{'PASS' if serialised_ok else 'FAIL'}]")
-    print(f"  region_ops at or above the floor "
-          f"[{'PASS' if floor_ok else 'FAIL'}]")
-    print()
+            log.info("      %s", name)
+    log.info("  missing backward schemas = %d [%s]",
+             len(backward_gap), "PASS" if backward_ok else "FAIL")
+    log.info("  replay: compiled=%s diverged=%d [%s]",
+             arm["compiled"], arm["diverged"], "PASS" if replay_ok else "FAIL")
+    log.info("  every backward window serialised [%s]",
+             "PASS" if serialised_ok else "FAIL")
+    log.info("  region_ops at or above the floor [%s]",
+             "PASS" if floor_ok else "FAIL")
+    log.info("")
     return backward_ok and replay_ok and serialised_ok and floor_ok
 
 
 def main() -> int:
+    """Run every arm, compare each against the control, and return the verdict."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--iters", type=int, default=4)
@@ -306,6 +346,7 @@ def main() -> int:
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
+    configure_logging(args.verbose)
     os.makedirs(args.outdir, exist_ok=True)
 
     # One arm per process. The dispatch library's schema table is a
@@ -328,31 +369,33 @@ def main() -> int:
             json.dump(result, fh)
         return 0
 
-    print("=" * 66)
-    print(f"Crucible — accelerator backward window  (torch {torch.__version__})")
-    print("=" * 66)
+    log.info("=" * 66)
+    log.info("Crucible — accelerator backward window  (torch %s)",
+             torch.__version__)
+    log.info("=" * 66)
 
     if args.device.startswith("cuda"):
         if not torch.cuda.is_available():
-            print("CUDA is not available")
+            log.error("CUDA is not available")
             return 1
         ordinal = int(args.device.split(":")[1]) if ":" in args.device else 0
         free, total = torch.cuda.mem_get_info(ordinal)
-        print(f"{args.device}: {torch.cuda.get_device_name(ordinal)}")
-        print(f"  free {free / 2**30:.1f} GiB of {total / 2**30:.1f} GiB")
+        log.info("%s: %s", args.device, torch.cuda.get_device_name(ordinal))
+        log.info("  free %.1f GiB of %.1f GiB", free / 2**30, total / 2**30)
         if args.frac > 0:
-            print(f"  this process is capped at {args.frac:.0%} of total")
-    print()
+            log.info("  this process is capped at %.0f%% of total",
+                     args.frac * 100)
+    log.info("")
 
     # The mixed arm is the one that separates a real fix from one that
     # only holds where a single worker thread produced the whole backward
     # pass. It runs last so its numbers sit next to the verdict.
     labels = ["cpu", args.device, f"{args.device}+host"]
 
-    arms = {}
+    arms: dict[str, dict] = {}
     with tempfile.TemporaryDirectory() as tmp:
         for label in labels:
-            print(f"--- {label} ---")
+            log.info("--- %s ---", label)
             out_json = os.path.join(tmp, label.replace(":", "").replace("+", "_") + ".json")
             cmd = [sys.executable, os.path.abspath(__file__),
                    "--arm", label, "--json", out_json,
@@ -362,22 +405,23 @@ def main() -> int:
                 cmd.append("--verbose")
             rc = subprocess.call(cmd)
             if rc != 0:
-                print(f"  arm {label} exited {rc}")
+                log.error("  arm %s exited %d", label, rc)
                 return rc
             with open(out_json) as fh:
                 arms[label] = json.load(fh)
             arms[label]["schemas"] = set(arms[label]["schemas"])
-            print()
+            log.info("")
 
-    print("=" * 66)
-    print("RESULT")
-    print("=" * 66)
+    log.info("=" * 66)
+    log.info("RESULT")
+    log.info("=" * 66)
     for label in labels:
         r = arms[label]
-        print(f"  {label:>14}: {len(r['schemas']):4d} distinct schemas  "
-              f"region_ops={r['num_ops']:4d}  bg_iters={r['bg_iters']:3d}  "
-              f"compiled={r['compiled']}  diverged={r['diverged']}")
-    print()
+        log.info("  %14s: %4d distinct schemas  region_ops=%4d  bg_iters=%3d  "
+                 "compiled=%s  diverged=%d",
+                 label, len(r["schemas"]), r["num_ops"], r["bg_iters"],
+                 r["compiled"], r["diverged"])
+    log.info("")
 
     cpu = arms["cpu"]
     # Every check in compare() reads the control: the schema comparison takes
@@ -389,13 +433,14 @@ def main() -> int:
     verdicts.update({label: compare(cpu, arms[label], args.iters, label)
                      for label in labels[1:]})
 
-    print("=" * 66)
+    log.info("=" * 66)
     for label, ok in verdicts.items():
-        print(f"  {label:>14}: {'PASS' if ok else 'FAIL'}")
+        log.info("  %14s: %s", label, "PASS" if ok else "FAIL")
     all_ok = all(verdicts.values())
-    print()
-    print("VERDICT:", "every shape records the backward window and replays it"
-          if all_ok else "a shape is still short of the control")
+    log.info("")
+    log.info("VERDICT: %s",
+             "every shape records the backward window and replays it" if all_ok
+             else "a shape is still short of the control")
     return 0 if all_ok else 1
 
 
