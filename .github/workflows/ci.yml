@@ -561,6 +561,24 @@ jobs:
             echo "::error::the last functionality key is '$last_key', not Crucible -- upstream appended a key after it and Crucible is no longer top dispatch priority"; exit 1; }
           rm -f c10/core/CrucibleState.cpp c10/core/*.rej c10/core/*.orig
 
+          # The two assertions below read the patch FILE, not the tree the
+          # patch was just applied to, because neither hunk can land in a
+          # wheel's header copy:
+          #   - the DEF_ONE hunk edits torch/csrc/utils/python_dispatch.cpp,
+          #     and a header tree ships no .cpp;
+          #   - the ThreadLocalState hunk is spelled aten/src/ATen/... in a
+          #     source tree, and the wheel keeps that header at ATen/..., so
+          #     -p1 finds no file and skips it.
+          # They are drift gates on the patch: a regenerated patch that loses
+          # either hunk reddens here instead of at the next rebuild of the
+          # fork, where the symptom is a missing Python enum name or a silent
+          # INACTIVE mode on the autograd engine's worker threads.
+          PATCH="$GITHUB_WORKSPACE/patches/pytorch-crucible-integration.patch"
+          grep -q '^+      DEF_ONE(Crucible)' "$PATCH" || {
+            echo "::error::the patch no longer adds DEF_ONE(Crucible) to the pybind DispatchKey enum -- torch._C.DispatchKey.Crucible would not exist and _parse_dispatch_key would print DispatchKey.???"; exit 1; }
+          grep -q '^+  c10::CrucibleState crucible_tls_;' "$PATCH" || {
+            echo "::error::the patch no longer adds the c10::CrucibleState member to at::ThreadLocalState -- the mode and the context stop travelling to the autograd engine's per-device workers, and the backward window of an accelerator model drops out of the trace"; exit 1; }
+
       - name: Configure with TORCH_DIR
         run: >
           cmake --preset default

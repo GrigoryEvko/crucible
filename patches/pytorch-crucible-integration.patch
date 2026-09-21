@@ -1,5 +1,28 @@
 Do not touch this patch. It was hand-verified and it worked.
 
+The patch has eleven hunks. It had five. The six new ones carry the recorder
+past the dispatch key, into Python and into the autograd engine:
+
+  - torch/csrc/utils/python_dispatch.cpp adds a Crucible entry to the pybind
+    enum, so torch._C.DispatchKey.Crucible exists. Before it, only
+    torch._C._parse_dispatch_key("Crucible") answered.
+  - aten/src/ATen/ThreadLocalState.{h,cpp} carry c10::CrucibleState across a
+    thread boundary. The dispatch key already traveled, so the engine's
+    per-device worker fired the fallback and then read an INACTIVE mode. The
+    backward window of a model on an accelerator was absent from the trace
+    for that one reason.
+  - c10/core/CrucibleState.h adds a dispatcher re-entry depth and a Python
+    callsite pair, with the accessors for both. The recording kernels append
+    at depth 0.
+  - torch/csrc/crucible/PythonCallsite.h holds the one helper that reads the
+    frame. The two files below call it before they release the GIL, because
+    PyEval_GetFrame needs the GIL.
+  - tools/autograd/templates/python_variable_methods.cpp (17 call sites) and
+    torch/csrc/autograd/python_torch_functions_manual.cpp (5 call sites) are
+    the hand-written Tensor.* and torch.* surfaces. The generated wrappers
+    come from tools/autograd/gen_python_functions.py, and this patch leaves
+    that file alone.
+
 Crucible takes DeferredInit's enum slot. torchdistx has been orphaned for three
 years, so the slot was dead, and the 64-bit key budget keeps its headroom.
 
@@ -8,12 +31,94 @@ dispatch priority. Every ATen op hits it before PreDispatch, functorch,
 autocast, autograd or any backend can decompose or wrap it. Duplicate records
 are the price. Do not move it down the enum.
 
+diff --git a/aten/src/ATen/ThreadLocalState.cpp b/aten/src/ATen/ThreadLocalState.cpp
+index 9f4ff8e4a63..328a7d51da3 100644
+--- a/aten/src/ATen/ThreadLocalState.cpp
++++ b/aten/src/ATen/ThreadLocalState.cpp
+@@ -16,6 +16,7 @@ ThreadLocalState::ThreadLocalState()
+       debug_info_(c10::ThreadLocalDebugInfo::current()),
+       rf_tls_(at::get_record_function_tls_()), functorch_tls_(functorch::getCopyOfFuncTorchTLS()),
+       autograd_tls_(c10::AutogradState::get_tls_state()),
++      crucible_tls_(c10::CrucibleState::get_tls_state()),
+       torch_dispatch_mode_state_(c10::impl::TorchDispatchModeTLS::get_state()), python_dispatcher_state_(c10::impl::PythonDispatcherTLS::get_state()),
+       python_torch_function_state_(at::impl::PythonTorchFunctionTLS::get_state()),
+       saved_tensors_default_hooks_state_(at::SavedTensorDefaultHooks::get_tls_state()),
+@@ -45,6 +46,8 @@ void ThreadLocalState::setThreadLocalState(
+   // restore the dispatch key set TLS at the same time.
+   c10::AutogradState::set_tls_state(state.autograd_tls_);
+ 
++  c10::CrucibleState::set_tls_state(state.crucible_tls_);
++
+   c10::impl::TorchDispatchModeTLS::set_state(state.torch_dispatch_mode_state_);
+ 
+   at::impl::PythonTorchFunctionTLS::set_state(state.python_torch_function_state_);
+diff --git a/aten/src/ATen/ThreadLocalState.h b/aten/src/ATen/ThreadLocalState.h
+index 59bf0fc24ac..db37e7cc8bc 100644
+--- a/aten/src/ATen/ThreadLocalState.h
++++ b/aten/src/ATen/ThreadLocalState.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <c10/core/CrucibleState.h>
+ #include <c10/core/InferenceMode.h>
+ #include <c10/core/impl/LocalDispatchKeySet.h>
+ #include <c10/util/Exception.h>
+@@ -62,6 +63,17 @@ class TORCH_API ThreadLocalState {
+   // TLS for AutogradModes
+   AutogradState autograd_tls_;
+ 
++  // TLS for Crucible.
++  //
++  // c10::impl::LocalDispatchKeySet above already travels, so a worker
++  // thread of the autograd engine receives DispatchKey::Crucible and
++  // the fallback fires there. Without this member the same worker read
++  // an INACTIVE mode and a null context, so every operator of a
++  // backward pass over accelerator tensors left the recording path at
++  // the mode branch. Carrying the state with the rest of the TLS is
++  // what puts the backward window in front of the recorder.
++  c10::CrucibleState crucible_tls_;
++
+   // TLS for enable_torch_dispatch_mode
+   c10::impl::TorchDispatchModeTLS torch_dispatch_mode_state_;
+ 
+diff --git a/c10/core/CrucibleState.cpp b/c10/core/CrucibleState.cpp
+new file mode 100644
+index 00000000000..98b176681ac
+--- /dev/null
++++ b/c10/core/CrucibleState.cpp
+@@ -0,0 +1,26 @@
++#include <c10/core/CrucibleState.h>
++
++namespace c10 {
++
++namespace {
++thread_local CrucibleState crucible_state_tls;
++} // namespace
++
++CrucibleState& CrucibleState::get_tls_state() {
++  return crucible_state_tls;
++}
++
++void CrucibleState::set_tls_state(CrucibleState state) {
++  crucible_state_tls = state;
++}
++
++CrucibleModeGuard::CrucibleModeGuard(CrucibleMode mode)
++    : prev_(CrucibleState::get_tls_state()) {
++  CrucibleState::get_tls_state().set_mode(mode);
++}
++
++CrucibleModeGuard::~CrucibleModeGuard() {
++  CrucibleState::set_tls_state(prev_);
++}
++
++} // namespace c10
 diff --git a/c10/core/CrucibleState.h b/c10/core/CrucibleState.h
 new file mode 100644
-index 00000000000..23d27c1939a
+index 00000000000..0a5e52847b7
 --- /dev/null
 +++ b/c10/core/CrucibleState.h
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,139 @@
 +#pragma once
 +
 +#include <c10/macros/Export.h>
@@ -93,11 +198,46 @@ index 00000000000..23d27c1939a
 +    scope_hash_ = h;
 +  }
 +
++  // Dispatcher re-entry depth. Zero is an operator the caller spelled;
++  // a greater value is an operator a kernel above it dispatched while
++  // serving that call, so the two describe the same work twice. The
++  // recording kernels append at depth 0 and let the rest execute.
++  [[nodiscard]] uint16_t depth() const {
++    return depth_;
++  }
++  void set_depth(uint16_t d) {
++    depth_ = d;
++  }
++
++  // The Python callsite, as the pair (code object address, bytecode
++  // offset) that the CPython frame carried when the call left Python.
++  // The address is an identity token and nothing dereferences it: the
++  // recording kernel hashes the pair into the callsite column of the
++  // ring. A frame holds a reference to its code object for as long as
++  // it runs, so the address is stable for the duration of the call it
++  // describes. lasti is -1 when no Python frame was on the stack.
++  [[nodiscard]] const void* callsite_code() const {
++    return callsite_code_;
++  }
++  [[nodiscard]] int32_t callsite_lasti() const {
++    return callsite_lasti_;
++  }
++  // One setter for both halves. A callsite is the pair, and separate
++  // setters would let a caller pin a new code object against the
++  // bytecode offset of the previous one.
++  void set_callsite(const void* code, int32_t lasti) {
++    callsite_code_ = code;
++    callsite_lasti_ = lasti;
++  }
++
 + private:
 +  CrucibleMode mode_ = CrucibleMode::INACTIVE;
 +  void* context_ = nullptr;
 +  uint32_t op_index_ = 0;
 +  uint64_t scope_hash_ = 0;
++  const void* callsite_code_ = nullptr;
++  int32_t callsite_lasti_ = -1;
++  uint16_t depth_ = 0;
 +};
 +
 +// RAII guard that saves/restores the full CrucibleState on the
@@ -118,43 +258,11 @@ index 00000000000..23d27c1939a
 +};
 +
 +} // namespace c10
-diff --git a/c10/core/CrucibleState.cpp b/c10/core/CrucibleState.cpp
-new file mode 100644
-index 00000000000..98b176681ac
---- /dev/null
-+++ b/c10/core/CrucibleState.cpp
-@@ -0,0 +1,26 @@
-+#include <c10/core/CrucibleState.h>
-+
-+namespace c10 {
-+
-+namespace {
-+thread_local CrucibleState crucible_state_tls;
-+} // namespace
-+
-+CrucibleState& CrucibleState::get_tls_state() {
-+  return crucible_state_tls;
-+}
-+
-+void CrucibleState::set_tls_state(CrucibleState state) {
-+  crucible_state_tls = state;
-+}
-+
-+CrucibleModeGuard::CrucibleModeGuard(CrucibleMode mode)
-+    : prev_(CrucibleState::get_tls_state()) {
-+  CrucibleState::get_tls_state().set_mode(mode);
-+}
-+
-+CrucibleModeGuard::~CrucibleModeGuard() {
-+  CrucibleState::set_tls_state(prev_);
-+}
-+
-+} // namespace c10
 diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
-index 6ccde711b74..32553187192 100644
+index 887a021a4e6..af583457d67 100644
 --- a/c10/core/DispatchKey.cpp
 +++ b/c10/core/DispatchKey.cpp
-@@ -176,8 +176,8 @@ const char* toString(DispatchKey t) {
+@@ -174,8 +174,8 @@ const char* toString(DispatchKey t) {
      case DispatchKey::FuncTorchGradWrapper:
        return "FuncTorchGradWrapper";
  
@@ -165,7 +273,7 @@ index 6ccde711b74..32553187192 100644
      case DispatchKey::PythonTLSSnapshot:
        return "PythonTLSSnapshot";
  
-@@ -315,7 +315,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
+@@ -312,7 +312,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
        {"FuncTorchVmapMode", c10::DispatchKey::FuncTorchVmapMode},
        {"Batched", c10::DispatchKey::Batched},
        {"VmapMode", c10::DispatchKey::VmapMode},
@@ -175,7 +283,7 @@ index 6ccde711b74..32553187192 100644
        {"FuncTorchDynamicLayerFrontMode",
         c10::DispatchKey::FuncTorchDynamicLayerFrontMode},
 diff --git a/c10/core/DispatchKey.h b/c10/core/DispatchKey.h
-index d0445f009af..100b7ced41d 100644
+index f05fbebf681..9133dbbc797 100644
 --- a/c10/core/DispatchKey.h
 +++ b/c10/core/DispatchKey.h
 @@ -366,10 +366,6 @@ enum class DispatchKey : uint16_t {
@@ -189,8 +297,7 @@ index d0445f009af..100b7ced41d 100644
    // Used by Python key logic to know the set of tls on entry to the dispatcher
    // This kernel assumes it is the top-most non-functorch-related DispatchKey.
    // If you add a key above, make sure to update the fallback implementation for
-@@ -404,6 +400,17 @@ enum class DispatchKey : uint16_t {
-   // This is a bypass that allows you to skip running the C++ dispatcher
+@@ -405,6 +401,17 @@ enum class DispatchKey : uint16_t {
    // entirely
    PythonDispatcher,
  
@@ -207,11 +314,294 @@ index d0445f009af..100b7ced41d 100644
 +
    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ FIN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
    EndOfFunctionalityKeys, // End of functionality keys.
+ 
+diff --git a/tools/autograd/templates/python_variable_methods.cpp b/tools/autograd/templates/python_variable_methods.cpp
+index c759d753aa7..8cd911358e4 100644
+--- a/tools/autograd/templates/python_variable_methods.cpp
++++ b/tools/autograd/templates/python_variable_methods.cpp
+@@ -17,6 +17,7 @@
+ #include "torch/csrc/autograd/utils/python_arg_parsing.h"
+ #include "torch/csrc/autograd/utils/error_messages.h"
+ #include "torch/csrc/autograd/utils/wrap_outputs.h"
++#include "torch/csrc/crucible/PythonCallsite.h"
+ #include "torch/csrc/jit/frontend/tracer.h"
+ #ifdef USE_CUDA
+ #include "torch/csrc/cuda/Event.h"
+@@ -231,6 +232,7 @@ static PyObject * THPVariable_numel(PyObject* self, PyObject* args)
+ }
+ 
+ static Tensor dispatch_contiguous(const Tensor & self, at::MemoryFormat memory_format) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.contiguous(memory_format);
+@@ -275,6 +277,7 @@ static PyObject * THPVariable_contiguous(PyObject* self, PyObject* args, PyObjec
+ }
+ 
+ static Tensor dispatch_copy_(const Tensor & self, const Tensor & other, bool non_blocking) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.copy_(other, non_blocking);
+@@ -308,6 +311,7 @@ static void maybe_warn_requires_grad(const Tensor & self) {
+ 
+ template<typename T>
+ static T dispatch_to(const Tensor & self) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   TORCH_CHECK_VALUE(self.sym_numel() == 1, "only one element tensors can be converted to Python scalars");
+@@ -372,6 +376,7 @@ static PyObject * THPVariable_index_scalar(PyObject* self, PyObject* args) {
+ }
+ 
+ static Tensor dispatch_invert(const Tensor & self) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.bitwise_not();
+@@ -390,6 +395,7 @@ static PyObject * THPVariable_invert(PyObject* self, PyObject* args) {
+ }
+ 
+ static Tensor dispatch_to(const Tensor & self, Device device, bool non_blocking, bool copy, std::optional<c10::MemoryFormat> optional_memory_format) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   // NOTE: this is where we record aten::to in the graph during tracing. However, the behavior of aten::to
+   // is different with respect to TensorOptions fields that are not present: aten::to inherits fields that
+@@ -400,17 +406,20 @@ static Tensor dispatch_to(const Tensor & self, Device device, bool non_blocking,
+ }
+ 
+ static Tensor dispatch_to(const Tensor & self, bool non_blocking, bool copy, std::optional<c10::MemoryFormat> optional_memory_format) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   return self.to(self.options().memory_format(optional_memory_format), non_blocking, copy);
+ }
+ 
+ static Tensor dispatch_to(const Tensor & self, ScalarType dtype, bool non_blocking, bool copy, std::optional<c10::MemoryFormat> optional_memory_format) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   // TODO: Make this call the TensorOptions version, maybe?
+   return self.to(dtype, non_blocking, copy, optional_memory_format);
+ }
+ 
+ static Tensor dispatch_to(const Tensor & self, Device device, ScalarType dtype, bool non_blocking, bool copy, std::optional<c10::MemoryFormat> optional_memory_format) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   // TODO: Make this call the TensorOptions version, maybe?
+   return self.to(device, dtype, non_blocking, copy, optional_memory_format);
+@@ -436,12 +445,14 @@ static PyObject * THPVariable_cpu(PyObject* self, PyObject* args, PyObject* kwar
+ }
+ 
+ static Tensor dispatch_nonzero(const Tensor & self) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.nonzero();
+ }
+ 
+ static std::vector<Tensor> dispatch_nonzero_numpy(const Tensor & self) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.nonzero_numpy();
+@@ -871,7 +882,8 @@ static PyObject * THPVariable_item(PyObject* self, PyObject* args)
+   jit::tracer::warn("Converting a tensor to a Python number", jit::tracer::WARN_PYTHON_DATAFLOW);
+   auto& self_ = THPVariable_Unpack(self);
+   auto dispatch_item_ = [](const Tensor& self) -> at::Scalar {
+-    pybind11::gil_scoped_release no_gil;
++    torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+     return self.item();
+   };
+   return py::cast(dispatch_item_(self_)).release().ptr();
+@@ -1104,7 +1116,8 @@ static PyObject * THPVariable___eq__(PyObject* self_, PyObject* args, PyObject*
+         if (PyArray_Check(other)) {
+           auto other_tensor = torch::utils::tensor_from_numpy(other);
+           auto dispatch_eq = [](const at::Tensor & self, const at::Tensor & other) -> at::Tensor {
+-            pybind11::gil_scoped_release no_gil;
++            torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+             return self.eq(other);
+           };
+           const Tensor& self = THPVariable_Unpack(self_);
+@@ -1159,7 +1172,8 @@ static PyObject* THPVariable_set_(
+     case 0: {
+       // aten::set_(Tensor(a!) self) -> Tensor(a!)
+       auto dispatch_set_ = [](const Tensor& self) -> Tensor {
+-        pybind11::gil_scoped_release no_gil;
++        torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+         return self.set_();
+       };
+       return wrap(dispatch_set_(self));
+@@ -1175,7 +1189,8 @@ static PyObject* THPVariable_set_(
+         " or an UntypedStorage, but got type ", storage_scalar_type,
+         " for argument 1 'storage'");
+       auto dispatch_set_ = [](const Tensor& self, Storage source) -> Tensor {
+-        pybind11::gil_scoped_release no_gil;
++        torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+         return self.set_(std::move(source));
+       };
+       return wrap(dispatch_set_(self, storage));
+@@ -1195,7 +1210,8 @@ static PyObject* THPVariable_set_(
+                               c10::SymInt storage_offset,
+                               c10::SymIntArrayRef size,
+                               c10::SymIntArrayRef stride) -> Tensor {
+-        pybind11::gil_scoped_release no_gil;
++        torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+         return self.set__symint(std::move(source), std::move(storage_offset), size, stride);
+       };
+       return wrap(dispatch_set_(
+@@ -1205,7 +1221,8 @@ static PyObject* THPVariable_set_(
+       // aten::set_.source_Tensor(Tensor(a!) self, Tensor source) -> Tensor(a!)
+       auto dispatch_set_ = [](const Tensor& self, const Tensor& source) -> Tensor {
+         TORCH_CHECK(source.dtype() == self.dtype(), "Could not set tensor of type ", source.dtype(), " to a tensor of type ", self.dtype());
+-        pybind11::gil_scoped_release no_gil;
++        torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+         return self.set_(source);
+       };
+       return wrap(dispatch_set_(self, _r.tensor(0)));
+@@ -1219,7 +1236,8 @@ static PyObject* THPVariable_set_(
+                               c10::SymInt storage_offset,
+                               c10::SymIntArrayRef size,
+                               c10::SymIntArrayRef stride) -> Tensor {
+-        pybind11::gil_scoped_release no_gil;
++        torch::crucible::stash_python_callsite();
++  pybind11::gil_scoped_release no_gil;
+         return self.set__symint(source, std::move(storage_offset), size, stride);
+       };
+       return wrap(dispatch_set_(
+diff --git a/torch/csrc/autograd/python_torch_functions_manual.cpp b/torch/csrc/autograd/python_torch_functions_manual.cpp
+index dc59381fb29..c4623504f99 100644
+--- a/torch/csrc/autograd/python_torch_functions_manual.cpp
++++ b/torch/csrc/autograd/python_torch_functions_manual.cpp
+@@ -6,6 +6,7 @@
+ #include <torch/csrc/autograd/python_torch_functions.h>
+ #include <torch/csrc/autograd/python_variable.h>
+ #include <torch/csrc/autograd/utils/wrap_outputs.h>
++#include <torch/csrc/crucible/PythonCallsite.h>
+ #include <torch/csrc/jit/frontend/tracer.h>
+ #include <torch/csrc/utils/device_lazy_init.h>
+ #include <torch/csrc/utils/out_types.h>
+@@ -45,6 +46,7 @@ inline static Tensor dispatch_range(
+     const Scalar& end,
+     const Scalar& step,
+     Tensor result) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(result));
+   return at::range_out(result, start, end, step);
+@@ -56,6 +58,7 @@ inline static Tensor dispatch_range(
+     const Scalar& step,
+     const TensorOptions& options) {
+   torch::utils::maybe_initialize_device(options);
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   DeviceGuard device_guard(options.device());
+   return torch::range(start, end, step, options);
+@@ -141,18 +144,21 @@ static PyObject* THPVariable_from_numpy(PyObject* module, PyObject* arg) {
+ }
+ 
+ static Tensor dispatch_nonzero(const Tensor& self) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.nonzero();
+ }
+ 
+ static Tensor dispatch_nonzero(const Tensor& self, Tensor out) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return at::nonzero_out(out, self);
+ }
+ 
+ static std::vector<Tensor> dispatch_nonzero_numpy(const Tensor& self) {
++  torch::crucible::stash_python_callsite();
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+   return self.nonzero_numpy();
+diff --git a/torch/csrc/crucible/PythonCallsite.h b/torch/csrc/crucible/PythonCallsite.h
+new file mode 100644
+index 00000000000..3262d0ad9e8
+--- /dev/null
++++ b/torch/csrc/crucible/PythonCallsite.h
+@@ -0,0 +1,56 @@
++#pragma once
++
++// Stash the Python callsite of a call that is about to leave Python for
++// ATen, so the Crucible recording kernel can attribute the operators of
++// that call to the line that made it.
++//
++// The pair it stores is (code object address, bytecode offset). Nothing
++// dereferences the address: the recording kernel hashes the pair into
++// the callsite column of the ring, and two calls made from one line
++// carry one pair. Resolving the pair back to a file and a line number is
++// a cold-path concern and needs the code object itself, which is why the
++// address is kept rather than a string.
++//
++// The GIL is the whole constraint on where this runs. PyEval_GetFrame()
++// reads the interpreter's frame stack, so the call has to sit ahead of
++// the pybind11::gil_scoped_release that every dispatch_* helper opens
++// with, while the caller's GIL is still held.
++
++#include <torch/csrc/python_headers.h>
++#include <torch/csrc/utils/pythoncapi_compat.h>
++
++#include <c10/core/CrucibleState.h>
++
++#include <cstdint>
++
++namespace torch::crucible {
++
++// Record the innermost Python frame into the Crucible TLS.
++//
++// Costs one thread-local read and one compare when Crucible is not
++// recording, which is every call of every process that does not opt in.
++// The frame walk happens only once the mode says somebody is listening.
++inline void stash_python_callsite() {
++  auto& state = c10::CrucibleState::get_tls_state();
++  if (state.mode() == c10::CrucibleMode::INACTIVE) {
++    return;
++  }
++  PyFrameObject* frame = PyEval_GetFrame();
++  if (frame == nullptr) {
++    // A call that reached ATen from C++ with no Python frame on the
++    // stack. Clear the pair rather than leave the previous callsite in
++    // place, which would attribute this operator to an unrelated line.
++    state.set_callsite(nullptr, -1);
++    return;
++  }
++  // PyFrame_GetCode returns a strong reference. The frame holds its own
++  // reference for as long as it runs, and it is running now, so the
++  // address stays valid over the call this pair describes.
++  PyCodeObject* code = PyFrame_GetCode(frame);
++  state.set_callsite(
++      static_cast<const void*>(code),
++      static_cast<int32_t>(PyFrame_GetLasti(frame)));
++  Py_DECREF(code);
++}
++
++} // namespace torch::crucible
+diff --git a/torch/csrc/utils/python_dispatch.cpp b/torch/csrc/utils/python_dispatch.cpp
+index 6d49fa75587..1c805437449 100644
+--- a/torch/csrc/utils/python_dispatch.cpp
++++ b/torch/csrc/utils/python_dispatch.cpp
+@@ -1225,6 +1225,7 @@ void initDispatchBindings(PyObject* module) {
+       DEF_ONE(FuncTorchVmapMode)
+       DEF_ONE(FuncTorchGradWrapper)
+       DEF_ONE(PythonDispatcher)
++      DEF_ONE(Crucible)
+       DEF_ONE(PreDispatch)
+       DEF_ONE(Functionalize)
+       DEF_ONE(AutocastCPU)
 diff --git a/torch/csrc/utils/tensor_new.cpp b/torch/csrc/utils/tensor_new.cpp
-index 8b758df7224..f5306f3fb8b 100644
+index 41583166ec3..cbcddf31311 100644
 --- a/torch/csrc/utils/tensor_new.cpp
 +++ b/torch/csrc/utils/tensor_new.cpp
-@@ -389,11 +389,10 @@ Tensor internal_new_from_data(
+@@ -382,11 +382,10 @@ Tensor internal_new_from_data(
          c10::DispatchKey::FuncTorchDynamicLayerFrontMode);
      c10::impl::ExcludeDispatchKeyGuard functorch_back_guard(
          c10::DispatchKey::FuncTorchDynamicLayerBackMode);
