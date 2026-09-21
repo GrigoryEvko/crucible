@@ -328,8 +328,12 @@ public:
 template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRing = 2048,
           std::uint32_t CompletionRing = 2048, std::uint32_t RxRing = 2048, std::uint32_t TxRing = 2048, class Ctx>
     requires AfXdpStaticShape<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing> && CtxFitsAfXdpMint<Ctx>
+// The one runtime step below this factory is the UMEM allocation, and that
+// step calls std::abort() when the allocator returns no memory.  No step in
+// the chain throws, so the factory declares that instead of resting on the
+// whole-artifact check that scripts/check-no-throw-no-rtti.sh does.
 [[nodiscard]] AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>
-mint_af_xdp_socket(Ctx const& ctx, DeclaredAfXdpConfig config) {
+mint_af_xdp_socket(Ctx const& ctx, DeclaredAfXdpConfig config) noexcept {
     return AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>::mint(ctx, config);
 }
 

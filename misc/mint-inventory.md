@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-20T17:57:49Z`.
+Snapshot generated: `2026-09-21T00:02:43Z`.
 
 ## bridges/
 
@@ -91,7 +91,7 @@ Snapshot generated: `2026-09-20T17:57:49Z`.
 | `mint_admission_controller` | `include/crucible/cntp/BackpressureRuntime.h:277` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_admission_decision` | `include/crucible/cntp/Backpressure.h:141` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_af_xdp_config` | `include/crucible/cntp/AfXdp.h:122` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h:332` | Y | - | - | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h:336` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 | `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h:135` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h:170` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h:158` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:124` | HS14: 4 |
