@@ -443,13 +443,18 @@ using ValidDrainCount =
     return raw.value();
 }
 
-// Certifies an Entry whose every field was built internally and is correct by
-// construction. An Entry carrying data that crossed a foreign-runtime boundary
-// is certified by validating it, never by this, so a call to this from an
-// adapter is a way of skipping the checks.
-[[nodiscard]] CRUCIBLE_INLINE TraceRing::ValidatedEntryPtr vouch(const TraceRing::Entry& e
-                                                                 CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return TraceRing::ValidatedEntryPtr{&e};
+// The first rung of the recording trust ladder. An adapter that builds an
+// Entry out of values a foreign runtime supplied mints this tag, and the only
+// transition the catalog admits from it is FromPytorch into Validated. A
+// recording entry point takes the second tag, so the adapter reaches one by
+// running its checks and retagging, and by no other route.
+//
+// There is deliberately no counterpart that mints the second tag directly.
+// One existed, and an adapter calling it was a way of skipping the checks
+// while reading like a certification.
+[[nodiscard]] CRUCIBLE_INLINE constexpr TraceRing::FromPytorchEntryPtr mint_ffi_entry(const TraceRing::Entry& e
+                                                                                      CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return TraceRing::FromPytorchEntryPtr{&e};
 }
 
 }  // namespace crucible

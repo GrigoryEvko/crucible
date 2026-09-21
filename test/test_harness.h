@@ -60,4 +60,22 @@ inline void flush_and_wait_compiled(Vigil& vigil) {
     wait_mode_compiled(vigil);
 }
 
+// Certifies an Entry a test built field by field, so it can reach
+// record_op and dispatch_op, which take the second trust tag.
+//
+// This lives in the harness rather than beside TraceRing because it runs
+// no check: it states that the fields are whatever the test wrote, which
+// is true of a literal in a test and is not true of anything an adapter
+// fills from a foreign runtime. An adapter reaching a recording entry
+// point runs the checks in vessel_api_typed.h and crosses the retag
+// edge, and it has nothing shorter to reach for, because this is not on
+// its include path.
+//
+// A test that wants the adapter's checks exercised should call the
+// adapter. This is for the tests that drive the Vigil directly.
+[[nodiscard]] inline TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
+                                                                          CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return TraceRing::ValidatedEntryPtr{&entry};
+}
+
 }  // namespace crucible::test

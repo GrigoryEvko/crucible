@@ -24,57 +24,36 @@
 #
 # The include/ tree carries no grandfathered sites — FIXY-U-082
 # drained the cntp/Fec + AfXdp + Integrity + GpuDirect cluster and it
-# has stayed drained.  The entries below are vessel/, not include/.
+# has stayed drained.
 #
-# ── vessel/ COVERAGE EXTENSION — NOT pre-approved ───────────────────
+# The vessel/ tree carries none either.  It held five when the guard's
+# scan set first reached it, and Stage B4 converted all five to
+# std::bit_cast:
 #
-# The entries below were NOT reviewed and NOT granted a waiver.  They
-# are the 5 pre-existing reinterpret_cast sites the guard surfaced the
-# moment `vessel/` entered its scan set.  Until that change `vessel/`
-# was absent from `scan_dirs`, so the PyTorch adapter — production C++
-# sitting on the C ABI boundary — was never checked at all.  No rg
-# glob had to be dropped: none of the existing exclusions (`build`,
-# `cmake-build-*`, `third_party`, `external`, `vendor`, `test`,
-# `bench`, `examples`) ever matched vessel/.  They are grandfathered
-# only so the coverage extension lands green.
+#   - three pointer-to-integer reads, two of them inside a debug
+#     plausibility assert and one an index into the schema cache.  The
+#     integer never turns back into a pointer at any of the three.
 #
-# Status: awaiting triage.  Two shapes are present:
+#   - the CrucibleMeta and crucible::TensorMeta view change in
+#     as_meta_typed and its inverse in metas_from_typed.  This file
+#     used to record that those two were not bit_cast-able, on the
+#     grounds that bit_cast needs same-size values rather than a
+#     pointer view change.  That was wrong twice over: the two are
+#     object pointers of one width, so bit_cast is well-formed, and
+#     what makes the read sound was never the spelling of the cast but
+#     the offsetof and sizeof block above them.  std::start_lifetime_as
+#     is the alternative and does not apply, because TensorMeta carries
+#     member initializers and is therefore not an implicit-lifetime
+#     type.
 #
-#   (a) Pointer→integer for a debug plausibility check or a cache-index
-#       hash (vessel_api_typed.h, crucible_fallback.cpp — the entries
-#       below carry the call text, which is the stable key; line numbers
-#       are left out of this prose because they drift and this comment
-#       is not checked against anything).
-#       `std::bit_cast<std::uintptr_t>(ptr)` is the §III replacement
-#       and is a mechanical swap.  Two of the three are inside
-#       `#ifndef NDEBUG` blocks, so they carry no release-build cost —
-#       that bounds the urgency, it does not grant an exemption.
+# So the list below is empty, and every reinterpret_cast that lands in
+# either tree from here is a new one.
 #
-#   (b) Layout-compatible pointer view changes between CrucibleMeta and
-#       crucible::TensorMeta (vessel_api_typed.h:172/176).  These are
-#       NOT bit_cast-able (bit_cast needs same-size values, not a
-#       pointer view change) and are the substantive open question.
-#       The header pins the layout with offsetof/sizeof static_asserts
-#       immediately above the casts, which is real evidence the punning
-#       is sound — but a proof of layout compatibility is not the same
-#       as a §III waiver, and no reviewer has signed off on one.
-#
-# On vessel_api.cpp: that file carries a file-level comment (line 17)
-# about reinterpret_cast, and it is worth stating precisely what the
-# comment says, because it is the opposite of a self-granted waiver.
-# It is a review-enforced rule that no raw `static_cast<Vigil*>(h)` /
-# `reinterpret_cast<TensorMeta*>(metas)` is permitted IN THAT FILE;
-# every ABI crossing must route through `as_vigil_typed` /
-# `as_meta_typed` so the cast and its layout proof stay co-located in
-# vessel_api_typed.h.  The file honours its own rule: its only match
-# is that comment, which the guard's comment filter drops, so
-# vessel_api.cpp contributes zero live sites and gets zero entries
-# here.  Adding one would trip the stale-entry gate (exit 2).
-#
-# No ticket yet.  When one is filed, reference it here and drain the
-# section as sites convert.
-vessel/torch/crucible_fallback.cpp:const auto idx = (reinterpret_cast<uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
-vessel/torch/vessel_api_typed.h:const auto bits = reinterpret_cast<std::uintptr_t>(handle);
-vessel/torch/vessel_api_typed.h:const auto bits = reinterpret_cast<std::uintptr_t>(metas);
-vessel/torch/vessel_api_typed.h:return TypedMeta{reinterpret_cast<const crucible::TensorMeta*>(metas)};
-vessel/torch/vessel_api_typed.h:return reinterpret_cast<const CrucibleMeta*>(typed.value());
+# One rule of vessel_api.cpp is worth keeping here, because it reads
+# like a self-granted waiver and is the opposite of one. That file
+# permits no cast between the C ABI structs in its own body: every ABI
+# crossing routes through as_vigil_typed and as_meta_typed, so the cast
+# and the layout proof that makes it sound stay in one place. The file
+# honours the rule, its only match is the comment stating it, and the
+# guard's comment filter drops that. Adding an entry for the file would
+# trip the stale-entry gate at exit 2.

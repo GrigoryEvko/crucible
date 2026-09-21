@@ -29,10 +29,10 @@
 //
 // CrucibleMeta is layout-compatible with crucible::TensorMeta by
 // construction; the static_asserts below pin every byte of that
-// claim.  The cast inside `as_meta_typed` is a layout-compat
-// reinterpret (not a value reinterpretation) and is the SOLE such
-// cast in the Vessel boundary — any other reinterpret of CrucibleMeta
-// is a review concern.
+// claim.  `as_meta_typed` and `metas_from_typed` change the pointer's
+// view with std::bit_cast and are the SOLE pair of such casts in the
+// Vessel boundary — any other cast between the two structs is a
+// review concern.
 //
 // ── Zero-cost guarantee ────────────────────────────────────────────
 //
@@ -40,31 +40,35 @@
 // empty element_type, so `sizeof(TypedHandle) == sizeof(void*)` and
 // `sizeof(TypedMeta) == sizeof(void*)` are static_assert'd below.
 // The two helpers are CRUCIBLE_HOT (always-inline) and compile to
-// the same machine code as the bare `static_cast` / `reinterpret_cast`
-// after EBO collapse — verified by the production binary's `objdump`
+// the same machine code as the bare `static_cast` / `bit_cast` after
+// EBO collapse — verified by the production binary's `objdump`
 // snapshot and by the cross-bench harness.
 //
 // ── Usage rule (review-enforced) ───────────────────────────────────
 //
 // Every C-ABI thunk in vessel_api.cpp begins with `as_vigil_typed(h)`
 // (and `as_meta_typed(metas)` if it accepts a meta array).  No raw
-// `static_cast<Vigil*>(h)` / `reinterpret_cast<TensorMeta*>(metas)`
-// is permitted outside this header.  Grepping for `as_vigil_typed`
-// or `as_meta_typed` finds every ABI-crossing site in O(1).
+// `static_cast<Vigil*>(h)` / `bit_cast<TensorMeta*>(metas)` is
+// permitted outside this header.  Grepping for `as_vigil_typed` or
+// `as_meta_typed` finds every ABI-crossing site in O(1).
 
 #include "vessel_api.h"
 
 #include <crucible/Platform.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
+#include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::vessel {
 
@@ -115,7 +119,7 @@ namespace detail {
 
 inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
 #ifndef NDEBUG
-    const auto bits = reinterpret_cast<std::uintptr_t>(handle);
+    const auto bits = std::bit_cast<std::uintptr_t>(handle);
     CRUCIBLE_DEBUG_ASSERT(handle != nullptr);
     CRUCIBLE_DEBUG_ASSERT((bits & (alignof(Vigil) - 1U)) == 0U);
     CRUCIBLE_DEBUG_ASSERT(bits >= 4096U);
@@ -137,7 +141,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
         return;
     }
     CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
-    const auto bits = reinterpret_cast<std::uintptr_t>(metas);
+    const auto bits = std::bit_cast<std::uintptr_t>(metas);
     CRUCIBLE_DEBUG_ASSERT((bits & (alignof(CrucibleMeta) - 1U)) == 0U);
 #else
     (void)metas;
@@ -164,16 +168,24 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 // `metas` MUST be nullptr — the invariant the C ABI promises.
 [[nodiscard]] CRUCIBLE_HOT TypedMeta as_meta_typed(const CrucibleMeta* metas, std::size_t n_metas = 0) noexcept {
     detail::assert_plausible_meta_array(metas, n_metas);
-    // Layout-compat reinterpret: every byte of CrucibleMeta lines up
-    // with TensorMeta (proven by the offsetof / sizeof asserts above).
-    // The cast is a `const CrucibleMeta*` → `const TensorMeta*` view
-    // change only — no value reinterpretation, no aliasing of writable
-    // storage, no lifetime bend.
-    return TypedMeta{reinterpret_cast<const crucible::TensorMeta*>(metas)};
+    // A `const CrucibleMeta*` and a `const TensorMeta*` are both object
+    // pointers of one width, so bit_cast reproduces the address and the
+    // view changes without the value changing.
+    //
+    // What makes the read through the result sound is the offsetof and
+    // sizeof block above, not the spelling of the cast: the two structs
+    // are layout-compatible byte for byte, and any drift fires a
+    // static_assert here before a caller can reach the pipeline with a
+    // mismatched struct. std::start_lifetime_as is the other candidate
+    // and does not apply — TensorMeta carries member initializers, so
+    // its default constructor is not trivial and the type is not an
+    // implicit-lifetime type.
+    return TypedMeta{std::bit_cast<const crucible::TensorMeta*>(metas)};
 }
 
 [[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(TypedMeta typed) noexcept {
-    return reinterpret_cast<const CrucibleMeta*>(typed.value());
+    // The inverse view change, sound by the same layout block.
+    return std::bit_cast<const CrucibleMeta*>(typed.value());
 }
 
 // ── Per-meta data_ptr typed accessor (GAPS-096) ────────────────────
@@ -226,6 +238,83 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
 [[nodiscard]] CRUCIBLE_HOT TypedSchemaName schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
     return crucible::schema_name(schema_hash);
+}
+
+// ── Recording trust ladder ─────────────────────────────────────────
+//
+// Every Entry this adapter builds is filled from values a foreign
+// runtime supplied: the C ABI hands over raw integers, the boxed
+// fallback reads an ATen stack, and the unboxed kernels read their own
+// typed arguments.  All three start at
+// `crucible::TraceRing::FromPytorchEntryPtr`, and `Vigil::record_op`
+// and `Vigil::dispatch_op` take `crucible::TraceRing::ValidatedEntryPtr`.
+// The retag catalog admits exactly one transition between those two
+// tags, so the checks below are the whole route from an adapter to the
+// ring, and `mint_validated_entry` is the only place that runs them.
+//
+// Three adapters share one ladder deliberately.  A check that lives in
+// one adapter is a check the next adapter does not have, and this file
+// already holds every other rule the boundary obeys.
+
+// Structural bounds on an Entry.  Each one names a downstream array
+// the recording pipeline indexes with the field:
+//
+//   - schema_hash != 0, because 0 is the invalid sentinel and the
+//     content hash and the region cache both key on this field
+//   - num_inputs and num_outputs each at most 64, the TensorMeta
+//     array cap the MetaLog appends against
+//   - num_scalar_args at most 5, the width of Entry::scalar_values.
+//     BackgroundThread asserts the same bound when it drains the ring,
+//     so a larger count reaches a contract violation rather than the
+//     pipeline; the adapter rejects the operation here instead.
+[[nodiscard]] CRUCIBLE_HOT constexpr bool entry_is_well_formed(const crucible::TraceRing::Entry& entry) noexcept {
+    if (entry.schema_hash.raw() == 0) return false;
+    if (entry.num_inputs > 64) return false;
+    if (entry.num_outputs > 64) return false;
+    if (entry.num_scalar_args > decltype(crucible::TraceRing::Entry::scalar_values)::capacity) return false;
+    return true;
+}
+
+// The structural invariant of TensorMeta is that sizes[] and strides[]
+// are fixed arrays of kMaxTensorNDim entries.  An ndim past that makes
+// every per-dimension loop in the recording pipeline read out of
+// bounds.
+//
+// A count of zero is well formed whatever the pointer is, and the
+// pointer is deliberately not required to be null there.  An operation
+// carrying no tensors is ordinary, and two of the three adapters reach
+// this with the address of a fixed array they never filled, which is
+// not null and is never read because the count is zero.  The C ABI
+// states the stronger rule that the two travel together, and
+// assert_plausible_meta_array is where that rule is checked, on the one
+// path that promises it.
+//
+// Cost is one byte compare per meta.  A typical operation carries two
+// to eight metas, and the dispatch that reached here is orders of
+// magnitude larger.
+[[nodiscard]] CRUCIBLE_HOT constexpr bool metas_are_well_formed(const crucible::TensorMeta* metas,
+                                                                uint32_t n_metas) noexcept {
+    if (n_metas == 0) return true;
+    if (metas == nullptr) return false;
+    for (uint32_t i = 0; i < n_metas; ++i) {
+        if (metas[i].ndim > crucible::kMaxTensorNDim) return false;
+    }
+    return true;
+}
+
+// The one door from the first tag to the second.  An empty return says
+// no certification exists for this operation, and the caller executes
+// eagerly and leaves the ring alone.  There is no failure value that
+// carries the second tag, which is what makes running the checks the
+// only way an adapter reaches a recording entry point.
+[[nodiscard]] CRUCIBLE_HOT constexpr std::optional<crucible::TraceRing::ValidatedEntryPtr>
+mint_validated_entry(crucible::TraceRing::FromPytorchEntryPtr raw, const crucible::TensorMeta* metas,
+                     uint32_t n_metas) noexcept {
+    const crucible::TraceRing::Entry* entry = raw.value();
+    if (entry == nullptr) return std::nullopt;
+    if (!entry_is_well_formed(*entry)) return std::nullopt;
+    if (!metas_are_well_formed(metas, n_metas)) return std::nullopt;
+    return std::move(raw).retag<crucible::fixy::tags::vessel_trust::Validated>();
 }
 
 }  // namespace crucible::vessel

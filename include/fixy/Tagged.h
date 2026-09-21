@@ -159,9 +159,11 @@ inline constexpr ::foundation::fail_closed::edge<source::PortablePinned, source:
 
 // Discharge: the adapter's well-formedness checks ran on the input.
 // This is the edge that carries TraceRing's FromPytorchEntryPtr into
-// its ValidatedEntryPtr; the vouch() helper that builds the second tag
-// directly for internally built entries dies at Stage B4 because this
-// edge exists.
+// its ValidatedEntryPtr.  The helper that used to build the second tag
+// straight from an Entry is gone: it read as a certification and ran no
+// check, so an adapter calling it skipped the checks while looking like
+// it had run them.  This edge is the replacement, and running the
+// checks is what crossing it means.
 inline constexpr ::foundation::fail_closed::edge<vessel_trust::FromPytorch, vessel_trust::Validated>
     from_pytorch_to_validated{};
 

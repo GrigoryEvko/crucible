@@ -887,10 +887,22 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
     for (uint16_t i = 0; i < recording.scalars.count; i++)
         entry.scalar_values[i] = recording.scalars.values[i];
 
-    // Every field was built here, from this operator's own typed arguments and
-    // from the live c10 query surface, so nothing in the entry crossed a
-    // boundary unvalidated and vouch is the right certification.
-    RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(crucible::vouch(entry));
+    // The trust ladder. Every field above was read from this operator's own
+    // typed arguments and from the live c10 query surface, which is a foreign
+    // runtime, so the Entry starts at the first trust tag and reaches a
+    // recording entry point only by passing the checks the two other adapters
+    // pass. The operator already ran eagerly before this function was called,
+    // so a rejected Entry costs the trace this operation and costs the caller
+    // nothing.
+    //
+    // Sharing one ladder with the boxed fallback and the C ABI is what keeps
+    // a bound from being enforced on one path and absent on the next.
+    auto validated = crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), recording.metas.data(),
+                                                            recording.counts.total());
+    if (!validated) [[unlikely]]
+        return;
+
+    RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(*validated);
 
     // dispatch_op_pure rather than dispatch_op: the facade demands an empty
     // caller row, which catches a kernel reached from an init, background or

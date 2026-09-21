@@ -33,6 +33,17 @@ using namespace crucible;
 
 namespace {
 
+// Certifies an Entry this file built field by field, so it can reach
+// record_op and dispatch_op, which take the second trust tag. It runs no
+// check, because a literal written here is whatever this file wrote. An
+// adapter filling an Entry from a foreign runtime runs the checks in
+// vessel_api_typed.h and crosses the retag edge; this is file-local so
+// there is nothing shorter for an adapter to reach for.
+[[nodiscard]] TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
+                                                                   CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return TraceRing::ValidatedEntryPtr{&entry};
+}
+
 // ── Constants ──────────────────────────────────────────────────────
 
 constexpr uint32_t NUM_OPS = 8;
@@ -89,14 +100,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
 void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
 void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
@@ -111,14 +122,14 @@ void wait_mode_compiled(Vigil& vigil) {
 void align_and_activate(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i);
-        [[maybe_unused]] auto r = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD);
     }
     assert(vigil.context().is_compiled());
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        [[maybe_unused]] auto r = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }
@@ -380,14 +391,15 @@ int main() {
         e.num_inputs = 0;
         e.num_outputs = 0;
         return bench::run("Vigil::record_op (0 metas, profiler hook)",
-                          [&] { bench::do_not_optimize(vigil.record_op(vouch(e), nullptr, 0)); });
+                          [&] { bench::do_not_optimize(vigil.record_op(certify_synthetic_entry(e), nullptr, 0)); });
     }());
 
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
-        return bench::run("Vigil::record_op (2 metas)",
-                          [&] { bench::do_not_optimize(vigil.record_op(vouch(d.entry), d.metas, d.n_metas)); });
+        return bench::run("Vigil::record_op (2 metas)", [&] {
+            bench::do_not_optimize(vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas));
+        });
     }());
 
     // ── dispatch_op RECORDING ──────────────────────────────────────
@@ -396,8 +408,9 @@ int main() {
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
-        return bench::run("dispatch_op [RECORDING, no pending]",
-                          [&] { bench::do_not_optimize(vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas)); });
+        return bench::run("dispatch_op [RECORDING, no pending]", [&] {
+            bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas));
+        });
     }());
 
     // ── dispatch_op COMPILED ───────────────────────────────────────
@@ -413,7 +426,7 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED, cyclic]", [&] {
             auto& d = ops[op_idx];
-            auto r = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             bench::do_not_optimize(r);
             op_idx = (op_idx + 1) % NUM_OPS;
         });
@@ -429,7 +442,7 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
             auto& d = ops[op_idx];
-            auto r = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             if (r.action == DispatchResult::Action::COMPILED) bench::do_not_optimize(vigil.output_ptr(0));
             bench::do_not_optimize(r);
             op_idx = (op_idx + 1) % NUM_OPS;
@@ -446,12 +459,12 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED, MATCH only]", [&] {
             auto& d = ops[op_idx];
-            auto r = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             bench::do_not_optimize(r);
             op_idx++;
             if (op_idx >= NUM_OPS - 1) {
                 auto& last = ops[NUM_OPS - 1];
-                auto rl = vigil.dispatch_op(vouch(last.entry), last.metas, last.n_metas);
+                auto rl = vigil.dispatch_op(certify_synthetic_entry(last.entry), last.metas, last.n_metas);
                 bench::do_not_optimize(rl);
                 op_idx = 0;
             }
@@ -468,7 +481,7 @@ int main() {
         return bench::run("dispatch_op [full 8-op iteration]", [&] {
             for (uint32_t i = 0; i < NUM_OPS; i++) {
                 auto& d = ops[i];
-                auto r = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+                auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
                 bench::do_not_optimize(r);
             }
         });
@@ -490,7 +503,7 @@ int main() {
             setup_compiled_vigil(vigil);
             for (uint32_t i = 0; i < 3; i++) {
                 auto d = make_op(10, i);
-                [[maybe_unused]] auto rr = vigil.dispatch_op(vouch(d.entry), d.metas, d.n_metas);
+                [[maybe_unused]] auto rr = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
                 assert(rr.action == DispatchResult::Action::COMPILED);
             }
             TraceRing::Entry bad{};
@@ -502,7 +515,7 @@ int main() {
                 make_meta(fake_ptr(10, 2)),
                 make_meta(fake_ptr(10, 3)),
             };
-            auto rr = vigil.dispatch_op(vouch(bad), bad_metas, 2);
+            auto rr = vigil.dispatch_op(certify_synthetic_entry(bad), bad_metas, 2);
             bench::do_not_optimize(rr);
             assert(rr.action == DispatchResult::Action::RECORD);
             assert(rr.status == ReplayStatus::DIVERGED);

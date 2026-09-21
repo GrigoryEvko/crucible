@@ -50,48 +50,12 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 
 // ── FFI entry validation ─────────────────────────────────────────────
 //
-// The Vessel-boundary compose-3 pattern: raw uint64_t/uint16_t args
-// from Python/PyTorch cross untrusted.  validate_ffi_entry checks the
-// fields for structural soundness BEFORE any in-memory Entry is built
-// or routed to Vigil.  On success it returns the Entry; the caller
-// then vouches for it at the typed dispatch boundary.
+// The checks and the retag that carries an Entry from the first trust
+// tag to the second live in vessel_api_typed.h, beside the rest of the
+// boundary's rules and shared with the two PyTorch adapters.  The two
+// thunks below build an Entry, mint the first tag over it, and reach a
+// recording entry point only through mint_validated_entry.
 //
-// Rules, conservative by design — the FFI is the attack surface:
-//   - schema_hash != 0 (0 is the invalid sentinel)
-//   - num_inputs  ≤ 64  (TensorMeta array cap)
-//   - num_outputs ≤ 64
-//   - num_scalars ≤ 4096 (the 5-inline cap is separate)
-//
-// A real fleet of PyTorch ops never violates these.  The validator
-// exists to reject corrupt FFI state before it reaches the hot path.
-static bool validate_ffi_entry(uint64_t schema_hash, uint16_t num_inputs, uint16_t num_outputs,
-                               uint16_t num_scalars) noexcept {
-    if (schema_hash == 0) return false;
-    if (num_inputs > 64) return false;
-    if (num_outputs > 64) return false;
-    if (num_scalars > 4096) return false;
-    return true;
-}
-
-// Per-meta FFI validation.  The structural invariant of TensorMeta is
-// that sizes[] and strides[] are length-8 fixed arrays; any ndim > 8
-// from a corrupt FFI caller would cause out-of-bounds reads when the
-// recording pipeline iterates per-dim.
-//
-// Cost: one uint8_t compare per meta on the dispatch path.  Typical
-// op has 2-8 metas → <10 ns overhead; PyTorch dispatch itself is
-// orders of magnitude larger, so the validation is free in the
-// regime the FFI is actually used.
-static bool validate_ffi_metas(const CrucibleMeta* metas, uint32_t n_metas) noexcept {
-    // n_metas == 0 requires metas == nullptr is OK (trivial op).
-    if (n_metas == 0) return true;
-    if (metas == nullptr) return false;
-    for (uint32_t i = 0; i < n_metas; ++i) {
-        if (metas[i].ndim > 8) return false;
-    }
-    return true;
-}
-
 // ── Late schema-name registrations ───────────────────────────────────
 //
 // crucible_create() constructs a Vigil, whose constructor calls
@@ -169,18 +133,6 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
                                             uint32_t n_metas) noexcept {
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
-    // Validate FFI inputs before constructing an Entry — see
-    // validate_ffi_entry / validate_ffi_metas for rules.  Failure
-    // returns an empty result (action=RECORD, status=DIVERGED by
-    // default-init of uint8_t) so the Python side can see it didn't
-    // take effect.
-    if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, 0)) {
-        return CrucibleDispatchResult{};
-    }
-    if (!validate_ffi_metas(metas, n_metas)) {
-        return CrucibleDispatchResult{};
-    }
-
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema_hash};
@@ -188,10 +140,28 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
 
-    // Entry fields are now validated; vouch at the typed dispatch boundary.
-    // metas crosses the FFI as `CrucibleMeta*` and is laundered through
-    // the typed-meta helper for layout-compat reinterpret + provenance.
-    //
+    // A count with no array behind it is a corrupt caller, and it is
+    // refused here rather than one line further on. as_meta_typed states
+    // the C ABI invariant that the pointer and the count travel together
+    // and holds it with a debug assert, which ends the process. This is
+    // the FFI, so the answer to a caller that broke the invariant is an
+    // empty result in every build mode.
+    if (metas == nullptr && n_metas > 0) return CrucibleDispatchResult{};
+
+    // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
+    // helper for the layout-compatible view change and the provenance
+    // tag.
+    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
+
+    // The trust ladder.  Every field above came from a caller this
+    // process does not control, so the Entry starts at the first tag and
+    // reaches the second only by passing the checks.  An empty result
+    // (action=RECORD, status=DIVERGED by default-init of uint8_t) tells
+    // the Python side the operation was not recorded.
+    auto validated =
+        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
+    if (!validated) return CrucibleDispatchResult{};
+
     // dispatch_op_pure<>() (FOUND-I19): the row-typed facade pinning this
     // FFI extern "C" entry as a `Pure` caller — i.e. no I/O / Block / Bg
     // / Init / Test / Alloc context.  Migrating the call from dispatch_op
@@ -199,8 +169,7 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // runtime (thin forwarder under -O3) and gives the compile-time
     // guarantee that the foreground extern "C" boundary cannot drift
     // into a non-Pure context without the row mismatch firing.
-    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
-    auto result = vigil_typed.value()->dispatch_op_pure(crucible::vouch(entry), metas_typed.value(), n_metas);
+    auto result = vigil_typed.value()->dispatch_op_pure(*validated, metas_typed.value(), n_metas);
 
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);
@@ -215,14 +184,6 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
                                                uint8_t grad_enabled, uint8_t inference_mode) noexcept {
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
-    // Validate FFI inputs before constructing an Entry.
-    if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, num_scalars)) {
-        return CrucibleDispatchResult{};
-    }
-    if (!validate_ffi_metas(metas, n_metas)) {
-        return CrucibleDispatchResult{};
-    }
-
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema_hash};
@@ -235,20 +196,39 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
     entry.op_flags = flags;
 
-    uint16_t n = num_scalars < 5 ? num_scalars : 5;
+    // The count above is what the caller claims; the inline array is the
+    // room there is for it. Writing past the array would be the first
+    // corruption, so the copy takes the smaller of the two and the
+    // ladder below rejects the operation outright when the claim does
+    // not fit.
+    constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::capacity;
+    const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
     if (scalar_values) {
-        for (uint16_t i = 0; i < n; i++)
+        for (uint16_t i = 0; i < stored_scalars; i++)
             entry.scalar_values[i] = scalar_values[i];
     }
 
-    // Entry fields validated above; vouch at the typed dispatch boundary.
-    // metas crosses the FFI as `CrucibleMeta*` and is laundered through
-    // the typed-meta helper for layout-compat reinterpret + provenance.
-    //
+    // A count with no array behind it is a corrupt caller, and it is
+    // refused here rather than one line further on. as_meta_typed states
+    // the C ABI invariant that the pointer and the count travel together
+    // and holds it with a debug assert, which ends the process. This is
+    // the FFI, so the answer to a caller that broke the invariant is an
+    // empty result in every build mode.
+    if (metas == nullptr && n_metas > 0) return CrucibleDispatchResult{};
+
+    // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
+    // helper for the layout-compatible view change and the provenance
+    // tag.
+    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
+
+    // The trust ladder; see the sister site in crucible_dispatch_op.
+    auto validated =
+        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
+    if (!validated) return CrucibleDispatchResult{};
+
     // dispatch_op_pure<>() — row-typed facade (FOUND-I19); see the
     // sister site in crucible_dispatch_op for the rationale.
-    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
-    auto result = vigil_typed.value()->dispatch_op_pure(crucible::vouch(entry), metas_typed.value(), n_metas);
+    auto result = vigil_typed.value()->dispatch_op_pure(*validated, metas_typed.value(), n_metas);
 
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);

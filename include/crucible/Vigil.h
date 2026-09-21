@@ -253,7 +253,7 @@ public:
         // op before alignment completes.
         auto* pending = pending_region_.observe();
         if (pending || pending_activation_) [[unlikely]]
-            return dispatch_transition_(entry, metas, n_metas, scope_hash, callsite_hash);
+            return dispatch_transition_(ve, metas, n_metas, scope_hash, callsite_hash);
 
         (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         return {
@@ -646,11 +646,15 @@ private:
                 .op_index = OpIndex{}};
     }
 
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(const TraceRing::Entry& entry,
-                                                                                   const TensorMeta* metas,
-                                                                                   uint32_t n_metas,
-                                                                                   ScopeHash scope_hash,
-                                                                                   CallsiteHash callsite_hash) {
+    // Takes the certified pointer rather than the Entry behind it. The two
+    // spellings differ where it matters: an Entry reference has to be
+    // certified again before record_op will take it, and certifying one that
+    // is already certified means minting the second tag with no check behind
+    // it. Carrying the pointer keeps the caller's certification.
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult
+    dispatch_transition_(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
+                         ScopeHash scope_hash, CallsiteHash callsite_hash) pre(ve.value() != nullptr) {
+        const TraceRing::Entry& entry = *ve.value();
         // A newer region arriving mid-alignment replaces the pending one and
         // restarts the alignment from zero.  That is correct: the newer
         // region can carry different ops, for instance after a divergence
@@ -662,7 +666,7 @@ private:
             // false iteration boundaries in the background detector.
             try_align_(entry.schema_hash, entry.shape_hash);
         } else {
-            (void)record_op(vouch(entry), metas, n_metas, scope_hash, callsite_hash);
+            (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         }
 
         return {

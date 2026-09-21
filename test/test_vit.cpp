@@ -283,14 +283,14 @@ static OpPacket build_op(uint32_t op_idx, uint32_t iter) {
 static void feed_iteration(Vigil& v, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto p = build_op(i, iter);
-        assert(v.record_op(crucible::vouch(p.entry), p.metas, p.n_metas));
+        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
     }
 }
 
 static void feed_trigger(Vigil& v, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto p = build_op(i, iter);
-        assert(v.record_op(crucible::vouch(p.entry), p.metas, p.n_metas));
+        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
     }
 }
 
@@ -335,14 +335,14 @@ int main() {
     static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
     for (uint32_t i = 0; i < AK; i++) {
         auto ap = build_op(i, 3);
-        auto ar = vigil.dispatch_op(crucible::vouch(ap.entry), ap.metas, ap.n_metas);
+        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
         assert(ar.action == DispatchResult::Action::RECORD);
     }
     assert(vigil.context().is_compiled());
     // Complete partial iteration.
     for (uint32_t i = AK; i < NUM_OPS; i++) {
         auto ap = build_op(i, 3);
-        auto ar = vigil.dispatch_op(crucible::vouch(ap.entry), ap.metas, ap.n_metas);
+        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
         assert(ar.action == DispatchResult::Action::COMPILED);
     }
     std::printf("\n   CrucibleContext: COMPILED (aligned after %u ops)\n\n", AK);
@@ -354,7 +354,7 @@ int main() {
     for (uint32_t iter = 4; iter < 1004; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto p = build_op(i, iter);
-            auto r = vigil.dispatch_op(crucible::vouch(p.entry), p.metas, p.n_metas);
+            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
@@ -372,18 +372,18 @@ int main() {
 
     for (uint32_t i = 0; i < 7; i++) {
         auto p = build_op(i, 9999);
-        auto r = vigil.dispatch_op(crucible::vouch(p.entry), p.metas, p.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
     // A recognizable byte pattern goes into the attention output.  If the
     // next op reads the same buffer back, the two slots are one.
     auto p7 = build_op(7, 9999);
-    auto r7 = vigil.dispatch_op(crucible::vouch(p7.entry), p7.metas, p7.n_metas);
+    auto r7 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p7.entry), p7.metas, p7.n_metas);
     assert(r7.action == DispatchResult::Action::COMPILED);
     std::memset(vigil.output_ptr(0), 0xCD, 64);
 
     auto p8 = build_op(8, 9999);
-    auto r8 = vigil.dispatch_op(crucible::vouch(p8.entry), p8.metas, p8.n_metas);
+    auto r8 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p8.entry), p8.metas, p8.n_metas);
     assert(r8.action == DispatchResult::Action::COMPILED);
 
     auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(0));
@@ -397,7 +397,7 @@ int main() {
     // Complete the iteration
     for (uint32_t i = 9; i < NUM_OPS; i++) {
         auto p = build_op(i, 9999);
-        (void)vigil.dispatch_op(crucible::vouch(p.entry), p.metas, p.n_metas);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
     }
 
     std::printf("   %s\n", ok ? "VERIFIED" : "FAILED");

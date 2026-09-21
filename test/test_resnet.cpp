@@ -239,14 +239,14 @@ static OpPacket build_pkt(const OpDef& op, uint32_t iter) {
 static void feed_iter(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter) {
     for (const auto& op : ops) {
         auto p = build_pkt(op, iter);
-        assert(v.record_op(crucible::vouch(p.entry), p.metas, p.n_metas));
+        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
     }
 }
 
 static void feed_trigger(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K && i < ops.size(); i++) {
         auto p = build_pkt(ops[i], iter);
-        assert(v.record_op(crucible::vouch(p.entry), p.metas, p.n_metas));
+        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
     }
 }
 
@@ -285,14 +285,14 @@ int main() {
     static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
     for (uint32_t i = 0; i < AK; i++) {
         auto ap = build_pkt(net.ops[i], 3);
-        auto ar = vigil.dispatch_op(crucible::vouch(ap.entry), ap.metas, ap.n_metas);
+        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
         assert(ar.action == DispatchResult::Action::RECORD);
     }
     assert(vigil.context().is_compiled());
     // The rest of the same iteration runs compiled.
     for (size_t i = AK; i < net.ops.size(); i++) {
         auto ap = build_pkt(net.ops[i], 3);
-        auto ar = vigil.dispatch_op(crucible::vouch(ap.entry), ap.metas, ap.n_metas);
+        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
         assert(ar.action == DispatchResult::Action::COMPILED);
     }
     std::printf("  aligned (%u ops) + partial iteration compiled\n", AK);
@@ -302,7 +302,7 @@ int main() {
     for (uint32_t iter = 4; iter < 1004; iter++) {
         for (size_t i = 0; i < net.ops.size(); i++) {
             auto p = build_pkt(net.ops[i], iter);
-            auto r = vigil.dispatch_op(crucible::vouch(p.entry), p.metas, p.n_metas);
+            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
@@ -322,12 +322,12 @@ int main() {
     // reading it back through the other is what shows the slots were
     // planned to coincide.
     auto p0 = build_pkt(net.ops[0], 9999);
-    auto r0 = vigil.dispatch_op(crucible::vouch(p0.entry), p0.metas, p0.n_metas);
+    auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p0.entry), p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     std::memset(vigil.output_ptr(0), 0xAB, 64);
 
     auto p1 = build_pkt(net.ops[1], 9999);
-    auto r1 = vigil.dispatch_op(crucible::vouch(p1.entry), p1.metas, p1.n_metas);
+    auto r1 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p1.entry), p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
 
     auto* d = static_cast<uint8_t*>(vigil.input_ptr(0));
@@ -341,7 +341,7 @@ int main() {
     // Finish the iteration so the pipeline is left at a boundary.
     for (size_t i = 2; i < net.ops.size(); i++) {
         auto p = build_pkt(net.ops[i], 9999);
-        (void)vigil.dispatch_op(crucible::vouch(p.entry), p.metas, p.n_metas);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
     }
 
     std::printf("  data_flow: %s\n", flow_ok ? "VERIFIED" : "FAILED");

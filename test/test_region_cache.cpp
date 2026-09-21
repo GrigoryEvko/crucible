@@ -78,14 +78,14 @@ static OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, 
 static void feed_record(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
 static void feed_trigger(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
@@ -94,14 +94,14 @@ using test::flush_and_wait_compiled;
 static void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
     }
     assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }
@@ -122,17 +122,17 @@ static void test_cache_switch_mid_iter() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 5, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
     auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    auto r_div = vigil.dispatch_op(crucible::vouch(dB3.entry), dB3.metas, dB3.n_metas);
+    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
 
@@ -147,7 +147,7 @@ static void test_cache_switch_mid_iter() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -155,18 +155,18 @@ static void test_cache_switch_mid_iter() {
     // show up at op 3.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
     auto dA3 = make_op(SHAPE_A, 0, 19, 3);
-    auto r_switch = vigil.dispatch_op(crucible::vouch(dA3.entry), dA3.metas, dA3.n_metas);
+    auto r_switch = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dA3.entry), dA3.metas, dA3.n_metas);
 
     assert(r_switch.action == DispatchResult::Action::COMPILED && "Expected instant cache switch to variant A");
 
     for (uint32_t i = 4; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -187,10 +187,10 @@ static void test_cache_data_migration() {
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
     auto dB3 = make_op(SHAPE_B, 1, 4, 3);
-    auto r_div = vigil.dispatch_op(crucible::vouch(dB3.entry), dB3.metas, dB3.n_metas);
+    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
     assert(r_div.action == DispatchResult::Action::RECORD);
 
     for (uint32_t iter = 10; iter < 16; iter++)
@@ -204,14 +204,14 @@ static void test_cache_data_migration() {
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
         // A prefix output holds 1024 floats, which is 4096 bytes.
         std::memset(vigil.output_ptr(0), static_cast<int>(0xA0 + i), 4096);
     }
 
     auto dA3 = make_op(SHAPE_A, 0, 18, 3);
-    auto r_switch = vigil.dispatch_op(crucible::vouch(dA3.entry), dA3.metas, dA3.n_metas);
+    auto r_switch = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dA3.entry), dA3.metas, dA3.n_metas);
     assert(r_switch.action == DispatchResult::Action::COMPILED && "Expected cache switch from B to A at pos 3");
 
     // Op 3's input is op 2's output, so it must still carry the pattern
@@ -223,7 +223,7 @@ static void test_cache_data_migration() {
 
     for (uint32_t i = 4; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 18, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -248,7 +248,7 @@ static void test_cache_miss_fallback() {
     bad.num_outputs = 1;
     TensorMeta bad_meta = make_meta(fake_ptr(99, 99, 0), 512);
 
-    auto r = vigil.dispatch_op(crucible::vouch(bad), &bad_meta, 1);
+    auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
     assert(r.action == DispatchResult::Action::RECORD);
     assert(r.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
@@ -314,15 +314,15 @@ static void test_cache_repeated_switching() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 5, i);
-        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
     auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    (void)vigil.dispatch_op(crucible::vouch(dB3.entry), dB3.metas, dB3.n_metas);
+    (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
 
     for (uint32_t iter = 10; iter < 16; iter++)
         feed_record(vigil, SHAPE_B, 1, iter);
@@ -335,7 +335,7 @@ static void test_cache_repeated_switching() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 
     for (uint32_t cycle = 0; cycle < 4; cycle++) {
@@ -345,17 +345,17 @@ static void test_cache_repeated_switching() {
 
         for (uint32_t i = 0; i < 3; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         auto d3 = make_op(active_shapes, variant, iter, 3);
-        auto r3 = vigil.dispatch_op(crucible::vouch(d3.entry), d3.metas, d3.n_metas);
+        auto r3 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d3.entry), d3.metas, d3.n_metas);
         assert(r3.action == DispatchResult::Action::COMPILED && "Cache switch failed during repeated alternation");
 
         for (uint32_t i = 4; i < NUM_OPS; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }

@@ -123,7 +123,10 @@ struct SchemaInfo {
 };
 
 [[nodiscard]] static SchemaInfo get_schema_info(const c10::OperatorHandle& op, const c10::FunctionSchema& schema) {
-    const auto idx = (reinterpret_cast<uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
+    // The handle's address is the cache key. bit_cast reproduces it as an
+    // integer for the index arithmetic; the pointer itself is compared
+    // below, so the integer never turns back into one.
+    const auto idx = (std::bit_cast<std::uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
     auto& slot = schema_cache[idx];
     if (slot.key.value() == &op) [[likely]]
         return {slot.hash, schema_is_mutable[idx]};
@@ -407,11 +410,19 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     //
     // COMPILED path: checks guards (~2ns), ignores metas.
     // RECORDING path: appends to ring + MetaLog (~15ns), uses metas.
-    // Entry was built by this function from the ATen Stack + schema:
-    // every field (schema_hash, shape_hash, counts, scalar_values,
-    // op_flags, grad_enabled) comes from either the dispatcher-trusted
-    // schema or the live c10 query surface.  Vouch at the typed boundary.
     //
+    // The trust ladder.  Every field of the Entry was read out of the
+    // ATen stack and the live c10 query surface, which is a foreign
+    // runtime, so the Entry starts at the first tag and reaches a
+    // recording entry point only by passing the same checks the C ABI
+    // thunks pass.  The operation already ran eagerly above, so a
+    // rejected Entry costs the trace this operation and costs the caller
+    // nothing.
+    auto validated =
+        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), inline_metas, counts.total());
+    if (!validated) [[unlikely]]
+        return;
+
     // dispatch_op_pure<>() (FOUND-I19): the row-typed facade pinning the
     // PyTorch fallback handler as a `Pure` caller — the ATen dispatcher
     // hands control here on the foreground producer thread, with no I/O,
@@ -420,7 +431,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // (thin forwarder, default CallerRow = Row<>) and gives the
     // compile-time guarantee that this foreground hot path cannot
     // silently drift into a non-Pure context.
-    (void)vigil->dispatch_op_pure(crucible::vouch(entry), inline_metas, counts.total(), scope_hash);
+    (void)vigil->dispatch_op_pure(*validated, inline_metas, counts.total(), scope_hash);
 }
 
 // =====================================================================

@@ -67,14 +67,14 @@ static OpData make_op(uint32_t iter, uint32_t op_idx) {
 static void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
 static void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
@@ -91,14 +91,14 @@ using test::flush_and_wait_compiled;
 static void align_and_activate(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
     }
     assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }
@@ -119,7 +119,7 @@ static void test_dispatch_basic() {
     uint32_t complete_count = 0;
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
-        auto result = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
 
         if (result.status == ReplayStatus::MATCH)
@@ -147,7 +147,7 @@ static void test_dispatch_divergence() {
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(4, i);
-        auto result = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
         assert(result.status == ReplayStatus::MATCH);
     }
@@ -163,13 +163,13 @@ static void test_dispatch_divergence() {
     bad_metas[0] = make_meta(fake_ptr(4, 2));
     bad_metas[1] = make_meta(fake_ptr(4, 3));
 
-    auto result = vigil.dispatch_op(crucible::vouch(bad_entry), bad_metas, 2);
+    auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad_entry), bad_metas, 2);
     assert(result.action == DispatchResult::Action::RECORD);
     assert(result.status == ReplayStatus::DIVERGED);
     assert(vigil.diverged_count() == 1);
 
     auto d = make_op(4, 4);
-    auto result2 = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+    auto result2 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     assert(result2.action == DispatchResult::Action::RECORD);
     assert(!vigil.context().is_compiled());
 
@@ -194,7 +194,7 @@ static void test_dispatch_recovery() {
     bad.num_outputs = 1;
     TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
 
-    auto r_div = vigil.dispatch_op(crucible::vouch(bad), &bad_meta, 1);
+    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
@@ -214,7 +214,7 @@ static void test_dispatch_recovery() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(18, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -235,14 +235,14 @@ static void test_dispatch_data_flow() {
     align_and_activate(vigil, 3);
 
     auto d0 = make_op(4, 0);
-    auto r0 = vigil.dispatch_op(crucible::vouch(d0.entry), d0.metas, d0.n_metas);
+    auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d0.entry), d0.metas, d0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     assert(r0.status == ReplayStatus::MATCH);
     std::memset(vigil.output_ptr(0), 0x42, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         auto d = make_op(4, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
         assert(r.status == ReplayStatus::MATCH);
 
@@ -255,7 +255,7 @@ static void test_dispatch_data_flow() {
     }
 
     auto d7 = make_op(4, NUM_OPS - 1);
-    auto r7 = vigil.dispatch_op(crucible::vouch(d7.entry), d7.metas, d7.n_metas);
+    auto r7 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d7.entry), d7.metas, d7.n_metas);
     assert(r7.action == DispatchResult::Action::COMPILED);
     assert(r7.status == ReplayStatus::COMPLETE);
 
@@ -289,7 +289,7 @@ static void test_dispatch_pool_bounds() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
-        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
 
         auto* p = static_cast<uint8_t*>(vigil.output_ptr(0));
@@ -314,23 +314,23 @@ static void test_dispatch_pure_FOUND_I19() {
     {
         Vigil vigil;
         auto d0 = make_op(0, 0);
-        auto r0 = vigil.dispatch_op_pure(crucible::vouch(d0.entry), d0.metas, d0.n_metas);
+        auto r0 = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d0.entry), d0.metas, d0.n_metas);
         assert(r0.action == DispatchResult::Action::RECORD);
 
         auto d1 = make_op(0, 1);
-        auto r1 = vigil.dispatch_op_pure<eff::Row<>>(crucible::vouch(d1.entry), d1.metas, d1.n_metas);
+        auto r1 = vigil.dispatch_op_pure<eff::Row<>>(crucible::test::certify_synthetic_entry(d1.entry), d1.metas, d1.n_metas);
         assert(r1.action == DispatchResult::Action::RECORD);
 
         auto d2 = make_op(0, 2);
-        auto r2 = vigil.dispatch_op_pure<eff::PureRow>(crucible::vouch(d2.entry), d2.metas, d2.n_metas);
+        auto r2 = vigil.dispatch_op_pure<eff::PureRow>(crucible::test::certify_synthetic_entry(d2.entry), d2.metas, d2.n_metas);
         assert(r2.action == DispatchResult::Action::RECORD);
 
         auto d3 = make_op(0, 3);
-        auto r3 = vigil.dispatch_op_pure<eff::TotRow>(crucible::vouch(d3.entry), d3.metas, d3.n_metas);
+        auto r3 = vigil.dispatch_op_pure<eff::TotRow>(crucible::test::certify_synthetic_entry(d3.entry), d3.metas, d3.n_metas);
         assert(r3.action == DispatchResult::Action::RECORD);
 
         auto d4 = make_op(0, 4);
-        auto r4 = vigil.dispatch_op_pure<eff::GhostRow>(crucible::vouch(d4.entry), d4.metas, d4.n_metas);
+        auto r4 = vigil.dispatch_op_pure<eff::GhostRow>(crucible::test::certify_synthetic_entry(d4.entry), d4.metas, d4.n_metas);
         assert(r4.action == DispatchResult::Action::RECORD);
     }
 
@@ -341,9 +341,9 @@ static void test_dispatch_pure_FOUND_I19() {
             auto d = make_op(0, i);
             DispatchResult r;
             if (i % 2 == 0) {
-                r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+                r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             } else {
-                r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+                r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             }
             assert(r.action == DispatchResult::Action::RECORD);
         }
@@ -358,20 +358,20 @@ static void test_dispatch_pure_FOUND_I19() {
 
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(3, i);
-            auto r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::RECORD && "alignment via _pure should still RECORD");
         }
         assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K _pure aligns");
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(3, i);
-            auto r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure<eff::PureRow>(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure<eff::PureRow>(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
@@ -409,7 +409,7 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
 
         for (uint32_t i = 0; i < 3; ++i) {
             auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
             assert(r.status == ReplayStatus::MATCH);
         }
@@ -424,14 +424,14 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         bad_metas[0] = make_meta(fake_ptr(4, 2));
         bad_metas[1] = make_meta(fake_ptr(4, 3));
 
-        auto rdiv = vigil.dispatch_op_pure(crucible::vouch(bad_entry), bad_metas, 2);
+        auto rdiv = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(bad_entry), bad_metas, 2);
         assert(rdiv.action == DispatchResult::Action::RECORD);
         assert(rdiv.status == ReplayStatus::DIVERGED);
         assert(vigil.diverged_count() == 1);
         assert(!vigil.context().is_compiled());
 
         auto d = make_op(4, 4);
-        auto r2 = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+        auto r2 = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r2.action == DispatchResult::Action::RECORD);
     }
 
@@ -451,7 +451,7 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         bad.num_outputs = 1;
         TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
 
-        auto rdiv = vigil.dispatch_op_pure(crucible::vouch(bad), &bad_meta, 1);
+        auto rdiv = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
         assert(rdiv.action == DispatchResult::Action::RECORD);
         assert(rdiv.status == ReplayStatus::DIVERGED);
         assert(!vigil.context().is_compiled());
@@ -469,20 +469,20 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         // driven through the wrapper as well.
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(17, i);
-            auto r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::RECORD);
         }
         assert(vigil.context().is_compiled());
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(17, i);
-            auto r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(18, i);
-            auto r = vigil.dispatch_op_pure(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
@@ -498,14 +498,14 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure<eff::TotRow>(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure<eff::TotRow>(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
             assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(5, i);
-            auto r = vigil.dispatch_op_pure<eff::GhostRow>(crucible::vouch(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure<eff::GhostRow>(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
             assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
         }
@@ -538,13 +538,13 @@ static void test_second_producer_is_rejected() {
 
         // Claims this thread as the producer.
         auto first = make_op(0, 0);
-        auto r0 = vigil.dispatch_op(crucible::vouch(first.entry), first.metas, first.n_metas);
+        auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(first.entry), first.metas, first.n_metas);
         assert(r0.action == DispatchResult::Action::RECORD);
 
         std::thread intruder([&vigil, &rejected] {
             rejected = crucible::test::aborts([&vigil] {
                 auto second = make_op(0, 1);
-                (void)vigil.dispatch_op(crucible::vouch(second.entry), second.metas, second.n_metas);
+                (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(second.entry), second.metas, second.n_metas);
             });
         });
         intruder.join();
@@ -559,10 +559,10 @@ static void test_second_producer_is_rejected() {
     // gate and not a blanket refusal.
     Vigil vigil;
     auto d = make_op(0, 0);
-    auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
+    auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     assert(r.action == DispatchResult::Action::RECORD);
     auto again = make_op(0, 1);
-    auto r2 = vigil.dispatch_op(crucible::vouch(again.entry), again.metas, again.n_metas);
+    auto r2 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(again.entry), again.metas, again.n_metas);
     assert(r2.action == DispatchResult::Action::RECORD);
 
     std::printf("  test_second_producer_is_rejected: PASSED\n");
