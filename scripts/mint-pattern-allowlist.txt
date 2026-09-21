@@ -137,7 +137,6 @@ include/crucible/canopy/VectorClock.h:mint_vector_clock:constexpr-ok
 # ── cntp/ transport mints ────────────────────────────────────────────
 include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
 # DEFECT — see the DEFECTS block in the header.  Not an exemption.
-include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:noexcept-ok
 include/crucible/cntp/dataplane/Xdp.h:mint_bpf_map_spec:requires-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 
@@ -213,14 +212,6 @@ include/crucible/observe/Metrics.h:mint_keeper_metrics_reader:constexpr-ok
 include/crucible/observe/Metrics.h:mint_metrics_writer:constexpr-ok
 include/crucible/observe/SdcDetect.h:mint_sdc_detector:constexpr-ok
 include/crucible/observe/SyntheticProbe.h:mint_synthetic_probes:constexpr-ok
-include/crucible/perf/LockContention.h:mint_lock_contention:constexpr-ok
-include/crucible/perf/PmuSample.h:mint_pmu_sample:constexpr-ok
-include/crucible/perf/SchedSwitch.h:mint_sched_switch:constexpr-ok
-include/crucible/perf/SchedTpBtf.h:mint_sched_tp_btf:constexpr-ok
-include/crucible/perf/SenseHub.h:mint_sense_hub:constexpr-ok
-include/crucible/perf/SyscallLatency.h:mint_syscall_latency:constexpr-ok
-include/crucible/perf/SyscallTpBtf.h:mint_syscall_tp_btf:constexpr-ok
-include/crucible/perf/WorkloadProfiler.h:mint_workload_profiler:constexpr-ok
 
 # ── permissions/ token + structured-concurrency mints ────────────────
 include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
