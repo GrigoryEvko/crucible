@@ -5261,10 +5261,11 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
 # the CtxFits<Hub>Mint concept.  Batch 1 of 2: SenseHub + SenseHubV2
 # (the two ABI-stable hubs; BPF facade hubs ship in batch 2).
 #
-# The seven v1 BPF hub gates read a row that carries Block rather than
-# the Init capability, and the _cold_init_ctx / _bg_compile_ctx pairs
-# further down are their own floor.  mint_sense_hub_v2 still reads the
-# Init capability, so its two fixtures below keep that wording.
+# All eight BPF hub gates read a row that carries Block rather than the
+# Init capability, and the _cold_init_ctx / _bg_compile_ctx pairs further
+# down are their own floor.  The two fixtures registered here for each
+# hub stay valid across that migration, because a drain context and a
+# foreground one are rejected under either gate shape.
 crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubMint")
@@ -5342,8 +5343,8 @@ crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
 #     wait and not the capability source.
 #
 # Each gate is its own concept over its own <hub>_required_row alias, so
-# a family-wide pair would leave six gates unwitnessed.  Fourteen
-# fixtures, one pair per mint.
+# a family-wide pair would leave seven gates unwitnessed.  Sixteen
+# fixtures, one pair per mint across the eight BPF hubs.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_cold_init_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsLockContentionMint")
@@ -5386,6 +5387,12 @@ crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_cold_init_ctx
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_compile_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsSyscallTpBtfMint")
+crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSenseHubV2Mint")
+crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSenseHubV2Mint")
 
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures

@@ -450,12 +450,26 @@ static_assert(sizeof(SenseHubV2) == sizeof(std::unique_ptr<DummyStateV2>),
               "indicates a non-EBO field crept in (likely a missing [[no_unique_address]] "
               "or a polymorphic vptr).");
 
-// Loading the program attaches to the kernel tracepoints and maps the
-// counter and gauge arrays.  Those are startup-only operations, so
-// only a context carrying the Init capability may reach this surface.
+// The load attaches to the kernel tracepoints, maps the counter and
+// gauge arrays, and calls bpf(BPF_PROG_LOAD).  That last call enters the
+// kernel and waits while the verifier walks the program.  The wait is
+// why the row carries Block.  IO covers the bpf, perf_event_open and
+// mmap traffic.  Alloc covers the state the load path takes from the
+// heap.
+//
+// An Init-capability context cannot reach this surface.  The permitted
+// row of that capability is Row<Init, Alloc, IO> and carries no Block,
+// so a startup context widens no further than IO and the gate is
+// unsatisfiable there.  A background context permits all three atoms
+// and widens to them.
+
+using sense_hub_v2_required_row =
+    ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO,
+                             ::crucible::effects::Effect::Block>;
+
 template <class Ctx>
 concept CtxFitsSenseHubV2Mint = ::crucible::effects::IsExecCtx<Ctx>
-                             && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+                             && ::crucible::effects::Subrow<sense_hub_v2_required_row, typename Ctx::row_type>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>
@@ -466,8 +480,26 @@ template <::crucible::effects::IsExecCtx Ctx>
     return SenseHubV2::load(init);
 }
 
-static_assert(CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>);
+// Block is the atom that decides this gate.  ColdInitCtx and
+// BgCompileCtx both carry Alloc and IO, and the gate rejects both for
+// the same missing atom.  The gate reads the wait, not the capability
+// source.
+static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::BgCompileCtx>);
 static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>);
 static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::HotFgCtx>);
+static_assert(CtxFitsSenseHubV2Mint<::crucible::effects::TestRunnerCtx>);
+
+// The two assertions below hold for a capability source rather than for
+// one named context, so a new alias on either side cannot evade them.
+static_assert(!::crucible::effects::Subrow<sense_hub_v2_required_row,
+                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Init>>,
+              "The initialization capability must never permit every atom this gate demands.  It omits "
+              "Block because a startup scope must not wait, and the BPF program load waits on the "
+              "kernel verifier.  No widening rescues an initialization context.");
+static_assert(::crucible::effects::Subrow<sense_hub_v2_required_row,
+                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Bg>>,
+              "The background capability must permit every atom this gate demands, or no production "
+              "context could reach this mint.");
 
 }  // namespace crucible::perf

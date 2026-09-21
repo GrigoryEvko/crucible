@@ -59,8 +59,17 @@ static_assert(std::is_same_v<::crucible::fixy::perf::v2::Idx, ::crucible::perf::
 static_assert(std::is_same_v<::crucible::fixy::perf::v2::Gauge, ::crucible::perf::Gauge>,
               "Gauge must alias the substrate type.");
 
-static_assert(::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>,
-              "The mint gate must admit a cold init context.");
+// The gate reads a row that carries Block, because the load calls
+// bpf(BPF_PROG_LOAD) and waits on the kernel verifier.  The
+// initialization capability permits Row<Init, Alloc, IO> and no Block,
+// so it cannot reach the mint.  The test runner capability permits Block
+// and does reach it.
+
+static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>,
+              "The mint gate must reject a cold init context.");
+
+static_assert(::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::TestRunnerCtx>,
+              "The mint gate must admit a test runner context.");
 
 static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>,
               "The mint gate must reject a background drain context.");
@@ -85,12 +94,14 @@ static_assert(v2_mint_cardinality == 1, "This umbrella re-exports exactly one mi
 namespace crucible::fixy::perf::v2 {
 
 inline void runtime_smoke_test() noexcept {
-    constexpr bool admits_cold = CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>;
+    constexpr bool rejects_cold = !CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>;
     constexpr bool rejects_bg = !CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>;
     constexpr bool rejects_hot = !CtxFitsSenseHubV2Mint<::crucible::effects::HotFgCtx>;
-    (void)admits_cold;
+    constexpr bool admits_test = CtxFitsSenseHubV2Mint<::crucible::effects::TestRunnerCtx>;
+    (void)rejects_cold;
     (void)rejects_bg;
     (void)rejects_hot;
+    (void)admits_test;
 }
 
 }  // namespace crucible::fixy::perf::v2

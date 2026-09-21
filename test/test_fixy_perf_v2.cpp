@@ -16,8 +16,16 @@ namespace fpv2 = ::crucible::fixy::perf::v2;
 namespace perf_ = ::crucible::perf;
 namespace eff = ::crucible::effects;
 
-static_assert(std::is_same_v<decltype(&fpv2::mint_sense_hub_v2<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_sense_hub_v2<eff::ColdInitCtx>)>,
+// The mint gates on a row that carries Block, so an initialization
+// context cannot instantiate it and cannot witness the re-export here.
+// This is the production shape instead: a background context widened to
+// the three atoms the gate demands.
+using BgProbeCtx =
+    eff::ExecCtx<eff::Bg, eff::ctx_numa::Local, eff::ctx_alloc::Heap, eff::ctx_heat::Cold, eff::ctx_resid::DRAM,
+                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+
+static_assert(std::is_same_v<decltype(&fpv2::mint_sense_hub_v2<BgProbeCtx>),
+                             decltype(&perf_::mint_sense_hub_v2<BgProbeCtx>)>,
               "fixy::perf::v2::mint_sense_hub_v2 must be the substrate function "
               "(the using-declaration preserves crucible::perf:: residency).");
 
@@ -41,9 +49,10 @@ static_assert(std::is_same_v<fpv2::Idx, perf_::Idx>, "fixy::perf::v2::Idx must a
 
 static_assert(std::is_same_v<fpv2::Gauge, perf_::Gauge>, "fixy::perf::v2::Gauge must alias substrate.");
 
-static_assert(fpv2::CtxFitsSenseHubV2Mint<eff::ColdInitCtx>);
+static_assert(!fpv2::CtxFitsSenseHubV2Mint<eff::ColdInitCtx>);
 static_assert(!fpv2::CtxFitsSenseHubV2Mint<eff::BgDrainCtx>);
 static_assert(!fpv2::CtxFitsSenseHubV2Mint<eff::HotFgCtx>);
+static_assert(fpv2::CtxFitsSenseHubV2Mint<BgProbeCtx>);
 
 // This is a floor, not an equality.  The exact pin sits beside the
 // source-of-truth constant in the header.  A floor here catches only the inverse
