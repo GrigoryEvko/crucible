@@ -554,8 +554,14 @@ private:
     // that starts it.
     [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept : stages_{std::forward<Stages>(stages)...} {}
 
+    // The constraint must match the definition's exactly.  A friend whose
+    // constraints differ declares a DIFFERENT template, so the friendship
+    // attaches to nothing and the private constructor stays unreachable —
+    // measured, when this clause still read `pipeline_chain` after the mint
+    // moved to `CtxFitsPipeline`.  `mint_pipeline_dag` below keeps the same
+    // discipline against its own gate.
     template <::foundation::effects::IsExecCtx MintCtx, class... MintStages>
-        requires pipeline_chain<std::remove_cvref_t<MintStages>...>
+        requires CtxFitsPipeline<MintCtx, std::remove_cvref_t<MintStages>...>
     friend constexpr auto mint_pipeline(MintCtx const&, MintStages&&...) noexcept;
 
     [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
@@ -723,12 +729,17 @@ private:
 };
 
 template <::foundation::effects::IsExecCtx Ctx, class... Stages>
-    requires pipeline_chain<std::remove_cvref_t<Stages>...>
+    requires CtxFitsPipeline<Ctx, std::remove_cvref_t<Stages>...>
 [[nodiscard]] constexpr auto mint_pipeline(Ctx const& /*ctx*/, Stages&&... stages) noexcept {
     using ctx_row = typename Ctx::row_type;
     using required_row = pipeline_row_union_t<std::remove_cvref_t<Stages>...>;
     using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
 
+    // The clause above already refuses an unfitting context, so this does not
+    // fire while `CtxFitsPipeline` carries its row conjunct.  It is the
+    // backstop for the case where that conjunct is dropped: measured by
+    // deleting it, the assertion catches the same call and names the offending
+    // atoms.  `mint_pipeline_dag` below keeps the pair for the same reason.
     CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
                                  &::fixy::concurrent::detail::pipeline_row_admission_anchor_, ctx_row, required_row,
                                  offending_row);

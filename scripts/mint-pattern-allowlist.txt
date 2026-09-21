@@ -106,10 +106,12 @@
 # deleted the entry.  §XXI admits no noexcept exemption, so this category
 # is expected to stay empty.
 #
-# The 27 `ctxfit-ok` entries ARE the open-defect list now.  Each one is a
+# The 26 `ctxfit-ok` entries ARE the open-defect list now.  Each one is a
 # ctx-bound mint that gates no context, and each needs a real conjunct
 # rather than an entry.  They sit in their own section below with the
-# remediation stated once for the set.
+# remediation stated once for the set.  All 26 are in the old substrate
+# that Stage D deletes; the only new-tree entry, `mint_pipeline`, was
+# repaired rather than excused.
 #
 # An earlier revision of this file attributed that entry, and a further
 # eleven entries under canopy/ and cntp/, to those trees being
@@ -273,13 +275,19 @@ include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
 # scanner's blind spot would have retired the entry and left the gap with
 # no record anywhere.  That is why this category exists.
 #
-# The twenty-six sessions/ entries sit in the old substrate, which Stage D
-# deletes; the port carries the gate.  `mint_pipeline` is in the new tree
-# and is the one that matters: it enforces the fit with an in-body
-# `static_assert` producing `EffectRowMismatch`, which is a HARD error
-# rather than a constraint.  `requires { mint_pipeline(bad_ctx, ...) }`
-# therefore answers true and no caller can probe it — the same defect the
-# view mints carried until 0a14fa5c gave them real concepts.
+# Every entry below sits in the old substrate, which Stage D deletes; the
+# port carries the gate.
+#
+# There WAS one new-tree entry, `include/fixy/concurrent/Pipeline.h`'s
+# `mint_pipeline`, and it was repaired rather than excused.  It enforced
+# the fit with an in-body `static_assert` producing `EffectRowMismatch`,
+# which is a HARD error rather than a constraint, so
+# `requires { mint_pipeline(bad_ctx, ...) }` answered true and no caller
+# could probe it — the same defect the view mints carried until 0a14fa5c.
+# The repair was one line: its clause already had a correct concept,
+# `CtxFitsPipeline`, sitting unused in the same header.  The body
+# assertion stayed, because deleting the concept's row conjunct was
+# measured to make it fire on the same call.
 include/crucible/fixy/Substr.h:mint_mpsc_consumer_session:ctxfit-ok
 include/crucible/fixy/Substr.h:mint_mpsc_producer_session:ctxfit-ok
 include/crucible/sessions/AsyncPipelineSession.h:mint_async_pipeline_consumer_session:ctxfit-ok
@@ -306,7 +314,6 @@ include/crucible/sessions/SwmrSession.h:mint_reader_runtime_session:ctxfit-ok
 include/crucible/sessions/SwmrSession.h:mint_reader_session:ctxfit-ok
 include/crucible/sessions/SwmrSession.h:mint_writer_runtime_session:ctxfit-ok
 include/crucible/sessions/SwmrSession.h:mint_writer_session:ctxfit-ok
-include/fixy/concurrent/Pipeline.h:mint_pipeline:ctxfit-ok
 
 # ── topology/ + warden/ allocating mints ─────────────────────────────
 include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok

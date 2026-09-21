@@ -1080,11 +1080,16 @@ fixy_neg_compile_test(neg_stage_run_on_an_lvalue
 # are separated by what the fold answered false about: an element that
 # is not a stage at all, two stages whose payloads do not meet, and an
 # empty pack.
+# `pipeline_chain` is reported as `pipeline_chain<Stages ...>` rather than in
+# the `remove_cvref<_ArgTypes>` spelling, because mint_pipeline's clause now
+# names CtxFitsPipeline and the unwrapping happens at that concept's call
+# site.  The second regex of each pair is the discriminating one and did not
+# move: IsStage for the non-stage, pipeline_chain_check for the broken chain.
 fixy_neg_compile_test(neg_pipeline_mint_not_a_stage
-  "required for the satisfaction of .pipeline_chain<typename std::remove_cvref<_ArgTypes>::type \\.\\.\\.>."
+  "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
   "the expression .\\(IsStage<Stages> && \\.\\.\\.\\).*, int\\}\\].* evaluated to .false.")
 fixy_neg_compile_test(neg_pipeline_mint_chain_break
-  "required for the satisfaction of .pipeline_chain<typename std::remove_cvref<_ArgTypes>::type \\.\\.\\.>."
+  "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
   "pipeline_chain_check<std::tuple<typename std::remove_cvref<_Tps>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
   "&float_to_double\\(<unnamed>::FakeConsumer<float>&&")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
@@ -1101,10 +1106,16 @@ fixy_neg_compile_test(neg_pipeline_mint_ctx_not_exec_ctx
 # the union against the context that starts them.  The third regex is
 # the offending set the block names, which is the whole reason the block
 # exists.
+# The gate moved from the body to the requires clause, so the refusal is a
+# constraint rather than a static assertion.  The third regex is what keeps
+# this fixture honest: it pins the ATOMIC constraint that answered false, so
+# deleting the row conjunct from CtxFitsPipeline changes the diagnostic and
+# reds the fixture.  Matching only "constraints not satisfied" would pass for
+# any of the three conjuncts.
 fixy_neg_compile_test(neg_pipeline_mint_row_union_not_admitted
-  "static assertion failed: \\[EffectRowMismatch\\]"
-  "at fixy::concurrent::detail::pipeline_row_admission_anchor_"
-  "offending atoms:     foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::Init>")
+  "constraints not satisfied"
+  "required for the satisfaction of .CtxFitsPipeline<"
+  "row_subset<.*Ctx::row_type>.*evaluated to")
 
 # The two disciplines the pipeline carries, as for the stage above.
 fixy_neg_compile_test(neg_pipeline_copied
