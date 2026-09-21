@@ -1755,9 +1755,40 @@ endif()
 # about +0.1 and +1.1 ns per guarded call.  The ordering held at every
 # quantile, which is the only part of this worth relying on.
 #
+# ── The quiet-box number, and the two entries it retires ───────────
+#
+# The paragraph above asked for a real number before shrinking this
+# list.  Measured on an isolated core with the bench partition active,
+# 10 runs per variant interleaved, one object per semantic linked
+# against the same library, pinned g++-16p:
+#
+#   dispatch_op [COMPILED, cyclic]      3.94 -> 4.64 ns  (+0.70, +17.8%)
+#   dispatch_op [COMPILED, MATCH only]  4.33 -> 5.30 ns  (+0.97, +22.4%)
+#   CrucibleContext::advance (8 ops)    3.40 -> 5.30 ns  (+1.90, +55.9%)
+#
+# Run-to-run p50 spread stayed at or below 3.8% on all six arms, inside
+# the 5% bar.  Two arms of the same run are void and are not quoted:
+# dispatch_op [RECORDING] spread 8.2% and 13.5%, and is_compiled()
+# under observe at 5.5%.
+#
+# So a guarded dispatch_op call costs +0.70 to +0.97 ns, which narrows
+# the band above rather than contradicting it.  The two entries that
+# timed those paths are therefore REMOVED: a benchmark whose figure sits
+# 15-22% below what production runs is not reporting the primitive, and
+# the exemption was the only thing making the two disagree.  The vessel
+# adapter compiles with `observe` — verified from its own compile line in
+# a Release build with CRUCIBLE_BENCH=OFF, where this whole block is
+# inert — so the bench and the adapter now share one semantic.
+#
+# The four that remain are unmeasured on a quiet box.  Each leaves this
+# list when it has its own number, not before.
+#
 # bench/ declares zero `add_test`, so there is no committed per-op
-# latency anywhere in the tree to compare against either.  Shrink this
-# list, do not grow it, until a quiet box gives a real number.
+# latency in the tree to compare against.  bench/baselines/record_leaf.json
+# predates this change and its dispatch figures were taken under
+# `ignore`; they are not comparable to a production path and re-taking
+# them waits on the recording-path rewrite now in flight.  Shrink this
+# list, do not grow it.
 # ═══════════════════════════════════════════════════════════════
 # The CRUCIBLE_BENCH guard is not a policy choice.  `DIRECTORY bench`
 # is an error when bench/ was never added, and bench/ is added only
@@ -1770,10 +1801,8 @@ if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set(CRUCIBLE_CONTRACT_IGNORE_TUS
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_meta_log.cpp       # MetaLog append
-    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_dispatch.cpp       # Vigil::dispatch_op
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_arena.cpp          # Arena bump allocation
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_pool_allocator.cpp # PoolAllocator slot lookup
-    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_replay_engine.cpp  # ReplayEngine::advance
   )
   set_source_files_properties(
     ${CRUCIBLE_CONTRACT_IGNORE_TUS}
