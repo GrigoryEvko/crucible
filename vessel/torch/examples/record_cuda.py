@@ -1,24 +1,32 @@
 #!/usr/bin/env python3
-"""Measure the accelerator backward-window gap that crucible_fallback.cpp
-documents.
+"""Measure whether the accelerator backward window reaches the trace.
 
-That file states the behavior: a backward pass over CPU tensors runs on
-the thread that called backward() and is recorded, while a backward pass
-over accelerator tensors runs on the engine's per-device worker thread
-and is not. This script measures the size of the resulting gap instead
-of taking it on faith.
+A backward pass runs on the thread that called backward() for host
+tensors, and on a per-device worker thread for accelerator tensors. The
+ring is single-producer, so every thread but the first is turned away and
+the window it produced is missing from the trace. CrucibleNative closes
+that by serialising the autograd engine while the Vigil records. This
+script measures the result instead of taking it on faith.
 
-The CPU arm is the control. Both arms train the same model for the same
-number of iterations, so a schema the CPU arm records and the CUDA arm
-does not is either an unrecorded backward op or a kernel that genuinely
-differs between the two devices. The report separates the two.
+Three arms, and the shapes are the point:
+
+  cpu            the control. Every schema it records is one the
+                 accelerator arms are expected to record too.
+  <device>       every tensor on one accelerator. The backward pass runs
+                 on one worker thread, so a merge that concatenated one
+                 thread after another would already look correct here.
+  <device>+host  the token table on the host and the blocks on the
+                 accelerator. The backward pass runs on the calling
+                 thread and on a worker thread at the same time. This is
+                 the shape that separates a real fix from one that only
+                 holds for a single device, so it is part of the gate.
 
 Each arm runs in its own process. The dispatch library's schema table is
 a process-global static, so two arms in one process would leave the
 second holding the union of both and no difference could show.
 
 Usage:
-    python record_cuda.py [--device cuda:3] [--iters 4] [--frac 0.12]
+    python record_cuda.py [--device cuda:0] [--iters 4]
 """
 
 import argparse
@@ -58,7 +66,8 @@ class MiniGPT(nn.Module):
     """Token and position embeddings, N blocks, a final norm and a head."""
 
     def __init__(self, vocab: int, d_model: int, n_heads: int,
-                 n_layers: int, d_ff: int, max_seq: int):
+                 n_layers: int, d_ff: int, max_seq: int,
+                 host_embedding: bool = False):
         super().__init__()
         self.tok_emb = nn.Embedding(vocab, d_model)
         self.pos_emb = nn.Embedding(max_seq, d_model)
@@ -67,29 +76,50 @@ class MiniGPT(nn.Module):
         )
         self.ln_f = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, vocab, bias=False)
+        # True keeps the token table on the host while the blocks run on
+        # the accelerator, which is what a large vocabulary does in
+        # practice. The backward pass then has a host segment and a device
+        # segment, and the default engine runs the two at the same time on
+        # two threads.
+        self.host_embedding = host_embedding
 
     def forward(self, idx):
         _, seq_len = idx.shape
-        x = self.tok_emb(idx) + self.pos_emb(
-            torch.arange(seq_len, device=idx.device)
-        )
+        if self.host_embedding:
+            tok = self.tok_emb(idx.to("cpu")).to(idx.device)
+        else:
+            tok = self.tok_emb(idx)
+        x = tok + self.pos_emb(torch.arange(seq_len, device=idx.device))
         for block in self.blocks:
             x = block(x)
         return self.head(self.ln_f(x))
 
 
-def run_arm(device: str, iters: int, out_path: str, verbose: bool) -> dict:
+def run_arm(device: str, iters: int, out_path: str, verbose: bool,
+            host_embedding: bool = False) -> dict:
     """Train on one device under the recorder and return what it captured."""
     torch.manual_seed(42)
     model = MiniGPT(vocab=128, d_model=64, n_heads=4,
-                    n_layers=2, d_ff=128, max_seq=32).to(device)
+                    n_layers=2, d_ff=128, max_seq=32,
+                    host_embedding=host_embedding).to(device)
+    if host_embedding:
+        model.tok_emb.to("cpu")
     model.train()
+    # The optimizer keeps its per-device default on purpose. Pinning
+    # foreach=False was measured and rejected: it emits three ops for each
+    # parameter, which turns the optimizer phase into a long run with a
+    # period of three. The iteration detector matches on a five-hash
+    # signature, so a divergence reset that lands inside that run locks onto
+    # the period and publishes six-op regions from then on. Measured on
+    # cuda:0 over 12 iterations: foreach=False gave a 6-op region and 24
+    # divergences, and the default gave a 799-op region and 3.
     opt = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     loss_fn = nn.CrossEntropyLoss()
 
     idx = torch.randint(0, 128, (4, 16), device=device)
     tgt = torch.randint(0, 128, (4, 16), device=device)
 
+    serialised_iters = 0
     with CrucibleNative(verbose=verbose) as ctx:
         ctx.track_modules(model)
         for i in range(iters):
@@ -100,8 +130,22 @@ def run_arm(device: str, iters: int, out_path: str, verbose: bool) -> dict:
             logits = model(idx)
             loss = loss_fn(logits.reshape(-1, 128), tgt.reshape(-1))
             ctx.set_training_phase(ctx.PHASE_BACKWARD)
+            # The guard must hold the engine on this thread unless the
+            # Vigil has already compiled, where a replayed dispatch
+            # records nothing and the worker threads cost the trace
+            # nothing. A silent failure to arm would show up only as a
+            # missing schema much later, so it is checked here.
+            assert ctx.backward_serialised or ctx.is_compiled(), (
+                "the backward phase neither serialised the engine nor "
+                "found the Vigil compiled"
+            )
+            serialised_iters += int(ctx.backward_serialised)
             loss.backward()
             ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
+            assert not ctx.backward_serialised, (
+                "leaving the backward phase must give the engine its "
+                "worker threads back"
+            )
             opt.step()
             if device.startswith("cuda"):
                 torch.cuda.synchronize(device)
@@ -113,27 +157,80 @@ def run_arm(device: str, iters: int, out_path: str, verbose: bool) -> dict:
         schemas = {name for _, name in ctx._dispatch.schema_entries()}
         result = {
             "device": device,
+            "host_embedding": host_embedding,
             "schemas": schemas,
             "num_ops": ctx.active_num_ops(),
             "bg_iters": ctx.bg_iterations(),
             "compiled": ctx.is_compiled(),
             "diverged": ctx.diverged_count(),
+            "serialised_iters": serialised_iters,
         }
         result["exported"] = ctx.export_trace(out_path)
 
     return result
 
 
+# A name carrying the other device's kernel family is a kernel difference,
+# not a recording gap. Keeping the two apart is what stops the count of
+# genuinely unrecorded ops from being inflated.
+DEVICE_SPECIFIC = ("_for_cpu", "_foreach_", "_efficient_attention",
+                   "_flash_attention")
+
+# The region size the accelerator arm must reach, as a fraction of the CPU
+# arm's. The two arms train the same model, so a region that is much
+# smaller means ops are missing from it.
+REGION_TOLERANCE = 0.10
+
+
+def compare(cpu: dict, arm: dict, label: str) -> bool:
+    """Print one arm against the CPU control and report whether it passes."""
+    missing = sorted(cpu["schemas"] - arm["schemas"])
+    extra = sorted(arm["schemas"] - cpu["schemas"])
+    gap = [n for n in missing if not any(m in n for m in DEVICE_SPECIFIC)]
+    backward_gap = [n for n in gap if "backward" in n]
+
+    ratio = arm["num_ops"] / cpu["num_ops"] if cpu["num_ops"] else 0.0
+    ops_ok = abs(ratio - 1.0) <= REGION_TOLERANCE
+    backward_ok = not backward_gap
+
+    print(f"--- {label} against the cpu control ---")
+    print(f"  schemas: cpu={len(cpu['schemas'])} {label}={len(arm['schemas'])}")
+    print(f"  region_ops: cpu={cpu['num_ops']} {label}={arm['num_ops']} "
+          f"({ratio:.1%} of the control, tolerance "
+          f"{1 - REGION_TOLERANCE:.0%}-{1 + REGION_TOLERANCE:.0%})")
+    print(f"  backward windows serialised while recording: "
+          f"{arm['serialised_iters']}")
+    print(f"  recorded on cpu but not here: {len(missing)}  "
+          f"({len(missing) - len(gap)} device-specific, {len(gap)} a gap)")
+    for name in missing:
+        print(f"      - {name}")
+    if extra:
+        print(f"  recorded here but not on cpu: {len(extra)}")
+        for name in extra:
+            print(f"      + {name}")
+    if backward_gap:
+        print(f"  MISSING BACKWARD SCHEMAS: {len(backward_gap)}")
+        for name in backward_gap:
+            print(f"      {name}")
+    print(f"  missing backward schemas = {len(backward_gap)} "
+          f"[{'PASS' if backward_ok else 'FAIL'}]")
+    print(f"  region_ops within {REGION_TOLERANCE:.0%} "
+          f"[{'PASS' if ops_ok else 'FAIL'}]")
+    print()
+    return backward_ok and ops_ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", default="cuda:3")
+    ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--iters", type=int, default=4)
-    ap.add_argument("--frac", type=float, default=0.12,
-                    help="cap on this device's memory, as a fraction of total")
+    ap.add_argument("--frac", type=float, default=0.0,
+                    help="cap on this device's memory as a fraction of total, "
+                         "0 for no cap")
     ap.add_argument("--outdir", default="traces")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--arm", default=None,
-                    help="internal: run one device and write JSON to --json")
+                    help="internal: run one arm and write JSON to --json")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
@@ -143,13 +240,16 @@ def main() -> int:
     # process-global static, so two arms in one process would leave the
     # second holding the union of both and no difference could show.
     if args.arm:
-        if args.arm.startswith("cuda"):
-            ordinal = int(args.arm.split(":")[1]) if ":" in args.arm else 0
+        host_embedding = args.arm.endswith("+host")
+        device = args.arm[: -len("+host")] if host_embedding else args.arm
+        if device.startswith("cuda") and args.frac > 0:
+            ordinal = int(device.split(":")[1]) if ":" in device else 0
             torch.cuda.set_per_process_memory_fraction(args.frac, ordinal)
+        stem = args.arm.replace(":", "").replace("+", "_")
         result = run_arm(
-            args.arm, args.iters,
-            os.path.join(args.outdir, f"minigpt_{args.arm.replace(':', '')}.crtrace"),
-            args.verbose,
+            device, args.iters,
+            os.path.join(args.outdir, f"minigpt_{stem}.crtrace"),
+            args.verbose, host_embedding=host_embedding,
         )
         result["schemas"] = sorted(result["schemas"])
         with open(args.json, "w") as fh:
@@ -157,7 +257,7 @@ def main() -> int:
         return 0
 
     print("=" * 66)
-    print(f"Crucible — CUDA vs CPU recording  (torch {torch.__version__})")
+    print(f"Crucible — accelerator backward window  (torch {torch.__version__})")
     print("=" * 66)
 
     if args.device.startswith("cuda"):
@@ -168,72 +268,56 @@ def main() -> int:
         free, total = torch.cuda.mem_get_info(ordinal)
         print(f"{args.device}: {torch.cuda.get_device_name(ordinal)}")
         print(f"  free {free / 2**30:.1f} GiB of {total / 2**30:.1f} GiB")
-        print(f"  this process is capped at {args.frac:.0%} of total")
+        if args.frac > 0:
+            print(f"  this process is capped at {args.frac:.0%} of total")
     print()
+
+    # The mixed arm is the one that separates a real fix from one that
+    # only holds where a single worker thread produced the whole backward
+    # pass. It runs last so its numbers sit next to the verdict.
+    labels = ["cpu", args.device, f"{args.device}+host"]
 
     arms = {}
     with tempfile.TemporaryDirectory() as tmp:
-        for device in ("cpu", args.device):
-            print(f"--- {device} ---")
-            out_json = os.path.join(tmp, f"{device.replace(':', '')}.json")
+        for label in labels:
+            print(f"--- {label} ---")
+            out_json = os.path.join(tmp, label.replace(":", "").replace("+", "_") + ".json")
             cmd = [sys.executable, os.path.abspath(__file__),
-                   "--arm", device, "--json", out_json,
+                   "--arm", label, "--json", out_json,
                    "--iters", str(args.iters), "--frac", str(args.frac),
                    "--outdir", os.path.abspath(args.outdir)]
             if args.verbose:
                 cmd.append("--verbose")
             rc = subprocess.call(cmd)
             if rc != 0:
-                print(f"  arm {device} exited {rc}")
+                print(f"  arm {label} exited {rc}")
                 return rc
             with open(out_json) as fh:
-                arms[device] = json.load(fh)
-            arms[device]["schemas"] = set(arms[device]["schemas"])
+                arms[label] = json.load(fh)
+            arms[label]["schemas"] = set(arms[label]["schemas"])
             print()
 
-    cpu, gpu = arms["cpu"], arms[args.device]
     print("=" * 66)
     print("RESULT")
     print("=" * 66)
-    for tag, r in (("cpu", cpu), (args.device, gpu)):
-        print(f"  {tag:>10}: {len(r['schemas']):4d} distinct schemas  "
+    for label in labels:
+        r = arms[label]
+        print(f"  {label:>14}: {len(r['schemas']):4d} distinct schemas  "
               f"region_ops={r['num_ops']:4d}  bg_iters={r['bg_iters']:3d}  "
               f"compiled={r['compiled']}  diverged={r['diverged']}")
-
-    missing = sorted(cpu["schemas"] - gpu["schemas"])
-    extra = sorted(gpu["schemas"] - cpu["schemas"])
     print()
-    print(f"  recorded on CPU but NOT on {args.device}: {len(missing)}")
-    for name in missing:
-        print(f"      - {name}")
-    if extra:
-        print(f"  recorded on {args.device} but not on CPU: {len(extra)}")
-        for name in extra:
-            print(f"      + {name}")
 
-    # A name carrying the other device's kernel family is a kernel
-    # difference, not a recording gap. Keep the two apart so the count
-    # of genuinely unrecorded ops is not inflated.
-    device_specific = ("_for_cpu", "_foreach_", "_efficient_attention",
-                       "_flash_attention")
-    gap = [n for n in missing if not any(m in n for m in device_specific)]
-    backward_gap = [n for n in gap if "backward" in n]
+    cpu = arms["cpu"]
+    verdicts = {label: compare(cpu, arms[label], label) for label in labels[1:]}
 
+    print("=" * 66)
+    for label, ok in verdicts.items():
+        print(f"  {label:>14}: {'PASS' if ok else 'FAIL'}")
+    all_ok = all(verdicts.values())
     print()
-    print(f"  of those {len(missing)}, {len(missing) - len(gap)} are "
-          f"device-specific kernels and {len(gap)} are a recording gap")
-    if backward_gap:
-        print(f"  {len(backward_gap)} of the gap are backward ops:")
-        for name in backward_gap:
-            print(f"      {name}")
-        print()
-        print("  The loss fell on both arms, so backward ran on both. On the")
-        print("  accelerator it ran on the engine's per-device worker thread,")
-        print("  which the recorder does not serve. See the backward-window")
-        print("  note in vessel/torch/crucible_fallback.cpp.")
-        print(f"  Region size: cpu={cpu['num_ops']} ops, "
-              f"{args.device}={gpu['num_ops']} ops.")
-    return 0
+    print("VERDICT:", "the backward window is recorded on every shape"
+          if all_ok else "a shape is still short of the control")
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":

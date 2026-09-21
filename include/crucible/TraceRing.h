@@ -24,6 +24,14 @@
 // different order on every run, so a multi-producer ring would not be a
 // faster version of this one, it would be a ring that cannot support
 // bit-exact replay.
+//
+// A caller that has work on several threads gives that work one producer
+// rather than giving this ring several. The PyTorch adapter is the worked
+// example: a backward pass runs on the calling thread and on one worker
+// thread for each accelerator, so a recording session holds the autograd
+// engine on the calling thread and the whole pass reaches this ring in the
+// order that thread produced. Refer to the serialisation note in
+// vessel/torch/crucible_native.py.
 
 #include <algorithm>
 #include <atomic>

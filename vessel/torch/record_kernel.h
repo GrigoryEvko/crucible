@@ -822,13 +822,20 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
 // ring is single-producer and the recorded operation order is the trace's
 // identity: it fixes the region content hash, the memory plan and the replay
 // order. This runtime's autograd engine runs a backward pass on a worker
-// thread of its own, and the Crucible key travels there with the captured
-// ThreadLocalState, so this handler fires there for every backward operation
-// of a model on an accelerator. A foreign thread executes its operation and
-// leaves the ring alone. The trace is then short by that thread's operations,
-// which is incomplete and reproducible; recording them would be complete and
-// irreproducible, and content addressing, the memory plan and bit-exact
-// replay are built on the reproducibility.
+// thread of its own by default, and the Crucible key travels there with the
+// captured ThreadLocalState, so this handler fires there for every backward
+// operation of a model on an accelerator. A foreign thread executes its
+// operation and leaves the ring alone. The trace is then short by that
+// thread's operations, which is incomplete and reproducible. Recording them
+// would be complete and irreproducible, and content addressing, the memory
+// plan and bit-exact replay are built on the reproducibility.
+//
+// A recording session gives the backward window one producer instead of
+// widening this gate. It holds the engine on the thread that calls backward()
+// while the Vigil records, so the window arrives here on the recording thread
+// and passes. Refer to the serialisation note in
+// vessel/torch/crucible_native.py. This question then turns away the sessions
+// that do not arm that guard.
 // =====================================================================
 
 [[nodiscard]] CRUCIBLE_HOT crucible::Vigil* recording_vigil() noexcept {

@@ -27,6 +27,7 @@ Usage:
         ctx.export_trace("resnet18.crtrace")
 """
 
+import contextlib
 import ctypes
 import os
 from pathlib import Path
@@ -349,12 +350,15 @@ class CrucibleNative:
       - Every ATen op goes through crucibleFallback() in C++
       - track_modules() installs scope hooks for module hierarchy
       - Vigil records to TraceRing, bg thread builds DAG
+      - A backward pass runs on this thread alone while the Vigil
+        records, so the whole backward window reaches the ring
 
     On __exit__:
       5. Disable DispatchKey::Crucible
       6. Clear TLS state
-      7. Remove scope hooks
-      8. Destroy Vigil
+      7. Give the autograd engine its worker threads back
+      8. Remove scope hooks
+      9. Destroy Vigil
     """
 
     # CrucibleMode ordinals (must match c10::CrucibleMode enum)
@@ -384,6 +388,11 @@ class CrucibleNative:
         # Scope tracking state
         self._hook_handles: list = []
         self._scope_names: dict[int, str] = {}  # hash -> module path
+
+        # The live autograd-serialisation guard, or None when the engine
+        # keeps its worker threads.  One slot, so arming twice is a no-op
+        # and no path restores the flag twice.
+        self._mt_guard = None
 
     def __enter__(self):
         self._dispatch_key = _get_crucible_dispatch_key()
@@ -428,6 +437,11 @@ class CrucibleNative:
             self._dispatch.set_mode(self.INACTIVE)
             self._dispatch.set_context(0)
             self._dispatch.set_scope(0)
+
+        # Restore the engine before anything else can observe it.  A
+        # session that left the guard armed would change the backward
+        # behavior of code that is no longer being recorded.
+        self._disarm_backward_serialisation()
 
         # Remove scope hooks
         self._remove_hooks()
@@ -583,6 +597,81 @@ class CrucibleNative:
     def active_num_ops(self) -> int:
         return self._vessel.active_num_ops(self._handle) if self._vessel else 0
 
+    # ── Autograd engine serialisation ────────────────────────────────
+    #
+    # The recorded op order is the trace's identity.  It fixes the region
+    # content hash, the memory plan and the replay order.  The ring is
+    # single-producer, so one thread alone can contribute to that order.
+    #
+    # By default this runtime runs a backward pass on several threads.
+    # Engine::execute_with_graph_task drives the graph task's CPU ready
+    # queue on the calling thread, and one worker thread serves each
+    # accelerator.  A graph with a host branch and a device branch runs
+    # its backward pass on two threads at the same time.  A graph across
+    # two accelerators runs on two worker threads, with the calling thread
+    # parked.  Every thread but the first is turned away at the ring, so
+    # the trace of an accelerator model was short by its whole backward
+    # window.
+    #
+    # Engine::ready_queue routes every node to the CPU ready queue when
+    # multithreading is off, and the calling thread drives that queue.
+    # One thread then produces the whole backward pass, the producer gate
+    # admits it, and the window reaches the trace.
+    #
+    # Serialising removes a source of variation rather than adding one.
+    # Measured on three accelerators, 80 runs for each mode, over a graph
+    # with several paths into one leaf: the default engine gave two
+    # distinct gradients, 78 runs against 2, and the serialised engine
+    # gave one.  Accumulation order decides that gradient, and the order
+    # is what the worker threads leave undefined.
+    #
+    # The guard covers the backward window of a recording iteration only.
+    # A compiled dispatch replays and records nothing, so the guard is
+    # lifted there and the backward pass keeps its worker threads.  A
+    # divergence returns the Vigil to recording, and the next backward
+    # window arms the guard again.
+
+    def _arm_backward_serialisation(self):
+        """Make the next backward pass run on this thread alone."""
+        if self._mt_guard is not None:
+            return
+        guard = torch.autograd.set_multithreading_enabled(False)
+        guard.__enter__()
+        self._mt_guard = guard
+
+    def _disarm_backward_serialisation(self):
+        """Give the backward pass its worker threads back."""
+        guard, self._mt_guard = self._mt_guard, None
+        if guard is not None:
+            guard.__exit__(None, None, None)
+
+    @property
+    def backward_serialised(self) -> bool:
+        """True while the guard holds the engine on the calling thread."""
+        return self._mt_guard is not None
+
+    @contextlib.contextmanager
+    def recording_backward(self):
+        """Serialise the autograd engine across one backward pass.
+
+        A loop that does not call set_training_phase wraps backward() in
+        this instead:
+
+            with ctx.recording_backward():
+                loss.backward()
+
+        The body runs on one thread while the Vigil records, and with the
+        engine unchanged once the Vigil is compiled.
+        """
+        armed = not self.is_compiled()
+        if armed:
+            self._arm_backward_serialisation()
+        try:
+            yield self
+        finally:
+            if armed:
+                self._disarm_backward_serialisation()
+
     def set_training_phase(self, phase: int):
         """Set the training phase for subsequent ops (op_flags bits 2-3).
 
@@ -595,7 +684,17 @@ class CrucibleNative:
             loss.backward()
             ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.step()
+
+        The backward phase also serialises the autograd engine while the
+        Vigil records, which is what puts the backward window of an
+        accelerator model into the trace.  Refer to the note above this
+        method.  A loop that never calls this keeps the default engine,
+        and its trace keeps the backward gap.
         """
+        if phase == self.PHASE_BACKWARD and not self.is_compiled():
+            self._arm_backward_serialisation()
+        else:
+            self._disarm_backward_serialisation()
         if self._dispatch:
             self._dispatch.set_training_phase(phase)
 

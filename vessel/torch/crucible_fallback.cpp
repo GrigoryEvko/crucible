@@ -350,6 +350,14 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // addressing, the memory plan, bit-exact replay — is built on the
     // reproducibility rather than on the completeness.
     //
+    // A recording session closes that window upstream instead of widening
+    // this door.  CrucibleNative holds the autograd engine on the thread
+    // that calls backward() while the Vigil records, so the backward pass
+    // has one producer and arrives here on the recording thread.  Refer to
+    // the serialisation note in vessel/torch/crucible_native.py.  This
+    // branch then carries the sessions that do not arm that guard, and any
+    // thread the engine still owns outside a backward pass.
+    //
     // Vigil refuses a second producer on its own and ends the process when
     // it sees one.  That guard stays as the last resort for a caller that
     // does not ask first.  This is the asking.
@@ -469,25 +477,36 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 //           queue itself. It is the recording thread, so these ops are
 //           recorded.
 //         - A backward pass over accelerator tensors runs on the engine's
-//           per-device worker thread. GraphTask carries the caller's
-//           at::ThreadLocalState to it, and LocalDispatchKeySet is part of
-//           that state, so the Crucible key arrives and this handler fires
-//           — on a thread that is not the recording thread. Those ops
-//           execute eagerly and are not recorded, either because
-//           c10::CrucibleState did not travel and the mode reads INACTIVE,
-//           or because the foreign-thread branch in crucibleFallback turns
-//           them away.
+//           per-device worker thread by default. GraphTask carries the
+//           caller's at::ThreadLocalState to it, and LocalDispatchKeySet is
+//           part of that state, so the Crucible key arrives and this
+//           handler fires — on a thread that is not the recording thread.
 //
-//       So the recorded trace of an accelerator model is forward plus
-//       optimizer, with the backward window absent from it. That window is
-//       a gap in the trace, not a corruption of it: the op order that is
-//       recorded is still exactly the order one thread produced.
-//
-//       Closing the gap is not a matter of admitting the worker thread to
+//       Closing that gap is not a matter of admitting the worker thread to
 //       the ring. Two threads have no defined emission order, so a trace
 //       that contains both is a different trace on every run. It needs a
 //       recording path that gives the backward window its own single
-//       producer, which is a separate piece of work.
+//       producer, and a recording session now arranges one: it holds the
+//       engine on the thread that calls backward() while the Vigil records.
+//       Engine::ready_queue sends every node to the graph task's CPU ready
+//       queue when multithreading is off, and the calling thread drives
+//       that queue, so one thread produces the whole window. Refer to the
+//       serialisation note in vessel/torch/crucible_native.py.
+//
+//       Measured on cuda:0 over 12 iterations of the MiniGPT in
+//       examples/record_cuda.py, against a CPU control: the recorded
+//       region grew from 285 ops to 799, the distinct schemas from 51 to
+//       63, and the count of backward schemas the control records and the
+//       accelerator arm does not fell from 7 to 0. A shape with the token
+//       table on the host, which runs its backward pass on two threads at
+//       once by default, went from 308 ops to 819 and from 5 missing
+//       backward schemas to 0.
+//
+//       A session that does not arm that guard keeps the old behavior: the
+//       recorded trace is forward plus optimizer, with the backward window
+//       absent from it. That window is a gap in the trace, not a corruption
+//       of it, because the op order that is recorded is still exactly the
+//       order one thread produced.
 //   [x] Optimizer ops (SGD: add_, mul_, addcdiv_; Adam: mul_, add_, etc.)
 //       optimizer.step() wraps ops in torch.no_grad(), but ops still dispatch
 //       through Crucible. no_grad() only affects autograd key, not Crucible.

@@ -226,12 +226,15 @@ public:
         // call is single-producer: two threads appending concurrently claim
         // the same slot, and the second overwrites the first with no
         // diagnostic. A backward pass under a foreign runtime dispatches
-        // part of its operations on a worker thread of its own, so this is
-        // reachable from a first run rather than from a rewrite.
+        // part of its operations on a worker thread of its own by default,
+        // so this is reachable from a first run rather than from a rewrite.
         //
         // The cost is a relaxed load and a comparison on a path that already
         // writes a full cache line and issues two release stores. It is a
-        // mitigation, not a repair; a multi-producer ring is separate work.
+        // mitigation and not a repair. The repair belongs to the adapter,
+        // which gives its backward window one producer rather than giving
+        // this ring several. Refer to the serialisation note in
+        // vessel/torch/crucible_native.py.
         assert_producer_thread_();
         const TraceRing::Entry& entry = *ve.value();
 
