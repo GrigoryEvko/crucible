@@ -106,14 +106,25 @@ def run_arm(device: str, iters: int, out_path: str, verbose: bool,
     if host_embedding:
         model.tok_emb.to("cpu")
     model.train()
-    # The optimizer keeps its per-device default on purpose. Pinning
-    # foreach=False was measured and rejected: it emits three ops for each
-    # parameter, which turns the optimizer phase into a long run with a
-    # period of three. The iteration detector matches on a five-hash
-    # signature, so a divergence reset that lands inside that run locks onto
-    # the period and publishes six-op regions from then on. Measured on
-    # cuda:0 over 12 iterations: foreach=False gave a 6-op region and 24
-    # divergences, and the default gave a 799-op region and 3.
+    # The optimizer keeps its per-device default, which is the shape a
+    # reader of this example is most likely to run.
+    #
+    # Pinning foreach=False was rejected once, on a measurement that no
+    # longer holds. It emits three ops for each parameter, which turns the
+    # optimizer phase into a long run with a period of three, and the
+    # iteration detector matches on a five-hash signature. A detector reset
+    # that lands inside that run locks onto the period of three and
+    # publishes six-op regions from then on. That reset came from a
+    # divergence, and the divergence came from a replayed backward window
+    # that was not serialised. Re-measured on cuda:0 over 12 iterations
+    # once the window is serialised under replay as well: foreach=False
+    # gives an 885-op region, one detected boundary and no divergence,
+    # against 801, one and none for the default.
+    #
+    # The hazard the earlier note described is real and belongs to the
+    # detector rather than to the optimizer: a reset part way through a
+    # short repeating run can lock onto that run's period. Nothing in a
+    # divergence-free session triggers one.
     opt = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     loss_fn = nn.CrossEntropyLoss()
 
