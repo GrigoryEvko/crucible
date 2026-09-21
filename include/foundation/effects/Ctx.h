@@ -232,6 +232,7 @@ namespace detail::ctx_witnesses {
 using FgWitness = ExecCtx<ctx_cap::Fg, Row<>>;
 using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
+using BgBlockWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>;
 using InitWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>;
 using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>;
 
@@ -257,6 +258,14 @@ static_assert(std::is_same_v<BgDrainCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::All
 using BgCompileCtx = BgIoWitness;
 static_assert(std::is_same_v<BgCompileCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>>);
 
+// The load context claims Block on top of the compile row.  Work that
+// enters the kernel and waits there, such as a BPF program load waiting
+// on the verifier, needs the atom the other two background rows omit.
+// The background capability permits all four atoms, so this is the
+// widest row a background context can claim.
+using BgLoadCtx = BgBlockWitness;
+static_assert(std::is_same_v<BgLoadCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>>);
+
 // The context of process startup, before the threads are pinned.
 using ColdInitCtx = InitWitness;
 static_assert(std::is_same_v<ColdInitCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
@@ -272,6 +281,7 @@ static_assert(sizeof(ExecCtx<>) == 1, "Both axes of ExecCtx are empty types, so 
 static_assert(sizeof(FgWitness) == 1);
 static_assert(sizeof(BgWitness) == 1);
 static_assert(sizeof(BgIoWitness) == 1);
+static_assert(sizeof(BgBlockWitness) == 1);
 static_assert(sizeof(InitWitness) == 1);
 static_assert(sizeof(TestWitnessCtx) == 1);
 

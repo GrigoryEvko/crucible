@@ -44,6 +44,14 @@ using BgCompileCtx = ::foundation::effects::ExecCtx<
                                                           ::foundation::effects::Effect::Alloc,
                                                           ::foundation::effects::Effect::IO>>;
 
+// The load context claims Block on top of the compile row.  Work that
+// enters the kernel and waits there, such as a BPF program load waiting
+// on the verifier, needs the atom the other two background rows omit.
+using BgLoadCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc,
+                               ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>;
+
 // The context of process startup, before the threads are pinned.
 using ColdInitCtx = ::foundation::effects::ExecCtx<
     ::foundation::effects::Init, ::foundation::effects::Row<::foundation::effects::Effect::Init,
@@ -70,6 +78,7 @@ namespace fe = ::foundation::effects;
 static_assert(std::is_same_v<HotFgCtx, fe::detail::ctx_witnesses::HotFgCtx>);
 static_assert(std::is_same_v<BgDrainCtx, fe::detail::ctx_witnesses::BgDrainCtx>);
 static_assert(std::is_same_v<BgCompileCtx, fe::detail::ctx_witnesses::BgCompileCtx>);
+static_assert(std::is_same_v<BgLoadCtx, fe::detail::ctx_witnesses::BgLoadCtx>);
 static_assert(std::is_same_v<ColdInitCtx, fe::detail::ctx_witnesses::ColdInitCtx>);
 static_assert(std::is_same_v<TestRunnerCtx, fe::detail::ctx_witnesses::TestRunnerCtx>);
 
@@ -77,6 +86,7 @@ static_assert(std::is_same_v<TestRunnerCtx, fe::detail::ctx_witnesses::TestRunne
 static_assert(sizeof(HotFgCtx) == 1, "The foreground context must be 1 byte");
 static_assert(sizeof(BgDrainCtx) == 1, "The background drain context must be 1 byte");
 static_assert(sizeof(BgCompileCtx) == 1, "The background compile context must be 1 byte");
+static_assert(sizeof(BgLoadCtx) == 1, "The background load context must be 1 byte");
 static_assert(sizeof(ColdInitCtx) == 1, "The initialization context must be 1 byte");
 static_assert(sizeof(TestRunnerCtx) == 1, "The test runner context must be 1 byte");
 
