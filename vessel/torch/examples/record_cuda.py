@@ -189,13 +189,20 @@ def run_arm(device: str, iters: int, out_path: str, verbose: bool,
 DEVICE_SPECIFIC = ("_for_cpu", "_foreach_", "_efficient_attention",
                    "_flash_attention")
 
+# The smallest region an arm may publish, as a fraction of the control's
+# count. This is a floor and never an equality, and the docstring of
+# compare() gives the measurements the number comes from. An exact count
+# has drifted twice in this repository, and the two arms legitimately run a
+# different number of ops, so an equality here would fail on correct code.
+REGION_FLOOR = 0.50
+
 
 def compare(cpu: dict, arm: dict, iters: int, label: str) -> bool:
     """Print one arm against the CPU control and report whether it passes.
 
-    Three checks carry the verdict. The first two together say that the
-    region holds the whole iteration, and the third says the arm reached
-    that result the supported way.
+    Four checks carry the verdict. The first two together say that the
+    region holds the whole iteration, the third says the arm reached that
+    result the supported way, and the fourth rejects a region that collapsed.
 
     The schema comparison against the control says the region holds the
     backward window. A schema the control records and this arm does not,
@@ -211,18 +218,36 @@ def compare(cpu: dict, arm: dict, iters: int, label: str) -> bool:
     thread for each one. An arm that armed the guard for some windows and
     not others would pass the first two checks on a lucky schedule.
 
-    The op count is reported and does not vote. The two arms run the same
-    model and a different number of ops, because the control decomposes on
-    the host what the accelerator does in one kernel. Measured over one
-    replayed period of each arm, cpu 1091 ops against cuda:0 801, the 290
-    are accounted for op by op. The CPU arm's SGD-with-momentum loop emits
+    The op count carries a floor and not a ratio against the control.
+
+    What the floor catches is a collapse, and neither of the first two
+    checks catches it. The background thread's iteration detector matches on
+    a five-hash signature, so it can lock onto a sub-period, publish a region
+    far shorter than one iteration, and then replay that region against
+    itself with no divergence at all. Both of the first two checks read green
+    in that state. A 6-op region against this model was measured once, so the
+    shape is reachable rather than hypothetical.
+
+    The floor is half the control's count, and the margin either side is
+    wide. Measured over one replayed period of each arm: cuda:0 801 ops and
+    cuda:0+host 898 against a control of 1091, which is 73% and 82%, and the
+    same model with foreach=False on the accelerator 885 ops, which is 81%.
+    The lowest legitimate shape measured therefore sits 23 points above the
+    floor. The 6-op collapse is 0.6% of the control, which the floor rejects
+    by two orders of magnitude.
+
+    An equality, or a tolerance band around the control, would fail on
+    correct code. The two arms run the same model and a different number of
+    ops, because the control decomposes on the host what the accelerator does
+    in one kernel. The 290-op gap between cpu 1091 and cuda:0 801 is
+    dominated by three buckets. The CPU arm's SGD-with-momentum loop emits
     one aten::mul_.Tensor and two aten::add_.Tensor for each of the model's
     29 parameters, which is 87 ops against four aten::_foreach_* calls on
-    the accelerator. Its BLAS wrappers add 63 aten::resolve_conj. The
-    remaining 147 are the host's dtype conversions and view bookkeeping,
-    led by aten::copy_, aten::empty_strided, aten::_to_copy, aten::to.dtype
-    and aten::as_strided. A ratio against the control therefore measures
-    the host's decomposition, not this arm's coverage.
+    the accelerator. Its BLAS wrappers add 63 aten::resolve_conj. Some 147
+    more are the host's dtype conversions and view bookkeeping, led by
+    aten::copy_, aten::empty_strided, aten::_to_copy, aten::to.dtype and
+    aten::as_strided. The accelerator's own kernel families run a few ops
+    longer and offset part of the three buckets.
     """
     missing = sorted(cpu["schemas"] - arm["schemas"])
     extra = sorted(arm["schemas"] - cpu["schemas"])
@@ -233,11 +258,15 @@ def compare(cpu: dict, arm: dict, iters: int, label: str) -> bool:
     backward_ok = not backward_gap
     replay_ok = arm["compiled"] and arm["diverged"] == 0
     serialised_ok = arm["serialised_iters"] == iters
+    # A control of zero ops makes the fraction meaningless, so it fails the
+    # floor rather than dividing by it. main() checks the control itself.
+    floor_ok = (cpu["num_ops"] > 0
+                and arm["num_ops"] >= REGION_FLOOR * cpu["num_ops"])
 
     print(f"--- {label} against the cpu control ---")
     print(f"  schemas: cpu={len(cpu['schemas'])} {label}={len(arm['schemas'])}")
     print(f"  region_ops: cpu={cpu['num_ops']} {label}={arm['num_ops']} "
-          f"({ratio:.1%} of the control, reported only)")
+          f"({ratio:.1%} of the control, floor {REGION_FLOOR:.0%})")
     print(f"  backward windows serialised: {arm['serialised_iters']} of {iters}")
     print(f"  recorded on cpu but not here: {len(missing)}  "
           f"({len(missing) - len(gap)} device-specific, {len(gap)} a gap)")
@@ -257,8 +286,10 @@ def compare(cpu: dict, arm: dict, iters: int, label: str) -> bool:
           f"[{'PASS' if replay_ok else 'FAIL'}]")
     print(f"  every backward window serialised "
           f"[{'PASS' if serialised_ok else 'FAIL'}]")
+    print(f"  region_ops at or above the floor "
+          f"[{'PASS' if floor_ok else 'FAIL'}]")
     print()
-    return backward_ok and replay_ok and serialised_ok
+    return backward_ok and replay_ok and serialised_ok and floor_ok
 
 
 def main() -> int:
@@ -349,8 +380,14 @@ def main() -> int:
     print()
 
     cpu = arms["cpu"]
-    verdicts = {label: compare(cpu, arms[label], args.iters, label)
-                for label in labels[1:]}
+    # Every check in compare() reads the control: the schema comparison takes
+    # its schemas and the floor divides by its op count. A control that
+    # collapsed or diverged would leave all of them vacuous and green, so it
+    # is checked once here before any arm is compared against it.
+    control_ok = cpu["compiled"] and cpu["diverged"] == 0 and cpu["num_ops"] > 0
+    verdicts = {"cpu control": control_ok}
+    verdicts.update({label: compare(cpu, arms[label], args.iters, label)
+                     for label in labels[1:]})
 
     print("=" * 66)
     for label, ok in verdicts.items():
