@@ -18,7 +18,7 @@
 // hashes verbatim → captured snapshot under VCS → CI re-runs the
 // binary → bit-identical or fail.
 //
-// The 45-entry enumeration MUST stay in lockstep with
+// The 44-entry enumeration MUST stay in lockstep with
 // test/test_row_hash_distinctness.cpp's kHashes array.  Drift is
 // caught by the static_assert below: the dump tool computes the SAME
 // kFoldAnchor as the test, so a divergence in count, ordering, or
@@ -27,11 +27,15 @@
 //
 // ── Ceremony discipline ────────────────────────────────────────────
 //
-// When a 46th wrapper is added to test_row_hash_distinctness.cpp:
-//   1. Update the test's kHashes (extend), kEntryCount (45→46), and
-//      kFoldAnchor (re-roll, document in commit message).
-//   2. Update THIS tool's kEntries (extend), kEntryCount (45→46), and
-//      kFoldAnchor (use the SAME re-rolled value as the test).
+// When a 45th wrapper is added to test_row_hash_distinctness.cpp:
+//   1. Update the test's kHashes (extend), its cardinality
+//      static_assert (44→45), and kFoldAnchor (re-roll, document in
+//      commit message).
+//   2. Update THIS tool's kEntries (extend) and kFoldAnchor (use the
+//      SAME re-rolled value as the test).
+//      Neither side's kEntryCount is edited: both derive it from the
+//      array they already extended.  The test's cardinality
+//      static_assert is a separate literal and is the one that fires.
 //   3. Re-run the binary, capture stdout, replace
 //      tools/row_hash_golden.txt with the new output.
 //   4. Commit all three (test + tool + golden) atomically.
