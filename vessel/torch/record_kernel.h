@@ -832,8 +832,11 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
 //
 // A recording session gives the backward window one producer instead of
 // widening this gate. It holds the engine on the thread that calls backward()
-// while the Vigil records, so the window arrives here on the recording thread
-// and passes. Refer to the serialisation note in
+// for every window, the replayed ones included, so the window arrives here on
+// the producer thread and passes. Replay needs that as much as recording does:
+// a replayed dispatch records nothing but it advances the replay cursor, and a
+// window turned away here leaves the cursor standing still until the next op
+// fails its guard. Refer to the serialisation note in
 // vessel/torch/crucible_native.py. This question then turns away the sessions
 // that do not arm that guard.
 // =====================================================================

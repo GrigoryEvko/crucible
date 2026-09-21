@@ -352,8 +352,11 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     //
     // A recording session closes that window upstream instead of widening
     // this door.  CrucibleNative holds the autograd engine on the thread
-    // that calls backward() while the Vigil records, so the backward pass
-    // has one producer and arrives here on the recording thread.  Refer to
+    // that calls backward() for every window, the replayed ones included,
+    // so the backward pass has one producer and arrives here on that
+    // thread.  A replayed dispatch records nothing but it advances the
+    // replay cursor, so a window turned away here leaves the cursor
+    // standing still until the next op fails its guard.  Refer to
     // the serialisation note in vessel/torch/crucible_native.py.  This
     // branch then carries the sessions that do not arm that guard, and any
     // thread the engine still owns outside a backward pass.
@@ -487,20 +490,37 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 //       that contains both is a different trace on every run. It needs a
 //       recording path that gives the backward window its own single
 //       producer, and a recording session now arranges one: it holds the
-//       engine on the thread that calls backward() while the Vigil records.
+//       engine on the thread that calls backward(), for every window the
+//       Vigil sees rather than for the recorded ones alone.
 //       Engine::ready_queue sends every node to the graph task's CPU ready
 //       queue when multithreading is off, and the calling thread drives
 //       that queue, so one thread produces the whole window. Refer to the
 //       serialisation note in vessel/torch/crucible_native.py.
 //
 //       Measured on cuda:0 over 12 iterations of the MiniGPT in
-//       examples/record_cuda.py, against a CPU control: the recorded
-//       region grew from 285 ops to 799, the distinct schemas from 51 to
-//       63, and the count of backward schemas the control records and the
-//       accelerator arm does not fell from 7 to 0. A shape with the token
-//       table on the host, which runs its backward pass on two threads at
-//       once by default, went from 308 ops to 819 and from 5 missing
-//       backward schemas to 0.
+//       examples/record_cuda.py, against a CPU control. Without the guard
+//       the recorded region held 285 ops and 51 distinct schemas, and the
+//       control recorded 7 backward schemas the accelerator arm did not.
+//       With it the region holds 801 ops and 65 schemas and the count of
+//       missing backward schemas is 0. A shape with the token table on the
+//       host, which runs its backward pass on two threads at once by
+//       default, reaches 898 ops and 0 missing backward schemas. Both
+//       shapes replay that region from iteration 2 to iteration 11 with no
+//       divergence, which is what says the region holds a whole period and
+//       nothing else.
+//
+//       Holding the engine for the recorded windows alone is not enough,
+//       and the measurement says so. A replayed dispatch records nothing,
+//       but it advances the replay cursor one op at a time. With the guard
+//       lifted under replay, the engine-driven window arrived on a worker
+//       thread and reached no cursor, so the cursor stood still at index
+//       286 of the 801-op region, holding aten::zero_ from that window,
+//       while the op that arrived next was
+//       aten::_foreach_mul_.Scalar from the optimizer. That is a schema
+//       mismatch, the hard divergence tier. Over 12 iterations it cost 3
+//       divergences on each accelerator shape and left the Vigil recording
+//       rather than compiled. The published region was the whole 801 ops
+//       either way. What was short was the stream that replayed it.
 //
 //       A session that does not arm that guard keeps the old behavior: the
 //       recorded trace is forward plus optimizer, with the backward window

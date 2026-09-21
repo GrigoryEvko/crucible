@@ -625,11 +625,20 @@ class CrucibleNative:
     # gave one.  Accumulation order decides that gradient, and the order
     # is what the worker threads leave undefined.
     #
-    # The guard covers the backward window of a recording iteration only.
-    # A compiled dispatch replays and records nothing, so the guard is
-    # lifted there and the backward pass keeps its worker threads.  A
-    # divergence returns the Vigil to recording, and the next backward
-    # window arms the guard again.
+    # The guard covers every backward window the Vigil sees, recording and
+    # compiled alike.  A compiled dispatch records nothing, but it advances
+    # the replay cursor one operation at a time, and the region it walks is
+    # a recording of the serialised stream.  A backward window that keeps
+    # its worker threads reaches the producer gate on those threads and is
+    # turned away, so the cursor stands still across the whole window and
+    # the first operation after it fails its guard.  Measured on cuda:0
+    # with the guard lifted under replay: the cursor reached index 286 of
+    # an 801-operation region, where the region holds aten::zero_ from the
+    # engine-driven window and the arriving operation was
+    # aten::_foreach_mul_.Scalar from the optimizer.
+    #
+    # Replaying a stream needs the same single producer that recorded it.
+    # That is the rule the condition here encodes.
 
     def _arm_backward_serialisation(self):
         """Make the next backward pass run on this thread alone."""
@@ -660,16 +669,18 @@ class CrucibleNative:
             with ctx.recording_backward():
                 loss.backward()
 
-        The body runs on one thread while the Vigil records, and with the
-        engine unchanged once the Vigil is compiled.
+        The body runs on one thread whether the Vigil records the window or
+        replays it.  Refer to the note above.
         """
-        armed = not self.is_compiled()
-        if armed:
+        # A guard already armed by an enclosing call stays with that caller,
+        # so the restore below belongs to whoever armed it.
+        armed_here = not self.backward_serialised
+        if armed_here:
             self._arm_backward_serialisation()
         try:
             yield self
         finally:
-            if armed:
+            if armed_here:
                 self._disarm_backward_serialisation()
 
     def set_training_phase(self, phase: int):
@@ -685,13 +696,14 @@ class CrucibleNative:
             ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.step()
 
-        The backward phase also serialises the autograd engine while the
-        Vigil records, which is what puts the backward window of an
-        accelerator model into the trace.  Refer to the note above this
-        method.  A loop that never calls this keeps the default engine,
-        and its trace keeps the backward gap.
+        The backward phase also serialises the autograd engine, which is
+        what puts the backward window of an accelerator model into the
+        trace and what keeps a replayed iteration walking the same
+        operations.  Refer to the note above this method.  A loop that
+        never calls this keeps the default engine, and its trace keeps the
+        backward gap.
         """
-        if phase == self.PHASE_BACKWARD and not self.is_compiled():
+        if phase == self.PHASE_BACKWARD:
             self._arm_backward_serialisation()
         else:
             self._disarm_backward_serialisation()
