@@ -193,6 +193,13 @@ constexpr Permission<Parent, Brand> permission_fork_(Ctx const& ctx, Permission<
 
 }  // namespace detail
 
+// The clause names two gates, and folding them behind one name to read as
+// a single concept was measured and reverted.  The children half then
+// goes through a variable template over a tuple of the child tags, which
+// is one atomic constraint, so the compiler stops reporting there: the
+// two fixtures on this mint lost the conjunct that answered false — the
+// absent background capability, the pack that does not partition — and
+// named a tuple wrapper instead.  Both halves stay spelled here.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...>
           && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
@@ -204,6 +211,9 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
 // The bodies run one after another on the calling thread, in child
 // order.  The split and the rebuild are the same as the spawning arm's,
 // so a body still holds its own child token and nothing else.
+// The inline arm spells its two halves for the same reason as the arm
+// above, and differs from it in one conjunct: it demands no background
+// capability, because it starts no thread.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
           && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>

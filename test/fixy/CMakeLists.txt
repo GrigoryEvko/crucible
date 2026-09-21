@@ -1634,6 +1634,35 @@ fixy_neg_compile_test(neg_brand_scoped_view_from_temporary_carrier
   "mint_view\\(const Carrier&&\\)"
   "a view over a temporary carrier outlives it")
 
+# ── The view mints' state gate ───────────────────────────────────────
+#
+# A carrier declares one view_ok per state it witnesses, and the pair of
+# carrier and tag either reaches one or does not.  That half of the gate
+# is CarrierDeclaresViewState, and before it the pair reached only the
+# contract predicate: both refusals below arrived from inside the header
+# after the call site had chosen the factory, and
+# `requires { mint_view<Tag>(c) }` answered true for either one.
+#
+# Each fixture's second regex names the concept and the pair it was
+# checked for, which is text the fixture source never spells.  Removing
+# the clause leaves the compile failing on view_ok instead, and the
+# second regex then matches nothing.
+fixy_neg_compile_test(neg_scoped_view_carrier_declares_no_state
+  "no matching function for call to .mint_view<"
+  "required for the satisfaction of .CarrierDeclaresViewState<Carrier, Tag>. .with Carrier = .*CarrierWithoutPredicate. Tag = .*Ready")
+fixy_neg_compile_test(neg_scoped_view_tag_has_no_predicate
+  "no matching function for call to .mint_view<"
+  "required for the satisfaction of .CarrierDeclaresViewState<Carrier, Tag>. .with Carrier = .*CarrierOpenOnly. Tag = .*Closed")
+
+# The linear form carries the view further than the scoped one, so it
+# spells the same gate rather than inheriting it from the inner call.
+fixy_neg_compile_test(neg_scoped_view_linear_carrier_declares_no_state
+  "no matching function for call to .mint_linear_view<"
+  "required for the satisfaction of .CarrierDeclaresViewState<Carrier, Tag>. .with Carrier = .*CarrierWithoutPredicate. Tag = .*Ready")
+fixy_neg_compile_test(neg_scoped_view_linear_tag_has_no_predicate
+  "no matching function for call to .mint_linear_view<"
+  "required for the satisfaction of .CarrierDeclaresViewState<Carrier, Tag>. .with Carrier = .*CarrierOpenOnly. Tag = .*Closed")
+
 # Two mints of a borrow are two brands.
 fixy_neg_compile_test(neg_brand_borrowed_cross_brand
   "no matching function for call to .same_minting\\("

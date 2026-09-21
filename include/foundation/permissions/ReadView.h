@@ -33,11 +33,32 @@ namespace foundation::permissions {
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class ReadView;
 
+// The row gate, and the one the family's other read borrow already
+// carries.  A view is a proof about a region, so minting one is bounded
+// by who may hold that region.  A factory that reads no context can be
+// sound only for the empty row, which is exactly the rule
+// SharedPermissionPool::lend states for the pooled share of the very
+// same region.  This factory stated it nowhere, so a borrow proof of a
+// region whose row names IO was mintable from a scope that declared no
+// context at all.
+//
+// permission_row_empty_v answers false for a tag that declares no row,
+// so an undeclared tag is refused here rather than admitted by
+// omission.
+//
+// There is no ctx-bound overload beside this one, because nothing
+// borrows an effectful region this way.  SharedPermissionPool::lend(ctx)
+// is the read borrow that already reads a context, and it is what an
+// effectful region wants until a second case asks for this shape.
+template <typename Tag>
+concept ReadViewNeedsNoCtx = permission_row_empty_v<Tag>;
+
 // The view inherits the permission's brand rather than minting one of
 // its own: a borrow proof is about the region it was borrowed from.
 template <typename Tag, typename Brand>
-[[nodiscard]] constexpr ReadView<Tag, Brand>
-mint_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+    requires ReadViewNeedsNoCtx<Tag>
+[[nodiscard]] constexpr ReadView<Tag, Brand> mint_read_view(Permission<Tag, Brand> const& p
+                                                            CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // The twin that makes the lifetime bound above a rule rather than a
 // claim.  A const lvalue reference binds a temporary, so without this
@@ -46,7 +67,12 @@ mint_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
 // the statement.  That was measured, not suspected.  The rvalue
 // reference is the better match for a prvalue, so the call now names a
 // deleted function instead.
+//
+// The twin carries the same row gate, so an effectful region is refused
+// by the gate that names the row rather than by the twin, whose message
+// names the lifetime instead.
 template <typename Tag, typename Brand>
+    requires ReadViewNeedsNoCtx<Tag>
 constexpr ReadView<Tag, Brand> mint_read_view(Permission<Tag, Brand> const&&) =
     delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
            "a name that outlives the view");
@@ -107,8 +133,23 @@ private:
     // Every entry in the friend list below is another way to mint a
     // borrow.  Additions need review.
 
-    friend constexpr ReadView<Tag, Brand>
-    mint_read_view<Tag, Brand>(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+    // The friend is the constrained template rather than this Tag and
+    // Brand's specialization of it, which is the shape fixy/ScopedView.h
+    // already uses for the same reason.  Naming the specialization makes
+    // the row gate a condition on instantiating THIS CLASS: a template-id
+    // whose constraint answers false matches no declaration, so
+    // `ReadView<EffectfulTag>` stopped being nameable at all and the
+    // refusal arrived from the friend list rather than from the mint.
+    // Measured, then repaired.
+    //
+    // The widening is nominal.  Every specialization of the factory is
+    // now a friend of every ReadView, and each one still builds only the
+    // ReadView its own Tag and Brand name, so no construction path
+    // exists that did not exist before.
+    template <typename Tag_, typename Brand_>
+        requires ReadViewNeedsNoCtx<Tag_>
+    friend constexpr ReadView<Tag_, Brand_> mint_read_view(Permission<Tag_, Brand_> const& p
+                                                           CRUCIBLE_LIFETIMEBOUND) noexcept;
 
     // The session layer's borrow payload default-constructs a view
     // through this host type; see the declaration above.
@@ -120,14 +161,20 @@ private:
 // compiler this project builds with honours a lifetime attribute.
 
 template <typename Tag, typename Brand>
-[[nodiscard]] constexpr ReadView<Tag, Brand>
-mint_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
+    requires ReadViewNeedsNoCtx<Tag>
+[[nodiscard]] constexpr ReadView<Tag, Brand> mint_read_view(Permission<Tag, Brand> const& p
+                                                            CRUCIBLE_LIFETIMEBOUND) noexcept {
     (void)p;
     return ReadView<Tag, Brand>{};
 }
 
+// The scoped form is the second door onto the same borrow, so it carries
+// the same row gate.  Without it the refusal still happened, but inside
+// this header on the call below, and a body that returns the view it was
+// handed would have borrowed an effectful region through a factory that
+// never mentioned one.
 template <typename Tag, typename Brand, typename Body>
-    requires std::is_invocable_v<Body, ReadView<Tag, Brand>>
+    requires ReadViewNeedsNoCtx<Tag> && std::is_invocable_v<Body, ReadView<Tag, Brand>>
 [[nodiscard]] constexpr auto
 with_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND,
                Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ReadView<Tag, Brand>>)
@@ -140,7 +187,7 @@ with_read_view(Permission<Tag, Brand> const& p CRUCIBLE_LIFETIMEBOUND,
 // body receives proves a permission that is gone the moment the
 // statement ends, and a body that stores the view keeps the proof.
 template <typename Tag, typename Brand, typename Body>
-    requires std::is_invocable_v<Body, ReadView<Tag, Brand>>
+    requires ReadViewNeedsNoCtx<Tag> && std::is_invocable_v<Body, ReadView<Tag, Brand>>
 constexpr auto with_read_view(Permission<Tag, Brand> const&&, Body&&) =
     delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
            "a name that outlives the call");
@@ -149,11 +196,18 @@ namespace detail {
 struct read_view_test_tag {};
 struct read_view_brand_a {};
 struct read_view_brand_b {};
+// Two tags the row gate must refuse, kept beside the one it admits: a
+// region whose row names an effect, and a region that declares no row.
+struct read_view_effectful_tag {};
+struct read_view_rowless_tag {};
 }  // namespace detail
 
 namespace permission_rows {
 inline constexpr ::foundation::fail_closed::edge<detail::read_view_test_tag, ::foundation::effects::Row<>>
     read_view_test{};
+inline constexpr ::foundation::fail_closed::edge<detail::read_view_effectful_tag,
+                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
+    read_view_effectful{};
 }  // namespace permission_rows
 
 static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1, "ReadView<Tag> must be a 1-byte empty class");
@@ -198,6 +252,28 @@ namespace detail::read_view_self_test {
         && ::foundation::brand::IsBranded<decltype(view)>;
 }
 static_assert(view_inherits_the_permission_brand());
+
+// ── The row gate answers, on both doors onto the borrow ──────────────
+//
+// Every assertion below read true before ReadViewNeedsNoCtx, for both
+// the bare mint and the scoped form.  A region whose row names IO was
+// borrowable with no context named anywhere, and a region that declares
+// no row was borrowable by omission.
+template <typename Tag>
+concept ReadViewMintable = requires(Permission<Tag> const& p) { mint_read_view(p); };
+
+template <typename Tag>
+concept ReadViewScopable = requires(Permission<Tag> const& p) { with_read_view(p, [](ReadView<Tag>) noexcept {}); };
+
+static_assert(ReadViewMintable<read_view_test_tag>, "a pure region stays borrowable with no context");
+static_assert(!ReadViewMintable<read_view_effectful_tag>,
+              "a region whose row names an effect must not be borrowable with no context");
+static_assert(!ReadViewMintable<read_view_rowless_tag>,
+              "a region that declares no row must be refused rather than admitted by omission");
+
+static_assert(ReadViewScopable<read_view_test_tag>, "the scoped form keeps the same admission");
+static_assert(!ReadViewScopable<read_view_effectful_tag>, "the scoped form is not a way around the row gate");
+static_assert(!ReadViewScopable<read_view_rowless_tag>, "the scoped form fails closed on a missing row too");
 
 }  // namespace detail::read_view_self_test
 

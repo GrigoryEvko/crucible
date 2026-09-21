@@ -28,6 +28,7 @@
 #include <foundation/Platform.h>
 #include <foundation/reflect/Instance.h>
 
+#include <concepts>
 #include <cstddef>
 #include <meta>
 #include <new>
@@ -51,20 +52,37 @@ inline constexpr bool is_scoped_view_v = is_scoped_view<std::remove_cvref_t<T>>:
 template <typename Carrier, typename Fresh>
 using view_brand_t = ::foundation::brand::inherited_or_fresh_brand_t<Carrier, Fresh>;
 
-// The single point at which a state is asserted.  view_ok is found by
-// argument-dependent lookup on the carrier.
+// The type half of the gate.  view_ok is found by argument-dependent
+// lookup on the carrier, so this asks whether the carrier declares a
+// state predicate for this tag at all, which is a question about types
+// and a concept can answer it.  Whether the carrier is presently in
+// that state is the other half, and it stays the precondition below,
+// because it reads the carrier's run-time state.
 //
-// The gate is a precondition and not a requires-clause because view_ok
-// inspects the carrier's run-time state rather than its type alone.
-// One consequence matters at call sites: overload resolution and
-// concepts cannot see the gate, so this factory looks callable
-// everywhere and only rejects when the precondition fires.
-// §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
+// The two were one gate before, and conflating them let the factory
+// look callable everywhere.  Measured: `requires { mint_view<Tag>(c) }`
+// answered true for a carrier that declares no view_ok at all, and true
+// for a tag the carrier declares no predicate for.  Both then failed
+// inside this header rather than at the call, and a caller that
+// dispatched on that answer chose this factory believing a view of an
+// unsupported state was mintable.
+//
+// The noexcept and bool requirements are the predicate's own contract,
+// which fixy/SessView.h states as a static_assert for one carrier.  The
+// factory is noexcept and evaluates view_ok inside itself, so a
+// throwing predicate would terminate rather than report.
+template <typename Carrier, typename Tag>
+concept CarrierDeclaresViewState = requires(Carrier const& c) {
+    { view_ok(c, std::type_identity<Tag>{}) } noexcept -> std::same_as<bool>;
+};
+
+// The single point at which a state is asserted.
 //
 // The fresh brand is the last template parameter, after the two the
 // call site can name, so `mint_view<Ready>(carrier)` is the whole
 // spelling and no caller can hand in a brand of its own choosing.
 template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CarrierDeclaresViewState<Carrier, Tag>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{}));
 
@@ -73,7 +91,13 @@ mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::
 // statement.  This twin is what refuses it.  The deduced parameter is a
 // const rvalue reference rather than a forwarding reference, so a
 // non-const lvalue carrier still reaches the factory above.
+//
+// The twin carries the same constraint as the factory, so a carrier
+// that declares no predicate for the tag is refused by the gate that
+// names the reason rather than by the twin, whose message names the
+// lifetime instead.
 template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CarrierDeclaresViewState<Carrier, Tag>
 constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>> mint_view(Carrier const&&) =
     delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
@@ -99,7 +123,11 @@ class [[nodiscard]] ScopedView {
     explicit ScopedView(Carrier const&&) =
         delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
+    // The constraint is repeated here because a friend declaration whose
+    // constraints differ from the factory's declares a different
+    // template, and the friendship would then attach to nothing.
     template <typename Tag_, typename Carrier_, typename Fresh_>
+        requires CarrierDeclaresViewState<Carrier_, Tag_>
     friend constexpr ScopedView<Carrier_, Tag_, view_brand_t<Carrier_, Fresh_>>
     mint_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
@@ -150,6 +178,7 @@ public:
 };
 
 template <typename Tag, typename Carrier, typename Fresh>
+    requires CarrierDeclaresViewState<Carrier, Tag>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
     return ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>{c};
@@ -166,11 +195,14 @@ mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::
 template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 using LinearScopedView = Linear<ScopedView<Carrier, Tag, Brand>>;
 
-// §XXI carve-out: rq=pre — the gate is a precondition, not a requires-clause.
 // The brand is passed through to mint_view by name, because a bare
 // `mint_view<Tag>(c)` here would draw a second fresh brand for the
 // inner call and the linear view would not carry this site's.
+//
+// The gate is the same one, spelled here rather than only inherited from
+// the inner call, so the refusal lands on this factory's name.
 template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CarrierDeclaresViewState<Carrier, Tag>
 [[nodiscard]] constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
     return mint_linear<ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>>(mint_view<Tag, Carrier, Fresh>(c));
@@ -179,6 +211,7 @@ mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c
 // The linear form carries its view further than the scoped one does, so
 // it needs the same twin and needs it more.
 template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CarrierDeclaresViewState<Carrier, Tag>
 constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>> mint_linear_view(Carrier const&&) =
     delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
@@ -338,6 +371,12 @@ struct sv_branded_carrier {
 };
 constexpr bool view_ok(sv_test_carrier const&, std::type_identity<sv_test_tag>) noexcept { return true; }
 constexpr bool view_ok(sv_branded_carrier const&, std::type_identity<sv_test_tag>) noexcept { return true; }
+
+// Two carriers that must not be mintable, kept beside the two that
+// must.  The first declares no predicate at all; the second declares
+// one for another tag.
+struct sv_other_tag {};
+struct sv_no_predicate_carrier {};
 }  // namespace detail
 
 static_assert(sizeof(ScopedView<detail::sv_test_carrier, detail::sv_test_tag>) == sizeof(void*),
@@ -381,6 +420,29 @@ namespace detail::scoped_view_self_test {
     return erased.operator->() == &plain && of_branded->value == 1;
 }
 static_assert(mints_brand());
+
+// ── The gate answers, where it used to fail inside the header ────────
+//
+// Each pair below was `true` before CarrierDeclaresViewState, for both
+// factories, and each then failed on the contract predicate inside
+// mint_view rather than at the call.  The four assertions are what
+// holds that: a caller may now ask whether a view of this state is
+// mintable and get an answer.
+template <typename Tag, typename Carrier>
+concept ViewMintable = requires(Carrier const& c) { mint_view<Tag>(c); };
+
+template <typename Tag, typename Carrier>
+concept LinearViewMintable = requires(Carrier const& c) { mint_linear_view<Tag>(c); };
+
+static_assert(ViewMintable<sv_test_tag, sv_test_carrier>, "the carrier that declares the predicate stays mintable");
+static_assert(!ViewMintable<sv_test_tag, sv_no_predicate_carrier>,
+              "a carrier that declares no view_ok must not look mintable");
+static_assert(!ViewMintable<sv_other_tag, sv_test_carrier>,
+              "a tag the carrier declares no predicate for must not look mintable");
+
+static_assert(LinearViewMintable<sv_test_tag, sv_test_carrier>, "the linear form keeps the same admissions");
+static_assert(!LinearViewMintable<sv_test_tag, sv_no_predicate_carrier>, "the linear form keeps the same refusals");
+static_assert(!LinearViewMintable<sv_other_tag, sv_test_carrier>, "the linear form refuses the wrong tag as well");
 
 }  // namespace detail::scoped_view_self_test
 

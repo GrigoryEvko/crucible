@@ -333,6 +333,30 @@ foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
   "constraints not satisfied"
   "satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = .*NeedsIo.*ctx_cap::Fg")
 
+# ── The borrow's row gate ────────────────────────────────────────────
+#
+# A view is a proof about a region, so minting one is bounded by who may
+# hold that region.  A factory that reads no context can be sound only
+# for the empty row, which is the rule SharedPermissionPool::lend states
+# for the pooled share of the same region and this factory stated
+# nowhere.  The first fixture is a declared row that names IO; the
+# second is a region that declares no row, and asks which way the gate
+# fails when it has nothing to read.  The third is the scoped form,
+# which is the second door onto the same borrow.
+#
+# Each second regex names the concept and the tag it was checked for,
+# which no fixture source spells.  Removing the clause compiles all
+# three.
+foundation_neg_compile_test(neg_read_view_effectful_row_without_ctx
+  "no matching function for call to .mint_read_view\\("
+  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = .*MappedRegion")
+foundation_neg_compile_test(neg_read_view_undeclared_row_without_ctx
+  "no matching function for call to .mint_read_view\\("
+  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = .*UndecidedRegion")
+foundation_neg_compile_test(neg_read_view_scoped_form_keeps_the_row_gate
+  "no matching function for call to .with_read_view\\("
+  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = .*MappedRegion")
+
 # ── Brands: identity per mint ────────────────────────────────────────
 #
 # A root mint gives every call site a fresh brand, and every derived
