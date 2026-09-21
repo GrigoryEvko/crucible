@@ -233,8 +233,8 @@ inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T
 // DetSafeLattice::At<Impure> are different types, so they take different
 // slots without either one naming a salt.
 //
-// Specializing this maps a second lattice type onto an existing
-// identity. That is what a rename or an alias needs in order to keep
+// Specializing this maps a second type onto an existing identity.
+// That is what a rename or an alias needs in order to keep
 // reaching entries already cached, and what peers need when they spell
 // one axis differently. It is also where a predicate rename lands, since
 // a refinement's predicate is a template argument of its lattice.
@@ -246,6 +246,22 @@ inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T
 // when a lattice declines to name itself: two unnamed lattices must not
 // share a slot, and a type always has a name even when it does not
 // publish one.
+//
+// The name is narrower than the role, and it stays. Not every identity
+// folded through this trait belongs to a lattice: the multi-axis binding
+// in fixy/Fn.h resolves an axis to an atom type or to a pole type, and it
+// folds those here as well. The alternative was a second trait named for
+// grades, defaulting the same way. One table is right, and the recursion
+// is what decides it rather than taste. A binding's payload axis recurses
+// into row_hash_contribution, which reaches the graded fold below, which
+// reads this trait. Both folds are therefore already live inside one key.
+// Two tables could disagree about one type, and that type would then
+// carry two identities within a single key, which is an inconsistency
+// rather than the fragmentation one table risks. A rename mapped in one
+// table and forgotten in the other is the ordinary way that happens.
+//
+// So a third kind of grade widens this comment. It does not add a peer
+// trait.
 template <typename L>
 struct lattice_canonical_id {
     static constexpr std::uint64_t value = ::foundation::reflect::stable_type_id<L>;

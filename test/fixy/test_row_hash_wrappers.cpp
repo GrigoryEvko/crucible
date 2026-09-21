@@ -21,7 +21,11 @@
 // it is here rather than there because foundation must not depend on
 // fixy.
 
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
 #include <fixy/Bands.h>
+#include <fixy/Collision.h>
+#include <fixy/Corpus.h>
 #include <fixy/Fn.h>
 #include <fixy/Mutation.h>
 #include <fixy/Qtt.h>
@@ -36,6 +40,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <type_traits>
 
 namespace {
 
@@ -131,6 +136,113 @@ static_assert(row_hash_contribution_v<BgWorkerInt> != row_hash_contribution_v<Io
 static_assert(row_hash_contribution_v<::fixy::fn<SecretInt>> != row_hash_contribution_v<::fixy::fn<int>>);
 static_assert(row_hash_contribution_v<::fixy::fn<SecretInt>> != row_hash_contribution_v<SecretInt>);
 
+// ---------------------------------------------------------------------
+// One axis, two spellings, and which of them share a slot.
+//
+// An axis can hold an atom that names a level and a strict pole at that
+// same level.  They are distinct types, so the walk in fixy/Fn.h folds
+// two identities for one claim unless a canonicalisation maps them
+// together.  It reads every grade through
+// foundation/diag/lattice_canonical_id in order to make that possible.
+//
+// Both directions of error live here, and they are not symmetric.  Two
+// spellings left apart cost a cache miss and a recompile.  Two spellings
+// merged with nothing behind the merge serve a kernel compiled under one
+// discipline to a caller under another.  So each cell below names the
+// consumer that decides its case, and asserts what that consumer does
+// rather than quoting it.
+
+using StrictPoleInt = ::fixy::fn<int>;
+using ClassifiedInt = ::fixy::fn<int, ::fixy::atom::as_classified>;
+using SecretAtomInt = ::fixy::fn<int, ::fixy::atom::as_secret>;
+using InternalInt = ::fixy::fn<int, ::fixy::atom::as_internal>;
+using PublicInt = ::fixy::fn<int, ::fixy::atom::as_public>;
+using UnclassifiedInt = ::fixy::fn<int, ::fixy::atom::as_unclassified>;
+using UnverifiedInt = ::fixy::fn<int, ::fixy::atom::trust_unverified>;
+
+// The Security axis merges, because every rule that reads it routes
+// through one predicate and that predicate answers alike for the strict
+// pole, as_classified and as_secret.  This is the establishment, asserted.
+static_assert(
+    ::fixy::corpus::detail::is_secret_carrier_<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>::value);
+static_assert(::fixy::corpus::detail::is_secret_carrier_<::fixy::atom::as_classified>::value);
+static_assert(::fixy::corpus::detail::is_secret_carrier_<::fixy::atom::as_secret>::value);
+
+// The corpus therefore gives the strict pole and as_classified one
+// verdict on every pack, and an IO row is the pack where the verdict
+// bites.
+static_assert(::fixy::IsAccepted<int>);
+static_assert(::fixy::IsAccepted<int, ::fixy::atom::as_classified>);
+static_assert(!::fixy::IsAccepted<int, ::fixy::atom::with_io>);
+static_assert(!::fixy::IsAccepted<int, ::fixy::atom::as_classified, ::fixy::atom::with_io>);
+static_assert(!::fixy::IsAccepted<int, ::fixy::atom::with_bg>);
+static_assert(!::fixy::IsAccepted<int, ::fixy::atom::as_classified, ::fixy::atom::with_bg>);
+
+// So the atom whose stated purpose is to write the default out reaches
+// the default's slot.  fixy/Atom.h says it "names the strict pole
+// explicitly", and before the canonicalisation it was the one spelling
+// of the default that moved the key.
+static_assert(row_hash_contribution_v<ClassifiedInt> == row_hash_contribution_v<StrictPoleInt>,
+              "as_classified names the strict Security pole explicitly, so the two spellings must reach one "
+              "cache slot");
+
+// The merge is one pair and not the axis.  Every Security point that sits
+// below the classified carrier keeps its own slot, because projecting a
+// binding down to one of them is exactly what stops the corpus refusing
+// an IO row.  A canonicalisation that swallowed these would serve a
+// classified kernel to a public caller.
+static_assert(row_hash_contribution_v<InternalInt> != row_hash_contribution_v<StrictPoleInt>);
+static_assert(row_hash_contribution_v<PublicInt> != row_hash_contribution_v<StrictPoleInt>);
+static_assert(row_hash_contribution_v<UnclassifiedInt> != row_hash_contribution_v<StrictPoleInt>);
+static_assert(row_hash_contribution_v<InternalInt> != row_hash_contribution_v<PublicInt>);
+static_assert(row_hash_contribution_v<PublicInt> != row_hash_contribution_v<UnclassifiedInt>);
+static_assert(row_hash_contribution_v<InternalInt> != row_hash_contribution_v<UnclassifiedInt>);
+static_assert(::fixy::IsAccepted<int, ::fixy::atom::as_public, ::fixy::atom::with_io>,
+              "as_public is the projection that discharges the IO entry, so it is not the strict pole under "
+              "another name");
+
+// as_secret is the third spelling the predicate above accepts, and it is
+// deliberately unmapped.  fixy/Atom.h gives it a residual claim the other
+// two lack, that no declassification is permitted at all, which two
+// points of Conf make coincide with the pole today and tier 4 makes
+// unobservable.  No cell here pins its relation to the pole either way:
+// asserting a split would block a later author who establishes that the
+// residual claim is empty, and asserting a merge is the claim nothing in
+// the tree supports.  It has a slot of its own against the points that
+// are genuinely other claims, and that much is asserted.
+static_assert(row_hash_contribution_v<SecretAtomInt> != row_hash_contribution_v<PublicInt>);
+static_assert(row_hash_contribution_v<SecretAtomInt> != row_hash_contribution_v<InternalInt>);
+
+// ---------------------------------------------------------------------
+// The load-bearing cell: an axis that reads exactly like Security and
+// decides the other way.
+//
+// atom::trust_unverified names the strict Trust pole, tags::trust::
+// Unverified, the same way as_classified names the strict Security pole.
+// The naming invites the same merge.  The code refuses it: rule T001 in
+// fixy/Collision.h reads the Trust grade as is_same_v against the atom
+// alone, so writing the atom out makes the rule fire and taking the
+// default leaves it standing down.  Collision.h pins both halves of that
+// asymmetry with its own self-tests, so the two spellings are separable
+// by a consumer and are therefore two claims, whatever the names suggest.
+//
+// Whether that asymmetry is right is T001's question and not this fold's.
+// Either way the two must not share a slot while it holds, and this cell
+// is what stops a later author reading the Security merge as a pattern
+// and applying it across the axis table.
+static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>::T001_ok,
+              "T001 must fire on a capability at the written-out unverified atom");
+static_assert(::fixy::collision::live_rules<::fixy::atom::capability_usage>::T001_ok,
+              "T001 must stand down on a capability at the strict Trust pole");
+static_assert(
+    std::is_same_v<typename ::fixy::axis_traits<::fixy::Axis::Trust>::strict, ::fixy::tags::trust::Unverified>,
+    "the cell below is only about the pole while the pole is Unverified");
+static_assert(!std::is_same_v<::fixy::atom::trust_unverified, ::fixy::tags::trust::Unverified>,
+              "the atom and the pole must stay distinct types for this cell to have content");
+static_assert(row_hash_contribution_v<UnverifiedInt> != row_hash_contribution_v<StrictPoleInt>,
+              "T001 separates the written-out unverified atom from the strict Trust pole, so the two are two "
+              "claims and must not be canonicalised together");
+
 struct TestFailure {};
 int total_passed = 0;
 int total_failed = 0;
@@ -177,6 +289,33 @@ void test_every_binding_reaches_runtime() {
     check(bg_worker != io_function, "two bindings declaring different effect rows share one slot at run time");
 }
 
+// The canonicalisation at run time, in both directions.  A grade folded
+// through a consteval path alone can hide a mistake that the constant
+// evaluator folds away, so the two answers are read back here as values.
+void test_one_claim_reaches_one_slot() {
+    std::uint64_t const strict_pole = row_hash_contribution_v<StrictPoleInt>;
+    std::uint64_t const classified = row_hash_contribution_v<ClassifiedInt>;
+    std::uint64_t const internal_tier = row_hash_contribution_v<InternalInt>;
+    std::uint64_t const public_tier = row_hash_contribution_v<PublicInt>;
+    check(strict_pole != 0, "the strict-pole binding contributes nothing at run time");
+    check(classified == strict_pole, "as_classified names the strict Security pole, and the two spellings take "
+                                     "two slots at run time");
+    check(internal_tier != strict_pole, "the internal tier shares the classified carrier's slot at run time");
+    check(public_tier != strict_pole, "the public tier shares the classified carrier's slot at run time");
+    check(internal_tier != public_tier, "two Security points below the carrier share one slot at run time");
+}
+
+// The other direction, and the reason it is a separate test: a merge
+// applied where no consumer treats the two spellings alike is a wrong
+// hit, and a wrong hit is the one way this key must never fail.
+void test_two_claims_keep_two_slots() {
+    std::uint64_t const strict_pole = row_hash_contribution_v<StrictPoleInt>;
+    std::uint64_t const unverified = row_hash_contribution_v<UnverifiedInt>;
+    check(unverified != 0, "the unverified binding contributes nothing at run time");
+    check(unverified != strict_pole, "T001 separates the written-out unverified atom from the strict Trust pole, "
+                                     "and the two share one slot at run time");
+}
+
 // The roster is read out of the role namespace, so a role added there is
 // covered here without an edit. A role at zero shares a slot with every
 // bare payload in the tree.
@@ -193,6 +332,8 @@ int main() {
     std::fprintf(stderr, "test_row_hash_wrappers:\n");
     run_test("test_every_wrapper_reaches_runtime", test_every_wrapper_reaches_runtime);
     run_test("test_every_binding_reaches_runtime", test_every_binding_reaches_runtime);
+    run_test("test_one_claim_reaches_one_slot", test_one_claim_reaches_one_slot);
+    run_test("test_two_claims_keep_two_slots", test_two_claims_keep_two_slots);
     run_test("test_every_role_is_off_the_zero_slot", test_every_role_is_off_the_zero_slot);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

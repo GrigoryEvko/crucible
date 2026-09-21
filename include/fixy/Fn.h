@@ -371,16 +371,34 @@ concept CtxAdmitsBinding =
 // promises about them: an empty stated pack and the strict pole mean the
 // same thing.
 //
-// Every other axis folds the reflected identity of its resolved grade.
-// That is the only canonical identity an atom publishes — an atom carries
-// no meaning beyond the axis it engages, by fixy/Atom.h's own words — and
-// it discriminates a parametric atom by its argument, so a
-// declassification under one policy takes a different slot from the same
-// declassification under another.  Where a grade has two spellings that
-// denote one claim, an atom naming a level and the strict pole at that
-// same level, this reads them as two.  The cost of that is a cache miss
-// and never a wrong hit, and closing it would need an equivalence over
-// grades that no axis publishes today.
+// Every other axis folds the canonical identity of its resolved grade,
+// which it reads through foundation/diag/RowHash.h's
+// lattice_canonical_id.  That trait defaults to the reflected identity,
+// and the reflected identity is the only canonical identity an atom
+// publishes — an atom carries no meaning beyond the axis it engages, by
+// fixy/Atom.h's own words.  It also discriminates a parametric atom by
+// its argument, so a declassification under one policy takes a different
+// slot from the same declassification under another.
+//
+// The indirection is what lets one axis hold two grade spellings for one
+// claim.  An atom that names a level, and the strict pole at that same
+// level, are distinct types.  A fold that reads the reflected identity
+// directly therefore gives one claim two slots.  The Effect axis never
+// had that problem, because the branch above folds through the row and
+// the row already collapses a stated empty pack onto the strict pole.
+// Every other axis closes it one specialisation at a time.
+//
+// Each specialisation is one judgment, and the judgment is made against
+// the code rather than against the naming.  The direction of the two
+// errors is not symmetric.  Two spellings left apart cost a cache miss
+// and a recompile.  Two spellings merged without an equivalence behind
+// them serve a kernel compiled under one discipline to a caller under
+// another, which is the direction this key must never move.  So a
+// specialisation is owed a consumer that already treats the two
+// spellings alike, and the Security and Trust axes show that the naming
+// alone does not tell: the two read the same way and decide opposite
+// ways.  The cells at the foot of test/fixy/test_row_hash_wrappers.cpp
+// hold both answers, with the consumer that establishes each.
 //
 // What does not fold in is whether the pack MENTIONED an axis.  Two
 // bindings whose resolved grades agree make the same claim, and whether
@@ -421,7 +439,7 @@ template <class Binding>
             h = ::foundation::diag::detail::combine_ids(
                 h, ::foundation::diag::row_hash_contribution_v<atom::effect_row_of_t<Grade>>);
         } else {
-            h = ::foundation::diag::detail::combine_ids(h, ::foundation::reflect::stable_type_id<Grade>);
+            h = ::foundation::diag::detail::combine_ids(h, ::foundation::diag::lattice_canonical_id_v<Grade>);
         }
     }
     return h;
@@ -433,11 +451,52 @@ template <class Binding>
 
 }  // namespace fixy
 
-// The specialisation lives on this side of the layer boundary because
+// The specialisations live on this side of the layer boundary because
 // foundation may name only foundation and the standard library, while
-// fixy may name foundation.  A binding is a fixy type, so the only place
-// the two can meet is here.
+// fixy may name foundation.  A binding and an atom are both fixy types,
+// so the only place the two layers can meet is here.
 namespace foundation::diag {
+
+// `as_classified` and the strict Security pole are one claim under two
+// spellings, and this is what puts them in one cache slot.
+//
+// What establishes the equivalence is a consumer, not the naming.  Every
+// rule in the tree that reads the Security axis reads it through
+// fixy/Corpus.h's `is_secret_carrier_`, which answers true for the strict
+// pole and for `as_classified` alike — "the strict pole counts, because a
+// binding that says nothing about Security is classified", in that
+// header's words.  No other predicate separates them: `is_internal_`
+// answers false for both, and the discharge side reads `declassify` only.
+// So the corpus gives the two spellings one verdict on every pack, and
+// the cells in test/fixy/test_row_hash_wrappers.cpp assert that rather
+// than cite it.
+//
+// fixy/Atom.h settles it a second way, definitionally: `as_classified`
+// "names the strict pole explicitly".  The atom exists in order to write
+// the default out, and the fold above already holds that writing an axis
+// out is a diagnostic distinction rather than an identity one.  Before
+// this, the one atom whose whole purpose was to spell the default was
+// also the one that moved the key.
+//
+// `as_secret` is the third spelling the same predicate accepts, and it is
+// deliberately NOT mapped here.  fixy/Atom.h gives it a residual claim
+// the other two do not carry — it "pins the top of the lattice, where no
+// declassification is permitted at all".  Two points of Conf make that
+// claim coincide with the pole today, and tier 4 makes it unobservable,
+// because an atom and a `declassify` cannot both sit on one axis.  A rule
+// that makes the claim real would separate `as_secret` from the pole, and
+// a merge shipped now would then be a wrong hit rather than a stale one.
+// A later author who establishes that the residual claim is empty maps it
+// here, one judgment, with the consumer named.
+//
+// The pole is reached through this same trait rather than through the
+// reflected identity, so a canonicalisation of the pole carries the atom
+// with it instead of splitting the pair again.
+template <>
+struct lattice_canonical_id<::fixy::atom::as_classified> {
+    static constexpr std::uint64_t value =
+        lattice_canonical_id_v<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>;
+};
 
 template <class Type, class... Atoms>
 struct row_hash_contribution<::fixy::fn<Type, Atoms...>> {
