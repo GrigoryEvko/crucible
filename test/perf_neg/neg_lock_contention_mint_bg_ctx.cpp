@@ -1,9 +1,10 @@
-// FIXY-U-083 HS14 neg-compile fixture (1 of 2 for mint_lock_contention).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_lock_contention rejects BgDrainCtx — BgDrain carries Bg + Alloc
-// capabilities but neither engages Init.  LockContention::load() opens
-// a BPF program + tracepoint and mmaps the per-CPU histogram, which is
-// startup-only work that must remain in the Init row.
+// mint_lock_contention rejects BgDrainCtx.  That context claims
+// Row<Bg, Alloc> and carries neither IO nor Block, and the gate demands
+// all three of Alloc, IO and Block.  LockContention::load() opens a BPF
+// program and a tracepoint and maps the per-CPU histogram, and the
+// bpf(BPF_PROG_LOAD) call waits on the kernel verifier.
 
 #include <crucible/perf/LockContention.h>
 

@@ -18,33 +18,44 @@ namespace fp = ::crucible::fixy::perf;
 namespace perf_ = ::crucible::perf;
 namespace eff = ::crucible::effects;
 
-static_assert(std::is_same_v<decltype(&fp::mint_lock_contention<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_lock_contention<eff::ColdInitCtx>)>,
-              "the re-exported mint must be the substrate function itself.");
+// The seven BPF hub mints gate on a row that carries Block, so an
+// initialization context cannot instantiate one and cannot witness the
+// re-export here.  This is the production shape instead: a background
+// context widened to the three atoms the gate demands.  The background
+// capability permits all three, so the widening is legal.
+//
+// The profiler mint below keeps the initialization context, because its
+// gate still reads the Init capability.
+using BgProbeCtx =
+    eff::ExecCtx<eff::Bg, eff::ctx_numa::Local, eff::ctx_alloc::Heap, eff::ctx_heat::Cold, eff::ctx_resid::DRAM,
+                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
-static_assert(std::is_same_v<decltype(&fp::mint_pmu_sample<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_pmu_sample<eff::ColdInitCtx>)>,
-              "the re-exported mint must be the substrate function itself.");
-
-static_assert(std::is_same_v<decltype(&fp::mint_sched_switch<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_sched_switch<eff::ColdInitCtx>)>,
-              "the re-exported mint must be the substrate function itself.");
-
-static_assert(std::is_same_v<decltype(&fp::mint_sched_tp_btf<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_sched_tp_btf<eff::ColdInitCtx>)>,
+static_assert(std::is_same_v<decltype(&fp::mint_lock_contention<BgProbeCtx>),
+                             decltype(&perf_::mint_lock_contention<BgProbeCtx>)>,
               "the re-exported mint must be the substrate function itself.");
 
 static_assert(
-    std::is_same_v<decltype(&fp::mint_sense_hub<eff::ColdInitCtx>), decltype(&perf_::mint_sense_hub<eff::ColdInitCtx>)>,
+    std::is_same_v<decltype(&fp::mint_pmu_sample<BgProbeCtx>), decltype(&perf_::mint_pmu_sample<BgProbeCtx>)>,
     "the re-exported mint must be the substrate function itself.");
 
-static_assert(std::is_same_v<decltype(&fp::mint_syscall_latency<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_syscall_latency<eff::ColdInitCtx>)>,
+static_assert(
+    std::is_same_v<decltype(&fp::mint_sched_switch<BgProbeCtx>), decltype(&perf_::mint_sched_switch<BgProbeCtx>)>,
+    "the re-exported mint must be the substrate function itself.");
+
+static_assert(
+    std::is_same_v<decltype(&fp::mint_sched_tp_btf<BgProbeCtx>), decltype(&perf_::mint_sched_tp_btf<BgProbeCtx>)>,
+    "the re-exported mint must be the substrate function itself.");
+
+static_assert(std::is_same_v<decltype(&fp::mint_sense_hub<BgProbeCtx>), decltype(&perf_::mint_sense_hub<BgProbeCtx>)>,
               "the re-exported mint must be the substrate function itself.");
 
-static_assert(std::is_same_v<decltype(&fp::mint_syscall_tp_btf<eff::ColdInitCtx>),
-                             decltype(&perf_::mint_syscall_tp_btf<eff::ColdInitCtx>)>,
-              "the re-exported mint must be the substrate function itself.");
+static_assert(
+    std::is_same_v<decltype(&fp::mint_syscall_latency<BgProbeCtx>), decltype(&perf_::mint_syscall_latency<BgProbeCtx>)>,
+    "the re-exported mint must be the substrate function itself.");
+
+static_assert(
+    std::is_same_v<decltype(&fp::mint_syscall_tp_btf<BgProbeCtx>), decltype(&perf_::mint_syscall_tp_btf<BgProbeCtx>)>,
+    "the re-exported mint must be the substrate function itself.");
 
 // This one has two overloads. The address is disambiguated to the three-
 // argument form by casting to its signature. The four-argument form travels
@@ -81,33 +92,40 @@ static_assert(std::is_same_v<fp::WorkloadProfiler, perf_::WorkloadProfiler>,
 // them through the re-export means a relaxed gate reddens here too, not only
 // at the definition site.
 
-static_assert(fp::CtxFitsLockContentionMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsLockContentionMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsLockContentionMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsLockContentionMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsLockContentionMint<BgProbeCtx>);
 
-static_assert(fp::CtxFitsPmuSampleMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsPmuSampleMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsPmuSampleMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsPmuSampleMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsPmuSampleMint<BgProbeCtx>);
 
-static_assert(fp::CtxFitsSchedSwitchMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsSchedSwitchMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsSchedSwitchMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsSchedSwitchMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsSchedSwitchMint<BgProbeCtx>);
 
-static_assert(fp::CtxFitsSchedTpBtfMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsSchedTpBtfMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsSchedTpBtfMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsSchedTpBtfMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsSchedTpBtfMint<BgProbeCtx>);
 
-static_assert(fp::CtxFitsSenseHubMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsSenseHubMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsSenseHubMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsSenseHubMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsSenseHubMint<BgProbeCtx>);
 
-static_assert(fp::CtxFitsSyscallLatencyMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsSyscallLatencyMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsSyscallLatencyMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsSyscallLatencyMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsSyscallLatencyMint<BgProbeCtx>);
 
-static_assert(fp::CtxFitsSyscallTpBtfMint<eff::ColdInitCtx>);
+static_assert(!fp::CtxFitsSyscallTpBtfMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsSyscallTpBtfMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsSyscallTpBtfMint<eff::HotFgCtx>);
+static_assert(fp::CtxFitsSyscallTpBtfMint<BgProbeCtx>);
 
 static_assert(fp::CtxFitsWorkloadProfilerMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsWorkloadProfilerMint<eff::BgDrainCtx>);

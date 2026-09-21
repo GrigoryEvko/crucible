@@ -5255,12 +5255,16 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsDeadlineWatchdogMint")
 
-# ─── FIXY-U-083 §XXI Universal Mint Pattern for perf/ hubs ────────
-# Per-perf-hub mint_<hub> (Init-row-gated startup factory) ships HS14
-# floor: ≥2 neg-compile fixtures per mint demonstrating BgDrainCtx and
-# HotFgCtx are both rejected by the CtxFits<Hub>Mint concept.  Batch 1
-# of 2: SenseHub + SenseHubV2 (the two ABI-stable hubs; BPF facade
-# hubs ship in batch 2).
+# ─── §XXI Universal Mint Pattern for perf/ hubs ───────────────────
+# Per-perf-hub mint_<hub> ships an HS14 floor: ≥2 neg-compile fixtures
+# per mint demonstrating BgDrainCtx and HotFgCtx are both rejected by
+# the CtxFits<Hub>Mint concept.  Batch 1 of 2: SenseHub + SenseHubV2
+# (the two ABI-stable hubs; BPF facade hubs ship in batch 2).
+#
+# The seven v1 BPF hub gates read a row that carries Block rather than
+# the Init capability, and the _cold_init_ctx / _bg_compile_ctx pairs
+# further down are their own floor.  mint_sense_hub_v2 still reads the
+# Init capability, so its two fixtures below keep that wording.
 crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubMint")
@@ -5274,11 +5278,14 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubV2Mint")
 
-# FIXY-U-083 batch 2: 7 remaining perf/ hubs.  Six load-based BPF
-# facade hubs (LockContention / PmuSample / SchedSwitch / SchedTpBtf /
-# SyscallLatency / SyscallTpBtf) share the SenseHub-shape gate.
-# WorkloadProfiler is ctor-based but rides the same Init-row Ctx-fit
+# Batch 2: 7 remaining perf/ hubs.  Six load-based BPF facade hubs
+# (LockContention / PmuSample / SchedSwitch / SchedTpBtf /
+# SyscallLatency / SyscallTpBtf) share the SenseHub-shape gate, which
+# reads a row carrying Block.  WorkloadProfiler is ctor-based, borrows
+# an already-loaded Senses, and keeps the Init-capability Ctx-fit
 # concept.  Two fixtures per hub (BgDrainCtx + HotFgCtx) = 14 total.
+# BgDrainCtx and HotFgCtx are rejected under either gate shape, so
+# these fourteen registrations stand unchanged across that migration.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsLockContentionMint")
@@ -5321,6 +5328,64 @@ crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsWorkloadProfilerMint")
+
+# The seven BPF hub mints now gate on a row that carries Block, because
+# each load calls bpf(BPF_PROG_LOAD) and waits on the kernel verifier.
+# The pair below is the HS14 floor for each of those seven gates.
+#
+#   * _cold_init_ctx  — ColdInitCtx carries Alloc and IO and no Block.
+#     This is the witness that the migration off the Init gate took:
+#     the context that used to be the ONLY accepted one is now rejected.
+#   * _bg_compile_ctx — BgCompileCtx holds the capability the gate does
+#     admit and still claims Row<Bg, Alloc, IO>, so it fails on Block
+#     alone.  Paired with the fixture above it shows the gate reads the
+#     wait and not the capability source.
+#
+# Each gate is its own concept over its own <hub>_required_row alias, so
+# a family-wide pair would leave six gates unwitnessed.  Fourteen
+# fixtures, one pair per mint.
+crucible_neg_compile_perf_test(neg_lock_contention_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsLockContentionMint")
+crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsLockContentionMint")
+crucible_neg_compile_perf_test(neg_pmu_sample_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsPmuSampleMint")
+crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsPmuSampleMint")
+crucible_neg_compile_perf_test(neg_sched_switch_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSchedSwitchMint")
+crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSchedSwitchMint")
+crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSchedTpBtfMint")
+crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSchedTpBtfMint")
+crucible_neg_compile_perf_test(neg_sense_hub_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSenseHubMint")
+crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSenseHubMint")
+crucible_neg_compile_perf_test(neg_syscall_latency_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSyscallLatencyMint")
+crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSyscallLatencyMint")
+crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_cold_init_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSyscallTpBtfMint")
+crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_compile_ctx
+    "constraint|constraints.*not satisfied"
+    "CtxFitsSyscallTpBtfMint")
 
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures

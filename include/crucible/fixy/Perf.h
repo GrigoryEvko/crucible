@@ -101,26 +101,57 @@ static_assert(
     std::is_same_v<::crucible::fixy::perf::TaggedParallelismDecision, ::crucible::perf::TaggedParallelismDecision>,
     "fixy::perf::TaggedParallelismDecision must alias substrate.");
 
-static_assert(::crucible::fixy::perf::CtxFitsLockContentionMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsLockContentionMint must admit ColdInitCtx.");
+// The seven BPF hubs gate on a row that carries Block, because each
+// load calls bpf(BPF_PROG_LOAD) and waits on the kernel verifier.  The
+// initialization capability permits Row<Init, Alloc, IO> and no Block,
+// so it cannot reach any of the seven.  The test runner capability
+// permits Block and does reach them.
 
-static_assert(::crucible::fixy::perf::CtxFitsPmuSampleMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsPmuSampleMint must admit ColdInitCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsLockContentionMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsLockContentionMint must reject ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSchedSwitchMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsSchedSwitchMint must admit ColdInitCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsPmuSampleMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsPmuSampleMint must reject ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSchedTpBtfMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsSchedTpBtfMint must admit ColdInitCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSchedSwitchMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSchedSwitchMint must reject ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsSenseHubMint must admit ColdInitCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSchedTpBtfMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSchedTpBtfMint must reject ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSyscallLatencyMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsSyscallLatencyMint must admit ColdInitCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSenseHubMint must reject ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<::crucible::effects::ColdInitCtx>,
-              "fixy::perf::CtxFitsSyscallTpBtfMint must admit ColdInitCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSyscallLatencyMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSyscallLatencyMint must reject ColdInitCtx.");
+
+static_assert(!::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSyscallTpBtfMint must reject ColdInitCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsLockContentionMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsLockContentionMint must admit TestRunnerCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsPmuSampleMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsPmuSampleMint must admit TestRunnerCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsSchedSwitchMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsSchedSwitchMint must admit TestRunnerCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsSchedTpBtfMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsSchedTpBtfMint must admit TestRunnerCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsSenseHubMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsSenseHubMint must admit TestRunnerCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsSyscallLatencyMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsSyscallLatencyMint must admit TestRunnerCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<::crucible::effects::TestRunnerCtx>,
+              "fixy::perf::CtxFitsSyscallTpBtfMint must admit TestRunnerCtx.");
+
+// The profiler mint is not one of the seven.  Its constructor borrows an
+// already-loaded Senses and enters no kernel of its own, so it keeps the
+// initialization gate.
 
 static_assert(::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<::crucible::effects::ColdInitCtx>,
               "fixy::perf::CtxFitsWorkloadProfilerMint must admit ColdInitCtx.");
@@ -212,12 +243,14 @@ static_assert(perf_mint_cardinality == 8, "ceiling: fixy::perf:: re-exports exac
 namespace crucible::fixy::perf {
 
 inline void runtime_smoke_test() noexcept {
-    constexpr bool admits_cold = CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>;
+    constexpr bool rejects_cold = !CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>;
     constexpr bool rejects_bg = !CtxFitsPmuSampleMint<::crucible::effects::BgDrainCtx>;
     constexpr bool rejects_hot = !CtxFitsLockContentionMint<::crucible::effects::HotFgCtx>;
-    (void)admits_cold;
+    constexpr bool admits_test = CtxFitsSenseHubMint<::crucible::effects::TestRunnerCtx>;
+    (void)rejects_cold;
     (void)rejects_bg;
     (void)rejects_hot;
+    (void)admits_test;
 
     constexpr bool dispatch_admits_bg = CtxFitsWorkloadDecisionDispatch<::crucible::effects::BgDrainCtx>;
     constexpr bool dispatch_rejects_hot = !CtxFitsWorkloadDecisionDispatch<::crucible::effects::HotFgCtx>;

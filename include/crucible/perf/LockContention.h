@@ -119,16 +119,28 @@ private:
     std::unique_ptr<State> state_;
 };
 
-// Loading the program attaches to the futex tracepoints and maps the
-// timeline ring.  Those are startup-only operations, so only a
-// context carrying the Init capability may reach this surface.
+// The load attaches to the futex tracepoints, maps the timeline ring,
+// and calls bpf(BPF_PROG_LOAD).  That last call enters the kernel and
+// waits while the verifier walks the program.  The wait is why the row
+// carries Block.  IO covers the bpf, perf_event_open and mmap traffic.
+// Alloc covers the state the load path takes from the heap.
+//
+// An Init-capability context cannot reach this surface.  The permitted
+// row of that capability is Row<Init, Alloc, IO> and carries no Block,
+// so a startup context widens no further than IO and the gate is
+// unsatisfiable there.  A background context permits all three atoms
+// and widens to them.
+
+using lock_contention_required_row =
+    ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO,
+                             ::crucible::effects::Effect::Block>;
+
 template <class Ctx>
 concept CtxFitsLockContentionMint = ::crucible::effects::IsExecCtx<Ctx>
-                                 && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+                                 && ::crucible::effects::Subrow<lock_contention_required_row, typename Ctx::row_type>;
 
 // These grants classify the privileged syscalls the load path issues.
-// They do not tighten the effect row.  Init is a startup pass-through
-// capability that admits blocking work without Block in the row.
+// They do not tighten the effect row.  The row gate above does that.
 using mint_lock_contention_syscall_grants =
     std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
                ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
@@ -156,8 +168,26 @@ template <::crucible::effects::IsExecCtx Ctx>
     return LockContention::load(init);
 }
 
-static_assert(CtxFitsLockContentionMint<::crucible::effects::ColdInitCtx>);
+// Block is the atom that decides this gate.  ColdInitCtx and
+// BgCompileCtx both carry Alloc and IO, and the gate rejects both for
+// the same missing atom.  The gate reads the wait, not the capability
+// source.
+static_assert(!CtxFitsLockContentionMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsLockContentionMint<::crucible::effects::BgCompileCtx>);
 static_assert(!CtxFitsLockContentionMint<::crucible::effects::BgDrainCtx>);
 static_assert(!CtxFitsLockContentionMint<::crucible::effects::HotFgCtx>);
+static_assert(CtxFitsLockContentionMint<::crucible::effects::TestRunnerCtx>);
+
+// The two assertions below hold for a capability source rather than for
+// one named context, so a new alias on either side cannot evade them.
+static_assert(!::crucible::effects::Subrow<lock_contention_required_row,
+                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Init>>,
+              "The initialization capability must never permit every atom this gate demands.  It omits "
+              "Block because a startup scope must not wait, and the BPF program load waits on the "
+              "kernel verifier.  No widening rescues an initialization context.");
+static_assert(::crucible::effects::Subrow<lock_contention_required_row,
+                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Bg>>,
+              "The background capability must permit every atom this gate demands, or no production "
+              "context could reach this mint.");
 
 }  // namespace crucible::perf

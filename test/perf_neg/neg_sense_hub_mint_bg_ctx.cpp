@@ -1,12 +1,11 @@
-// FIXY-U-083 HS14 neg-compile fixture (1 of 2 for mint_sense_hub).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_sense_hub rejects a context whose effect row lacks Init.
-// BgDrainCtx::row = Row<Bg, Alloc> — no Init grant.  SenseHub::load()
-// performs BPF program loading + tracepoint attach via bpf() and
-// perf_event_open syscalls plus mmap — startup-only operations
-// belonging to the Init row.  The Bg drain context must NOT engage
-// this surface; the Ctx-fit gate refuses to satisfy the requires
-// clause for BgDrainCtx.
+// mint_sense_hub rejects BgDrainCtx.  That context claims
+// Row<Bg, Alloc> and carries neither IO nor Block, and the gate demands
+// all three of Alloc, IO and Block.  SenseHub::load() loads a BPF
+// program and attaches a tracepoint through bpf() and
+// perf_event_open(), and maps the counter array.  The
+// bpf(BPF_PROG_LOAD) call waits on the kernel verifier.
 
 #include <crucible/perf/SenseHub.h>
 

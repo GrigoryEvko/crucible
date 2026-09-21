@@ -72,35 +72,49 @@ using MmapRow = ::crucible::effects::Row<::crucible::effects::Effect::IO>;
 
 #undef FIXY_V_179_AUDIT_HUB
 
-// The Init row is the gate.  A background-drain or hot-foreground context
-// is out of bounds for every one of these mints.
-static_assert(::crucible::perf::CtxFitsSenseHubMint<eff::ColdInitCtx>);
+// A row that carries Block is the gate, because each load calls
+// bpf(BPF_PROG_LOAD) and waits on the kernel verifier.  An
+// initialization, background-drain or hot-foreground context is out of
+// bounds for every one of these mints.  The widened background context
+// below is the production shape.
+using BgProbeCtx =
+    eff::ExecCtx<eff::Bg, eff::ctx_numa::Local, eff::ctx_alloc::Heap, eff::ctx_heat::Cold, eff::ctx_resid::DRAM,
+                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+
+static_assert(!::crucible::perf::CtxFitsSenseHubMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsSenseHubMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsSenseHubMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsSenseHubMint<BgProbeCtx>);
 
-static_assert(::crucible::perf::CtxFitsPmuSampleMint<eff::ColdInitCtx>);
+static_assert(!::crucible::perf::CtxFitsPmuSampleMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsPmuSampleMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsPmuSampleMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsPmuSampleMint<BgProbeCtx>);
 
-static_assert(::crucible::perf::CtxFitsLockContentionMint<eff::ColdInitCtx>);
+static_assert(!::crucible::perf::CtxFitsLockContentionMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsLockContentionMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsLockContentionMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsLockContentionMint<BgProbeCtx>);
 
-static_assert(::crucible::perf::CtxFitsSchedSwitchMint<eff::ColdInitCtx>);
+static_assert(!::crucible::perf::CtxFitsSchedSwitchMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsSchedSwitchMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsSchedSwitchMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsSchedSwitchMint<BgProbeCtx>);
 
-static_assert(::crucible::perf::CtxFitsSchedTpBtfMint<eff::ColdInitCtx>);
+static_assert(!::crucible::perf::CtxFitsSchedTpBtfMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsSchedTpBtfMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsSchedTpBtfMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsSchedTpBtfMint<BgProbeCtx>);
 
-static_assert(::crucible::perf::CtxFitsSyscallTpBtfMint<eff::ColdInitCtx>);
+static_assert(!::crucible::perf::CtxFitsSyscallTpBtfMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsSyscallTpBtfMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsSyscallTpBtfMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsSyscallTpBtfMint<BgProbeCtx>);
 
-static_assert(::crucible::perf::CtxFitsSyscallLatencyMint<eff::ColdInitCtx>);
+static_assert(!::crucible::perf::CtxFitsSyscallLatencyMint<eff::ColdInitCtx>);
 static_assert(!::crucible::perf::CtxFitsSyscallLatencyMint<eff::BgDrainCtx>);
 static_assert(!::crucible::perf::CtxFitsSyscallLatencyMint<eff::HotFgCtx>);
+static_assert(::crucible::perf::CtxFitsSyscallLatencyMint<BgProbeCtx>);
 
 }  // namespace
 
