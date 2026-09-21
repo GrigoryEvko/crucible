@@ -685,12 +685,32 @@ fixy_neg_compile_test(neg_bands_satisfies_foreign_tier
   "satisfaction of .same_as<decltype \\(Required\\), fixy::band_tier_t<B> >."
   ".enum class foundation::algebra::lattices::HotPathTier. is not the same as .enum class foundation::algebra::lattices::DetSafeTier.")
 
-# The seven coverage assertions in Bands.h all pass, so none of them
+# The eight coverage assertions in Bands.h all pass, so none of them
 # shows what the walk does when a tier has no alias.  This namespace
 # mirrors fixy::hot_path and leaves one of the three tiers out.
 fixy_neg_compile_test(neg_bands_tier_without_an_alias
   "static assertion failed: a namespace missing one tier alias covers its enum"
   "the comparison reduces to .\\(0 == 1\\).")
+
+# ScopedFence is the one band over a partial order rather than a chain,
+# so it is the only one that can be asked to move to a tier that sits
+# neither above nor below its own.  Cta is on the accelerator trunk and
+# Inner on the ARM trunk, the two meet only at Thread and System, and the
+# same leq gate that refuses a move up refuses this one.  The chain
+# fixture above cannot produce the case.
+fixy_neg_compile_test(neg_bands_relax_cross_trunk
+  "no matching function for call to .relax<foundation::algebra::lattices::MemoryScope::Inner>"
+  "band_lattice_t<B>::leq\\)\\(WeakerTier, band_tier_v<B>\\).*evaluated to .false."
+  "MemoryScopeLattice::At<foundation::algebra::lattices::MemoryScope::Cta>")
+
+# The admission direction across the same two trunks.  An inner-shareable
+# provider is refused at a block-scope requirement, because leq is false
+# both ways between the trunks and a gate that admitted it would offer
+# the value to observers the fence never reached.
+fixy_neg_compile_test(neg_bands_satisfies_cross_trunk
+  "no matching function for call to .consume"
+  "required for the satisfaction of .covers_cta_requirement<"
+  "satisfies_v<Provider, foundation::algebra::lattices::MemoryScope::Cta>.*evaluated to .false.")
 
 # ── Task #105 (A10.5): the eight value wrappers ──────────────────────
 #

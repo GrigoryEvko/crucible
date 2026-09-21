@@ -10,7 +10,7 @@
 
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/IsClockSource.h>
-#include <crucible/safety/ScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>

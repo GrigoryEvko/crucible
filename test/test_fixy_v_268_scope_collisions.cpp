@@ -15,7 +15,7 @@
 #include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/Fn.h>  // pulls in the collision catalog
 #include <crucible/safety/Hw.h>
-#include <crucible/safety/ScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/source/Arch.h>
 

@@ -3,8 +3,8 @@
 // under the project warning flags, and adds the cross-wrapper checks no
 // single wrapper header can state about itself.
 
-#include <crucible/safety/ScopedFence.h>
-#include <crucible/safety/IsScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
+#include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>

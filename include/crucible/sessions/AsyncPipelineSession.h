@@ -26,7 +26,7 @@
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/ScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionGrade.h>

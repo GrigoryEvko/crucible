@@ -7,7 +7,7 @@
 // from the type alone.
 //
 // Old spellings: include/crucible/safety/{DetSafe,AllocClass,HotPath,
-// CipherTier,Wait,NumericalTier,OpaqueLifetime,RecipeSpec}.h, each a
+// CipherTier,Wait,NumericalTier,OpaqueLifetime,ScopedFence,RecipeSpec}.h, each a
 // class of its own around the same Graded.  Only what a consumer calls
 // survives here: the carrier's own peek and consume, the construction
 // door, the admission query satisfies_v, the tier query, and relax.
@@ -28,6 +28,15 @@
 // RecipeSpec is not a band.  It carries both numerical axes at run time,
 // so the grade is stored beside the value and the caller decides
 // admission with admits().
+//
+// One band pins a partial order rather than a chain.  ScopedFence's
+// scopes form two trunks that meet only at the ends, so two scopes on
+// different trunks are incomparable and neither satisfies the other.
+// Nothing in the generic surface below changes for it: every operation
+// here is written in terms of the outer lattice's leq alone, and leq is
+// defined on a partial order.  satisfies_v answers no for an
+// incomparable pair, and relax rejects one, so a cross-trunk move is a
+// substitution failure by the same clause that rejects a move up.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
@@ -37,6 +46,7 @@
 #include <foundation/algebra/lattices/DetSafeLattice.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/LifetimeLattice.h>
+#include <foundation/algebra/lattices/MemoryScopeLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
@@ -56,6 +66,7 @@ using HotPathTier_v = ::foundation::algebra::lattices::HotPathTier;
 using CipherTierTag_v = ::foundation::algebra::lattices::CipherTierTag;
 using WaitStrategy_v = ::foundation::algebra::lattices::WaitStrategy;
 using Lifetime_v = ::foundation::algebra::lattices::Lifetime;
+using MemoryScope_v = ::foundation::algebra::lattices::MemoryScope;
 using ::foundation::algebra::lattices::RecipeFamily;
 using ::foundation::algebra::lattices::Tolerance;
 
@@ -64,6 +75,7 @@ using ::foundation::algebra::lattices::CipherTierLattice;
 using ::foundation::algebra::lattices::DetSafeLattice;
 using ::foundation::algebra::lattices::HotPathLattice;
 using ::foundation::algebra::lattices::LifetimeLattice;
+using ::foundation::algebra::lattices::MemoryScopeLattice;
 using ::foundation::algebra::lattices::RecipeFamilyLattice;
 using ::foundation::algebra::lattices::ToleranceLattice;
 using ::foundation::algebra::lattices::WaitLattice;
@@ -201,6 +213,30 @@ template <Lifetime_v Scope, class T>
 using OpaqueLifetime =
     ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, LifetimeLattice::At<Scope>, T>;
 
+// The memory-visibility scope a publication was released under.  The
+// scopes form a partial order over two trunks that meet only at the
+// ends: Warp ⊑ Cta ⊑ Cluster ⊑ Gpu on the accelerator side, Inner ⊑
+// Outer on the ARM shareability side, with a shared bottom Thread and a
+// shared top System.  Scopes on different trunks are incomparable — a
+// block scope has no ordering relation to an inner-shareable domain, so
+// neither one satisfies the other.
+//
+// S is the scope the fence publishes at.  Wider visibility is higher, so
+// a consumer requirement R is met when S subsumes R, and a device-wide
+// fence meets a block-scope requirement while a block-scope fence does
+// not meet a device-wide one.
+//
+// relax narrows the scope, and is sound because a wider fence really does
+// publish at every narrower scope it dominates: a device-wide fence has
+// already made the writes visible at block scope, so re-labelling narrows
+// where the value is offered and never overstates what the fence covered.
+// Relaxing up, or across to an incomparable trunk, is a compile error.
+// It would assert the value is visible to observers the fence never
+// reached.
+template <MemoryScope_v S, class T>
+using ScopedFence =
+    ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, MemoryScopeLattice::At<S>, T>;
+
 namespace det_safe {
 template <typename T>
 using Pure = DetSafe<DetSafeTier_v::Pure, T>;
@@ -292,7 +328,26 @@ template <typename T>
 using PerFleet = OpaqueLifetime<Lifetime_v::PER_FLEET, T>;
 }  // namespace opaque_lifetime
 
-// Nothing checked that the seven alias namespaces above cover their
+namespace scoped_fence {
+template <typename T>
+using Thread = ScopedFence<MemoryScope_v::Thread, T>;
+template <typename T>
+using Warp = ScopedFence<MemoryScope_v::Warp, T>;
+template <typename T>
+using Cta = ScopedFence<MemoryScope_v::Cta, T>;
+template <typename T>
+using Cluster = ScopedFence<MemoryScope_v::Cluster, T>;
+template <typename T>
+using Gpu = ScopedFence<MemoryScope_v::Gpu, T>;
+template <typename T>
+using Inner = ScopedFence<MemoryScope_v::Inner, T>;
+template <typename T>
+using Outer = ScopedFence<MemoryScope_v::Outer, T>;
+template <typename T>
+using System = ScopedFence<MemoryScope_v::System, T>;
+}  // namespace scoped_fence
+
+// Nothing checked that the eight alias namespaces above cover their
 // enums.  An enumerator added to a lattice enum and not given an alias
 // here is simply unreachable by the short spelling, silently, and the
 // aliases cannot be generated because GCC 16 has no code injection.
@@ -444,6 +499,72 @@ static_assert(relax<DetSafeTier_v::PhiloxRng>(pinned_pure).peek() == 42);
 static_assert(tier_of(relax<DetSafeTier_v::NonDeterministicSyscall>(pinned_pure))
               == DetSafeTier_v::NonDeterministicSyscall);
 
+// The poset band.  These cells are the old ScopedFence.h's own, because
+// the trunk structure is what a chain-shaped reading of this band would
+// silently lose.
+using CtaInt = ScopedFence<MemoryScope_v::Cta, int>;
+using GpuInt = ScopedFence<MemoryScope_v::Gpu, int>;
+using InnerInt = ScopedFence<MemoryScope_v::Inner, int>;
+using OuterInt = ScopedFence<MemoryScope_v::Outer, int>;
+using SystemInt = ScopedFence<MemoryScope_v::System, int>;
+using ThreadInt = ScopedFence<MemoryScope_v::Thread, int>;
+using WarpInt = ScopedFence<MemoryScope_v::Warp, int>;
+
+static_assert(sizeof(CtaInt) == sizeof(int));
+static_assert(sizeof(scoped_fence::Cta<double>) == sizeof(double));
+static_assert(IsBand<CtaInt>);
+static_assert(IsBandOf<MemoryScopeLattice, CtaInt>);
+static_assert(!IsBandOf<DetSafeLattice, CtaInt>);
+static_assert(band_tier_v<CtaInt> == MemoryScope_v::Cta);
+static_assert(std::is_same_v<band_lattice_t<CtaInt>, MemoryScopeLattice>);
+
+// Within a trunk the order holds in the admission direction.
+static_assert(satisfies_v<GpuInt, MemoryScope_v::Cta>,
+              "A device-wide fence publishes at block scope too, because Cta "
+              "sits below Gpu on the accelerator trunk.");
+static_assert(!satisfies_v<CtaInt, MemoryScope_v::Gpu>,
+              "A block-scope fence is too narrow for a device-wide requirement.");
+static_assert(satisfies_v<OuterInt, MemoryScope_v::Inner>,
+              "An outer-shareable fence subsumes an inner-shareable "
+              "requirement within the same trunk.");
+
+// Across trunks nothing satisfies anything, which is the property a chain
+// cannot express.
+static_assert(!satisfies_v<GpuInt, MemoryScope_v::Inner>,
+              "A device fence has no ordering relation to an inner-shareable "
+              "domain, because the two trunks are incomparable.");
+static_assert(!satisfies_v<InnerInt, MemoryScope_v::Cta>);
+
+// The shared bottom and top.
+static_assert(satisfies_v<SystemInt, MemoryScope_v::Inner>);
+static_assert(satisfies_v<SystemInt, MemoryScope_v::Cta>);
+static_assert(satisfies_v<CtaInt, MemoryScope_v::Thread>);
+static_assert(satisfies_v<InnerInt, MemoryScope_v::Thread>);
+static_assert(!satisfies_v<ThreadInt, MemoryScope_v::Cta>,
+              "A thread-local provider does not subsume a block-scope requirement.");
+
+static_assert(can_relax<GpuInt, MemoryScope_v::Cta>);
+static_assert(can_relax<SystemInt, MemoryScope_v::Inner>);
+static_assert(can_relax<CtaInt, MemoryScope_v::Cta>);
+static_assert(!can_relax<CtaInt, MemoryScope_v::Gpu>,
+              "relax<Gpu> on a ScopedFence<Cta> must be rejected.  Claiming a "
+              "value is device-visible when it was only published at block "
+              "scope would offer it to observers the fence never reached.");
+static_assert(!can_relax<CtaInt, MemoryScope_v::Inner>,
+              "relax<Inner> on a ScopedFence<Cta> must be rejected.  The two "
+              "trunks are incomparable.");
+static_assert(!can_relax<InnerInt, MemoryScope_v::Cta>);
+
+constexpr GpuInt pinned_gpu{42, {}};
+static_assert(tier_of(pinned_gpu) == MemoryScope_v::Gpu);
+static_assert(relax<MemoryScope_v::Cta>(pinned_gpu).peek() == 42);
+static_assert(tier_of(relax<MemoryScope_v::Cta>(pinned_gpu)) == MemoryScope_v::Cta);
+static_assert(std::is_same_v<rebind_band_t<GpuInt, MemoryScope_v::Cta>, CtaInt>);
+static_assert(std::is_same_v<scoped_fence::Cta<int>, CtaInt>);
+static_assert(!std::is_same_v<CtaInt, InnerInt>);
+static_assert(CtaInt::lattice_name() == "MemoryScopeLattice::At<Cta>");
+static_assert(InnerInt::lattice_name() == "MemoryScopeLattice::At<Inner>");
+
 constexpr RecipeSpec<int> spec{7, {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
 static_assert(tolerance_of(spec) == Tolerance::ULP_FP16);
 static_assert(recipe_family_of(spec) == RecipeFamily::Kahan);
@@ -455,7 +576,7 @@ static_assert(!admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
 // Every enumerator of each lattice enum has a short spelling in the
 // namespace that mirrors it.  An enumerator added to one of these enums
 // and left without an alias is reachable only through the long
-// Band<Tier, T> form, which is the gap these seven lines close.
+// Band<Tier, T> form, which is the gap these eight lines close.
 static_assert(every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^DetSafeTier_v)>(),
               "fixy/Bands.h: a DetSafeTier enumerator has no alias in fixy::det_safe.");
 static_assert(every_tier_has_an_alias<^^::fixy::alloc_class, std::meta::dealias(^^AllocClassTag_v)>(),
@@ -473,6 +594,8 @@ static_assert(every_tier_has_an_alias<^^::fixy::numerical_tier, ^^::foundation::
               "fixy/Bands.h: a Tolerance enumerator has no alias in fixy::numerical_tier.");
 static_assert(every_tier_has_an_alias<^^::fixy::opaque_lifetime, std::meta::dealias(^^Lifetime_v)>(),
               "fixy/Bands.h: a Lifetime enumerator has no alias in fixy::opaque_lifetime.");
+static_assert(every_tier_has_an_alias<^^::fixy::scoped_fence, std::meta::dealias(^^MemoryScope_v)>(),
+              "fixy/Bands.h: a MemoryScope enumerator has no alias in fixy::scoped_fence.");
 
 // The walk answers no when an enumerator has no alias, which is what
 // keeps the seven assertions above from passing vacuously.  det_safe

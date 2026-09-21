@@ -830,7 +830,7 @@ static_assert(cheat67_admits, "[CHEAT 67 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/IsHw.h>
 #include <crucible/safety/IsBarrierGuarded.h>
 #include <crucible/safety/IsSimdWidthPinned.h>
-#include <crucible/safety/IsScopedFence.h>
+#include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/IsClockSource.h>
 #include <crucible/safety/witness/IsWitness.h>

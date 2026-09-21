@@ -44,7 +44,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-09-21T05:49:00Z`.
+Snapshot generated: `2026-09-21T07:27:21Z`.
 
 ## bridges/
 
@@ -212,7 +212,6 @@ Snapshot generated: `2026-09-21T05:49:00Z`.
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h:102` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:176` | HS14: 12 |
 | `mint_hw` | `include/crucible/safety/Hw.h:105` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:245` | HS14: 2 |
 | `mint_join_policy` | `include/crucible/safety/JoinPolicy.h:141` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:260` | HS14: 2 |
-| `mint_scoped_fence` | `include/crucible/safety/ScopedFence.h:118` | Y | Y | Y | Y | token | `include/crucible/fixy/Hw.h:290` | HS14: 2 |
 | `mint_simd_width_pinned` | `include/crucible/safety/SimdWidthPinned.h:117` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:255` | HS14: 2 |
 | `mint_stack_use` | `include/crucible/safety/StackUse.h:107` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:289` | HS14: 2 |
 | `mint_stdio` | `include/crucible/safety/Stdio.h:105` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:294` | HS14: 2 |
@@ -357,6 +356,7 @@ mints) are listed in the substrate section instead.
 | `mint_msr_grant` | `include/crucible/fixy/Hw.h:284` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_priority` | `include/crucible/fixy/Sched.h:210` | Y | - (alloc) | Y | Y | ctx | HS14: 4 |
 | `mint_scheduler_policy` | `include/crucible/fixy/Sched.h:198` | Y | - (alloc) | Y | Y | ctx | HS14: 2 |
+| `mint_scoped_fence` | `include/crucible/fixy/Hw.h:290` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_simd_width` | `include/crucible/fixy/Hw.h:264` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_spsc_consumer_endpoint` | `include/crucible/fixy/Substr.h:108` | Y | Y | Y | - | token | HS14: 2 |
 | `mint_spsc_producer_endpoint` | `include/crucible/fixy/Substr.h:101` | Y | Y | Y | - | token | HS14: 2 |
@@ -365,8 +365,8 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 181
+- Total substrate mints: 180
 - Missing fixy re-export: 66
 - Member-function mints: 8 (separate §XXI grep-target — see above)
-- fixy-origin mints: 21 (declared in fixy/, no substrate counterpart — see above)
+- fixy-origin mints: 22 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

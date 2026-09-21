@@ -20,7 +20,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" naming the satisfies-gated require_gpu_fence template.
 
-#include <crucible/safety/ScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
 
 namespace sf = ::crucible::safety;
 using Ms_t = sf::MemoryScope_v;

@@ -204,41 +204,46 @@ crucible/safety/diag/_StableName.h:runtime_smoke_test_stable_name  — An inline
 # Each old IsX.h carried a concept, a trait, a tier accessor and a value
 # accessor for one band.  fixy/Bands.h answers all four generically:
 # foundation::reflect::is_instance_of_v over the band alias for the test,
-# band_tier_t (Bands.h:115) and band_value_t (Bands.h:109) for the
+# band_tier_t (Bands.h:127) and band_value_t (Bands.h:121) for the
 # accessors.  The smoke test of each retired with its header.
 
-crucible/safety/_IsAllocClass.h:alloc_class_tag_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
-crucible/safety/_IsAllocClass.h:alloc_class_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsAllocClass.h:alloc_class_tag_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band.
+crucible/safety/_IsAllocClass.h:alloc_class_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 crucible/safety/_IsAllocClass.h:IsAllocClass  — A recogniser for the alloc-class band, declared as the per-band concept and again as an ExecCtx axis predicate; is_instance_of_v over the band alias answers the first, and the second went with the policy axes at 8fd50215.
 crucible/safety/_IsAllocClass.h:is_alloc_class_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsAllocClass.h:is_alloc_class_v  — A recogniser for the alloc-class band, declared as the per-band trait and again as an ExecCtx axis predicate; is_instance_of_v over the band alias answers the first, and the second went with the policy axes at 8fd50215.
-crucible/safety/_IsCipherTier.h:cipher_tier_tag_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
-crucible/safety/_IsCipherTier.h:cipher_tier_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsCipherTier.h:cipher_tier_tag_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band.
+crucible/safety/_IsCipherTier.h:cipher_tier_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 crucible/safety/_IsCipherTier.h:IsCipherTier  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
 crucible/safety/_IsCipherTier.h:is_cipher_tier_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsCipherTier.h:is_cipher_tier_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
-crucible/safety/_IsDetSafe.h:det_safe_tier_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
-crucible/safety/_IsDetSafe.h:det_safe_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsDetSafe.h:det_safe_tier_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band.
+crucible/safety/_IsDetSafe.h:det_safe_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 crucible/safety/_IsDetSafe.h:IsDetSafe  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
 crucible/safety/_IsDetSafe.h:is_det_safe_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsDetSafe.h:is_det_safe_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
-crucible/safety/_IsHotPath.h:hot_path_tier_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
-crucible/safety/_IsHotPath.h:hot_path_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsHotPath.h:hot_path_tier_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band.
+crucible/safety/_IsHotPath.h:hot_path_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 crucible/safety/_IsHotPath.h:IsHotPath  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
 crucible/safety/_IsHotPath.h:is_hot_path_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsHotPath.h:is_hot_path_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
 crucible/safety/_IsNumericalTier.h:IsNumericalTier  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
 crucible/safety/_IsNumericalTier.h:is_numerical_tier_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsNumericalTier.h:is_numerical_tier_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
-crucible/safety/_IsNumericalTier.h:numerical_tier_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
-crucible/safety/_IsNumericalTier.h:numerical_tier_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsNumericalTier.h:numerical_tier_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band.
+crucible/safety/_IsNumericalTier.h:numerical_tier_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 crucible/safety/_IsOpaqueLifetime.h:IsOpaqueLifetime  — A per-band recogniser concept; foundation::reflect::is_instance_of_v over the band alias answers it, so fixy/Bands.h carries no per-band concept.
 crucible/safety/_IsOpaqueLifetime.h:is_opaque_lifetime_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsOpaqueLifetime.h:is_opaque_lifetime_v  — A per-band recogniser trait; foundation::reflect::is_instance_of_v over the band alias answers it.
-crucible/safety/_IsOpaqueLifetime.h:opaque_lifetime_scope_v  — A per-band tier accessor; fixy/Bands.h:115 band_tier_t answers it for every band.
-crucible/safety/_IsOpaqueLifetime.h:opaque_lifetime_value_t  — A per-band payload accessor; fixy/Bands.h:109 band_value_t answers it for every band.
+crucible/safety/_IsOpaqueLifetime.h:opaque_lifetime_scope_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band.
+crucible/safety/_IsOpaqueLifetime.h:opaque_lifetime_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 crucible/safety/_IsOwnedRegion.h:is_owned_region_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
 crucible/safety/_IsRecipeSpec.h:is_recipe_spec_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsScopedFence.h:IsScopedFence  — A per-band recogniser concept; fixy/Bands.h:115 IsBandOf<MemoryScopeLattice, B> answers it, and Bands.h says at that declaration that the per-lattice band query is what the old per-wrapper detectors asked.
+crucible/safety/_IsScopedFence.h:is_scoped_fence_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsScopedFence.h:is_scoped_fence_v  — A per-band recogniser trait; fixy/Bands.h:118 is_band_of_v<MemoryScopeLattice, B> answers it.
+crucible/safety/_IsScopedFence.h:scoped_fence_scope_v  — A per-band tier accessor; fixy/Bands.h:127 band_tier_t answers it for every band, and tier_of reads the same tier from a value.
+crucible/safety/_IsScopedFence.h:scoped_fence_value_t  — A per-band payload accessor; fixy/Bands.h:121 band_value_t answers it for every band.
 
 # ── safety: wrappers ────────────────────────────────────────────────────
 
@@ -250,6 +255,7 @@ crucible/safety/_OwnedMmap.h:IsLeakGrant  — The leak witness is now fixy::atom
 crucible/safety/_OwnedMmap.h:is_leak_grant_v  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
 crucible/safety/_Refined.h:predicate_implies  — The open implication trait was the hole; fixy/Refined.h:595 keeps implies_v and admits an edge only from the namespace admitted_implications.
 crucible/safety/_RefinedAlgebra.h:predicate_implies  — The algebra's own specialisations of that open trait, one per axiom over AllOf, AnyOf and the bounded predicates. Each is now a rule family inside the namespace admitted_implications of fixy/Refined.h:661, which no other header can reopen.
+crucible/safety/_ScopedFence.h:mint_scoped_fence  — No band in fixy/Bands.h carries a mint door. The substrate's two-argument constructor ScopedFence{value, {}} is the door, because the grade is a pinned singleton whose whole witness is the braces, so a factory would restate the constructor and nothing else.
 crucible/safety/_Secret.h:All  — The policy roster tuple became the namespace admitted_policies of fail-closed edges in fixy/Secret.h:51.
 crucible/safety/_Secret.h:kCount  — A hand-written cardinality pin; the roster it pinned is now a namespace the guard enumerates, and such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
@@ -303,7 +309,7 @@ crucible/permissions/_Permission.h:permission_row  — A primary template that a
 # this header made for its own use, not a definition it owned. The type
 # itself is ported by its own header, and the entry drains when that
 # lands.
-crucible/safety/diag/_RowHashFold.h:BarrierGuarded  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
+crucible/safety/diag/_RowHashFold.h:BarrierGuarded  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::BarrierStrength moved to the binding as the atom family of fixy/atoms/Barrier.h over foundation's BarrierStrengthLattice, V301 in fixy/Collision.h reads the strength there, and the value form's only consumer was a using-declaration in the old crucible/fixy/Wrap.h.
 crucible/safety/diag/_RowHashFold.h:Budgeted  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:Consistency  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:Crash  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
@@ -313,7 +319,7 @@ crucible/safety/diag/_RowHashFold.h:FpComplexLayout  — A forward declaration o
 crucible/safety/diag/_RowHashFold.h:FpConstantRounding  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:FpInfPolicy  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:FpLibmPolicy  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
-crucible/safety/diag/_RowHashFold.h:FpModePinned  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
+crucible/safety/diag/_RowHashFold.h:FpModePinned  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::FpMode moved to the binding as the product atom fp::mode of fixy/atoms/Fp.h, which keeps the four settings F101 and F102 can reject on and states in its head comment why the seven no rule reads are decoration, and the value form never had a consumer outside the old dimension and collision tables.
 crucible/safety/diag/_RowHashFold.h:FpNanPolicy  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:FpRounding  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:FpTrapMask  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
@@ -329,9 +335,8 @@ crucible/safety/diag/_RowHashFold.h:Progress  — A forward declaration made so 
 crucible/safety/diag/_RowHashFold.h:ProgressClass  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:ResidencyHeat  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:ResidencyHeatTag  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
-crucible/safety/diag/_RowHashFold.h:ScopedFence  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:SimdIsa  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum's own port is not this header's to carry.
-crucible/safety/diag/_RowHashFold.h:SimdWidthPinned  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
+crucible/safety/diag/_RowHashFold.h:SimdWidthPinned  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::SimdIsa moved to the binding as the atom family of fixy/atoms/Simd.h, which restates the fifteen enumerators and their trunk nibble verbatim because foundation ports no SimdIsa lattice, V101 and V402 in fixy/Collision.h read the pin there, and the value form's only consumer was a using-declaration in the old crucible/fixy/Wrap.h.
 crucible/safety/diag/_RowHashFold.h:TimeOrdered  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:Vendor  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:Witness  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.

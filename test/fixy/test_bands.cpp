@@ -2,7 +2,9 @@
 // pinned grade, so the pins are the carrier's own: a band costs
 // sizeof(T) at every tier, its diagnostic surface is the substrate's,
 // at_bottom and weaken are the singleton identity, and relax rebinds
-// the type down the chain only.
+// the type down the chain only.  One band, ScopedFence, pins a partial
+// order instead of a chain, so relax there also refuses a move across to
+// an incomparable trunk.
 //
 // The tiers are walked by reflection over each band's enum, so a new
 // tier is covered the moment it is declared.
@@ -249,6 +251,34 @@ int main() {
     std::unique_ptr<int> released = std::move(arena).consume();
     if (*released != seed) {
         std::fprintf(stderr, "test_bands: consume of Arena<unique_ptr<int>> lost it\n");
+        return 1;
+    }
+
+    // The one band over a partial order.  Relaxing down a trunk keeps the
+    // value; the refusals across trunks are compile-time and live in
+    // test/fixy/neg/neg_bands_*_cross_trunk.cpp, because an incomparable
+    // move is not a runtime answer.
+    fixy::scoped_fence::Gpu<int> device_wide{seed, {}};
+    if (fixy::tier_of(device_wide) != fixy::MemoryScope_v::Gpu) {
+        std::fprintf(stderr, "test_bands: tier_of(Gpu<int>) is not Gpu\n");
+        return 1;
+    }
+    auto block = fixy::relax<fixy::MemoryScope_v::Cta>(device_wide);
+    if (block.peek() != seed || fixy::tier_of(block) != fixy::MemoryScope_v::Cta) {
+        std::fprintf(stderr, "test_bands: relax<Cta>(Gpu) is wrong\n");
+        return 1;
+    }
+    // Both trunks reach the shared bottom, and neither reaches the other.
+    fixy::scoped_fence::Outer<int> outer_shareable{seed, {}};
+    auto inner_shareable = fixy::relax<fixy::MemoryScope_v::Inner>(std::move(outer_shareable));
+    if (std::move(inner_shareable).consume() != seed) {
+        std::fprintf(stderr, "test_bands: relax<Inner>(Outer) lost the value\n");
+        return 1;
+    }
+    const bool device_covers_block = fixy::satisfies_v<decltype(device_wide), fixy::MemoryScope_v::Cta>;
+    const bool device_covers_inner = fixy::satisfies_v<decltype(device_wide), fixy::MemoryScope_v::Inner>;
+    if (!device_covers_block || device_covers_inner) {
+        std::fprintf(stderr, "test_bands: scope admission crossed a trunk\n");
         return 1;
     }
 

@@ -42,7 +42,7 @@
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsSchedClass.h>
-#include <crucible/safety/IsScopedFence.h>
+#include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/IsSessionHandle.h>
 #include <crucible/safety/IsSimdWidthPinned.h>

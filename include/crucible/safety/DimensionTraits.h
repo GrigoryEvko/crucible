@@ -22,7 +22,7 @@
 #include <crucible/safety/_RecipeSpec.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/ScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/SimdWidthPinned.h>

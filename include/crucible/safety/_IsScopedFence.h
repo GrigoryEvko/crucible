@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/ScopedFence.h>
+#include <crucible/safety/_ScopedFence.h>
 
 #include <type_traits>
 
