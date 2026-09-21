@@ -59,6 +59,7 @@ endfunction()
 
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_arena)
+crucible_bench(bench_meta_zero)
 crucible_bench(bench_adaptive_scheduler)
 crucible_bench(bench_observe_metrics_swmr)
 crucible_bench(bench_cipher)
