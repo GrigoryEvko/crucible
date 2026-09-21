@@ -4,7 +4,7 @@
 // trait is checked against a genuinely callable function, not only
 // against its own type computation.
 
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 
 #include <cstdio>
 #include <cstdlib>

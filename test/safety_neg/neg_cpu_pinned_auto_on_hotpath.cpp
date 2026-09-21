@@ -18,7 +18,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // meets_posture / on_hot_path.
 
-#include <crucible/safety/CpuPinned.h>
+#include <crucible/safety/_CpuPinned.h>
 
 #include <crucible/algebra/lattices/_AffinityLattice.h>
 

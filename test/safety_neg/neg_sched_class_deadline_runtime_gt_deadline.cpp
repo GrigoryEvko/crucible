@@ -19,7 +19,7 @@
 // Expected diagnostic: static assertion failed / SCHED_DEADLINE requires /
 // CBS admission.
 
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_SchedClass.h>
 
 using namespace crucible::safety;
 

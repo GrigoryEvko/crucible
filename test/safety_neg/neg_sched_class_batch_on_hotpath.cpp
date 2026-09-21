@@ -18,7 +18,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // hot_path_eligible / on_hot_path.
 
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_SchedClass.h>
 
 #include <crucible/algebra/lattices/_SchedulerPolicyLattice.h>
 

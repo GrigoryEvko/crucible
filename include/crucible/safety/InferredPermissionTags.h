@@ -10,7 +10,7 @@
 // order produce the same set.  Cache keys are built on the canonical
 // form and would otherwise depend on parameter order.
 
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 

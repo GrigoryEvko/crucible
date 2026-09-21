@@ -14,7 +14,7 @@
 // Expected diagnostic: constraints not satisfied / CtxCanMint / Block /
 // no matching function / mint_bounded_sleep.
 
-#include <crucible/fixy/Time.h>
+#include <crucible/fixy/_Time.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

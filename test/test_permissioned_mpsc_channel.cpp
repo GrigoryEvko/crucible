@@ -1,4 +1,4 @@
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <atomic>

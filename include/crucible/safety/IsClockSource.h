@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 
 #include <type_traits>
 

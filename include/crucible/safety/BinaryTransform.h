@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/_IsOwnedRegion.h>
 
 #include <type_traits>

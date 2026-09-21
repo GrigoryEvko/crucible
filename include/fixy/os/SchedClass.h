@@ -17,7 +17,7 @@
 // inequality at compile time rather than taking an EINVAL at run time.
 // Every other policy leaves the three budgets zero.
 //
-// Old spelling: include/crucible/safety/SchedClass.h.
+// Old spelling: include/crucible/safety/_SchedClass.h.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>

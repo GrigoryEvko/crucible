@@ -335,3 +335,29 @@ crucible/safety/diag/_RowHashFold.h:SimdWidthPinned  — A forward declaration m
 crucible/safety/diag/_RowHashFold.h:TimeOrdered  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:Vendor  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
 crucible/safety/diag/_RowHashFold.h:Witness  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the type's own port is not this header's to carry.
+
+# ── concurrent: the ring predicates and the working-set trait ───────────
+#
+# Both rows are renames of a shape, not losses of a check. The new spelling
+# is read at every site the old one occupied, and the sentence names it.
+crucible/concurrent/_SpscRing.h:SpscValue  — The old tree carried two textually identical predicates, this one and RingValue in _MpscRing.h, and the port unifies them under the single name RingValue in fixy/concurrent/RingValue.h, which both new rings constrain on.
+crucible/concurrent/_WorkingSet.h:has_static_per_call_working_set  — The class template and its one partial specialisation became the concept HasStaticPerCallWorkingSet in fixy/concurrent/WorkingSet.h:85, whose requires-expression is the same witness token for token; Stage.h and Pipeline.h read the concept at all three sites the trait occupied.
+crucible/concurrent/_WorkingSet.h:has_static_per_call_working_set_v  — The value spelling of that trait, gone with it, because a concept is used directly where the _v was read.
+
+# ── fixy/os: the time grant tags ────────────────────────────────────────
+#
+# Nothing outside the old header's own self-test read these four, and
+# fixy/os/Time.h states the drop. What gates the time surface now is a
+# context concept that reads the context and the clock source.
+crucible/fixy/_Time.h:clock_read  — A grant tag no code outside the old header's self-test read; the clock surface is gated by CtxFitsClockReaderMint in fixy/os/Time.h:198, which reads the context and the source rather than a tag.
+crucible/fixy/_Time.h:sleep  — A grant tag with the same standing as clock_read, replaced by the CtxFitsBoundedSleepMint gate in fixy/os/Time.h:300, which requires the Block effect and a non-zero bound.
+crucible/fixy/_Time.h:tsc_read  — A grant tag with the same standing as clock_read, replaced by the CtxFitsTscReaderMint gate in fixy/os/Time.h:297, which requires a singleton pin proof rather than a tag.
+crucible/fixy/_Time.h:which_dim  — The three specialisations that routed those tags onto an axis. An atom carries the axis it engages as a static member in fixy/Atom.h:54, so there is no separate routing trait left to specialise.
+
+# ── safety: one forgeable mint and two inline smoke tests ───────────────
+#
+# The two smoke tests follow the pattern already recorded above: an inline
+# runtime check in a public namespace, moved to a registered test.
+crucible/safety/_CpuPinned.h:mint_cpu_pinned  — Replaced by fixy::sched::mint_affinity, declared in fixy/os/CpuPinned.h:126 and defined in fixy/os/Sched.h:166, which returns std::expected and builds the pin only after sched_setaffinity returned 0; the CpuPinned constructor is now private with that mint its sole friend, so the door the old mint left open is closed.
+crucible/safety/_PipelineStage.h:pipeline_stage_smoke_test  — An inline smoke test in a public namespace; its body moved to test/fixy/test_stage_shape.cpp, which adds a real channel-handle cell the old fakes could not state.
+crucible/safety/_SignatureTraits.h:signature_traits_smoke_test  — An inline smoke test in a public namespace; its body moved to test/foundation/test_signature.cpp, which checks each result rather than returning a bool no caller consumed.

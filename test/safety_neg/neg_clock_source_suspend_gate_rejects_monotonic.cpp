@@ -19,7 +19,7 @@
 // Expected diagnostic: constraint not satisfied / no matching function /
 // candidate ... constraints not satisfied / satisfies.
 
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 
 using namespace crucible::safety;
 

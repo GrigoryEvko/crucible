@@ -36,7 +36,7 @@
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/concurrent/Substrate.h>
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <cstddef>

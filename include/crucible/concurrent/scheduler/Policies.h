@@ -42,7 +42,7 @@
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/traits/Concepts.h>

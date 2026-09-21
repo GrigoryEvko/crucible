@@ -26,7 +26,7 @@
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_RecipeSpec.h>
 #include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/Vendor.h>
 
 #include <cstdint>

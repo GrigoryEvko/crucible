@@ -3,7 +3,7 @@
 // embeds its own length checks, so this file pins the same property from
 // the outside: weakened prose reddens here as well as at the definition.
 
-#include <crucible/fixy/Insights.h>
+#include <crucible/fixy/_Insights.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Theory.h>
 #include <crucible/safety/DimensionTraits.h>

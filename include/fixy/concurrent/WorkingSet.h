@@ -8,7 +8,7 @@
 // would only add cache-line ping-pong?  A footprint declared per
 // operation is what makes that answerable without measuring.
 //
-// Old spelling: include/crucible/concurrent/WorkingSet.h.
+// Old spelling: include/crucible/concurrent/_WorkingSet.h.
 
 #include <concepts>
 #include <cstddef>

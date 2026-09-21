@@ -3,9 +3,9 @@
 // under the project warning flags, and adds the cross-wrapper checks no
 // single wrapper header can state about itself.
 
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_SchedClass.h>
 #include <crucible/safety/IsSchedClass.h>
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>

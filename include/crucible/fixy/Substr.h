@@ -21,13 +21,13 @@
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/ShardedGrid.h>
-#include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/_SpscRing.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>

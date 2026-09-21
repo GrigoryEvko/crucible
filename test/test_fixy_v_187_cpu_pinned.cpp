@@ -3,10 +3,10 @@
 // under the project warning flags, and adds the cross-wrapper checks no
 // single wrapper header can state about itself.
 
-#include <crucible/safety/CpuPinned.h>
+#include <crucible/safety/_CpuPinned.h>
 #include <crucible/safety/IsCpuPinned.h>
-#include <crucible/safety/ClockSource.h>
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_ClockSource.h>
+#include <crucible/safety/_SchedClass.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 
 #include <type_traits>

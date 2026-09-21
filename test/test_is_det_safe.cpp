@@ -11,7 +11,7 @@
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 
 #include <cstdio>
 #include <cstdlib>

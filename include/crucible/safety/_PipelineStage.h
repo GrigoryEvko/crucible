@@ -7,7 +7,7 @@
 
 #include <crucible/safety/IsConsumerHandle.h>
 #include <crucible/safety/IsProducerHandle.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 
 #include <cstddef>
 #include <optional>

@@ -42,10 +42,10 @@
 
 #include <crucible/concurrent/ChaseLevDeque.h>
 #include <crucible/concurrent/MpmcRing.h>
-#include <crucible/concurrent/MpscRing.h>
+#include <crucible/concurrent/_MpscRing.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/permissions/_Permission.h>

@@ -34,7 +34,7 @@
 // on the concept itself.
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_WorkingSet.h>
 
 #include <cstddef>
 #include <limits>

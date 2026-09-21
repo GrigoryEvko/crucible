@@ -5,8 +5,8 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Hw.h>
 
-#include <crucible/safety/ClockSource.h>
-#include <crucible/safety/CpuPinned.h>
+#include <crucible/safety/_ClockSource.h>
+#include <crucible/safety/_CpuPinned.h>
 #include <crucible/safety/_Pre.h>
 
 #include <crucible/effects/_ExecCtx.h>

@@ -29,8 +29,8 @@
 // the sole friend fixes it.  Other units remain nameable so the shape
 // checks here and in fixy/os/Time.h can keep naming them.
 //
-// Old spelling: include/crucible/safety/CpuPinned.h.  The old tree
-// forges a pin in its own smoke test, at include/crucible/fixy/Time.h,
+// Old spelling: include/crucible/safety/_CpuPinned.h.  The old tree
+// forges a pin in its own smoke test, at include/crucible/fixy/_Time.h,
 // and reads the counter through it.  That is how the open door survived
 // review: the canonical example of using CpuPinned was an example of
 // forging it.  The leg is not ported in that shape.  test/fixy/

@@ -5,7 +5,7 @@
 // non-const rvalue reference.  The order is the data-flow order, so a
 // producer parameter ahead of a consumer parameter is not a stage.
 //
-// Old spelling: include/crucible/safety/PipelineStage.h, namespace
+// Old spelling: include/crucible/safety/_PipelineStage.h, namespace
 // crucible::safety::extract.  The shape it recognizes is a stage's, so
 // it lands beside the stage rather than in a namespace named for the
 // act of reading it.  The name changed with the home: the concept

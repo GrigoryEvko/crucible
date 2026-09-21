@@ -6,7 +6,7 @@
 // single-producer single-consumer ring. Nothing enforces it at run time.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/_SpscRing.h>
 #include <crucible/safety/_Pinned.h>
 
 #include <array>

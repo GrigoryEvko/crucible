@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/handles/FileHandle.h>
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 
 #include <array>
 #include <cerrno>

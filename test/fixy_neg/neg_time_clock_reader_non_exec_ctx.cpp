@@ -13,7 +13,7 @@
 // Expected diagnostic: constraints not satisfied / IsExecCtx /
 // no matching function / mint_clock_reader.
 
-#include <crucible/fixy/Time.h>
+#include <crucible/fixy/_Time.h>
 
 int main() {
     // Should FAIL: 42 (int) is not an effects::IsExecCtx.

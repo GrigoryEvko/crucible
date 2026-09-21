@@ -17,7 +17,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // IsCpuPinned / read_tsc.
 
-#include <crucible/safety/CpuPinned.h>
+#include <crucible/safety/_CpuPinned.h>
 #include <crucible/safety/IsCpuPinned.h>
 
 using namespace crucible::safety;

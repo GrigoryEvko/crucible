@@ -2,7 +2,7 @@
 
 // Reflection over a function's parameter list and return type.
 //
-// Old spelling: include/crucible/safety/SignatureTraits.h, namespace
+// Old spelling: include/crucible/safety/_SignatureTraits.h, namespace
 // crucible::safety::extract.  That namespace was not a location: 57
 // headers reopened it, each adding the aliases for the thing it
 // examined, so "extract" named a convention rather than a home.  These

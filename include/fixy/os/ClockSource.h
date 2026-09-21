@@ -10,7 +10,7 @@
 // determinism, suspend and pinning axes, so a consumer can gate on the
 // one property it actually depends on.
 //
-// Old spelling: include/crucible/safety/ClockSource.h.
+// Old spelling: include/crucible/safety/_ClockSource.h.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>

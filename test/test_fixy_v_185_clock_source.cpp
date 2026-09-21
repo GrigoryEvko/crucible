@@ -8,7 +8,7 @@
 // cannot make about itself: distinctness of hash contributions and
 // sensitivity to nesting order.
 
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/IsClockSource.h>
 #include <crucible/safety/ScopedFence.h>
 #include <crucible/safety/diag/_RowHashFold.h>

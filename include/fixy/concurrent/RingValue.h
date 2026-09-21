@@ -15,8 +15,8 @@
 // Two names for one rule read as two rules, and a reader has to compare
 // them to find out they agree.  One name, stated once.
 //
-// Old spelling: include/crucible/concurrent/SpscRing.h (SpscValue) and
-// include/crucible/concurrent/MpscRing.h (RingValue).
+// Old spelling: include/crucible/concurrent/_SpscRing.h (SpscValue) and
+// include/crucible/concurrent/_MpscRing.h (RingValue).
 
 #include <type_traits>
 

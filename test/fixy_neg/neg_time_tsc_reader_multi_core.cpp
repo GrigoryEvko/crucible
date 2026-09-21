@@ -14,7 +14,7 @@
 // Expected diagnostic: constraints not satisfied / IsSingletonCpuPin /
 // no matching function / mint_tsc_reader.
 
-#include <crucible/fixy/Time.h>
+#include <crucible/fixy/_Time.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

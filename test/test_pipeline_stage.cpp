@@ -13,7 +13,7 @@
 // interesting cases the ones that nearly match, so most of the
 // witnesses below exist to be refused.
 
-#include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/_PipelineStage.h>
 
 #include <crucible/safety/BinaryTransform.h>
 #include <crucible/safety/ConsumerEndpoint.h>

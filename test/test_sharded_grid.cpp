@@ -6,7 +6,7 @@
 // the same work.
 
 #include <crucible/concurrent/ShardedGrid.h>
-#include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/_SpscRing.h>
 
 #include <atomic>
 #include "test_assert.h"

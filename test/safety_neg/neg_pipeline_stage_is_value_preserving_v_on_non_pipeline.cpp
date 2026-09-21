@@ -6,7 +6,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/_PipelineStage.h>
 
 inline void neg_witness_two_ints(int, int) noexcept {}
 

@@ -40,7 +40,7 @@ include/crucible/fixy/_Io.h:::munmap(sqes_, sqes_size_);  — effects::IO via Io
 include/crucible/fixy/_Io.h:::munmap(cq_ring_, cq_size_);  — effects::IO via IoUringRing::release_ (munmap CQ ring, RAII, cap inherited)
 include/crucible/fixy/_Io.h:::munmap(sq_ring_, sq_size_);  — effects::IO via IoUringRing::release_ (munmap SQ ring, RAII, cap inherited)
 include/crucible/fixy/_Io.h:::close(ring_fd_);  — effects::IO via IoUringRing::release_ (close ring fd, RAII, cap inherited)
-include/crucible/fixy/Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
+include/crucible/fixy/_Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
 include/fixy/os/Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — clock_gettime via ClockReader<Source>::read under the effects::* context that minted the reader, the ported copy of the entry above (the reader holds no context of its own, and mint_clock_reader checked one through CtxFitsClockReaderMint; #172 records that this class of gate is forgeable today)
 include/crucible/handles/FileHandle.h:(void)::close(fd_);  — effects::IO via FileHandle::~FileHandle (close on RAII drop)
 include/crucible/handles/FileHandle.h:if (fd_ >= 0) (void)::close(fd_);  — effects::IO via FileHandle::operator= (close the old fd before taking the moved-from one)

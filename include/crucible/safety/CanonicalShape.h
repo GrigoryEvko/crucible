@@ -11,7 +11,7 @@
 
 #include <crucible/safety/BinaryTransform.h>
 #include <crucible/safety/ConsumerEndpoint.h>
-#include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/_PipelineStage.h>
 #include <crucible/safety/ProducerEndpoint.h>
 #include <crucible/safety/Reduction.h>
 #include <crucible/safety/SwmrReader.h>

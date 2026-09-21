@@ -22,7 +22,7 @@
 // Mint each consumer root once per program: nothing checks that at
 // runtime.
 //
-// Old spelling: include/crucible/concurrent/PermissionedMpscChannel.h.
+// Old spelling: include/crucible/concurrent/_PermissionedMpscChannel.h.
 
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>

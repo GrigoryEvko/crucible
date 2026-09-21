@@ -21,7 +21,7 @@
 // / "__builtin_trap" — GCC's consteval evaluator hitting the trap
 // planted by CRUCIBLE_PRE's `if consteval { __builtin_trap(); }`.
 
-#include <crucible/handles/Once.h>
+#include <crucible/handles/_Once.h>
 
 namespace {
 

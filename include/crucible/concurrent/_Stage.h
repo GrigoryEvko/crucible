@@ -13,13 +13,13 @@
 // whatever assembles the chain.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/_Decide.h>
-#include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/_PipelineStage.h>
 #include <crucible/safety/IsSwmrHandle.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/diag/_RowMismatch.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 

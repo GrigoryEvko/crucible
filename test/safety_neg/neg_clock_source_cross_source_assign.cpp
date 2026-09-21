@@ -18,7 +18,7 @@
 // Expected diagnostic: conversion from / cannot convert / no viable / no
 // match for.
 
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 
 using namespace crucible::safety;
 

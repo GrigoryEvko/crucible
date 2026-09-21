@@ -6,7 +6,7 @@
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
 #include <crucible/algebra/lattices/_SeqPrefixLattice.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Post.h>

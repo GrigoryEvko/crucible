@@ -44,11 +44,11 @@
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/_Topology.h>
-#include <crucible/fixy/Time.h>  // FIXY-V-202
+#include <crucible/fixy/_Time.h>  // FIXY-V-202
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 

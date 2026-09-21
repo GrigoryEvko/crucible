@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_SchedClass.h>
 
 #include <cstdint>
 #include <type_traits>

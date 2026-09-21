@@ -4,7 +4,7 @@
 // collision that has already happened in the pre-mix.  This fixture pins a
 // concrete aliasing pair and asserts that the real fold separates it.
 
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_SchedClass.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/safety/diag/_StableName.h>
 

@@ -27,7 +27,7 @@
 // / "__builtin_trap" — GCC's consteval evaluator hitting the trap on
 // the SECOND set() call's CRUCIBLE_PRE(ptr_ == nullptr) check.
 
-#include <crucible/handles/Once.h>
+#include <crucible/handles/_Once.h>
 
 namespace {
 

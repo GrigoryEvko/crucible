@@ -18,7 +18,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // runnable_on / host_on_pool.
 
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_SchedClass.h>
 
 using namespace crucible::safety;
 

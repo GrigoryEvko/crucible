@@ -312,7 +312,7 @@ while IFS=: read -r file line text; do
             # or introduce new structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/Time.h)
+        include/crucible/fixy/_Time.h)
             # V-190 SyscallSurface / HwInstruction axis-specialized catalog
             # (3 grant::time::* families: clock_read<Source>/sleep<MaxNanos>
             # → SyscallSurface, tsc_read<Mode> → HwInstruction).  Specializes

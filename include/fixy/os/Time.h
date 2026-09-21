@@ -2,7 +2,7 @@
 
 // Clock and counter readers, each minted against an execution context.
 //
-// Old spelling: include/crucible/fixy/Time.h.
+// Old spelling: include/crucible/fixy/_Time.h.
 //
 // Three things the old header carried are gone.  The grant tags
 // grant::time::{clock_read, tsc_read, sleep} and their which_dim rows

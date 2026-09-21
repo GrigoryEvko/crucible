@@ -14,7 +14,7 @@
 // rejection because try_pop is not a member of ProducerHandle):
 //   "no member named .try_pop."
 
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 
 namespace {

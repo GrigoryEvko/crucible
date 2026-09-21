@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/handles/Once.h>
+#include <crucible/handles/_Once.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <bpf/bpf.h>

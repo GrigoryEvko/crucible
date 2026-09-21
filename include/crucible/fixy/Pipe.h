@@ -10,7 +10,7 @@
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/concurrent/TopologyConstexpr.h>
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <concepts>

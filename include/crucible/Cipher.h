@@ -23,10 +23,10 @@
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
 #include <crucible/fixy/Source.h>
-#include <crucible/fixy/Time.h>
+#include <crucible/fixy/_Time.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/source/_Path.h>
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 // safety/Decide.h, safety/Post.h and safety/Pre.h are included directly
 // rather than through the fixy umbrella.  The umbrella header that
 // re-exports the contract macros includes this header, so reaching the

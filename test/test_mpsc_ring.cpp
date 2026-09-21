@@ -2,7 +2,7 @@
 // thread.  That is not the supported pattern, but it isolates the
 // per-cell protocol from thread scheduling.
 
-#include <crucible/concurrent/MpscRing.h>
+#include <crucible/concurrent/_MpscRing.h>
 
 #include <atomic>
 #include "test_assert.h"

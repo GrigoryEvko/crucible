@@ -19,7 +19,7 @@
 // means higher priority.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/_SpscRing.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/PermissionGridGenerator.h>

@@ -27,7 +27,7 @@
 // for itself is a question for the cost model.
 
 #include <crucible/safety/InferredRow.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 
 #include <type_traits>
 

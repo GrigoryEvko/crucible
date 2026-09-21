@@ -2,10 +2,10 @@
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_WorkingSet.h>
 
 #include <cstddef>
 #include <cstdint>

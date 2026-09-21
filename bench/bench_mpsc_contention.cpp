@@ -38,7 +38,7 @@
 #include <thread>
 #include <vector>
 
-#include <crucible/concurrent/MpscRing.h>
+#include <crucible/concurrent/_MpscRing.h>
 
 #include "bench_harness.h"
 

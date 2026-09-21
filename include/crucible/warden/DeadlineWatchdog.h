@@ -39,7 +39,7 @@
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/safety/_Checked.h>
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 
 #include <chrono>
 #include <cstdint>

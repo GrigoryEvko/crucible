@@ -53,7 +53,7 @@
 // builds contracts at `observe` and the violation handler is [[noreturn]] —
 // and is there as a second line, not as the first.
 
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/ledger/ProbeSupport.h>
 
 #if defined(__x86_64__) || defined(__i386__)

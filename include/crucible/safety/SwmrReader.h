@@ -2,7 +2,7 @@
 
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsSwmrHandle.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 
 #include <type_traits>
 

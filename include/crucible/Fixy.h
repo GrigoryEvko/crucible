@@ -55,6 +55,6 @@
 #include <crucible/fixy/Algebra.h>
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/Eff.h>
-#include <crucible/fixy/Insights.h>
+#include <crucible/fixy/_Insights.h>
 #include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Source.h>

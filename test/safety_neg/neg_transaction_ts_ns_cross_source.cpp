@@ -20,7 +20,7 @@
 // no viable / conversion from.
 
 #include <crucible/Transaction.h>
-#include <crucible/safety/ClockSource.h>
+#include <crucible/safety/_ClockSource.h>
 
 #include <cstdint>
 

@@ -50,8 +50,8 @@
 #include <span>
 
 #include <crucible/concurrent/MpmcRing.h>
-#include <crucible/concurrent/MpscRing.h>
-#include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/_MpscRing.h>
+#include <crucible/concurrent/_SpscRing.h>
 
 #include "bench_harness.h"
 

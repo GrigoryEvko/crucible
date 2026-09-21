@@ -25,7 +25,7 @@
 // / "__builtin_trap" — GCC's consteval evaluator hitting the trap
 // planted in reset()'s CRUCIBLE_PRE(has_value()).
 
-#include <crucible/handles/Once.h>
+#include <crucible/handles/_Once.h>
 
 namespace {
 

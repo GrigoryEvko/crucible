@@ -25,7 +25,7 @@
 // existed, and the pins at the foot hold the three policies the
 // examples cite.
 //
-// Old spelling: include/crucible/fixy/Insights.h.
+// Old spelling: include/crucible/fixy/_Insights.h.
 
 #include <fixy/Axis.h>
 #include <fixy/Corpus.h>

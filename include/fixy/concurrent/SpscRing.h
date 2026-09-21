@@ -5,7 +5,7 @@
 // the sole reader of those slots.  Nothing enforces this at run time.
 // A second producer or a second consumer corrupts the ring silently.
 //
-// Old spelling: include/crucible/concurrent/SpscRing.h.
+// Old spelling: include/crucible/concurrent/_SpscRing.h.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>

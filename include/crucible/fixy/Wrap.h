@@ -53,7 +53,7 @@
 #include <crucible/safety/SwissTableBuffer.h>
 #include <crucible/safety/SwmrReader.h>
 #include <crucible/safety/SwmrWriter.h>
-#include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/GradedExtract.h>
 #include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/Hw.h>

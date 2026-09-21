@@ -9,8 +9,8 @@
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
 
-#include <crucible/safety/CpuPinned.h>
-#include <crucible/safety/SchedClass.h>
+#include <crucible/safety/_CpuPinned.h>
+#include <crucible/safety/_SchedClass.h>
 #include <crucible/safety/ThreadName.h>
 
 #include <crucible/effects/_ExecCtx.h>

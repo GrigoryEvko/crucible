@@ -10,7 +10,7 @@
 #include <crucible/safety/ConsumerEndpoint.h>
 #include <crucible/safety/InferredPermissionTags.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/_PipelineStage.h>
 #include <crucible/safety/ProducerEndpoint.h>
 #include <crucible/safety/SwmrReader.h>
 #include <crucible/safety/SwmrWriter.h>

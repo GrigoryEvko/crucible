@@ -13,7 +13,7 @@
 // Expected diagnostic: constraints not satisfied / ClockBacked /
 // no matching function / mint_clock_reader.
 
-#include <crucible/fixy/Time.h>
+#include <crucible/fixy/_Time.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

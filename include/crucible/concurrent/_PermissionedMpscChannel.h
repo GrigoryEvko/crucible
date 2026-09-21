@@ -23,8 +23,8 @@
 // runtime.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/MpscRing.h>
-#include <crucible/concurrent/WorkingSet.h>
+#include <crucible/concurrent/_MpscRing.h>
+#include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
 

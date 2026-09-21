@@ -10,7 +10,7 @@
 // rejection because try_push is not a member of ConsumerHandle):
 //   "no member named .try_push."
 
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 
 namespace {

@@ -18,7 +18,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // is_singleton_pin / require_singleton_pin.
 
-#include <crucible/safety/CpuPinned.h>
+#include <crucible/safety/_CpuPinned.h>
 
 #include <crucible/algebra/lattices/_AffinityLattice.h>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/CpuPinned.h>
+#include <crucible/safety/_CpuPinned.h>
 
 #include <type_traits>
 

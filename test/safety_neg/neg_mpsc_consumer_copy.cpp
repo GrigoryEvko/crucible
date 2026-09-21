@@ -9,7 +9,7 @@
 // ConsumerHandle's own = delete reason string):
 //   "ConsumerHandle owns the Consumer Permission"
 
-#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 
 namespace {

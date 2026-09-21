@@ -27,7 +27,7 @@
 #include <cstring>
 #include <span>
 
-#include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/_SpscRing.h>
 
 #include "bench_harness.h"
 
