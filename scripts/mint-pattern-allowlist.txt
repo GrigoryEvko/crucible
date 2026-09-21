@@ -121,14 +121,6 @@
 # category is how a real drift gets absorbed without anyone noticing.
 
 # ── Class-method / allocating view mints ─────────────────────────────
-include/crucible/Cipher.h:mint_open_view:constexpr-ok
-include/crucible/CKernel.h:mint_mutable_view:constexpr-ok
-include/crucible/CKernel.h:mint_sealed_view:constexpr-ok
-include/crucible/CrucibleContext.h:mint_compiled_view:constexpr-ok
-include/crucible/PoolAllocator.h:mint_initialized_view:constexpr-ok
-include/crucible/ReplayEngine.h:mint_active_view:constexpr-ok
-include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
-include/crucible/SchemaTable.h:mint_sealed_view:constexpr-ok
 
 # ── bridges/ allocating session mints ────────────────────────────────
 include/crucible/bridges/SessionPersistence.h:mint_persisted_session:constexpr-ok

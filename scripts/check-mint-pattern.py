@@ -103,7 +103,7 @@ def shortfalls(mint: mintmodel.Mint) -> list[str]:
     missing: list[str] = []
     if not mint.nodiscard:
         missing.append("nodiscard")
-    if not mint.constexpr:
+    if not mint.constexpr and mintmodel.constexpr_applies(mint):
         missing.append("constexpr")
     if not mint.noexcept_:
         missing.append("noexcept")
@@ -221,7 +221,7 @@ def self_test() -> int:
             name="mint_probe", path="p.h", line=1, owner=None, namespace="probe",
             inline_ok=False, nodiscard=True, constexpr=True, noexcept_=True,
             requires_=True, shape="ctx", templated=True,
-            carve_out_cx=False, carve_out_rq=False,
+            carve_out_cx=False, carve_out_rq=False, borrow_projection=False,
         )
         fields.update(kwargs)
         return mintmodel.Mint(**fields)  # type: ignore[arg-type]
@@ -277,10 +277,29 @@ def self_test() -> int:
         not exempted(make(constexpr=False), "constexpr", set()),
     )
 
+    # The cosmetic axis: a borrow projection hands out a view over its own
+    # carrier, so constexpr could never carry meaning there.
+    check(
+        "a borrow projection is not asked for constexpr",
+        shortfalls(make(constexpr=False, borrow_projection=True)) == [],
+    )
+    # Negative control: the same absence IS a shortfall for a real factory.
+    check(
+        "a real factory with no constexpr still falls short",
+        shortfalls(make(constexpr=False, borrow_projection=False)) == ["constexpr"],
+    )
+    # Negative control: the exemption is cosmetic only and must not reach a
+    # soundness axis.
+    check(
+        "a borrow projection is still held to its other axes",
+        shortfalls(make(nodiscard=False, requires_=False, borrow_projection=True))
+        == ["nodiscard", "requires"],
+    )
+
     if failures:
         print(f"check-mint-pattern --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("check-mint-pattern --self-test: 13 cases pass, 4 of them negative controls.")
+    print("check-mint-pattern --self-test: 16 cases pass, 6 of them negative controls.")
     return 0
 
 

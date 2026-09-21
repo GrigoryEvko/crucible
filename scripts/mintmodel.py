@@ -79,6 +79,7 @@ class Mint:
         line: The one-based line of the identifier that names the factory
         owner: The enclosing class for a member mint, otherwise None
         inline_ok: Whether a `MINT-PATTERN-OK` marker sits on the signature line
+        borrow_projection: Whether the body's only return delegates to `mint_view`
         nodiscard: Whether the site carries `[[nodiscard]]`
         constexpr: Whether the site carries `constexpr` or `consteval`
         noexcept_: Whether the declarator carries `noexcept`
@@ -95,6 +96,7 @@ class Mint:
     owner: str | None
     namespace: str
     inline_ok: bool
+    borrow_projection: bool
     nodiscard: bool
     constexpr: bool
     noexcept_: bool
@@ -127,6 +129,71 @@ class Mint:
         re-export that names a different function as if it named this one.
         """
         return f"::{self.namespace}::{self.name}" if self.namespace else f"::{self.name}"
+
+
+def _is_borrow_projection(site: tsast.Node) -> bool:
+    """Report whether this mint's body does nothing but delegate to `mint_view`.
+
+    Such a function hands out a `ScopedView` over its own carrier.  It composes
+    nothing and synthesises no authority, so it is a borrow projection rather
+    than a §XXI factory, and it can never be constant-evaluated: the carrier
+    would have to be a constant expression, and every carrier in this tree holds
+    state set by a syscall, by an allocation, or by a cross-thread store.
+
+    `fixy/ScopedView.h` already treats `mint_view` as the borrow door — it
+    carries a documented `rq=pre` carve-out, because the gate inspects runtime
+    state and a concept cannot see that.  A function that delegates to it
+    inherits the same character.
+
+    Args:
+        site: The declaration or definition node of the mint
+
+    Returns:
+        True when the body is a single return that calls `mint_view`
+    """
+    body = site.child_by_field("body")
+    if body is None:
+        return False
+    returns = [r for r in body.descendants("return_statement")]
+    if len(returns) != 1:
+        return False
+    called = [c for c in returns[0].descendants("template_function", "identifier")
+              if c.text.split("<")[0].rsplit("::", 1)[-1] == "mint_view"]
+    if not called:
+        return False
+    # The carrier must be the mint's OWN object.  A free function that delegates
+    # to `mint_view` with a PARAMETER carrier can legitimately be a compile-time
+    # factory, so the projection claim needs `*this` rather than the delegation
+    # alone.  Without this, the rule also matches mint_linear_view and
+    # mint_session_view, which are not projections of their own state.
+    for call in returns[0].descendants("call_expression"):
+        function = call.child_by_field("function")
+        if function is None:
+            continue
+        if function.text.split("<")[0].rsplit("::", 1)[-1] != "mint_view":
+            continue
+        arguments = call.child_by_field("arguments")
+        if arguments is not None and "this" in arguments.text:
+            return True
+    return False
+
+
+def constexpr_applies(mint: Mint) -> bool:
+    """Report whether the `constexpr` axis is meaningful for this mint.
+
+    It is not meaningful for a borrow projection.  This is a COSMETIC axis, and
+    the distinction matters: a heuristic is acceptable here because the worst
+    outcome is that a dead keyword goes undemanded.  On a SOUNDNESS axis such as
+    `requires` no heuristic is acceptable, because the worst outcome there is an
+    unguarded gate.
+
+    Args:
+        mint: The mint to judge
+
+    Returns:
+        True when `constexpr` could carry meaning at this site
+    """
+    return not mint.borrow_projection
 
 
 def requires_applies(mint: Mint) -> bool:
@@ -496,6 +563,7 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 owner=owner,
                 namespace=_namespace_of(node),
                 inline_ok=INLINE_OK in tree.source.decode("utf-8", "replace").splitlines()[node.line - 1],
+                borrow_projection=_is_borrow_projection(site),
                 nodiscard=_has_attribute(site, "nodiscard"),
                 constexpr=_has_qualifier(site, "constexpr", "consteval"),
                 noexcept_=bool(declarator.children_of_type("noexcept")),
