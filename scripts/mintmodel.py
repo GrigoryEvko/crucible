@@ -34,8 +34,9 @@ function than the row's own site.
 
 from __future__ import annotations
 
+import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -68,6 +69,12 @@ CARVE_OUT_RQ = "§XXI carve-out: rq=pre"
 # the old verdict, and so a later consolidation can count what it removes.
 INLINE_OK = "MINT-PATTERN-OK"
 
+# `IsExecCtx` states that a template parameter IS a context.  That is the
+# parameter's SHAPE, not its FIT, so it never counts as a context gate — a mint
+# constrained only by it accepts every context in the tree.  `_shape` already
+# reads it as the shape marker that identifies a ctx-bound mint.
+CTX_SHAPE_CONCEPT = "IsExecCtx"
+
 
 @dataclass(frozen=True, slots=True)
 class Mint:
@@ -83,7 +90,10 @@ class Mint:
         nodiscard: Whether the site carries `[[nodiscard]]`
         constexpr: Whether the site carries `constexpr` or `consteval`
         noexcept_: Whether the declarator carries `noexcept`
-        requires_: Whether a `requires` clause constrains the site
+        requires_: Whether a `requires` CLAUSE constrains the site
+        constraint_concepts: The concepts constraining its template parameters
+        ctx_token: The type name of the first parameter of a ctx-bound mint
+        ctx_gated: Whether a clause names that context type
         shape: `ctx`, `token` or `member` — the authorization shape
         templated: Whether a template declaration encloses the site
         carve_out_cx: Whether a comment documents the absent `constexpr`
@@ -101,6 +111,9 @@ class Mint:
     constexpr: bool
     noexcept_: bool
     requires_: bool
+    constraint_concepts: frozenset[str]
+    ctx_token: str | None
+    ctx_gated: bool
     shape: str
     templated: bool
     carve_out_cx: bool
@@ -215,6 +228,48 @@ def requires_applies(mint: Mint) -> bool:
     return mint.templated
 
 
+def has_fit_constraint(mint: Mint) -> bool:
+    """Report whether a type-level constraint reaches this mint, in any position.
+
+    C++ spells one constraint two ways, and they mean the same thing to the
+    compiler: `template <typename T> requires C<T>` and `template <C T>`.  Reading
+    only the first reported 49 of the tree's 332 mints as unconstrained when every
+    one of them carries a concept on a template parameter.  `mint_bpf_map_spec`
+    is the plainest case — its gate is `template <BpfScalar Key, BpfScalar Value>`,
+    which says exactly what may be a BPF map key, and the old read called it
+    absent.
+
+    This axis asks only whether a constraint is PRESENT.  Whether it is the RIGHT
+    constraint is a different question, and for a ctx-bound mint `ctxfit_applies`
+    asks it separately — because a concept on some other parameter says nothing
+    about the context.
+
+    Args:
+        mint: The mint to judge
+
+    Returns:
+        True when a clause or a constrained template parameter reaches the site
+    """
+    return mint.requires_ or bool(mint.constraint_concepts)
+
+
+def ctxfit_applies(mint: Mint) -> bool:
+    """Report whether the context-fit axis is meaningful for this mint.
+
+    It applies to a ctx-bound mint, which §XXI defines as one threading ctx-driven
+    policy through the constructed type.  A token mint derives authority from a
+    parent token and holds no context to gate.  A member mint's authority is the
+    object whose method it is.
+
+    Args:
+        mint: The mint to judge
+
+    Returns:
+        True when the mint takes a context first
+    """
+    return mint.shape == "ctx"
+
+
 def scan_files() -> list[Path]:
     """Return every header the §XXI mint surface covers, sorted.
 
@@ -304,6 +359,130 @@ def _has_requires(site: tsast.Node, declarator: tsast.Node) -> bool:
     if owner is not None and owner.type == "template_declaration":
         return bool(owner.children_of_type("requires_clause"))
     return False
+
+
+def _template_parameters(site: tsast.Node) -> list[tsast.Node]:
+    """Return every template parameter declared above this site.
+
+    Three node types carry a type and a name: the plain form, the defaulted form
+    and the pack form.  A plain `typename T` is a `type_parameter_declaration`
+    instead and carries neither, so it never appears here.
+
+    Args:
+        site: The declaration or definition node
+
+    Returns:
+        The parameter nodes, in source order
+    """
+    owner = site.parent
+    if owner is None or owner.type != "template_declaration":
+        return []
+    found: list[tsast.Node] = []
+    for plist in owner.children_of_type("template_parameter_list"):
+        found += plist.children_of_type(
+            "parameter_declaration",
+            "optional_parameter_declaration",
+            "variadic_parameter_declaration",
+        )
+    return found
+
+
+def _constraint_candidates(site: tsast.Node) -> dict[str, str]:
+    """Return each template parameter's constraining type name, unresolved.
+
+    A concept-constrained type parameter and a NON-TYPE parameter parse
+    identically.  `CalendarGridSessionSurface Grid` and `std::size_t P` are both a
+    `parameter_declaration` with a `type` and a `declarator`, so the node shape
+    cannot tell a constraint from a value.  Reading the shape alone would count
+    `P` as a gate, which is a false pass on a soundness axis.  The caller settles
+    it against the tree's own roster of `concept_definition` names: `std::size_t`
+    is not among them and `CalendarGridSessionSurface` is.
+
+    Args:
+        site: The declaration or definition node
+
+    Returns:
+        Parameter name to the leaf of its declared type
+    """
+    found: dict[str, str] = {}
+    for param in _template_parameters(site):
+        kind = param.child_by_field("type")
+        named = param.child_by_field("declarator")
+        if kind is None or named is None:
+            continue
+        found[named.text] = kind.text.strip().split("::")[-1]
+    return found
+
+
+def _clause_text(site: tsast.Node, declarator: tsast.Node) -> str:
+    """Return the text of every `requires` clause that reaches a site.
+
+    Args:
+        site: The declaration or definition node
+        declarator: The function declarator of the mint
+
+    Returns:
+        The clauses joined by a space, or the empty string when there are none
+    """
+    parts = [c.text for c in declarator.children_of_type("requires_clause")]
+    parts += [c.text for c in site.children_of_type("requires_clause")]
+    owner = site.parent
+    if owner is not None and owner.type == "template_declaration":
+        parts += [c.text for c in owner.children_of_type("requires_clause")]
+    return " ".join(parts)
+
+
+def _ctx_token(declarator: tsast.Node) -> str | None:
+    """Return the type name of the first parameter, which `_shape` read as a context.
+
+    Args:
+        declarator: The function declarator of the mint
+
+    Returns:
+        The leaf of the first parameter's type, or None when there is no parameter
+    """
+    params = declarator.child_by_field("parameters")
+    if params is None:
+        return None
+    first = next(iter(params.children_of_type("parameter_declaration")), None)
+    if first is None:
+        return None
+    kind = first.child_by_field("type")
+    return kind.text.strip().split("::")[-1] if kind is not None else None
+
+
+def _ctx_gated(site: tsast.Node, declarator: tsast.Node, token: str | None) -> bool:
+    """Report whether a constraint on this site gates the context it takes.
+
+    Two positions can carry the gate.  A clause that names the context type does
+    it — `CtxFitsPipeline<Ctx, Stages...>` and `SubstrateFitsCtxResidency<Substr,
+    Ctx>` both name `Ctx`.  A concept written onto the context parameter itself
+    does it too, unless that concept is `IsExecCtx`, which states the parameter's
+    shape and admits every context.
+
+    A clause that constrains only the OTHER parameters does not gate the context.
+    `mint_writer_session` constrains its channel surface and takes any context at
+    all, and 24 session mints share that shape.
+
+    Complexity: O(n) in the clause length, from one word-boundary search.
+
+    Args:
+        site: The declaration or definition node
+        declarator: The function declarator of the mint
+        token: The context type name, from `_ctx_token`
+
+    Returns:
+        True when a clause names the context, or a non-shape concept constrains it
+    """
+    if token is None:
+        return False
+    for name, concept in _constraint_candidates(site).items():
+        if name == token and concept != CTX_SHAPE_CONCEPT:
+            return True
+    text = _clause_text(site, declarator)
+    if not text:
+        return False
+    return re.search(rf"\b{re.escape(token)}\b", text) is not None
 
 
 def _ctx_parameter_names(site: tsast.Node) -> frozenset[str]:
@@ -555,6 +734,8 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 owner = named.text if named is not None else None
 
         carve_cx, carve_rq = _carve_outs(tree, node.line)
+        shape = _shape(site, declarator, owner)
+        token = _ctx_token(declarator) if shape == "ctx" else None
         mints.append(
             Mint(
                 name=name,
@@ -568,7 +749,10 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 constexpr=_has_qualifier(site, "constexpr", "consteval"),
                 noexcept_=bool(declarator.children_of_type("noexcept")),
                 requires_=_has_requires(site, declarator),
-                shape=_shape(site, declarator, owner),
+                constraint_concepts=frozenset(_constraint_candidates(site).values()),
+                ctx_token=token,
+                ctx_gated=_ctx_gated(site, declarator, token),
+                shape=shape,
                 templated=site.parent is not None and site.parent.type == "template_declaration",
                 carve_out_cx=carve_cx,
                 carve_out_rq=carve_rq,
@@ -577,8 +761,38 @@ def extract(tree: tsast.Tree) -> list[Mint]:
     return mints
 
 
+def concept_names(tree: tsast.Tree) -> set[str]:
+    """Return every concept this file declares.
+
+    The roster is derived from the tree, never listed, so a concept added
+    anywhere under `include/` counts the moment it is written.
+
+    Args:
+        tree: The parsed file
+
+    Returns:
+        The declared concept names
+    """
+    found: set[str] = set()
+    for node in tree.root.descendants("concept_definition"):
+        named = node.child_by_field("name")
+        if named is None:
+            named = next((k for k in node.children if k.type == "identifier"), None)
+        if named is not None:
+            found.add(named.text)
+    return found
+
+
 def collect(paths: list[Path] | None = None) -> list[Mint]:
     """Return every live §XXI mint across the scanned surface, in sorted order.
+
+    A constraining type name is resolved against the concept roster of the WHOLE
+    scanned surface, not of the file that uses it, because a mint is constrained
+    by concepts its own header only includes.  Both are gathered in one pass and
+    the resolution happens after it, so the surface is parsed once.
+
+    Complexity: O(n) in the node count of the surface, plus O(m) in the mint count
+    for the resolution.
 
     Args:
         paths: The files to scan, or None to scan the whole §XXI surface
@@ -587,9 +801,12 @@ def collect(paths: list[Path] | None = None) -> list[Mint]:
         Every mint, sorted by name then path then line
     """
     files = scan_files() if paths is None else paths
-    mints: list[Mint] = []
+    raw: list[Mint] = []
+    roster: set[str] = set()
     for tree in tsast.parse(files, strict=False):
-        mints += extract(tree)
+        raw += extract(tree)
+        roster |= concept_names(tree)
+    mints = [replace(m, constraint_concepts=m.constraint_concepts & roster) for m in raw]
     return sorted(mints, key=lambda m: (m.name, m.path, m.line))
 
 
@@ -620,6 +837,10 @@ def _self_test() -> int:
 namespace probe {
 
 template <typename> concept IsExecCtx = true;
+template <typename> concept Surface = true;
+template <typename> concept Scalar = true;
+template <typename> concept CtxFitsProbe = true;
+template <typename, typename> concept FitsCtx = true;
 struct Ctx {};
 struct Thing {};
 
@@ -658,6 +879,34 @@ class mint_not_a_factory {
 // A trailing underscore marks an internal helper.
 [[nodiscard]] constexpr Thing mint_internal_(Thing) noexcept { return {}; }
 
+// The constraint sits on the template parameter, not in a clause. The two spell
+// one thing, so the presence axis must read both.
+template <Scalar K>
+[[nodiscard]] constexpr Thing mint_param_constrained(Thing) noexcept { return {}; }
+
+// A NON-TYPE parameter parses exactly like a constrained one. `size_t` is no
+// concept, so this mint carries no constraint at all.
+template <std::size_t N>
+[[nodiscard]] constexpr Thing mint_sized(Thing) noexcept { return {}; }
+
+// A clause that constrains the surface and takes any context whatsoever.
+template <Surface S, IsExecCtx C>
+    requires Surface<S>
+[[nodiscard]] constexpr Thing mint_surface_only(C const&) noexcept { return {}; }
+
+// The same shape, with the context in the clause.
+template <Surface S, IsExecCtx C>
+    requires FitsCtx<S, C>
+[[nodiscard]] constexpr Thing mint_ctx_in_clause(C const&) noexcept { return {}; }
+
+// IsExecCtx alone states the parameter's shape and admits every context.
+template <IsExecCtx C>
+[[nodiscard]] constexpr Thing mint_shape_only(C const&) noexcept { return {}; }
+
+// A fit concept written onto the context parameter gates it without a clause.
+template <CtxFitsProbe Ctx>
+[[nodiscard]] constexpr Thing mint_ctx_in_parameter(Ctx const&) noexcept { return {}; }
+
 }  // namespace probe
 """
     with tempfile.TemporaryDirectory() as work:
@@ -668,9 +917,13 @@ class mint_not_a_factory {
 
         # Positive control: every live mint is found, and only those.
         check(
-            "finds exactly the six live mints",
-            sorted(by_name) == ["mint_allocating", "mint_bare", "mint_compliant",
-                                "mint_member", "mint_plain_ctx", "mint_token"],
+            "finds exactly the twelve live mints",
+            sorted(by_name) == [
+                "mint_allocating", "mint_bare", "mint_compliant",
+                "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_member",
+                "mint_param_constrained", "mint_plain_ctx", "mint_shape_only",
+                "mint_sized", "mint_surface_only", "mint_token",
+            ],
         )
         # Negative controls: each exclusion rule fires.
         check("excludes a deleted overload", "mint_removed" not in by_name)
@@ -720,10 +973,62 @@ class mint_not_a_factory {
             good is not None and not good.carve_out_cx and not good.carve_out_rq,
         )
 
+        # The presence axis reads a constraint in either position.
+        param = by_name.get("mint_param_constrained")
+        check(
+            "reads a constraint written on a template parameter",
+            param is not None and not param.requires_
+            and param.constraint_concepts == frozenset({"Scalar"})
+            and has_fit_constraint(param),
+        )
+        # Negative control: a non-type parameter parses the same and is no gate.
+        sized = by_name.get("mint_sized")
+        check(
+            "does NOT read a non-type parameter as a constraint",
+            sized is not None and not sized.constraint_concepts
+            and not has_fit_constraint(sized),
+        )
+        check(
+            "reads a clause as a constraint with no parameter concept",
+            good is not None and has_fit_constraint(good),
+        )
+
+        # The context-fit axis: the clause must name the context it gates.
+        in_clause = by_name.get("mint_ctx_in_clause")
+        check(
+            "reads a clause that names the context as gating it",
+            in_clause is not None and in_clause.shape == "ctx"
+            and in_clause.ctx_token == "C" and in_clause.ctx_gated,
+        )
+        # Negative control: a clause on another parameter gates no context.
+        surface = by_name.get("mint_surface_only")
+        check(
+            "does NOT read a clause on another parameter as a context gate",
+            surface is not None and surface.shape == "ctx"
+            and surface.requires_ and not surface.ctx_gated,
+        )
+        # Negative control: IsExecCtx is the shape, never the fit.
+        shape_only = by_name.get("mint_shape_only")
+        check(
+            "does NOT read IsExecCtx alone as a context gate",
+            shape_only is not None and shape_only.shape == "ctx"
+            and has_fit_constraint(shape_only) and not shape_only.ctx_gated,
+        )
+        in_param = by_name.get("mint_ctx_in_parameter")
+        check(
+            "reads a fit concept on the context parameter as gating it",
+            in_param is not None and in_param.shape == "ctx" and in_param.ctx_gated,
+        )
+        # Negative control: the axis does not apply where there is no context.
+        check(
+            "does not ask a token mint to gate a context",
+            token is not None and not ctxfit_applies(token),
+        )
+
     if failures:
         print(f"mintmodel --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("mintmodel --self-test: 13 cases pass, 4 of them negative controls.")
+    print("mintmodel --self-test: 21 cases pass, 9 of them negative controls.")
     return 0
 
 

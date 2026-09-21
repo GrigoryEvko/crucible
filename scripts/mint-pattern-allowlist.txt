@@ -5,9 +5,9 @@
 #   NAME-KEYED  path:mint_name[:check-ok]   (PREFERRED — drift-proof)
 #   LINE-KEYED  path:line[:check-ok]        (legacy — fragile)
 #
-# where <check> ∈ {nodiscard, noexcept, constexpr, requires}.  Lines
-# beginning with '#' are comments.  A bare key (no `:check-ok` suffix)
-# exempts all four checks for that key.
+# where <check> ∈ {nodiscard, noexcept, constexpr, requires, ctxfit}.
+# Lines beginning with '#' are comments.  A bare key (no `:check-ok`
+# suffix) exempts every check for that key.
 #
 # ── Why name-keyed is the default ────────────────────────────────────
 #
@@ -36,12 +36,19 @@
 # ── Trim discipline ──────────────────────────────────────────────────
 #
 # Every entry is either a STRUCTURAL exemption (allocating / syscall /
-# token / concept-constrained-param / passkey ctor) OR a tracked
-# migration TODO.  When a site migrates to canonical §XXI shape (or the
-# scanner learns to recognize a new structural false-positive), the
-# entry MUST be removed; the stale-entry gate fails CI if a dead entry
-# lingers.  The goal is for this file to trend toward the
-# structural-exempt minimum.
+# token / passkey ctor) OR a tracked migration TODO.  When a site migrates
+# to canonical §XXI shape (or the scanner learns to recognize a new
+# structural false-positive), the entry MUST be removed; the stale-entry
+# gate fails CI if a dead entry lingers.  The goal is for this file to
+# trend toward the structural-exempt minimum.
+#
+# The scanner learning something is worth as much trimming as a source
+# fix, and on 2026-09-21 it was worth more: teaching it to read a
+# concept-constrained template parameter retired 50 entries in one change,
+# against the 9 that a day of source edits retired.  An entry that
+# describes a scanner limitation was never an exemption, and
+# "concept-constrained-param" is gone from the list above for that reason.
+# Before adding an entry, ask which of the two it is.
 #
 # ── Carve-out categories ─────────────────────────────────────────────
 #
@@ -53,21 +60,34 @@
 #     perf-event `perf/*` mints, the `canopy/*` gossip-state mints, the
 #     class-method view mints (`mint_open_view`, `mint_compiled_view`).
 #
-#   `requires-ok` — a templated mint whose §XXI gate is expressed as a
-#     concept-CONSTRAINED template parameter (`template <SomeConcept T>`)
-#     or an in-body `static_assert(...)` rather than a trailing
-#     `requires` clause.  The scanner only recognizes the literal
-#     `requires` keyword, so these read as "missing requires" though the
-#     gate is real.  Also covers TOKEN mints (§XXI: token mints derive
-#     authority from a parent token, NOT a `CtxFitsX` concept gate —
-#     `mint_permission_root` / `_split` / `_combine` / `_split_n` /
-#     `_combine_n` / `_share`).
+#   `requires-ok` — a templated mint that carries no type-level constraint
+#     at all.  This category used to be much larger, and 50 of its
+#     entries were not exemptions: they named a mint whose gate is a
+#     concept-CONSTRAINED template parameter (`template <SomeConcept T>`),
+#     which the scanner could not see because it read only the literal
+#     `requires` keyword.  The two spellings mean one thing to the
+#     compiler, the scanner now reads both, and those 50 entries are gone.
+#     A non-type parameter (`template <std::size_t N>`) parses exactly
+#     like a constrained one, so the scanner settles the difference
+#     against the tree's own roster of `concept` declarations rather than
+#     against the node shape.
+#
+#   `ctxfit-ok` — a CTX-BOUND mint that takes a context no constraint
+#     gates, so it accepts every context in the tree.  This is the
+#     question §XXI actually asks of a ctx-bound mint, and it was
+#     previously invisible: `requires-ok` conflated "carries no
+#     constraint" with "carries no gate on its CONTEXT", and a mint that
+#     constrained some other parameter satisfied the axis while admitting
+#     any context at all.  Note that `IsExecCtx Ctx` does NOT gate the
+#     context — it states that the parameter IS one.  A token mint has no
+#     entry in this category, because §XXI derives its authority from a
+#     parent token rather than from a context.
 #
 #   `noexcept-ok` — §XXI admits NO noexcept exemption: "Every mint MUST
 #     be [[nodiscard]] constexpr noexcept", and only the constexpr half
 #     has an escape for allocating factories.  So an entry in this
-#     category is a DEFECT, not an exemption.  It is listed under
-#     DEFECTS below, with the remediation named.
+#     category is a DEFECT, not an exemption.  The category is empty, and
+#     a new entry in it belongs under DEFECTS below with its remediation.
 #
 #   `nodiscard-ok` — a mint whose return value can legitimately be
 #     discarded.  A passkey constructor is NOT in this category: the
@@ -77,17 +97,19 @@
 #
 # ── DEFECTS, not exemptions ──────────────────────────────────────────
 #
-# One entry in this file records a real §XXI violation with no fix
-# applied.  It is called out here rather than buried in the list,
-# because an entry that reads like a category and is actually an open
-# defect is the failure this whole file exists to prevent.
+# An entry that reads like a category and is actually an open defect is
+# the failure this whole file exists to prevent, so the open ones are
+# named here rather than buried in the list.
 #
-#   include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:noexcept-ok
-#     mint_af_xdp_socket is not noexcept.  §XXI requires it, including
-#     for allocating mints.  The remediation is one word on the
-#     signature at AfXdp.h:335 plus a check that nothing on the XDP
-#     setup path can throw (nothing can: the tree builds with
-#     -fno-exceptions).  Delete this entry in the same change.
+# No `noexcept-ok` entry remains.  The one that stood here named
+# mint_af_xdp_socket, and 2b65b669 put the keyword on the signature and
+# deleted the entry.  §XXI admits no noexcept exemption, so this category
+# is expected to stay empty.
+#
+# The 27 `ctxfit-ok` entries ARE the open-defect list now.  Each one is a
+# ctx-bound mint that gates no context, and each needs a real conjunct
+# rather than an entry.  They sit in their own section below with the
+# remediation stated once for the set.
 #
 # An earlier revision of this file attributed that entry, and a further
 # eleven entries under canopy/ and cntp/, to those trees being
@@ -137,7 +159,6 @@ include/crucible/canopy/VectorClock.h:mint_vector_clock:constexpr-ok
 # ── cntp/ transport mints ────────────────────────────────────────────
 include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
 # DEFECT — see the DEFECTS block in the header.  Not an exemption.
-include/crucible/cntp/dataplane/Xdp.h:mint_bpf_map_spec:requires-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 
 # ── fixy/ syscall / resource mints ───────────────────────────────────
@@ -198,14 +219,6 @@ include/fixy/os/CpuPinned.h:mint_affinity:constexpr-ok
 include/fixy/os/Spawn.h:mint_parallel_for:constexpr-ok
 include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
 
-# ── fixy/Substr.h concept-constrained-param endpoint/session mints ────
-include/crucible/fixy/Substr.h:mint_mpsc_consumer_endpoint:requires-ok
-include/crucible/fixy/Substr.h:mint_mpsc_consumer_session:requires-ok
-include/crucible/fixy/Substr.h:mint_mpsc_producer_endpoint:requires-ok
-include/crucible/fixy/Substr.h:mint_mpsc_producer_session:requires-ok
-include/crucible/fixy/Substr.h:mint_spsc_consumer_endpoint:requires-ok
-include/crucible/fixy/Substr.h:mint_spsc_producer_endpoint:requires-ok
-
 # ── observe/ + perf/ eBPF / perf-event allocating mints ──────────────
 include/crucible/observe/Metrics.h:mint_canopy_metrics_reader:constexpr-ok
 include/crucible/observe/Metrics.h:mint_keeper_metrics_reader:constexpr-ok
@@ -222,7 +235,6 @@ include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:require
 # entries the old overload pairs needed are gone.  The spawning fork arm
 # starts threads, so it is not constexpr; the inline arm is.
 include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
-include/foundation/permissions/ReadView.h:mint_read_view:requires-ok
 
 # ── safety/ concept-constrained view + syscall mints ─────────────────
 include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
@@ -233,59 +245,68 @@ include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
 # stand until the old tree is deleted.
 include/fixy/os/ThreadName.h:mint_thread_name:constexpr-ok
 
-# ── fixy/ScopedView.h — the ported copies of the two view mints above.
-# The gate is view_ok, a precondition on the carrier's runtime state
-# (§XXI carve-out rq=pre), so there is no requires-clause to write.
-include/fixy/ScopedView.h:mint_linear_view:requires-ok
-include/fixy/ScopedView.h:mint_view:requires-ok
-
-# ── sessions/ concept-constrained-param session mints ────────────────
-include/crucible/sessions/CalendarGridSession.h:mint_calendar_grid_consumer:requires-ok
-include/crucible/sessions/CalendarGridSession.h:mint_calendar_grid_producer:requires-ok
-include/crucible/sessions/CalendarGridSession.h:mint_consumer_session:requires-ok
-include/crucible/sessions/CalendarGridSession.h:mint_producer_session:requires-ok
-include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_signaler:requires-ok
-include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_signaler_session:requires-ok
-include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_waiter:requires-ok
-include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_waiter_session:requires-ok
-include/crucible/sessions/ChaseLevDequeSession.h:mint_chaselev_owner:requires-ok
+# ── sessions/ allocating endpoint mints ──────────────────────────────
+# The forty-two `requires-ok` entries that stood here are gone.  Each one
+# named a mint whose gate is `template <SomeSessionSurface S, ...>`, and
+# the scanner now reads a constrained parameter as the constraint it is.
 include/crucible/sessions/ChaseLevDequeSession.h:mint_chaselev_thief:constexpr-ok
-include/crucible/sessions/ChaseLevDequeSession.h:mint_chaselev_thief:requires-ok
-include/crucible/sessions/ChaseLevDequeSession.h:mint_owner_session:requires-ok
-include/crucible/sessions/ChaseLevDequeSession.h:mint_thief_session:requires-ok
-include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
-include/crucible/sessions/MetaLogSession.h:mint_metalog_consumer:requires-ok
-include/crucible/sessions/MetaLogSession.h:mint_metalog_consumer_session:requires-ok
-include/crucible/sessions/MetaLogSession.h:mint_metalog_producer:requires-ok
-include/crucible/sessions/MetaLogSession.h:mint_metalog_producer_session:requires-ok
 include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_consumer_endpoint:constexpr-ok
-include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_consumer_endpoint:requires-ok
-include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_consumer_session:requires-ok
 include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_endpoint:constexpr-ok
-include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_endpoint:requires-ok
-include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_session:requires-ok
-include/crucible/sessions/ShardedCalendarGridSession.h:mint_consumer_session:requires-ok
-include/crucible/sessions/ShardedCalendarGridSession.h:mint_producer_session:requires-ok
-include/crucible/sessions/ShardedCalendarGridSession.h:mint_sharded_calendar_grid_consumer:requires-ok
-include/crucible/sessions/ShardedCalendarGridSession.h:mint_sharded_calendar_grid_producer:requires-ok
-include/crucible/sessions/ShardedGridSession.h:mint_consumer_session:requires-ok
-include/crucible/sessions/ShardedGridSession.h:mint_producer_session:requires-ok
-include/crucible/sessions/ShardedGridSession.h:mint_sharded_grid_consumer:requires-ok
-include/crucible/sessions/ShardedGridSession.h:mint_sharded_grid_producer:requires-ok
 include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader:constexpr-ok
-include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader:requires-ok
-include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader_session:requires-ok
-include/crucible/sessions/SnapshotSession.h:mint_snapshot_writer:requires-ok
-include/crucible/sessions/SnapshotSession.h:mint_snapshot_writer_session:requires-ok
-include/crucible/sessions/SpscSession.h:mint_consumer_session:requires-ok
-include/crucible/sessions/SpscSession.h:mint_producer_session:requires-ok
-include/crucible/sessions/SwmrSession.h:mint_reader_runtime_session:requires-ok
-include/crucible/sessions/SwmrSession.h:mint_reader_session:requires-ok
 include/crucible/sessions/SwmrSession.h:mint_swmr_reader:constexpr-ok
-include/crucible/sessions/SwmrSession.h:mint_swmr_reader:requires-ok
-include/crucible/sessions/SwmrSession.h:mint_swmr_writer:requires-ok
-include/crucible/sessions/SwmrSession.h:mint_writer_runtime_session:requires-ok
-include/crucible/sessions/SwmrSession.h:mint_writer_session:requires-ok
+include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
+
+# ── ctxfit: ctx-bound mints that gate no context ──────────────────────
+#
+# Every entry below is an OPEN GAP, not a structural exemption, and each
+# one needs the same repair: a `CtxFits...<..., Ctx>` conjunct plus the two
+# HS14 negative-compile fixtures proving it fires.  They are listed so the
+# gap has a name and a count.
+#
+# WHAT THE OLD LEDGER SAID INSTEAD.  These sites used to carry a
+# `requires-ok` entry, which reads as "the gate is a constrained parameter
+# the scanner cannot see".  For the surface parameter that was true.  For
+# the CONTEXT it was not: a mint constrained only on its channel surface
+# takes `HotFgCtx`, `ColdInitCtx` and every other context equally, and
+# §XXI's whole claim for a ctx-bound mint is that the requires clause
+# verifies a CROSS-TIER FIT.  The entry named the wrong axis, so fixing the
+# scanner's blind spot would have retired the entry and left the gap with
+# no record anywhere.  That is why this category exists.
+#
+# The twenty-six sessions/ entries sit in the old substrate, which Stage D
+# deletes; the port carries the gate.  `mint_pipeline` is in the new tree
+# and is the one that matters: it enforces the fit with an in-body
+# `static_assert` producing `EffectRowMismatch`, which is a HARD error
+# rather than a constraint.  `requires { mint_pipeline(bad_ctx, ...) }`
+# therefore answers true and no caller can probe it — the same defect the
+# view mints carried until 0a14fa5c gave them real concepts.
+include/crucible/fixy/Substr.h:mint_mpsc_consumer_session:ctxfit-ok
+include/crucible/fixy/Substr.h:mint_mpsc_producer_session:ctxfit-ok
+include/crucible/sessions/AsyncPipelineSession.h:mint_async_pipeline_consumer_session:ctxfit-ok
+include/crucible/sessions/AsyncPipelineSession.h:mint_async_pipeline_producer_session:ctxfit-ok
+include/crucible/sessions/CalendarGridSession.h:mint_consumer_session:ctxfit-ok
+include/crucible/sessions/CalendarGridSession.h:mint_producer_session:ctxfit-ok
+include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_signaler_session:ctxfit-ok
+include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_waiter_session:ctxfit-ok
+include/crucible/sessions/ChaseLevDequeSession.h:mint_owner_session:ctxfit-ok
+include/crucible/sessions/ChaseLevDequeSession.h:mint_thief_session:ctxfit-ok
+include/crucible/sessions/MetaLogSession.h:mint_metalog_consumer_session:ctxfit-ok
+include/crucible/sessions/MetaLogSession.h:mint_metalog_producer_session:ctxfit-ok
+include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_consumer_session:ctxfit-ok
+include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_session:ctxfit-ok
+include/crucible/sessions/ShardedCalendarGridSession.h:mint_consumer_session:ctxfit-ok
+include/crucible/sessions/ShardedCalendarGridSession.h:mint_producer_session:ctxfit-ok
+include/crucible/sessions/ShardedGridSession.h:mint_consumer_session:ctxfit-ok
+include/crucible/sessions/ShardedGridSession.h:mint_producer_session:ctxfit-ok
+include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader_session:ctxfit-ok
+include/crucible/sessions/SnapshotSession.h:mint_snapshot_writer_session:ctxfit-ok
+include/crucible/sessions/SpscSession.h:mint_consumer_session:ctxfit-ok
+include/crucible/sessions/SpscSession.h:mint_producer_session:ctxfit-ok
+include/crucible/sessions/SwmrSession.h:mint_reader_runtime_session:ctxfit-ok
+include/crucible/sessions/SwmrSession.h:mint_reader_session:ctxfit-ok
+include/crucible/sessions/SwmrSession.h:mint_writer_runtime_session:ctxfit-ok
+include/crucible/sessions/SwmrSession.h:mint_writer_session:ctxfit-ok
+include/fixy/concurrent/Pipeline.h:mint_pipeline:ctxfit-ok
 
 # ── topology/ + warden/ allocating mints ─────────────────────────────
 include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok

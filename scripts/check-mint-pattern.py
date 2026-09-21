@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
-"""Hold every §XXI mint to the four enforcement axes, from the parse tree.
+"""Hold every §XXI mint to the five enforcement axes, from the parse tree.
 
 CLAUDE.md §XXI: every mint factory is `[[nodiscard]] constexpr ... noexcept`
 with a `requires` clause carrying the fit check.  This gate reads each axis off
 the AST rather than off a line window, which is what `check-mint-pattern.sh`
 does in 1,173 lines of bash.
+
+ONE CLAUSE, TWO QUESTIONS.  §XXI's sentence carries two claims about the
+constraint, and reading it as one axis got both wrong in opposite directions.
+
+  * PRESENCE — is there a type-level constraint at all?  C++ spells one
+    constraint two ways: `template <typename T> requires C<T>` and
+    `template <C T>`.  Reading only the keyword called 49 of the tree's 332
+    mints unconstrained when every one carried a concept on a parameter, and
+    50 allowlist entries existed to excuse that misreading.
+  * CONTEXT FIT — for a ctx-bound mint, does the constraint gate the CONTEXT?
+    A clause naming some other parameter does not.  Twenty-six session mints
+    constrain their channel surface and accept `HotFgCtx`, `ColdInitCtx` and
+    every other context equally, which is the opposite of what §XXI claims a
+    ctx-bound mint verifies.
+
+So the two are separate axes.  Folding them let a surface constraint stand in
+for a context gate, and fixing the presence blind spot alone would have retired
+all 50 entries and left those 26 sites recorded nowhere.
 
 WHAT THE WINDOW COST.  The bash guard decides whether the `requires` axis
 applies by walking fifteen lines up from the signature looking for the word
@@ -26,10 +44,11 @@ reads every one so its verdict matches the old guard:
   * a `// §XXI carve-out: cx=alloc` or `rq=pre` comment above the signature
   * a `// MINT-PATTERN-OK: <reason>` marker on the signature line
 
-Measured 2026-09-21: 138 allowlist entries, 39 carve-out comments and 9 inline
-markers, against 97 real axis failures.  Consolidating the three onto one
-in-source marker is tracked separately — this gate does not change the rules, it
-reads them from a parse tree instead of a regex.
+Measured 2026-09-21: the allowlist opened the day at 138 entries and closed it at
+75, against 39 carve-out comments and 9 inline markers.  Fifty of the entries it
+shed were not exemptions — they recorded a constraint the scanner could not read.
+Consolidating the three mechanisms onto one in-source marker is tracked
+separately.
 
 SUPERSEDED HEADERS ARE OUT OF SCOPE, and that is a change.  The bash guard scans
 `include/crucible/**/_*.h`, the ported old-substrate headers, and 24 allowlist
@@ -56,8 +75,13 @@ import tsast  # noqa: E402
 
 ALLOWLIST = tsast.REPO_ROOT / "scripts" / "mint-pattern-allowlist.txt"
 
-# The four axes, each with the allowlist suffix that exempts it.
-AXES = ("nodiscard", "constexpr", "noexcept", "requires")
+# The axes, each with the allowlist suffix that exempts it.  `requires` asks only
+# whether a constraint is PRESENT; `ctxfit` asks the separate question of whether
+# it gates the context, which is the one §XXI actually cares about for a ctx-bound
+# mint.  Folding the two reported a constrained mint as unconstrained, and read a
+# mint that gates nothing about its context as compliant the moment it constrained
+# some other parameter.
+AXES = ("nodiscard", "constexpr", "noexcept", "requires", "ctxfit")
 
 
 def read_allowlist(path: Path = ALLOWLIST) -> set[tuple[str, str, str]]:
@@ -91,8 +115,13 @@ def read_allowlist(path: Path = ALLOWLIST) -> set[tuple[str, str, str]]:
 def shortfalls(mint: mintmodel.Mint) -> list[str]:
     """Return the axes this mint does not meet.
 
-    The `requires` axis applies only to a templated mint, because a clause
-    constrains a template and a non-template cannot carry one.
+    The `requires` axis applies only to a templated mint, because a constraint
+    constrains a template and a non-template cannot carry one.  It is satisfied by
+    a clause OR by a concept on a template parameter, which are two spellings of
+    one thing.
+
+    The `ctxfit` axis applies only to a ctx-bound mint, and asks whether any
+    constraint gates the context.  A token mint holds no context to gate.
 
     Args:
         mint: The mint to judge
@@ -107,8 +136,10 @@ def shortfalls(mint: mintmodel.Mint) -> list[str]:
         missing.append("constexpr")
     if not mint.noexcept_:
         missing.append("noexcept")
-    if mintmodel.requires_applies(mint) and not mint.requires_:
+    if mintmodel.requires_applies(mint) and not mintmodel.has_fit_constraint(mint):
         missing.append("requires")
+    if mintmodel.ctxfit_applies(mint) and not mint.ctx_gated:
+        missing.append("ctxfit")
     return missing
 
 
@@ -155,11 +186,19 @@ def scan() -> int:
             live.add((mint.path, mint.name, axis))
             if exempted(mint, axis, allowlist):
                 continue
+            if axis == "ctxfit":
+                lack = (
+                    f"takes a context ({mint.ctx_token}) that no constraint gates. "
+                    f"It accepts every context in the tree. Write a "
+                    f"`CtxFits...<..., {mint.ctx_token}>` conjunct into its "
+                    f"constraint, or state the reason"
+                )
+            else:
+                lack = f"is missing {axis}. Add it to the signature, or state the reason"
             findings.append(
                 f"MINT-PATTERN violation: {mint.path}:{mint.line} — {mint.name} "
-                f"is missing {axis}. Add it to the signature, or state the reason: "
-                f"an inline `// MINT-PATTERN-OK: <reason>` on the signature line, "
-                f"or an entry `{mint.path}:{mint.name}:{axis}-ok` in "
+                f"{lack}: an inline `// MINT-PATTERN-OK: <reason>` on the signature "
+                f"line, or an entry `{mint.path}:{mint.name}:{axis}-ok` in "
                 f"scripts/mint-pattern-allowlist.txt."
             )
 
@@ -177,13 +216,13 @@ def scan() -> int:
     if findings:
         print(
             f"\ncheck-mint-pattern: {len(findings)} finding(s) across {len(mints)} "
-            f"mint sites on the four §XXI axes.",
+            f"mint sites on the {len(AXES)} §XXI axes.",
             file=sys.stderr,
         )
         return 2
     print(
-        f"check-mint-pattern: clean — {len(mints)} mint sites meet the four §XXI "
-        f"axes or carry a stated exemption, and no entry is stale.",
+        f"check-mint-pattern: clean — {len(mints)} mint sites meet the {len(AXES)} "
+        f"§XXI axes or carry a stated exemption, and no entry is stale.",
         file=sys.stderr,
     )
     return 0
@@ -220,7 +259,8 @@ def self_test() -> int:
         fields: dict[str, object] = dict(
             name="mint_probe", path="p.h", line=1, owner=None, namespace="probe",
             inline_ok=False, nodiscard=True, constexpr=True, noexcept_=True,
-            requires_=True, shape="ctx", templated=True,
+            requires_=True, constraint_concepts=frozenset(), ctx_token="Ctx",
+            ctx_gated=True, shape="ctx", templated=True,
             carve_out_cx=False, carve_out_rq=False, borrow_projection=False,
         )
         fields.update(kwargs)
@@ -232,18 +272,46 @@ def self_test() -> int:
     check("a missing nodiscard is a shortfall", shortfalls(make(nodiscard=False)) == ["nodiscard"])
     check("a missing noexcept is a shortfall", shortfalls(make(noexcept_=False)) == ["noexcept"])
     check(
-        "all four can fall short at once",
-        shortfalls(make(nodiscard=False, constexpr=False, noexcept_=False, requires_=False))
-        == ["nodiscard", "constexpr", "noexcept", "requires"],
+        "all five can fall short at once",
+        shortfalls(make(nodiscard=False, constexpr=False, noexcept_=False,
+                        requires_=False, ctx_gated=False))
+        == ["nodiscard", "constexpr", "noexcept", "requires", "ctxfit"],
     )
     # The rule the bash window got wrong: requires applies only to a template.
     check(
-        "a templated mint with no clause falls short",
+        "a templated mint with no constraint falls short",
         shortfalls(make(requires_=False, templated=True)) == ["requires"],
     )
     check(
         "a non-template with no clause does NOT fall short",
         shortfalls(make(requires_=False, templated=False)) == [],
+    )
+    # A constraint on a template parameter satisfies the presence axis.
+    check(
+        "a constrained template parameter satisfies requires",
+        shortfalls(make(requires_=False, constraint_concepts=frozenset({"Surface"})))
+        == [],
+    )
+    # Negative control: the presence axis is not the context axis.  A mint
+    # constrained on another parameter still has to gate its context.
+    check(
+        "a parameter constraint does NOT satisfy the context axis",
+        shortfalls(make(requires_=False, ctx_gated=False,
+                        constraint_concepts=frozenset({"Surface"})))
+        == ["ctxfit"],
+    )
+    check(
+        "an ungated context is a shortfall",
+        shortfalls(make(ctx_gated=False)) == ["ctxfit"],
+    )
+    # Negative control: a token mint holds no context, so the axis is silent.
+    check(
+        "a token mint is not asked to gate a context",
+        shortfalls(make(shape="token", ctx_token=None, ctx_gated=False)) == [],
+    )
+    check(
+        "a member mint is not asked to gate a context",
+        shortfalls(make(shape="member", ctx_token=None, ctx_gated=False)) == [],
     )
 
     # Each of the three exemption mechanisms covers, and covers only its own axis.
@@ -267,6 +335,16 @@ def self_test() -> int:
     check(
         "an rq carve-out comment exempts requires",
         exempted(make(requires_=False, carve_out_rq=True), "requires", set()),
+    )
+    # Negative control: an rq carve-out documents an absent CLAUSE.  It says
+    # nothing about the context, so it must not reach the context axis.
+    check(
+        "an rq carve-out does not exempt ctxfit",
+        not exempted(make(ctx_gated=False, carve_out_rq=True), "ctxfit", set()),
+    )
+    check(
+        "a ctxfit allowlist entry exempts the context axis",
+        exempted(make(ctx_gated=False), "ctxfit", {("p.h", "mint_probe", "ctxfit")}),
     )
     check(
         "an inline MINT-PATTERN-OK marker exempts the site",
@@ -299,7 +377,7 @@ def self_test() -> int:
     if failures:
         print(f"check-mint-pattern --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("check-mint-pattern --self-test: 16 cases pass, 6 of them negative controls.")
+    print("check-mint-pattern --self-test: 23 cases pass, 10 of them negative controls.")
     return 0
 
 
