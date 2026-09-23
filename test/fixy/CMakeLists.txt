@@ -1016,6 +1016,62 @@ fixy_neg_compile_test(neg_sess_vigil_illegal_transition
   "fixy::session::diagnostic \\[VigilModeBridge_IllegalTransition\\]"
   "admitted_mode_transitions")
 
+# ── Crash-stop sessions ───────────────────────────────────────────────
+#
+# Crash.h holds the rules of Barwell, Hou, Yoshida and Zhou (LMCS 2025),
+# and CrashTransport.h runs a handle under them.  The test runs the
+# paper's Example 3.2 under three schedules.
+fixy_test(test_session_crash_stop)
+
+# HS14 for mint_crash_session.  Rule 3 refuses a bare reception from an
+# unreliable peer, also when the reception hides in a loop body.  Rule 5
+# refuses a crash branch for a reliable peer.  The cell must outlive the
+# session, so a temporary cell is refused.
+fixy_neg_compile_test(neg_sess_crash_bare_recv_unreliable
+  "no matching function for call to .mint_crash_session"
+  "every_reception_handles_crash_v<Proto, Peer, Reliable> \\[with Proto = fixy::session::Send<int, fixy::session::Recv<int")
+
+fixy_neg_compile_test(neg_sess_crash_hidden_in_loop
+  "no matching function for call to .mint_crash_session"
+  "every_reception_handles_crash_v<Proto, Peer, Reliable> \\[with Proto = fixy::session::Loop<")
+
+fixy_neg_compile_test(neg_sess_crash_branch_for_reliable
+  "no matching function for call to .mint_crash_session"
+  "every_reception_handles_crash_v<Proto, Peer, Reliable>"
+  "Reliable = fixy::session::ReliableSet<.unnamed.::Bob>")
+
+fixy_neg_compile_test(neg_sess_crash_cell_temporary
+  "use of deleted function .void fixy::session::mint_crash_session"
+  "Crash_Cell_Temporary")
+
+# Rules 1 and 2, and Stop as runtime syntax, hold in every session, so
+# the plain handle factory refuses them.
+fixy_neg_compile_test(neg_sess_crash_label_sent
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<int, fixy::session::End>, fixy::session::Send<fixy::session::Crash<")
+
+fixy_neg_compile_test(neg_sess_crash_pure_choice
+  "no matching function for call to .mint_session_handle"
+  "is_empty_choice_v<Proto>\\) \\[with Proto = fixy::session::Send<int, fixy::session::Offer<fixy::session::Recv<fixy::session::Crash<")
+
+fixy_neg_compile_test(neg_sess_crash_stop_at_design_time
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Send<int, fixy::session::Stop>\\]")
+
+# HS14 for crash(): a reliable role cannot crash, and an ended process
+# cannot crash.
+fixy_neg_compile_test(neg_sess_crash_reliable_role_crashes
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Of_Reliable_Role\\]")
+
+fixy_neg_compile_test(neg_sess_crash_after_end
+  "no matching function for call to .fixy::session::CrashWatched<"
+  "is_terminal_state_v<P>\\) \\[with P = fixy::session::End\\]")
+
+fixy_neg_compile_test(neg_sess_crash_branch_index_missing
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Branch_Missing\\]")
+
 # ── Every gate predicate is armed ─────────────────────────────────────
 #
 # The walk in test_armed_roster.cpp reads every predicate the two layers
