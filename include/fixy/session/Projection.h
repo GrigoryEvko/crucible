@@ -57,7 +57,41 @@
 // the rule of Pischke and Yoshida, "Top-down = Bottom-up" (OOPSLA 2026),
 // Definition 6.9.  Definition 21 does not constrain such a role, but a
 // role that has not finished cannot be live with no peer.
+//
+// Crash-stop projection.  project_crash_t<G, Role, ReliableSet<...>> is
+// the projection of Barwell, Hou, Yoshida and Zhou, "Crash-Stop Failures
+// in Asynchronous Multiparty Session Types" (LMCS 21:2, 2025), Definition
+// 4.3, for a set of reliable roles.  The crash branch of a transmission
+// is Branch<global::CrashLabel, void, G>.  The sender's projection drops
+// it, because no role sends the crash label.  The receiver's projection
+// keeps it as the last branch of its Offer, so the message branches keep
+// their indices in the dual (rule 6 of fixy/session/Crash.h).  A role
+// that takes no part merges every branch, the crash branch too.  The
+// receiver needs a crash branch when the sender is not reliable, as in
+// the paper.  This header also refuses a crash branch from a reliable
+// sender, which the paper projects: rule Sub-& lets no implementation
+// omit that branch, and the branch can never run, so rule 5 of
+// fixy/session/Crash.h refuses it at the endpoint too.
+//
+// The crash-stop merge does not unfold a loop.  Definition 4.3 merges
+// two loops only body with body, so each projection of project_crash_t
+// is a projection of Definition 4.3 (this merge refuses the loop case
+// that the paper merges, which only makes it stricter).  project_t
+// projects as if each role is reliable, keeps the unfolding merge, and
+// refuses each crash branch.
+//
+// The runtime crash annotations of fixy/session/Global.h project as far
+// as the paper defines them without the configuration semantics.  A
+// transmission to a crashed receiver projects onto its sender as an
+// internal choice without the crash branch, and onto the other roles by
+// merge.  The projection onto a crashed role is refused: Definition 4.19
+// gives that role the type stop and an unavailable queue, and this
+// header does not model association under crashes.  An EnRoute node
+// keeps only the chosen branch, and the receiver of a message from an
+// unreliable sender holds the whole choice with its crash branch, so
+// crash-stop projection refuses the receiver of such a node.
 
+#include <fixy/session/Crash.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Protocol.h>
 #include <foundation/contracts/Armed.h>
@@ -112,7 +146,15 @@ struct MergePayloadMismatch {};
 struct MergeUnfoldLimit {};
 struct EnRouteUnderRecursion {};
 struct LoopWithoutAction {};
+struct MissingCrashBranch {};
+struct CrashBranchFromReliableSender {};
+struct ProjectionOntoCrashedRole {};
+struct EnRouteFromUnreliableSender {};
 }  // namespace projection_failure
+
+// The reliable set of project_t: every role is reliable, so no receiver
+// needs a crash branch and none may have one.
+struct EveryRoleReliable {};
 
 template <typename T>
 struct is_projection_failure : std::false_type {};
@@ -131,6 +173,18 @@ namespace g = ::fixy::session::global;
 
 template <typename...>
 inline constexpr bool dependent_false_v = false;
+
+template <typename Reliable, typename Role>
+inline constexpr bool is_reliable_role_v = false;
+template <typename Role>
+inline constexpr bool is_reliable_role_v<EveryRoleReliable, Role> = true;
+template <typename... Rs, typename Role>
+inline constexpr bool is_reliable_role_v<ReliableSet<Rs...>, Role> = (std::is_same_v<Rs, Role> || ...);
+
+// How many times one merge path can unfold a Loop.  The crash-stop merge
+// unfolds none, which keeps it inside Definition 4.3 of the paper.
+template <typename Reliable>
+inline constexpr int merge_fuel_v = std::is_same_v<Reliable, EveryRoleReliable> ? 4 : 0;
 
 // ── Queues ───────────────────────────────────────────────────────────
 
@@ -214,21 +268,27 @@ enum class Side : std::uint8_t {
     External,
 };
 
+// is_select_node: the type is a Select, even with one branch.  The
+// sender of a transmission with a crash branch keeps a Select, because
+// the receiver reads a label to tell the message from the crash.
 template <typename T>
 struct view {
     static constexpr Side side = Side::Neither;
+    static constexpr bool is_select_node = false;
     using peer = void;
     using branches = BL<>;
 };
 template <typename Q, typename L, typename P, typename K>
 struct view<Send<PeerMsg<Q, L, P>, K>> {
     static constexpr Side side = Side::Internal;
+    static constexpr bool is_select_node = false;
     using peer = Q;
     using branches = BL<Br<L, P, K>>;
 };
 template <typename Q, typename L, typename P, typename K>
 struct view<Recv<PeerMsg<Q, L, P>, K>> {
     static constexpr Side side = Side::External;
+    static constexpr bool is_select_node = false;
     using peer = Q;
     using branches = BL<Br<L, P, K>>;
 };
@@ -236,6 +296,7 @@ template <typename... Qs, typename... Ls, typename... Ps, typename... Ks>
 struct view<Select<Send<PeerMsg<Qs, Ls, Ps>, Ks>...>> {
     static constexpr bool one_peer = sizeof...(Qs) > 0 && (std::is_same_v<Qs, Qs...[0]> && ...);
     static constexpr Side side = one_peer ? Side::Internal : Side::Neither;
+    static constexpr bool is_select_node = true;
     using peer = std::conditional_t<one_peer, Qs...[0], void>;
     using branches = BL<Br<Ls, Ps, Ks>...>;
 };
@@ -243,6 +304,7 @@ template <typename Q, typename... Qs, typename... Ls, typename... Ps, typename..
 struct view<Offer<Sender<Q>, Recv<PeerMsg<Qs, Ls, Ps>, Ks>...>> {
     static constexpr bool one_peer = sizeof...(Qs) > 0 && (std::is_same_v<Qs, Q> && ...);
     static constexpr Side side = one_peer ? Side::External : Side::Neither;
+    static constexpr bool is_select_node = false;
     using peer = Q;
     using branches = BL<Br<Ls, Ps, Ks>...>;
 };
@@ -257,15 +319,18 @@ template <typename Peer, typename... Brs>
 struct rebuild<Side::Internal, Peer, BL<Brs...>> {
     using type = Select<Send<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
 };
+
+// An internal choice that stays a Select with one branch.
+template <typename Peer, typename List, bool IsSelect>
+struct rebuild_internal : rebuild<Side::Internal, Peer, List> {};
+template <typename Peer, typename... Brs>
+struct rebuild_internal<Peer, BL<Brs...>, true> {
+    using type = Select<Send<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
+};
 template <typename Peer, typename L, typename P, typename K>
 struct rebuild<Side::External, Peer, BL<Br<L, P, K>>> {
     using type = Recv<PeerMsg<Peer, L, P>, K>;
 };
-template <typename Peer, typename... Brs>
-struct rebuild<Side::External, Peer, BL<Brs...>> {
-    using type = Offer<Sender<Peer>, Recv<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
-};
-
 template <typename... Lists>
 struct bl_concat;
 template <>
@@ -278,6 +343,37 @@ struct bl_concat<BL<A...>> {
 };
 template <typename... A, typename... B, typename... Rest>
 struct bl_concat<BL<A...>, BL<B...>, Rest...> : bl_concat<BL<A..., B...>, Rest...> {};
+
+template <typename B>
+inline constexpr bool is_crash_br_v = std::is_same_v<typename B::label, g::CrashLabel>;
+
+// The message branches of a list, then its crash branches.
+template <typename List>
+struct crash_last;
+template <typename... Brs>
+struct crash_last<BL<Brs...>> {
+    using type = typename bl_concat<std::conditional_t<is_crash_br_v<Brs>, BL<>, BL<Brs>>...,
+                                    std::conditional_t<is_crash_br_v<Brs>, BL<Brs>, BL<>>...>::type;
+};
+
+template <typename List>
+struct without_crash;
+template <typename... Brs>
+struct without_crash<BL<Brs...>> {
+    using type = typename bl_concat<std::conditional_t<is_crash_br_v<Brs>, BL<>, BL<Brs>>...>::type;
+};
+
+template <typename Peer, typename List>
+struct rebuild_offer;
+template <typename Peer, typename... Brs>
+struct rebuild_offer<Peer, BL<Brs...>> {
+    using type = Offer<Sender<Peer>, Recv<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
+};
+
+// A crash branch comes last, so the message branches keep their indices
+// in the dual (rule 6 of fixy/session/Crash.h).
+template <typename Peer, typename... Brs>
+struct rebuild<Side::External, Peer, BL<Brs...>> : rebuild_offer<Peer, typename crash_last<BL<Brs...>>::type> {};
 
 // The branch of List whose label is L, or void.
 template <typename L, typename List>
@@ -398,7 +494,7 @@ consteval auto merge_internal_branch() {
 
 // Two internal choices to the same peer merge when they offer the same
 // labels (rule merge-internal).
-template <typename Peer, int Fuel, typename... As, typename... Bs>
+template <typename Peer, int Fuel, bool IsSelect, typename... As, typename... Bs>
 consteval auto merge_internal(BL<As...>, BL<Bs...>) {
     if constexpr (sizeof...(As) != sizeof...(Bs)) {
         return std::type_identity<NotProjectable<projection_failure::MergeLabelSetMismatch>>{};
@@ -408,8 +504,8 @@ consteval auto merge_internal(BL<As...>, BL<Bs...>) {
         if constexpr (!std::is_void_v<failure>) {
             return std::type_identity<failure>{};
         } else {
-            return std::type_identity<typename rebuild<
-                Side::Internal, Peer, BL<typename decltype(merge_internal_branch<As, BL<Bs...>, Fuel>())::type...>>::type>{};
+            return std::type_identity<typename rebuild_internal<
+                Peer, BL<typename decltype(merge_internal_branch<As, BL<Bs...>, Fuel>())::type...>, IsSelect>::type>{};
         }
     }
 }
@@ -446,7 +542,8 @@ consteval auto merge_select() {
         }
     } else if constexpr (view<A>::side == Side::Internal && view<B>::side == Side::Internal
                          && std::is_same_v<typename view<A>::peer, typename view<B>::peer>) {
-        return merge_internal<typename view<A>::peer, Fuel>(typename view<A>::branches{}, typename view<B>::branches{});
+        return merge_internal<typename view<A>::peer, Fuel, view<A>::is_select_node || view<B>::is_select_node>(
+            typename view<A>::branches{}, typename view<B>::branches{});
     } else if constexpr (view<A>::side == Side::External && view<B>::side == Side::External
                          && std::is_same_v<typename view<A>::peer, typename view<B>::peer>) {
         return merge_external<typename view<A>::peer, Fuel>(typename view<A>::branches{}, typename view<B>::branches{});
@@ -460,32 +557,32 @@ struct merge2 {
     using type = typename decltype(merge_select<A, B, Fuel>())::type;
 };
 
-template <typename... Ts>
+template <int Fuel, typename... Ts>
 struct merge_all;
-template <typename T>
-struct merge_all<T> {
+template <int Fuel, typename T>
+struct merge_all<Fuel, T> {
     using type = T;
 };
-template <typename T1, typename T2, typename... Rest>
-struct merge_all<T1, T2, Rest...> : merge_all<typename merge2<T1, T2, projection_unfold_limit>::type, Rest...> {};
+template <int Fuel, typename T1, typename T2, typename... Rest>
+struct merge_all<Fuel, T1, T2, Rest...> : merge_all<Fuel, typename merge2<T1, T2, Fuel>::type, Rest...> {};
 
 // ── Projection walk ──────────────────────────────────────────────────
 
-template <typename G, typename R>
+template <typename G, typename R, typename Reliable>
 struct proj_walk;
 
-template <typename B, typename R>
+template <typename B, typename R, typename Reliable>
 consteval auto proj_rec() {
     if constexpr (!g::holds_free_var_v<B>) {
         // A Rec whose body never loops back is its body.
-        return std::type_identity<typename proj_walk<B, R>::type>{};
+        return std::type_identity<typename proj_walk<B, R, Reliable>::type>{};
     } else if constexpr (g::holds_en_route_v<B>) {
         return std::type_identity<NotProjectable<projection_failure::EnRouteUnderRecursion>>{};
     } else if constexpr (!g::role_in_v<R, g::active_roles_t<B>>) {
         // P-END: no unfolding of the loop activates R.
         return std::type_identity<Projected<OutQueue<>, End>>{};
     } else {
-        using inner = typename proj_walk<B, R>::type;
+        using inner = typename proj_walk<B, R, Reliable>::type;
         if constexpr (is_projection_failure_v<inner>) {
             return std::type_identity<inner>{};
         } else if constexpr (std::is_same_v<typename inner::local, Continue>) {
@@ -499,25 +596,40 @@ consteval auto proj_rec() {
 template <typename Result, typename First>
 inline constexpr bool queue_agrees_v = queues_equivalent_v<typename Result::queue, typename First::queue>;
 
-template <typename From, typename To, typename R, typename... Ls, typename... Ps, typename... Cs>
+// ToCrashed: the receiver has crashed, so its projection is refused and
+// the sender's messages are lost (rule [GR-crash-m] of Figure 7).
+template <typename From, typename To, bool ToCrashed, typename R, typename Reliable, typename... Ls, typename... Ps,
+          typename... Cs>
 consteval auto proj_comm(BL<Br<Ls, Ps, Cs>...>) {
-    using failure = typename first_failure<typename proj_walk<Cs, R>::type...>::type;
-    if constexpr (!std::is_void_v<failure>) {
+    using failure = typename first_failure<typename proj_walk<Cs, R, Reliable>::type...>::type;
+    constexpr bool has_crash_branch = (std::is_same_v<Ls, g::CrashLabel> || ...);
+    if constexpr (ToCrashed && std::is_same_v<R, To>) {
+        return std::type_identity<NotProjectable<projection_failure::ProjectionOntoCrashedRole>>{};
+    } else if constexpr (!std::is_void_v<failure>) {
         return std::type_identity<failure>{};
     } else {
-        using first = typename proj_walk<Cs...[0], R>::type;
-        if constexpr (!(queue_agrees_v<typename proj_walk<Cs, R>::type, first> && ...)) {
+        using projected = BL<Br<Ls, Ps, typename proj_walk<Cs, R, Reliable>::type::local>...>;
+        using first = typename proj_walk<Cs...[0], R, Reliable>::type;
+        if constexpr (!(queue_agrees_v<typename proj_walk<Cs, R, Reliable>::type, first> && ...)) {
             return std::type_identity<NotProjectable<projection_failure::QueueDiffersAcrossBranches>>{};
         } else if constexpr (std::is_same_v<R, From>) {
+            // No role sends the crash label.  The choice stays a Select, so
+            // the receiver can tell the message from the crash.
             return std::type_identity<Projected<
                 typename first::queue,
-                typename rebuild<Side::Internal, To, BL<Br<Ls, Ps, typename proj_walk<Cs, R>::type::local>...>>::type>>{};
+                typename rebuild_internal<To, typename without_crash<projected>::type, has_crash_branch>::type>>{};
         } else if constexpr (std::is_same_v<R, To>) {
-            return std::type_identity<Projected<
-                typename first::queue,
-                typename rebuild<Side::External, From, BL<Br<Ls, Ps, typename proj_walk<Cs, R>::type::local>...>>::type>>{};
+            if constexpr (!is_reliable_role_v<Reliable, From> && !has_crash_branch) {
+                return std::type_identity<NotProjectable<projection_failure::MissingCrashBranch>>{};
+            } else if constexpr (is_reliable_role_v<Reliable, From> && has_crash_branch) {
+                return std::type_identity<NotProjectable<projection_failure::CrashBranchFromReliableSender>>{};
+            } else {
+                return std::type_identity<
+                    Projected<typename first::queue, typename rebuild<Side::External, From, projected>::type>>{};
+            }
         } else {
-            using merged = typename merge_all<typename proj_walk<Cs, R>::type::local...>::type;
+            using merged =
+                typename merge_all<merge_fuel_v<Reliable>, typename proj_walk<Cs, R, Reliable>::type::local...>::type;
             if constexpr (is_projection_failure_v<merged>) {
                 return std::type_identity<merged>{};
             } else {
@@ -527,10 +639,15 @@ consteval auto proj_comm(BL<Br<Ls, Ps, Cs>...>) {
     }
 }
 
-template <typename From, typename To, typename L, typename P, typename C, typename R>
+// FromCrashed: the sender crashed after it sent the message.
+template <typename From, typename To, bool FromCrashed, typename L, typename P, typename C, typename R, typename Reliable>
 consteval auto proj_en_route() {
-    using inner = typename proj_walk<C, R>::type;
-    if constexpr (is_projection_failure_v<inner>) {
+    using inner = typename proj_walk<C, R, Reliable>::type;
+    if constexpr (FromCrashed && std::is_same_v<R, From>) {
+        return std::type_identity<NotProjectable<projection_failure::ProjectionOntoCrashedRole>>{};
+    } else if constexpr (std::is_same_v<R, To> && !is_reliable_role_v<Reliable, From>) {
+        return std::type_identity<NotProjectable<projection_failure::EnRouteFromUnreliableSender>>{};
+    } else if constexpr (is_projection_failure_v<inner>) {
         return std::type_identity<inner>{};
     } else if constexpr (std::is_same_v<R, From>) {
         return std::type_identity<
@@ -542,44 +659,76 @@ consteval auto proj_en_route() {
     }
 }
 
-template <typename R>
-struct proj_walk<g::End, R> {
+template <typename R, typename Reliable>
+struct proj_walk<g::End, R, Reliable> {
     using type = Projected<OutQueue<>, End>;
 };
-template <typename R>
-struct proj_walk<g::Var, R> {
+template <typename R, typename Reliable>
+struct proj_walk<g::Var, R, Reliable> {
     using type = Projected<OutQueue<>, Continue>;
 };
-template <typename B, typename R>
-struct proj_walk<g::Rec<B>, R> {
-    using type = typename decltype(proj_rec<B, R>())::type;
+template <typename B, typename R, typename Reliable>
+struct proj_walk<g::Rec<B>, R, Reliable> {
+    using type = typename decltype(proj_rec<B, R, Reliable>())::type;
 };
-template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename R>
-struct proj_walk<g::Comm<From, To, g::Branch<Ls, Ps, Cs>...>, R> {
-    using type = typename decltype(proj_comm<From, To, R>(BL<Br<Ls, Ps, Cs>...>{}))::type;
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename R, typename Reliable>
+    requires(!g::detail::is_crashed_v<To>)
+struct proj_walk<g::Comm<From, To, g::Branch<Ls, Ps, Cs>...>, R, Reliable> {
+    using type = typename decltype(proj_comm<From, To, false, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
 };
-template <typename From, typename To, typename L, typename P, typename C, typename R>
-struct proj_walk<g::EnRoute<From, To, L, P, C>, R> {
-    using type = typename decltype(proj_en_route<From, To, L, P, C, R>())::type;
+template <typename From, typename To, typename L, typename P, typename C, typename R, typename Reliable>
+    requires(!g::detail::is_crashed_v<From>)
+struct proj_walk<g::EnRoute<From, To, L, P, C>, R, Reliable> {
+    using type = typename decltype(proj_en_route<From, To, false, L, P, C, R, Reliable>())::type;
 };
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename R, typename Reliable>
+struct proj_walk<g::Comm<From, g::Crashed<To>, g::Branch<Ls, Ps, Cs>...>, R, Reliable> {
+    using type = typename decltype(proj_comm<From, To, true, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
+};
+template <typename From, typename To, typename L, typename P, typename C, typename R, typename Reliable>
+struct proj_walk<g::EnRoute<g::Crashed<From>, To, L, P, C>, R, Reliable> {
+    using type = typename decltype(proj_en_route<From, To, true, L, P, C, R, Reliable>())::type;
+};
+
+template <typename G, typename R, typename Reliable>
+consteval auto project_under() {
+    if constexpr (g::role_in_v<R, g::crashed_roles_t<G>>) {
+        return std::type_identity<NotProjectable<projection_failure::ProjectionOntoCrashedRole>>{};
+    } else {
+        return std::type_identity<typename proj_walk<G, R, Reliable>::type>{};
+    }
+}
 
 }  // namespace detail::proj
 
 // The projection of G onto R: a Projected<Queue, Local>, or a
-// NotProjectable<Reason>.  G must be well-formed.
+// NotProjectable<Reason>.  G must be well-formed.  Every role counts as
+// reliable, so a crash branch is refused.
 template <typename G, typename R>
     requires global::is_global_well_formed_v<G>
-using project_t = typename detail::proj::proj_walk<G, R>::type;
+using project_t = typename decltype(detail::proj::project_under<G, R, EveryRoleReliable>())::type;
 
 template <typename G, typename R>
     requires global::is_global_well_formed_v<G>
 inline constexpr bool projects_v = !is_projection_failure_v<project_t<G, R>>;
 
-template <typename G, typename R>
+// The crash-stop projection of G onto R for the roles in Reliable
+// (Definition 4.3 of the crash-stop paper).
+template <typename G, typename R, typename Reliable>
+    requires global::is_global_well_formed_v<G> && is_reliable_set<Reliable>::value
+using project_crash_t = typename decltype(detail::proj::project_under<G, R, Reliable>())::type;
+
+template <typename G, typename R, typename Reliable>
+    requires global::is_global_well_formed_v<G> && is_reliable_set<Reliable>::value
+inline constexpr bool projects_crash_v = !is_projection_failure_v<project_crash_t<G, R, Reliable>>;
+
+// The projection gate.  Reliable is EveryRoleReliable for project_t and
+// a ReliableSet for the crash-stop projection.
+template <typename G, typename R, typename Reliable = EveryRoleReliable>
 consteval void ensure_projectable() noexcept {
     global::ensure_global_well_formed<G>();
     if constexpr (global::is_global_well_formed_v<G>) {
-        using P = project_t<G, R>;
+        using P = typename decltype(detail::proj::project_under<G, R, Reliable>())::type;
         if constexpr (is_projection_failure_v<P>) {
             using reason = typename P::reason;
             if constexpr (std::is_same_v<reason, projection_failure::MergeShapeMismatch>) {
@@ -620,12 +769,44 @@ consteval void ensure_projectable() noexcept {
                 static_assert(detail::proj::dependent_false_v<G, R>,
                               "fixy::session::diagnostic [Projection_Loop_Without_Action]: the projection of a loop "
                               "body is only a loop-back, so the role would loop for ever without an action.");
+            } else if constexpr (std::is_same_v<reason, projection_failure::MissingCrashBranch>) {
+                static_assert(detail::proj::dependent_false_v<G, R>,
+                              "fixy::session::diagnostic [Projection_Missing_Crash_Branch]: the role receives from a "
+                              "sender that is not reliable, and the transmission has no crash branch.  If the sender "
+                              "crashes, the role waits for ever (Definition 4.3 of the crash-stop paper).  Add "
+                              "Branch<global::CrashLabel, void, Cont>, or name the sender in the reliable set.");
+            } else if constexpr (std::is_same_v<reason, projection_failure::CrashBranchFromReliableSender>) {
+                static_assert(detail::proj::dependent_false_v<G, R>,
+                              "fixy::session::diagnostic [Projection_Crash_Branch_From_Reliable_Sender]: the "
+                              "transmission has a crash branch, and its sender is reliable.  The branch can never run, "
+                              "and rule Sub-& lets no implementation omit it.  Remove the branch, or remove the sender "
+                              "from the reliable set.  project_t counts every role as reliable.");
+            } else if constexpr (std::is_same_v<reason, projection_failure::ProjectionOntoCrashedRole>) {
+                static_assert(detail::proj::dependent_false_v<G, R>,
+                              "fixy::session::diagnostic [Projection_Onto_Crashed_Role]: the role carries the crash "
+                              "annotation.  A crashed role has the type stop, not a projection.");
+            } else if constexpr (std::is_same_v<reason, projection_failure::EnRouteFromUnreliableSender>) {
+                static_assert(detail::proj::dependent_false_v<G, R>,
+                              "fixy::session::diagnostic [Projection_EnRoute_From_Unreliable_Sender]: the role is the "
+                              "receiver of an en-route message from a role that is not reliable.  Its type is the "
+                              "whole choice with the crash branch, and an EnRoute node keeps only the chosen branch.");
             } else {
                 static_assert(detail::proj::dependent_false_v<G, R>,
                               "fixy::session::diagnostic [Projection_Refused]: the projection refused for a reason "
                               "this gate does not name.");
             }
         }
+    }
+}
+
+template <typename G, typename R, typename Reliable>
+consteval void ensure_crash_projectable() noexcept {
+    if constexpr (!is_reliable_set<Reliable>::value) {
+        static_assert(detail::proj::dependent_false_v<G, Reliable>,
+                      "fixy::session::diagnostic [Projection_Reliable_Set_Malformed]: the set of reliable roles "
+                      "must be a ReliableSet<Roles...>.");
+    } else {
+        ensure_projectable<G, R, Reliable>();
     }
 }
 
@@ -877,6 +1058,12 @@ template <typename Q, typename L, typename P, typename K>
 struct strip<Recv<PeerMsg<Q, L, P>, K>> {
     using type = Recv<Labelled<L, P>, typename strip<K>::type>;
 };
+// The crash branch becomes the crash branch of fixy/session/Crash.h, so
+// mint_crash_session accepts the binary view of a crash-stop projection.
+template <typename Q, typename P, typename K>
+struct strip<Recv<PeerMsg<Q, g::CrashLabel, P>, K>> {
+    using type = Recv<Crash<Q>, typename strip<K>::type>;
+};
 template <typename... Bs>
 struct strip<Select<Bs...>> {
     using type = Select<typename strip<Bs>::type...>;
@@ -896,6 +1083,116 @@ template <typename Local>
     requires(local_peers_t<Local>::size <= 1)
 using strip_peers_t = typename detail::proj::strip<Local>::type;
 
+// ── Liveness under crash-stop failures ───────────────────────────────
+//
+// Theorem 4.31 of the crash-stop paper: a typing context associated with
+// a global type G that has no runtime constructs, for a set R of
+// reliable roles, is R-safe, R-deadlock-free and R-live.  R-liveness
+// (Definition 4.28) quantifies over fair paths, and a fair path has
+// three clauses (Definition 4.27): each enabled send eventually fires
+// (F1), each enabled receive eventually fires (F2), and each enabled
+// crash detection eventually fires (F3).  Without F3 a path can ignore
+// a crash for ever and still count as fair.  Definition 17 of the
+// CONCUR 2022 paper of Barwell, Scalas, Yoshida and Zhou lacks F3.  The
+// technical report arXiv 2207.02015, version 3 of 2023-02-22, has it as
+// clause (2).  A runtime monitor of this liveness checks F3 beside F1
+// and F2: a receiver whose peer has crashed, with an empty queue from
+// that peer, must eventually take its crash branch.  CrashWatched::branch
+// of fixy/session/CrashTransport.h takes it on the first poll that finds
+// the queue empty and the peer crashed.
+//
+// The predicate asks for three conditions, each at least as strong as
+// the hypothesis of the theorem:
+//
+//   - G is well-formed and has no runtime construct: no EnRoute node and
+//     no crash annotation.
+//   - G is balanced+ (fixy/session/Global.h).  The crash-stop theorem
+//     does not ask for it.  With it the verdict also holds in the
+//     asynchronous theory of fixy/session/Liveness.h.
+//   - G projects under R onto each of its roles (project_crash_t).
+//
+// The context made of these projections, with empty queues, is then
+// R-live.  Association under crashes (Definition 4.19), which relates a
+// context with crashed roles to a global type, is not modelled here.
+// The result covers one session, as in fixy/session/Liveness.h.
+
+template <typename G, typename Reliable>
+struct CrashLiveness {};
+
+namespace detail::proj {
+
+template <typename G, typename Reliable, typename RL>
+struct each_role_crash_projects;
+template <typename G, typename Reliable, typename... Rs>
+struct each_role_crash_projects<G, Reliable, g::Roles<Rs...>>
+    : std::bool_constant<(!is_projection_failure_v<typename decltype(project_under<G, Rs, Reliable>())::type> && ...)> {};
+
+template <typename G, typename Reliable, typename RL>
+struct first_crash_unprojectable {
+    using type = void;
+};
+template <typename G, typename Reliable, typename R, typename... Rest>
+struct first_crash_unprojectable<G, Reliable, g::Roles<R, Rest...>> {
+    using type = std::conditional_t<is_projection_failure_v<typename decltype(project_under<G, R, Reliable>())::type>, R,
+                                    typename first_crash_unprojectable<G, Reliable, g::Roles<Rest...>>::type>;
+};
+
+template <typename G>
+inline constexpr bool holds_runtime_construct_v = g::holds_en_route_v<G> || g::crashed_roles_t<G>::size != 0;
+
+}  // namespace detail::proj
+
+template <typename Q>
+struct is_crash_live_by_construction : std::false_type {};
+template <typename G, typename... Rs>
+struct is_crash_live_by_construction<CrashLiveness<G, ReliableSet<Rs...>>> : std::bool_constant<[] {
+    if constexpr (global::is_balanced_plus_v<G>) {
+        if constexpr (detail::proj::holds_runtime_construct_v<G>) {
+            return false;
+        } else {
+            return detail::proj::each_role_crash_projects<G, ReliableSet<Rs...>, global::roles_t<G>>::value;
+        }
+    } else {
+        return false;
+    }
+}()> {};
+
+template <typename G, typename Reliable>
+inline constexpr bool crash_live_by_construction_v = is_crash_live_by_construction<CrashLiveness<G, Reliable>>::value;
+
+template <typename G, typename Reliable>
+consteval void ensure_crash_live_by_construction() noexcept {
+    global::ensure_balanced_plus<G>();
+    if constexpr (global::is_balanced_plus_v<G>) {
+        if constexpr (detail::proj::holds_runtime_construct_v<G>) {
+            static_assert(detail::proj::dependent_false_v<G, Reliable>,
+                          "fixy::session::diagnostic [Crash_Liveness_Runtime_Construct]: the global type holds an "
+                          "EnRoute node or a crash annotation.  Theorem 4.31 of the crash-stop paper covers a global "
+                          "type written at design time.  Check the protocol, not a state it reaches.");
+        } else if constexpr (is_reliable_set<Reliable>::value) {
+            using role = typename detail::proj::first_crash_unprojectable<G, Reliable, global::roles_t<G>>::type;
+            if constexpr (!std::is_void_v<role>) {
+                ensure_crash_projectable<G, role, Reliable>();
+            }
+        } else {
+            ensure_crash_projectable<G, void, Reliable>();
+        }
+    }
+}
+
+namespace detail::proj::witness {
+
+using global::detail::witness::RoleA;
+using global::detail::witness::RoleB;
+using global::detail::witness::LabelX;
+
+// RoleB detects the crash of RoleA.
+using DetectsCrash = global::detail::witness::WithCrashBranch;
+// RoleB would wait for ever for a RoleA that crashed.
+using NoCrashBranch = global::detail::witness::Once;
+
+}  // namespace detail::proj::witness
+
 }  // namespace fixy::session
 
 template <>
@@ -904,4 +1201,24 @@ struct foundation::contracts::armed_cell<::fixy::session::is_projection_failure>
                               ::fixy::session::NotProjectable<int>>;
     using refuses = witnesses<int, ::fixy::session::Projected<::fixy::session::OutQueue<>, ::fixy::session::End>,
                               ::fixy::session::End>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::session::is_crash_live_by_construction> {
+    using accepts = witnesses<
+        ::fixy::session::CrashLiveness<::fixy::session::global::End, ::fixy::session::NoReliableRoles>,
+        ::fixy::session::CrashLiveness<::fixy::session::detail::proj::witness::DetectsCrash,
+                                       ::fixy::session::NoReliableRoles>,
+        ::fixy::session::CrashLiveness<::fixy::session::detail::proj::witness::NoCrashBranch,
+                                       ::fixy::session::ReliableSet<::fixy::session::detail::proj::witness::RoleA>>>;
+    using refuses = witnesses<
+        int,
+        ::fixy::session::CrashLiveness<::fixy::session::detail::proj::witness::NoCrashBranch,
+                                       ::fixy::session::NoReliableRoles>,
+        ::fixy::session::CrashLiveness<::fixy::session::detail::proj::witness::DetectsCrash,
+                                       ::fixy::session::ReliableSet<::fixy::session::detail::proj::witness::RoleA>>,
+        ::fixy::session::CrashLiveness<::fixy::session::global::detail::witness::SenderCrashed,
+                                       ::fixy::session::NoReliableRoles>,
+        ::fixy::session::CrashLiveness<::fixy::session::global::detail::witness::Starves,
+                                       ::fixy::session::NoReliableRoles>>;
 };

@@ -58,6 +58,26 @@
 // default.  A header that adds a global combinator, for example a crash
 // annotation, adds a specialization of each walk beside that
 // combinator.  If it forgets one, the build stops.
+//
+// Crash-stop failures follow Barwell, Hou, Yoshida and Zhou, "Crash-Stop
+// Failures in Asynchronous Multiparty Session Types" (LMCS 21:2, 2025),
+// section 4.1.  The paper adds no syntax to a design-time global type
+// except a special label.  Here that label is CrashLabel: the branch
+// Branch<CrashLabel, void, G> of a transmission from p to q is what q
+// does when it detects that p crashed.  No role sends the label.  A
+// transmission cannot have the crash branch as its only branch, and the
+// branch carries no payload.
+//
+// The runtime annotation Crashed<Role> marks a role that crashed.  It
+// takes the two positions of Figure 6 of that paper: the receiver of a
+// Comm, and the sender of an EnRoute.  role removal (Definition 4.10,
+// remove_role_t below) writes it.  Each walk of this header has a
+// specialization for the two annotated nodes.  roles_t names each
+// participant, crashed or not.  crashed_roles_t names each role that
+// carries the annotation somewhere.  The paper's set of crashed roles
+// (Definition 4.1) leaves out a crashed sender of an en-route message
+// (its Remark 4.2), so crashed_roles_t can be larger, and each check
+// that reads it is stricter than the paper.
 
 #include <foundation/contracts/Armed.h>
 
@@ -103,6 +123,20 @@ struct EnRoute {
     using label = Label;
     using payload = Payload;
     using next = Cont;
+};
+
+// The label of a crash handling branch.  It is a pseudo-message: the
+// receiver takes the branch when it detects that the sender crashed.
+struct CrashLabel {};
+
+// The runtime annotation of a crashed role.  Comm<From, Crashed<To>,
+// ...> is a transmission to a crashed receiver: From still sends, and
+// the message is lost.  EnRoute<Crashed<From>, To, ...> is a message
+// that From sent before it crashed.  Its label is CrashLabel when it is
+// the pseudo-message that lets To detect the crash.
+template <typename Role>
+struct Crashed {
+    using role = Role;
 };
 
 // ── Role lists ───────────────────────────────────────────────────────
@@ -151,6 +185,22 @@ struct role_union_all<> {
 template <typename RL, typename... Rest>
 struct role_union_all<RL, Rest...> : role_union<RL, typename role_union_all<Rest...>::type> {};
 
+// The roles of RL that are not in Remove, in the order of RL.
+template <typename RL, typename Remove>
+struct role_difference;
+template <typename... Rs, typename Remove>
+struct role_difference<Roles<Rs...>, Remove> {
+    using type = typename role_union_all<std::conditional_t<role_in<Rs, Remove>::value, Roles<>, Roles<Rs>>...>::type;
+};
+
+template <typename R>
+inline constexpr bool is_crashed_v = false;
+template <typename R>
+inline constexpr bool is_crashed_v<Crashed<R>> = true;
+
+template <typename L>
+inline constexpr bool is_crash_label_v = std::is_same_v<L, CrashLabel>;
+
 }  // namespace detail
 
 template <typename R, typename RL>
@@ -176,12 +226,20 @@ struct is_global_type<Var> : std::true_type {};
 template <typename Body>
 struct is_global_type<Rec<Body>> : is_global_type<Body> {};
 template <typename From, typename To, typename... Bs>
+    requires(!detail::is_crashed_v<To>)
 struct is_global_type<Comm<From, To, Bs...>> : std::false_type {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct is_global_type<Comm<From, To, Branch<Ls, Ps, Cs>...>>
     : std::bool_constant<(is_global_type<Cs>::value && ...)> {};
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct is_global_type<EnRoute<From, To, L, P, C>> : is_global_type<C> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct is_global_type<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(is_global_type<Cs>::value && ...)> {};
+template <typename From, typename To, typename L, typename P, typename C>
+struct is_global_type<EnRoute<Crashed<From>, To, L, P, C>> : is_global_type<C> {};
 
 template <typename G>
 inline constexpr bool is_global_type_v = is_global_type<G>::value;
@@ -207,11 +265,21 @@ struct role_walk<Var> {
 template <typename Body>
 struct role_walk<Rec<Body>> : role_walk<Body> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
     using type = typename role_union_all<Roles<From, To>, typename role_walk<Cs>::type...>::type;
 };
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct role_walk<EnRoute<From, To, L, P, C>> {
+    using type = typename role_union<Roles<From, To>, typename role_walk<C>::type>::type;
+};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<Roles<From, To>, typename role_walk<Cs>::type...>::type;
+};
+template <typename From, typename To, typename L, typename P, typename C>
+struct role_walk<EnRoute<Crashed<From>, To, L, P, C>> {
     using type = typename role_union<Roles<From, To>, typename role_walk<C>::type>::type;
 };
 
@@ -228,11 +296,22 @@ struct active_role_walk<Var> {
 template <typename Body>
 struct active_role_walk<Rec<Body>> : active_role_walk<Body> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct active_role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
     using type = typename role_union_all<Roles<From, To>, typename active_role_walk<Cs>::type...>::type;
 };
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct active_role_walk<EnRoute<From, To, L, P, C>> {
+    using type = typename role_union<Roles<To>, typename active_role_walk<C>::type>::type;
+};
+// A crashed receiver cannot act.  The sender still sends.
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct active_role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<Roles<From>, typename active_role_walk<Cs>::type...>::type;
+};
+template <typename From, typename To, typename L, typename P, typename C>
+struct active_role_walk<EnRoute<Crashed<From>, To, L, P, C>> {
     using type = typename role_union<Roles<To>, typename active_role_walk<C>::type>::type;
 };
 
@@ -249,12 +328,87 @@ struct sending_role_walk<Var> {
 template <typename Body>
 struct sending_role_walk<Rec<Body>> : sending_role_walk<Body> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct sending_role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
     using type = typename role_union_all<typename sending_role_walk<Cs>::type...>::type;
 };
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct sending_role_walk<EnRoute<From, To, L, P, C>> {
     using type = typename role_union<Roles<From>, typename sending_role_walk<C>::type>::type;
+};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct sending_role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<typename sending_role_walk<Cs>::type...>::type;
+};
+// A message that a role sent before it crashed stays in the queue.  The
+// crash pseudo-message is not in a queue.
+template <typename From, typename To, typename L, typename P, typename C>
+struct sending_role_walk<EnRoute<Crashed<From>, To, L, P, C>> {
+    using type = typename role_union<std::conditional_t<is_crash_label_v<L>, Roles<>, Roles<From>>,
+                                     typename sending_role_walk<C>::type>::type;
+};
+
+// The roles that carry the crash annotation somewhere in G.
+template <typename G>
+struct crashed_role_walk;
+template <>
+struct crashed_role_walk<End> {
+    using type = Roles<>;
+};
+template <>
+struct crashed_role_walk<Var> {
+    using type = Roles<>;
+};
+template <typename Body>
+struct crashed_role_walk<Rec<Body>> : crashed_role_walk<Body> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
+struct crashed_role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<typename crashed_role_walk<Cs>::type...>::type;
+};
+template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
+struct crashed_role_walk<EnRoute<From, To, L, P, C>> : crashed_role_walk<C> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct crashed_role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<Roles<To>, typename crashed_role_walk<Cs>::type...>::type;
+};
+template <typename From, typename To, typename L, typename P, typename C>
+struct crashed_role_walk<EnRoute<Crashed<From>, To, L, P, C>> {
+    using type = typename role_union<Roles<From>, typename crashed_role_walk<C>::type>::type;
+};
+
+// The roles that occur somewhere without the crash annotation.
+template <typename G>
+struct plain_role_walk;
+template <>
+struct plain_role_walk<End> {
+    using type = Roles<>;
+};
+template <>
+struct plain_role_walk<Var> {
+    using type = Roles<>;
+};
+template <typename Body>
+struct plain_role_walk<Rec<Body>> : plain_role_walk<Body> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
+struct plain_role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<Roles<From, To>, typename plain_role_walk<Cs>::type...>::type;
+};
+template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
+struct plain_role_walk<EnRoute<From, To, L, P, C>> {
+    using type = typename role_union<Roles<From, To>, typename plain_role_walk<C>::type>::type;
+};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct plain_role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
+    using type = typename role_union_all<Roles<From>, typename plain_role_walk<Cs>::type...>::type;
+};
+template <typename From, typename To, typename L, typename P, typename C>
+struct plain_role_walk<EnRoute<Crashed<From>, To, L, P, C>> {
+    using type = typename role_union<Roles<To>, typename plain_role_walk<C>::type>::type;
 };
 
 // True when G holds a Var that no Rec inside G binds.
@@ -267,9 +421,16 @@ struct free_var_walk<Var> : std::true_type {};
 template <typename Body>
 struct free_var_walk<Rec<Body>> : std::false_type {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct free_var_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(free_var_walk<Cs>::value || ...)> {};
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct free_var_walk<EnRoute<From, To, L, P, C>> : free_var_walk<C> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct free_var_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(free_var_walk<Cs>::value || ...)> {};
+template <typename From, typename To, typename L, typename P, typename C>
+struct free_var_walk<EnRoute<Crashed<From>, To, L, P, C>> : free_var_walk<C> {};
 
 // True when G holds an EnRoute node anywhere.
 template <typename G>
@@ -281,9 +442,16 @@ struct en_route_walk<Var> : std::false_type {};
 template <typename Body>
 struct en_route_walk<Rec<Body>> : en_route_walk<Body> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct en_route_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(en_route_walk<Cs>::value || ...)> {};
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct en_route_walk<EnRoute<From, To, L, P, C>> : std::true_type {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct en_route_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(en_route_walk<Cs>::value || ...)> {};
+template <typename From, typename To, typename L, typename P, typename C>
+struct en_route_walk<EnRoute<Crashed<From>, To, L, P, C>> : std::true_type {};
 
 }  // namespace detail
 
@@ -302,6 +470,9 @@ inline constexpr bool holds_free_var_v = detail::free_var_walk<G>::value;
 template <typename G>
 inline constexpr bool holds_en_route_v = detail::en_route_walk<G>::value;
 
+template <typename G>
+using crashed_roles_t = typename detail::crashed_role_walk<G>::type;
+
 // ── Well-formedness ──────────────────────────────────────────────────
 //
 // The walk returns the first fault it finds, in depth-first order, so a
@@ -314,6 +485,9 @@ enum class GlobalFault : std::uint8_t {
     DuplicateLabel,
     UnboundVariable,
     UnguardedRecursion,
+    CrashOnlyChoice,
+    CrashLabelPayload,
+    MisplacedCrashAnnotation,
 };
 
 namespace detail {
@@ -342,8 +516,37 @@ consteval GlobalFault first_fault(std::initializer_list<GlobalFault> faults) noe
     return GlobalFault::None;
 }
 
+template <typename L, typename P>
+inline constexpr bool crash_payload_ok_v = !is_crash_label_v<L> || std::is_void_v<P>;
+
 template <typename G, bool Bound>
 struct fault_walk;
+
+// The faults of one transmission, before its continuations.  From and
+// To are the roles as written, so a Crashed that wraps the sender, or a
+// Crashed inside a Crashed, is a misplaced annotation.
+template <bool Bound, typename From, typename To, typename... Bs>
+struct comm_fault;
+template <bool Bound, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct comm_fault<Bound, From, To, Branch<Ls, Ps, Cs>...>
+    : std::integral_constant<GlobalFault, std::is_same_v<From, To>   ? GlobalFault::SelfCommunication
+                                          : is_crashed_v<From> || is_crashed_v<To> ? GlobalFault::MisplacedCrashAnnotation
+                                          : !label_set_distinct_v<Ls...>            ? GlobalFault::DuplicateLabel
+                                          : (is_crash_label_v<Ls> && ...)           ? GlobalFault::CrashOnlyChoice
+                                          : !(crash_payload_ok_v<Ls, Ps> && ...)    ? GlobalFault::CrashLabelPayload
+                                                                                    : first_fault({fault_walk<Cs, Bound>::value...})> {};
+
+// The faults of one en-route message.  A live role never sends the crash
+// label, and a crashed receiver has no en-route message (Definition
+// 4.10 removes it).
+template <bool Bound, bool FromCrashed, typename From, typename To, typename L, typename P, typename C>
+struct en_route_fault
+    : std::integral_constant<GlobalFault,
+                             std::is_same_v<From, To> ? GlobalFault::SelfCommunication
+                             : is_crashed_v<From> || is_crashed_v<To> || (!FromCrashed && is_crash_label_v<L>)
+                                 ? GlobalFault::MisplacedCrashAnnotation
+                             : !crash_payload_ok_v<L, P> ? GlobalFault::CrashLabelPayload
+                                                         : fault_walk<C, Bound>::value> {};
 template <bool Bound>
 struct fault_walk<End, Bound> : std::integral_constant<GlobalFault, GlobalFault::None> {};
 template <bool Bound>
@@ -356,15 +559,18 @@ struct fault_walk<Rec<Body>, Bound>
 template <typename From, typename To, bool Bound>
 struct fault_walk<Comm<From, To>, Bound> : std::integral_constant<GlobalFault, GlobalFault::EmptyChoice> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, bool Bound>
-struct fault_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>, Bound>
-    : std::integral_constant<GlobalFault, std::is_same_v<From, To> ? GlobalFault::SelfCommunication
-                                          : !label_set_distinct_v<Ls...>
-                                              ? GlobalFault::DuplicateLabel
-                                              : first_fault({fault_walk<Cs, Bound>::value...})> {};
+    requires(!detail::is_crashed_v<To>)
+struct fault_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>, Bound> : comm_fault<Bound, From, To, Branch<Ls, Ps, Cs>...> {};
 template <typename From, typename To, typename L, typename P, typename C, bool Bound>
-struct fault_walk<EnRoute<From, To, L, P, C>, Bound>
-    : std::integral_constant<GlobalFault,
-                             std::is_same_v<From, To> ? GlobalFault::SelfCommunication : fault_walk<C, Bound>::value> {};
+    requires(!detail::is_crashed_v<From>)
+struct fault_walk<EnRoute<From, To, L, P, C>, Bound> : en_route_fault<Bound, false, From, To, L, P, C> {};
+template <typename From, typename To, bool Bound>
+struct fault_walk<Comm<From, Crashed<To>>, Bound> : std::integral_constant<GlobalFault, GlobalFault::EmptyChoice> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, bool Bound>
+struct fault_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>, Bound>
+    : comm_fault<Bound, From, To, Branch<Ls, Ps, Cs>...> {};
+template <typename From, typename To, typename L, typename P, typename C, bool Bound>
+struct fault_walk<EnRoute<Crashed<From>, To, L, P, C>, Bound> : en_route_fault<Bound, true, From, To, L, P, C> {};
 
 }  // namespace detail
 
@@ -405,10 +611,20 @@ struct path_meets<R, Var> : std::false_type {};
 template <typename R, typename Body>
 struct path_meets<R, Rec<Body>> : std::true_type {};
 template <typename R, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct path_meets<R, Comm<From, To, Branch<Ls, Ps, Cs>...>>
     : std::bool_constant<std::is_same_v<R, From> || std::is_same_v<R, To> || (path_meets<R, Cs>::value && ...)> {};
 template <typename R, typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct path_meets<R, EnRoute<From, To, L, P, C>> : std::bool_constant<std::is_same_v<R, To> || path_meets<R, C>::value> {};
+// The crashed receiver does not act.  The detection of a crash is an
+// action of the detecting receiver.
+template <typename R, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct path_meets<R, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<std::is_same_v<R, From> || (path_meets<R, Cs>::value && ...)> {};
+template <typename R, typename From, typename To, typename L, typename P, typename C>
+struct path_meets<R, EnRoute<Crashed<From>, To, L, P, C>>
+    : std::bool_constant<std::is_same_v<R, To> || path_meets<R, C>::value> {};
 
 template <typename Body, typename RL>
 struct loop_meets_each;
@@ -416,7 +632,8 @@ template <typename Body, typename... Rs>
 struct loop_meets_each<Body, Roles<Rs...>> : std::bool_constant<(path_meets<Rs, Body>::value && ...)> {};
 
 // True when each Rec in G passes loop_meets_each for each role in its
-// body.  Complexity: O(|G| * |roles|) walks of O(|G|) each.
+// body that has not crashed.  A crashed role cannot starve.
+// Complexity: O(|G| * |roles|) walks of O(|G|) each.
 template <typename G>
 struct balance_walk;
 template <>
@@ -425,11 +642,21 @@ template <>
 struct balance_walk<Var> : std::true_type {};
 template <typename Body>
 struct balance_walk<Rec<Body>>
-    : std::bool_constant<loop_meets_each<Body, typename role_walk<Body>::type>::value && balance_walk<Body>::value> {};
+    : std::bool_constant<
+          loop_meets_each<Body, typename role_difference<typename role_walk<Body>::type,
+                                                         typename crashed_role_walk<Body>::type>::type>::value
+          && balance_walk<Body>::value> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct balance_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(balance_walk<Cs>::value && ...)> {};
 template <typename From, typename To, typename L, typename P, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct balance_walk<EnRoute<From, To, L, P, C>> : balance_walk<C> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct balance_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(balance_walk<Cs>::value && ...)> {};
+template <typename From, typename To, typename L, typename P, typename C>
+struct balance_walk<EnRoute<Crashed<From>, To, L, P, C>> : balance_walk<C> {};
 
 }  // namespace detail
 
@@ -464,11 +691,21 @@ struct en_route_pair_walk<P, Q, Var> : std::false_type {};
 template <typename P, typename Q, typename Body>
 struct en_route_pair_walk<P, Q, Rec<Body>> : en_route_pair_walk<P, Q, Body> {};
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct en_route_pair_walk<P, Q, Comm<From, To, Branch<Ls, Ps, Cs>...>>
     : std::bool_constant<(en_route_pair_walk<P, Q, Cs>::value || ...)> {};
 template <typename P, typename Q, typename From, typename To, typename L, typename Pl, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct en_route_pair_walk<P, Q, EnRoute<From, To, L, Pl, C>>
     : std::bool_constant<(std::is_same_v<P, From> && std::is_same_v<Q, To>) || en_route_pair_walk<P, Q, C>::value> {};
+template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct en_route_pair_walk<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(en_route_pair_walk<P, Q, Cs>::value || ...)> {};
+// The crash pseudo-message is not in a queue.
+template <typename P, typename Q, typename From, typename To, typename L, typename Pl, typename C>
+struct en_route_pair_walk<P, Q, EnRoute<Crashed<From>, To, L, Pl, C>>
+    : std::bool_constant<(std::is_same_v<P, From> && std::is_same_v<Q, To> && !is_crash_label_v<L>)
+                         || en_route_pair_walk<P, Q, C>::value> {};
 
 consteval std::int64_t agreed_count(std::initializer_list<std::int64_t> counts) noexcept {
     std::int64_t agreed = count_undefined;
@@ -498,15 +735,29 @@ struct en_route_count<P, Q, Rec<Body>>
                                  ? en_route_count<P, Q, Body>::value
                                  : count_undefined> {};
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
 struct en_route_count<P, Q, Comm<From, To, Branch<Ls, Ps, Cs>...>>
     : std::integral_constant<std::int64_t, (std::is_same_v<P, From> && std::is_same_v<Q, To>)
                                                ? ((en_route_pair_walk<P, Q, Cs>::value || ...) ? count_undefined : 0)
                                                : agreed_count({en_route_count<P, Q, Cs>::value...})> {};
 template <typename P, typename Q, typename From, typename To, typename L, typename Pl, typename C>
+    requires(!detail::is_crashed_v<From>)
 struct en_route_count<P, Q, EnRoute<From, To, L, Pl, C>>
     : std::integral_constant<std::int64_t,
                              en_route_count<P, Q, C>::value == count_undefined ? count_undefined
                              : (std::is_same_v<P, From> && std::is_same_v<Q, To>)
+                                 ? en_route_count<P, Q, C>::value + 1
+                                 : en_route_count<P, Q, C>::value> {};
+template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct en_route_count<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::integral_constant<std::int64_t, (std::is_same_v<P, From> && std::is_same_v<Q, To>)
+                                               ? ((en_route_pair_walk<P, Q, Cs>::value || ...) ? count_undefined : 0)
+                                               : agreed_count({en_route_count<P, Q, Cs>::value...})> {};
+template <typename P, typename Q, typename From, typename To, typename L, typename Pl, typename C>
+struct en_route_count<P, Q, EnRoute<Crashed<From>, To, L, Pl, C>>
+    : std::integral_constant<std::int64_t,
+                             en_route_count<P, Q, C>::value == count_undefined ? count_undefined
+                             : (std::is_same_v<P, From> && std::is_same_v<Q, To> && !is_crash_label_v<L>)
                                  ? en_route_count<P, Q, C>::value + 1
                                  : en_route_count<P, Q, C>::value> {};
 
@@ -539,6 +790,176 @@ struct is_balanced_plus : std::bool_constant<[] {
 
 template <typename G>
 inline constexpr bool is_balanced_plus_v = is_balanced_plus<G>::value;
+
+// ── Crash annotations (Definitions 4.10 and 4.15) ────────────────────
+//
+// A global type with crash annotations is well-annotated for a set of
+// reliable roles when no reliable role carries the annotation (WA1) and
+// no role carries it at one position and occurs without it at another
+// (WA3).  Clause WA2 of the paper relates the annotations to the set of
+// crashed roles of the transition system, which this header does not
+// model.  crashed_roles_t can hold more roles than the set of crashed
+// roles of Definition 4.1, so both clauses here are stricter.
+//
+// The question is a type, so that the predicate takes one argument and
+// can hold an armed cell.
+
+template <typename G, typename ReliableRoles>
+struct CrashAnnotation {};
+
+template <typename Q>
+struct is_well_annotated : std::false_type {};
+template <typename G, typename... Reliable>
+struct is_well_annotated<CrashAnnotation<G, Roles<Reliable...>>> : std::bool_constant<[] {
+    if constexpr (is_global_well_formed_v<G>) {
+        using crashed = crashed_roles_t<G>;
+        using plain = typename detail::plain_role_walk<G>::type;
+        return !(role_in_v<Reliable, crashed> || ...)
+               && std::is_same_v<typename detail::role_difference<crashed, plain>::type, crashed>;
+    } else {
+        return false;
+    }
+}()> {};
+
+template <typename G, typename ReliableRoles>
+inline constexpr bool is_well_annotated_v = is_well_annotated<CrashAnnotation<G, ReliableRoles>>::value;
+
+// The result of a role removal that Definition 4.10 does not define: the
+// removed role sends a transmission that has no crash branch, or the
+// role has already crashed.
+struct RemovalUndefined {};
+
+namespace detail {
+
+template <typename... Bs>
+struct crash_continuation {
+    using type = void;
+};
+template <typename L, typename P, typename C, typename... Rest>
+struct crash_continuation<Branch<L, P, C>, Rest...> {
+    using type = std::conditional_t<is_crash_label_v<L>, C, typename crash_continuation<Rest...>::type>;
+};
+
+template <typename G, typename R>
+struct removal_walk;
+
+template <typename R, typename... Cs>
+inline constexpr bool removal_defined_v = (!std::is_same_v<typename removal_walk<Cs, R>::type, RemovalUndefined> && ...);
+
+// The crash branch of a transmission whose sender R crashed.  The
+// continuations of the other branches must have a removal too, as in the
+// paper, although the result keeps only the crash branch.
+template <typename R, typename... Ls, typename... Ps, typename... Cs>
+consteval auto removal_crash_branch(Branch<Ls, Ps, Cs>*...) {
+    using crash = typename crash_continuation<Branch<Ls, Ps, Cs>...>::type;
+    if constexpr (std::is_void_v<crash> || !removal_defined_v<R, Cs...>) {
+        return std::type_identity<RemovalUndefined>{};
+    } else {
+        return std::type_identity<typename removal_walk<crash, R>::type>{};
+    }
+}
+
+template <typename R>
+struct removal_walk<End, R> {
+    using type = End;
+};
+template <typename R>
+struct removal_walk<Var, R> {
+    using type = Var;
+};
+template <typename Body, typename R>
+struct removal_walk<Rec<Body>, R> {
+    static consteval auto select() {
+        using inner = typename removal_walk<Body, R>::type;
+        if constexpr (std::is_same_v<inner, RemovalUndefined>) {
+            return std::type_identity<RemovalUndefined>{};
+        } else if constexpr (active_role_walk<inner>::type::size == 0) {
+            return std::type_identity<End>{};
+        } else {
+            return std::type_identity<Rec<inner>>{};
+        }
+    }
+    using type = typename decltype(select())::type;
+};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename R>
+    requires(!detail::is_crashed_v<To>)
+struct removal_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>, R> {
+    static consteval auto select() {
+        if constexpr (std::is_same_v<From, R>) {
+            using next = typename decltype(removal_crash_branch<R>(static_cast<Branch<Ls, Ps, Cs>*>(nullptr)...))::type;
+            if constexpr (std::is_same_v<next, RemovalUndefined>) {
+                return std::type_identity<RemovalUndefined>{};
+            } else {
+                return std::type_identity<EnRoute<Crashed<From>, To, CrashLabel, void, next>>{};
+            }
+        } else if constexpr (!removal_defined_v<R, Cs...>) {
+            return std::type_identity<RemovalUndefined>{};
+        } else if constexpr (std::is_same_v<To, R>) {
+            return std::type_identity<Comm<From, Crashed<To>, Branch<Ls, Ps, typename removal_walk<Cs, R>::type>...>>{};
+        } else {
+            return std::type_identity<Comm<From, To, Branch<Ls, Ps, typename removal_walk<Cs, R>::type>...>>{};
+        }
+    }
+    using type = typename decltype(select())::type;
+};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename R>
+struct removal_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>, R> {
+    static consteval auto select() {
+        if constexpr (std::is_same_v<From, R>) {
+            // Both roles crashed: the prefix goes, and the crash branch stays.
+            return removal_crash_branch<R>(static_cast<Branch<Ls, Ps, Cs>*>(nullptr)...);
+        } else if constexpr (std::is_same_v<To, R> || !removal_defined_v<R, Cs...>) {
+            return std::type_identity<RemovalUndefined>{};
+        } else {
+            return std::type_identity<Comm<From, Crashed<To>, Branch<Ls, Ps, typename removal_walk<Cs, R>::type>...>>{};
+        }
+    }
+    using type = typename decltype(select())::type;
+};
+template <typename From, typename To, typename L, typename P, typename C, typename R>
+    requires(!detail::is_crashed_v<From>)
+struct removal_walk<EnRoute<From, To, L, P, C>, R> {
+    static consteval auto select() {
+        using next = typename removal_walk<C, R>::type;
+        if constexpr (std::is_same_v<next, RemovalUndefined>) {
+            return std::type_identity<RemovalUndefined>{};
+        } else if constexpr (std::is_same_v<From, R>) {
+            // A message the role sent before it crashed stays available.
+            return std::type_identity<EnRoute<Crashed<From>, To, L, P, next>>{};
+        } else if constexpr (std::is_same_v<To, R>) {
+            return std::type_identity<next>{};
+        } else {
+            return std::type_identity<EnRoute<From, To, L, P, next>>{};
+        }
+    }
+    using type = typename decltype(select())::type;
+};
+template <typename From, typename To, typename L, typename P, typename C, typename R>
+struct removal_walk<EnRoute<Crashed<From>, To, L, P, C>, R> {
+    static consteval auto select() {
+        using next = typename removal_walk<C, R>::type;
+        if constexpr (std::is_same_v<next, RemovalUndefined> || std::is_same_v<From, R>) {
+            return std::type_identity<RemovalUndefined>{};
+        } else if constexpr (std::is_same_v<To, R>) {
+            return std::type_identity<next>{};
+        } else {
+            return std::type_identity<EnRoute<Crashed<From>, To, L, P, next>>{};
+        }
+    }
+    using type = typename decltype(select())::type;
+};
+
+}  // namespace detail
+
+// G with the live role R removed (Definition 4.10): each occurrence of R
+// carries the crash annotation, a transmission that R sends becomes the
+// crash pseudo-message, and a transmission between two crashed roles
+// goes.  RemovalUndefined where the paper leaves the removal undefined.
+// The transition that crashes R also asks that R is not reliable (rule
+// [GR-crash] of Figure 7).  That check belongs to the caller.
+template <typename G, typename R>
+    requires is_global_type_v<G>
+using remove_role_t = typename detail::removal_walk<G, R>::type;
 
 // ── Diagnostics ──────────────────────────────────────────────────────
 //
@@ -574,6 +995,22 @@ consteval void ensure_global_well_formed() noexcept {
         static_assert(detail::dependent_false_v<G>,
                       "fixy::session::diagnostic [Global_Unguarded_Recursion]: a Rec body starts with Var.  A loop "
                       "must communicate before it loops back.");
+    } else if constexpr (global_fault_v<G> == GlobalFault::CrashOnlyChoice) {
+        static_assert(detail::dependent_false_v<G>,
+                      "fixy::session::diagnostic [Global_Crash_Only_Choice]: a Comm has the crash branch as its "
+                      "only branch.  No role sends the crash label, so the receiver could only wait for a crash.  "
+                      "Add a message branch.");
+    } else if constexpr (global_fault_v<G> == GlobalFault::CrashLabelPayload) {
+        static_assert(detail::dependent_false_v<G>,
+                      "fixy::session::diagnostic [Global_Crash_Label_Payload]: a branch with the label CrashLabel "
+                      "carries a payload.  No role sends that branch, so no value can arrive.  Write "
+                      "Branch<CrashLabel, void, Cont>.");
+    } else if constexpr (global_fault_v<G> == GlobalFault::MisplacedCrashAnnotation) {
+        static_assert(detail::dependent_false_v<G>,
+                      "fixy::session::diagnostic [Global_Misplaced_Crash_Annotation]: Crashed<Role> occurs at a "
+                      "position the crash-stop semantics does not reach, or a live role sends CrashLabel.  "
+                      "Crashed marks only the receiver of a Comm or the sender of an EnRoute, it does not nest, "
+                      "and only a crashed sender has the crash label en route.  remove_role_t writes these nodes.");
     }
 }
 
@@ -614,6 +1051,11 @@ using Forever = Rec<Msg<RoleA, RoleB, LabelX, int, Var>>;
 using Starves = Rec<Comm<RoleA, RoleB, Branch<LabelX, int, Var>, Branch<LabelY, int, Msg<RoleA, RoleC, LabelZ, int, End>>>>;
 using SentOnce = EnRoute<RoleA, RoleB, LabelX, int, End>;
 using SentEachLoop = Rec<EnRoute<RoleA, RoleB, LabelX, int, Msg<RoleA, RoleB, LabelY, int, Var>>>;
+using WithCrashBranch = Comm<RoleA, RoleB, Branch<LabelX, int, End>, Branch<CrashLabel, void, End>>;
+using SenderCrashed = remove_role_t<WithCrashBranch, RoleA>;
+using ReceiverCrashed = remove_role_t<WithCrashBranch, RoleB>;
+// RoleB crashed at one position and acts at another.
+using CrashedAndLive = Comm<RoleA, Crashed<RoleB>, Branch<LabelX, int, Msg<RoleB, RoleA, LabelY, int, End>>>;
 
 }  // namespace detail::witness
 
@@ -631,10 +1073,17 @@ struct foundation::contracts::armed_cell<::fixy::session::global::is_global_type
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::global::is_global_well_formed> {
     using accepts = witnesses<::fixy::session::global::End, ::fixy::session::global::detail::witness::Once,
-                              ::fixy::session::global::detail::witness::Forever>;
-    using refuses = witnesses<int, ::fixy::session::global::Var, ::fixy::session::global::Comm<int, char>,
-                              ::fixy::session::global::Msg<int, int, char, char, ::fixy::session::global::End>,
-                              ::fixy::session::global::Rec<::fixy::session::global::Var>>;
+                              ::fixy::session::global::detail::witness::Forever,
+                              ::fixy::session::global::detail::witness::WithCrashBranch,
+                              ::fixy::session::global::detail::witness::SenderCrashed,
+                              ::fixy::session::global::detail::witness::ReceiverCrashed>;
+    using refuses = witnesses<
+        int, ::fixy::session::global::Var, ::fixy::session::global::Comm<int, char>,
+        ::fixy::session::global::Msg<int, int, char, char, ::fixy::session::global::End>,
+        ::fixy::session::global::Rec<::fixy::session::global::Var>,
+        ::fixy::session::global::Msg<int, char, ::fixy::session::global::CrashLabel, void, ::fixy::session::global::End>,
+        ::fixy::session::global::Msg<::fixy::session::global::Crashed<int>, char, char, int, ::fixy::session::global::End>,
+        ::fixy::session::global::EnRoute<int, char, ::fixy::session::global::CrashLabel, void, ::fixy::session::global::End>>;
 };
 
 template <>
@@ -650,4 +1099,21 @@ struct foundation::contracts::armed_cell<::fixy::session::global::is_balanced_pl
                               ::fixy::session::global::detail::witness::SentOnce>;
     using refuses = witnesses<int, ::fixy::session::global::detail::witness::Starves,
                               ::fixy::session::global::detail::witness::SentEachLoop>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::session::global::is_well_annotated> {
+    using accepts = witnesses<
+        ::fixy::session::global::CrashAnnotation<::fixy::session::global::End, ::fixy::session::global::Roles<>>,
+        ::fixy::session::global::CrashAnnotation<::fixy::session::global::detail::witness::SenderCrashed,
+                                                 ::fixy::session::global::Roles<::fixy::session::global::detail::witness::RoleB>>,
+        ::fixy::session::global::CrashAnnotation<::fixy::session::global::detail::witness::ReceiverCrashed,
+                                                 ::fixy::session::global::Roles<>>>;
+    using refuses = witnesses<
+        int,
+        ::fixy::session::global::CrashAnnotation<::fixy::session::global::detail::witness::SenderCrashed,
+                                                 ::fixy::session::global::Roles<::fixy::session::global::detail::witness::RoleA>>,
+        ::fixy::session::global::CrashAnnotation<::fixy::session::global::detail::witness::CrashedAndLive,
+                                                 ::fixy::session::global::Roles<>>,
+        ::fixy::session::global::CrashAnnotation<::fixy::session::global::Var, ::fixy::session::global::Roles<>>>;
 };
