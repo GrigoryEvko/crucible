@@ -216,8 +216,11 @@ struct Port {
 
 constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
 constexpr auto push_value = [](Port& port, auto&& message) noexcept { port.out->slots.push_back(1); (void)message; };
+// A crash-watched reception reads with no wait: the payload when one is
+// queued, and no value otherwise.
 template <typename T>
-constexpr auto pop_value = [](Port& port) noexcept {
+constexpr auto read_value = [](Port& port) noexcept -> std::optional<T> {
+    if (port.in->slots.empty()) return std::nullopt;
     port.in->slots.pop_front();
     return T{};
 };
@@ -255,7 +258,7 @@ int run_sender_crashes_after_send() {
             std::fprintf(stderr, "q detected the crash before the queued message\n");
             std::abort();
         } else {
-            auto [message, q_reply] = std::move(q_branch).recv(pop_value<s::Labelled<M, int>>);
+            auto [message, q_reply] = std::move(q_branch).recv(read_value<s::Labelled<M, int>>);
             (void)message;
             auto q_sel = std::move(q_reply).template select<0>(push_label);
             auto [q_end, q_reply_lost] = std::move(q_sel).send(s::Labelled<Answer, int>{}, push_value);

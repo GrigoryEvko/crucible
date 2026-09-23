@@ -11,20 +11,32 @@
 //   send, select  If the peer has crashed, the message is lost (rule
 //                 r-send-↯).  The decorator does not call the transport.
 //                 A payload that was not delivered comes back to the
-//                 caller, so a linear payload such as a permission is
-//                 never lost silently.
+//                 caller.
 //   branch        The decorator polls for a label.  If the peer has
 //                 crashed and no message from the peer is left, it takes
 //                 the crash branch (rule r-rcv-⊙).  A message that arrived
 //                 before the crash is delivered first.
 //   recv          A crash branch head Recv<Crash<Peer>, K> gives the
 //                 crash record from the detector.  Any other reception
-//                 calls the transport.  The mint proved that such a
-//                 reception is from a reliable peer, or is the payload of
-//                 a label that already arrived.
+//                 reads with no wait and watches the peer between reads.
+//                 The mint proved that such a reception is from a reliable
+//                 peer, or is the payload of a label that already arrived,
+//                 so a crash there has no branch to take, and the wait
+//                 ends the process with a diagnostic.
 //   crash         The local endpoint stops (rule r-↯).  Only a role
 //                 outside the reliable set may do this.  The peer learns
-//                 of it through the cell that the call marks.
+//                 of it through the cell that the call marks.  A crash
+//                 never falls between a label and the payload of its
+//                 branch, because the two are one message.
+//
+// The handle records where it stands inside a message: a label whose
+// branch opens with a send or a reception leaves the payload still to
+// go.  The position is a type, so crash() refuses the split at compile
+// time, and recv() knows which role sends the payload it waits for.
+//
+// Every read and every poll returns std::optional.  A transport that
+// returns the value itself waits inside the transport, where no crash is
+// seen, so the exact return type refuses it.
 //
 // The detector is a PeerCrashCell.  The Keeper's failure detector marks
 // it.  A test marks it by hand.  The decorator only reads it.
@@ -41,14 +53,25 @@
 // the mint has a false primary.  The crash class is no longer in the
 // type, so no counterpart of stop_class_compatible is needed.
 //
-// ── Known limits ────────────────────────────────────────────────────
+// ── What the transport is trusted with ──────────────────────────────
+//
+// The detector cell says that the peer stopped.  It does not say what
+// the peer sent.  Only the transport knows what is queued, and rule
+// r-rcv-⊙ delivers a message queued before the crash.  So the decorator
+// trusts the transport on two points: a poll or a read reports only
+// messages that the peer sent, and the transport delivers a label and
+// the payload of its branch together.  A transport that breaks one of
+// these can hide a crash or split a message, and no type here can see
+// it.  The crash attack campaign pins the first on its ledger.  Closing
+// it needs a witness of the sends that the transport cannot write, for
+// example a final sequence number that the failure detector publishes
+// with the crash.
 //
 // The crash check and the transport call are two steps.  If the peer
 // crashes between them, the transport delivers into the queue of a dead
 // peer, and the payload is lost with that queue (rule r-↯ makes the
 // queue unavailable).  The decorator returns a payload only when the
-// crash was visible before the send.  A transport that must not lose a
-// linear payload hands queued payloads back when it learns of the crash.
+// crash was visible before the send.
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>
@@ -59,6 +82,7 @@
 #include <foundation/contracts/Pre.h>
 
 #include <atomic>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -170,14 +194,78 @@ struct sender_of {
 
 // Each endpoint names its own reliable set, so two endpoints can
 // disagree: this one counts the peer reliable, and the peer crashes.
-// The Offer has no crash branch to take, and a wait would last for ever.
+// The reception has no crash branch to take, and a wait would last for
+// ever.
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_reliable_peer_crash() noexcept {
     std::fprintf(stderr,
                  "fixy::session: diagnostic [Crash_Of_Reliable_Peer]: the peer crashed, and this endpoint "
-                 "counts it reliable, so the Offer has no crash branch and would wait for ever.  The two "
+                 "counts it reliable, so the reception has no crash branch and would wait for ever.  The two "
                  "endpoints disagree about the reliable set.  Give both the same set, or remove the peer "
                  "from it and add the crash branch.\n");
     std::abort();
+}
+
+// The peer sent a label and crashed before the payload of its branch.  A
+// label and that payload are one message, so the transport split it, and
+// the branch that the label entered has no crash branch.
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_split_message() noexcept {
+    std::fprintf(stderr,
+                 "fixy::session: diagnostic [Crash_Splits_A_Message]: the peer crashed after a label and "
+                 "before the payload of its branch.  The label and the payload are one message, so the "
+                 "transport delivered half of one.  Deliver a label and the payload of its branch together.\n");
+    std::abort();
+}
+
+// Where a handle stands inside one message.  A label and the payload that
+// heads its branch are one message (fixy/session/Crash.h), so a handle
+// that holds the label and not yet the payload is inside a message.
+struct between_messages {};
+
+// This endpoint picked a label whose branch opens with a send.  The
+// payload still has to go.
+struct payload_to_send {};
+
+// This endpoint took a label whose branch opens with a reception.  The
+// payload still has to come, from Sender.
+template <typename Sender>
+struct payload_to_receive {
+    using sender = Sender;
+};
+
+// The role that sends the payload a reception waits for: the sender of
+// the label for a payload, and the channel peer for a bare reception.
+template <typename Position, typename Peer>
+struct payload_sender {
+    using type = Peer;
+};
+template <typename Sender, typename Peer>
+struct payload_sender<payload_to_receive<Sender>, Peer> {
+    using type = Sender;
+};
+
+// Waits for a payload that `read` returns, and watches the peer between
+// reads.  A payload queued before the crash wins.  When the peer has
+// crashed and a last read finds nothing, no payload can come, and the
+// wait ends the process with a diagnostic, because the protocol gives the
+// endpoint no branch to take.  A reception from a role that the cell does
+// not watch waits without the check: the mint admits such a role only
+// when it is reliable.
+template <typename Sender, typename Peer, typename Reliable, typename Read, typename Resource>
+[[nodiscard]] constexpr auto await_payload(Read& read, Resource& resource, const PeerCrashCell& cell) {
+    for (;;) {
+        if (auto payload = std::invoke(read, resource)) return payload;
+        if constexpr (std::is_same_v<Sender, Peer>) {
+            if (cell.has_crashed()) {
+                if (auto payload = std::invoke(read, resource)) return payload;
+                if constexpr (reliable_set_contains_v<Reliable, Peer>) {
+                    abort_on_reliable_peer_crash();
+                } else {
+                    abort_on_split_message();
+                }
+            }
+        }
+        CRUCIBLE_SPIN_PAUSE;
+    }
 }
 
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_crash_label(std::size_t word,
@@ -226,7 +314,8 @@ struct is_crash_session_admissible<CrashSession<Proto, Self, Peer, Reliable>>
 
 // ── The decorator ────────────────────────────────────────────────────
 
-template <typename Handle, typename Self, typename Peer, typename Reliable>
+template <typename Handle, typename Self, typename Peer, typename Reliable,
+          typename Position = detail::crash_transport::between_messages>
 class CrashWatched;
 
 // The result of a send.  `undelivered` holds the payload when the peer
@@ -245,7 +334,7 @@ template <typename Self, typename Peer, typename Reliable, typename Handle>
 
 }  // namespace detail::crash_transport
 
-template <typename Handle, typename Self, typename Peer, typename Reliable>
+template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position>
 class [[nodiscard]] CrashWatched {
     static_assert(is_reliable_set<Reliable>::value,
                   "fixy::session::diagnostic [Crash_Reliable_Set_Required]: CrashWatched<H, Self, Peer, Reliable>: "
@@ -254,7 +343,7 @@ class [[nodiscard]] CrashWatched {
     Handle inner_;
     const PeerCrashCell* peer_cell_;
 
-    template <typename, typename, typename, typename>
+    template <typename, typename, typename, typename, typename>
     friend class CrashWatched;
 
     template <typename FSelf, typename FPeer, typename FReliable, typename FHandle>
@@ -264,9 +353,10 @@ class [[nodiscard]] CrashWatched {
     constexpr CrashWatched(Handle inner, const PeerCrashCell& cell) noexcept
         : inner_{std::move(inner)}, peer_cell_{&cell} {}
 
-    template <typename Next>
+    // Wraps the successor, and records where it stands inside a message.
+    template <typename NextPosition = detail::crash_transport::between_messages, typename Next>
     [[nodiscard]] constexpr auto wrap_(Next next) const noexcept {
-        return CrashWatched<Next, Self, Peer, Reliable>{std::move(next), *peer_cell_};
+        return CrashWatched<Next, Self, Peer, Reliable, NextPosition>{std::move(next), *peer_cell_};
     }
 
 public:
@@ -306,6 +396,9 @@ public:
     }
 
     // ── select ───────────────────────────────────────────────────────
+    //
+    // A branch that opens with a send carries the payload of the label, so
+    // the successor stands inside that message until the send.
     template <std::size_t I, typename Transport, typename P = protocol>
         requires is_select_v<P> && std::is_invocable_v<Transport, resource_type&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
@@ -313,15 +406,43 @@ public:
         auto next = std::move(inner_).template select<I>([&](resource_type& resource, std::size_t label) noexcept(is_nothrow) {
             if (!peer_cell_->has_crashed()) std::invoke(transport, resource, label);
         });
-        return wrap_(std::move(next));
+        using Next = decltype(next);
+        if constexpr (is_send_v<typename Next::protocol>) {
+            return wrap_<detail::crash_transport::payload_to_send>(std::move(next));
+        } else {
+            return wrap_(std::move(next));
+        }
     }
 
     // ── recv ─────────────────────────────────────────────────────────
-    template <typename Transport, typename P = protocol>
+    //
+    // Read has the signature std::optional<T>(Resource&).  It returns the
+    // payload when one from the sender is queued, and no value otherwise.
+    // The decorator reads with a pause between reads and watches the peer,
+    // so a crash ends the wait.  A read that returns T itself would block
+    // inside the transport, where no crash is seen, and the exact return
+    // type refuses it.
+    //
+    // A payload queued before the crash wins.  After the crash nothing more
+    // can come, and the protocol gives this reception no crash branch.  The
+    // mint admits a bare reception only from a reliable peer, and the
+    // payload of a label travels with it, so the wait ends with
+    // Crash_Of_Reliable_Peer or with Crash_Splits_A_Message.
+    template <typename Read, typename P = protocol>
         requires is_recv_v<P> && (!is_crash_payload_v<typename P::message_type>)
-              && std::is_invocable_r_v<typename P::message_type, Transport, resource_type&>
-    [[nodiscard]] constexpr auto recv(Transport transport) && {
-        auto [value, next] = std::move(inner_).recv(std::move(transport));
+              && std::is_invocable_v<Read, resource_type&>
+    [[nodiscard]] constexpr auto recv(Read read) && {
+        using T = typename P::message_type;
+        static_assert(std::same_as<std::invoke_result_t<Read, resource_type&>, std::optional<T>>,
+                      "fixy::session::diagnostic [Crash_Read_Must_Poll]: recv(): the read does not return "
+                      "std::optional<T>.  A read that returns T waits inside the transport, where no crash is "
+                      "seen, so a dead peer blocks it for ever.  Return the payload when one is queued, and no "
+                      "value otherwise.");
+        using Sender = typename detail::crash_transport::payload_sender<Position, Peer>::type;
+        std::optional<T> payload =
+            detail::crash_transport::await_payload<Sender, Peer, Reliable>(read, inner_.resource(), *peer_cell_);
+        auto [value, next] = std::move(inner_).recv(
+            [&payload](resource_type&) noexcept(std::is_nothrow_move_constructible_v<T>) { return std::move(*payload); });
         return std::pair{std::move(value), wrap_(std::move(next))};
     }
 
@@ -343,15 +464,25 @@ public:
     // Poll has the signature std::optional<std::size_t>(Resource&).  It
     // returns a wire word when a message from the peer is queued, and no
     // value otherwise.  The decorator spins with a pause between polls.
-    // A transport that expects long waits parks inside Poll.
+    // A transport that expects long waits parks inside Poll, and returns
+    // no value when its wait ends without a message.  A poll that returns
+    // std::size_t itself would block inside the transport, where no crash
+    // is seen, and the exact return type refuses it.
     //
     // A word goes to the inner handle, which enters the branch that the
     // word names (branch_of_wire_word in fixy/session/Handle.h).  A crash
     // branch is no label, so no word names it.  On a crash the decorator
-    // enters the crash branch with pick_local, and no word is read.
+    // enters the crash branch with pick_local, and no word is read.  A
+    // branch that opens with a reception waits for the payload of the
+    // label, from the sender of the Offer.
     template <typename Poll, typename Handler, typename P = protocol>
-        requires is_offer_v<P> && std::is_invocable_r_v<std::optional<std::size_t>, Poll, resource_type&>
+        requires is_offer_v<P> && std::is_invocable_v<Poll, resource_type&>
     constexpr auto branch(Poll poll, Handler handler) && {
+        static_assert(std::same_as<std::invoke_result_t<Poll, resource_type&>, std::optional<std::size_t>>,
+                      "fixy::session::diagnostic [Crash_Read_Must_Poll]: branch(): the poll does not return "
+                      "std::optional<std::size_t>.  A poll that returns the word waits inside the transport, "
+                      "where no crash is seen, so a dead peer blocks it for ever.  Return the word when a "
+                      "message is queued, and no value otherwise.");
         using OfferSender = std::conditional_t<std::is_same_v<offer_sender_t<P>, AnonymousPeer>, Peer, offer_sender_t<P>>;
         constexpr std::size_t message_branches = detail::crash_transport::message_branch_count<P>::value;
         constexpr bool is_watched = !reliable_set_contains_v<Reliable, OfferSender>;
@@ -360,7 +491,13 @@ public:
                       "that is not the watched peer.");
 
         const auto wrapped = [this, &handler](auto branch_handle) {
-            return std::invoke(handler, wrap_(std::move(branch_handle)));
+            using Head = typename decltype(branch_handle)::protocol;
+            if constexpr (is_recv_v<Head> && !is_crash_payload_v<typename Head::message_type>) {
+                return std::invoke(handler,
+                                   wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(std::move(branch_handle)));
+            } else {
+                return std::invoke(handler, wrap_(std::move(branch_handle)));
+            }
         };
         const auto take_word = [this, &wrapped](std::size_t word) {
             if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
@@ -396,7 +533,9 @@ public:
     // the cell the peer watches.  The endpoint is then at the runtime
     // type Stop, where no operation exists, so the call gives back the
     // Resource instead of a handle.  Rule r-↯ does not apply to a
-    // process that has already ended, so End has no crash().
+    // process that has already ended, so End has no crash().  A crash
+    // never falls inside one message: after a label whose branch opens
+    // with a send, the payload goes first.
     template <typename P = protocol>
         requires(!is_terminal_state_v<P>)
     [[nodiscard]] resource_type crash(CrashCause cause, PeerCrashCell& announce) && {
@@ -404,6 +543,11 @@ public:
                       "fixy::session::diagnostic [Crash_Of_Reliable_Role]: crash(): the local role is in the "
                       "reliable set.  Rule r-↯ lets only a role outside the reliable set crash.  Remove the "
                       "role from the reliable set, or do not crash it.");
+        static_assert(!std::is_same_v<Position, detail::crash_transport::payload_to_send>,
+                      "fixy::session::diagnostic [Crash_Splits_A_Message]: crash(): this endpoint sent a label, "
+                      "and its branch opens with the payload of that label.  The label and the payload are one "
+                      "message, so a crash here delivers half of it, and the peer waits in a branch with no "
+                      "crash branch.  Send the payload first, then crash.");
         resource_type resource = std::forward<resource_type>(inner_.resource());
         std::move(inner_).detach(detach_reason::LocalCrashStop{});
         announce.mark_crashed(cause);

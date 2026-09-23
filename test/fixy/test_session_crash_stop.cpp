@@ -165,12 +165,16 @@ struct Port {
 constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
 constexpr auto push_text = [](Port& port, Text&& text) noexcept { port.out->slots.push_back(text.value.size()); };
 constexpr auto push_int = [](Port& port, int&& value) noexcept { port.out->slots.push_back(static_cast<std::uint64_t>(value)); };
-constexpr auto pop_int = [](Port& port) noexcept {
+// A crash-watched reception reads with no wait: the payload when one is
+// queued, and no value otherwise.
+constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
+    if (port.in->slots.empty()) return std::nullopt;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
     return static_cast<int>(slot);
 };
-constexpr auto pop_text = [](Port& port) noexcept {
+constexpr auto read_text = [](Port& port) noexcept -> std::optional<Text> {
+    if (port.in->slots.empty()) return std::nullopt;
     port.in->slots.pop_front();
     return Text{"abc"};
 };
@@ -210,7 +214,7 @@ int run_without_crash() {
             std::fprintf(stderr, "q took the crash branch of a live peer\n");
             std::abort();
         } else {
-            auto [text, q_reply] = std::move(q_branch).recv(pop_text);
+            auto [text, q_reply] = std::move(q_branch).recv(read_text);
             auto q_sel = std::move(q_reply).template select<0>(push_label);
             auto [q_end, q_lost] = std::move(q_sel).send(static_cast<int>(text.value.size()) + 39, push_int);
             if (q_lost) std::abort();
@@ -220,7 +224,7 @@ int run_without_crash() {
 
     std::move(p_wait).branch(poll_label, [&](auto p_branch) {
         if constexpr (std::is_same_v<typename decltype(p_branch)::protocol, s::Recv<int, s::End>>) {
-            auto [value, p_end] = std::move(p_branch).recv(pop_int);
+            auto [value, p_end] = std::move(p_branch).recv(read_int);
             reply = value;
             (void)std::move(p_end).close();
         } else {
@@ -284,7 +288,7 @@ int run_sender_crashes_after_send() {
             std::fprintf(stderr, "q detected the crash before the queued message\n");
             std::abort();
         } else {
-            auto [text, q_reply] = std::move(q_branch).recv(pop_text);
+            auto [text, q_reply] = std::move(q_branch).recv(read_text);
             took_message = text.value == "abc";
             auto q_sel = std::move(q_reply).template select<0>(push_label);
             auto [q_end, q_lost] = std::move(q_sel).send(42, push_int);

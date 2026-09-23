@@ -302,12 +302,26 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
+using Token = s::Transferable<int, X>;
+
 constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
 constexpr auto push_int = [](Port& port, int&& value) noexcept { port.out->slots.push_back(static_cast<std::uint64_t>(value)); };
-constexpr auto pop_int = [](Port& port) noexcept {
+constexpr auto push_token = [](Port& port, Token&& token) noexcept {
+    port.out->slots.push_back(static_cast<std::uint64_t>(token.value));
+};
+// A crash-watched reception reads with no wait: the payload when one is
+// queued, and no value otherwise.
+constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
+    if (port.in->slots.empty()) return std::nullopt;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
     return static_cast<int>(slot);
+};
+constexpr auto read_token = [](Port& port) noexcept -> std::optional<Token> {
+    if (port.in->slots.empty()) return std::nullopt;
+    const std::uint64_t slot = port.in->slots.front();
+    port.in->slots.pop_front();
+    return Token{static_cast<int>(slot), fp::mint_permission_root<X>()};
 };
 constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {
     if (port.in->slots.empty()) return std::nullopt;
@@ -342,7 +356,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
     (void)std::move(p).crash(s::CrashCause::Abort, cell_p);
     std::move(q).branch(poll_label, [](auto branch) noexcept {
-        auto [value, end] = std::move(branch).recv(pop_int);
+        auto [value, end] = std::move(branch).recv(read_int);
         (void)value;
         (void)std::move(end).close();
     });
@@ -371,8 +385,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
 // q relays a token to p, and p has crashed.  The token comes back once,
 // in the undelivered payload, and the queue of p holds nothing.
 [[noreturn]] void token_relayed_to_crashed_peer() {
-    using Relay = s::Offer<s::Recv<s::Transferable<int, X>, s::Select<s::Send<s::Transferable<int, X>, s::End>>>,
-                           s::Recv<s::Crash<P>, s::End>>;
+    using Relay = s::Offer<s::Recv<Token, s::Select<s::Send<Token, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
     to_q.slots.push_back(0);  // the label of the message branch
@@ -385,16 +398,10 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
         if constexpr (s::is_crash_branch_v<Head>) {
             finish(Outcome::Silent);
         } else {
-            auto [token, reply] = std::move(branch).recv([](Port& port) noexcept {
-                port.in->slots.pop_front();
-                return s::Transferable<int, X>{7, fp::mint_permission_root<X>()};
-            });
+            auto [token, reply] = std::move(branch).recv(read_token);
             cell_p.mark_crashed(s::CrashCause::Abort);
             auto chosen = std::move(reply).template select<0>(push_label);
-            auto [end, undelivered] =
-                std::move(chosen).send(std::move(token), [](Port& port, s::Transferable<int, X>&& moved) noexcept {
-                    port.out->slots.push_back(static_cast<std::uint64_t>(moved.value));
-                });
+            auto [end, undelivered] = std::move(chosen).send(std::move(token), push_token);
             came_back_once = undelivered.has_value() && undelivered->value == 7;
             (void)std::move(end).close();
         }
@@ -464,7 +471,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
                 detected = true;
                 (void)std::move(end).close();
             } else {
-                auto [value, next] = std::move(branch).recv(pop_int);
+                auto [value, next] = std::move(branch).recv(read_int);
                 if (value == received + 1) ++received;
                 current.emplace(std::move(next));
             }
@@ -504,7 +511,8 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
                                 (void)record;
                                 (void)std::move(end).close();
                             } else {
-                                auto [value, end] = std::move(branch).recv([](Port&) noexcept { return 99; });
+                                auto [value, end] =
+                                    std::move(branch).recv([](Port&) noexcept -> std::optional<int> { return 99; });
                                 took_message = value == 99;
                                 (void)std::move(end).close();
                             }
@@ -517,8 +525,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
 // transport writes into a queue that nobody reads.  The token inside the
 // message is lost, and the undelivered payload is empty.
 [[noreturn]] void crash_between_check_and_write_loses_token() {
-    using Relay = s::Offer<s::Recv<s::Transferable<int, X>, s::Select<s::Send<s::Transferable<int, X>, s::End>>>,
-                           s::Recv<s::Crash<P>, s::End>>;
+    using Relay = s::Offer<s::Recv<Token, s::Select<s::Send<Token, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
     to_q.slots.push_back(0);
@@ -531,15 +538,12 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
         if constexpr (s::is_crash_branch_v<Head>) {
             finish(Outcome::Correct);
         } else {
-            auto [token, reply] = std::move(branch).recv([](Port& port) noexcept {
-                port.in->slots.pop_front();
-                return s::Transferable<int, X>{7, fp::mint_permission_root<X>()};
-            });
+            auto [token, reply] = std::move(branch).recv(read_token);
             auto chosen = std::move(reply).template select<0>(push_label);
-            auto [end, undelivered] = std::move(chosen).send(
-                std::move(token), [&cell_p](Port& port, s::Transferable<int, X>&& moved) noexcept {
+            auto [end, undelivered] =
+                std::move(chosen).send(std::move(token), [&cell_p](Port& port, Token&& moved) noexcept {
                     cell_p.mark_crashed(s::CrashCause::Abort);
-                    port.out->slots.push_back(static_cast<std::uint64_t>(moved.value));
+                    push_token(port, std::move(moved));
                 });
             token_lost = !undelivered.has_value() && cell_p.has_crashed();
             (void)std::move(end).close();
@@ -549,8 +553,11 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
 }
 
 // A bare reception from a peer counted reliable, which crashes.  The
-// transport has no message to give, and the handle cannot tell a slow
-// peer from a dead one without a poll.
+// theory assumes a reliable peer never crashes (LMCS 2025, p. 11), and
+// this endpoint and the peer disagree about that.  The reception has no
+// crash branch, so no recovery exists.  The read returns no value while
+// the queue is empty, so the decorator sees the crash between reads, and
+// the wait ends with Crash_Of_Reliable_Peer instead of lasting for ever.
 [[noreturn]] void bare_recv_from_crashed_reliable_peer() {
     using ProtoQ = s::Recv<int, s::End>;
     Mailbox to_p;
@@ -558,15 +565,41 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     s::PeerCrashCell cell_p;
     cell_p.mark_crashed(s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
-    auto [value, end] = std::move(q).recv([](Port& port) noexcept {
-        while (port.in->slots.empty()) {
-            ::pause();
-        }
-        return static_cast<int>(port.in->slots.front());
-    });
+    auto [value, end] = std::move(q).recv(read_int);
     (void)value;
     (void)std::move(end).close();
-    finish(Outcome::Correct);
+    finish(Outcome::Silent);
+}
+
+// The peer sends a label, and its process dies before the payload of the
+// branch.  The label and the payload are one message, so the transport
+// split it.  The branch that the label entered has no crash branch, so
+// the wait for the payload ends with Crash_Splits_A_Message.  The peer's
+// own crash() cannot split a message: neg_sess_crash_between_label_and_
+// payload and neg_sess_crash_recorded_between_label_and_payload.
+[[noreturn]] void peer_dies_between_label_and_payload() {
+    using ProtoP = s::Select<s::Send<int, s::End>>;
+    using ProtoQ = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto half_sent = std::move(p).select<0>(push_label);
+    std::move(half_sent).detach(s::detach_reason::TestInstrumentation{});
+    cell_p.mark_crashed(s::CrashCause::Abort);
+    std::move(q).branch(poll_label, [](auto branch) noexcept {
+        using Head = typename decltype(branch)::protocol;
+        if constexpr (s::is_crash_branch_v<Head>) {
+            finish(Outcome::Silent);
+        } else {
+            auto [value, end] = std::move(branch).recv(read_int);
+            (void)value;
+            (void)std::move(end).close();
+        }
+    });
+    finish(Outcome::Silent);
 }
 
 // The recorder outside the crash transport records a send to a crashed
@@ -650,7 +683,8 @@ constexpr attack_case kAttacks[] = {
     {"peer_sends_the_crash_label", Outcome::Caught, peer_sends_the_crash_label},
     {"transport_fabricates_messages_after_crash", Outcome::Silent, transport_fabricates_messages_after_crash},
     {"crash_between_check_and_write_loses_token", Outcome::Silent, crash_between_check_and_write_loses_token},
-    {"bare_recv_from_crashed_reliable_peer", Outcome::Deadlock, bare_recv_from_crashed_reliable_peer},
+    {"bare_recv_from_crashed_reliable_peer", Outcome::Caught, bare_recv_from_crashed_reliable_peer},
+    {"peer_dies_between_label_and_payload", Outcome::Caught, peer_dies_between_label_and_payload},
     {"recorder_sees_the_crash", Outcome::Correct, recorder_sees_the_crash},
     {"corrupt_event_bytes", Outcome::Correct, corrupt_event_bytes},
 };
@@ -666,14 +700,14 @@ struct limitation_row {
 
 constexpr limitation_row known_limitations[] = {
     {"transport_fabricates_messages_after_crash",
-     "rule r-rcv-⊙ (LMCS 2025, Fig. 4): the handle trusts the transport to report a queued message, so a "
-     "transport that invents messages hides the crash for ever"},
+     "rule r-rcv-⊙ (LMCS 2025, Fig. 4) delivers a message queued before the crash, and only the transport "
+     "knows what is queued.  The detector cell reports that the peer stopped, not what it sent, so a transport "
+     "that invents messages hides the crash for ever.  Closing it needs a witness of the sends that the "
+     "transport cannot write, for example a final sequence number that the failure detector publishes with "
+     "the crash"},
     {"crash_between_check_and_write_loses_token",
      "a linear token is not lost: rule r-send-↯ drops a message to a crashed peer, and a crash between the "
      "check and the write drops the token inside it.  A transport that returns a refused payload would close it"},
-    {"bare_recv_from_crashed_reliable_peer",
-     "the reliable set is an assumption of the theory (LMCS 2025, p. 11): a reception from a reliable peer "
-     "has no crash branch, so a crash of that peer blocks it, and without a poll the handle cannot detect it"},
 };
 
 consteval bool ledger_matches_the_campaign() {
