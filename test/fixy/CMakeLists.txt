@@ -464,6 +464,19 @@ fixy_neg_compile_test(neg_rule_i002_thrown_unseen_family
   "Collision rule\\(s\\) I002:"
   "${_fixy_tier5_member}")
 
+# R004: a suspension, a live session handle and a frame that is not
+# linear.  One fixture states the handle with the session atom and
+# suspends on ControlFlow.  The other has a session handle as its payload
+# and suspends on Reentrancy, so the rule reads the handle from the type.
+fixy_neg_compile_test(neg_rule_r004_affine_frame_holds_live_handle
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) R004:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_r004_copy_frame_suspends_handle_payload
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) R004:"
+  "${_fixy_tier5_member}")
+
 # The Security grade is read through one closed relation, and its primary
 # has no definition.  An atom on the axis that the relation does not name
 # stops the build with one message, rather than reading as public.
@@ -984,6 +997,12 @@ fixy_test(test_session_protocol)
 # one abandonment banner on stderr from that child.
 fixy_test(test_session_handle)
 
+# The adversarial campaign: legal code that tries to drop a protocol,
+# reuse a handle or make a deadlock.  Each attack runs in a child process
+# with a deadline, and the attacks that succeed are pinned on a ledger
+# that can only shrink.
+fixy_test(test_session_handle_attacks)
+
 # A channel whose two endpoints are not duals has no deadlock-freedom
 # guarantee.  Both operands here are individually well-formed, so the
 # refusal can only come from the duality clause.
@@ -1119,6 +1138,80 @@ fixy_neg_compile_test(neg_sess_mint_unpinned_reference
   "no matching function for call to .mint_session_handle"
   "constraints not satisfied"
   "satisfaction of .SessionResource<Resource>.")
+
+# No public mint gives the two endpoints of one channel to one caller.
+# The resource-only form is deleted, and the test hatch refuses the
+# background and the foreground contexts, which hold no Test capability.
+fixy_neg_compile_test(neg_sess_channel_resource_only_mint_is_deleted
+  "use of deleted function .void fixy::session::mint_channel"
+  "\\[Channel_Needs_A_Fork\\]")
+fixy_neg_compile_test(neg_sess_test_channel_outside_a_test
+  "no matching function for call to .mint_test_channel"
+  "required for the satisfaction of .CtxFitsTestChannel<Ctx, Proto>."
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Test>")
+fixy_neg_compile_test(neg_sess_test_channel_from_the_foreground
+  "no matching function for call to .mint_test_channel"
+  "required for the satisfaction of .CtxFitsTestChannel<Ctx, Proto>."
+  "ctx_cap::Fg")
+
+# The fork-shaped mint starts two threads, so its context must hold Bg,
+# and each body must return its endpoint at End.
+fixy_neg_compile_test(neg_sess_forked_channel_without_bg
+  "no matching function for call to .mint_forked_channel"
+  "CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>"
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>")
+fixy_neg_compile_test(neg_sess_forked_channel_body_stops_early
+  "no matching function for call to .mint_forked_channel"
+  "ForkedEndpointBody<PeerBody"
+  "the required expression .std::move\\(handle\\).close\\(\\). is invalid")
+
+# A forked channel whose sides are related by asynchronous subtyping runs
+# the check at the capacity that its two ends state.  A pair that sends
+# further ahead than that capacity is refused, and an end that states no
+# capacity is refused.
+fixy_test(test_session_async_channel)
+fixy_neg_compile_test(neg_sess_async_channel_capacity_too_small
+  "no matching function for call to .mint_forked_async_channel"
+  "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, channel_capacity_v<ResourceSelf> >")
+fixy_neg_compile_test(neg_sess_async_channel_without_capacity
+  "no matching function for call to .mint_forked_async_channel"
+  "StatesChannelCapacity<ResourceSelf>. \\[with ResourceSelf = .unnamed.::SilentEnd\\]")
+
+# The callback entry point closes the handle the body returns, so the
+# body must return it at End.
+fixy_neg_compile_test(neg_sess_with_session_body_stops_early
+  "no matching function for call to .with_session"
+  "SessionBody<Body, Proto, Resource, Policy>"
+  "the required expression .std::move\\(handle\\).close\\(\\). is invalid")
+fixy_neg_compile_test(neg_sess_with_session_forged_end_handle
+  "no matching function for call to .with_session"
+  "SessionBody<Body, Proto, Resource, Policy>"
+  "is_same_v<typename fixy::session::detail::session_brand_of<typename H::loop_ctx>::type, Brand>")
+
+# check::Cancel needs a Resource that can send a cancellation.
+fixy_neg_compile_test(neg_sess_cancel_policy_without_channel
+  "static assertion failed: fixy::session::diagnostic \\[Cancel_Needs_A_Channel\\]"
+  "CancellableResource<.anonymous.::SilentWire>")
+
+# The permission set.  End refuses an open loan.  The mint walks every
+# path of the protocol, so it refuses a send of a region the set does not
+# hold, an iteration that changes the set, and an arm that leaves a loan
+# open, also when no run selects that arm.
+fixy_neg_compile_test(neg_sess_end_with_open_loan
+  "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: the protocol reaches End"
+  "perm_set_admits_close_v<foundation::permissions::PermSet<fixy::session::LentOut<.anonymous.::Region> > >")
+fixy_neg_compile_test(neg_sess_send_unheld_permission
+  "no matching function for call to .mint_session_handle"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<")
+fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
+  "no matching function for call to .mint_session_handle"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<")
+fixy_neg_compile_test(neg_sess_loop_iteration_sends_permission
+  "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: a path of the protocol"
+  "open_session_\\(Resource, std::source_location\\) \\[with Proto = fixy::session::Loop<fixy::session::Send<")
+fixy_neg_compile_test(neg_sess_unselected_arm_leaves_loan_open
+  "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: a path of the protocol"
+  "open_session_\\(Resource, std::source_location\\) \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int")
 
 # ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)
