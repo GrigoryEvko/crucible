@@ -325,7 +325,7 @@ foundation_neg_compile_test(neg_permission_split_lvalue_token
 # The ctx-bound root mint in a context whose row does not cover the
 # tag's row: the one root template's fit concept names the tag and the
 # context it refused.
-# ── Task #119 (A15): the signature reflection ────────────────────────
+# ── The signature reflection ──────────────────────────────────────────
 #
 # param_type_t names one parameter by index, bounded by the function's
 # own arity.  The two fixtures stand on the two ends of that bound: an
@@ -433,7 +433,7 @@ foundation_neg_compile_test(neg_permission_row_declared_twice
   "static assertion failed: permission_row: a tag declares its row twice"
   "\\(\\(!\\(bool\\)by_edge\\) \\|\\| \\(!\\(bool\\)by_member\\)\\). evaluates to false")
 
-# ── Task #119 (A15): the row-mismatch message builder ────────────────
+# ── The row-mismatch message builder ──────────────────────────────────
 #
 # The static_assert message a mint hands the compiler when a row is not
 # admitted: the site, the caller's row, the row the callee requires and
@@ -451,7 +451,7 @@ foundation_neg_compile_test(neg_row_mismatch_tag_not_a_tag
   "row_message_check<int, some_function, int, float, double, false>"
   "is_diagnostic_class_v<int>. evaluates to false")
 
-# ── Task #96 (A6.2): the row hash, as one fold ───────────────────────
+# ── The row hash, as one fold ─────────────────────────────────────────
 #
 # The half of the cache key that separates one effect regime from
 # another.  The old header carried a partial specialisation per wrapper,

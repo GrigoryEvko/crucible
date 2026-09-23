@@ -31,7 +31,7 @@ endfunction()
 # foundation_neg_compile_test in test/foundation/CMakeLists.txt: at least
 # two regexes (reason + project token), every regex required, strict
 # single-error mode on.  The label is fixy_neg_new because "fixy_neg" is
-# the old corpus under test/fixy_neg/, which Stage D deletes.
+# the old corpus under test/fixy_neg/.
 function(fixy_neg_compile_test name)
   set(_diags ${ARGN})
   list(LENGTH _diags _count)
@@ -107,24 +107,24 @@ fixy_neg_compile_test(neg_mutation_write_once_twice
   "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set\\(2\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
-# ── Task #100 (A9): the atom catalog ─────────────────────────────────
+# ── The atom catalog ──────────────────────────────────────────────────
 fixy_test(test_atom)
 
-# ── Task #108 (A11.1): the fn gate ───────────────────────────────────
+# ── The fn gate ───────────────────────────────────────────────────────
 # The resolver, the silent strict defaults and what the gate refuses.
-# The negative fixtures for the tiers arrive with A11.5.
+# The negative fixtures for the tiers are in the gate-fixture section.
 fixy_test(test_fn)
 
-# ── Task #109 (A11.2): the collision rules ───────────────────────────
+# ── The collision rules ───────────────────────────────────────────────
 # Ten live rules, and twenty-two registered against the axis they wait
-# on.  The per-rule negative fixtures arrive with A11.4.
+# on.  The per-rule negative fixtures are in the hand corpus below.
 fixy_test(test_collision)
 
-# ── Task #110 (A11.3): the corpus, the roles, the insights, the contexts
+# ── The corpus, the roles, the insights, the contexts ─────────────────
 # Six refused combinations wired into tier 5, seven roles over the
 # atoms, one generated insight provider per axis plus six by hand, and
-# the five production contexts.  The per-entry negative fixtures arrive
-# with A11.4.
+# the five production contexts.  The per-entry negative fixtures are
+# in the hand corpus below.
 fixy_test(test_corpus)
 fixy_test(test_role)
 fixy_test(test_insights)
@@ -132,7 +132,7 @@ fixy_test(test_insights)
 # the five named contexts.
 fixy_test(test_contexts)
 
-# ── Task #111 (A11.4): the hand corpus ───────────────────────────────
+# ── The hand corpus ───────────────────────────────────────────────────
 #
 # One fixture per rule that can fire and one per corpus entry: eleven
 # and six.  The other forty-three rule codes get none, and the reason is
@@ -146,7 +146,7 @@ fixy_test(test_contexts)
 #
 # Each fixture floors on three compiler-produced regexes: the tier-5
 # reason, its own rule code or entry name — which fn's message carries
-# because A11.3 made tier 5 report WHICH rule or entry refused the pack
+# because tier 5 reports WHICH rule or entry refused the pack
 # — and the GCC bullet naming the member that evaluated false.  None of
 # the three appears in the fixture's own source, so the source echo
 # cannot satisfy the gate.
@@ -205,7 +205,7 @@ fixy_neg_compile_test(neg_rule_d002_recursion_unbounded_cost
   "Collision rule\\(s\\) D002:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the regime family ──────────────────────────────────────
+# ── The regime family ─────────────────────────────────────────────────
 #
 # Six rules that could not fire until fixy/atoms/Regime.h gave Axis::Regime
 # its first atoms.  Five of the six are isolated to their own code, which
@@ -214,7 +214,7 @@ fixy_neg_compile_test(neg_rule_d002_recursion_unbounded_cost
 # `regime::hot` pack trips both, and every other fixture in this group
 # carries a cost grade and a refinement witness specifically to silence
 # them.  Without those atoms each fixture would floor on a code it does
-# not claim — the defect #166 was.
+# not claim.
 #
 # H003 is the one that cannot be isolated, and its own text says so:
 # cost_unbounded is H001's premise as well, so the pack trips H001, H003.
@@ -245,11 +245,11 @@ fixy_neg_compile_test(neg_rule_s001_stdio_hot
   "Collision rule\\(s\\) S001:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the wait family ────────────────────────────────────────
+# ── The wait family ───────────────────────────────────────────────────
 #
-# Two rules that needed fixy/atoms/Sync.h.  W001 needed BOTH commits of
-# this task: it reads a tier and a wait strategy, so it stayed Pending
-# after Regime shipped and only fired once Synchronization did.
+# Two rules that need fixy/atoms/Sync.h.  W001 reads a tier and a wait
+# strategy, so it fires only when both the Regime and the
+# Synchronization axes have atoms.
 #
 # W001's pack carries a cost grade and a refinement witness, like the
 # regime fixtures above, so it floors on W001 rather than on H001 or H002.
@@ -264,7 +264,7 @@ fixy_neg_compile_test(neg_rule_w002_bg_row_core_burning_spin
   "Collision rule\\(s\\) W002:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the observability family ───────────────────────────────
+# ── The observability family ──────────────────────────────────────────
 #
 # Two rules on one axis, and they are two theorems rather than one read
 # two ways.  B002 is the containment — an observability row must be a
@@ -285,7 +285,7 @@ fixy_neg_compile_test(neg_rule_b001_bg_surface_unbounded
   "Collision rule\\(s\\) B001:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the hardware-instruction family ────────────────────────
+# ── The hardware-instruction family ───────────────────────────────────
 #
 # Three rules over one chain, each read at one boundary.  V201 is the hot
 # path against a tier at or above the timestamp read; V202 is the
@@ -307,7 +307,7 @@ fixy_neg_compile_test(neg_rule_v203_replay_tsc
   "Collision rule\\(s\\) V203:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the barrier-strength family ────────────────────────────
+# ── The barrier-strength family ───────────────────────────────────────
 #
 # One rule at one boundary of the chain: the hot path against a fence at
 # or above seq_cst.  The pack carries a cost grade and a refinement
@@ -318,7 +318,7 @@ fixy_neg_compile_test(neg_rule_v301_hot_seq_cst
   "Collision rule\\(s\\) V301:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the memory-scope family ────────────────────────────────
+# ── The memory-scope family ───────────────────────────────────────────
 #
 # One rule that reads two of the new axes together: a scope at or above
 # Cluster against a fence below AcqRel.  The pack names no regime, so
@@ -328,7 +328,7 @@ fixy_neg_compile_test(neg_rule_v401_wide_scope_weak_fence
   "Collision rule\\(s\\) V401:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the SIMD-ISA family ────────────────────────────────────
+# ── The SIMD-ISA family ───────────────────────────────────────────────
 #
 # Two rules.  V101 refuses on the payload, as V203 does: a replay-
 # deterministic band against an ISA pinned to one vendor trunk.  V402
@@ -344,9 +344,9 @@ fixy_neg_compile_test(neg_rule_v402_scope_across_trunk
   "Collision rule\\(s\\) V402:"
   "${_fixy_tier5_member}")
 
-# ── Task #176: the floating-point-mode family ─────────────────────────
+# ── The floating-point-mode family ────────────────────────────────────
 #
-# The last axis the task drained.  Both rules refuse on the payload's
+# Both rules refuse on the payload's
 # replay claim against one setting of the product atom: F101 on
 # reassociation, F102 on contraction across statements.  Each fixture's
 # mode names one setting and leaves the other at its strict pole, which
@@ -439,10 +439,10 @@ fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
   "The axis graded twice here is Usage"
   "fixy::atom::copy, fixy::atom::affine>::tier4_unique_ok_.+ evaluates to false")
 
-# ── Task #112 (A11.5): the gate fixtures and the generated TU ─────────
+# ── The gate fixtures and the generated TU ────────────────────────────
 #
-# A11.4 stood a fixture on each rule and each corpus entry — the tier-5
-# half.  This is the rest of the gate: the doors a reader walks into on
+# The hand corpus stands a fixture on each rule and each corpus entry,
+# which is the tier-5 half.  This is the rest of the gate: the doors a reader walks into on
 # the way to tier 5, and the combinatorial claims that are universal over
 # the atom catalog rather than one file per case.
 #
@@ -510,7 +510,7 @@ fixy_neg_compile_test(neg_role_io_row_under_foreground_ctx
 fixy_neg_compile_test(neg_os_fs_mint_file_with_atom_widens_required_row
   "required for the satisfaction of .CtxAdmitsAtomRow<Ctx, Atoms ...>."
   "R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Bg>")
-#   Both refusals are constraints (#191), so the diagnostic names the
+#   Both refusals are constraints, so the diagnostic names the
 #   concept that failed and the atomic expression that decided it, and
 #   Secret<int&> is never named because deduction stops before the
 #   trailing return type.
@@ -553,7 +553,7 @@ fixy_neg_compile_test(neg_atom_without_axis_rejected
   "required for the satisfaction of .IsAtom<G>."
   "the required expression .G::axis. is invalid")
 
-# ── Task #101 (A10.1): fixy/Refined.h ─────────────────────────────────
+# ── Fixy/Refined.h ────────────────────────────────────────────────────
 
 fixy_test(test_refined)
 
@@ -616,7 +616,7 @@ fixy_neg_compile_test(neg_refined_bounded_inverted
   "static assertion failed: Bounded<Lo, Hi, T>: range is empty \\(Lo > Hi\\)"
   "In instantiation of .struct fixy::detail::bounded_alias<10, 5, int>.")
 
-# ── Task #102 (A10.2): fixy/Tagged.h and fixy/Secret.h ────────────────
+# ── Fixy/Tagged.h and fixy/Secret.h ───────────────────────────────────
 
 fixy_test(test_tagged)
 fixy_test(test_secret)
@@ -651,7 +651,7 @@ fixy_neg_compile_test(neg_secret_copy
   "fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\)"
   "cannot be silently duplicated")
 
-# ── Task #104 (A10.4): Stale, OwnedRegion, Borrowed, ScopedView, Machine ──
+# ── Stale, OwnedRegion, Borrowed, ScopedView, Machine ─────────────────
 #
 # The region test keeps the file name of the test it is ported from and
 # carries a suffix, because test/CMakeLists.txt still registers
@@ -691,7 +691,7 @@ fixy_neg_compile_test(neg_stale_weakened_downwards
   "in .constexpr. expansion of .eight_behind\\.fixy::Stale<int>::weaken\\("
   "fixy/Stale\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
-# ── Task #106 (A10.6): the consumed bands and the F* aliases ─────────
+# ── The consumed bands and the F* aliases ─────────────────────────────
 fixy_test(test_bands)
 fixy_test(test_aliases)
 
@@ -744,7 +744,7 @@ fixy_neg_compile_test(neg_bands_satisfies_cross_trunk
   "required for the satisfaction of .covers_cta_requirement<"
   "satisfies_v<Provider, foundation::algebra::lattices::MemoryScope::Cta>.*evaluated to .false.")
 
-# ── Task #105 (A10.5): the eight value wrappers ──────────────────────
+# ── The eight value wrappers ──────────────────────────────────────────
 #
 # The checked test keeps the file name of the test it is ported from and
 # carries a suffix, because test/CMakeLists.txt still registers
@@ -808,7 +808,7 @@ fixy_neg_compile_test(neg_saturated_checked_op_on_float
   "constraints not satisfied"
   "required for the satisfaction of .integral<T>. \\[with T = float\\]")
 
-# The ninth header of A10.5.  The old spelling was a pair that included
+# The ninth value-wrapper header.  The old spelling was a pair that included
 # each other; here the sanitizer follows the declarations it reads.
 fixy_test(test_path)
 
@@ -827,21 +827,20 @@ fixy_neg_compile_test(neg_path_forge_sanitized_tag
   "fixy::Tagged<T, Tag>::Tagged\\(T\\)"
   "Tag = fixy::tags::source::Sanitized")
 
-# ── Task #153 (FIXY-6): the OS tag namespaces, walked ────────────────
+# ── The OS tag namespaces, walked ─────────────────────────────────────
 #
 # The check reads the nine namespaces rather than a hand roster, so the
 # witness that it works is a class it was never told about.  The
 # fixture plants one before the header, and both halves of the check
 # answer: the shape walk refuses it, and the count pin sees 46 where it
-# recorded 45.  The namespace count went from nine to ten and the tag
-# count from 35 to 45 when #116 moved fixy::mmap::advice here, so that one
+# recorded 45.  fixy::mmap::advice is one of the ten namespaces, so one
 # walk covers every tag namespace.
 fixy_neg_compile_test(neg_os_tag_namespace_holds_a_non_tag
   "static assertion failed: fixy/atoms/Os\\.h: a class declared in one of the ten tag namespaces has state"
   "static assertion failed: fixy/atoms/Os\\.h: the ten tag namespaces hold a different number of tags"
   "the comparison reduces to .\\(46 == 45\\).")
 
-# ── Task #117 (A14.1): the binary session core ───────────────────────
+# ── The binary session core ───────────────────────────────────────────
 #
 # Protocol.h is the type level: combinators, duality, composition,
 # well-formedness.  Stepping.h adds the abandonment-check policy and
@@ -889,7 +888,7 @@ fixy_neg_compile_test(neg_sess_mint_unpinned_reference
   "constraints not satisfied"
   "satisfaction of .SessionResource<Resource>.")
 
-# ── Task #118 (A14.2): the machine and Vigil-mode session bridges ────
+# ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)
 
 # HS14 for mint_session_from_machine: one fixture per clause of its
@@ -959,7 +958,7 @@ file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/armed_roster/every_header.h
 fixy_test(test_armed_roster)
 target_include_directories(test_armed_roster PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
 
-# ── Task #119 (A15): the lock-free rings ─────────────────────────────
+# ── The lock-free rings ───────────────────────────────────────────────
 #
 # The threaded half of this test is what checks the ordering claim, so
 # it is the half that means anything under the tsan preset.
@@ -979,7 +978,7 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
   "constraints not satisfied"
   "satisfaction of .RingValue<T>.")
 
-# ── Task #119 (A15): the permissioned channels ───────────────────────
+# ── The permissioned channels ─────────────────────────────────────────
 #
 # The split relation for each channel's tag triple is declared in the
 # channel's own header, which is why include/fixy/concurrent/ is an
@@ -1005,7 +1004,7 @@ fixy_neg_compile_test(neg_channel_foreign_tag_permission
   "spsc_tag::Producer<.*TraceTag"
   "spsc_tag::Producer<.*MetaTag")
 
-# ── Task #119 (A15): the handle poles and the stage shape ─────────────
+# ── The handle poles and the stage shape ──────────────────────────────
 #
 # Which pole of a channel a handle is, and what shape a pipeline-stage
 # body has.  Both were in namespace crucible::safety::extract, which 57
@@ -1044,7 +1043,7 @@ fixy_neg_compile_test(neg_stage_shape_value_preserving_on_non_stage
   "use of invalid variable template"
   "the expression .\\(arity_v<FnPtr>\\) >= 2 \\[with FnPtr = &nullary_body\\(\\)\\]. evaluated to .false.")
 
-# ── Task #189: the payload row is fail-closed ─────────────────────────
+# ── The payload row is fail-closed ────────────────────────────────────
 #
 # The extractor is entirely compile-time, so this test is first the
 # sentinel that compiles its static_assert wall: until Stage.h lands,
@@ -1079,7 +1078,7 @@ fixy_neg_compile_test(neg_payload_row_member_hides_unclassified
   "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "The refused type: \\{anonymous\\}::UnclassifiedWrapper<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >")
 
-# ── Task #119 (A15): the machine topology ─────────────────────────────
+# ── The machine topology ──────────────────────────────────────────────
 #
 # The sysfs probe Pipeline::run reads for its cache sizes and its
 # affinity.  The machine under test is unknown, so every assertion is
@@ -1089,7 +1088,7 @@ fixy_neg_compile_test(neg_payload_row_member_hides_unclassified
 # and a CMake target name is global.
 fixy_test(test_topology_fixy test_topology.cpp)
 
-# ── Task #119 (A15): the stage and the pipeline ──────────────────────
+# ── The stage and the pipeline ────────────────────────────────────────
 #
 # Stage.h and Pipeline.h carry their type-level claims as static
 # assertions, so the two tests below are the parts only a constructed
@@ -1255,7 +1254,7 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
   "required for the satisfaction of .CtxFitsPipelineDagMint<Ctx, Graph, Stages \\.\\.\\.>."
   "Graph = fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&pass_through")
 
-# ── Task #119 (A15): the publication handles ─────────────────────────
+# ── The publication handles ───────────────────────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a
 # hot-path TU sets the contract semantic to ignore, where a clause
@@ -1264,7 +1263,7 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
 # PublishOnceDoublePublish banner from the child.
 fixy_test(test_handle_publish)
 
-# The standing witness for task #18: the guard that admitted
+# The standing witness for the guard that once admitted
 # PublishOnce<int*> and enforced nothing.  A guard that went
 # tautological again would make this fixture stop failing.
 fixy_neg_compile_test(neg_handle_publish_once_pointer_pointee
@@ -1289,7 +1288,7 @@ fixy_neg_compile_test(neg_handle_publish_once_copied
 fixy_test(test_os_time)
 
 # The gate and the clamp safety/_Mutation.h's MonotonicClock carried,
-# restored to fixy/os/Time.h (#183).  A clock read on the replay-bound
+# restored to fixy/os/Time.h.  A clock read on the replay-bound
 # foreground path makes replay diverge across machines, so the reader is
 # minted only by a context owning Bg, Init or Test, and its constructor
 # is private with the mint as its only friend.  The first fixture is a
@@ -1579,7 +1578,7 @@ foreach(_witness_line IN LISTS _witness_lines)
     "\\b${_witness_base}\\(")
 endforeach()
 
-# ── Task #107 (A10.7): the cross-wrapper harness and the cheat probe ──
+# ── The cross-wrapper harness and the cheat probe ─────────────────────
 #
 # test_wrapper_verification is the one translation unit where every
 # fixy wrapper meets: the diagnostic surface, the layout per storage
@@ -1604,7 +1603,7 @@ fixy_neg_compile_test(neg_cheat_graded_modality_injection
   "template constraint failure"
   "IsGraded<T>. \\[with T = FakeSubstrate\\]")
 
-# ── Task #116 (A13.4): the spin gate, the throws walk, fp, and spawn ──
+# ── The spin gate, the throws walk, fp, and spawn ─────────────────────
 #
 # fixy/Throws.h and fixy/fp/Canonicalize.h carry their whole claim as
 # static assertions, so they have no runtime unit of their own; the two
@@ -1861,7 +1860,7 @@ fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
   "static assertion failed: mint_split<N>\\(region\\) takes one template argument"
   "Never = \\{\\{anonymous\\}::HeldName\\}")
 
-# ── Task #96 (A6.2): the row hash reaches every wrapper ──────────────
+# ── The row hash reaches every wrapper ────────────────────────────────
 #
 # foundation/diag/RowHash.h folds the row hash over one shape rather
 # than over fifty-two named wrappers, so the property it owes this tree
