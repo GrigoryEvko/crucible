@@ -11,6 +11,7 @@
 
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/sessions/SessionMint.h>
+#include <foundation/Lifetime.h>
 
 #include <cstdio>
 #include <iterator>
@@ -119,6 +120,37 @@ static_assert(!is_forgeable_from_bytes_v<eff::ColdInitCtx>);
 static_assert(!is_forgeable_from_bytes_v<proto::EpochExecCtx<1, 1, eff::BgDrainCtx>>);
 static_assert(!is_forgeable_from_bytes_v<eff::Capability<eff::Effect::Block, eff::Bg>>);
 
+// ── Routes that left the ledger for a guard ─────────────────────────
+//
+// Two routes still compile, and a guard refuses each one where code ships.
+//
+// The testing door.  testing::bg(), init() and test() mint a context in
+// any translation unit.  scripts/check-ctx-testing-boundary.sh counts each
+// use of the door in include/, src/, vessel/, tools/ and examples/, the old
+// tree included, and a use beyond the reviewed count of its file fails.
+//
+// An array, an aggregate or a union over a context.  Each is an
+// implicit-lifetime type whatever its elements are, so
+// std::start_lifetime_as gives a pointer to a context whose lifetime never
+// started.  scripts/check-start-lifetime.sh refuses the library start
+// outside the checked start, a frozen file and a negative fixture, and it
+// reads the preprocessed text, so a macro does not hide it.  The checked
+// start refuses each such type at compile time, as the assertions below
+// pin.
+struct HoldsBgDrain {
+    eff::BgDrainCtx held;
+};
+union BgDrainOrByte {
+    unsigned char byte;
+    eff::BgDrainCtx held;
+};
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<eff::BgDrainCtx[1]>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<HoldsBgDrain>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<BgDrainOrByte>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<eff::Bg[1]>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<eff::detail::ctx_mint::bg_key[1]>,
+              "the checked lifetime start admits an array, an aggregate or a union over an old-tree context");
+
 // ── The ledger ──────────────────────────────────────────────────────
 //
 // Each entry is a route that builds a context over Bg with legal code.
@@ -134,24 +166,23 @@ struct KnownRoute {
 inline constexpr KnownRoute kLedger[] = {
     {"a friended host class defined by the attacker",
      "The keys friend BackgroundThread, Vigil, tools::HwProbeEntry and TestWitness by name. A program that links none "
-     "of them can define the class itself and reach the key. Two definitions in one program are an ODR violation, "
-     "and no diagnostic is required."},
-    {"the testing door",
-     "testing::bg(), init() and test() mint a context in any translation unit. The guard on that namespace scans the "
-     "new tree only, so a use in the old production tree is seen by review alone."},
-    {"an array or a union over a context",
-     "An array type and an aggregate union are implicit-lifetime types whatever their elements are, so "
-     "std::start_lifetime_as gives a pointer. The element has no lifetime, and a read through it is undefined. A use "
-     "in the tree needs an entry in scripts/start-lifetime-allowlist.txt, so review sees it."},
+     "of them can define the class itself and reach the key. Two definitions of one class in one program are an ODR "
+     "violation, and no diagnostic is required. No friend spelling closes it: a friend function, a friend template "
+     "and a key defined out of line in a library each have a definition that such a program can also write."},
+    {"the inactive member of a union, or a pointer from a void pointer",
+     "A union that holds a context beside a byte starts with the byte alive, and the address of its context member "
+     "is a pointer to a context whose lifetime never started. A cast through void, std::malloc and an arena give "
+     "the same pointer. A read through it is undefined behavior, and no property of the type refuses it: a union "
+     "may hold any object type, and a static_cast from void to an object pointer is always well-formed. "
+     "test/fixy/test_forgeable_proofs.cpp pins the same two routes for the new tree."},
     {"an epoch wrapper states any epoch",
-     "with_session_epoch takes the epoch and the generation as template arguments and checks them against nothing, so "
-     "the wrapper admits a hand-off at an epoch no one reached. It raises no capability."},
+     "with_session_epoch and EpochExecCtx take the epoch and the generation as template arguments and check them "
+     "against nothing, so the wrapper admits a hand-off at an epoch no one reached. The epoch is a type-level claim, "
+     "and a runtime epoch can back it only through an epoch authority that the tree does not have. The frozen tree "
+     "admits a soundness mirror only of a fix that the new tree holds, and the new tree has no epoched delegation. "
+     "No code that ships builds the wrapper, and it raises no capability."},
 };
-static_assert(std::size(kLedger) <= 4, "the ledger only shrinks");
-
-union UnionOverBgDrain {
-    eff::BgDrainCtx held;
-};
+static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
 
 // The reproducers.  Each returns true while its route stays open.
 [[nodiscard]] inline bool reproduces_host_class_route() noexcept {
@@ -159,30 +190,28 @@ union UnionOverBgDrain {
     return std::is_same_v<std::remove_cvref_t<decltype(ctx.cap())>, eff::Bg>;
 }
 
-[[nodiscard]] inline bool reproduces_testing_door_route() noexcept {
-    const eff::BgDrainCtx ctx{eff::testing::bg()};
-    return std::is_same_v<std::remove_cvref_t<decltype(ctx.cap())>, eff::Bg>;
-}
-
-template <class T>
-concept lifetime_starts_over_bytes = requires(unsigned char* storage) { std::start_lifetime_as<T>(storage); };
-
-[[nodiscard]] constexpr bool reproduces_array_union_route() noexcept {
-    return std::is_implicit_lifetime_v<eff::BgDrainCtx[1]> && std::is_implicit_lifetime_v<UnionOverBgDrain>
-           && lifetime_starts_over_bytes<eff::BgDrainCtx[1]>;
+// Counts the pointers the two routes give, and never reads through one.
+[[nodiscard]] inline bool reproduces_union_and_void_routes() noexcept {
+    alignas(eff::BgDrainCtx) unsigned char storage[sizeof(eff::BgDrainCtx)]{};
+    BgDrainOrByte context_or_byte{.byte = 0};
+    const eff::BgDrainCtx* const from_union = &context_or_byte.held;
+    const eff::BgDrainCtx* const from_void = static_cast<const eff::BgDrainCtx*>(static_cast<const void*>(storage));
+    return from_union != nullptr && from_void != nullptr;
 }
 
 [[nodiscard]] inline bool reproduces_epoch_claim_route() noexcept {
     const auto wrapped = proto::with_session_epoch<999, 999>(eff::HotFgCtx{});
-    return decltype(wrapped)::current_epoch == 999 && decltype(wrapped)::current_generation == 999;
+    const proto::EpochExecCtx<999, 999, eff::HotFgCtx> stated{};
+    return decltype(wrapped)::current_epoch == 999 && decltype(wrapped)::current_generation == 999
+           && decltype(stated)::current_epoch == 999;
 }
 
 }  // namespace ctx_forge_attacks
 
 int main() {
     namespace cfa = ctx_forge_attacks;
-    const bool open[] = {cfa::reproduces_host_class_route(), cfa::reproduces_testing_door_route(),
-                         cfa::reproduces_array_union_route(), cfa::reproduces_epoch_claim_route()};
+    const bool open[] = {cfa::reproduces_host_class_route(), cfa::reproduces_union_and_void_routes(),
+                         cfa::reproduces_epoch_claim_route()};
     static_assert(std::size(open) == std::size(cfa::kLedger), "each ledger entry has one reproducer");
     for (std::size_t index = 0; index < std::size(open); ++index) {
         if (!open[index]) {
