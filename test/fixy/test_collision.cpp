@@ -641,10 +641,17 @@ static_assert(col::live_rule_count == 30);
 }
 static_assert(corpus_entries_with(col::Disposition::Live) == 30);
 static_assert(corpus_entries_with(col::Disposition::Pending) == 0);
-static_assert(corpus_entries_with(col::Disposition::Absent) == 25);
+static_assert(corpus_entries_with(col::Disposition::Absent) == 18);
+static_assert(corpus_entries_with(col::Disposition::Retired) == 7);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
-                  + corpus_entries_with(col::Disposition::Absent)
+                  + corpus_entries_with(col::Disposition::Absent) + corpus_entries_with(col::Disposition::Retired)
               == col::rule_corpus_size);
+
+// The Absent list and the Absent rows are the same set, so the list's
+// length is the Absent count.  The header pins the set by name; this
+// cell ties that name list to the count above.
+static_assert(sizeof(col::absent_rule_codes) / sizeof(col::absent_rule_codes[0])
+              == corpus_entries_with(col::Disposition::Absent));
 
 // No code appears twice, so the 54 are 54 distinct codes rather than a
 // list that happens to be 54 long.
@@ -658,11 +665,13 @@ static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(
 }
 static_assert(every_corpus_code_is_unique());
 
-// Every absent entry says what is missing, so an absence is a claim a
-// reader can check rather than a silence.
+// Every absent entry says what is missing, and every retired entry says
+// why it is not carried, so neither is a silence.
 [[nodiscard]] consteval bool every_absent_entry_gives_a_reason() noexcept {
     for (const col::corpus_entry& entry : col::rule_corpus) {
-        if (entry.disposition == col::Disposition::Absent && entry.note.empty()) return false;
+        const bool needs_reason =
+            entry.disposition == col::Disposition::Absent || entry.disposition == col::Disposition::Retired;
+        if (needs_reason && entry.note.empty()) return false;
     }
     return true;
 }
@@ -727,17 +736,19 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
     std::size_t live = 0;
     std::size_t pending = 0;
     std::size_t absent = 0;
+    std::size_t retired = 0;
     for (const col::corpus_entry& entry : col::rule_corpus) {
         if (entry.code.empty() || entry.note.empty()) return 7;
         switch (entry.disposition) {
             case col::Disposition::Live: ++live; break;
             case col::Disposition::Pending: ++pending; break;
             case col::Disposition::Absent: ++absent; break;
+            case col::Disposition::Retired: ++retired; break;
             default: return 8;
         }
     }
-    if (live != 30 || pending != 0 || absent != 25) return 9;
-    if (live + pending + absent != col::rule_corpus_size) return 10;
+    if (live != 30 || pending != 0 || absent != 18 || retired != 7) return 9;
+    if (live + pending + absent + retired != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 
     // The binding the rules admit still carries its value.

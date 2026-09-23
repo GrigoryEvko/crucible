@@ -247,16 +247,15 @@ enum class RuleCode : std::uint8_t {
     W002,
     F101,
     F102,
-    // F103, F104, F105 and V102 have no enumerator, and the pin below is
+    // An Absent or Retired code has no enumerator, and the pin below is
     // why: this enum holds exactly the codes a rule in this file can be
-    // named by, and an Absent code is named only by the corpus, as a
-    // string.  The twenty-one codes that were Absent from the start have
-    // never had one either.  They were briefly here while they were
-    // Pending, because a pending rule keeps its code against the day its
-    // axis gains an atom; when task #176 gave FpMode and SimdIsa atoms
-    // and the four still could not fire, they joined the Absent list and
-    // gave their enumerators up.  Nothing renamed and nothing reused: the
-    // corpus still carries each string, with the reason it cannot fire.
+    // named by, and any other code is named only by the corpus, as a
+    // string.  F103, F104, F105 and V102 were briefly here while they
+    // were Pending, because a pending rule keeps its code against the day
+    // its axis gains an atom; when FpMode and SimdIsa gained atoms and
+    // the four still could not fire, they gave their enumerators up.
+    // Nothing renamed and nothing reused: the corpus still carries each
+    // string, with the reason it cannot fire or is not carried.
     V101,
     V201,
     V202,
@@ -288,12 +287,13 @@ struct pending_rule {
 // scope AND a strength, V402 a scope AND a pinned ISA, so each waited on
 // whichever of its two axes was still atomless.
 //
-// Four left for the Absent list in rule_corpus instead, because the atom
-// their axis gained did not make them fire.  V102 reads a SIMD width, and
-// F103, F104 and F105 read a constant-time grade; no atom and no band
-// carries either.  That is the honest distinction this list exists to
-// draw: pending means waiting on an atom, and absent means waiting on
-// something this layer does not have.
+// Four left for rule_corpus instead, because the atom their axis gained
+// did not make them fire.  F103, F104 and F105 read a constant-time grade
+// that no atom or band carries, and are Absent.  V102 reads a SIMD width,
+// and is Retired, because the one ISA grade a binding names already fixes
+// its width.  That is the distinction this list exists to draw: pending
+// means waiting on an atom, and absent means waiting on something this
+// layer does not have.
 inline constexpr std::array<pending_rule, 0> pending_rules{};
 
 inline constexpr std::size_t pending_rule_count = pending_rules.size();
@@ -320,6 +320,7 @@ enum class Disposition : std::uint8_t {
     Live,     // implemented in live_rules below, and able to fire today
     Pending,  // carried as a theorem, waiting on an axis that has no atom
     Absent,   // not implemented; the note names what is missing
+    Retired,  // not carried further; the note says why
 };
 
 struct corpus_entry {
@@ -398,65 +399,80 @@ inline constexpr corpus_entry rule_corpus[] = {
     // Nothing waits on an atom any more.  pending_rules above is empty and
     // says why in two parts; the rest of this list is the second part.
 
-    // The twenty-five this layer cannot state.  Each note names the thing
+    // The rules this layer cannot state yet.  Each note names the thing
     // that is missing, so the entry is a claim someone can check rather
-    // than a gap someone has to notice.
+    // than a gap someone has to notice.  absent_rule_codes below names the
+    // same set, and the set only shrinks.
     //
-    // Four of them waited in pending_rules until task #176 gave their axis
-    // an atom, and moved here rather than going live, because the atom was
-    // not what they were missing.  V102 reads a SIMD width against the
-    // ISA, and the width a body emits is not the instruction set it was
-    // emitted for.  F103, F104 and F105 read a constant-time grade, which
-    // is the same thing E044 and S010 below are missing.
-    {"V102", Disposition::Absent, "reads a pinned SIMD width against the ISA; no atom or band carries a width"},
-    {"F103", Disposition::Absent, "reads a constant-time grade against the FP mode, as E044 does"},
-    {"F104", Disposition::Absent, "reads a constant-time grade against denormal inputs, as E044 does"},
-    {"F105", Disposition::Absent, "reads a constant-time grade against subnormal results, as E044 does"},
-    //
-    // Four of them read a grade on the payload type.  live_rules receives
-    // the atom pack and not the payload: CollisionRules<fn<Type, Atoms...>>
-    // passes Atoms... alone, and Axis::Type is excluded from grades by
-    // design.  Wiring the payload in is a change to the shape of this
-    // file, not a rule.
-    {"C001", Disposition::Absent, "reads a ControlFlow tier on the payload; fixy/Bands.h ships no ControlFlowPinned"},
-    {"S011", Disposition::Absent, "reads a replay requirement, which rides on the payload as a DetSafe band"},
-    {"E044", Disposition::Absent, "reads a constant-time grade; fixy ships ct:: free functions, not a band or an axis"},
-    {"S010", Disposition::Absent, "reads a constant-time grade, as E044 does"},
+    // Seven read a constant-time grade, two a failure path, and one both.
+    // The specification carries each as an effect in the row — `with CT`
+    // and Fail(E) — and foundation/effects/Effect.h defines Alloc, IO,
+    // Block, Bg, Init and Test and nothing else.  Neither can be added in
+    // this layer: an effect is a foundation enumerator, and every consumer
+    // of the row reads the enumeration.
+    {"F103", Disposition::Absent, "reads Effect::CT against FP reassociation; foundation defines no CT effect"},
+    {"F104", Disposition::Absent, "reads Effect::CT against honoured denormal inputs; foundation defines no CT effect"},
+    {"F105", Disposition::Absent, "reads Effect::CT against preserved subnormal results; foundation defines no CT effect"},
+    {"E044", Disposition::Absent, "reads Effect::CT against async scheduling; foundation defines no CT effect"},
+    {"S010", Disposition::Absent, "reads Effect::CT against a staleness window; foundation defines no CT effect"},
+    {"I004", Disposition::Absent,
+     "reads the absence of Effect::CT on a classified async session send; foundation defines no CT effect"},
+    {"I003", Disposition::Absent, "reads Effect::CT and a Fail(E) on a secret condition; foundation defines neither"},
+    {"I002", Disposition::Absent,
+     "reads the error payload of Fail(E) against a classified value; foundation defines no Fail effect"},
+    {"M011", Disposition::Absent, "reads a Fail(E) path live across a linear value; foundation defines no Fail effect"},
 
-    // Five read an axis the 33 do not contain.
-    {"I002", Disposition::Absent, "reads an error-payload grade; no axis carries failure"},
-    {"I003", Disposition::Absent, "reads a constant-time grade and an error grade; neither exists"},
-    {"I004", Disposition::Absent, "reads a constant-time grade on a session send"},
-    {"M011", Disposition::Absent, "reads a failure path; no axis carries failure"},
-    {"F002", Disposition::Absent, "reads a termination budget; no axis carries one"},
+    // Three read a premise nothing in the tree can write.
+    {"F002", Disposition::Absent,
+     "reads a federation-peer role; Canopy membership is not a grade, and no atom or band names it"},
+    {"N002", Disposition::Absent,
+     "reads an exact-decimal payload against overflow_wrap; the tree has no decimal type and Axis::Precision "
+     "carries f32, f64 and higham only"},
+    {"L004", Disposition::Absent,
+     "reads whether a linear in_region<Tag> binding holds Permission<Tag>; the proof is a call argument, fn "
+     "carries one payload, and in_region names its tag as a value where Permission names it as a type"},
 
-    // Five read an atom nobody has written.
-    {"D001", Disposition::Absent, "reads the callable family's signature; indirect_call<F> takes F as an opaque class"},
-    {"L003", Disposition::Absent, "separates a scoped from an unscoped spawn; no atom names a spawn"},
-    {"L004", Disposition::Absent, "reads whether the binding carries a Permission proof; no atom names one"},
-    {"P003", Disposition::Absent, "reads a fork-worker marker; no atom names one"},
-    {"N002", Disposition::Absent, "reads an exact-decimal kind; Axis::Precision carries f32, f64 and higham only"},
-
-    // Two are already covered by the atomless-axis list: their axis has
-    // no atom AND the rule compares two bindings, so neither half is
-    // available.  They are recorded here rather than in pending_rules
-    // because an atom on Axis::SimdIsa would still not make them fire.
-    {"V001", Disposition::Absent, "compares two vendor intrinsics in one pack; Axis::SimdIsa also has no atom"},
-    {"V002", Disposition::Absent, "compares two architecture trunks in one pack; Axis::SimdIsa also has no atom"},
-
-    // Four hold across several bindings.  live_rules is handed one
-    // binding's pack, so a corpus-level relation belongs to A11.3.
+    // Three hold across several bindings.  rules_of is handed one binding,
+    // so a relation over a set of bindings has no place here.
     {"F001", Disposition::Absent, "a frame-level agreement across several bindings"},
     {"L005", Disposition::Absent, "compares two linear bindings that share a region tag"},
-    {"S004", Disposition::Absent, "walks the init-dependency graph across every registered singleton"},
+    {"S004", Disposition::Absent,
+     "walks the init-dependency graph across every registered singleton; global::singleton<Tag> names no edge"},
 
-    // One is discharged by construction, and one never had a theorem.
-    {"G001", Disposition::Absent,
+    // Retired: the rule is not carried further, and the note says why.
+    // Each of these is discharged by the shape of the new tree — the
+    // combination it refused cannot be written — or never had a theorem.
+    // A retired rule is not a rule deferred, so it leaves the Absent set
+    // rather than waiting in it.
+    {"C001", Disposition::Retired,
+     "discharged: ctrl::abort<Reason> IS the binding's ControlFlow grade, so the abort declaration and the "
+     "tier the old rule compared it with are one claim and cannot disagree"},
+    {"P003", Disposition::Retired,
+     "discharged: a fork worker is a callable handed to mint_spawn, which refuses one whose type carries "
+     "ctrl::throws (fixy/os/Spawn.h, deviation 1), after foundation's fork gate has required it be noexcept"},
+    {"V001", Disposition::Retired,
+     "discharged: Axis::SimdIsa takes one grade per binding and tier 4 refuses a second, so a pack cannot name "
+     "two vendors' instruction sets"},
+    {"V002", Disposition::Retired,
+     "discharged: Axis::SimdIsa takes one grade per binding and tier 4 refuses a second, so a pack cannot name "
+     "an x86 set and an ARM set together"},
+    {"V102", Disposition::Retired,
+     "discharged: the width a body emits is the width of the one SimdIsa grade it names; no atom or band states "
+     "a width apart from it, so a width wider than the set cannot be written"},
+    {"G001", Disposition::Retired,
      "discharged: atom::global::thread_local_<StaticTag> requires the tag, so the untagged form this rule refused "
      "cannot be named"},
-    {"M001", Disposition::Absent,
+    {"M001", Disposition::Retired,
      "the old catalog declares M001_DontNeedRequiresReleaseAware and ships no CRUCIBLE_COLLISION_DIAGNOSTIC for it, "
      "so the code has a name and no theorem to port"},
+
+    // Three whose premises the new tree CAN write, and whose rules are not
+    // written.  Nothing is missing but the rule.
+    {"S011", Disposition::Absent,
+     "not written; capability_usage and a DetSafe band on the payload state both premises"},
+    {"D001", Disposition::Absent,
+     "not written; indirect_call<Family> states a signature when Family is a function pointer"},
+    {"L003", Disposition::Absent, "not written; borrow and spawn::detach_with state both premises"},
 };
 
 inline constexpr std::size_t rule_corpus_size = sizeof(rule_corpus) / sizeof(rule_corpus[0]);
@@ -472,7 +488,7 @@ namespace detail {
 
 [[nodiscard]] consteval bool corpus_ships_(std::string_view code) noexcept {
     for (const corpus_entry& entry : rule_corpus) {
-        if (entry.code == code) return entry.disposition != Disposition::Absent;
+        if (entry.code == code) return entry.disposition == Disposition::Live || entry.disposition == Disposition::Pending;
     }
     return false;
 }
@@ -744,7 +760,7 @@ static_assert(rule_corpus_size == 55,
               "dropped from this list stops being reported as absent.");
 
 // Every code the corpus says ships has an enumerator, and every code it
-// says is absent has none.  A rule written without a corpus entry, or
+// says is absent or retired has none.  A rule written without a corpus entry, or
 // recorded as absent after being written, reddens here.
 //
 // Both checks answer with the offending code rather than with a bool, so
@@ -755,7 +771,7 @@ namespace detail {
 
 [[nodiscard]] consteval std::string_view code_the_enum_disagrees_about_() noexcept {
     for (const corpus_entry& entry : rule_corpus) {
-        const bool shipped = entry.disposition != Disposition::Absent;
+        const bool shipped = entry.disposition == Disposition::Live || entry.disposition == Disposition::Pending;
         if (rule_code_names_(entry.code) != shipped) return entry.code;
     }
     return {};
@@ -803,9 +819,8 @@ static_assert(detail::code_the_corpus_never_listed_().empty(),
 // is the one edit that grows the set, and it is a visible line in a diff
 // rather than a disposition changed in passing.
 inline constexpr std::string_view absent_rule_codes[] = {
-    "V102", "F103", "F104", "F105", "C001", "S011", "E044", "S010", "I002",
-    "I003", "I004", "M011", "F002", "D001", "L003", "L004", "P003", "N002",
-    "V001", "V002", "F001", "L005", "S004", "G001", "M001",
+    "F103", "F104", "F105", "E044", "S010", "I004", "I003", "I002", "M011", "F002",
+    "N002", "L004", "F001", "L005", "S004", "S011", "D001", "L003",
 };
 
 namespace detail {
