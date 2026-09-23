@@ -120,6 +120,13 @@ union RawUnion {
     ~RawUnion() {}
 };
 struct Declared;
+template <class T>
+struct DeclaredTemplate;
+template <class T>
+struct BoxesToken {
+    T tag{};
+    TX token;
+};
 
 // Counted, not laundered: the walk reaches the token owned.
 static_assert(sender_requires_exactly<std::tuple<TX, int>, X>);
@@ -150,6 +157,15 @@ static_assert(refusal_of<std::span<TX>> == Refusal::TokenBehindPointer);
 static_assert(refusal_of<std::reference_wrapper<TX>> == Refusal::TokenBehindPointer);
 static_assert(refusal_of<std::atomic<TX*>> == Refusal::TokenBehindPointer);
 static_assert(refusal_of<std::pair<std::unique_ptr<TX>, int>> == Refusal::TokenBehindPointer);
+// A specialization behind a pointer is read for its members, so a token
+// that no template argument names is refused too.  Before that read,
+// std::unique_ptr<BoxesToken<int>> was a plain payload, and the sender
+// kept the region while the recipient owned the token.
+static_assert(refusal_of<BoxesToken<int>*> == Refusal::TokenBehindPointer);
+static_assert(refusal_of<std::unique_ptr<BoxesToken<int>>> == Refusal::TokenBehindPointer);
+static_assert(refusal_of<std::vector<BoxesToken<int>>> == Refusal::TokenBehindPointer);
+static_assert(refusal_of<BoxesToken<int>&> == Refusal::TokenBehindPointer);
+static_assert(!sess::is_plain_payload_v<std::unique_ptr<BoxesToken<int>>>);
 
 // Refused in a union: the token can be absent at run time.
 static_assert(refusal_of<std::optional<TX>> == Refusal::TokenInUnion);
@@ -194,8 +210,11 @@ static_assert(refusal_of<decltype(capture_by_reference(std::declval<TX&>()))> ==
 static_assert(refusal_of<decltype(capture_plain(0))> == Refusal::UnreadableState);
 static_assert(refusal_of<decltype(capture_nothing())> == Refusal::None, "a lambda with no state carries nothing");
 
-// Refused as only declared: nothing says what it holds.
+// Refused as only declared: nothing says what it holds.  The public
+// traits stop the build on these instead of answering:
+// neg_session_payload_declared_template_behind_pointer.
 static_assert(refusal_of<Declared*> == Refusal::IncompleteType);
+static_assert(refusal_of<DeclaredTemplate<int>*> == Refusal::IncompleteType);
 
 // Refused as one tag twice.
 static_assert(refusal_of<std::pair<TX, TX>> == Refusal::DuplicateTag);

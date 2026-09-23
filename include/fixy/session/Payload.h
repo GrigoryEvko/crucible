@@ -69,7 +69,8 @@
 //     the static type does not name what they hold;
 //   * a class whose state the walk cannot read, which is the shape of a
 //     lambda with captures;
-//   * a class that is only declared;
+//   * a class or a template that is only declared, behind a pointer or a
+//     reference;
 //   * one tag twice in one payload;
 //   * a fixy::Secret outside DeclassifyOnSend, and a type marked
 //     constant_time_value outside CTPayload, as fixy/session/Classified.h
@@ -77,10 +78,13 @@
 //
 // A refusal is a compile error.  Its text names the refused type.
 //
-// What the walk cannot see.  A specialization reached through a pointer
-// is read for its template arguments and not for its members, so a
-// member that the arguments do not name is not seen.
-// TypeComponents.h states the same limit.
+// The walk reads each class behind a pointer or a reference for its
+// members, and it instantiates a specialization for that read.  So a
+// token in a member that no template argument names is seen too, and
+// std::unique_ptr<Box<int>> cannot launder the token that Box holds.
+// TypeComponents.h states the costs of that read.  A class that is only
+// declared is complete in a different unit, so the verdict on it is a
+// compile error of every trait here and never a value.
 //
 // ── Delegation ──────────────────────────────────────────────────────
 //
@@ -434,6 +438,9 @@ struct PayloadAccount {
 [[nodiscard]] consteval PayloadAccount account_payload(std::meta::info root) {
     namespace refl = ::foundation::reflect;
     namespace fp = ::foundation::permissions;
+    // A class behind a pointer or a reference is read for its members, a
+    // specialization too, so a token that no argument names is seen.
+    constexpr refl::SpecializationRead instantiating = refl::SpecializationRead::Instantiating;
 
     struct Node {
         std::meta::info type{};
@@ -451,7 +458,7 @@ struct PayloadAccount {
     // sender, so its tokens are reached aliased, as through a reference
     // member.
     if (std::meta::is_reference_type(std::meta::dealias(root))) {
-        const refl::TypeNode reached = refl::node_reached_indirectly(root);
+        const refl::TypeNode reached = refl::node_reached_indirectly(root, instantiating);
         pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
     } else {
         pending.push_back(Node{refl::bare_type(root), true, PayloadReach::Owned});
@@ -593,7 +600,7 @@ struct PayloadAccount {
         if (std::meta::is_pointer_type(type) || std::meta::is_reference_type(type)) {
             const std::meta::info element =
                 std::meta::is_pointer_type(type) ? std::meta::remove_pointer(type) : std::meta::remove_reference(type);
-            const refl::TypeNode reached = refl::node_reached_indirectly(element);
+            const refl::TypeNode reached = refl::node_reached_indirectly(element, instantiating);
             pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
             continue;
         }
@@ -606,17 +613,9 @@ struct PayloadAccount {
         const bool is_union = std::meta::is_union_type(type);
         if (!std::meta::is_class_type(type) && !is_union) continue;
 
+        // Only a class behind a pointer or a reference can be unreadable,
+        // and then it has no definition here.
         if (!node.readable) {
-            // Reached through a pointer.  A specialization is read for its
-            // template arguments, and each keeps the reach of the node.
-            if (payload_is_specialization(type)) {
-                for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
-                    if (!std::meta::is_type(argument)) continue;
-                    const refl::TypeNode reached = refl::node_reached_indirectly(argument);
-                    pending.push_back(Node{reached.type, reached.may_read_members, node.reach});
-                }
-                continue;
-            }
             refuse(PayloadRefusal::IncompleteType, type);
             continue;
         }
@@ -634,7 +633,7 @@ struct PayloadAccount {
         for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, unchecked)) {
             const std::meta::info member_type = std::meta::type_of(member);
             if (std::meta::is_reference_type(member_type)) {
-                const refl::TypeNode reached = refl::node_reached_indirectly(member_type);
+                const refl::TypeNode reached = refl::node_reached_indirectly(member_type, instantiating);
                 pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
             } else {
                 pending.push_back(Node{refl::bare_type(member_type), true, member_reach, node.in_ct_carrier});
@@ -680,7 +679,7 @@ struct PayloadVerdict {
         case PayloadRefusal::UnreadableState:
             return "it holds a class whose state the walk cannot read, such as a lambda with captures";
         case PayloadRefusal::IncompleteType:
-            return "it holds a class that is only declared, so nothing says what it holds";
+            return "it reaches a class or a template that is only declared, so nothing says what it holds";
         case PayloadRefusal::ClassifiedBare:
             return "it holds a fixy::Secret outside DeclassifyOnSend.  A classified value on a channel leaves "
                    "classification, and that needs a named policy.  Carry it as DeclassifyOnSend<T, Policy>";
@@ -701,6 +700,17 @@ struct PayloadVerdict {
     text += ".  The refused type: ";
     text += std::meta::display_string_of(verdict.refused_type);
     return std::define_static_string(text);
+}
+
+// The verdict on P, as every trait below reads it.  A class that is only
+// declared is a compile error here and not a refusal value.  A unit that
+// defines the class gives a different verdict, and a program must not
+// hold two verdicts on one type.
+template <class P>
+[[nodiscard]] consteval PayloadVerdict payload_verdict_of() {
+    constexpr PayloadVerdict verdict = payload_verdict(^^P);
+    static_assert(verdict.refusal != PayloadRefusal::IncompleteType, payload_refusal_text(verdict));
+    return verdict;
 }
 
 // ── From the account to permission sets ─────────────────────────────
@@ -863,8 +873,8 @@ template <class P>
 // True when the walk accepts the payload.  A refused payload answers
 // false here, and the refusal text comes from payload_perm_delta.
 template <class P>
-struct is_permission_classified : std::bool_constant<detail::payload_verdict(^^P).refusal ==
-                                                     detail::PayloadRefusal::None> {};
+struct is_permission_classified
+    : std::bool_constant<detail::payload_verdict_of<P>().refusal == detail::PayloadRefusal::None> {};
 
 template <class P>
 inline constexpr bool is_permission_classified_v = is_permission_classified<P>::value;
@@ -878,7 +888,7 @@ inline constexpr bool is_permission_classified_v = is_permission_classified<P>::
 //   (set minus receiver_requires) plus receiver_gains.
 template <class P>
 struct payload_perm_delta {
-    static constexpr detail::PayloadVerdict verdict = detail::payload_verdict(^^P);
+    static constexpr detail::PayloadVerdict verdict = detail::payload_verdict_of<P>();
     static_assert(verdict.refusal == detail::PayloadRefusal::None, detail::payload_refusal_text(verdict));
 
     using sender_requires = [:detail::payload_set(^^P, detail::PayloadSet::SenderRequires):];
@@ -898,7 +908,7 @@ struct payload_perm_delta {
 template <class P>
 struct is_plain_payload
     : std::bool_constant<[] consteval {
-          if (detail::payload_verdict(^^P).refusal != detail::PayloadRefusal::None) return false;
+          if (detail::payload_verdict_of<P>().refusal != detail::PayloadRefusal::None) return false;
           return std::meta::template_arguments_of(detail::payload_set(^^P, detail::PayloadSet::SenderRequires)).empty()
               && std::meta::template_arguments_of(detail::payload_set(^^P, detail::PayloadSet::ReceiverGains)).empty()
               && !detail::payload_carries_share(^^P);
