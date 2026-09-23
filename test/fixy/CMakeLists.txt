@@ -938,6 +938,27 @@ fixy_neg_compile_test(neg_sess_vigil_illegal_transition
   "fixy::session::diagnostic \\[VigilModeBridge_IllegalTransition\\]"
   "admitted_mode_transitions")
 
+# ── Every gate predicate is armed ─────────────────────────────────────
+#
+# The walk in test_armed_roster.cpp reads every predicate the two layers
+# declare, so the translation unit has to see every header they ship.
+# The list is the glob, not a hand list: a header added to either layer
+# joins the walk at the next configure.  A predicate with no armed cell
+# and no ledger entry fails the build of that one test.
+file(GLOB_RECURSE _armed_roster_headers CONFIGURE_DEPENDS
+  RELATIVE ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/include/foundation/*.h
+  ${CMAKE_SOURCE_DIR}/include/fixy/*.h)
+list(SORT _armed_roster_headers)
+set(_armed_roster_include_lines "")
+foreach(_armed_roster_header IN LISTS _armed_roster_headers)
+  string(APPEND _armed_roster_include_lines "#include <${_armed_roster_header}>\n")
+endforeach()
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/armed_roster/every_header.h
+  CONTENT "#pragma once\n${_armed_roster_include_lines}")
+fixy_test(test_armed_roster)
+target_include_directories(test_armed_roster PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
+
 # ── Task #119 (A15): the lock-free rings ─────────────────────────────
 #
 # The threaded half of this test is what checks the ordering claim, so
