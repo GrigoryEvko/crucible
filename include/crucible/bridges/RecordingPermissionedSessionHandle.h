@@ -671,7 +671,8 @@ public:
     delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&& delegated,
              Transport transport, InnerPermSetHash inner_ps_hash = {}) && {
         log_->append_event(
-            SessionEvent::delegate_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, inner_ps_hash));
+            SessionEvent::epoched_delegate_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, MinEpoch,
+                                               MinGeneration, inner_ps_hash));
         this->mark_consumed_();
         auto next = std::move(inner_).delegate(std::move(delegated), std::move(transport));
         return detail::wrap_next_permissioned_(std::move(next), *log_, self_role_, peer_role_);
@@ -683,7 +684,8 @@ public:
         PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&& delegated,
         InnerPermSetHash inner_ps_hash = {}) && {
         log_->append_event(
-            SessionEvent::delegate_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, inner_ps_hash));
+            SessionEvent::epoched_delegate_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, MinEpoch,
+                                               MinGeneration, inner_ps_hash));
         this->mark_consumed_();
         auto next = std::move(inner_).delegate_local(std::move(delegated));
         return detail::wrap_next_permissioned_(std::move(next), *log_, self_role_, peer_role_);
@@ -747,7 +749,8 @@ public:
     [[nodiscard]] constexpr auto accept(Transport transport, InnerPermSetHash inner_ps_hash = {}) && {
         auto [delegated_handle, next] = std::move(inner_).accept(std::move(transport));
         log_->append_event(
-            SessionEvent::accept_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, inner_ps_hash));
+            SessionEvent::epoched_accept_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, MinEpoch,
+                                             MinGeneration, inner_ps_hash));
         this->mark_consumed_();
         auto wrapped_next = detail::wrap_next_permissioned_(std::move(next), *log_, self_role_, peer_role_);
         return std::pair{std::move(delegated_handle), std::move(wrapped_next)};
@@ -757,7 +760,8 @@ public:
     [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res, InnerPermSetHash inner_ps_hash = {}) && {
         auto [delegated_handle, next] = std::move(inner_).accept_with(std::move(delegated_res));
         log_->append_event(
-            SessionEvent::accept_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, inner_ps_hash));
+            SessionEvent::epoched_accept_handoff(self_role_, peer_role_, default_proto_hash<InnerProto>, MinEpoch,
+                                             MinGeneration, inner_ps_hash));
         this->mark_consumed_();
         auto wrapped_next = detail::wrap_next_permissioned_(std::move(next), *log_, self_role_, peer_role_);
         return std::pair{std::move(delegated_handle), std::move(wrapped_next)};
