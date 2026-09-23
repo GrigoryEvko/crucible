@@ -151,13 +151,16 @@ struct VendorPinned : Proto {
 };
 
 // The payloads that the registry below has a rule for.  Each is defined
-// in the header of its layer: Crash in fixy/session/Crash.h and PeerMsg
-// in fixy/session/Projection.h.
+// in the header of its layer: Crash in fixy/session/Crash.h, and PeerMsg
+// and Labelled in fixy/session/Projection.h.
 template <typename Peer>
 struct Crash;
 
 template <typename Peer, typename Label, typename Payload>
 struct PeerMsg;
+
+template <typename Label, typename Payload>
+struct Labelled;
 
 namespace detail {
 
@@ -178,6 +181,21 @@ struct label_of<PeerMsg<Peer, Label, Payload>> {
 template <typename T>
 using label_of_t = typename label_of<T>::type;
 }  // namespace peer_message
+
+// The label key of a message of the binary view is its label without the
+// payload.  A binary view has one peer, so the label alone tells its
+// branches apart, as the peer and the label do in the local type that the
+// view strips.
+namespace labelled {
+template <typename T>
+struct label_of;
+template <typename Label, typename Payload>
+struct label_of<Labelled<Label, Payload>> {
+    using type = Labelled<Label, void>;
+};
+template <typename T>
+using label_of_t = typename label_of<T>::type;
+}  // namespace labelled
 
 }  // namespace detail
 
@@ -256,8 +274,13 @@ inline constexpr ::foundation::algebra::transition::payload_rule crash_label{
 inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
     .shape = ^^PeerMsg, .label_key = ^^detail::peer_message::label_of_t};
 
+// A message of the binary view names a label key too, so a choice of the
+// binary view is keyed, and the handle sends the label word.
+inline constexpr ::foundation::algebra::transition::payload_rule labelled{
+    .shape = ^^Labelled, .label_key = ^^detail::labelled::label_of_t};
+
 inline constexpr ::foundation::algebra::transition::seal payload_rule_seal{
-    .kind = ^^::foundation::algebra::transition::payload_rule, .count = 2};
+    .kind = ^^::foundation::algebra::transition::payload_rule, .count = 3};
 
 }  // namespace combinators
 

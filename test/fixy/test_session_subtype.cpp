@@ -462,11 +462,18 @@ static_assert(!s::is_subtype_sync_v<Send<s::PeerMsg<Bob, projected::Hello, Tagge
                                     Send<projected::HelloBob, End>>,
               "an untrusted payload inside a message does not drop its tag");
 static_assert(s::is_subtype_sync_v<Select<Send<projected::HelloBob, End>>, projected::Menu>,
-              "an output choice of the subtype can drop the last label");
-static_assert(!s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>>, projected::Menu>,
-              "branches match by position, so a choice that keeps only the second label is refused");
+              "an output choice of the subtype can drop a label");
+static_assert(s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>>, projected::Menu>,
+              "a keyed choice pairs by label, so a choice that keeps only the second label refines");
+static_assert(s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>, Send<projected::HelloBob, End>>, projected::Menu>,
+              "a keyed choice with its labels in another order is the same choice");
 static_assert(s::is_subtype_sync_v<projected::Inbox, Offer<s::Sender<Bob>, Recv<projected::HelloBob, End>>>,
-              "an input choice of the subtype can add a label at the end");
+              "an input choice of the subtype can add a label");
+static_assert(s::is_subtype_sync_v<projected::Inbox, Offer<s::Sender<Bob>, Recv<projected::ByeBob, End>>>,
+              "an input choice of the subtype can add a label before the labels of the supertype");
+static_assert(s::subtype_mismatch_v<Offer<s::Sender<Bob>, Recv<projected::ByeBob, End>>, projected::Inbox>
+                  == tr::mismatch::label_set,
+              "an input choice of the subtype receives each label of the supertype");
 static_assert(s::subtype_mismatch_v<projected::Inbox,
                                     Offer<s::Sender<Alice>, Recv<projected::HelloBob, End>,
                                           Recv<projected::ByeBob, End>>>

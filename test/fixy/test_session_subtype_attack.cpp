@@ -644,8 +644,9 @@ static_assert(!s::is_subtype_sync_v<Offer<Recv<A, End>, AliceCrash>, Offer<Recv<
               "a crash branch for one peer does not stand for a crash branch for another");
 static_assert(s::is_subtype_sync_v<Offer<Recv<A, End>, Recv<B, End>, BobCrash>, Offer<Recv<A, End>, BobCrash>>);
 
-// A subtype cannot drop an exit branch that stands before another
-// branch: the positions shift, and the pair at the old position differs.
+// In a positional choice a subtype cannot drop a branch that stands
+// before another branch: the positions shift, and the pair at the old
+// position differs.
 static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select<Send<B, End>, Send<A, Continue>>>>);
 
 // ── The wire word of a keyed branch is its label ─────────────────────
@@ -653,12 +654,24 @@ static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select
 // A PeerMsg names a label key.  select<I>() sends the label word of the
 // key of branch I, and the Offer of the peer dispatches on the word.  So
 // a Select that names the same labels in another order takes, at run
-// time, the branch of the label that it sent.  The relation pairs branches
-// by position, so it refuses the permutation that the run below routes.
+// time, the branch of the label that it sent.  The relation pairs the
+// branches of a keyed choice by label, so it admits the permutation that
+// the run below routes, in both directions and in both relations.
 
 using Projected = Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L1, int>, End>>;
 using Permuted = Select<Send<s::PeerMsg<Bob, L1, int>, End>, Send<s::PeerMsg<Bob, L0, int>, End>>;
-static_assert(!s::is_subtype_sync_v<Permuted, Projected> && !s::is_subtype_async_v<Permuted, Projected, ring<4>>);
+static_assert(s::is_subtype_sync_v<Permuted, Projected> && s::is_subtype_sync_v<Projected, Permuted>);
+static_assert(s::is_subtype_async_v<Permuted, Projected, ring<4>> && s::CompatibleServer<Permuted, s::dual_of_t<Projected>>);
+
+// A keyed Select drops labels in any position, and a keyed Offer adds
+// them in any position.  A label that the supertype does not send is
+// refused, and so is a keyed choice against a positional one.
+using SendsL1 = Select<Send<s::PeerMsg<Bob, L1, int>, End>>;
+static_assert(s::is_subtype_sync_v<SendsL1, Projected>);
+static_assert(s::subtype_mismatch_v<Projected, SendsL1> == tr::mismatch::label_set);
+static_assert(s::is_subtype_sync_v<s::dual_of_t<Projected>, s::dual_of_t<SendsL1>>);
+static_assert(s::subtype_mismatch_v<s::dual_of_t<SendsL1>, s::dual_of_t<Projected>> == tr::mismatch::label_set);
+static_assert(s::subtype_mismatch_v<Select<Send<A, End>, Send<B, End>>, Projected> == tr::mismatch::label_discipline);
 static_assert(s::branch_wire_word_v<Permuted, 0> == s::branch_wire_word_v<Projected, 1>
               && s::branch_wire_word_v<Permuted, 1> == s::branch_wire_word_v<Projected, 0>);
 

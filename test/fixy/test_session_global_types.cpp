@@ -311,16 +311,17 @@ static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQue
 static_assert(!s::association_holds_v<int, Ring>);
 
 // Association refines each entry with the synchronous relation of
-// Subtype.h.  Branches match by position.
+// Subtype.h.  A PeerMsg names a label key, so the branches of each choice
+// match by label.
 struct Extra {};
 template <typename LocalP, typename LocalQ, typename LocalR>
 using RingWith = s::TypingContext<s::RoleState<P, s::OutQueue<>, LocalP>, s::RoleState<Q, s::OutQueue<>, LocalQ>,
                                   s::RoleState<R, s::OutQueue<>, LocalR>>;
 
-// Safe: Q picks only Add, a prefix of the projected Select.
+// Safe: Q picks only Add, one label of the projected Select.
 using TqNarrow = s::Loop<s::Recv<s::PeerMsg<P, Add, int>, s::Select<s::Send<s::PeerMsg<R, Add, int>, s::Continue>>>>;
 static_assert(s::association_holds_v<RingWith<Tp, TqNarrow, Tr>, Ring>);
-// Safe: R also accepts a label that Q never sends, at the end.
+// Safe: R also accepts a label that Q never sends.
 using TrWide = s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>,
                                 s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>,
                                 s::Recv<s::PeerMsg<Q, Extra, int>, s::End>>>;
@@ -352,11 +353,12 @@ static_assert(!s::association_holds_v<RingWith<TpUntrusted, Tq, Tr>, Ring>);
 using TpWrongSender = s::Loop<s::Send<s::PeerMsg<Q, Add, int>, s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
                                                                          s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
 static_assert(!s::association_holds_v<RingWith<TpWrongSender, Tq, Tr>, Ring>);
-// Safe, but refused: the same labels in another order.  Branches match
-// by position, so the entry must keep the order of the projection.
+// Safe, and admitted: the same labels in another order.  A PeerMsg names
+// a label key, so branches match by label, and the handle sends the label
+// word that the peer dispatches on.
 using TrSwapped = s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>,
                                    s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>>>;
-static_assert(!s::association_holds_v<RingWith<Tp, Tq, TrSwapped>, Ring>);
+static_assert(s::association_holds_v<RingWith<Tp, Tq, TrSwapped>, Ring>);
 // A queue that disagrees with the en-route messages of G.
 static_assert(s::association_holds_v<s::projected_context_t<Ex4>, Ex4>);
 static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, typename s::project_t<Ex4, P>::local>,

@@ -26,17 +26,23 @@
 //   Loop   unfolded.  A pair seen a second time holds by assumption.
 //   VendorPinned  the same vendor on both sides.
 //
-// A label branch is matched by its position, because the handle sends
-// the position as the label: select<I>() puts I on the wire, and the
-// Offer of the peer dispatches on it.  A Select or an Offer with the
-// same branches in another order is therefore another protocol, and the
-// relation refuses it.  A branch that is no label, a crash branch for
-// example, has no position on the wire.  It is matched by the payload
-// it receives, wherever it stands (rule Sub-&, Barwell, Hou, Yoshida and
-// Zhou, LMCS 2025, Definition 4.4).  So an Offer of the subtype can add a
-// message branch before its crash branches.  The Sender note of an Offer
-// is compared for equality, so each combinator is reflexive, the Offer
-// with a note included.  An operand that is not well-formed is refused,
+// The relation matches a label branch by the word that the handle sends
+// for it (fixy/session/Handle.h).  In a keyed choice, where each label
+// branch names a label key (a PeerMsg or a Labelled payload), the word is
+// the label word, and the branches match by label in any order.  A
+// Select of the subtype sends a subset of the labels of the supertype,
+// and an Offer of the subtype receives a superset (Gay and Hole, 2005).
+// In a positional choice the word is the position, so a Select or an
+// Offer with the same branches in another order is another protocol, and
+// the relation refuses it.  A keyed choice never refines a positional
+// one, because the two put different words on the wire.  A branch that
+// is no label, a crash branch for example, has no word on the wire.  The
+// relation matches it by the payload it receives, wherever it stands
+// (rule Sub-&, Barwell, Hou, Yoshida and Zhou, LMCS 2025, Definition
+// 4.4).  So an Offer of the subtype can add a message branch before its
+// crash branches.  The relation compares the Sender note of an Offer for
+// equality, so each combinator is reflexive, the Offer with a note
+// included.  An operand that is not well-formed is refused,
 // and the reason says so.  An empty choice is not well-formed.
 //
 // One walk gives the verdict and its reason.  subtype_verdict_v names
@@ -410,6 +416,12 @@ struct reason_of {
             return "Subtype_MissingNonLabelBranch";
         case mismatch::loses_termination:
             return "Subtype_LosesTermination";
+        case mismatch::label_set:
+            return "Subtype_LabelSet";
+        case mismatch::label_discipline:
+            return "Subtype_LabelDiscipline";
+        case mismatch::label_word_clash:
+            return "Subtype_LabelWordClash";
         default:
             break;
     }
@@ -545,10 +557,15 @@ consteval void check_protocol_evolution() noexcept {
 
 namespace detail::async {
 
+// A label action names its branch by the word that the handle sends: the
+// label word and the key in a keyed choice, and the position in a
+// positional one.
 struct action {
     bool is_output = false;
     bool is_label = false;
-    std::size_t label = 0;
+    bool is_keyed = false;
+    std::uint64_t label = 0;
+    std::meta::info key{};
     std::meta::info payload{};
     std::meta::info note{};
 };
@@ -644,8 +661,9 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
 }
 
 [[nodiscard]] consteval bool same_action(const action& left, const action& right) {
-    return left.is_output == right.is_output && left.is_label == right.is_label && left.label == right.label
-           && left.payload == right.payload && left.note == right.note;
+    return left.is_output == right.is_output && left.is_label == right.is_label && left.is_keyed == right.is_keyed
+           && left.label == right.label && left.key == right.key && left.payload == right.payload
+           && left.note == right.note;
 }
 
 [[nodiscard]] consteval bool same_prefix(const std::vector<action>& left, const std::vector<action>& right) {
@@ -658,10 +676,15 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
 
 // An action of the subtype matches an action of the supertype when both
 // have the same direction and the same label, or when the payloads are
-// in the payload order for that direction.
+// in the payload order for that direction.  Two labels are the same when
+// both are keyed, with one word and one key, or both are positional, with
+// one position.
 [[nodiscard]] consteval bool matches(std::meta::info axioms, const action& sub, const action& super) {
     if (sub.is_output != super.is_output || sub.is_label != super.is_label) return false;
-    if (sub.is_label) return sub.label == super.label && sub.note == super.note;
+    if (sub.is_label) {
+        return sub.is_keyed == super.is_keyed && sub.label == super.label && sub.key == super.key
+               && sub.note == super.note;
+    }
     return sub.is_output ? ::foundation::algebra::transition::subsorts(axioms, sub.payload, super.payload)
                          : ::foundation::algebra::transition::subsorts(axioms, super.payload, sub.payload);
 }
@@ -733,12 +756,15 @@ consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, s
     const bool is_output = node.entry.direction == ::foundation::algebra::transition::polarity::output;
     std::vector<move> result;
     if (node.entry.kind == ::foundation::algebra::transition::shape_kind::step) {
-        result.push_back(move{action{is_output, false, 0, node.payload, {}}, node.next});
+        result.push_back(move{action{is_output, false, false, 0, {}, node.payload, {}}, node.next});
         return result;
     }
     for (std::size_t branch = 0; branch < node.child_count; ++branch) {
-        result.push_back(move{action{is_output, true, branch, {}, node.annotation},
-                              graph.children[node.first_child + branch]});
+        const std::size_t child = graph.children[node.first_child + branch];
+        const ::foundation::algebra::transition::graph_node& head = graph.nodes[child];
+        const std::uint64_t label = node.is_keyed ? head.label_word : static_cast<std::uint64_t>(branch);
+        const std::meta::info key = node.is_keyed ? head.label_key : std::meta::info{};
+        result.push_back(move{action{is_output, true, node.is_keyed, label, key, {}, node.annotation}, child});
     }
     return result;
 }

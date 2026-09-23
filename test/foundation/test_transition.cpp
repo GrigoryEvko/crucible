@@ -692,8 +692,9 @@ static_assert(refines(^^Wait<Take<Fault<int>, Done>, Done>, ^^Wait<Take<Fault<in
 static_assert(refine(^^Wait<Take<Fault<int>, Done>, Done>, ^^Wait<Take<Fault<int>, Done>>).reason
               == tr::mismatch::pure_non_label_choice);
 
-// A label branch pairs by position, because its position is its wire
-// label.  A branch that is no label pairs by the payload it receives.
+// A label branch of a positional choice pairs by position, because its
+// position is its wire word.  A branch that is no label pairs by the
+// payload it receives.
 static_assert(refines(^^Wait<Done, Ping, Take<Fault<int>, Done>>, ^^Wait<Done, Take<Fault<int>, Done>>),
               "a label branch added before the branch that is no label (rule Sub-&)");
 static_assert(refines(^^Wait<Done, Take<Fault<char>, Done>, Take<Fault<int>, Done>>,
@@ -704,7 +705,77 @@ static_assert(refine(^^Wait<Done>, ^^Wait<Done, Take<Fault<int>, Done>>).reason
 static_assert(refine(^^Wait<Done, Take<Fault<char>, Done>>, ^^Wait<Done, Take<Fault<int>, Done>>).reason
               == tr::mismatch::non_label_branch,
               "a branch that is no label with no partner of the same payload");
-static_assert(!refines(^^Wait<Ping, Done>, ^^Wait<Done, Ping>), "another order of label branches is another choice");
+static_assert(!refines(^^Wait<Ping, Done>, ^^Wait<Done, Ping>),
+              "another order of positional label branches is another choice");
+
+// A label branch of a keyed choice pairs by label, wherever it stands.
+// An output choice of the subtype sends only labels of the supertype, and
+// an input choice of the supertype receives only labels of the subtype.
+using SendHelloBye = Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Bye, int>, Done>>;
+using SendByeHello = Pick<Put<Envelope<Alice, Bye, int>, Done>, Put<Envelope<Alice, Hello, int>, Done>>;
+using SendBye = Pick<Put<Envelope<Alice, Bye, int>, Done>>;
+using HearHelloBye = Wait<Take<Envelope<Alice, Hello, int>, Done>, Take<Envelope<Alice, Bye, int>, Done>>;
+using HearByeHello = Wait<Take<Envelope<Alice, Bye, int>, Done>, Take<Envelope<Alice, Hello, int>, Done>>;
+using HearBye = Wait<Take<Envelope<Alice, Bye, int>, Done>>;
+static_assert(refines(^^SendHelloBye, ^^SendByeHello) && refines(^^SendByeHello, ^^SendHelloBye),
+              "another order of keyed label branches is the same choice");
+static_assert(refines(^^HearHelloBye, ^^HearByeHello) && refines(^^HearByeHello, ^^HearHelloBye));
+static_assert(refines(^^SendBye, ^^SendHelloBye) && refines(^^SendBye, ^^SendByeHello));
+static_assert(refine(^^SendHelloBye, ^^SendBye).reason == tr::mismatch::label_set,
+              "an output choice sends a label that the supertype does not send");
+static_assert(refines(^^HearByeHello, ^^HearBye) && refines(^^HearHelloBye, ^^HearBye));
+static_assert(refine(^^HearBye, ^^HearHelloBye).reason == tr::mismatch::label_set,
+              "an input choice of the supertype receives a label that the subtype does not receive");
+static_assert(refines(dual(^^SendHelloBye), dual(^^SendBye)) && refines(dual(^^HearBye), dual(^^HearByeHello)),
+              "closed under duality");
+static_assert(dual(dual(^^SendByeHello)) == plain(^^SendByeHello), "duality keeps the order of the branches");
+
+// Two labels pair by label word and label key.  One word with two keys is
+// refused, and a keyed choice never pairs with a positional one.
+static_assert(refine(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>>,
+                     ^^Pick<Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
+                  .reason
+              == tr::mismatch::label_word_clash);
+static_assert(refine(^^Pick<Put<Envelope<Alice, Hello, int>, Done>>, ^^Pick<Put<int, Done>>).reason
+              == tr::mismatch::label_discipline);
+static_assert(refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>>, ^^Wait<Take<Envelope<Bob, Hello, int>, Done>>)
+                  .reason
+              == tr::mismatch::label_set,
+              "a label to another peer is another label");
+
+// A keyed choice that repeats a label word is not well-formed.  The
+// relation refuses it also when the layer does not check well-formedness
+// first, because the peer could not tell the two branches apart.
+static_assert(refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>, Take<Envelope<Alice, Hello, long>, Done>>,
+                     ^^Wait<Take<Envelope<Alice, Hello, int>, Done>>)
+                  .reason
+              == tr::mismatch::ill_formed,
+              "an input choice of the subtype repeats a label");
+static_assert(refine(^^Pick<Put<Envelope<Alice, Hello, int>, Done>>,
+                     ^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>, Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
+                  .reason
+              == tr::mismatch::ill_formed,
+              "an output choice of the supertype has two keys of one word");
+
+// A paired label compares its payloads, and a crash branch still pairs by
+// the payload it receives.
+static_assert(tr::refines(reg, ^^envelope_axioms, ^^Pick<Put<Envelope<Alice, Bye, short>, Done>>,
+                          ^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Bye, long>, Done>>)
+                  .holds);
+static_assert(!tr::refines(reg, ^^envelope_axioms, ^^Pick<Put<Envelope<Alice, Bye, long>, Done>>,
+                           ^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Bye, short>, Done>>)
+                   .holds);
+static_assert(refines(^^Wait<Take<Envelope<Alice, Bye, int>, Done>, Take<Envelope<Alice, Hello, int>, Done>,
+                             Take<Fault<int>, Done>>,
+                      ^^Wait<Take<Envelope<Alice, Hello, int>, Done>, Take<Fault<int>, Done>>),
+              "an input choice adds a label before its crash branch");
+
+// Exit preservation reads the pairs by label: a subtype that drops the
+// only exit of a keyed loop loses an exit, in whichever position it stands.
+static_assert(refine(^^Again<Pick<Put<Envelope<Alice, Hello, int>, Back>>>,
+                     ^^Again<Pick<Put<Envelope<Alice, Bye, int>, Done>, Put<Envelope<Alice, Hello, int>, Back>>>)
+                  .reason
+              == tr::mismatch::loses_termination);
 
 // An unknown node is named.
 static_assert(refine(^^Pick<Done, Unknown>, ^^Pick<Done>).reason == tr::mismatch::unregistered);
@@ -744,12 +815,15 @@ constexpr bool runtime_facts[] = {
          .holds,
     tr::wire_word_of(reg, ^^EnvelopePick, 0).value == tr::wire_word_of(reg, ^^EnvelopePickSwapped, 1).value,
     !well_formed(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>, Put<Envelope<Alice, ClosureLabelB, int>, Done>>),
+    refines(^^SendByeHello, ^^SendHelloBye),
+    refine(^^HearBye, ^^HearHelloBye).reason == tr::mismatch::label_set,
 };
 
 constexpr std::string_view names[] = {
     "coherent registry",      "narrow output choice", "wide output choice refused", "guarded loop",
     "unguarded loop refused", "drop then weaken",     "congruent payload",          "other peer refused",
-    "label word by label",    "label word collision refused",
+    "label word by label",    "label word collision refused", "keyed branches pair by label",
+    "input label set refused",
 };
 
 }  // namespace

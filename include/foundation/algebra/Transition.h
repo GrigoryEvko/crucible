@@ -1516,9 +1516,14 @@ inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, d
 // `is_label` is the answer of the payload rules for this node as a
 // branch, and `head_payload` is the payload of its head step under its
 // wrappers, or null.  A branch that is no label is matched by that
-// payload.  `has_restricted_payload` is true for a step whose payload a
-// payload registration marks as not sendable or as no label.  `can_end`
-// is true when a path of the graph leads from this node to a terminal.
+// payload.  `label_key` and `label_word` are the label key of this node
+// as a branch and the word of that key, or null and zero.
+// `has_restricted_payload` is true for a step whose payload a payload
+// registration marks as not sendable or as no label.  For a keyed
+// choice, `is_keyed` is true, and `first_label` and `label_count` name
+// its label branches in the sorted run of the graph, in the order of
+// their label words.  `can_end` is true when a path of the graph leads
+// from this node to a terminal.
 struct graph_node {
     std::meta::info type{};
     combinator entry{};
@@ -1530,13 +1535,19 @@ struct graph_node {
     std::size_t child_count = 0;
     bool is_label = true;
     std::meta::info head_payload{};
+    std::meta::info label_key{};
+    std::uint64_t label_word = 0;
     bool has_restricted_payload = false;
+    bool is_keyed = false;
+    std::size_t first_label = 0;
+    std::size_t label_count = 0;
     bool can_end = false;
 };
 
 struct type_graph {
     std::vector<graph_node> nodes{};
     std::vector<std::size_t> children{};
+    std::vector<std::size_t> sorted_labels{};
     std::meta::info unregistered{};
 };
 
@@ -1560,6 +1571,8 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
     const branch_head head = head_of_branch(registry, view.type);
     graph.nodes[here].is_label = head.is_label;
     graph.nodes[here].head_payload = head.payload;
+    graph.nodes[here].label_key = head.label_key;
+    graph.nodes[here].label_word = head.label_word;
     if (view.entry.kind == shape_kind::step) {
         const payload_lookup rule = lookup_payload_rule(registry, view.payload);
         graph.nodes[here].has_restricted_payload = rule.is_found && (!rule.entry.is_label || !rule.entry.is_sendable);
@@ -1589,6 +1602,27 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
             graph.nodes[here].first_child = graph.children.size();
             graph.nodes[here].child_count = own.size();
             for (const std::size_t index : own) graph.children.push_back(index);
+            if (is_keyed_choice(registry, view)) {
+                // The label branches in the order of their label words, by
+                // an insertion sort, because a choice has few branches.
+                // Complexity: quadratic in the label branches of the choice.
+                std::vector<std::size_t> labels;
+                for (const std::size_t index : own) {
+                    if (graph.nodes[index].is_label) labels.push_back(index);
+                }
+                for (std::size_t outer = 1; outer < labels.size(); ++outer) {
+                    for (std::size_t inner = outer; inner > 0; --inner) {
+                        if (graph.nodes[labels[inner - 1]].label_word <= graph.nodes[labels[inner]].label_word) break;
+                        const std::size_t moved = labels[inner - 1];
+                        labels[inner - 1] = labels[inner];
+                        labels[inner] = moved;
+                    }
+                }
+                graph.nodes[here].is_keyed = true;
+                graph.nodes[here].first_label = graph.sorted_labels.size();
+                graph.nodes[here].label_count = labels.size();
+                for (const std::size_t index : labels) graph.sorted_labels.push_back(index);
+            }
             break;
         }
         default:
@@ -1668,11 +1702,13 @@ template <class T>
 struct graph_view {
     static_run<graph_node> nodes{};
     static_run<std::size_t> children{};
+    static_run<std::size_t> sorted_labels{};
     std::meta::info unregistered{};
 };
 
 [[nodiscard]] consteval graph_view freeze(const type_graph& graph) {
-    return graph_view{to_static_run(graph.nodes), to_static_run(graph.children), graph.unregistered};
+    return graph_view{to_static_run(graph.nodes), to_static_run(graph.children), to_static_run(graph.sorted_labels),
+                      graph.unregistered};
 }
 
 template <std::meta::info Registry, std::meta::info Type>
@@ -1704,15 +1740,23 @@ inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
 //   terminal  the same terminal on both sides.
 //   step      the same shape.  The payload order follows the payload
 //             variance of the shape, then the continuations refine.
-//   choice    the same shape and the same note.  An output choice of T
-//             has no more label branches than U, and an input choice of
-//             T has no fewer.  The label branches both sides have refine
-//             position by position, because the position is the wire
-//             label.  Each branch that is no label pairs with the branch
-//             of the other side that receives the same payload,
-//             wherever the two stand.  Rule Sub-& adds two conditions:
-//             each such branch of U has its partner in T, and T has no
-//             such branch without a partner in U.
+//   choice    the same shape, the same note, and the same kind of wire
+//             word: both keyed or both positional.
+//             In a keyed choice the label branches pair by label.  Each
+//             label of an output choice of T is a label of U, and each
+//             label of an input choice of U is a label of T (Gay and
+//             Hole, 2005).  Two labels pair when their words and their
+//             keys are equal.  Equal words with different keys cannot
+//             stand on one wire, so the relation refuses them.
+//             In a positional choice the label branches pair by
+//             position, because the position is the wire label.  An
+//             output choice of T has no more label branches than U, and
+//             an input choice of T has no fewer.
+//             Each branch that is no label pairs with the branch of the
+//             other side that receives the same payload, wherever the
+//             two stand.  Rule Sub-& adds two conditions: each such
+//             branch of U has its partner in T, and T has no such branch
+//             without a partner in U.
 //   wrapper   the same shape.  The value order follows the value
 //             variance, then the inner types refine.
 //
@@ -1756,6 +1800,9 @@ enum class mismatch : std::uint8_t {
     ill_formed,
     missing_non_label_branch,
     loses_termination,
+    label_set,
+    label_discipline,
+    label_word_clash,
 };
 
 struct verdict {
@@ -1795,6 +1842,14 @@ struct verdict {
         case mismatch::loses_termination:
             return "the supertype can end from this pair and the subtype cannot, so the subtype removes an exit "
                    "(fair subtyping)";
+        case mismatch::label_set:
+            return "an output choice of the subtype sends a label that the supertype does not send, or an input "
+                   "choice of the supertype receives a label that the subtype does not receive";
+        case mismatch::label_discipline:
+            return "one choice is keyed and the other is positional, so the two sides put different kinds of word "
+                   "on the wire";
+        case mismatch::label_word_clash:
+            return "two labels have one label word and different label keys, so the peer cannot tell them apart";
         default:
             break;
     }
@@ -1851,6 +1906,79 @@ struct split_branches {
         if (graph.nodes[candidate].head_payload == payload) return candidate;
     }
     return npos;
+}
+
+// The label pairs of two keyed choices, as graph indices, sub then super
+// for each pair, or the reason the labels do not refine.
+struct label_pairing {
+    mismatch reason = mismatch::none;
+    std::vector<std::size_t> pairs{};
+};
+
+// True when two label branches of one keyed choice have one label word,
+// with one key or with two.  The run of the choice is in the order of the
+// label words, so a repeated word stands next to its twin.
+// Complexity: linear in the label branches of the choice.
+[[nodiscard]] consteval bool repeats_a_label_word(const graph_view& graph, const graph_node& choice) {
+    for (std::size_t rank = 1; rank < choice.label_count; ++rank) {
+        const std::size_t earlier = graph.sorted_labels[choice.first_label + rank - 1];
+        const std::size_t later = graph.sorted_labels[choice.first_label + rank];
+        if (graph.nodes[earlier].label_word == graph.nodes[later].label_word) return true;
+    }
+    return false;
+}
+
+// Pairs the label branches of two keyed choices by label, in one merge of
+// the two runs that the graphs sorted by label word.  An output choice of
+// the subtype sends only labels that the supertype sends, and an input
+// choice of the supertype receives only labels that the subtype receives.
+// Two branches with one word pair only when their keys are equal too.  A
+// choice that repeats a label word is not well-formed, and the merge
+// refuses it also when the layer above did not check well-formedness.
+// Complexity: linear in the label branches of the two choices.
+[[nodiscard]] consteval label_pairing pair_by_label(const graph_view& sub_graph, const graph_node& sub,
+                                                    const graph_view& super_graph, const graph_node& super,
+                                                    bool is_output) {
+    label_pairing result{};
+    if (repeats_a_label_word(sub_graph, sub) || repeats_a_label_word(super_graph, super)) {
+        result.reason = mismatch::ill_formed;
+        return result;
+    }
+    std::size_t sub_rank = 0;
+    std::size_t super_rank = 0;
+    while (sub_rank < sub.label_count || super_rank < super.label_count) {
+        const bool has_sub = sub_rank < sub.label_count;
+        const bool has_super = super_rank < super.label_count;
+        const std::size_t sub_index = has_sub ? sub_graph.sorted_labels[sub.first_label + sub_rank] : npos;
+        const std::size_t super_index = has_super ? super_graph.sorted_labels[super.first_label + super_rank] : npos;
+        const std::uint64_t sub_word = has_sub ? sub_graph.nodes[sub_index].label_word : 0;
+        const std::uint64_t super_word = has_super ? super_graph.nodes[super_index].label_word : 0;
+        if (has_sub && has_super && sub_word == super_word) {
+            if (sub_graph.nodes[sub_index].label_key != super_graph.nodes[super_index].label_key) {
+                result.reason = mismatch::label_word_clash;
+                return result;
+            }
+            result.pairs.push_back(sub_index);
+            result.pairs.push_back(super_index);
+            ++sub_rank;
+            ++super_rank;
+        } else if (has_sub && (!has_super || sub_word < super_word)) {
+            // A label of the subtype that the supertype does not have.
+            if (is_output) {
+                result.reason = mismatch::label_set;
+                return result;
+            }
+            ++sub_rank;
+        } else {
+            // A label of the supertype that the subtype does not have.
+            if (!is_output) {
+                result.reason = mismatch::label_set;
+                return result;
+            }
+            ++super_rank;
+        }
+    }
+    return result;
 }
 
 [[nodiscard]] consteval bool payload_in_order(std::meta::info axioms, const graph_node& sub, const graph_node& super) {
@@ -1932,14 +2060,21 @@ struct split_branches {
                 // so a layer that skips the check stays sound.
                 if (own.labels.empty() || other.labels.empty()) return {false, mismatch::ill_formed, a.type, b.type};
                 const bool is_output = a.entry.direction == polarity::output;
-                const bool count_is_wrong =
-                    is_output ? own.labels.size() > other.labels.size() : own.labels.size() < other.labels.size();
-                if (count_is_wrong) return {false, mismatch::branch_count, a.type, b.type};
-                const std::size_t shared = own.labels.size() < other.labels.size() ? own.labels.size()
-                                                                                    : other.labels.size();
-                for (std::size_t k = 0; k < shared; ++k) {
-                    pending.push_back(own.labels[k]);
-                    pending.push_back(other.labels[k]);
+                if (a.is_keyed != b.is_keyed) return {false, mismatch::label_discipline, a.type, b.type};
+                if (a.is_keyed) {
+                    const detail::label_pairing pairing = detail::pair_by_label(left, a, right, b, is_output);
+                    if (pairing.reason != mismatch::none) return {false, pairing.reason, a.type, b.type};
+                    for (const std::size_t index : pairing.pairs) pending.push_back(index);
+                } else {
+                    const bool count_is_wrong =
+                        is_output ? own.labels.size() > other.labels.size() : own.labels.size() < other.labels.size();
+                    if (count_is_wrong) return {false, mismatch::branch_count, a.type, b.type};
+                    const std::size_t shared = own.labels.size() < other.labels.size() ? own.labels.size()
+                                                                                        : other.labels.size();
+                    for (std::size_t k = 0; k < shared; ++k) {
+                        pending.push_back(own.labels[k]);
+                        pending.push_back(other.labels[k]);
+                    }
                 }
                 for (const std::size_t mine : own.non_labels) {
                     if (detail::partner_of(right, other.non_labels, left.nodes[mine].head_payload) == npos) {

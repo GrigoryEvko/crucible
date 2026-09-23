@@ -55,17 +55,17 @@
 // asynchronous one, so each association this header accepts is an
 // association of the paper.
 //
-// The relation matches branches by position, and the label of a message
-// is part of its payload PeerMsg<Peer, Label, Payload>.  So a context
-// entry keeps the branch order of the projection.  It can drop branches
-// at the end of a Select and add branches at the end of an Offer.  A
-// context entry that sends a label at a position where the projection
-// has another label is refused, also when the two lists hold the same
-// labels in another order.  The axiom peer_message of
-// fixy/session/Subtype.h makes a message covariant in its payload and
-// exact in its peer and its label.  Refinement also keeps each exit of
-// the projection, so a context entry cannot drop the only branch of a
-// Select that lets a loop end.
+// A PeerMsg names a label key, so each choice of a local type is keyed,
+// and the relation matches its branches by label (fixy/session/Subtype.h).
+// A context entry can drop labels from a Select and add labels to an
+// Offer, in any order.  The handle puts the label word on the wire, and
+// the binary view gives each Labelled branch its label as the label key,
+// so the peer dispatches each message of the entry to the branch of the
+// same label.  The
+// axiom peer_message of fixy/session/Subtype.h makes a message covariant
+// in its payload and exact in its peer and its label.  Refinement also
+// keeps each exit of the projection, so a context entry cannot drop the
+// only branch of a Select that lets a loop end.
 //
 // A role of the context that G does not name must have finished, which is
 // the rule of Pischke and Yoshida, "Top-down = Bottom-up" (OOPSLA 2026),
@@ -993,11 +993,10 @@ consteval void ensure_associated() noexcept {
         } else if constexpr (fault == F::LocalMismatch) {
             static_assert(detail::proj::dependent_false_v<Ctx, G>,
                           "fixy::session::diagnostic [Association_Local_Mismatch]: the local type of a role does not "
-                          "refine its projection (is_subtype_sync_v).  Branches match by position: keep the branch "
-                          "order of the projection, drop branches only at the end of a Select, and add branches "
-                          "only at the end of an Offer.  A Select keeps each exit of the projection: it cannot drop "
-                          "the only branch that lets a loop end.  subtype_reason_t<Local, Projected> names the "
-                          "failed pair.");
+                          "refine its projection (is_subtype_sync_v).  Branches match by label: a Select can drop "
+                          "labels of the projection and an Offer can add labels, in any order.  A Select keeps "
+                          "each exit of the projection: it cannot drop the only branch that lets a loop end.  "
+                          "subtype_reason_t<Local, Projected> names the failed pair.");
         }
     }
 }
@@ -1015,6 +1014,10 @@ consteval void ensure_associated() noexcept {
 // label on the wire would reach the wrong process.  So strip_peers_t
 // requires a local type that names at most one peer.
 
+// A message of the binary view.  The payload rule labelled in
+// fixy/session/Protocol.h gives each Labelled branch its label as the
+// label key, so a choice of the binary view is keyed, as the local type
+// that the view strips is.
 template <typename Label, typename Payload>
 struct Labelled {
     using label = Label;

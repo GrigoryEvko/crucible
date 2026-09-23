@@ -1288,16 +1288,38 @@ fixy_neg_compile_test(neg_sess_subtype_async_empty_select
   "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
   "with Sub = Select<>. Super = Select<Send<")
 
-# The branches of a choice: a label branch pairs by position, because
-# the position is the wire label, and a crash branch pairs by the
-# payload it receives.  A permutation of labelled branches is refused,
-# and so is a subtype that loses a crash branch of the supertype.
+# The branches of a choice.  A positional choice sends the position of a
+# branch as its wire label, so its branches pair by position and a
+# permutation of them is refused.  A crash branch pairs by the payload it
+# receives, and a subtype that loses one is refused.
 fixy_neg_compile_test(neg_sess_subtype_permuted_labels
   "\\[Subtype_Payload\\]: assert_subtype_sync"
-  "The failed pair is fixy::session::PeerMsg<[^>]*Bob, [^>]*Bye, int> against fixy::session::PeerMsg<[^>]*Bob, [^>]*Hello, int>")
+  "The failed pair is .*Bye against .*Hello\\.")
 fixy_neg_compile_test(neg_sess_subtype_missing_crash_branch
   "\\[Subtype_MissingNonLabelBranch\\]: assert_subtype_sync"
   "because a branch of the supertype that is no label has no branch in the subtype")
+
+# A keyed choice sends a label word, so its branches pair by label in any
+# order.  The relation refuses a label that the peer does not accept, a
+# keyed choice against a positional one, and one label word with two keys.
+fixy_neg_compile_test(neg_sess_subtype_label_set_output
+  "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
+  "The failed pair is .*Select<.*Retry, int>.* against .*Select<.*Bye, int>")
+fixy_neg_compile_test(neg_sess_subtype_label_set_input
+  "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
+  "The failed pair is .*Offer<.*Sender<.*Bob>, .*Recv<.*Hello, int>, .*End> > against .*Offer<.*Bye, int>")
+fixy_neg_compile_test(neg_sess_subtype_label_discipline_keyed
+  "fixy::session::diagnostic \\[Subtype_LabelDiscipline\\]: assert_subtype_sync"
+  "The failed pair is .*Select<.*PeerMsg<.*Hello, int>, .*End> > against fixy::session::Select<fixy::session::Send<int, fixy::session::End> >")
+fixy_neg_compile_test(neg_sess_subtype_label_discipline_positional
+  "fixy::session::diagnostic \\[Subtype_LabelDiscipline\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Offer<fixy::session::Recv<int, fixy::session::End> > against .*Offer<.*PeerMsg<.*Hello, int>")
+fixy_neg_compile_test(neg_sess_subtype_label_word_clash_output
+  "fixy::session::diagnostic \\[Subtype_LabelWordClash\\]: assert_subtype_sync"
+  "The failed pair is .*Select<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Select<.*<lambda\\(\\)>, int>")
+fixy_neg_compile_test(neg_sess_subtype_label_word_clash_input
+  "fixy::session::diagnostic \\[Subtype_LabelWordClash\\]: assert_subtype_sync"
+  "The failed pair is .*Offer<.*Recv<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Offer<.*<lambda\\(\\)>, int>")
 
 # Well-formedness of a choice: no message branch after a crash branch,
 # no two crash branches with one payload, and no two branches that name

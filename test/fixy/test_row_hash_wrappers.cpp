@@ -941,6 +941,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::PeerMsg,
      "a message of a projected local protocol: it names a peer and a label beside its payload, it is the payload "
      "of a Send or a Recv, and the handle that steps through the protocol folds it"},
+    {^^::fixy::session::Labelled,
+     "a message of the binary view of a projected protocol: it names a label beside its payload, it is the "
+     "payload of a Send or a Recv, and the handle that steps through the protocol folds it"},
     {^^::fixy::session::session_loop_ctx_traits, kMetafunction},
     {^^::fixy::session::session_loop_ctx_rebind_inner, kMetafunction},
     {^^::fixy::session::is_send, kMetafunction},

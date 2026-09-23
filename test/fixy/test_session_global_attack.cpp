@@ -742,13 +742,10 @@ void expect_context(std::string_view label, bool expect_clean) {
 //   narrowed  each Offer with two or more branches loses its last one.
 //             Association must refuse.
 //   swapped   each Offer with two or more branches swaps its first two.
-//             Association must refuse.  The position of a branch is the
-//             label that the handle sends, so on that wire a swap takes
-//             each message into the branch of another label, and
-//             test_session_subtype_attack runs one such case.  The
-//             explorer here carries the label on the wire, so it shows
-//             such a context safe.  The refusal is right for the wire
-//             that the handle uses.
+//             Association must hold, and the context must be live.  A
+//             PeerMsg names a label key, so the handle sends the label
+//             word, and the peer enters the branch of that label wherever
+//             it stands.  The explorer carries the label on the wire too.
 //
 // A refused rewrite also runs in the explorer.  The count of refused
 // rewrites that the explorer shows faulty tells how often the refusal
@@ -983,8 +980,7 @@ struct AssociationCounts {
     std::size_t unfolded_live = 0;
     std::size_t refused = 0;
     std::size_t refused_faulty = 0;
-    std::size_t swapped_refused = 0;
-    std::size_t swapped_safe = 0;
+    std::size_t swapped_live = 0;
 };
 AssociationCounts association_counts;
 
@@ -1027,15 +1023,14 @@ void judge_narrowed(std::string_view label, std::string_view rewrite, bool assoc
 // A rewrite that association must refuse.  The explorer tells whether
 // the refusal stopped a real fault.
 void judge_refused(std::string_view label, std::string_view rewrite, bool associated, const System& sys,
-                   std::size_t& refused, std::size_t& faulty_or_safe, bool count_faulty) {
+                   std::size_t& refused, std::size_t& faulty) {
     std::string what{label};
     what += ", ";
     what += rewrite;
     expect(!associated, what + ": association accepted an entry that does not refine its projection");
     if (associated) return;
     ++refused;
-    const bool clean = is_clean_at_small_capacities(sys);
-    if (count_faulty ? !clean : clean) ++faulty_or_safe;
+    if (!is_clean_at_small_capacities(sys)) ++faulty;
 }
 
 // Full runs all five rewrites.  Otherwise only the safe and the widened
@@ -1052,7 +1047,7 @@ void check_association_step(std::string_view label) {
     if constexpr (!std::is_same_v<Widened, Ctx>) {
         judge_refused(label, "widened Select", s::association_holds_v<Widened, G>,
                       rewritten(base, GraphRewrite::Widen), association_counts.refused,
-                      association_counts.refused_faulty, true);
+                      association_counts.refused_faulty);
     }
     if constexpr (Full) {
         ++association_counts.full_types;
@@ -1063,12 +1058,11 @@ void check_association_step(std::string_view label) {
         if constexpr (!std::is_same_v<Narrowed, Ctx>) {
             judge_refused(label, "narrowed Offer", s::association_holds_v<Narrowed, G>,
                           rewritten(base, GraphRewrite::Narrow), association_counts.refused,
-                          association_counts.refused_faulty, true);
+                          association_counts.refused_faulty);
         }
         if constexpr (!std::is_same_v<Swapped, Ctx>) {
-            judge_refused(label, "swapped Offer", s::association_holds_v<Swapped, G>,
-                          rewritten(base, GraphRewrite::Swap), association_counts.swapped_refused,
-                          association_counts.swapped_safe, false);
+            judge_accepted(label, "swapped Offer", s::association_holds_v<Swapped, G>,
+                           rewritten(base, GraphRewrite::Swap), association_counts.swapped_live);
         }
     }
 }
@@ -1614,7 +1608,10 @@ constexpr KnownLimitation known_limitations[] = {
      "Liveness by construction covers one session (Pischke, Masters, Yoshida, Theorem 13; Pischke, Yoshida, "
      "Top-down = Bottom-up, p. 25).  Freedom from deadlock across sessions needs an acyclic ownership of channels, "
      "where a channel is made with the peer that holds its other end (LinearActris, POPL 2024), or a priority order "
-     "on sessions (Dardha and Gay, Prioritised GV).  This header set has neither.",
+     "on sessions (Dardha and Gay, Prioritised GV).  This header set has neither.  fixy/session/Watch.h detects "
+     "such a cycle at run time when each wait goes through a polling transport.  The wait traces the wait-for chain, "
+     "and it aborts on a cycle that holds at two traces.  That is detection and not freedom.  A transport that "
+     "blocks inside its own call publishes no wait, so the watch does not see a cycle through it.",
      &crossed_sessions_deadlock},
 };
 
@@ -1641,13 +1638,12 @@ void report_association_step() {
                 c.safe_live, c.safe_lost_exit, c.unfolded_live);
     std::printf("  widened or narrowed rewrites refused: %zu, of which the explorer shows faulty: %zu\n", c.refused,
                 c.refused_faulty);
-    std::printf("  swapped rewrites refused: %zu, of which the explorer shows safe: %zu\n", c.swapped_refused,
-                c.swapped_safe);
+    std::printf("  swapped rewrites associated and live: %zu\n", c.swapped_live);
     expect(c.safe_live + c.safe_lost_exit == c.types && c.unfolded_live == c.full_types,
            "a safe rewrite failed the association step");
     expect(c.safe_live > 0, "no safe rewrite kept its exits, so the association of a narrowed Select is untested");
     expect(c.refused > 0 && c.refused_faulty > 0, "no refused rewrite showed a fault, so the step proves nothing");
-    expect(c.swapped_refused > 0, "no swapped rewrite was built, so the position rule is untested");
+    expect(c.swapped_live > 0, "no swapped rewrite was built, so the match by label has no test");
 }
 
 }  // namespace
