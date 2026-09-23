@@ -53,7 +53,10 @@ These rules give the target design for the session layer. Each rule names the pa
    - The payload check examines each component of the payload. A permission inside a `std::pair` or a similar type must not escape the check.
    - The mint consumes the permission tokens that it receives.
    - A `Borrowed` payload has a matching `Recv<Returned>`, or it uses ordered linear borrowing. A borrowed prefix that goes to a different thread blocks each operation on the suffix until the prefix is consumed. (Saffrich, Spaderna, Thiemann and Vasconcelos, OOPSLA 2025, with its errata.)
-   - No code can make a read proof without a real permission.
+   - No code can make a read proof without a real permission. A read view comes from a live share guard, not from a `SharedPermission` token, because a token alone confers nothing (`include/foundation/permissions/Permission.h`).
+   - A read loan closes with `Released`, because the borrower holds no token. `Returned` closes an exclusive loan.
+   - A second mint from a token that was already moved cannot be refused at compile time, and it does not abort, because the tree does not diagnose use after move. A `PermHold` (`include/fixy/session/Payload.h`) aborts on the equivalent use through a hold. This limit is on a ledger.
+   - No proof type can be built from bytes. `std::bit_cast` and `std::start_lifetime_as` must not produce a permission, a mint key, a read proof, an execution context or a session event. A trivially copyable proof type is forgeable by construction.
 9. **A crash class is local to the session.** It is metadata on the crash branch, together with the set of reliable roles and the marker for an unavailable queue. It is not a foundation lattice. It is not a fixy control atom. (Barwell, Hou, Yoshida and Zhou, LMCS 2025. Peters, Nestmann and Wagner, LMCS 2023.)
    - The fair-path definition must include the clause for crash detection.
    - The literature has no type system for crash-recover. Do not claim it.
