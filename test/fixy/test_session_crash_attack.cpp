@@ -235,13 +235,19 @@ struct delegation_gap {
 
 constexpr delegation_gap delegation_gaps[] = {
     {"an integer that holds the address of an endpoint",
-     "the query reads types, and std::bit_cast turns the integer back into a pointer to the endpoint",
+     "the query reads types, and an integer has no type provenance.  std::bit_cast turns the integer back into a "
+     "pointer to the endpoint, and an index into a table of endpoints needs no cast at all.  C++ has no provenance "
+     "on an integer, so no type can refuse it",
      s::payload_conveys_delegation_v<std::uintptr_t>},
     {"a function pointer whose target steps an endpoint",
-     "the target reaches the endpoint through global state, which no type of the payload names",
+     "a function pointer names code and holds no state.  Its target reaches the endpoint only through global "
+     "state, and each function of the recipient reaches that state without the pointer.  The pointer conveys no "
+     "authority that the recipient did not hold, and the global state is outside the discipline",
      s::payload_conveys_delegation_v<void (*)() noexcept>},
     {"a copy of the Resource of a live session",
-     "a Resource is a channel and not an endpoint.  A copy of it lets the recipient write outside the protocol",
+     "a Resource of raw pointers is a channel held as plain data, and no type marks it.  A copy lets the recipient "
+     "write outside the protocol.  A move-only Resource would close the copy through resource(), but not a "
+     "Resource that the recipient builds again from its raw parts",
      s::payload_conveys_delegation_v<SharedChannel>},
 };
 
