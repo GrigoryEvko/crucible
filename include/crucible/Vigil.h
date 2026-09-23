@@ -245,7 +245,7 @@ public:
             auto compiled_view = ctx_.mint_compiled_view();
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
-                return handle_divergence_(entry, metas, n_metas, scope_hash, callsite_hash);
+                return handle_divergence_(entry.schema_hash, entry.shape_hash);
             return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
         }
 
@@ -586,9 +586,14 @@ private:
 
     // Looks the diverging shape up in the region cache, tries to switch to a
     // matching region, and falls back to recording.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
-        const TraceRing::Entry& entry, [[maybe_unused]] const TensorMeta* metas, [[maybe_unused]] uint32_t n_metas,
-        [[maybe_unused]] ScopeHash scope_hash, [[maybe_unused]] CallsiteHash callsite_hash) {
+    //
+    // Takes the two guard values and nothing else. It used to take the whole
+    // Entry plus the metadata, the scope hash and the callsite hash, and the
+    // last four were all `[[maybe_unused]]`: the divergent operation is
+    // deliberately not recorded, as the tail of this function says, so no
+    // metadata ever reaches a reader from here.
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(SchemaHash schema_hash,
+                                                                                ShapeHash shape_hash) {
         const uint32_t div_pos = ctx_.engine().ops_matched();
 
         // A region the background thread published while the context was
@@ -621,13 +626,13 @@ private:
 
         // Look for a cached region that matches at the divergence position,
         // excluding the current one.
-        auto* alt = region_cache_.find_alternate(div_pos, entry.schema_hash, entry.shape_hash, ctx_.active_region());
+        auto* alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, ctx_.active_region());
 
         if (alt && try_switch_region_(alt, div_pos)) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
             auto compiled_view = ctx_.mint_compiled_view();
-            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
+            auto status = ctx_.advance(schema_hash, shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
                 return {.action = DispatchResult::Action::COMPILED,
                         .status = status,

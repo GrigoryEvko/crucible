@@ -181,7 +181,11 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
 
     // -- Core fields --------------------------------------------------
 
-    const auto ndim = static_cast<uint8_t>(std::min(tensor.dim(), static_cast<int64_t>(8)));
+    // The bound is the lane count of the array being written, named rather than
+    // spelled 8, because every other reader of that array derives its bound
+    // from the same constant and a literal here could drift from it.
+    const auto ndim =
+        static_cast<uint8_t>(std::min(tensor.dim(), static_cast<int64_t>(::crucible::kMaxTensorNDim)));
     meta.ndim = ndim;
 
     const auto sizes = tensor.sizes();
@@ -408,9 +412,12 @@ inline thread_local uint32_t backward_depth = 0;
 // loop that skipped a call was silently FORWARD throughout.
 // =====================================================================
 
-[[nodiscard]] inline crucible::TrainingPhase derive_training_phase(bool is_foreach) noexcept {
+// `grad_enabled` arrives as an argument rather than being read here, because
+// the unboxed caller needs the same bit for the GRAD_ENABLED flag. One read
+// serves both, and the two cannot report different answers for one operation.
+[[nodiscard]] inline crucible::TrainingPhase derive_training_phase(bool is_foreach, bool grad_enabled) noexcept {
     if (backward_depth != 0) return crucible::TrainingPhase::BACKWARD;
-    if (is_foreach && !c10::GradMode::is_enabled()) return crucible::TrainingPhase::OPTIMIZER;
+    if (is_foreach && !grad_enabled) return crucible::TrainingPhase::OPTIMIZER;
     return crucible::TrainingPhase::FORWARD;
 }
 
@@ -932,9 +939,15 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
 // Bits 2 and 3 of op_flags. `is_foreach` is a property of the operator, which
 // the unboxed path knows at compile time and the boxed path caches beside the
 // schema hash.
-[[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach) noexcept {
-    const auto phase = static_cast<uint8_t>(derive_training_phase(is_foreach));
+[[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach, bool grad_enabled) noexcept {
+    const auto phase = static_cast<uint8_t>(derive_training_phase(is_foreach, grad_enabled));
     return static_cast<uint8_t>((phase & 0x3) << crucible::op_flag::PHASE_SHIFT);
+}
+
+// For the boxed fallback, which reads the gradient mode for no flag of its own
+// and so has no value to share.
+[[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach) noexcept {
+    return phase_flag_bits(is_foreach, c10::GradMode::is_enabled());
 }
 
 // The five bits of per-operation context. Mutability is a template parameter
@@ -947,10 +960,13 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
 template <bool IsMutable, bool IsForeach>
 [[nodiscard]] uint8_t entry_op_flags(c10::DispatchKeySet dispatch_keys) noexcept {
     uint8_t flags = 0;
+    // One read, shared with the phase derivation below rather than repeated
+    // inside it.
+    const bool grad_enabled = c10::GradMode::is_enabled();
     if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
-    if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
+    if (grad_enabled) flags |= crucible::op_flag::GRAD_ENABLED;
     if constexpr (IsMutable) flags |= crucible::op_flag::IS_MUTABLE;
-    flags |= phase_flag_bits(IsForeach);
+    flags |= phase_flag_bits(IsForeach, grad_enabled);
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     return flags;
 }
