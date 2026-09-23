@@ -1189,9 +1189,14 @@ fixy_neg_compile_test(neg_sess_event_log_copied
 #
 # Global.h checks well-formedness and balanced+, Projection.h projects
 # onto each role and checks association, and Liveness.h joins the chain
-# (Pischke, Masters and Yoshida, arXiv 2505.17676 version 4).  The test
-# holds the paper's examples.
+# (Pischke, Masters and Yoshida, arXiv 2505.17676 version 4).  The first
+# test holds the paper's examples.  The second runs an explorer of the
+# asynchronous context semantics against the paper's non-live contexts,
+# the accepted types, the contexts each refusal prevents, generated
+# global types and a grid of merges, and it pins the one attack that
+# succeeds on purpose.
 fixy_test(test_session_global_types)
+fixy_test(test_session_global_attack)
 
 # Two fixtures for each gate.  Each refused type satisfies each earlier
 # clause of its gate, so only the named clause can refuse it.
