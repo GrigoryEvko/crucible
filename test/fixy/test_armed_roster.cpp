@@ -20,6 +20,7 @@
 
 #include "every_header.h"
 
+#include <array>
 #include <cstdio>
 #include <memory>
 #include <optional>
@@ -467,6 +468,16 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage_ed
     using refuses = witnesses<int, ::fixy::concurrent::StagePack<>>;
 };
 
+// A stage is named by the self-test stage of fixy/concurrent/Stage.h,
+// which fits the foreground context.  Naming the type does not build a
+// stage, so no handle and no channel is made here.
+template <>
+struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage> {
+    using accepts = witnesses<::fixy::concurrent::Stage<&::fixy::concurrent::detail::stage_self_test::stage_pass_through,
+                                                        ::fixy::HotFgCtx>>;
+    using refuses = witnesses<int, ::fixy::concurrent::StagePack<>, ::fixy::concurrent::StageEdge<0, 1, 0, 0>>;
+};
+
 template <>
 struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage_graph> {
     using accepts =
@@ -660,12 +671,10 @@ namespace {
 //
 // The predicates the walk finds and that have no cell.  Each entry says
 // why.  The ledger can only shrink: an entry that gains a cell, or that
-// names a predicate the walk stops finding, fails the walk.
-inline constexpr std::meta::info unarmed_ledger[] = {
-    // A stage names a function pointer, and no witness here can name a
-    // stage without the stage machinery the pipeline tests build.
-    ^^::fixy::concurrent::detail::is_stage,
-};
+// names a predicate the walk stops finding, fails the walk.  It is empty,
+// so every predicate the walk finds has a cell, and a new predicate with
+// no cell fails the walk.
+inline constexpr std::array<std::meta::info, 0> unarmed_ledger{};
 
 inline constexpr std::meta::info walked_scopes[] = {^^::foundation, ^^::fixy};
 
