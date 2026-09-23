@@ -67,6 +67,11 @@
 //      The first unfold records the assumption that each later visit of
 //      the loop discharges.
 //
+// The search also has a fixed fuel, stated at search_fuel.  A pair whose
+// proof needs more work is refused as not proven, well before the build
+// reaches its constexpr operation limit.  The synchronous relation runs
+// first, and a pair that it holds skips the search.
+//
 // The check also runs on the duals, T := dual(U) and U := dual(T), and
 // both runs must hold, so the relation is closed under duality by
 // construction (Padovani and Zavattaro, TOPLAS 2026, page 3).  The
@@ -511,19 +516,39 @@ struct assumption {
     std::size_t rho_length = 0;
 };
 
-// Each call of the search spends one unit.  A search that runs out has
-// not proven the pair, and the pair is refused.
-inline constexpr std::size_t search_budget = std::size_t{1} << 15;
+// The fuel of one direction of the search.  Each step spends units in
+// proportion to the work it does: the prefixes it copies, the
+// assumptions it scans and the actions it reads back.  A search that
+// runs out has not proven the pair, and the pair is refused.  The
+// amount keeps each direction well inside the constexpr operation limit
+// of the build (-fconstexpr-ops-limit=100000000 in CMakeLists.txt), so
+// a hard pair is refused with an answer and never stops the build.  On
+// the hardest pair of the differential corpus, one unit costs about 220
+// operations, and the limit falls between 370,000 and 524,288 units, so
+// this amount is about one seventh of the limit.  No pair of the corpus
+// holds with twice this amount and fails with it.
+inline constexpr std::size_t search_fuel = std::size_t{1} << 16;
 
 struct search {
     ::foundation::algebra::transition::graph_view sub{};
     ::foundation::algebra::transition::graph_view super{};
     std::meta::info axioms{};
     std::size_t capacity = 0;
-    std::size_t budget = search_budget;
+    std::size_t fuel = search_fuel;
     std::vector<action> rho{};
     std::vector<assumption> sigma{};
 };
+
+// Spends `units` of fuel.  False when the fuel does not cover them, and
+// then the fuel is empty and every later step fails too.
+[[nodiscard]] consteval bool spend(search& state, std::size_t units) {
+    if (units > state.fuel) {
+        state.fuel = 0;
+        return false;
+    }
+    state.fuel -= units;
+    return true;
+}
 
 [[nodiscard]] consteval bool same_action(const action& left, const action& right) {
     return left.is_output == right.is_output && left.is_label == right.is_label && left.label == right.label
@@ -645,6 +670,7 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
     const std::vector<move> own = moves_of(state.sub, sub_index);
     const std::vector<move> other = moves_of(state.super, super_index);
     const auto attempt = [&](const move& mine, const move& theirs) {
+        if (!spend(state, 2 + sub_prefix.size() + super_prefix.size())) return false;
         std::vector<action> next_sub = sub_prefix;
         std::vector<action> next_super = super_prefix;
         next_sub.push_back(mine.act);
@@ -713,8 +739,8 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
 consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t sub_index, std::size_t sub_bound,
                      std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound) {
     using ::foundation::algebra::transition::shape_kind;
-    if (state.budget == 0) return false;
-    --state.budget;
+    const std::size_t prefix_length = sub_prefix.size() + super_prefix.size();
+    if (!spend(state, 1 + prefix_length + state.rho.size() + state.sigma.size() * (1 + prefix_length))) return false;
     sub_index = to_binder(state.sub, sub_index);
     super_index = to_binder(state.super, super_index);
     if (sub_index == ::foundation::algebra::transition::npos || super_index == ::foundation::algebra::transition::npos) {
@@ -800,13 +826,31 @@ consteval bool bounded() {
     return prove(state, {}, sub_top, Capacity + 1, {}, super_top, Capacity + 1);
 }
 
+// One direction of the bounded check, as its own constant evaluation,
+// so each direction has the full operation budget of the build.
+template <typename Sub, typename Super, std::size_t Capacity>
+inline constexpr bool bounded_v = bounded<Sub, Super, Capacity>();
+
+// The synchronous relation first, then each direction of the bounded
+// check only when the step before it did not decide.  Each call of a
+// consteval function in a variable initializer is evaluated where it
+// stands, also on the side of a || that is not needed, so the order is
+// made by `if constexpr` and not by the operators.
+template <typename Sub, typename Super, std::size_t Capacity>
+consteval bool holds() {
+    if constexpr (is_subtype_sync_v<Sub, Super>) {
+        return true;
+    } else if constexpr (!bounded_v<Sub, Super, Capacity>) {
+        return false;
+    } else {
+        return bounded_v<dual_of_t<Super>, dual_of_t<Sub>, Capacity>;
+    }
+}
+
 }  // namespace detail::async
 
 template <typename Sub, typename Super, std::size_t Capacity>
-inline constexpr bool is_subtype_async_v =
-    is_subtype_sync_v<Sub, Super>
-    || (detail::async::bounded<Sub, Super, Capacity>()
-        && detail::async::bounded<dual_of_t<Super>, dual_of_t<Sub>, Capacity>());
+inline constexpr bool is_subtype_async_v = detail::async::holds<Sub, Super, Capacity>();
 
 template <typename Sub, typename Super, std::size_t Capacity>
 concept SubtypeAsync = is_subtype_async_v<Sub, Super, Capacity>;
