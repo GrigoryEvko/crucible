@@ -162,7 +162,9 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandl
 // Spin-wait until TraceRing is drained (1s timeout).
 CRUCIBLE_VESSEL_API void crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Query mode: 1 if COMPILED, 0 if RECORDING/DIVERGED.
+// Query mode: 1 while the Vigil replays a region, 0 while it records.  A
+// region that the background thread published and the foreground has not
+// aligned to yet reads 0.
 CRUCIBLE_VESSEL_API int crucible_is_compiled(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of complete iterations in COMPILED mode.

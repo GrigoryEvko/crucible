@@ -294,7 +294,7 @@ static void feed_trigger(Vigil& v, uint32_t iter) {
     }
 }
 
-using test::flush_and_wait_compiled;
+using test::flush_and_wait_region_published;
 
 int main() {
     std::printf("═══ ViT Training Simulation ═══\n\n");
@@ -309,7 +309,7 @@ int main() {
     feed_iteration(vigil, 0);
     feed_iteration(vigil, 1);
     feed_trigger(vigil, 2);
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);

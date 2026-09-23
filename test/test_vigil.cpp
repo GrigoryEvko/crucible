@@ -146,7 +146,7 @@ static void test_divergence_drops_the_unobserved_region() {
     // Phase 1: the background thread publishes a region and the foreground
     // aligns onto it, which leaves the context compiled.
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_compiled(vigil);
+    crucible::test::flush_and_wait_region_published(vigil);
 
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(3, i);
@@ -224,7 +224,7 @@ static void test_divergence_drops_a_half_finished_alignment() {
     // entry for rollback() to restore.  Neither is observed by the
     // foreground: these entries reach the ring through record_op.
     feed_one_region(vigil, 0);
-    crucible::test::flush_and_wait_compiled(vigil);
+    crucible::test::flush_and_wait_region_published(vigil);
     const uint64_t step_after_first = vigil.current_step();
 
     feed_one_region(vigil, 4);
@@ -324,9 +324,14 @@ int main() {
         }
     }
 
-    crucible::test::flush_and_wait_compiled(vigil);
+    crucible::test::flush_and_wait_region_published(vigil);
 
-    assert(vigil.is_compiled());
+    // A published region is not a replay. The mode turns COMPILED only when
+    // the foreground aligns to the region and activates the context, and
+    // this test dispatches nothing after the flush.
+    assert(vigil.has_pending_region());
+    assert(!vigil.is_compiled() && "publication alone must not report a replay");
+    assert(!vigil.context().is_compiled());
     assert(vigil.active_region() != nullptr);
     assert(vigil.current_step() >= 1);
     const crucible::RegionNode* active_region = vigil.active_region();

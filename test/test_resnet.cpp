@@ -250,7 +250,7 @@ static void feed_trigger(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter)
     }
 }
 
-using test::flush_and_wait_compiled;
+using test::flush_and_wait_region_published;
 
 int main() {
     std::printf("test_resnet: ResNet-50 (He et al. 2015)\n");
@@ -271,7 +271,7 @@ int main() {
     feed_iter(vigil, net.ops, 0);
     feed_iter(vigil, net.ops, 1);
     feed_trigger(vigil, net.ops, 2);
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);

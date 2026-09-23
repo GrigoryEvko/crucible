@@ -248,7 +248,7 @@ static void feed_trigger(Vigil& vigil, uint32_t iter) {
     }
 }
 
-using test::flush_and_wait_compiled;
+using test::flush_and_wait_region_published;
 
 int main() {
     std::printf("═══ Crucible MLP Training Simulation ═══\n\n");
@@ -271,7 +271,7 @@ int main() {
     std::printf("── Trigger: feeding first %u ops of iter 2 ──\n", IterationDetector::K);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
 
     std::printf("\n   >>> Iteration boundary detected! <<<\n");
     std::printf("   BackgroundThread built RegionNode with %u ops\n", vigil.active_region()->num_ops);

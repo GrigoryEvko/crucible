@@ -44,20 +44,24 @@ static_assert(
     "fixy::sched::mint_priority<-10>(TestRunnerCtx).");
 #endif
 
-// After flush() the mode is already visible, because the release and acquire on
-// total_processed order it.  This loop is a safety net.
-inline void wait_mode_compiled(Vigil& vigil) {
+// Waits for the background thread to publish a region.  Replay has not
+// started at that point: the foreground aligns to the region on its next
+// dispatches, and Vigil::is_compiled turns true only when it activates.
+//
+// After flush() the publication is already visible, because the release and
+// acquire on total_processed order it.  This loop is a safety net.
+inline void wait_region_published(Vigil& vigil) {
     uint64_t spins = 0;
-    while (!vigil.is_compiled()) {
-        assert(++spins < 100000000 && "Vigil did not reach COMPILED mode");
+    while (!vigil.has_pending_region()) {
+        assert(++spins < 100000000 && "the background thread did not publish a region");
         CRUCIBLE_SPIN_PAUSE;
     }
 }
 
-inline void flush_and_wait_compiled(Vigil& vigil) {
+inline void flush_and_wait_region_published(Vigil& vigil) {
     vigil.flush();
     assert(vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
-    wait_mode_compiled(vigil);
+    wait_region_published(vigil);
 }
 
 // Certifies an Entry a test built field by field, so it can reach

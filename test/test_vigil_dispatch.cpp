@@ -78,7 +78,7 @@ static void feed_trigger(Vigil& vigil, uint32_t iter) {
     }
 }
 
-using test::flush_and_wait_compiled;
+using test::flush_and_wait_region_published;
 
 // Callers get back an engine sitting at position 0 and ready for whole
 // compiled iterations.
@@ -90,11 +90,15 @@ using test::flush_and_wait_compiled;
 // which is what leaves the engine back at position 0.
 static void align_and_activate(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
+        // The mode reports the replay, not the publication, so it stays
+        // RECORDING through every alignment op before the last one.
+        assert(!vigil.is_compiled() && "the mode must not report a replay before the context activates");
         auto d = make_op(iter, i);
         auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
     }
     assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
+    assert(vigil.is_compiled() && "the mode must report the replay once the context activates");
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
@@ -110,7 +114,7 @@ static void test_dispatch_basic() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
 
     align_and_activate(vigil, 3);
     assert(vigil.compiled_iterations() == 1);
@@ -142,7 +146,7 @@ static void test_dispatch_divergence() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
     align_and_activate(vigil, 3);
 
     for (uint32_t i = 0; i < 3; i++) {
@@ -183,7 +187,7 @@ static void test_dispatch_recovery() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
 
     align_and_activate(vigil, 3);
 
@@ -208,7 +212,7 @@ static void test_dispatch_recovery() {
 
     // Divergence put the mode back to recording, so this call is waiting
     // for a fresh transition rather than observing the original one.
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
 
     align_and_activate(vigil, 17);
 
@@ -231,7 +235,7 @@ static void test_dispatch_data_flow() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
     align_and_activate(vigil, 3);
 
     auto d0 = make_op(4, 0);
@@ -277,7 +281,7 @@ static void test_dispatch_pool_bounds() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    flush_and_wait_compiled(vigil);
+    flush_and_wait_region_published(vigil);
     align_and_activate(vigil, 3);
 
     auto& pool = vigil.context().pool();
@@ -354,7 +358,7 @@ static void test_dispatch_pure_FOUND_I19() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_compiled(vigil);
+        flush_and_wait_region_published(vigil);
 
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(3, i);
@@ -404,7 +408,7 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_compiled(vigil);
+        flush_and_wait_region_published(vigil);
         align_and_activate(vigil, 3);
 
         for (uint32_t i = 0; i < 3; ++i) {
@@ -441,7 +445,7 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_compiled(vigil);
+        flush_and_wait_region_published(vigil);
         align_and_activate(vigil, 3);
 
         TraceRing::Entry bad{};
@@ -462,7 +466,7 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         for (uint32_t iter = 10; iter < 16; iter++)
             feed_record(vigil, iter);
         feed_trigger(vigil, 16);
-        flush_and_wait_compiled(vigil);
+        flush_and_wait_region_published(vigil);
 
         // Realignment is open-coded rather than delegated to the helper,
         // because the helper drives dispatch_op and this leg has to be
@@ -493,7 +497,7 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
-        flush_and_wait_compiled(vigil);
+        flush_and_wait_region_published(vigil);
         align_and_activate(vigil, 3);
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {

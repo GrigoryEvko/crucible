@@ -343,15 +343,28 @@ public:
         CRUCIBLE_FATAL_INVARIANT(claimed == current_tid);
     }
 
-    // Relaxed suffices: the mode is a status flag written and read mostly
-    // by the foreground, and a cross-thread reader needs only eventual
-    // visibility.  The real synchronization is the pending-region observe.
+    // Relaxed suffices: only the foreground writes the mode, at each
+    // activation and deactivation of the replay context, and a cross-thread
+    // reader needs only eventual visibility.  The real synchronization is
+    // the pending-region observe.
     //
     // Not gnu::pure, despite reading nothing else: another thread can change
     // the value between two loads, so common-subexpression elimination would
     // be wrong.
     [[nodiscard]] Mode mode() const noexcept { return mode_.load(std::memory_order_relaxed); }
+
+    // True while the foreground replays a region.  The mode follows the
+    // context: every path that activates or deactivates it publishes the
+    // matching mode on the same thread, so this and context().is_compiled()
+    // agree whenever the foreground reads them.
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
+
+    // True when the background thread published a region that the
+    // foreground has not taken yet.  The foreground takes it on its next
+    // dispatch and aligns to it before replay can start, so this is true
+    // earlier than is_compiled.  The acquire load pairs with the release
+    // publish, and flush() orders that publish before it returns.
+    [[nodiscard]] bool has_pending_region() const noexcept { return pending_region_.has_pending(); }
 
     [[nodiscard]] constexpr ModeSessionHandle mode_session() const noexcept {
         return safety::mint_atomic_session<ModeProtocol>(mode_);
@@ -411,11 +424,18 @@ public:
     // Transaction.h rather than to this call.
     [[nodiscard, gnu::cold]] bool rollback() {
         if (!tx_log_.rollback()) return false;
+        // The deactivation abandons the replayed region the way a divergence
+        // does, so the mode takes the same transition.  A restored region
+        // with a memory plan takes it back to COMPILED below.
         if (ctx_.is_compiled()) ctx_.deactivate();
+        mode_.publish_recording_after_divergence();
         const Transaction* tx = tx_log_.active();
         if (tx && tx->region.value()) {
             bg_.active_region.store(tx->region.value(), std::memory_order_release);
-            if (ctx_.activate(tx->region.value())) register_externals_from_region_(tx->region.value());
+            if (ctx_.activate(tx->region.value())) {
+                register_externals_from_region_(tx->region.value());
+                mode_.publish_compiled();
+            }
         }
         return true;
     }
@@ -454,10 +474,12 @@ public:
         RegionNode* region = cipher_->load_content_addressed(open_view, a, cipher_->head(), load_arena_).get();
         if (!region) return false;
         bg_.active_region.store(region, std::memory_order_release);
-        mode_.publish_compiled();
+        // COMPILED only when the context activates.  A region without a
+        // memory plan cannot replay, and the mode must not say it does.
         if (ctx_.activate(region)) {
             register_externals_from_region_(region);
             region_cache_.insert(region);
+            mode_.publish_compiled();
         }
         return true;
     }
@@ -560,11 +582,12 @@ private:
         (void)tx_log_.activate(tx);
 
         // Publishing the region signals the foreground, which picks it up
-        // on its next dispatch.  The mode flip is separate so an observer
-        // polling is_compiled sees the transition without waiting for that
-        // dispatch.
+        // on its next dispatch.  The mode stays RECORDING here.  The
+        // foreground still records until it aligns to this region, and it
+        // publishes COMPILED when it activates the context, so is_compiled
+        // never reports a replay that has not started.  An observer that
+        // waits for this publication reads has_pending_region.
         pending_region_.publish(region);
-        mode_.publish_compiled();
 
         // The observation is presented with a background-drain context
         // because this runs on the region-publishing thread, not the
