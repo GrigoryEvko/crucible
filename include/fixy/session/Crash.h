@@ -125,9 +125,11 @@
 // passed), never read the reliable set, and let a Select carry a crash
 // branch through duality.  Each of those contradicts the calculus.
 
+#include <fixy/session/Payload.h>
 #include <fixy/session/Protocol.h>
 
 #include <foundation/contracts/Armed.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -141,18 +143,10 @@ namespace fixy::session {
 
 struct Stop {};
 
-template <>
-struct dual_of<Stop> {
-    using type = Stop;
-};
-
-template <>
-struct is_dual_involutive<Stop> : std::true_type {};
-
-template <>
-struct is_terminal_state<Stop> : std::true_type {};
-
-// Stop is runtime syntax, so no design-time protocol may contain it.
+// Stop is runtime syntax, so no design-time protocol may contain it.  The
+// registration below gives its dual, its terminal kind and its place in
+// refinement.  This specialization keeps it out of every design-time
+// protocol.
 template <typename LoopCtx>
 struct is_well_formed<Stop, LoopCtx> : std::false_type {};
 
@@ -196,12 +190,31 @@ struct is_crash_payload<Crash<Peer>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_crash_payload_v = is_crash_payload<T>::value;
 
-// Rule 1: the crash label is never sent.  This refuses the plain dual
-// of an endpoint with crash branches, which is correct.  The peer of
-// such an endpoint is its crash dual (crash_dual_t below), not its
-// plain dual.
-template <typename Peer, typename R, typename LoopCtx>
-struct is_well_formed<Send<Crash<Peer>, R>, LoopCtx> : std::false_type {};
+// ── The registrations ────────────────────────────────────────────────
+//
+// Stop is a terminal that absorbs a suffix: a crashed endpoint never
+// resumes, so composition keeps it.  Its dual is itself, and refinement
+// relates it only to itself (rule Sub-stop).
+//
+// The crash label is a payload that no endpoint sends (rule 1) and that
+// is no label a peer can send (rule 2).  The first refuses the plain dual
+// of an endpoint with crash branches, which is correct: the peer of such
+// an endpoint is its crash dual (crash_dual_t below).  The second makes
+// an Offer of crash branches only an empty choice, and gives rule Sub-&
+// its two side conditions in refinement.
+
+namespace combinators {
+
+inline constexpr ::foundation::algebra::transition::combinator stop{
+    .shape = ^^Stop,
+    .kind = ::foundation::algebra::transition::shape_kind::terminal,
+    .dual = ^^Stop,
+    .absorbs_suffix = true};
+
+inline constexpr ::foundation::algebra::transition::payload_rule crash_label{
+    .shape = ^^Crash, .is_sendable = false, .is_label = false};
+
+}  // namespace combinators
 
 // A crash branch of an Offer.
 template <typename B>
@@ -218,21 +231,6 @@ template <typename... Bs>
 inline constexpr bool every_branch_is_crash_v = (is_crash_branch_v<Bs> && ...);
 
 }  // namespace detail::crash
-
-// Rule 2: an Offer whose every branch is a crash branch has no label the
-// peer can send, so it is an empty choice for the handle factory.  Such
-// an Offer has a crash branch in first position, which is what these
-// two partial specializations match.  They then check the rest of the
-// branches and walk every continuation.
-template <typename Peer, typename K, typename... Rest>
-struct is_empty_choice<Offer<Recv<Crash<Peer>, K>, Rest...>>
-    : std::bool_constant<detail::crash::every_branch_is_crash_v<Rest...> || is_empty_choice<K>::value
-                         || (is_empty_choice<Rest>::value || ...)> {};
-
-template <typename Role, typename Peer, typename K, typename... Rest>
-struct is_empty_choice<Offer<Sender<Role>, Recv<Crash<Peer>, K>, Rest...>>
-    : std::bool_constant<detail::crash::every_branch_is_crash_v<Rest...> || is_empty_choice<K>::value
-                         || (is_empty_choice<Rest>::value || ...)> {};
 
 // ── Reliable roles and unavailable queues ────────────────────────────
 
@@ -362,6 +360,52 @@ struct is_crash_well_formed : std::bool_constant<is_well_formed_v<P> && detail::
 
 template <typename P>
 inline constexpr bool is_crash_well_formed_v = is_crash_well_formed<P>::value;
+
+// ── Delegation ───────────────────────────────────────────────────────
+//
+// The crash-stop theory that these rules follow has no delegation (LMCS
+// 2025, footnote 2 on p. 11).  A delegated endpoint has peers of its
+// own, and no detector of this session watches them, so the crash of
+// such a peer leaves the holder waiting for ever.  The coverage walk
+// below does not look inside a payload.  A crash-aware session therefore
+// refuses a payload that holds a DelegatedSession anywhere inside it,
+// read by the component walk of foundation/reflect/TypeComponents.h.
+// Barwell, Scalas, Yoshida and Zhou (CONCUR 2022) type delegation with
+// crashes, and this tree does not carry that system.
+
+namespace detail::crash {
+
+inline constexpr auto is_delegation_node = [](::foundation::reflect::TypeNode node) consteval {
+    return std::meta::has_template_arguments(node.type) && std::meta::template_of(node.type) == ^^DelegatedSession;
+};
+
+template <typename T>
+inline constexpr bool carries_delegation_v = ::foundation::reflect::any_component_satisfies<is_delegation_node>(^^T);
+
+// The primary refuses, so a combinator this walk does not know is not
+// admitted.
+template <typename P>
+struct delegation_free : std::false_type {};
+template <>
+struct delegation_free<End> : std::true_type {};
+template <>
+struct delegation_free<Continue> : std::true_type {};
+template <typename T, typename K>
+struct delegation_free<Send<T, K>> : std::bool_constant<!carries_delegation_v<T> && delegation_free<K>::value> {};
+template <typename T, typename K>
+struct delegation_free<Recv<T, K>> : std::bool_constant<!carries_delegation_v<T> && delegation_free<K>::value> {};
+template <typename... Bs>
+struct delegation_free<Select<Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+template <typename... Bs>
+struct delegation_free<Offer<Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+template <typename Role, typename... Bs>
+struct delegation_free<Offer<Sender<Role>, Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+template <typename B>
+struct delegation_free<Loop<B>> : delegation_free<B> {};
+template <VendorBackend V, typename P>
+struct delegation_free<VendorPinned<V, P>> : delegation_free<P> {};
+
+}  // namespace detail::crash
 
 // ── Crash coverage: rules 3 and 5 ────────────────────────────────────
 //

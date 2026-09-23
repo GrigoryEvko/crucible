@@ -164,6 +164,18 @@ struct sender_of {
     using type = offer_sender_t<OfferType>;
 };
 
+// Each endpoint names its own reliable set, so two endpoints can
+// disagree: this one counts the peer reliable, and the peer crashes.
+// The Offer has no crash branch to take, and a wait would last for ever.
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_reliable_peer_crash() noexcept {
+    std::fprintf(stderr,
+                 "fixy::session: diagnostic [Crash_Of_Reliable_Peer]: the peer crashed, and this endpoint "
+                 "counts it reliable, so the Offer has no crash branch and would wait for ever.  The two "
+                 "endpoints disagree about the reliable set.  Give both the same set, or remove the peer "
+                 "from it and add the crash branch.\n");
+    std::abort();
+}
+
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_crash_label(std::size_t label,
                                                                           std::size_t message_branches) noexcept {
     std::fprintf(stderr,
@@ -181,9 +193,12 @@ struct sender_of {
 // constraint, so a refusal names the clause that failed.
 template <typename Proto, typename Self, typename Peer, typename Reliable>
 concept CrashSessionAdmissible = is_reliable_set<Reliable>::value && !std::is_same_v<Self, Peer>
-                              && WellFormedRunnableProtocol<Proto> && is_crash_well_formed_v<Proto>
+                              && WellFormedRunnableProtocol<Proto>
+                              && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
+                              && is_crash_well_formed_v<Proto>
                               && every_reception_handles_crash_v<Proto, Peer, Reliable>
-                              && detail::crash_transport::senders_watched<Proto, Peer, Reliable>::value;
+                              && detail::crash_transport::senders_watched<Proto, Peer, Reliable>::value
+                              && detail::crash::delegation_free<Proto>::value;
 
 // The same question as a one-argument trait, so that it can hold an
 // armed cell.
@@ -336,12 +351,13 @@ public:
             };
             for (;;) {
                 if (const std::optional<std::size_t> label = std::invoke(poll, resource)) return checked(*label);
-                if constexpr (is_watched) {
-                    if (cell->has_crashed()) {
-                        // A message queued before the crash still wins.
-                        if (const std::optional<std::size_t> label = std::invoke(poll, resource))
-                            return checked(*label);
+                if (cell->has_crashed()) {
+                    // A message queued before the crash still wins.
+                    if (const std::optional<std::size_t> label = std::invoke(poll, resource)) return checked(*label);
+                    if constexpr (is_watched) {
                         return crash_branch_index_v<P, Peer>;
+                    } else {
+                        detail::crash_transport::abort_on_reliable_peer_crash();
                     }
                 }
                 CRUCIBLE_SPIN_PAUSE;
