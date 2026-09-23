@@ -651,6 +651,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},
+    {^^::fixy::session::position, "protocol positions that a view names; a view carries no claim to fold"},
     {^^::fixy::refined, kMachinery},
     {^^::fixy::refined::admitted_implications, kMachinery},
     {^^::fixy::refined_algebra, "refinement predicate combinators, which are grade vocabulary"},
@@ -861,6 +862,9 @@ inline constexpr std::string_view kFactory =
     "a stateless factory: it hands out readings and holds nothing a key could discriminate";
 inline constexpr std::string_view kGraphShape =
     "the type-level shape of a stage graph; the pipeline that runs it folds the shape as its identity";
+inline constexpr std::string_view kMessageMarker =
+    "a message marker of a session protocol: it names the permission one message moves, it is the payload of a "
+    "Send or a Recv, and the handle that steps through the protocol folds it";
 
 inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
@@ -950,6 +954,19 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::SessionHandleBase,
      "the base every session handle derives from: it is never held by value, and the handle folds.  It "
      "publishes the Stepping modality without a resource, so hashing it directly is a hard error"},
+    {^^::fixy::session::LentOut, kVocabulary},
+    {^^::fixy::session::BorrowedIn, kVocabulary},
+    {^^::fixy::session::Transferable, kMessageMarker},
+    {^^::fixy::session::Returned, kMessageMarker},
+    {^^::fixy::session::Borrowed, kMessageMarker},
+    {^^::fixy::session::Released, kMessageMarker},
+    {^^::fixy::session::DelegatedSession, kMessageMarker},
+    {^^::fixy::session::SharedReader,
+     "a read proof that the payload walk names before any header defines it; a message that carries one is the "
+     "payload of a Send or a Recv, and the handle that steps through the protocol folds it"},
+    {^^::fixy::session::is_permission_classified, kMetafunction},
+    {^^::fixy::session::payload_perm_delta, kMetafunction},
+    {^^::fixy::session::is_plain_payload, kMetafunction},
 
     {^^::fixy::session::vigil_mode::mode_tag, kVocabulary},
     {^^::fixy::session::vigil_mode::ModeTransition, kProtocol},
