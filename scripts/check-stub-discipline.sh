@@ -11,7 +11,7 @@
 #       (BackendUnavailable / Deferred / Unavailable) at runtime."
 #
 #   (2) Every stub entrypoint in that header must additionally carry
-#       `[[deprecated("CRUCIBLE_STUB: <reason>; see fixy-A5-XXX")]]` on
+#       `[[deprecated("CRUCIBLE_STUB: <reason>")]]` on
 #       its declaration so callers ALSO see a -Wdeprecated-declarations
 #       warning at COMPILE TIME — not only at runtime sentinel.
 #

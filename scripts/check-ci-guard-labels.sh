@@ -20,7 +20,7 @@
 #
 # Every add_test() in test/CMakeLists.txt whose COMMAND references a
 # path under scripts/ MUST carry the `ci_guard` label via
-# set_tests_properties(... PROPERTIES LABELS "ci_guard;<ticket>").
+# set_tests_properties(... PROPERTIES LABELS "ci_guard").
 #
 # The label is what makes the count self-guarding: a new guard script
 # registered without it fails THIS test, so the gap cannot reopen
@@ -228,7 +228,7 @@ Fix: add the test name to a set_tests_properties(...) call carrying
 the label, next to its add_test():
 
   set_tests_properties(<name> [<name_self_test>] PROPERTIES
-    LABELS "ci_guard;<ticket>")
+    LABELS "ci_guard")
 
 Label the --self-test entry alongside the scan entry: a self-test that
 never runs cannot witness a regex regression.

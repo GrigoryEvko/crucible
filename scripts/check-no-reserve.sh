@@ -416,10 +416,10 @@ Remediations, in order of preference:
       named reserve that semantically isn't vector::reserve).
 
   (4) Add 'path:text' to scripts/no-reserve-allowlist.txt for
-      grandfathered code awaiting a tracked migration, where 'text'
+      grandfathered code that waits for its migration, where 'text'
       is the trimmed call source printed as the "Allowlist key"
       above — a content key that survives line shifts.  Every entry
-      is a TODO referencing its fixy-A5-* migration ticket.
+      is a TODO that names the migration it waits for.
 HINT
     exit 1
 fi

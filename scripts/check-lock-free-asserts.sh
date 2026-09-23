@@ -397,8 +397,8 @@ Remediations, in order of preference:
       for compile-time-deduced single-thread fast path).
 
   (3) Add 'path::type' to scripts/no-lock-free-asserts-allowlist.txt
-      for grandfathered sites awaiting a tracked migration — every
-      entry is a TODO referencing its fixy-A5-* ticket.
+      for grandfathered sites that wait for their migration — every
+      entry is a TODO that names the migration it waits for.
 HINT
     exit 1
 fi
