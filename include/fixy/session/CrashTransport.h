@@ -11,7 +11,9 @@
 //   send, select  If the peer has crashed, the message is lost (rule
 //                 r-send-↯).  The decorator does not call the transport.
 //                 A payload that was not delivered comes back to the
-//                 caller.
+//                 caller.  A payload that carries a permission needs a
+//                 transport that refuses at the write, because the peer
+//                 can crash after the check and before the write.
 //   branch        The decorator polls for a label.  If the peer has
 //                 crashed and no message from the peer is left, it takes
 //                 the crash branch (rule r-rcv-⊙).  A message that arrived
@@ -58,20 +60,20 @@
 // The detector cell says that the peer stopped.  It does not say what
 // the peer sent.  Only the transport knows what is queued, and rule
 // r-rcv-⊙ delivers a message queued before the crash.  So the decorator
-// trusts the transport on two points: a poll or a read reports only
-// messages that the peer sent, and the transport delivers a label and
-// the payload of its branch together.  A transport that breaks one of
-// these can hide a crash or split a message, and no type here can see
-// it.  The crash attack campaign pins the first on its ledger.  Closing
-// it needs a witness of the sends that the transport cannot write, for
-// example a final sequence number that the failure detector publishes
-// with the crash.
+// trusts the transport on three points: a poll or a read reports only
+// messages that the peer sent, a refusing write refuses when the queue
+// of the peer is closed, and the transport delivers a label and the
+// payload of its branch together.  A transport that breaks one of these
+// can hide a crash, lose a token or split a message, and no type here
+// can see it.  The crash attack campaign pins the first on its ledger.
+// Closing it needs a witness of the sends that the transport cannot
+// write, for example a final sequence number that the failure detector
+// publishes with the crash.
 //
-// The crash check and the transport call are two steps.  If the peer
-// crashes between them, the transport delivers into the queue of a dead
-// peer, and the payload is lost with that queue (rule r-↯ makes the
-// queue unavailable).  The decorator returns a payload only when the
-// crash was visible before the send.
+// A payload that the transport took before the crash and that the peer
+// never read is lost with the queue of the peer (rule r-↯ makes that
+// queue unavailable).  A refusing transport that drains a closed queue
+// back to its senders returns such payloads too.
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>
@@ -319,7 +321,8 @@ template <typename Handle, typename Self, typename Peer, typename Reliable,
 class CrashWatched;
 
 // The result of a send.  `undelivered` holds the payload when the peer
-// had crashed before the send, and is empty when the transport took it.
+// had crashed before the send, or when the transport refused it at the
+// write.  It is empty when the transport took the payload.
 template <typename Next, typename T>
 struct [[nodiscard]] CrashSend {
     Next next;
@@ -378,16 +381,38 @@ public:
     [[nodiscard]] bool peer_has_crashed() const noexcept { return peer_cell_->has_crashed(); }
 
     // ── send ─────────────────────────────────────────────────────────
+    //
+    // Transport has the signature void(Resource&, T&&) or
+    // std::optional<T>(Resource&, T&&).  The second form refuses at the
+    // write: it gives the payload back when the peer has crashed by then.
+    // The crash check of the decorator and the write of the transport are
+    // two steps, and the peer can crash between them, so only the write can
+    // decide.  A payload that moves, lends or releases a permission needs
+    // the refusing form, or a crash between the two steps loses the token.
     template <typename Transport, typename P = protocol>
         requires is_send_v<P> && std::is_invocable_v<Transport, resource_type&, typename P::message_type&&>
     [[nodiscard]] constexpr auto send(typename P::message_type value, Transport transport) && {
         using T = typename P::message_type;
+        using Result = std::invoke_result_t<Transport, resource_type&, T&&>;
+        constexpr bool is_refusing = std::is_same_v<Result, std::optional<T>>;
+        static_assert(is_refusing || std::is_void_v<Result>,
+                      "fixy::session::diagnostic [Crash_Transport_Result]: send(): the transport returns neither "
+                      "void nor std::optional<T>.  Return void when the write cannot fail, and std::optional<T> "
+                      "holding the payload when the peer crashed before the write.");
+        static_assert(is_refusing || is_plain_payload_v<T>,
+                      "fixy::session::diagnostic [Crash_Send_Must_Refuse]: send(): the payload moves, lends or "
+                      "releases a permission, and the transport returns void.  The peer can crash between the "
+                      "crash check and the write, and the token then goes into a queue that no one reads.  Give "
+                      "the transport the signature std::optional<T>(Resource&, T&&), and make it refuse at the "
+                      "write when the queue of the peer is closed.");
         std::optional<T> undelivered;
         constexpr bool is_nothrow =
             std::is_nothrow_invocable_v<Transport, resource_type&, T&&> && std::is_nothrow_move_constructible_v<T>;
         auto next = std::move(inner_).send(std::move(value), [&](resource_type& resource, T&& payload) noexcept(is_nothrow) {
             if (peer_cell_->has_crashed()) {
                 undelivered.emplace(std::move(payload));
+            } else if constexpr (is_refusing) {
+                undelivered = std::invoke(transport, resource, std::move(payload));
             } else {
                 std::invoke(transport, resource, std::move(payload));
             }

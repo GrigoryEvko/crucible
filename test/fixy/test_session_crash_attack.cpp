@@ -293,8 +293,12 @@ constexpr int kSilentExit = 3;
 constexpr int kDeadlockExit = 4;
 constexpr unsigned kWatchdogSeconds = 5;
 
+// The queue into one endpoint.  A crash of that endpoint closes it, and a
+// write into a closed queue is refused, which is the check a transport
+// makes at the write.
 struct Mailbox {
     std::deque<std::uint64_t> slots;
+    bool is_closed = false;
 };
 
 struct Port {
@@ -302,12 +306,23 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
+// The crash of the endpoint whose inbound queue is `inbox`: the detector
+// cell records it, and the queue closes.
+void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause) {
+    cell.mark_crashed(cause);
+    inbox.is_closed = true;
+}
+
 using Token = s::Transferable<int, X>;
 
 constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
 constexpr auto push_int = [](Port& port, int&& value) noexcept { port.out->slots.push_back(static_cast<std::uint64_t>(value)); };
-constexpr auto push_token = [](Port& port, Token&& token) noexcept {
+// A write that refuses at the write: it gives the token back when the
+// queue of the peer is closed.
+constexpr auto push_token = [](Port& port, Token&& token) noexcept -> std::optional<Token> {
+    if (port.out->is_closed) return std::optional<Token>{std::move(token)};
     port.out->slots.push_back(static_cast<std::uint64_t>(token.value));
+    return std::nullopt;
 };
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.
@@ -399,7 +414,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
             finish(Outcome::Silent);
         } else {
             auto [token, reply] = std::move(branch).recv(read_token);
-            cell_p.mark_crashed(s::CrashCause::Abort);
+            crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] = std::move(chosen).send(std::move(token), push_token);
             came_back_once = undelivered.has_value() && undelivered->value == 7;
@@ -522,8 +537,11 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
 
 // The check of the crash cell and the write of the transport are two
 // steps.  The peer crashes between them: the check sees it alive, and the
-// transport writes into a queue that nobody reads.  The token inside the
-// message is lost, and the undelivered payload is empty.
+// peer's queue closes before the write.  A token-carrying payload needs a
+// transport that refuses at the write, so the closed queue refuses the
+// token and it comes back as the undelivered payload.  A transport that
+// returns void for a token does not compile: neg_sess_crash_token_send_
+// without_refusal and neg_sess_crash_recorded_token_send_without_refusal.
 [[noreturn]] void crash_between_check_and_write_loses_token() {
     using Relay = s::Offer<s::Recv<Token, s::Select<s::Send<Token, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
@@ -532,20 +550,23 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     to_q.slots.push_back(7);
     s::PeerCrashCell cell_p;
     auto q = s::mint_crash_session<Relay, Q, P>(Port{&to_q, &to_p}, cell_p);
-    bool token_lost = false;
+    bool token_lost = true;
     std::move(q).branch(poll_label, [&](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
-            finish(Outcome::Correct);
+            finish(Outcome::Silent);
         } else {
             auto [token, reply] = std::move(branch).recv(read_token);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] =
-                std::move(chosen).send(std::move(token), [&cell_p](Port& port, Token&& moved) noexcept {
-                    cell_p.mark_crashed(s::CrashCause::Abort);
-                    push_token(port, std::move(moved));
+                std::move(chosen).send(std::move(token), [&cell_p, &to_p](Port& port, Token&& moved) noexcept {
+                    crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
+                    return push_token(port, std::move(moved));
                 });
-            token_lost = !undelivered.has_value() && cell_p.has_crashed();
+            // The label went before the crash, so the queue of p holds it
+            // and must hold nothing more.
+            const bool is_token_queued = to_p.slots.size() > 1;
+            token_lost = !(undelivered.has_value() && undelivered->value == 7) || is_token_queued;
             (void)std::move(end).close();
         }
     });
@@ -588,7 +609,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
     auto half_sent = std::move(p).select<0>(push_label);
     std::move(half_sent).detach(s::detach_reason::TestInstrumentation{});
-    cell_p.mark_crashed(s::CrashCause::Abort);
+    crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
     std::move(q).branch(poll_label, [](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
@@ -682,7 +703,7 @@ constexpr attack_case kAttacks[] = {
     {"queue_drains_before_detection", Outcome::Correct, queue_drains_before_detection},
     {"peer_sends_the_crash_label", Outcome::Caught, peer_sends_the_crash_label},
     {"transport_fabricates_messages_after_crash", Outcome::Silent, transport_fabricates_messages_after_crash},
-    {"crash_between_check_and_write_loses_token", Outcome::Silent, crash_between_check_and_write_loses_token},
+    {"crash_between_check_and_write_loses_token", Outcome::Correct, crash_between_check_and_write_loses_token},
     {"bare_recv_from_crashed_reliable_peer", Outcome::Caught, bare_recv_from_crashed_reliable_peer},
     {"peer_dies_between_label_and_payload", Outcome::Caught, peer_dies_between_label_and_payload},
     {"recorder_sees_the_crash", Outcome::Correct, recorder_sees_the_crash},
@@ -702,12 +723,9 @@ constexpr limitation_row known_limitations[] = {
     {"transport_fabricates_messages_after_crash",
      "rule r-rcv-⊙ (LMCS 2025, Fig. 4) delivers a message queued before the crash, and only the transport "
      "knows what is queued.  The detector cell reports that the peer stopped, not what it sent, so a transport "
-     "that invents messages hides the crash for ever.  Closing it needs a witness of the sends that the "
-     "transport cannot write, for example a final sequence number that the failure detector publishes with "
-     "the crash"},
-    {"crash_between_check_and_write_loses_token",
-     "a linear token is not lost: rule r-send-↯ drops a message to a crashed peer, and a crash between the "
-     "check and the write drops the token inside it.  A transport that returns a refused payload would close it"},
+     "that invents messages hides the crash for ever.  The same trust covers a transport that reports a write "
+     "into a closed queue as delivered.  Closing it needs a witness of the sends that the transport cannot "
+     "write, for example a final sequence number that the failure detector publishes with the crash"},
 };
 
 consteval bool ledger_matches_the_campaign() {

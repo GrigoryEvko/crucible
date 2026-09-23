@@ -252,15 +252,27 @@ public:
     Recorded& operator=(const Recorded&) = delete("a recorded handle is linear, like the handle it wraps");
     ~Recorded() = default;
 
+    // A transport that refuses at the write returns the payload it could
+    // not deliver.  The recorder passes that result through, and records
+    // a refused payload as lost to the crashed peer.
     template <typename T, typename Transport>
         requires is_send_v<protocol> && detail::recording::inner_can_send<Inner, T, Transport>
     [[nodiscard]] constexpr auto send(T value, Transport transport) && {
         using Message = typename protocol::message_type;
+        using Result = std::invoke_result_t<Transport, resource_type&, Message&&>;
+        constexpr bool is_refusing = std::is_same_v<Result, std::optional<Message>>;
         constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, Message&&>;
         bool is_delivered = false;
-        auto marked = [&transport, &is_delivered](resource_type& resource, Message&& payload) noexcept(is_nothrow) {
-            is_delivered = true;
-            std::invoke(transport, resource, std::move(payload));
+        auto marked = [&transport, &is_delivered](resource_type& resource, Message&& payload) noexcept(is_nothrow)
+            -> Result {
+            if constexpr (is_refusing) {
+                Result refused = std::invoke(transport, resource, std::move(payload));
+                is_delivered = !refused.has_value();
+                return refused;
+            } else {
+                is_delivered = true;
+                return std::invoke(transport, resource, std::move(payload));
+            }
         };
         auto result = std::move(inner_).send(std::move(value), marked);
         record_(detail::recording::event_for_send<Message>(
