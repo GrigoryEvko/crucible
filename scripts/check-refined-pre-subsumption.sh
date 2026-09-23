@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-refined-pre-subsumption.sh — CONTRACT-120 grep guard.
+# check-refined-pre-subsumption.sh — dead-weight precondition grep guard.
 #
 # Layer-C cooperative discipline: when a function takes a parameter
 # typed `safety::Refined<Pred<...>, T>` (or a `using` alias of it),
@@ -27,7 +27,7 @@
 # anti-pattern to demonstrate the rejection.
 #
 # Suppression: a reviewer can annotate a deliberate defense-in-depth
-# cite with the inline marker `// CONTRACT-120-OK:` on the same line
+# cite with the inline marker `// REFINED-PRE-OK:` on the same line
 # as the CRUCIBLE_PRE invocation (e.g. when the Refined param's
 # invariant has been moved through a non-typed path within the
 # function body and re-establishment is intentional).  Lines with
@@ -44,7 +44,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     cat >&2 <<'USAGE'
-check-refined-pre-subsumption.sh — Layer-C grep guard for CONTRACT-120.
+check-refined-pre-subsumption.sh — Layer-C grep guard for dead-weight preconditions.
 
 Usage:
   check-refined-pre-subsumption.sh              # scan; exit 1 on violation
@@ -54,7 +54,7 @@ Usage:
   check-refined-pre-subsumption.sh -h | --help  # usage
 
 Suppression:
-  // CONTRACT-120-OK: <reason>   on the same line as CRUCIBLE_PRE skips it.
+  // REFINED-PRE-OK: <reason>   on the same line as CRUCIBLE_PRE skips it.
 USAGE
 }
 
@@ -75,7 +75,7 @@ predicates=(
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
     --list)
-        printf 'CONTRACT-120 scans these refined predicates:\n'
+        printf 'check-refined-pre-subsumption scans these refined predicates:\n'
         for entry in "${predicates[@]}"; do
             printf '  %s\n' "${entry%%|*}"
         done
@@ -110,7 +110,7 @@ case "${1:-}" in
         # everything is caught here and nowhere else.
         cat >"$tmp_root/include/crucible/planted_clean.h" <<'CLEAN'
 #pragma once
-// Synthetic CONTRACT-120 clean cases for --self-test verification.
+// Synthetic clean cases for --self-test verification.
 namespace crucible::planted {
 struct positive {};
 template <typename P, typename T> struct Refined { T v_; };
@@ -139,16 +139,16 @@ CLEAN
         fi
 
         # Arm two, the suppression marker.  A genuine dead-weight cite
-        # that carries CONTRACT-120-OK must be skipped, which is the
+        # that carries REFINED-PRE-OK must be skipped, which is the
         # only exercise the suppression branch ever gets.
         cat >"$tmp_root/include/crucible/planted_marked.h" <<'MARKED'
 #pragma once
-// Synthetic CONTRACT-120 suppressed case for --self-test verification.
+// Synthetic suppressed case for --self-test verification.
 namespace crucible::planted {
 struct positive {};
 template <typename P, typename T> struct Refined { T v_; };
 inline void marked_fn(Refined<positive, int> n) {
-    // CONTRACT-120-OK: kept deliberately while the caller is migrated.
+    // REFINED-PRE-OK: kept deliberately while the caller is migrated.
     CRUCIBLE_PRE(decide::positive(n));
     (void)n;
 }
@@ -158,7 +158,7 @@ MARKED
         CRUCIBLE_REFINED_PRE_TEST_ROOT="$tmp_root" \
             bash "${BASH_SOURCE[0]}" 2>"$result_file" || rc=$?
         if [[ "$rc" -ne 0 ]]; then
-            st_fail "a cite marked CONTRACT-120-OK reported $rc, want 0"
+            st_fail "a cite marked REFINED-PRE-OK reported $rc, want 0"
         fi
 
         # Arm three, the violation.  Exactly one site is dead weight, so
@@ -166,7 +166,7 @@ MARKED
         # match or sweeps the clean neighbours in.
         cat >"$tmp_root/include/crucible/planted_violation.h" <<'PLANTED'
 #pragma once
-// Synthetic CONTRACT-120 violation for --self-test verification.
+// Synthetic REFINED-PRE violation for --self-test verification.
 namespace crucible::planted {
 struct positive {};  // stand-in for safety::positive predicate
 template <typename P, typename T> struct Refined { T v_; };
@@ -183,7 +183,7 @@ PLANTED
             st_fail "planted violation was not caught"
         fi
         # Confirm the diagnostic message names the predicate.
-        if ! grep -q 'CONTRACT-120 violation.*positive' "$result_file"; then
+        if ! grep -q 'REFINED-PRE violation.*positive' "$result_file"; then
             st_fail "diagnostic missing predicate name"
         fi
         if ! grep -q 'planted_violation\.h' "$result_file"; then
@@ -193,9 +193,9 @@ PLANTED
             st_fail "a clean shape was flagged"
         fi
         if grep -q 'planted_marked\.h' "$result_file"; then
-            st_fail "a CONTRACT-120-OK marked cite was flagged"
+            st_fail "a REFINED-PRE-OK marked cite was flagged"
         fi
-        violation_count="$(grep -c 'CONTRACT-120 violation' "$result_file" || true)"
+        violation_count="$(grep -c 'REFINED-PRE violation' "$result_file" || true)"
         if [[ "$violation_count" -ne 1 ]]; then
             st_fail "expected exactly 1 violation, got $violation_count"
         fi
@@ -256,7 +256,7 @@ violation_count=0
 #     and PCRE2 rejects 2000 with "regular expression is too large".
 #
 # The window is deliberately short either way — beyond a handful of
-# nested scopes the heuristic loses precision; CONTRACT-120 is a
+# nested scopes the heuristic loses precision; this guard is a
 # best-effort signal, not a parser.
 #
 # False-positive guards:
@@ -282,7 +282,7 @@ for entry in "${predicates[@]}"; do
     # prints every line a multi-line match spans, each with its own
     # `file:line:` prefix, so a `while read` loop over it sees one
     # record per line: the count then counts lines rather than sites,
-    # and a CONTRACT-120-OK marker only suppresses the single line it
+    # and a REFINED-PRE-OK marker only suppresses the single line it
     # sits on.  The --json stream gives one object per match instead,
     # carrying the match's start line and the full matched text; jq
     # folds the newlines to spaces so one match is one record and the
@@ -295,15 +295,15 @@ for entry in "${predicates[@]}"; do
         # Full matched text — used to check for the suppression marker.
         text="${rest#*:}"
 
-        # Suppression: skip if the match carries CONTRACT-120-OK on any
+        # Suppression: skip if the match carries REFINED-PRE-OK on any
         # of its lines.  `text` is the whole match, so one marker
         # anywhere inside it suppresses the whole site.
-        if [[ "$text" == *'CONTRACT-120-OK'* ]]; then
+        if [[ "$text" == *'REFINED-PRE-OK'* ]]; then
             continue
         fi
 
         rel="${file#"$scan_root"/}"
-        printf 'CONTRACT-120 violation: %s:%s — Refined<%s, ...> param + CRUCIBLE_PRE re-tests predicate.\n' \
+        printf 'REFINED-PRE violation: %s:%s — Refined<%s, ...> param + CRUCIBLE_PRE re-tests predicate.\n' \
             "$rel" "$line" "$pred" >&2
         violation_count=$((violation_count + 1))
     done < <(
@@ -322,7 +322,7 @@ done
 if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
-CONTRACT-120 detected ${violation_count} double-enforcement site(s).
+check-refined-pre-subsumption detected ${violation_count} double-enforcement site(s).
 Each site has a parameter typed safety::Refined<Pred, T> AND an
 in-body CRUCIBLE_PRE that re-tests the same predicate on the same
 parameter.  The Refined ctor already discharges the predicate at
@@ -333,7 +333,7 @@ Three remediations:
   (1) Drop the CRUCIBLE_PRE.  The type already carries the proof.
   (2) Lift the cite to a dependent invariant (e.g., a relation
       between two parameters that the type system can't carry).
-  (3) Annotate the cite with '// CONTRACT-120-OK: <reason>' on the
+  (3) Annotate the cite with '// REFINED-PRE-OK: <reason>' on the
       same line if the re-test is genuinely defense-in-depth (the
       param's invariant has been threaded through an untyped path
       and re-establishment is intentional).

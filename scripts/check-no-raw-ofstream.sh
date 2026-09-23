@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# check-no-raw-ofstream.sh — raw C++ file-stream ban in band-3 dirs (FIXY-V-237).
+# check-no-raw-ofstream.sh — raw C++ file-stream ban in band-3 dirs.
 #
-# Agent 9 Phase F6.  The eight band-3 subsystems (cntp, canopy, cog,
+# The eight band-3 subsystems (cntp, canopy, cog,
 # topology, forge, mimic, observe, warden) are "fixy-only from 17 May
-# 2026 onward" (fixy.md §5.3, FIXY-V-070).  Every filesystem touch in
+# 2026 onward" (fixy.md §5.3).  Every filesystem touch in
 # those dirs MUST route through the typed RAII capability surface —
-# safety::OwnedFile (std::FILE* RAII, FIXY-V-230) / safety::FileHandle
+# safety::OwnedFile (std::FILE* RAII) / safety::FileHandle
 # (fd RAII) / fixy::mint_file (Ctx-bound, effects::IO-admitting).  Raw
 # C++ iostream file streams (std::ofstream / std::ifstream / std::fstream
 # and their basic_* templates) bypass that surface entirely:
 #
 #   (1) No effects::IO capability admission — the syscall-capability
-#       discipline (FIXY-U-100) and the fixy:: I/O grants never see them.
+#       discipline and the fixy:: I/O grants never see them.
 #   (2) Exception-throwing on failure (we build -fno-exceptions); a
 #       failed open silently sets failbit instead of being handled at
 #       the type level via std::expected / OwnedFile's nullptr sentinel.
@@ -22,7 +22,7 @@
 # `#include <fstream>` inside the production band-3 dirs.  It is a
 # regression-prevention surface: band-3 has ZERO raw file-stream usage
 # today (verified at ship), so the guard ships green with an empty
-# allowlist, exactly like check-fixy-spawn-discipline.sh (FIXY-V-210).
+# allowlist, exactly like check-fixy-spawn-discipline.sh.
 #
 # Scope: include/crucible/{8 band-3} + src/{8 band-3} only.  Fixture
 # dirs (examples/fn/, test/fixy_neg/) are EXEMPT — a neg-compile fixture
@@ -220,7 +220,7 @@ fi
 # IS the stream type, so the boundary just avoids matching mid-token.
 candidate_pattern='std::(basic_)?[oi]?fstream\b|#[[:space:]]*include[[:space:]]*<fstream>'
 
-# ── Band-3 production scan dirs (FIXY-V-070 mirror) ──────────────────
+# ── Band-3 production scan dirs ──────────────────────────────────────
 # Authoritative list: CMakeLists.txt CRUCIBLE_FIXY_ONLY_PATHS /
 # check-fixy-discipline.sh.  examples/fn/ + test/fixy_neg/ are band-3 but
 # EXEMPT here (fixture dirs may demonstrate the rejected pattern).
@@ -271,7 +271,7 @@ while IFS= read -r match; do
         continue
     fi
 
-    printf 'NO-RAW-OFSTREAM violation: %s:%s — raw C++ file stream banned in band-3 (FIXY-V-237).\n' \
+    printf 'NO-RAW-OFSTREAM violation: %s:%s — raw C++ file stream banned in band-3.\n' \
         "$rel" "$line" >&2
     violation_count=$((violation_count + 1))
 done < <(
@@ -300,7 +300,7 @@ Remediations, in order of preference:
   (1) Route through fixy::mint_file (Ctx-bound, effects::IO-admitting)
       when you need the full capability discipline.
 
-  (2) Use safety::OwnedFile (std::FILE* RAII, FIXY-V-230) or
+  (2) Use safety::OwnedFile (std::FILE* RAII) or
       safety::FileHandle (fd RAII) — both close on RAII drop and expose
       an std::expected / nullptr-sentinel surface instead of failbit.
 

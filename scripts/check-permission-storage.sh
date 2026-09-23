@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-permission-storage.sh — Permission<Tag> long-lived-struct
-# antipattern guard (fixy-L-03 #1519, the header comment of
+# antipattern guard (the header comment of
 # include/foundation/permissions/Permission.h).
 #
 # ─── Background ──────────────────────────────────────────────────────
@@ -23,7 +23,7 @@
 # pattern".  A bare `Permission<Tag> p_;` without the attribute is the
 # documented antipattern: the holder may be aliased across threads
 # without the type system catching it (CSL frame rule defeated —
-# Permission.h:144-148, CLAUDE.md §IX, fixy-L-03).
+# Permission.h:144-148, CLAUDE.md §IX).
 #
 # ─── Rule ────────────────────────────────────────────────────────────
 #

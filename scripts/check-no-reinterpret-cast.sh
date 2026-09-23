@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-no-reinterpret-cast.sh — reinterpret_cast ban enforcement (FIXY-U-105).
+# check-no-reinterpret-cast.sh — reinterpret_cast ban enforcement.
 #
 # CLAUDE.md §III opt-out matrix: `reinterpret_cast` is banned
 # project-wide because it bypasses TBAA, hides strict-aliasing
@@ -27,9 +27,9 @@
 # EXACT trimmed source of the violating call line — a CONTENT KEY, not
 # a line number.  Comment lines start with `#`.  Empty lines ignored.
 #
-# fix-18: content-keying replaces the legacy `path:line` form.  A line
+# The content key replaces the legacy `path:line` form.  A line
 # number drifts the instant ANY edit lands above the call (a concurrent
-# agent inserting a member, a new `#include`, a reflowed comment),
+# edit inserting a member, a new `#include`, a reflowed comment),
 # silently staling the entry: the real reinterpret_cast reads as
 # un-suppressed AND the dangling line-keyed entry trips the stale gate.
 # The call line's TEXT is stable across line shifts, so a content-keyed
@@ -86,7 +86,7 @@ case "${1:-}" in
         # Finally plant ONE STALE allowlist entry whose call text exists
         # nowhere in the file — must trigger exit 2.  Each cast carries
         # a TEXTUALLY DISTINCT target type so the content key maps each
-        # to exactly one site — the fix-18 invariant the self-test pins.
+        # to exactly one site — the content-key invariant the self-test pins.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/vessel/torch" \
@@ -131,7 +131,7 @@ PLANTED_VESSEL
         # Allowlist entry is CONTENT-KEYED: it names the exact trimmed
         # source of the SECOND reinterpret_cast call
         # (`return reinterpret_cast<std::uint64_t>(p);`), not its line
-        # number.  This is the fix-18 drift-proof key.  Also plant a
+        # number.  This is the drift-proof key.  Also plant a
         # STALE entry (cast text present nowhere) to verify stale
         # detection rides alongside.
         cat >"$tmp_root/scripts/no-reinterpret-allowlist.txt" <<'ALLOW'
@@ -202,7 +202,7 @@ ALLOW
         # live violation does not mask those outcomes.
         rm -f "$tmp_root/vessel/torch/planted_vessel.cpp"
 
-        # ── Second sub-test: drift-proofing (the fix-18 core invariant)
+        # ── Second sub-test: drift-proofing (the content-key invariant)
         # Re-plant with an extra leading blank line so the allowlisted
         # call's LINE NUMBER shifts; the content-keyed entry is unchanged
         # and must STILL exempt it (line-keyed form would red here).
@@ -385,10 +385,9 @@ Remediations, in order of preference:
       structurally-justified exceptions documented inline.
 
   (5) Add 'path:text' to scripts/no-reinterpret-allowlist.txt for
-      grandfathered code awaiting a tracked migration, where 'text' is
+      grandfathered code that waits for its migration, where 'text' is
       the trimmed call source printed as the "Allowlist key" above — a
-      content key that survives line shifts (FIXY-U-082 + WRAP-* tickets
-      are the active drain plans).
+      content key that survives line shifts.
 HINT
     exit 1
 fi

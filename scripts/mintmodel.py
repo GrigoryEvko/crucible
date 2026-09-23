@@ -27,7 +27,7 @@ node type rather than a heuristic:
 
 PARITY.  Measured 2026-09-21 against the 216 rows of `misc/mint-inventory.md`:
 these rules reproduce every row, miss none, and add three sites the snapshot
-does not hold.  All three are real and filed as task #215 — two independent
+does not hold.  All three are real: two independent
 definitions that share a name, and one row whose fixy cell names a different
 function than the row's own site.
 """
@@ -297,7 +297,7 @@ def guard_files() -> list[Path]:
     substrate trees it lists, which is a narrower set.
 
     Superseded `_*.h` headers are excluded from both: they are frozen, so a
-    shortfall there cannot be repaired, and Stage D deletes them.
+    shortfall there cannot be repaired, and they go with the old tree.
 
     Returns:
         Repo-relative paths, in sorted order

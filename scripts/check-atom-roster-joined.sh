@@ -37,8 +37,8 @@
 # file.  A list would go stale the first time a header is added, and a
 # stale list here is exactly the failure this guard exists to catch.
 #
-# Stage A's acceptance gate check 6 ("every atom has a consumer") consumes
-# the same two templates rather than building a second set of atoms.
+# The acceptance check that every atom has a consumer reads the same two
+# templates rather than building a second set of atoms.
 #
 # Exit codes
 #   0 — every declared roster is joined, and no sample set is joined

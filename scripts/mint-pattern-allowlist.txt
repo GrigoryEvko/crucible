@@ -12,19 +12,19 @@
 # ── Why name-keyed is the default ────────────────────────────────────
 #
 # A LINE-KEYED entry pins an exemption to a source LINE NUMBER.  Any
-# edit above the mint — a concurrent agent inserting a member, a new
+# edit above the mint — a concurrent edit inserting a member, a new
 # `#include`, a reflowed comment — shifts the line and silently
 # invalidates the entry: the real mint reads as an un-suppressed
 # violation AND the now-dangling entry trips the stale-entry gate.  That
-# is the exact failure mode this file kept hitting (the FIXY-U-101
-# line-collapse sweep stranded 7 entries; later sweeps stranded more).
+# is the exact failure mode this file kept hitting (one line-collapse
+# sweep stranded 7 entries; later sweeps stranded more).
 #
 # A NAME-KEYED entry pins the exemption to the mint's IDENTIFIER (the
 # `mint_<noun>` token on the candidate line).  The identifier is stable
 # across line shifts, so a name-keyed exemption keeps tracking the same
-# factory no matter how the file above it churns.  This is the fix-18
-# approach applied to the mint guard: eliminate the line number as the
-# drift vector entirely.  Every entry below is name-keyed.
+# factory no matter how the file above it churns.  This is the content
+# key of the reserve guard, applied to the mint guard: it eliminates the
+# line number as the drift vector.  Every entry below is name-keyed.
 #
 # Name-keyed semantics: `path` must match the candidate's file exactly;
 # the name segment matches the `mint_<noun>` identifier.  An overload
@@ -109,9 +109,9 @@
 # The 26 `ctxfit-ok` entries ARE the open-defect list now.  Each one is a
 # ctx-bound mint that gates no context, and each needs a real conjunct
 # rather than an entry.  They sit in their own section below with the
-# remediation stated once for the set.  All 26 are in the old substrate
-# that Stage D deletes; the only new-tree entry, `mint_pipeline`, was
-# repaired rather than excused.
+# remediation stated once for the set.  All 26 are in the frozen old
+# substrate; the only new-tree entry, `mint_pipeline`, was repaired
+# rather than excused.
 #
 # An earlier revision of this file attributed that entry, and a further
 # eleven entries under canopy/ and cntp/, to those trees being
@@ -122,17 +122,6 @@
 # the claim is withdrawn.  The canopy/ and cntp/ entries stand or fall
 # on their own category, like every other entry here; the section
 # headers below no longer label either tree as banned.
-#
-# If a per-session ownership split does make a file untouchable for a
-# particular change, say so on the entry with the date and the scope,
-# not as a standing property of the directory.
-#
-# Cross-references:
-#   fixy-M-22 (#1507) — CLOSED: mint_vigil_mode_bridge gained constexpr.
-#   fixy-M-23 (#1508) — CLOSED: mint_persisted_session gained noexcept on
-#       all three live overloads.  constexpr-ok carve-out retained.
-#   fixy-A4-027 (#1666) — CLOSED: mint_federation_admittance gained a
-#       standalone [[nodiscard]]; it has no entry in this file.
 #
 # ── Known over-breadth in `constexpr-ok` ─────────────────────────────
 #
@@ -275,8 +264,8 @@ include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
 # scanner's blind spot would have retired the entry and left the gap with
 # no record anywhere.  That is why this category exists.
 #
-# Every entry below sits in the old substrate, which Stage D deletes; the
-# port carries the gate.
+# Every entry below sits in the frozen old substrate; the port carries
+# the gate.
 #
 # There WAS one new-tree entry, `include/fixy/concurrent/Pipeline.h`'s
 # `mint_pipeline`, and it was repaired rather than excused.  It enforced
@@ -320,9 +309,9 @@ include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok
 include/crucible/topology/Ptp.h:mint_ptp_handle:constexpr-ok
 include/crucible/warden/Hardening.h:mint_hardening:constexpr-ok
 
-# fixy-A4-027 follow-up, 2026-09-21.  The AST guard sees a template the bash
-# window could not: the template parameter list sits at line 288 and the
-# signature at line 305, seventeen lines apart against a fifteen-line window,
+# The AST guard sees a template the bash window could not: the template
+# parameter list sits at line 288 and the signature at line 305,
+# seventeen lines apart against a fifteen-line window,
 # so the old guard found no template, skipped the requires axis and passed a
 # templated mint that carries no clause.  The site is under a frozen path and
 # the federation permission surface has no port yet, so the clause cannot be

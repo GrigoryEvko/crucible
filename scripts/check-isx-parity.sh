@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-isx-parity.sh — fixy::is:: convention enforcement (FIXY-U-104).
+# check-isx-parity.sh — fixy::is:: convention enforcement.
 #
 # The fixy::is:: namespace (include/crucible/fixy/Is.h) re-exports the
 # public surface of every safety/IsX.h header in three tiers:
@@ -7,7 +7,7 @@
 #   (b) trait re-export      — fixy::is::is_x_v  (using-decl)
 #   (c) type-alias helpers   — fixy::is::x_*_t  (using-decl)
 #
-# fixy-L-05 / fixy-L-06 established the parity invariant: every public
+# The parity invariant: every public
 # alias in safety::extract:: must be re-exported through fixy::is::.
 # Without enforcement, future IsX.h additions silently drift out of
 # parity — adding a new IsX.h compiles cleanly even when fixy::is::

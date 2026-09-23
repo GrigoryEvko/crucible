@@ -47,13 +47,11 @@ reads every one so its verdict matches the old guard:
 Measured 2026-09-21: the allowlist opened the day at 138 entries and closed it at
 75, against 39 carve-out comments and 9 inline markers.  Fifty of the entries it
 shed were not exemptions — they recorded a constraint the scanner could not read.
-Consolidating the three mechanisms onto one in-source marker is tracked
-separately.
 
 SUPERSEDED HEADERS ARE OUT OF SCOPE, and that is a change.  The bash guard scans
 `include/crucible/**/_*.h`, the ported old-substrate headers, and 24 allowlist
 entries exist only to exempt them.  Those files are frozen, so a shortfall there
-cannot be repaired, and Stage D deletes them.  Enforcing §XXI on them buys
+cannot be repaired, and they go with the old tree.  Enforcing §XXI on them buys
 nothing and keeps 24 ledger entries alive.  The inventory generator already
 excludes them.
 

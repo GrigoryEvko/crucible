@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# fixy-A1-018 + fixy-M-29 — splits_into / splits_into_pack +
+# check-splits-into-orphan.sh — splits_into / splits_into_pack +
 # splits_into_authoring_witness / splits_into_pack_authoring_witness
 # orphan-specialization guard.
 #
 # `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children...>`
 # are the declarative manifests that gate `mint_permission_split` /
-# `mint_permission_combine` / `mint_permission_fork`.  fixy-M-29 adds
+# `mint_permission_combine` / `mint_permission_fork`.  Beside them sit
 # the companion `splits_into_authoring_witness` /
 # `splits_into_pack_authoring_witness` traits — `mint_permission_*`
 # requires BOTH the splits trait AND the witness trait.  The witness
@@ -61,7 +61,7 @@
 #                                          (test/{safety,fixy}_neg/)
 #                                        - attack regressions
 #                                          (test/safety_attack/) — the
-#                                          CR-05 fixture exercises the
+#                                          attack fixture exercises the
 #                                          residual federation-specific
 #                                          orphan gap and is allowed.
 #
@@ -219,8 +219,8 @@ scan_root="${CRUCIBLE_SPLITS_INTO_ORPHAN_TEST_ROOT:-$root}"
 # Matches the four orphan-rejected traits:
 #   splits_into< ...                        — binary splits manifest
 #   splits_into_pack< ...                   — N-ary splits manifest
-#   splits_into_authoring_witness< ...      — fixy-M-29 binary witness
-#   splits_into_pack_authoring_witness< ... — fixy-M-29 N-ary witness
+#   splits_into_authoring_witness< ...      — binary authoring witness
+#   splits_into_pack_authoring_witness< ... — N-ary authoring witness
 pattern='(struct|class)\s+splits_into(_pack)?(_authoring_witness)?\s*<'
 status=0
 

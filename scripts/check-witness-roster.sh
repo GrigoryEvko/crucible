@@ -2,7 +2,7 @@
 # check-witness-roster.sh — every witness type has one door, and a
 # fixture stands on it.
 #
-# Seven holes this session were one defect: a type that attests to a
+# Seven holes were one defect: a type that attests to a
 # fact it cannot see — a pin, a mapping, a descriptor, a permission, a
 # context — and whose constructor took raw data and trusted it.  Every
 # fix was the same rule: the constructor either consumes the evidence
@@ -27,7 +27,8 @@
 #               would have to hand over: forge::lvalue<T>() and
 #               forge::rvalue<T>() yield a T& and a T&& of any type.
 #   reason      how the door refuses: private | deleted | no-match.
-#               For an open entry, the task that owns the hole, `#NNN`.
+#               For an open entry, one sentence that says why the hole
+#               stays open, ending with a period.
 #   status      closed  — the door is shut; a fixture is generated that
 #                         attempts the expression and must be REJECTED
 #               open    — a known hole, recorded so the tally is honest;
@@ -168,9 +169,9 @@ def parse_roster():
         if status == "closed" and reason not in REASONS:
             sys.exit(f"witness-roster.txt:{lineno}: a closed entry's reason must be one of "
                      f"{', '.join(REASONS)}; got '{reason}'")
-        if status == "open" and not re.fullmatch(r"#\d+", reason):
-            sys.exit(f"witness-roster.txt:{lineno}: an open entry's reason must be the task that owns "
-                     f"the hole, spelled #NNN; got '{reason}'")
+        if status == "open" and (reason in REASONS or not reason.endswith(".")):
+            sys.exit(f"witness-roster.txt:{lineno}: an open entry's reason must be one sentence that says "
+                     f"why the hole stays open, ending with a period; got '{reason}'")
         if not (include_base / header).exists():
             sys.exit(f"witness-roster.txt:{lineno}: header '{header}' does not exist under include/")
         entries.append((lineno, type_, header, expr, reason, status))
@@ -431,7 +432,7 @@ if mode == "check":
             failures.append(f"UNROSTERED witness: {name} ({where}) has a door shape — a mint_, named or class "
                             f"friend, a passkey, or a static expected<{name}> factory — and is absent from "
                             f"scripts/witness-roster.txt.  Add it as closed with a forging expression, or as "
-                            f"open with the task that owns the hole.")
+                            f"open with a sentence that says why the hole stays open.")
     seen = {}
     for (lineno, type_, header, expr, reason, status) in entries:
         p = fixture_path(type_)

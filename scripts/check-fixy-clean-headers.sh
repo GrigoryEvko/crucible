@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# check-fixy-clean-headers.sh — FIXY-U-096* migration lock-in (FIXY-U-096z).
+# check-fixy-clean-headers.sh — fixy:: migration lock-in.
 #
-# The FIXY-U-096* sweep migrated the top-level include/crucible/*.h
+# A migration sweep moved the top-level include/crucible/*.h
 # headers from direct `safety::` namespace references onto the `fixy::`
 # umbrella re-exports.  This guard LOCKS IN that work: every header
 # listed in scripts/fixy-clean-headers.txt is a CERTIFIED-CLEAN header
@@ -9,7 +9,7 @@
 # therefore contain ZERO `safety::` namespace tokens — in code AND
 # comments.  A migrated header spells its wrappers `fixy::wrap::Tagged`,
 # never `safety::Tagged`; prose that writes `safety::` is the regression
-# signal that bit the DimHash comment near-miss (FIXY-U-096v).
+# signal that a DimHash comment once tripped.
 #
 # This is the inverse polarity of check-no-reserve.sh / check-fixy-
 # discipline.sh: those scan a wide tree for a BANNED pattern with an
@@ -36,7 +36,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     cat >&2 <<'USAGE'
-check-fixy-clean-headers.sh — FIXY-U-096* certified-clean lock-in.
+check-fixy-clean-headers.sh — certified-clean lock-in.
 
 Usage:
   check-fixy-clean-headers.sh              # scan; exit 1 on regression
@@ -181,7 +181,7 @@ if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
 check-fixy-clean-headers detected ${violation_count} regression(s): a
-header certified by the FIXY-U-096* sweep reached past the fixy::
+header certified by the migration sweep reached past the fixy::
 umbrella to the safety:: substrate directly.
 
 Remediations:

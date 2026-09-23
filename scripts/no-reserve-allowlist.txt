@@ -5,21 +5,21 @@
 # trailing whitespace stripped) — a content key, NOT a line number.
 # Comments start with '#'.  Blank lines ignored.
 #
-# ── Why content-keyed, not line-keyed (fix-18) ──────────────────────
+# ── Why content-keyed, not line-keyed ───────────────────────────────
 #
 # A LINE-KEYED entry (`path:line`) pins an exemption to a source LINE
-# NUMBER.  Any edit above the call — a concurrent agent inserting a
+# NUMBER.  Any edit above the call — a concurrent edit inserting a
 # member, a new `#include`, a reflowed comment — shifts the line and
 # silently invalidates the entry: the real reserve reads as an
 # un-suppressed violation AND the now-dangling entry trips the
 # stale-entry gate.  That is the exact failure mode this file kept
-# hitting (memory documents two recent regressions; the six Cipher.h
-# entries had already drifted by 5 lines when fix-18 landed).
+# hitting: the six Cipher.h entries had drifted by 5 lines before the
+# key became the call text.
 #
 # A CONTENT-KEYED entry pins the exemption to the call line's TEXT.
 # The text is stable across line shifts, so a content-keyed exemption
 # keeps tracking the same call no matter how the file above it churns.
-# fix-18 eliminates the line number as the drift vector entirely; the
+# The content key eliminates the line number as the drift vector; the
 # mint-pattern guard took the same approach (name-keyed) — see
 # scripts/mint-pattern-allowlist.txt.
 #
@@ -30,11 +30,10 @@
 # duplicate-text call in the same file would (correctly) be covered by
 # the same waiver — they share one migration rationale by construction.
 #
-# Every entry is a TODO awaiting a tracked migration.  When the
-# referenced fixy-A5-* / WRAP-* ticket lands, delete the line — the
-# guard then enforces no regression.  Stale entries (no matching call
-# text in the file) red CI at exit 2 so the allowlist drains in
-# lockstep with the §IV migration.
+# Every entry is a site that waits for its migration.  When the site
+# converts, delete the line — the guard then enforces no regression.
+# Stale entries (no matching call text in the file) red CI at exit 2 so
+# the allowlist drains in lockstep with the §IV migration.
 #
 # Inline suppression (preferred for new code): `// NO-RESERVE-OK:
 # <reason>` on the call line exempts that single line directly.
@@ -42,17 +41,16 @@
 # ── vis/TraceVisualizer.h ───────────────────────────────────────────
 # Trace visualization tools — cold-tier, but still bound by §IV.
 # Migrate to fixed-capacity per-graph buffers when the visualizer
-# tooling is refactored (no dedicated ticket yet).
+# tooling is refactored.
 include/crucible/vis/TraceVisualizer.h:nodes.reserve(blocks.size());
 include/crucible/vis/TraceVisualizer.h:layout_edges.reserve(view.edges.size());
 #
 # ── Cipher.h ────────────────────────────────────────────────────────
-# WRAP-Cipher-2 / WRAP-Cipher-3 / WRAP-Cipher-5 cluster (#885, #886,
-# #888): Cipher cold-tier path constructs O(K) buffers before
+# The Cipher cold-tier path constructs O(K) buffers before
 # serialization; amortization is acceptable but the guard tracks
 # them so the long-term migration to inplace_vector + Linear<bytes>
-# isn't forgotten.  V-030 added two entries (obj_relpath_ +
-# session_event_dir_relpath_) — relative-path counterparts of
+# isn't forgotten.  Two entries (obj_relpath_ and
+# session_event_dir_relpath_) are the relative-path counterparts of
 # obj_path / session_event_dir for dirfd-anchored openat().
 include/crucible/Cipher.h:out.reserve(out.size() + decoded.size());
 include/crucible/Cipher.h:path.reserve(root.size() + OBJECT_PATH_SUFFIX_BYTES);
@@ -62,8 +60,8 @@ include/crucible/Cipher.h:path.reserve(sizeof("session_events/") - 1 + 16);
 include/crucible/Cipher.h:resident_cache_.reserve(MAX_RESIDENT_CACHE_ENTRIES);
 #
 # ── BackgroundThread.h ──────────────────────────────────────────────
-# WRAP-BgThread-6 (#877): current_trace + parallel vectors reserved
-# to kInitialTraceCapacity at iteration start.  Migration target:
+# current_trace and its parallel vectors reserve
+# kInitialTraceCapacity at iteration start.  Migration target:
 # length-coupled SoA newtype where the SoA backing storage is
 # arena-owned or inplace_vector<T, kInitialTraceCapacity>.
 include/crucible/BackgroundThread.h:current_trace.reserve(kInitialTraceCapacity);
@@ -74,7 +72,7 @@ include/crucible/BackgroundThread.h:current_callsite_hashes.reserve(kInitialTrac
 # ── concurrent/AdaptiveScheduler.h ──────────────────────────────────
 # workers_.reserve(worker_count_) during pool init — bounded by
 # the CostModel's cap, would convert cleanly to inplace_vector
-# with NUMA-pinned capacity.  No dedicated ticket yet.
+# with NUMA-pinned capacity.
 include/crucible/concurrent/AdaptiveScheduler.h:workers_.reserve(worker_count_);
 #
 # ── bench/ COVERAGE EXTENSION — NOT pre-approved ────────────────────
@@ -108,9 +106,8 @@ include/crucible/concurrent/AdaptiveScheduler.h:workers_.reserve(worker_count_);
 # bite less hard than they would on a hot path.  The ban is still
 # project-wide and these still owe a migration.
 #
-# No ticket yet.  When one is filed, reference it here and drain the
-# section as sites convert; the stale-entry gate (exit 2) forces the
-# entries out as soon as their call text changes.
+# Drain the section as sites convert.  The stale-entry gate (exit 2)
+# forces the entries out as soon as their call text changes.
 bench/bench_adaptive_scheduler.cpp:dispatch_samples.reserve(kJobsPerPolicy);
 bench/bench_adaptive_scheduler.cpp:results.reserve(10);
 bench/bench_auto_router.cpp:reports.reserve(136);

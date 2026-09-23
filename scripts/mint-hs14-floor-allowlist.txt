@@ -9,13 +9,13 @@
 #
 # Why this file exists.  HS14 (CLAUDE.md §XVIII) demands two negative-compile
 # fixtures per mint, because a `requires` clause with no witness that it
-# FIRES is a comment.  The floor gate enforced that against 11 trees.  Task
-# #43 extended the scan to `cntp`, `topology`, `canopy`, `observe`, `cog`
-# and `mimic`, which added 69 mints — and with them the 42 deficits below.
+# FIRES is a comment.  The floor gate enforced that against 11 trees.  The
+# scan then reached `cntp`, `topology`, `canopy`, `observe`, `cog` and
+# `mimic`, which added 69 mints — and with them the 42 deficits below.
 # They are pre-existing, not new: the gate could not see these trees, so
-# nothing ever asked them for fixtures.  Task #53 surfaced the last one
-# (`mint_computation_in_ctx`) by teaching the counter to ignore mentions
-# inside comments.
+# nothing ever asked them for fixtures.  The last one
+# (`mint_computation_in_ctx`) appeared when the counter learned to ignore
+# mentions inside comments.
 #
 # Listing them here keeps the gate doing its actual job.  A mint added
 # tomorrow without fixtures reds CI immediately; these 42 are tracked debt

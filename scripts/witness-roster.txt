@@ -17,7 +17,8 @@
 #             forge::lvalue<T>() and forge::rvalue<T>() stand in for a
 #             T& and a T&& the forger would have to hold.
 # reason      private | deleted | no-match -- the refusal the fixture
-#             must see.  For an open entry, the task that owns the hole.
+#             must see.  For an open entry, one sentence that says why
+#             the hole stays open.
 # status      closed -- a fixture is generated and must be rejected
 #             open   -- a known hole; no fixture, tolerated by the walk
 #
@@ -109,20 +110,20 @@ fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2> | fixy/Ow
 fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
 # A clock read on the replay-bound foreground path makes replay diverge,
 # so the reader's one door is mint_clock_reader, gated on a context that
-# owns Bg, Init or Test (#183).
+# owns Bg, Init or Test.
 fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic> | fixy/os/Time.h | fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic>{} | private | closed
 fixy::OwnedMmap<int, int, int> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, int, int>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
 # OwnedFile fcloses what it holds, so a public FILE* constructor let
 # `OwnedFile{stdin}` close standard input.  The constructor is private;
 # open_path and open_temporary do the fopen and the tmpfile themselves,
-# so a handle exists only over a stream libc returned (#184).
+# so a handle exists only over a stream libc returned.
 fixy::OwnedFile | fixy/OwnedFile.h | fixy::OwnedFile{stdout} | private | closed
 fixy::io::IoUringRing | fixy/os/Io.h | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}} | private | closed
 fixy::fs::OwnedFd | fixy/os/Fs.h | fixy::fs::OwnedFd{3} | private | closed
 fixy::fs::Dirfd | fixy/os/Fs.h | fixy::fs::Dirfd{forge::rvalue<fixy::fs::OwnedFd>()} | private | closed
 fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance> | fixy/os/CipherDurable.h | fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance>{forge::rvalue<fixy::fs::OwnedFd>()} | private | closed
 
-# The five doors of the pipeline (#119).  Each class exists only as the
+# The five doors of the pipeline.  Each class exists only as the
 # product of its mint, and the mint is what weighs the payload rows
 # against the context, so a direct construction is a stage or a pipeline
 # whose effects nobody weighed.  The forging expressions name the

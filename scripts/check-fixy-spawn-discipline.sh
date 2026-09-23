@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# check-fixy-spawn-discipline.sh — process-spawn discipline (FIXY-V-210).
+# check-fixy-spawn-discipline.sh — process-spawn discipline.
 #
-# Closes the regression-prevention surface for Agent 7 migration item
-# 10: production code must NOT invoke OS process-spawning syscalls
+# Closes the regression-prevention surface for process spawn:
+# production code must NOT invoke OS process-spawning syscalls
 # (fork / vfork / execve / posix_spawn / system / popen / clone) without
 # an explicit opt-in, because doing so escapes the entire fixy:: type
 # system (no PermissionFork CSL parallel-rule witness, no Met(X) effect
@@ -108,7 +108,7 @@ USAGE
 # ── Opt-in paths (CMake-materialized + hardcoded mirror) ──────────────
 #
 # Authoritative list lives in CMakeLists.txt under the GLOBAL property
-# CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS (FIXY-V-210).  At configure time
+# CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS.  At configure time
 # CMake writes the list to ${CMAKE_BINARY_DIR}/spawn-allow-process-paths.txt;
 # when that file exists, the script consumes it directly.  When absent
 # (pre-configure CI, standalone scans), the script falls back to the
@@ -116,14 +116,15 @@ USAGE
 # with the authoritative list.
 #
 # Currently empty: zero production sites need OS process spawn today.
-# Drift checked at configure time per the FIXY-V-072 pattern.
+# Drift checked at configure time, the same way as for
+# CRUCIBLE_FIXY_ONLY_PATHS.
 #
 # Array body discipline: ONLY path entries inside the parens, one per
-# line.  The CMake-side drift check at CMakeLists.txt FIXY-V-210 word-
-# splits the array body on whitespace BEFORE comment stripping, so any
+# line.  The CMake-side drift check for this property word-splits the
+# array body on whitespace BEFORE comment stripping, so any
 # prose inside the parens leaks into the path set.  Comments go ABOVE
 # the array declaration, never inside it.  This is the same convention
-# used by CRUCIBLE_FIXY_ONLY_PATHS at FIXY-V-070 / V-072.
+# used by CRUCIBLE_FIXY_ONLY_PATHS.
 CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS=(
 )
 
@@ -376,7 +377,7 @@ scan_pattern() {
             continue
         fi
 
-        printf 'SPAWN-PROCESS violation (%s): %s:%s — raw OS process-spawn banned (CLAUDE.md §IX; FIXY-V-210).\n' \
+        printf 'SPAWN-PROCESS violation (%s): %s:%s — raw OS process-spawn banned (CLAUDE.md §IX).\n' \
             "$label" "$rel" "$line" >&2
         violation_count=$((violation_count + 1))
     done < <(
@@ -424,7 +425,7 @@ posix_spawn()/system()/popen() lands in production code:
 If process spawn is the right answer (rare):
   (1) Register the owning directory in CMakeLists.txt via
       crucible_register_spawn_process_path(<rel-dir>) — same pattern
-      as FIXY-V-072 CRUCIBLE_FIXY_ONLY_PATHS.  Per-directory opt-in
+      as CRUCIBLE_FIXY_ONLY_PATHS.  Per-directory opt-in
       is preferred over per-line because process-spawn is usually a
       cluster of related calls (spawn + setup + wait).
   (2) Add `path:line` to scripts/no-spawn-process-allowlist.txt with

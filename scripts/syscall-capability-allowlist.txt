@@ -1,4 +1,4 @@
-# syscall-capability allowlist — grandfathered bare-syscall sites (fixy-A5-016).
+# syscall-capability allowlist — grandfathered bare-syscall sites.
 #
 # Each entry is `path:<call text>  — <effects::* cap proof + note>`.  The key
 # is the trimmed source of the call line with its trailing `//` comment
@@ -25,7 +25,7 @@
 # after any edit here.  Write what the line actually does, not what the
 # surrounding subsystem does.
 
-include/crucible/Cipher.h:const int dfd = ::open(root.c_str(), O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC);  — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
+include/crucible/Cipher.h:const int dfd = ::open(root.c_str(), O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC);  — effects::Init via Cipher::open (root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
 include/crucible/Cipher.h:const ssize_t n = ::read(hf.get(), buf, sizeof(buf));  — effects::IO via Cipher::open (read HEAD file content at startup)
 include/crucible/Platform.h:int fd = ::open("/proc/self/status", O_RDONLY | O_CLOEXEC);  — effects::Init via crucible::detail::is_debugger_present (open /proc/self/status to read TracerPid on an assertion failure)
 include/crucible/Platform.h:ssize_t n = ::read(fd, buf, sizeof(buf) - 1);  — effects::Init via crucible::detail::is_debugger_present (read /proc/self/status)
@@ -41,7 +41,7 @@ include/crucible/fixy/_Io.h:::munmap(cq_ring_, cq_size_);  — effects::IO via I
 include/crucible/fixy/_Io.h:::munmap(sq_ring_, sq_size_);  — effects::IO via IoUringRing::release_ (munmap SQ ring, RAII, cap inherited)
 include/crucible/fixy/_Io.h:::close(ring_fd_);  — effects::IO via IoUringRing::release_ (close ring fd, RAII, cap inherited)
 include/crucible/fixy/_Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
-include/fixy/os/Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — clock_gettime via ClockReader<Source>::read under the effects::* context that minted the reader, the ported copy of the entry above (the reader holds no context of its own, and mint_clock_reader checked one through CtxFitsClockReaderMint; #172 records that this class of gate is forgeable today)
+include/fixy/os/Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — clock_gettime via ClockReader<Source>::read under the effects::* context that minted the reader, the ported copy of the entry above (the reader holds no context of its own, and mint_clock_reader checked one through CtxFitsClockReaderMint)
 include/crucible/handles/FileHandle.h:(void)::close(fd_);  — effects::IO via FileHandle::~FileHandle (close on RAII drop)
 include/crucible/handles/FileHandle.h:if (fd_ >= 0) (void)::close(fd_);  — effects::IO via FileHandle::operator= (close the old fd before taking the moved-from one)
 include/crucible/handles/FileHandle.h:return ::close(fd) == 0 ? 0 : errno;  — effects::IO via FileHandle::close_explicit (close and report errno)
@@ -75,10 +75,10 @@ src/cntp/CongestionControl.cpp:::setsockopt(fd.value(), IPPROTO_TCP, TCP_CONGEST
 src/cntp/CongestionControl.cpp:const int rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), &len);  — effects::IO via query_cc_selection_for_socket (getsockopt TCP_CONGESTION)
 src/cntp/IncastControl.cpp:const int rc = ::setsockopt(fd.value(), IPPROTO_TCP, TCP_RTO_MIN_US, &value, static_cast<socklen_t>(sizeof(value)));  — effects::IO via set_socket_rto_min_usec (setsockopt TCP_RTO_MIN_US)
 src/cntp/Pacing.cpp:LocalFd nl{::socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE)};  — effects::IO via query_active_qdisc (socket AF_NETLINK SOCK_RAW NETLINK_ROUTE, LocalFd-owned)
-src/cntp/Pacing.cpp:if (::bind(nl.get(), static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),  — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID, fixy-A5-036)
-src/cntp/Pacing.cpp:if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, static_cast<socklen_t>(sizeof(rcv_timeout)))  — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv, fixy-A5-004)
+src/cntp/Pacing.cpp:if (::bind(nl.get(), static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),  — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID)
+src/cntp/Pacing.cpp:if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, static_cast<socklen_t>(sizeof(rcv_timeout)))  — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv)
 src/cntp/Pacing.cpp:const auto sent = ::send(nl.get(), &request, sizeof(request), 0);  — effects::IO via query_active_qdisc (NETLINK send RTM_GETQDISC dump)
-src/cntp/Pacing.cpp:const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);  — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded fixy-A5-004)
+src/cntp/Pacing.cpp:const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);  — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded)
 src/cntp/Pacing.cpp:::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));  — effects::IO via set_socket_pacing_rate (setsockopt SO_MAX_PACING_RATE)
 src/cntp/RoceConfig.cpp:LocalFd fd{::open(path, O_RDONLY | O_CLOEXEC)};  — effects::IO via read_counter_file (open /sys/class/net/<iface>/statistics counter, LocalFd-owned)
 src/cntp/RoceConfig.cpp:const auto nread = ::read(fd.get(), bytes.data(), bytes.size() - 1u);  — effects::IO via read_counter_file (read sysfs pause-frame counter)
@@ -105,5 +105,5 @@ src/topology/Ptp.cpp:LocalFd fd{::open(path.bytes.data(), O_RDONLY | O_CLOEXEC)}
 src/topology/Ptp.cpp:const int rc = ::ioctl(fd.value(), PTP_CLOCK_GETCAPS2, &caps);  — effects::IO via query_ptp_clock_caps (PTP_CLOCK_GETCAPS2 ioctl)
 src/topology/Ptp.cpp:const int rc = ::clock_gettime(clockid_from_fd(fd), &ts);  — effects::IO via ptp_now (clock_gettime PHC clockid_from_fd)
 src/topology/Ptp.cpp:::setsockopt(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, static_cast<socklen_t>(sizeof(flags)));  — effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
-src/topology/Ptp.cpp:const int rc = ::ioctl(control_socket.value(), SIOCSHWTSTAMP, &request);  — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded fixy-A5-027)
+src/topology/Ptp.cpp:const int rc = ::ioctl(control_socket.value(), SIOCSHWTSTAMP, &request);  — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded)
 src/topology/Ptp.cpp:const auto nread = ::recvmsg(socket.value(), &msg, MSG_DONTWAIT);  — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)

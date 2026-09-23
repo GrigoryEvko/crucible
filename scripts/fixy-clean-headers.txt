@@ -1,14 +1,14 @@
-# scripts/fixy-clean-headers.txt — FIXY-U-096* certified-clean registry.
+# scripts/fixy-clean-headers.txt — certified-clean registry.
 #
-# Each path below is a top-level include/crucible/*.h header that the
-# FIXY-U-096* migration sweep brought to LITERAL ZERO `safety::`
+# Each path below is a top-level include/crucible/*.h header that a
+# migration sweep brought to LITERAL ZERO `safety::`
 # namespace references: it reaches the safety:: substrate only through
 # the fixy:: umbrella (fixy::wrap::, fixy::tags::source::, fixy::handle::,
 # fixy::sess::, ...).  check-fixy-clean-headers.sh asserts every entry
 # stays at zero `safety::` tokens — code AND comments (a migrated header
 # describes its wrappers as `fixy::wrap::Tagged`, never `safety::Tagged`;
-# prose that writes `safety::` is the regression signal that bit the
-# DimHash comment near-miss in FIXY-U-096v).
+# prose that writes `safety::` is the regression signal that a DimHash
+# comment once tripped).
 #
 # `safety/` include PATHS are NOT matched — `\bsafety::` is the namespace
 # token only.  Headers that legitimately retain `safety/Decide.h`,
@@ -26,12 +26,12 @@
 #     rather than consume the umbrella, so they carry irreducible
 #     `::crucible::safety::` re-export plumbing (documented in-header).
 #   - Vigil.h / TraceRing.h / MetaLog.h / CrucibleContext.h —
-#     S1-spelling-migrated via the populate pattern (FIXY-U-031a-d /
-#     032a / 030a), same as Arena.h/Saturate.h above: they POPULATE
+#     migrated to the fixy:: spelling via the populate pattern, same as
+#     Arena.h/Saturate.h above: they POPULATE
 #     crucible::fixy::wrap (+ fixy::handle / fixy::tags) and carry
 #     irreducible `::crucible::safety::` re-export plumbing, so they stay
-#     OFF this registry.  The DEEPER reimplement (FIXY-U-030/031/032 —
-#     SPSC->PermissionedSpscChannel, WRAP-CCtx field refactors, Vigil
+#     OFF this registry.  The DEEPER reimplement (the SPSC ring to
+#     PermissionedSpscChannel, the CrucibleContext field refactors, Vigil
 #     mode_session->mint_vigil_mode_bridge) remains; Vigil also keeps one
 #     documented substrate-mint call (safety::mint_atomic_session).
 #   - MerkleDag.h / PoolAllocator.h / CKernel.h / ... — code-clean but

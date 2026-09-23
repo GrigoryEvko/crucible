@@ -2,9 +2,9 @@
 # check-port-completeness.sh — every symbol a superseded header declares
 # has a home in the new tree, or a written reason for having none.
 #
-# Three completed Stage A tasks were incomplete — A2.3, A9, A11.2 — and
-# each was found by downstream work or by a one-off sweep, never by
-# review.  This guard is the permanent form of that sweep.
+# Three ports that were recorded as complete were incomplete, and each
+# was found by downstream work or by a one-off sweep, never by review.
+# This guard is the permanent form of that sweep.
 #
 # The input set is exactly the headers the project CLAIMS to have ported:
 # every `_Foo.h` under include/crucible/, because the leading underscore
@@ -126,13 +126,14 @@
 # What is out of scope, stated so nobody infers it is covered
 # -----------------------------------------------------------
 #   - Member functions and nested members of a class are not enumerated.
-#     A wrapper whose member surface shrank (A10.2 deleted value_mut on
-#     purpose) is a different question from a symbol that vanished.
+#     A wrapper whose member surface shrank (the Secret and Tagged ports
+#     deleted value_mut on purpose) is a different question from a symbol
+#     that vanished.
 #   - Headers WITHOUT the underscore are not measured at all.  The guard
 #     measures the claimed set; an unmarked header that was partly ported
 #     is invisible here until it is marked (include/crucible/Saturate.h
-#     was, from A2.2 until #179).  Marking is what puts a header under
-#     this guard.
+#     was, until its port marked it).  Marking is what puts a header
+#     under this guard.
 #
 # scripts/port-drops.txt
 # ----------------------
@@ -188,7 +189,7 @@
 # thing for every argument.  The enforcement it carried is then gone and
 # no name is missing, so the scan above reports clean.  That is how
 # fixy/Qtt.h shipped two discipline tables whose four old specialisations
-# became zero, making linearity a tautology (task #193).
+# became zero, making linearity a tautology.
 #
 # So this guard also counts specialisations on both sides.  A
 # specialisation is a class, struct or union declaration whose name is

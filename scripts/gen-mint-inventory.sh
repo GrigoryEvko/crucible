@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gen-mint-inventory.sh — generate misc/mint-inventory.md auditor snapshot.
 #
-# Companion to FIXY-U-002 (test/test_fixy_umbrella_reach.cpp).  U-002 is
+# Companion to test/test_fixy_umbrella_reach.cpp.  That test is
 # the CI GATE — a constexpr static_assert matrix that fails CI if any
 # substrate mint is not reachable through fixy::.  This script is the
 # AUDITOR SURFACE — a human-readable inventory of every `mint_*` factory
@@ -20,7 +20,7 @@
 #   scripts/gen-mint-inventory.sh --self-test     # plant a mint, verify capture
 #   scripts/gen-mint-inventory.sh -h | --help     # usage
 #
-# Acceptance gates (per FIXY-U-106):
+# Acceptance gates:
 #   - runs in <5s on full codebase
 #   - one section per substrate tree, mints sorted by name
 #   - gap markers: [✗ NO-FIXY] / [⚠ NO-NODISCARD] / [⚠ NO-CONSTEXPR] /
@@ -53,7 +53,7 @@ Usage:
 
 Writing is opt-in.  A bare invocation used to WRITE misc/mint-inventory.md,
 so anyone running the script to look at the output silently dirtied a
-tracked file — and during a multi-agent edit wave that write captures a
+tracked file — and during concurrent edits that write captures a
 half-finished tree.  Bare invocation now refuses and names both options.
 USAGE
 }
@@ -85,9 +85,9 @@ BARE
        usage; exit 2 ;;
 esac
 
-# FIXY-FOUND-140 — single source of truth for the HS14 floor.
+# Single source of truth for the HS14 floor.
 #
-# Pre-140 the value `2` was hard-coded at THREE numerical sites
+# The value `2` was once hard-coded at THREE numerical sites
 # (the (( hs14 < 2 )) markers across substrate / member-function /
 # fixy-origin emitters) PLUS the legend prose ("HS14 floor is 2").
 # Drift between sites is silent — bumping the floor would have
@@ -102,7 +102,7 @@ HS14_FLOOR=2
 # the self-test can point the gate at a planted fixture tree.
 FLOOR_ALLOWLIST="${CRUCIBLE_MINT_FLOOR_ALLOWLIST:-$root/scripts/mint-hs14-floor-allowlist.txt}"
 
-# ── Tautological-requires registry (fix-16, fixy-A2-026 / CLAUDE.md §XXI) ──
+# ── Tautological-requires registry (CLAUDE.md §XXI) ──────────────────
 # These bridge-wrap mints carry an explicit `requires
 # IsSessionHandle<SessionHandle<Proto,Resource,LoopCtx>>` clause whose argument
 # is ALREADY the deduced parameter type — the clause is tautologically true and
@@ -126,7 +126,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 scan_root="${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-$root}"
-# fix-43: the tree list used to name eleven directories out of the ~20 that
+# The tree list once named eleven directories out of the ~20 that
 # hold C++ headers, so ~31% of the codebase's free-function mints were
 # invisible to the inventory — including every cntp/ mint.  A mint outside
 # the list is not "clean", it is UNAUDITED: no §XXI compliance row, no
@@ -138,7 +138,7 @@ scan_root="${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-$root}"
 trees=(safety effects algebra concurrent sessions permissions bridges handles cipher warden perf
        cntp topology canopy observe cog mimic ledger)
 
-# fix-66: the paragraph above says appending is REQUIRED, and prose does
+# The paragraph above says appending is REQUIRED, and prose does
 # not enforce anything — `ledger` landed with three mints and the list did
 # not grow, so `mint_ledger_view` was unaudited on arrival.  That is the
 # same shape as the list itself, which sat eleven entries long while nine
@@ -174,7 +174,7 @@ if [[ -z "${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-}" && -d "$scan_root/include/cruc
 fi
 
 # ── Strip comments and string literals from a code window ────────────
-# fix-35: `extract_qualifiers` greps its window for the bare tokens
+# `extract_qualifiers` greps its window for the bare tokens
 # `constexpr` / `noexcept` / `requires` / `[[nodiscard]]`.  Those tokens
 # also occur inside PROSE — a `static_assert` diagnostic message that
 # says "… requires splits_into<In, L, R>::value true", or a doc comment
@@ -232,7 +232,7 @@ strip_code_noise() {
 }
 
 # ── Join a wrapped declarator into one logical line ──────────────────
-# fix-35: the `= delete` / `= default` skips below test the declaration
+# The `= delete` / `= default` skips below test the declaration
 # text for special-member syntax.  clang-format is free to wrap a
 # declarator anywhere, and in commit 12de6ea0 it split
 # `… noexcept = delete("…")` so that `noexcept =` ended one line and
@@ -288,7 +288,7 @@ declarator_text() {
 }
 
 # ── Is this declaration a defaulted / deleted special member? ────────
-# fix-35: the old test was a glob on the raw line —
+# The old test was a glob on the raw line —
 # `*'= default'*` — which is a SUBSTRING match.  A defaulted function
 # argument spelled `= default_peer_key_fingerprint<Org>()` contains the
 # substring `= default`, so `permissions/FederationPermission.h`'s
@@ -307,11 +307,11 @@ is_deleted_or_defaulted() {
 # constexpr/consteval, noexcept, requires, a ctx-bound first
 # parameter (Ctx const& / eff::IsExecCtx), and TWO §XXI carve-out
 # markers — `cv` for `// §XXI carve-out: cx=alloc` and `cv_rq` for
-# `// §XXI carve-out: rq=pre` (FIXY-FOUND-082, value-dependent
+# `// §XXI carve-out: rq=pre` (a value-dependent
 # predicate that cannot lift into a `requires`-clause concept; the
 # gate is a P2900 `pre(...)` clause instead).
 #
-# FIXY-V-021: the window was widened from `line - 2` to `line - 10`
+# The window was widened from `line - 2` to `line - 10`
 # to accept a multi-line carve-out marker between the `requires`
 # line and the `[[nodiscard]]` line.  Ten lines of upward reach
 # accommodate the canonical layout
@@ -348,7 +348,7 @@ extract_qualifiers() {
     local end=$(( line + 5 ))
     (( start < 1 )) && start=1
 
-    # FIXY-FOUND-088: tighten the backward window so a sibling overload's
+    # Tighten the backward window so a sibling overload's
     # qualifiers (constexpr / noexcept / requires) don't leak forward into
     # the current mint's qualifier set.  Canonical defect: mint_chaselev_owner
     # (line 87, constexpr) sits 7 lines above mint_chaselev_thief (line 94,
@@ -378,7 +378,7 @@ extract_qualifiers() {
     # mint_snapshot_writer_session (`constexpr`, takes `Ctx const&`), so the
     # fixed five-line window reported the reader as cx=Y and ctx-bound.
     #
-    # fix-cx: stopping at the next `}` was not enough.  A mint whose BODY is
+    # Stopping at the next `}` was not enough.  A mint whose BODY is
     # longer than the window never reaches that brace, so the window ran on
     # into the body and picked up body-local declarations.  Five mints read
     # cx=Y off a `constexpr int flags = ...` on the line after their own
@@ -418,7 +418,7 @@ extract_qualifiers() {
 
     local window code_window
     window="$(sed -n "${start},${end}p" "$file" 2>/dev/null || true)"
-    # fix-35: flag detection runs against the CODE, not the prose.  See
+    # Flag detection runs against the CODE, not the prose.  See
     # strip_code_noise above — a `requires` inside a static_assert message
     # and a `consteval` inside a doc comment are English, not qualifiers.
     # Carve-out markers are detected below against the RAW window, because
@@ -431,16 +431,13 @@ extract_qualifiers() {
     if grep -qE '\bnoexcept\b' <<<"$code_window"; then ne=1; fi
     if grep -qE '\brequires\b' <<<"$code_window"; then rq=1; fi
     if grep -qE '(Ctx[[:space:]]+const[[:space:]]*&|effects::IsExecCtx|eff::IsExecCtx)' <<<"$code_window"; then cb=1; fi
-    # FIXY-V-021 / FIXY-FOUND-088: cx=alloc carve-out marker.  Mirrors
-    # cv_rq below — the marker is AUTHORITATIVE.  Force cx=0 when cv=1
-    # because the carve-out comment legitimately contains the word
-    # "constexpr" in its rationale text (e.g. "constexpr would lie"),
-    # and `\b(constexpr|consteval)\b` would otherwise false-positive on
-    # that prose.  A site that has BOTH the marker AND a real constexpr
-    # qualifier is an internal contradiction; the marker wins (reviewers
-    # grep the marker and see the intent).
+    # cx=alloc carve-out marker.  An earlier revision treated the marker
+    # as AUTHORITATIVE and forced cx=0 when cv=1, because the carve-out
+    # comment legitimately contains the word "constexpr" in its rationale
+    # text (e.g. "constexpr would lie"), and `\b(constexpr|consteval)\b`
+    # false-positived on that prose.
     #
-    # fix-35: the forced `cx=0` is GONE.  It existed only because the
+    # The forced `cx=0` is GONE.  It existed only because the
     # carve-out's own rationale prose ("constexpr would lie about the
     # runtime cost") tripped the bare-token grep.  strip_code_noise now
     # removes comments before detection, so prose cannot set cx and the
@@ -451,19 +448,15 @@ extract_qualifiers() {
     if grep -qF '§XXI carve-out: cx=alloc' <<<"$window"; then
         cv=1
     fi
-    # FIXY-FOUND-082: §XXI carve-out for value-dependent gates that
+    # §XXI carve-out for value-dependent gates that
     # cannot lift into a `requires`-clause (the predicate inspects
     # carrier runtime state, not just template arguments).  Canonical
     # example: mint_view's `pre(view_ok(c, type_identity<Tag>{}))`.
     # When cv_rq=1 AND rq=0, the inventory renders the rq column as
     # `- (pre)` — surfacing that the absence is documented, not a §XXI
-    # compliance gap.  The marker is AUTHORITATIVE: we force rq=0 when
-    # cv_rq=1 because the carve-out comment legitimately contains the
-    # word "requires" (rationale text), and the `\brequires\b` regex
-    # would otherwise false-positive on that prose.
-    # fix-35: forced `rq=0` removed for the same reason as `cx` above —
-    # comment stripping, not an override, is what keeps rationale prose
-    # out of the flag.
+    # compliance gap.  No forced `rq=0` applies, for the same reason as
+    # `cx` above: comment stripping, not an override, is what keeps
+    # rationale prose out of the flag.
     if grep -qF '§XXI carve-out: rq=pre' <<<"$window"; then
         cv_rq=1
     fi
@@ -502,20 +495,20 @@ scan_substrate() {
             # Defaulted/deleted special members (a passkey class's own
             # `mint_*_key() = default;` ctor, a removed overload's
             # `= delete("…")`) are NOT handled here any more — see the
-            # joined-declarator test below.  fix-35: the substring globs
+            # joined-declarator test below.  The substring globs
             # that used to occupy this arm were both too loose and too
             # tight.  Too loose: `= default_peer_key_fingerprint<Org>()`
             # is a defaulted ARGUMENT, not a defaulted function, and the
             # glob dropped a live mint.  Too tight: a clang-format wrap
             # between `=` and `delete(` hid a deleted overload.
             #
-            # FIXY-U-118: string-literal continuation.  A multi-line
+            # String-literal continuation.  A multi-line
             # static_assert diagnostic message naming a mint factory
             # (e.g. `"mint_persisted_session(ctx, ...) requires ..."`)
             # produces continuation lines whose stripped form starts
             # with a quote.  These are NEVER declaration sites — they
             # are documentation text inside a string literal that the
-            # mint_* token happens to appear in.  Surveyed 13 such
+            # mint_* token happens to appear in.  There were 13 such
             # matches across permissions/Permission.h, permissions/
             # FederationPermission.h, bridges/SessionPersistence.h —
             # all 13 start with `"` after leading whitespace.  A
@@ -530,7 +523,7 @@ scan_substrate() {
             '"'*) continue ;;
         esac
 
-        # FIXY-V-014: skip `friend` declarations.  A `friend` declaration
+        # Skip `friend` declarations.  A `friend` declaration
         # of a free-function mint inside a class body is the ACCESS-GRANT,
         # not the canonical authorization point.  Crucially, GCC 16
         # `-Werror=attributes` rejects `[[nodiscard]]` on a non-defining
@@ -549,7 +542,7 @@ scan_substrate() {
             'friend '*|'friend('*) continue ;;
         esac
 
-        # FIXY-FOUND-082: multi-line `friend` declarations also need to
+        # Multi-line `friend` declarations also need to
         # skip.  The `friend` keyword appears on the line ABOVE the mint
         # name when the return type and signature span two lines, e.g.:
         #     template <typename Tag_, typename Carrier_>
@@ -582,7 +575,7 @@ scan_substrate() {
         done
         (( saw_friend == 1 )) && continue
 
-        # FIXY-FOUND-086 / fix-35: defaulted-or-deleted special members are
+        # Defaulted-or-deleted special members are
         # detected on the JOINED declarator, not on any single line.  The
         # previous implementation walked forward looking for the CONTIGUOUS
         # string `= delete` and stopped at the first line ending in `;`.
@@ -599,7 +592,7 @@ scan_substrate() {
             continue
         fi
 
-        # FIXY-FOUND-141: skip `static` member-function mints.  A
+        # Skip `static` member-function mints.  A
         # `[[nodiscard]] static constexpr … mint_X(` inside a class body is
         # a CLASS METHOD (e.g. `Computation<R,T>::mint_computation` /
         # `::mint_computation_in_ctx`), NOT a namespace-scope free function.
@@ -633,7 +626,7 @@ scan_substrate() {
                          print s; exit }' <<<"$text")"
         [[ -z "$name" ]] && continue
 
-        # FIXY-FOUND-084: trailing-underscore mints (e.g. `mint_event_`) are
+        # Trailing-underscore mints (e.g. `mint_event_`) are
         # the §XXI-prescribed convention for INTERNAL detail-namespace
         # authorizers.  CLAUDE.md §XXI: "Internal helpers do NOT use the
         # `mint_` prefix … internal detail-namespace helpers carry the
@@ -658,9 +651,9 @@ scan_substrate() {
         printf '%s\t%s\t%s:%s\t%s\n' "$tree" "$name" "$rel" "$line" "$quals"
     done < <(
         # A leading underscore marks an old-substrate header that has been
-        # ported to include/foundation or include/fixy and awaits Stage D
-        # deletion (scripts/check-frozen-tree.sh).  Its mints are no longer
-        # the surface; the ported copy is.
+        # ported to include/foundation or include/fixy and waits for the
+        # deletion of the old tree (scripts/check-frozen-tree.sh).  Its
+        # mints are no longer the surface; the ported copy is.
         rg -nP \
            --no-heading \
            --type=cpp \
@@ -670,7 +663,7 @@ scan_substrate() {
 }
 
 # ── Scan top-level headers for class-member mint_X declarations ──────
-# FIXY-U-118b (Part 2): member-function mints are CLASS METHODS (e.g.
+# Member-function mints are CLASS METHODS (e.g.
 # `Cipher::mint_open_view`, `ReplayEngine::mint_active_view`).  They
 # CANNOT be `using`-re-exported at namespace scope — a `using`-decl
 # moves a free-function NAME into another namespace, but a member
@@ -698,7 +691,7 @@ scan_member_function_mints() {
     for f in "$scan_root"/include/crucible/*.h; do
         [[ -f "$f" ]] && files+=("$f")
     done
-    # FIXY-FOUND-141: curated inner-tree headers that host class-method
+    # Curated inner-tree headers that host class-method
     # mints.  effects/Computation.h declares the two Computation<R,T>
     # static member mints (mint_computation / mint_computation_in_ctx);
     # they live INSIDE the `effects` substrate tree, so scan_substrate's
@@ -754,7 +747,7 @@ scan_member_function_mints() {
         #      [[nodiscard]] Baz` which would still need attribute strip.
         #   2. `CRUCIBLE_*` annotation macros (CRUCIBLE_OWNER,
         #      CRUCIBLE_API, …) — handles `class CRUCIBLE_OWNER Cipher {`.
-        # FIXY-U-118c: pre-empts a class-name mis-attribution bug where
+        # This pre-empts a class-name mis-attribution bug where
         # a `class [[nodiscard]] Inner { mint_x(...) }` nested inside an
         # outer `class CRUCIBLE_OWNER Outer { ... }` would be silently
         # attributed to Outer because the inner `match()` would fail to
@@ -788,14 +781,14 @@ scan_member_function_mints() {
         # The production scan always sees ≥8 top-level headers so the
         # bug never manifested; --self-test plants exactly one header so
         # the bug surfaced as "0 member-function mints captured" until
-        # FIXY-U-118c forced the prefix.
+        # the flag forced the prefix.
         rg -nP --no-heading --with-filename \
            '^\s+\[\[nodiscard\]\][^{]*\bmint_[a-z0-9_]+\s*\(' \
            "${files[@]}" 2>/dev/null || true
     )
 }
 
-# ── Scan fixy/ for fixy-ORIGIN mint declarations (FIXY-V-271) ────────
+# ── Scan fixy/ for fixy-ORIGIN mint declarations ─────────────────────
 # The substrate scan above cross-references each substrate mint INTO
 # fixy/ for its re-export site (fixy_reexport_for).  But a mint whose
 # CANONICAL declaration lives in fixy/ with NO substrate counterpart —
@@ -819,8 +812,9 @@ scan_member_function_mints() {
 #     fixy grant mint (e.g. safety::mint_scoped_fence the token mint vs
 #     the grant::hw::scope mint_scoped_fence) is the pre-existing by-name
 #     attribution limitation: the substrate row absorbs the shared name.
-#     Resolving the collision is out of scope for V-271 (whose premise is
-#     the previously-untracked fixy-ORIGIN mints, not name disambiguation).
+#     Resolving the collision is out of scope for this scanner (whose
+#     premise is the previously-untracked fixy-ORIGIN mints, not name
+#     disambiguation).
 #
 # The "fixy re-export" column is structurally inapplicable here (these
 # mints ARE the fixy declaration), exactly like the member-function
@@ -854,7 +848,7 @@ scan_fixy_mints() {
             'friend '*|'friend('*) continue ;;
         esac
 
-        # fix-35: joined-declarator word-boundary test, mirroring
+        # Joined-declarator word-boundary test, mirroring
         # scan_substrate.  The substring globs this replaces both dropped
         # live mints (defaulted ARGUMENTS spelled `= default_x()`) and
         # admitted dead ones (clang-format-wrapped `= delete`).
@@ -885,9 +879,9 @@ scan_fixy_mints() {
         printf '%s\t%s:%s\t%s\n' "$name" "$rel" "$line" "$quals"
     done < <(
         # A leading underscore marks an old-substrate header that has been
-        # ported to include/foundation or include/fixy and awaits Stage D
-        # deletion (scripts/check-frozen-tree.sh).  Its mints are no longer
-        # the surface; the ported copy is.
+        # ported to include/foundation or include/fixy and waits for the
+        # deletion of the old tree (scripts/check-frozen-tree.sh).  Its
+        # mints are no longer the surface; the ported copy is.
         rg -nP \
            --no-heading \
            --type=cpp \
@@ -921,10 +915,10 @@ fixy_reexport_for() {
 # the fixtures — counting only fixy_neg falsely flagged ~33 such mints.
 # Span every test/*_neg/ tree so the count reflects ACTUAL coverage; the
 # separate NO-FIXY cell still records whether the mint is fixy-re-exported.
-# FIXY-V-271: the count is the number of FILES under test/*_neg/ that
+# The count is the number of FILES under test/*_neg/ that
 # mention a `mint_*` name (word-boundary match).  The per-mint form
 # (`rg -lP "\bNAME\b" | wc -l`, one rg spawn per mint, ~150 for the full
-# inventory) pushed the generator past the FIXY-U-106 <5s acceptance
+# inventory) pushed the generator past the <5s acceptance
 # budget once the fixy-origin section added 30 more lookups.  Replaced
 # with a SINGLE rg pass (build_hs14_index) that tokenizes every
 # `\bmint_[a-z0-9_]+\b` occurrence across all neg trees, deduplicates
@@ -943,7 +937,7 @@ build_hs14_index() {
     done
     [[ ${#dirs[@]} -eq 0 ]] && return 0
 
-    # fix-53: count CODE mentions, not comment mentions.
+    # Count CODE mentions, not comment mentions.
     #
     # A neg-compile fixture witnesses HS14 by making the compiler reject
     # something — that witness lives in the code.  A `//` comment naming
@@ -978,7 +972,7 @@ build_hs14_index() {
         # One awk process for the whole corpus: strip comments and string
         # contents inline (block-comment state resets at each FNR==1), then
         # tokenize.  Spawning strip_code_noise per file would cost ~600
-        # processes and blow the FIXY-U-106 <5s generation budget.
+        # processes and blow the <5s generation budget.
         awk '
         FNR == 1 { in_block = 0 }
         {
@@ -1041,20 +1035,20 @@ PLANTED
 #pragma once
 #include <crucible/safety/PlantedSelfTest.h>
 namespace crucible::fixy::planted {
-// FIXY-V-271: forwarding DEFINITION re-exporting the substrate mint.  Shares
+// A forwarding DEFINITION re-exporting the substrate mint.  Shares
 // the name mint_planted_token with safety/PlantedSelfTest.h, so it (a) feeds
 // the substrate row's `fixy` re-export cell AND (b) MUST be EXCLUDED from the
 // fixy-origin section (the substrate section owns the canonical row).
 [[nodiscard]] constexpr ::crucible::planted::PlantedToken
 mint_planted_token() noexcept { return ::crucible::planted::mint_planted_token(); }
-// FIXY-V-271: a fixy-ORIGIN mint with NO substrate counterpart — MUST
+// A fixy-ORIGIN mint with NO substrate counterpart — MUST
 // surface in the "fixy-origin mints" section.
 struct FixyOriginToken {};
 [[nodiscard]] constexpr FixyOriginToken
 mint_planted_fixy_origin() noexcept { return {}; }
 }
 FIXY
-    # fix-53: these two fixtures used to name the mint ONLY inside a `//`
+    # These two fixtures once named the mint ONLY inside a `//`
     # comment, and the HS14:2 assertion below passed because the counter
     # scanned comments.  The self-test therefore certified the very bug it
     # should have caught.  Both fixtures now exercise the mint in CODE, and
@@ -1077,7 +1071,7 @@ NEG
 static const char* why = "mint_planted_token is named here in a string only.";
 NEG
     # ── Plant class-method mints — covers scan_member_function_mints ──
-    # FIXY-U-118c extension: the substrate path above tests free-function
+    # The substrate path above tests free-function
     # mint capture + fixy re-export + HS14 counter.  This block additionally
     # plants two class-method mints (one under each annotation family) so
     # `scan_member_function_mints` is exercised end-to-end:
@@ -1086,8 +1080,8 @@ NEG
     #                                                annotation, was the
     #                                                original known case.
     #   2. `class [[nodiscard]] AttrHost`          — `[[...]]` attribute
-    #                                                annotation, the new
-    #                                                FIXY-U-118c-covered case.
+    #                                                annotation, the case
+    #                                                the attribute strip covers.
     #
     # The self-test then verifies BOTH class names extract correctly (i.e.
     # `MacroHost::mint_planted_macro` and `AttrHost::mint_planted_attr`,
@@ -1125,7 +1119,7 @@ HOST
         rm -f "$out"
         exit 2
     fi
-    # fix-53: HS14 must be exactly 2 — the two fixtures that CALL the mint.
+    # HS14 must be exactly 2 — the two fixtures that CALL the mint.
     # A third fixture names it only in a line comment, a block comment and a
     # string literal.  A count of 3 means comment/string stripping regressed
     # and the floor gate is satisfiable by documentation again; a count of 1
@@ -1140,7 +1134,7 @@ HOST
         exit 2
     fi
     # ── Member-function mint discovery + class-name extraction ──
-    # FIXY-U-118c: assert BOTH annotation families resolve to the right
+    # Assert BOTH annotation families resolve to the right
     # enclosing class.  Each check is independently failable so the
     # diagnostic points at the specific failure mode (rg prefix bug,
     # CRUCIBLE_ macro strip bug, or [[...]] attribute strip bug).
@@ -1168,7 +1162,7 @@ HOST
         rm -f "$out"
         exit 2
     fi
-    # ── fixy-origin mint discovery (FIXY-V-271) ──
+    # ── fixy-origin mint discovery ──
     # Planted fixy/Planted.h DEFINES mint_planted_fixy_origin (no substrate
     # counterpart) and a same-named forwarding mint_planted_token (substrate
     # origin).  Assert the fixy-origin SECTION captures the former and
@@ -1291,8 +1285,8 @@ done | sort -t$'\t' -k1,1 -k2,2 -k3,3 | \
 
 # ── Emit markdown ────────────────────────────────────────────────────
 emit_inventory() {
-    # FIXY-V-271: one-time HS14 fixture-count index (replaces ~150 per-mint
-    # rg spawns) — keeps generation under the FIXY-U-106 <5s budget.
+    # One-time HS14 fixture-count index (replaces ~150 per-mint
+    # rg spawns) — keeps generation under the <5s budget.
     build_hs14_index
 
     local generated_at
@@ -1300,10 +1294,10 @@ emit_inventory() {
     cat <<HEADER
 # Mint inventory — auditor snapshot
 
-Generated by \`scripts/gen-mint-inventory.sh\` (FIXY-U-106).
+Generated by \`scripts/gen-mint-inventory.sh\`.
 
 This is the auditor-facing companion to \`test/test_fixy_umbrella_reach.cpp\`
-(FIXY-U-002, the CI gate).  The inventory below is a SNAPSHOT — regenerate
+(the CI gate).  The inventory below is a SNAPSHOT — regenerate
 in the same PR that adds, removes, or renames a substrate \`mint_*\` factory:
 
 \`\`\`bash
@@ -1332,7 +1326,7 @@ factory is named \`mint_<noun>\`.  Each row records:
 |---|---|
 | \`mint_name\` | The factory's identifier. |
 | \`file:line\` | Substrate declaration site (canonical). |
-| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature.  \`- (pre)\` in the \`rq\` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 \`pre(...)\` clause instead of a \`requires\`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: \`mint_view\`'s \`pre(view_ok(c, type_identity<Tag>{}))\`.  Marker: \`// §XXI carve-out: rq=pre\` above the mint signature.  \`Y (taut)\` in the \`rq\` column = documented tautological clause (fix-16, fixy-A2-026): the \`requires\` clause is present but references ONLY the already-deduced parameter type, so it is tautologically true and can never reject — the real gate is in-body \`static_assert\`s.  Distinguishes a decorative clause (\`mint_recording_session\`, \`mint_crash_watched_session\`) from a load-bearing fit-check (\`mint_endpoint\`'s \`CtxFitsEndpointMint\`).  Registry: \`is_tautological_requires_mint\` in this script. |
+| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out: the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature.  \`- (pre)\` in the \`rq\` column = documented carve-out: the gate is a P2900 \`pre(...)\` clause instead of a \`requires\`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: \`mint_view\`'s \`pre(view_ok(c, type_identity<Tag>{}))\`.  Marker: \`// §XXI carve-out: rq=pre\` above the mint signature.  \`Y (taut)\` in the \`rq\` column = documented tautological clause: the \`requires\` clause is present but references ONLY the already-deduced parameter type, so it is tautologically true and can never reject — the real gate is in-body \`static_assert\`s.  Distinguishes a decorative clause (\`mint_recording_session\`, \`mint_crash_watched_session\`) from a load-bearing fit-check (\`mint_endpoint\`'s \`CtxFitsEndpointMint\`).  Registry: \`is_tautological_requires_mint\` in this script. |
 | \`cb\` | Authorization shape: \`ctx\` (ctx-bound mint, \`Ctx const&\` first parameter), \`token\` (token mint, derives authority from a parent token), or \`member\` (class-method mint — see "Member-function mints" section below). |
 | \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap.  Inapplicable for the \`member\` row (class-method mints cannot be \`using\`-re-exported at namespace scope). |
 | \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is ${HS14_FLOOR}). |
@@ -1341,8 +1335,7 @@ Gap markers: \`[✗ NO-FIXY]\` (substrate mint not re-exported through fixy::),
 \`[⚠ <2 HS14]\` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as \`-\` in the flag columns.  \`- (alloc)\` is documented absence,
 not a gap.  The auditor surface for member-function mints lives in a
-separate "Member-function mints" section after the substrate trees
-(FIXY-U-118b).
+separate "Member-function mints" section after the substrate trees.
 
 Snapshot generated: \`$generated_at\`.
 
@@ -1377,7 +1370,7 @@ HEADER
         [[ "$rq" == "1" ]] && rq_cell="Y"
         [[ "$cb" == "1" ]] && cb_cell="ctx"
 
-        # FIXY-V-021: `cx=- (alloc)` is the documented carve-out for mints
+        # `cx=- (alloc)` is the documented carve-out for mints
         # that genuinely allocate (BPF load + perf_event_open + mmap, heap,
         # syscall) — CLAUDE.md §XXI rule says `constexpr` would lie about
         # the runtime cost.  The carve-out marker `// §XXI carve-out:
@@ -1389,7 +1382,7 @@ HEADER
             cx_cell="- (alloc)"
         fi
 
-        # FIXY-FOUND-082: `rq=- (pre)` is the documented carve-out for
+        # `rq=- (pre)` is the documented carve-out for
         # mints whose gate is a P2900 `pre(...)` clause instead of a
         # `requires`-clause concept.  Used when the predicate is value-
         # dependent (inspects carrier runtime state, not just template
@@ -1403,7 +1396,7 @@ HEADER
             rq_cell="- (pre)"
         fi
 
-        # fix-16: `rq=Y (taut)` distinguishes a tautological requires-clause
+        # `rq=Y (taut)` distinguishes a tautological requires-clause
         # (present but cannot reject — gate is in-body static_asserts) from a
         # load-bearing fit-check.  See is_tautological_requires_mint above.
         if [[ "$rq" == "1" ]] && is_tautological_requires_mint "$name"; then
@@ -1422,7 +1415,7 @@ HEADER
         [[ -z "$fixy" ]] && violation_count=$((violation_count + 1))
     done <"$inventory_tmp"
 
-    # ── Member-function mints (FIXY-U-118b Part 2) ───────────────────
+    # ── Member-function mints ────────────────────────────────────────
     # Class-method mint factories live under a distinct section because
     # they cannot be `using`-re-exported at namespace scope.  See
     # scan_member_function_mints() above for the discovery + class-name
@@ -1454,16 +1447,16 @@ HEADER
             [[ "$ne" == "1" ]] && mf_ne_cell="Y"
             [[ "$rq" == "1" ]] && mf_rq_cell="Y"
 
-            # FIXY-V-021: §XXI alloc carve-out for member-function mints.
+            # §XXI alloc carve-out for member-function mints.
             # See substrate loop for full rationale.
             if [[ "$cv" == "1" && "$cx" == "0" ]]; then
                 mf_cx_cell="- (alloc)"
             fi
-            # FIXY-FOUND-082: §XXI rq=pre carve-out for member-function mints.
+            # §XXI rq=pre carve-out for member-function mints.
             if [[ "$cv_rq" == "1" && "$rq" == "0" ]]; then
                 mf_rq_cell="- (pre)"
             fi
-            # fix-16: tautological-requires marker (parallel to substrate path).
+            # Tautological-requires marker (parallel to substrate path).
             if [[ "$rq" == "1" ]] && is_tautological_requires_mint "$name"; then
                 mf_rq_cell="Y (taut)"
             fi
@@ -1480,7 +1473,7 @@ HEADER
         done <<<"$mf_rows"
     fi
 
-    # ── fixy-origin mints (FIXY-V-271) ───────────────────────────────
+    # ── fixy-origin mints ────────────────────────────────────────────
     # Free-function mints whose canonical declaration lives in fixy/ with
     # no substrate counterpart.  See scan_fixy_mints() for the discovery +
     # substrate-name exclusion algorithm.  The "fixy re-export" cell is
@@ -1520,11 +1513,11 @@ HEADER
             [[ "$rq" == "1" ]] && fo_rq_cell="Y"
             [[ "$cb" == "1" ]] && fo_cb_cell="ctx"
 
-            # FIXY-V-021: §XXI alloc carve-out — see substrate loop.
+            # §XXI alloc carve-out — see substrate loop.
             if [[ "$cv" == "1" && "$cx" == "0" ]]; then
                 fo_cx_cell="- (alloc)"
             fi
-            # FIXY-FOUND-082: §XXI rq=pre carve-out — see substrate loop.
+            # §XXI rq=pre carve-out — see substrate loop.
             if [[ "$cv_rq" == "1" && "$rq" == "0" ]]; then
                 fo_rq_cell="- (pre)"
             fi
@@ -1590,7 +1583,7 @@ case "$mode" in
         exit 1
         ;;
     check-floor)
-        # FIXY-FOUND-140 — HS14-floor CI gate.
+        # HS14-floor CI gate.
         #
         # The ⚠ marker placed by the emitter on under-witnessed rows
         # (HS14 < HS14_FLOOR) is documentation-only.  This mode promotes
@@ -1603,7 +1596,7 @@ case "$mode" in
         # filter that out before counting.  Real rows always begin with
         # "| `mint_" (a markdown table row whose first column is the
         # backtick-quoted mint name).
-        # fix-43/fix-53 — grandfathered deficits live in
+        # Grandfathered deficits live in
         # scripts/mint-hs14-floor-allowlist.txt, keyed `mint_name|path`
         # (no line number: a mint slides down its own header on any edit
         # above it, so a line key stales on contact).  Extending the scan

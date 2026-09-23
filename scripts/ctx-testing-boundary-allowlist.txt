@@ -1,5 +1,5 @@
 # ctx-testing-boundary allowlist — files in the new production tree that
-# may name foundation::effects::testing (#172, Door 2).
+# may name foundation::effects::testing.
 #
 # Effect.h:413 says: "Naming this namespace outside test and bench code is
 # a review rejection.  Its whole purpose is that a grep for it finds every

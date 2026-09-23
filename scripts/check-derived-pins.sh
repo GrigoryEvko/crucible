@@ -22,7 +22,7 @@
 #
 # Scope: include/, src/, test/, bench/, tools/, vessel/, minus the frozen old
 # substrate and its fixtures (scripts/check-frozen-tree.sh lists them); those
-# die at Stage D and are not worth allowlisting one by one.
+# die with the old tree and are not worth allowlisting one by one.
 #
 # Allowlist: scripts/derived-pins-allowlist.txt, content-keyed as
 # `path:NAME`.  An entry names a constant, not a line, so it survives edits

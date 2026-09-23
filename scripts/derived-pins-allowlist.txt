@@ -3,7 +3,7 @@
 # survives line shifts and goes stale only when the pin itself is gone.
 #
 # Every entry below is a test of the old fixy session re-exports.  They die
-# with test/fixy_neg at Stage D2, and scripts/check-derived-pins.sh reports a
+# with test/fixy_neg, and scripts/check-derived-pins.sh reports a
 # stale entry the moment they do.
 test/test_fixy_sess_mint_handle_reach.cpp:kFixyFriendMintHandleCount
 test/test_fixy_sess_patterns.cpp:kFixyPatternProtocolAliasCount

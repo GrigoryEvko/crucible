@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# check-syscall-capability.sh — syscall capability discipline (FIXY-U-100).
+# check-syscall-capability.sh — syscall capability discipline.
 #
-# Closes the regression-prevention surface for fixy-A5-016: "Effect-row
-# capabilities bypassed in EVERY syscall path — hot-path can accidentally
-# invoke netlink/sysctl".  The original fix wrapped syscall sites with
-# proper effects:: capability admission; this guard prevents new
+# Closes the regression-prevention surface for a defect in which every
+# syscall path bypassed the effect-row capabilities, so the hot path could
+# invoke netlink or sysctl by accident.  The original fix wrapped
+# syscall sites with proper effects:: capability admission; this guard
+# prevents new
 # unreviewed syscall sites from sneaking in.
 #
 # ── DISCIPLINE ────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@
 #
 # Adding a NEW syscall site WITHOUT a marker or an allowlist entry fails
 # CI.  This forces every new syscall introduction through the review
-# surface documented in fixy-A5-016 + CLAUDE.md §1 effect-row capabilities.
+# surface of the effect-row capabilities in CLAUDE.md §1.
 #
 # Inline suppression (rare): `// SYSCALL-CAP-OK: <reason>` on the call
 # statement exempts that statement.  Use when the syscall site is
@@ -270,7 +271,7 @@ fi
 # (`std::simd::select`, `crucible::foo::open`, etc.) — those are not
 # POSIX syscalls even when they share the name.
 #
-# Syscall list per fixy-A5-016 "EVERY syscall path" wording: covers
+# The syscall list covers every syscall path: the
 # network family, scheduler, memory, file I/O, process, time, fd
 # manipulation, polling, sync, signal, BPF, random.  Each entry below
 # represents a kernel-state observation or mutation that requires
@@ -282,7 +283,7 @@ syscall_names='socket|bind|listen|connect|accept|send|sendto|sendmsg|recv|recvfr
 # ...)` compiles and hits the very same kernel.  Branch 1's leading
 # `::` made every such site INVISIBLE to this guard: no allowlist
 # entry, no marker, clean exit.  That is a class of bypass, not one
-# site (fixy-A5-016 says "EVERY syscall path").
+# site.
 #
 # The unqualified form cannot use the full name list.  Roughly half of
 # it — open / close / read / write / send / recv / accept / select /
@@ -413,7 +414,7 @@ while IFS= read -r match; do
         continue
     fi
 
-    printf 'SYSCALL-CAP violation: %s:%s — bare Linux syscall site missing effects::* capability admission (fixy-A5-016).  Allowlist key: %s\n' \
+    printf 'SYSCALL-CAP violation: %s:%s — bare Linux syscall site missing effects::* capability admission.  Allowlist key: %s\n' \
         "$rel" "$line" "$key" >&2
     violation_count=$((violation_count + 1))
 done < <(
@@ -438,7 +439,7 @@ if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
 check-syscall-capability detected ${violation_count} new Linux syscall
-site(s) outside the allowlist.  fixy-A5-016 + CLAUDE.md §1 require
+site(s) outside the allowlist.  CLAUDE.md §1 requires
 every syscall invocation to hold a proper effects::* capability
 (Init / IO / Block / Bg), admitted through a Ctx-bound boundary.
 

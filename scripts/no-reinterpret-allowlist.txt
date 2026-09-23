@@ -5,29 +5,28 @@
 # trailing whitespace stripped) — a content key, NOT a line number.
 # Comments start with '#'.  Blank lines ignored.
 #
-# fix-18: content-keying replaces the legacy `path:line` form.  A line
+# The content key replaces the legacy `path:line` form.  A line
 # number drifts the instant ANY edit lands above the call (a concurrent
-# agent inserting a member, a new `#include`, a reflowed comment),
+# edit inserting a member, a new `#include`, a reflowed comment),
 # silently staling the entry: the real reinterpret_cast reads as
 # un-suppressed AND the dangling line-keyed entry trips the stale gate.
 # The call line's TEXT is stable across line shifts.  Mirror of the
 # name-keyed mint-pattern guard (mint-pattern-allowlist.txt).
 #
-# Every entry is a TODO awaiting a tracked migration.  When the
-# referenced FIXY-U-082 / fixy-A5-028 / WRAP-* ticket lands, delete the
-# line — the guard then catches any future drift.  Stale entries (no
-# matching call text in the file) red CI at exit 2 so the allowlist
-# drains in lockstep with substrate fixes.
+# Every entry is a site that waits for its migration.  When the site
+# converts, delete the line — the guard then catches any future drift.
+# Stale entries (no matching call text in the file) red CI at exit 2 so
+# the allowlist drains in lockstep with substrate fixes.
 #
 # Inline suppression (preferred for new code): `// NO-REINTERPRET-OK:
 # <reason>` on the call line exempts that single line directly.
 #
-# The include/ tree carries no grandfathered sites — FIXY-U-082
-# drained the cntp/Fec + AfXdp + Integrity + GpuDirect cluster and it
-# has stayed drained.
+# The include/ tree carries no grandfathered sites — the cntp/Fec +
+# AfXdp + Integrity + GpuDirect cluster was drained and it has stayed
+# drained.
 #
 # The vessel/ tree carries none either.  It held five when the guard's
-# scan set first reached it, and Stage B4 converted all five to
+# scan set first reached it, and all five were converted to
 # std::bit_cast:
 #
 #   - three pointer-to-integer reads, two of them inside a debug

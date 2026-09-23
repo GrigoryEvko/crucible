@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# check-no-ffast-math.sh — fast-math-family flag ban enforcement (FIXY-V-094).
+# check-no-ffast-math.sh — fast-math-family flag ban enforcement.
 #
 # CLAUDE.md §V "NEVER" matrix lists the fast-math family as
 # determinism-breaking flags banned project-wide:
 #
 #   -ffast-math                    root umbrella — bundles 8 sub-flags
 #   -funsafe-math-optimizations    global blanket disable
-#   -fassociative-math             reorders FP — F101 trigger
-#   -fno-signed-zeros              elides sign-of-zero — V-093 break
-#   -ffinite-math-only             assumes no NaN/Inf — V-093 dead
-#   -ffp-contract=fast             cross-statement FMA — F104 trigger
+#   -fassociative-math             reorders FP — breaks replay determinism
+#   -fno-signed-zeros              elides sign-of-zero — breaks ±0 canonicalization
+#   -ffinite-math-only             assumes no NaN/Inf — kills NaN canonicalization
+#   -ffp-contract=fast             cross-statement FMA — breaks replay determinism
 #   -freciprocal-math              x/y → x*(1/y) — vendor ULP drift
 #
 # Plus pragma-level overrides that bypass the build-system floor:
@@ -404,17 +404,17 @@ one Crucible numerical invariant:
                           umbrella; one flag undoes the entire
                           strict-IEEE-754 discipline.
 
-  -fassociative-math      reorders FP additions — V-091 F101
-                          (DetSafe × FpMode replay drift).
+  -fassociative-math      reorders FP additions, so a replay-deterministic
+                          payload drifts (DetSafe × FpMode).
 
-  -fno-signed-zeros       elides sign-of-zero — V-093 ±0
-                          canonicalization break.
+  -fno-signed-zeros       elides sign-of-zero — breaks the ±0
+                          canonicalization.
 
-  -ffinite-math-only      constexpr-folds std::isnan to false —
-                          V-093 NaN canonicalization dead code.
+  -ffinite-math-only      constexpr-folds std::isnan to false — the NaN
+                          canonicalization becomes dead code.
 
-  -ffp-contract=fast      cross-statement FMA — F104 (Vendor ×
-                          FMA realization) bit-divergence.
+  -ffp-contract=fast      cross-statement FMA — contraction across
+                          statements, a bit divergence between vendors.
 
   -freciprocal-math       x/y → x*(1/y); the reciprocal step
                           introduces a vendor-divergent ULP.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # check-lock-free-asserts.sh — cross-thread atomic lock-free assert
-# discipline enforcement (FIXY-U-086).
+# discipline enforcement.
 #
-# CLAUDE.md §IX + fixy-A5-029: every `std::atomic<T>` reference in
+# CLAUDE.md §IX: every `std::atomic<T>` reference in
 # a cross-thread substrate header MUST be accompanied by a sibling
 # `static_assert(std::atomic<T>::is_always_lock_free)`.  Rationale:
 #
@@ -31,10 +31,9 @@
 # atomics live outside this scan and are covered by their own
 # discipline (the SPSC ring author documents thread ownership
 # directly; the one-shot flag's correctness is single-thread).
-# Extending the scan into mimic/ forge/ observe/ and the top-level
-# Vigil.h / MerkleDag.h / concurrent/* sites is tracked as a
-# follow-up under FIXY-U-029-EXT — those headers may have legitimate
-# atomic-T sites that are deliberately not cross-thread, and the
+# The scan does not reach mimic/ forge/ observe/ and the top-level
+# Vigil.h / MerkleDag.h / concurrent/* sites — those headers may have
+# legitimate atomic-T sites that are deliberately not cross-thread, and the
 # scan would need a finer-grained per-field discipline marker.
 #
 # Per-file allowlist: scripts/no-lock-free-asserts-allowlist.txt.
@@ -362,7 +361,7 @@ for file in "${files[@]}"; do
             continue
         fi
 
-        printf 'LOCK-FREE-MISSING: %s:%s::%s — std::atomic<%s> declared without sibling static_assert(std::atomic<%s>::is_always_lock_free) — fixy-A5-029 / FIXY-U-086 discipline.\n' \
+        printf 'LOCK-FREE-MISSING: %s:%s::%s — std::atomic<%s> declared without sibling static_assert(std::atomic<%s>::is_always_lock_free) — CLAUDE.md §IX lock-free discipline.\n' \
             "$rel" "$line_num" "$normalized" "$type" "$type" >&2
         violation_count=$((violation_count + 1))
     done < <(

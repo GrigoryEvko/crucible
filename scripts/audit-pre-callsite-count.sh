@@ -11,9 +11,9 @@
 #
 # Output:
 #   * Aggregate counts across the tree
-#   * Per-decide-procedure cite count (CONTRACT-125 audit alignment —
+#   * Per-decide-procedure cite count (the cite-ratio audit reads it —
 #     every Decide procedure should accumulate ≥ 2 cites within 6 months
-#     of CONTRACT-100..127 migrations; CONTRACT-126 trims unloved ones)
+#     of its introduction, and an unloved one is trimmed)
 #   * Top-10 files by combined contract-cite density (signal of
 #     where the boundary discipline is concentrated; surfaces files
 #     under-served by the discipline)
@@ -42,10 +42,10 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Catalog of named predicates in safety/Decide.h.  Declared ABOVE the
 # argument dispatcher so --self-test can synthesize a fixture that cites
 # EVERY procedure.  A fixture built from this same array cannot desync
-# from the catalog when CONTRACT-126 trims a procedure or a migration
-# adds one.  Counts are computed fresh each run; CONTRACT-125 audits
-# ratios (every procedure > 0 cites at 6mo); CONTRACT-126 trims the
-# unloved ones.
+# from the catalog when a procedure is trimmed or a migration adds
+# one.  Counts are computed fresh each run; audit-decide-cite-ratio.sh
+# audits the ratios (every procedure > 0 cites at 6mo), and the unloved
+# ones are trimmed.
 decide_procedures=(
     is_non_zero
     in_range
@@ -388,7 +388,7 @@ HEADER
         # We count `decide::PROC` outside of the Decide.h definition
         # itself (which contains the canonical declarations).  Excluding
         # safety/Decide.h gives the "production cite" count, mirroring
-        # the CONTRACT-124 docstring cross-reference discipline.
+        # the docstring cross-reference discipline.
         # -o counts occurrences; -c would count lines and drop a cite whenever
         # two land on one line.
         local n=0
@@ -421,10 +421,10 @@ MIDDLE
 
 ── Notes ─────────────────────────────────────────────
   Per CLAUDE.md §XII: prefer Refined<P, T> parameter types over pre()
-  cites where the predicate is structurally provable (CONTRACT-120
-  subsumption discipline).  Prefer named decide::* cites over anonymous
-  CRUCIBLE_PRE expressions where a catalog entry fits (CONTRACT-100..127
-  rebrand discipline).
+  cites where the predicate is structurally provable (the subsumption
+  discipline of check-refined-pre-subsumption.sh).  Prefer named
+  decide::* cites over anonymous CRUCIBLE_PRE expressions where a
+  catalog entry fits.
 
   Run with --json for machine-readable output.
   Run with --baseline FILE to snapshot for CI diff tracking.
@@ -491,7 +491,7 @@ case "$mode" in
         # EXCLUDED from the must-not-decrease set: the codebase is actively
         # migrating vanilla `pre()` / `post (r:...)` to the stronger
         # CRUCIBLE_PRE / CRUCIBLE_POST macros (consteval-firing, toolchain-
-        # independent — see fix-10 + the CONTRACT-* sweep).  That migration
+        # independent).  That migration
         # MOVES a cite from p2900_pre to crucible_pre, so p2900_pre shrinks by
         # design.  Genuine coverage loss (a pre() deleted, not migrated) still
         # trips the AGGREGATE guards (total_pre_cites / total_post_cites /

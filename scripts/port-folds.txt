@@ -7,7 +7,7 @@
 # lose every specialisation, and answer the same thing for every argument.
 # The enforcement it carried is then gone and no name is missing, which is
 # how fixy/Qtt.h shipped two discipline tables that made linearity a
-# tautology (task #193).
+# tautology.
 #
 # scripts/check-port-completeness.sh counts specialisations on both sides.
 # A name the old tree specialises at least once, whose primary the new
@@ -34,8 +34,8 @@
 # concept, to a reflection query, or to a member of its own parameter.  A
 # primary whose body mentions none of its parameters answers the same
 # thing for everything, and that is the defect this file exists to keep
-# out.  "Deferred to task N" is a valid sentence; the entry then drains
-# itself when that task lands.
+# out.  A deferral is a valid sentence if it names the header that will
+# carry the specialisations.  The entry drains when that header does.
 #
 # WHAT THIS DOES NOT CHECK, stated so nobody infers it is covered.  The
 # guard counts specialisations; it does not compare answers.  P2996 has no
@@ -62,9 +62,9 @@ include/fixy/Tagged.h:retag_policy  — each specialisation became one edge in t
 # VendorCtx, and the new primary replaces the inner context outright.  It
 # is NOT a requirement today because its two old homes,
 # crucible/sessions/Session.h and crucible/sessions/PermissionedSession.h,
-# carry no underscore: the session port is task #210 and has not claimed
-# them.  Marking a header is what puts it under this guard, so this row
-# becomes required the moment #210 marks those two, and the header already
+# carry no underscore: the session port has not claimed them.  Marking a
+# header is what puts it under this guard, so this row becomes required
+# the moment the session port marks those two, and the header already
 # says EpochCtx drops in as one specialisation of each trait when it
 # lands.  A row written before then reads STALE, which is the guard
 # refusing to accept a sentence about a fold it cannot see.

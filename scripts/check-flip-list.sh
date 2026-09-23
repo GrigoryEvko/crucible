@@ -2,8 +2,8 @@
 # check-flip-list.sh — every file that still names the old substrate is on
 # the flip list, every listed file still names it, and the list only shrinks.
 #
-# Stage C moves each consumer of the old substrate onto include/foundation/
-# and include/fixy/.  The old substrate is the frozen tree: the prefixes in
+# Each consumer of the old substrate moves onto include/foundation/ and
+# include/fixy/.  The old substrate is the frozen tree: the prefixes in
 # FROZEN_PATHS of scripts/check-frozen-tree.sh, read from that script so
 # the two guards cannot disagree about what is old.  A consumer is a file
 # under the scan roots, outside every frozen prefix, that names the old

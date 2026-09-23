@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# check-row-contains-discipline.sh — row-membership discipline (FIXY-U-101).
+# check-row-contains-discipline.sh — row-membership discipline.
 #
-# Closes the regression-prevention surface for fixy-A5-039: "effects::
-# row_contains_v not asserted at function-signature level — discipline
-# scaling gap".  The fix shipped named lifts (CtxOwnsCapability /
+# Closes the regression-prevention surface for a scaling gap in which
+# effects::row_contains_v was not asserted at function-signature level.
+# The fix shipped named lifts (CtxOwnsCapability /
 # CtxOwnsAnyOf / CtxOwnsAllOf in effects/ExecCtx.h, commit c0b53827)
 # plus a worked-example migration of IncastControlRuntime.  This guard
 # prevents new inline `row_contains_v<row_type_of_t<Ctx>, ...>` uses
@@ -42,7 +42,7 @@
 # ── COVERED PATTERN ──────────────────────────────────────────────────
 #
 # `effects::row_contains_v<` invocations in production code.  This is
-# the canonical pattern fixy-A5-039 was scaling out from.
+# the canonical pattern the named lifts replace.
 #
 # Exit status:
 #   0 — clean (no NEW inline sites, no stale allowlist entries)
@@ -302,7 +302,7 @@ while IFS= read -r match; do
         continue
     fi
 
-    printf 'ROW-CONTAINS violation: %s:%s — inline row_contains_v should use CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf (fixy-A5-039).\n' \
+    printf 'ROW-CONTAINS violation: %s:%s — inline row_contains_v should use CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf.\n' \
         "$rel" "$line" >&2
     violation_count=$((violation_count + 1))
 done < <(
@@ -326,7 +326,7 @@ if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
 check-row-contains-discipline detected ${violation_count} inline
-row_contains_v site(s) outside the allowlist.  fixy-A5-039 named-lift
+row_contains_v site(s) outside the allowlist.  The named-lift
 discipline requires CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
 for grep-discoverable capability admission.
 

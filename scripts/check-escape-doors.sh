@@ -110,8 +110,8 @@ mode, ledger_path, root = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
 roots = [Path(p) for p in sys.argv[4:]]
 
 # The conventional getter names.  A member whose provenance is the
-# object it is called on carries one of these; the survey that measured
-# this surface enumerated them, and a new getter with a new name is
+# object it is called on carries one of these; a measurement of this
+# surface enumerated them, and a new getter with a new name is
 # added here in a reviewed edit rather than reaching for a bare door.
 ACCESSORS = frozenset({
     "data", "data_mut", "begin", "end", "cbegin", "cend", "front", "back", "at", "get",

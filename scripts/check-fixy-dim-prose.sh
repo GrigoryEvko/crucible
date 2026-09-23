@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-fixy-dim-prose.sh — FIXY-V-006 axis-numbering CI grep guard.
+# check-fixy-dim-prose.sh — axis-numbering CI grep guard.
 #
 # Doc-blocks in include/crucible/fixy/ used to spell axes by their
 # historical FX numbering ("Dim 1 Type", "(dim 22)", etc.).  FX dim 12
@@ -7,7 +7,7 @@
 # §24.1, so the substrate DimensionAxis enum compacts 0..23 without
 # gaps and the FX numbers diverge from the substrate ordinals (FX dim
 # 22 Staleness → substrate 19, FX dim 23 Synchronization → substrate
-# 20, etc.).  V-006 migrated every doc-block to the substrate form
+# 20, etc.).  Every doc-block moved to the substrate form
 # "DimensionAxis::<Name> = <ordinal>"; this guard rejects regression
 # back to the FX-only spelling.
 #
@@ -15,7 +15,7 @@
 #   - "Dim <N>" where <N> is a 1-2 digit decimal (matches "Dim 1 Type",
 #     "Dim 23 Synchronization", etc.; case-sensitive)
 #   - "(dim <N>)" or "(dim <N>," — the parenthetical FX-ordinal form
-#     that V-006 found in Fp.h and syscall/Family.h
+#     that Fp.h and syscall/Family.h once carried
 #
 # The substrate form "DimensionAxis::<Name> = <ordinal>" is NOT matched
 # because the "Dim" token is preceded by "Dimension", not a word
@@ -33,7 +33,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     cat >&2 <<'USAGE'
-check-fixy-dim-prose.sh — FIXY-V-006 axis-numbering guard.
+check-fixy-dim-prose.sh — axis-numbering guard.
 
 Usage:
   check-fixy-dim-prose.sh              # scan; exit 1 on violation

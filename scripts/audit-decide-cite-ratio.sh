@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# audit-decide-cite-ratio.sh — CONTRACT-125 cite-ratio policy enforcer.
+# audit-decide-cite-ratio.sh — cite-ratio policy enforcer.
 #
 # Catalog discipline (CLAUDE.md §XII; feedback_decide_catalog.md):
 #   * decide::* procedures grow bottom-up — a citing site lands FIRST,
 #     the named predicate lands second.  A procedure with zero cites
 #     six months after introduction is either undefended speculation
-#     or a name that didn't fit reality; CONTRACT-126 trims it.
+#     or a name that didn't fit reality, and it is trimmed.
 #   * Threshold: every procedure has ≥ 2 production cites within 6
 #     months of introduction.  Single-cite procedures may be a
 #     genuinely-bespoke pattern but more often signal a name that
@@ -22,8 +22,8 @@
 #   GOOD       — cites ≥ MIN_CITES.  Earned its place.
 #   GRACE      — cites < MIN_CITES, age < GRACE_DAYS.  Still warming up;
 #                informational only, doesn't fail.
-#   VIOLATION  — cites < MIN_CITES, age ≥ GRACE_DAYS.  Trim candidate
-#                for CONTRACT-126; fails the audit unless --soft.
+#   VIOLATION  — cites < MIN_CITES, age ≥ GRACE_DAYS.  Trim candidate;
+#                fails the audit unless --soft.
 #
 # Modes:
 #   default          — human-readable bucketed report; exit 1 on any
@@ -49,7 +49,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     cat >&2 <<'USAGE'
-audit-decide-cite-ratio.sh — enforce CONTRACT-125 cite-ratio policy.
+audit-decide-cite-ratio.sh — enforce the cite-ratio policy.
 
 Usage:
   audit-decide-cite-ratio.sh                     # human report; exit 1 on violation
@@ -63,7 +63,7 @@ Usage:
 Buckets:
   GOOD       cites ≥ min_cites
   GRACE      cites < min_cites, age < grace_days  (informational)
-  VIOLATION  cites < min_cites, age ≥ grace_days  (CONTRACT-126 trim candidate)
+  VIOLATION  cites < min_cites, age ≥ grace_days  (trim candidate)
 USAGE
 }
 
@@ -88,14 +88,14 @@ while [[ $# -gt 0 ]]; do
             # history and cite counts are chosen so the bucketing MUST land
             # one procedure in each bucket:
             #
-            #   procedure #1  1 cite, Decide.h token introduced 400 days ago
-            #                 -> cites < min_cites, age >= grace -> VIOLATION
-            #   procedure #2  1 cite, token introduced today
-            #                 -> cites < min_cites, age <  grace -> GRACE
-            #   every other   2 cites                            -> GOOD
+            #   first procedure   1 cite, Decide.h token introduced 400 days ago
+            #                     -> cites < min_cites, age >= grace -> VIOLATION
+            #   second procedure  1 cite, token introduced today
+            #                     -> cites < min_cites, age <  grace -> GRACE
+            #   every other       2 cites                            -> GOOD
             #
             # This covers the WHOLE script, git-history join included: the
-            # only thing separating procedure #1 from procedure #2 is the
+            # only thing separating the first procedure from the second is the
             # commit date that `git log -S` resolves, so a broken pickaxe
             # collapses the VIOLATION into GRACE and fails the test.
             for selftest_tool in rg git python3; do
@@ -106,7 +106,7 @@ while [[ $# -gt 0 ]]; do
             done
 
             # The catalog is owned by the sibling audit; read it from there
-            # so the fixture cannot desync when CONTRACT-126 trims a name.
+            # so the fixture cannot desync when a name is trimmed.
             selftest_sibling="$root/scripts/audit-pre-callsite-count.sh"
             if [[ ! -x "$selftest_sibling" ]]; then
                 printf 'audit-decide-cite-ratio: SELF-TEST FAILED — missing %s\n' \
@@ -301,7 +301,7 @@ done
 # Sibling audit script is the SINGLE source of truth for the catalog
 # enumeration AND per-procedure cite counts.  This script is policy
 # only: it consumes the JSON, joins with git introduction dates, and
-# applies the threshold.  When CONTRACT-126 trims a procedure it
+# applies the threshold.  When a procedure is trimmed it
 # disappears from audit-pre-callsite-count.sh's catalog list and
 # automatically falls out of this audit too.
 # ── Scan-root override for --self-test recursion ─────────────────────
@@ -315,8 +315,8 @@ if [[ ! -x "$audit_script" ]]; then
     exit 2
 fi
 
-# The old catalog is marked superseded (_Decide.h) until Stage D deletes
-# it; the pickaxe below names both spellings so the introduction dates
+# The old catalog is marked superseded (_Decide.h) until the old tree
+# is deleted; the pickaxe below names both spellings so the introduction dates
 # survive the rename.
 decide_h="$scan_root/include/crucible/safety/_Decide.h"
 if [[ ! -f "$decide_h" ]]; then
@@ -403,14 +403,14 @@ done <<<"$proc_count_pairs"
 # ── Output ──────────────────────────────────────────────────────────
 print_human() {
     cat <<HEADER
-=== Crucible Decide.h cite-ratio audit (CONTRACT-125) ===
+=== Crucible Decide.h cite-ratio audit ===
 Threshold: ≥ ${min_cites} production cites within ${grace_days} days of introduction.
 
 ──────────────────────────────────────────────────────────────────
 HEADER
 
     if [[ "$violations" -gt 0 ]]; then
-        printf '── VIOLATIONS — past grace period, candidate for CONTRACT-126 trim ──\n'
+        printf '── VIOLATIONS — past grace period, candidate for a trim ──\n'
         for i in "${!procs[@]}"; do
             if [[ "${buckets[$i]}" == "VIOLATION" ]]; then
                 printf '  decide::%-30s  %d cites,  %d days old (intro %s)\n' \
@@ -451,11 +451,11 @@ undefended speculation or a name that didn't fit reality.
 
 Remediation for VIOLATIONs (in order of preference):
   (1) Cite it.  Find the second site that wants this name and
-      migrate it under CONTRACT-100..127 batch discipline.
+      migrate it to the named cite.
   (2) Defend it.  Add a "reserved for <work>, blocked on <gate>"
       comment in Decide.h above the procedure documenting WHY no
       production cite has materialized yet.
-  (3) Trim it.  Delete the procedure under CONTRACT-126.  The CI
+  (3) Trim it.  Delete the procedure.  The CI
       grep guard (scripts/check-refined-pre-subsumption.sh) will
       catch any cite that survives the trim.
 FOOTER

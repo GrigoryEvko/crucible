@@ -1,10 +1,10 @@
 # frozen-soundness-mirrors — the second exception to the frozen tree.
 #
 # check-frozen-tree.sh freezes the old substrate: nothing is added to it
-# and nothing in it is modified, until Stage D deletes it.  A soundness
+# and nothing in it is modified, until it is deleted.  A soundness
 # mirror is the one content edit that exception admits.  A frozen file
 # can hold a live bug that the new tree has ALREADY fixed.  The old code
-# keeps hurting until Stage D removes it, and mirroring the fix into it
+# keeps hurting until the old tree is deleted, and mirroring the fix into it
 # risks no divergence, because the same fix already exists in the new
 # tree.  Each line below admits ONE such edit.
 #

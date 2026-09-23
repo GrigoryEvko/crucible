@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-no-reserve.sh — std::vector::reserve ban enforcement (FIXY-U-097).
+# check-no-reserve.sh — std::vector::reserve ban enforcement.
 #
 # CLAUDE.md §IV opt-out matrix: `std::vector::reserve` is banned
 # project-wide because:
@@ -28,9 +28,9 @@
 # trimmed source of the violating call line — a CONTENT KEY, not a line
 # number.  Comment lines start with `#`.  Empty lines are ignored.
 #
-# fix-18: content-keying replaces the legacy `path:line` form.  A line
+# The content key replaces the legacy `path:line` form.  A line
 # number drifts the instant ANY edit lands above the call (a concurrent
-# agent inserting a member, a new `#include`, a reflowed comment),
+# edit inserting a member, a new `#include`, a reflowed comment),
 # silently staling the entry: the real reserve reads as un-suppressed
 # AND the dangling line-keyed entry trips the stale gate.  The call
 # line's TEXT is stable across line shifts, so a content-keyed entry
@@ -90,7 +90,7 @@ case "${1:-}" in
         # allowlist mechanism (otherwise a hostile entry could mask
         # everything).  Each reserve call carries TEXTUALLY DISTINCT
         # arguments so the content key maps each to exactly one site —
-        # this is the fix-18 invariant the self-test must pin.
+        # this is the content-key invariant the self-test must pin.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/bench" \
@@ -140,7 +140,7 @@ void planted_bench_drift() {
 PLANTED_BENCH
         # Allowlist entry is CONTENT-KEYED: it names the exact trimmed
         # source of the SECOND .reserve() call (`v.reserve(11);`), not
-        # its line number.  This is the fix-18 drift-proof key.
+        # its line number.  This is the drift-proof key.
         cat >"$tmp_root/scripts/no-reserve-allowlist.txt" <<'ALLOW'
 # self-test grandfathered entry (content-keyed)
 include/crucible/planted/planted_violation.h:v.reserve(11);
@@ -203,7 +203,7 @@ ALLOW
         # violation does not mask those outcomes.
         rm -f "$tmp_root/bench/bench_planted.cpp"
 
-        # ── Phase 2: drift-proofing (the fix-18 core invariant) ──────
+        # ── Phase 2: drift-proofing (the content-key invariant) ──────
         # Insert a blank line ABOVE the allowlisted call so its LINE
         # NUMBER shifts.  A content-keyed allowlist must STILL exempt
         # it (old line-keyed form would red here — that is the bug).

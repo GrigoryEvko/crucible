@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# check-fixy-discipline.sh — Phase F discipline gate for the fixy
-# unification layer (misc/16_05_2026_fixy.md §4 Phase F).
+# check-fixy-discipline.sh — discipline gate for the fixy
+# unification layer (misc/16_05_2026_fixy.md §4).
 #
 # Greenfield discipline: under directories explicitly opted into
 # CRUCIBLE_FIXY_ONLY, downstream consumers must spell substrate
@@ -11,8 +11,7 @@
 #       the aggregator IS the umbrella, and reaching past it defeats
 #       the IsAccepted engagement gate, leaks the 19-positional
 #       substrate signature into consumer code, and breaks the
-#       federation cache-key story (FIXY-U-004 + FOUND-I02
-#       row_hash_contribution).
+#       federation cache-key story (row_hash_contribution).
 #
 #   (2) Primitive form — Refined / Tagged / Linear / Monotonic /
 #       Stale / Secret / Permission / Affine.  Spell the fixy::wrap::
@@ -22,15 +21,15 @@
 #       story for §XXI mint factories.  Raw safety::*<> reach in
 #       band-3 dirs is grandfathered through
 #       scripts/fixy-discipline-allowlist.txt and migrates as the
-#       per-tag fixy::wrap surfaces stabilize (FIXY-V-073 backlog).
+#       per-tag fixy::wrap surfaces stabilize.
 #
 # Opt-in surface (CMakeLists.txt CRUCIBLE_FIXY_ONLY_PATHS GLOBAL
-# property is the single source of truth per FIXY-V-072; CMake
+# property is the single source of truth; CMake
 # emits the list to ${CMAKE_BINARY_DIR}/fixy-only-paths.txt at
 # configure and this script consumes that file when present.  The
 # hardcoded fallback array below handles pre-configure CI and
 # standalone scans; CMake configure verifies the two lists agree.)
-# Current set per FIXY-V-070 (band-3 expansion):
+# Current set (the band-3 directories):
 #   examples/fn/, test/fixy_neg/
 #   include/crucible/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
 #   src/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
@@ -97,7 +96,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     cat >&2 <<'USAGE'
-check-fixy-discipline.sh — Phase F discipline gate for fixy::.
+check-fixy-discipline.sh — discipline gate for fixy::.
 
 Usage:
   check-fixy-discipline.sh              # scan; exit 1 on violation
@@ -113,7 +112,7 @@ USAGE
 
 # ── Greenfield opt-ins ────────────────────────────────────────────────
 # Authoritative list lives in CMakeLists.txt under the GLOBAL property
-# CRUCIBLE_FIXY_ONLY_PATHS (FIXY-V-072).  At configure time CMake
+# CRUCIBLE_FIXY_ONLY_PATHS.  At configure time CMake
 # materializes the list to ${CMAKE_BINARY_DIR}/fixy-only-paths.txt; when
 # that file exists (CI runs after configure / regular dev iteration),
 # the script consumes it directly.  When absent (pre-configure CI,
@@ -123,22 +122,21 @@ USAGE
 #
 # Adding a new band-3 directory:
 #   1. crucible_register_fixy_only_directory(<path>) in CMakeLists.txt
-#      under the FIXY-V-072 block.
+#      beside the other CRUCIBLE_FIXY_ONLY_PATHS registrations.
 #   2. Mirror the same path into the array below (presentational order
 #      doesn't matter — the configure-time drift check is set-equality).
 #   3. Re-configure to regenerate fixy-only-paths.txt + verify mirror
 #      agreement.
 #
-# FIXY-V-070 — Band-3 expansion (Agent 2 CRITICAL-1).  fixy.md §5.3
-# names cntp/, canopy/, cog/, topology/, forge/, mimic/, observe/,
-# warden/ as "fixy-only from 17 May 2026 onward".  Each is added
+# Band-3 directories.  fixy.md §5.3 names cntp/, canopy/, cog/,
+# topology/, forge/, mimic/, observe/, warden/ as "fixy-only from
+# 17 May 2026 onward".  Each is added
 # below for both include/ and src/ trees so the safety::fn::Fn<
 # reach-past-the-umbrella gate fires on any future raw instantiation
 # (current site count in these dirs: 0 — allowlist stays empty;
 # CI catches new regressions).  Wider substrate types (Refined,
 # Tagged, Linear, etc.) remain on the original safety:: spelling
-# inside band-3 dirs; their fixy:: re-export migration is tracked
-# under FIXY-V-073 + FIXY-U-099.
+# inside band-3 dirs until their fixy:: re-export migration lands.
 CRUCIBLE_FIXY_ONLY_PATHS=(
     examples/fn
     test/fixy_neg
@@ -160,7 +158,7 @@ CRUCIBLE_FIXY_ONLY_PATHS=(
     src/warden
 )
 
-# ── FIXY-V-072: load authoritative list from generated file if present ──
+# ── Load the authoritative list from the generated file if present ──
 # Order of resolution (first hit wins):
 #   1. CRUCIBLE_FIXY_ONLY_PATHS_FILE env var — explicit path override.
 #   2. ${root}/build/fixy-only-paths.txt — default in-tree CMake output.
@@ -278,7 +276,7 @@ PLANTED
         rm -f "$result_file"
         printf 'check-fixy-discipline: self-test phase 2 passed — stale allowlist entry detected and live entry preserved.\n' >&2
 
-        # ── Phase 3: FIXY-V-072 generated-file consumer ──────────────
+        # ── Phase 3: generated-file consumer ─────────────────────────
         # Verify CRUCIBLE_FIXY_ONLY_PATHS_FILE env-var override loads
         # paths from the named file.  Plant a synthetic single-path
         # generated file, invoke --list with the env-var pointing at
@@ -286,7 +284,7 @@ PLANTED
         # parser regression (blank-line filter, comment-skip, array
         # population) reddens here, not silently in production.
         generated_file="$(mktemp)"
-        printf '# header banner (skipped)\n\nplanted/v072/synthetic_path\n' \
+        printf '# header banner (skipped)\n\nplanted/generated/synthetic_path\n' \
             >"$generated_file"
         list_output_file="$(mktemp)"
         if ! CRUCIBLE_FIXY_ONLY_PATHS_FILE="$generated_file" \
@@ -297,7 +295,7 @@ PLANTED
             rm -f "$generated_file" "$list_output_file"
             exit 2
         fi
-        if ! grep -Fq 'planted/v072/synthetic_path' "$list_output_file"; then
+        if ! grep -Fq 'planted/generated/synthetic_path' "$list_output_file"; then
             printf 'check-fixy-discipline: SELF-TEST FAILED — generated-file consumer did not pick up planted path.\n' >&2
             printf '── --list output ────\n%s\n────────────────────\n' \
                 "$(cat "$list_output_file")" >&2
@@ -316,7 +314,7 @@ PLANTED
         rm -f "$generated_file" "$list_output_file"
         printf 'check-fixy-discipline: self-test phase 3 passed — CRUCIBLE_FIXY_ONLY_PATHS_FILE loads paths from generated file.\n' >&2
 
-        # ── Phase 4: FIXY-V-073 expanded substrate alternation ──────
+        # ── Phase 4: expanded substrate alternation ─────────────────
         # Verify the banned_pattern matches Tier-1 primitive spellings
         # beyond safety::fn::Fn< — Refined / Tagged / Linear / Monotonic
         # / Stale / Secret / Permission / Affine.  Plant one violation
@@ -326,7 +324,7 @@ PLANTED
         rm -rf "$tmp_root/examples/fn"
         mkdir -p "$tmp_root/examples/fn"
         cat >"$tmp_root/examples/fn/planted_substrate.cpp" <<'PLANTED'
-// Synthetic substrate violations for FIXY-V-073 self-test verification.
+// Synthetic substrate violations for self-test verification.
 // Each line plants one banned spelling; production callers spell each
 // via the fixy::wrap:: re-export instead.
 namespace crucible::planted {
@@ -547,7 +545,7 @@ fi
 # following) — bare mentions in prose comments are filtered out below.
 # Adding a new substrate primitive: extend the alternation here AND
 # regenerate the allowlist for any band-3 file that legitimately uses
-# the new spelling pre-migration (FIXY-V-073 sweep).
+# the new spelling pre-migration.
 banned_pattern='\b(::)?(crucible::)?safety::(fn::Fn|Refined|Tagged|Linear|Monotonic|Stale|Secret|Permission|Affine)\s*<'
 
 # ── Per-path scan ─────────────────────────────────────────────────────
@@ -773,13 +771,12 @@ if [[ "$violation_count" -ne 0 ]]; then
 check-fixy-discipline detected ${violation_count} reach-past-the-umbrella site(s).
 Each site lives under a CRUCIBLE_FIXY_ONLY directory and spells a
 raw substrate type directly instead of through the fixy:: umbrella.
-Banned spellings (FIXY-V-073 expansion):
+Banned spellings:
   safety::fn::Fn<...>                    — the 19-axis aggregator
   safety::{Refined,Tagged,Linear,Monotonic,Stale,Secret,Permission,Affine}<...>
                                          — Tier-1 substrate primitives
 The umbrella enforces engagement gating (IsAccepted), the per-axis
-grant story, and the federation cache key (FIXY-U-004 + FOUND-I02
-row_hash_contribution).
+grant story, and the federation cache key (row_hash_contribution).
 
 Three remediations:
 
@@ -787,7 +784,7 @@ Three remediations:
       aggregator: fixy::fn<Type, Grants...> using the grant tag
       catalog under crucible::fixy::grant::.  For Tier-1 primitives:
       fixy::wrap::Refined / fixy::wrap::Tagged / fixy::wrap::Linear /
-      etc. (header crucible/fixy/Wrap.h, FIXY-V-035..V-058 surfaces).
+      etc. (header crucible/fixy/Wrap.h).
       This is the strongly preferred fix.
   (2) If the site is a deliberate round-trip demonstration that
       MUST spell the substrate form (e.g. a doc fixture), annotate

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-stub-discipline.sh — stub-vs-live deprecation discipline (FIXY-U-087).
+# check-stub-discipline.sh — stub-vs-live deprecation discipline.
 #
 # Pairs every `*_implemented = false` / `*_attached = false` honesty marker
 # in include/crucible/ with a matching [[deprecated("CRUCIBLE_STUB:`

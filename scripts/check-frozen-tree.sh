@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# check-frozen-tree.sh — the old substrate is frozen until Stage D deletes it.
+# check-frozen-tree.sh — the old substrate is frozen until it is deleted.
 #
 # The canonical substrate is being extracted into include/foundation/ and
 # include/fixy/ as a sibling tree.  While the two coexist, the old one under
 # include/crucible/{safety,fixy,algebra,effects,permissions,sessions,bridges,
 # handles,concurrent} is frozen: a bug found in old code is fixed in the new
 # tree or not at all, and nothing is added to the old tree.  Deletions pass —
-# Stage D is deletion, and Stage C removes consumers one by one.
+# the old tree ends by deletion, and its consumers move off it one by one.
 #
 # The freeze base is the commit recorded below.  The scan diffs that base
 # against the working tree (committed and uncommitted changes alike), and any
 # Added or Modified path under a frozen prefix fails.  Renames count as an add
 # of the destination when it is under a frozen prefix.
 #
-# One change is not a change: the superseded marking.  When a task ports an
+# One change is not a change: the superseded marking.  When a port moves an
 # old header to the new tree, the old file is renamed in place with a leading
 # underscore (Graded.h becomes _Graded.h) so that its status is visible in
-# every include line and directory listing until Stage D deletes it.  A
+# every include line and directory listing until it is deleted.  A
 # rename of dir/Name to dir/_Name whose content is unchanged passes, and so
 # does an edit to a frozen file whose only difference is that its includes of
 # frozen headers gained the same underscore.  The comparison normalizes both
@@ -24,7 +24,7 @@
 #
 # A second exception is a soundness mirror.  A frozen file can hold a
 # live bug that the new tree has ALREADY fixed.  The old code keeps
-# hurting until Stage D deletes it, and a mirror of that fix carries no
+# hurting until the old tree is deleted, and a mirror of that fix carries no
 # divergence risk, because the same fix already exists in the new tree.
 # scripts/frozen-soundness-mirrors.txt admits one such edit per line, in
 # the shape `path — new-tree fix reference — reason`.  A
@@ -80,7 +80,7 @@ FROZEN_MIRROR_LEDGER="scripts/frozen-soundness-mirrors.txt"
 
 usage() {
     cat >&2 <<'USAGE'
-check-frozen-tree.sh — the old substrate is frozen until Stage D.
+check-frozen-tree.sh — the old substrate is frozen until it is deleted.
 
 Usage:
   check-frozen-tree.sh              # scan; exit 1 on an add/modify under a frozen path
@@ -484,10 +484,10 @@ scan "$scan_root" "$base" || rc=$?
 if [[ "$rc" -eq 1 ]]; then
     cat >&2 <<'HINT'
 
-check-frozen-tree: the old substrate changed.  It is frozen until Stage D
-deletes it.  A fix belongs in include/foundation/ or include/fixy/; a
-consumer that still needs the old tree is flipped at Stage C, not patched
-here.  Deleting old files is always allowed.
+check-frozen-tree: the old substrate changed.  It is frozen until it is
+deleted.  A fix belongs in include/foundation/ or include/fixy/; a
+consumer that still needs the old tree moves to the new tree, and the old
+tree is not patched.  Deleting old files is always allowed.
 HINT
 fi
 exit "$rc"

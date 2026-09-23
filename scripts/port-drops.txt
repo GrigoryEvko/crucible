@@ -75,24 +75,24 @@
 
 # ── algebra ─────────────────────────────────────────────────────────────
 
-crucible/algebra/_Modality.h:CoeffectModality  — A2.1 deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
-crucible/algebra/_Modality.h:Coeffect_t  — A2.1 deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
-crucible/algebra/_Modality.h:QuotientModality  — A2.1 deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
-crucible/algebra/_Modality.h:Quotient_t  — A2.1 deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:CoeffectModality  — The port deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:Coeffect_t  — The port deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:QuotientModality  — The port deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:Quotient_t  — The port deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
 
 # ── effects: capabilities ───────────────────────────────────────────────
 
 crucible/effects/_Capabilities.h:BackgroundThread  → include/foundation/effects/Effect.h  — The production passkey holder is now spelled host::BackgroundOwner in foundation/effects/Effect.h:261.
-crucible/effects/_Capabilities.h:CanMintBgContext  — Folded with its two siblings into one CanMintContext<Ctx, Key> at #147, whose binding is the context's own key_type.
-crucible/effects/_Capabilities.h:CanMintInitContext  — Folded with its two siblings into one CanMintContext<Ctx, Key> at #147, whose binding is the context's own key_type.
-crucible/effects/_Capabilities.h:CanMintTestContext  — Folded with its two siblings into one CanMintContext<Ctx, Key> at #147, whose binding is the context's own key_type.
-crucible/effects/_Capabilities.h:mint_bg_context  — Folded with its two siblings into one mint_context<Ctx>(Key) at #147; the friend and the constraint moved with it, so the door is the same door.
-crucible/effects/_Capabilities.h:mint_init_context  — Folded with its two siblings into one mint_context<Ctx>(Key) at #147; the friend and the constraint moved with it, so the door is the same door.
-crucible/effects/_Capabilities.h:mint_test_context  — Folded with its two siblings into one mint_context<Ctx>(Key) at #147; the friend and the constraint moved with it, so the door is the same door.
-crucible/effects/_Capability.h:cap_matches  — The trait struct is gone; only cap_matches_v survives, folded at FOUND-2 to a consteval query over the template arguments.
-crucible/effects/_Capability.h:cap_of  — The trait struct is gone; only cap_of_v survives, read off the template argument by reflection at FOUND-2.
-crucible/effects/_Capability.h:is_capability  — The trait struct is gone; only is_capability_v survives, an is_instance_of_v query at FOUND-2.
-crucible/effects/_Capability.h:source_of  — The trait struct is gone; only source_of_t survives, spliced from the template argument at FOUND-2.
+crucible/effects/_Capabilities.h:CanMintBgContext  — Folded with its two siblings into one CanMintContext<Ctx, Key>, whose binding is the context's own key_type.
+crucible/effects/_Capabilities.h:CanMintInitContext  — Folded with its two siblings into one CanMintContext<Ctx, Key>, whose binding is the context's own key_type.
+crucible/effects/_Capabilities.h:CanMintTestContext  — Folded with its two siblings into one CanMintContext<Ctx, Key>, whose binding is the context's own key_type.
+crucible/effects/_Capabilities.h:mint_bg_context  — Folded with its two siblings into one mint_context<Ctx>(Key); the friend and the constraint moved with it, so the door is the same door.
+crucible/effects/_Capabilities.h:mint_init_context  — Folded with its two siblings into one mint_context<Ctx>(Key); the friend and the constraint moved with it, so the door is the same door.
+crucible/effects/_Capabilities.h:mint_test_context  — Folded with its two siblings into one mint_context<Ctx>(Key); the friend and the constraint moved with it, so the door is the same door.
+crucible/effects/_Capability.h:cap_matches  — The trait struct is gone; only cap_matches_v survives, folded to a consteval query over the template arguments.
+crucible/effects/_Capability.h:cap_of  — The trait struct is gone; only cap_of_v survives, read off the template argument by reflection.
+crucible/effects/_Capability.h:is_capability  — The trait struct is gone; only is_capability_v survives, an is_instance_of_v query.
+crucible/effects/_Capability.h:source_of  — The trait struct is gone; only source_of_t survives, spliced from the template argument.
 crucible/effects/_Capability.h:runtime_smoke_test_capability  — An inline smoke test in a public namespace; its body moved to test/foundation/test_capability.cpp.
 
 # ── effects: the six policy axes ExecCtx dropped at 8fd50215 ────────────
@@ -180,7 +180,7 @@ crucible/effects/_EffectRowLattice.h:runtime_smoke_test_lattice  — An inline s
 crucible/effects/_FxAliases.h:Div  — Progress did not survive the port, so Div has no value form; fixy/Aliases.h:12-18 records why and keeps DivRow.
 crucible/effects/_FxAliases.h:runtime_smoke_test  — An inline smoke test in a public namespace; its body moved to the fixy sentinel at 24456d2a.
 
-# ── fixy: the grant tier that became the atom tier at A9 ────────────────
+# ── fixy: the grant tier that became the atom tier ──────────────────────
 # fixy/Atom.h:17-22 records the renaming: a grant is an effect atom, so
 # grant_base, IsGrantTag, which_dim and the tags of eighteen axes became
 # the atoms of fixy/atoms/.  Nothing on the atom side carries these names.
@@ -196,15 +196,15 @@ crucible/fixy/grant/_Dispatch.h:accept_default_strict_for_CallShape  — The eng
 crucible/fixy/grant/_Global.h:accept_default_strict_for_GlobalState  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
 crucible/fixy/grant/_Stack.h:accept_default_strict_for_StackUse  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
 crucible/fixy/grant/_Stdio.h:accept_default_strict_for_Stdio  — The engagement marker the old resolver demanded; fixy/Fn.h:7-13 takes the strict pole silently for every axis the atom pack does not name, so no marker exists.
-crucible/fixy/_Grant.h:axis_has_grant_family  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:axis_is_grantless  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:axis_query_tag  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:grant_base  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:grant_families_witnessed_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:grant_family_witnessed_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:IsGrantTag  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:IsGrantTag_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
-crucible/fixy/_Grant.h:kAxesWithoutNonDefaultGrants  — A literal cardinality pin that #36 found stale; it retired with the grant tier at A9.
+crucible/fixy/_Grant.h:axis_has_grant_family  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:axis_is_grantless  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:axis_query_tag  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:grant_base  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:grant_families_witnessed_v  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:grant_family_witnessed_v  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:IsGrantTag  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:IsGrantTag_v  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:kAxesWithoutNonDefaultGrants  — A literal cardinality pin that was stale, and it retired with the grant tier.
 crucible/fixy/_Grant.h:which_dim  — The primary of the axis-registration trait, together with the usage-family specialisations this header declares. fixy/Atom.h:8 records that an atom now carries its axis as a static member, so no trait registers it.
 crucible/fixy/_Fs.h:which_dim  — The axis registration of the filesystem family, written here as four specialisations of the old trait. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/_Io.h:which_dim  — The axis registration of the io_uring family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
@@ -215,12 +215,12 @@ crucible/fixy/grant/_Global.h:which_dim  — The axis registration of the global
 crucible/fixy/grant/_Stack.h:which_dim  — The axis registration of the stack-use family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/grant/_Stdio.h:which_dim  — The axis registration of the stdio family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/spawn/_SpawnGrant.h:which_dim  — The axis registration of the spawn family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
-crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier at A9, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
 
 # ── permissions ─────────────────────────────────────────────────────────
 
-crucible/permissions/_ReadView.h:Borrowed  → none  — A forward declaration of the session payload marker, friended so a session step could mint a borrow. The marker itself is declared in crucible/sessions/SessionGrade.h, which no port has marked superseded, so no completed task owed it a home. foundation/permissions/ReadView.h:76 friends host::BorrowIssuer in its place. The fixy::Borrowed of the new tree is the borrow wrapper of A10.4 and a different thing with the same name.
-crucible/permissions/_PermissionFork.h:PermissionForkSpawnCtx  — The spawn context left with the throws gate; foundation/permissions/PermissionFork.h:34 assigns the structural check to fixy/os/Spawn.h at A13.4 (#116).
+crucible/permissions/_ReadView.h:Borrowed  → none  — A forward declaration of the session payload marker, friended so a session step could mint a borrow. The marker itself is declared in crucible/sessions/SessionGrade.h, which no port has marked superseded, so no port owed it a home. foundation/permissions/ReadView.h:76 friends host::BorrowIssuer in its place. The fixy::Borrowed of the new tree is the borrow wrapper of fixy/Borrowed.h and a different thing with the same name.
+crucible/permissions/_PermissionFork.h:PermissionForkSpawnCtx  — The spawn context left with the throws gate; foundation/permissions/PermissionFork.h:34 assigns the structural check to fixy/os/Spawn.h.
 
 # ── safety: the diagnostic catalog and the stable name ──────────────────
 
@@ -274,7 +274,7 @@ crucible/safety/_IsScopedFence.h:scoped_fence_value_t  — A per-band payload ac
 
 # ── safety: wrappers ────────────────────────────────────────────────────
 
-crucible/safety/_Affine.h:drop  — The free function became a hidden friend of Qtt (fixy/Qtt.h:175). That is one drop for both grades instead of one per wrapper, and the name can no longer be written for a type that is not a Qtt. An unqualified drop(std::move(x)) still resolves by argument-dependent lookup, and the qualified spelling has no successor. Eight mentions in five files use the qualified spelling today, so C2 meets a known list rather than eight surprises: crucible/fixy/Wrap.h:84 and crucible/fixy/Safety.h:19 re-export it with a using-declaration, test/test_fixy_mach_safety.cpp:28 and test/test_fixy_wrap.cpp:68 call it through a namespace alias, and test/test_fixy_umbrella.cpp:66-73 takes its address four times in two static assertions, which a hidden friend cannot answer at all.
+crucible/safety/_Affine.h:drop  — The free function became a hidden friend of Qtt (fixy/Qtt.h:175). That is one drop for both grades instead of one per wrapper, and the name can no longer be written for a type that is not a Qtt. An unqualified drop(std::move(x)) still resolves by argument-dependent lookup, and the qualified spelling has no successor. Eight mentions in five files use the qualified spelling today, so the move of those consumers to the new tree meets a known list rather than eight surprises: crucible/fixy/Wrap.h:84 and crucible/fixy/Safety.h:19 re-export it with a using-declaration, test/test_fixy_mach_safety.cpp:28 and test/test_fixy_wrap.cpp:68 call it through a namespace alias, and test/test_fixy_umbrella.cpp:66-73 takes its address four times in two static assertions, which a hidden friend cannot answer at all.
 crucible/safety/_Linear.h:drop  — The same hidden friend as the affine one; fixy/Qtt.h:175 declares drop once for both grades.
 crucible/safety/_Machine.h:machine_transition  — The transition relation is no longer a trait; fixy/Machine.h:13 states it as edges beside the states they join.
 crucible/safety/_OwnedMmap.h:is_leak_grant  — The leak witness is now fixy::atom::IsLeakAtom over the leak atom of fixy/atoms/Os.h, as fixy/OwnedMmap.h:20 records.
@@ -289,7 +289,7 @@ crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinal
 crucible/safety/_Tagged.h:kCatalogRosterMatchesCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple became the namespace admitted_retags of fail-closed edges in fixy/Tagged.h.
 
-# ── fixy/os, A13.2 / A13.3 / A13.4 (#114, #115, #116) ───────────────────
+# ── fixy/os ─────────────────────────────────────────────────────────────
 #
 # The six rows whose sentence names a successor are renames, not losses.
 # The file has one row shape, so a rename reads as a drop whose sentence
@@ -304,7 +304,7 @@ crucible/fixy/_Fs.h:Directory  — The tag folded O_DIRECTORY and nothing gated 
 crucible/fixy/_Fs.h:NonBlock  — The tag folded O_NONBLOCK and had no consumer anywhere in the old tree (fixy/os/Fs.h:27).
 crucible/fixy/_Fs.h:Path  — Two declarations, and neither was carried. fs::flag::Path folded O_PATH and its flag_bits specialisation is the only occurrence of the name in the tree, so nothing selected it, and a descriptor opened O_PATH can be neither read nor written, which is no use to a surface whose every operation reads or writes. fixy/atoms/Os.h:72 keeps the five flag tags that have a consumer. fs::Path was a local alias for the sanitized path, and fixy/os/Fs.h names fixy::Path directly.
 crucible/fixy/_Fs.h:LinkAtomic  — A hard ENOSYS in the old commit body, probe-confirmed on the development host, and cold_writer_stance pinned it, so every cold commit failed before a filesystem was consulted; fixy/os/CipherDurable.h:13 pins atomicity::Rename in its place and records the probe.
-crucible/fixy/_Fs.h:Msync  — The tag was selectable and always returned EINVAL, and the old comment beside it said a memory-mapped flush goes through the mmap surface instead: no msync call exists in either tree, so that surface was never there. Nothing regressed, and the missing flush is unimplemented work tracked as #186.
+crucible/fixy/_Fs.h:Msync  — The tag was selectable and always returned EINVAL, and the old comment beside it said a memory-mapped flush goes through the mmap surface instead: no msync call exists in either tree, so that surface was never there. Nothing regressed, and the memory-mapped flush is not implemented.
 crucible/fixy/_Io.h:CtxAdmitsIoBlock  — A separate concept of the same name and the same body as the filesystem one. Ported as io::CtxAdmitsAtomRow in fixy/os/Io.h:347, which derives the row from the atom pack rather than naming IO and Block by hand.
 crucible/fixy/_Io.h:Synchronous  — An engine tag the old mint already refused, as that header's own self-test asserts; engine_is_io_uring_v is ported with a false primary, so it refuses this tag and any other added later (fixy/os/Io.h:22).
 crucible/fixy/_Io.h:Aio  — The same, and the old comment records that review policy forbids libaio (fixy/os/Io.h:22).
@@ -320,12 +320,12 @@ crucible/fixy/_Mmap.h:is_leak_grant  — A specialisation of the old open leak t
 crucible/fixy/_Mmap.h:release_aware  — The grant was dead: the old concept read CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice> and named neither the grant nor its RegionTag, so the tag was a parameter no gate read. The Permission argument on advise_release_aware is what admits the dangerous advice, and it is still there (fixy/os/Mmap.h:38).
 crucible/fixy/_Mmap.h:with_advice  — Nothing lifts an advice tag, because advise takes an Advice directly and never an atom, so the grant was decoration; the advice tags themselves are ported into fixy::mmap::advice in fixy/atoms/Os.h (fixy/os/Mmap.h:25).
 crucible/fixy/concurrent/_SpinLock.h:cache_tier_hot  — A namespace-scope constant that restated SpinLock<Tag>::cache_tier, which is ported; nothing read it (fixy/os/SpinLock.h:45).
-crucible/fixy/concurrent/_SpinLock.h:fixy_spinlock_runtime_smoke_test  — A smoke function compiled into every including translation unit and called by nothing, which is the shape #178 removed throughout; its cases are test/fixy/test_os_spinlock.cpp, which ctest runs.
+crucible/fixy/concurrent/_SpinLock.h:fixy_spinlock_runtime_smoke_test  — A smoke function compiled into every including translation unit and called by nothing, which is a shape the port removed throughout; its cases are test/fixy/test_os_spinlock.cpp, which ctest runs.
 crucible/fixy/ctrl/_Throws.h:throws  — An alias that filled in the atom's default argument, so a caller could write ctrl::throws for ctrl::throws<>. fixy/Throws.h:32 records the decision as deviation 3: the walk matches the template rather than that one specialisation, and a short name for the specialisation would invite the bug deviation 1 closes. A caller names fixy::atom::ctrl::throws<>.
 crucible/fixy/fp/_Polynomial.h:runtime_smoke_test  — An inline smoke test in a public namespace that called each function into a volatile local and asserted nothing. fixy/fp/Polynomial.h:26 records its removal, and test/fixy/test_fp_polynomial.cpp calls each function once against a pinned bit pattern.
 crucible/fixy/spawn/_SpawnGrant.h:fork_parent  — A grant whose comment said it threaded the parent identity through the pack so the coherence check could read it without the call site retyping it; JoinPolicyGrantsCoherent read neither it nor its parent_tag, and nothing else read it either (fixy/os/Spawn.h:20).
 crucible/fixy/spawn/_SpawnGrant.h:exec_ctx  — The same, for the execution context: a parameter no gate consumed (fixy/os/Spawn.h:20).
-crucible/safety/diag/_RowMismatch.h:runtime_smoke_test_row_mismatch  — A smoke function compiled into every including translation unit and called by nothing, which is the shape #178 removed throughout; its body is the first case of test/foundation/test_row_mismatch.cpp, which ctest runs.
+crucible/safety/diag/_RowMismatch.h:runtime_smoke_test_row_mismatch  — A smoke function compiled into every including translation unit and called by nothing, which is a shape the port removed throughout; its body is the first case of test/foundation/test_row_mismatch.cpp, which ctest runs.
 crucible/permissions/_Permission.h:permission_row  — A primary template that answered Row<> for every tag nobody specialised, so an unregistered tag was a pure tag by omission and its region could be owned by the foreground, which foundation/permissions/Permission.h replaces with a closed relation read by has_permission_row_v and permission_row_t from the edge namespace permission_rows and from a permission_row member on the tag.
 
 # The old row hash carried one partial specialisation per wrapper and

@@ -3,8 +3,8 @@
 # foundation::effects::testing hands out minted capabilities with no gate.
 # Effect.h says naming it outside test and bench code is a review
 # rejection, and that a grep for it finds every translation unit taking
-# the test path.  Nothing performed that grep, so the boundary was prose
-# (#172, Door 2).  A capability is what every ctx-bound mint checks for,
+# the test path.  Nothing performed that grep, so the boundary was prose.
+# A capability is what every ctx-bound mint checks for,
 # so an unnoticed use in production code silently hands out authority.
 #
 # This scans the new production tree and fails on any file naming the
@@ -13,8 +13,8 @@
 # with the code rather than rotting.
 #
 # The old tree under include/crucible is frozen and is not scanned: it
-# may only shrink, so a marking pass there would violate the freeze.  It
-# is deleted at Stage D.
+# may only shrink, so a marking pass there would violate the freeze.  The
+# old tree is deleted when no consumer needs it.
 #
 #   --self-test   plant one violating file and one clean file, and prove
 #                 the scan reports the first and not the second.

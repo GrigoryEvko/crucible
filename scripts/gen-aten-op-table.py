@@ -11,8 +11,8 @@ never disagree.
 
 WHERE THE FACTS COME FROM, and why it is not the yaml
 
-The brief for this generator named native_functions.yaml. That file is
-not the authoritative set. Measured on fork 8be2400cf5c:
+The obvious source for this generator is native_functions.yaml. That
+file is not the authoritative set. Measured on fork 8be2400cf5c:
 
     distinct (name, overload) in ATen/ops/*_ops.h   3110
     distinct (name, overload) from yaml `- func:`   2590

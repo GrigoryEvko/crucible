@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fixy-A2-014 CI regression guard.
+# check-session-persistence-include-audit.sh — include-lift regression guard.
 #
 # Verifies that <crucible/bridges/SessionPersistence.h> does NOT
 # transitively pull <crucible/Cipher.h> (or its heavy substrate
@@ -34,7 +34,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
     cat >&2 <<'USAGE'
-check-session-persistence-include-audit.sh — fixy-A2-014 include-lift guard.
+check-session-persistence-include-audit.sh — include-lift guard.
 
 Usage:
   check-session-persistence-include-audit.sh              # probe; exit 1 on violation
@@ -48,7 +48,7 @@ Environment:
   CRUCIBLE_SESSION_PERSISTENCE_TARGET       override the probed header path,
                                             default crucible/bridges/SessionPersistence.h
 
-fixy-A2-014 — the bridge header must reach Cipher through the thin
+The bridge header must reach Cipher through the thin
 <crucible/cipher/SessionPersistenceSurface.h>, never the heavy substrate.
 USAGE
 }
@@ -201,7 +201,7 @@ CXX="$(resolve_cxx)"
 # etc.) and the rest of this script's signal would be meaningless.
 if ! grep -q "cipher/SessionPersistenceSurface.h" "$TRACE_LOG"; then
     echo "FAIL: cipher/SessionPersistenceSurface.h NOT in trace — the" >&2
-    echo "       fixy-A2-014 surface header should always resolve when" >&2
+    echo "       surface header should always resolve when" >&2
     echo "       SessionPersistence.h is included.  Probe broken?  Check" >&2
     echo "       the include path or whether the surface header still exists." >&2
     exit 1
@@ -225,7 +225,7 @@ for header in "${FORBIDDEN_HEADERS[@]}"; do
     if grep -F -q "$header" "$TRACE_LOG"; then
         if [[ $FAIL -eq 0 ]]; then
             echo "FAIL: SessionPersistence.h transitively pulls a heavy header." >&2
-            echo "       fixy-A2-014 lifted the Cipher.h include out; consumers" >&2
+            echo "       The Cipher.h include is lifted out; consumers" >&2
             echo "       that need Cipher methods include <crucible/Cipher.h>" >&2
             echo "       themselves.  Restoring the heavy include here defeats" >&2
             echo "       the build-time-cost reduction.  Use" >&2
@@ -242,9 +242,9 @@ if [[ $FAIL -ne 0 ]]; then
     exit 1
 fi
 
-# ── Bound on total include-edge count.  Pre-A2-014 the trace ran ~1100+
-# lines (MerkleDag + Arena + Serialize + federation + tier-promotion
-# pulled their full subtrees).  Post-fix the floor is the surface +
+# ── Bound on total include-edge count.  Before the include lift the
+# trace ran ~1100+ lines (MerkleDag + Arena + Serialize + federation +
+# tier-promotion pulled their full subtrees).  After it the floor is the surface +
 # RecordingSessionHandle + EffectRow / Capabilities — call it < 950 as
 # a generous bound.  Any future edit that pushes back above this number
 # means a similar regression has crept in via a different transitive.
@@ -253,7 +253,7 @@ CEILING=950
 if [[ "$EDGE_COUNT" -gt "$CEILING" ]]; then
     echo "FAIL: SessionPersistence.h dep-edge count = $EDGE_COUNT, ceiling = $CEILING." >&2
     echo "       The transitive set has grown.  Audit the new transitive pulls" >&2
-    echo "       and lift them to a surface header per fixy-A2-014's pattern." >&2
+    echo "       and lift them to a surface header, as SessionPersistenceSurface.h does." >&2
     exit 1
 fi
 

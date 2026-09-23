@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # check-fullness-guard.sh — equality-as-fullness-test discipline.
 #
-# Closes the regression surface for the public-count overflow class
-# (#62 / #63).  A container guards its push with a fullness test.  When
+# Closes the regression surface for the public-count overflow class.
+# A container guards its push with a fullness test.  When
 # that test is spelled `count == Capacity` instead of `count >=
 # Capacity`, a count that has ALREADY passed the bound reads as "not
 # full", and the next push writes outside the array.
@@ -56,7 +56,7 @@
 # actually exceed the bound — that is, when it is NOT protected by a
 # class invariant.  In this tree the house convention marks a private
 # member with a trailing underscore, and that convention tracks the
-# danger exactly: across the ~30 `==`-against-capacity sites surveyed,
+# danger exactly: across the ~30 `==`-against-capacity sites measured,
 # EVERY invariant-protected counter is named with a trailing underscore
 # (`peer_count_`, `size_`, `slot_count_`, `event_count_`, `count_`) and
 # EVERY unprotected public one is named without (`size`, `count`,
@@ -425,7 +425,7 @@ while IFS= read -r match; do
         continue
     fi
 
-    printf 'FULLNESS violation: %s:%s — equality fullness test against a capacity bound; write `>=` so a count already past the bound still reads as full (#62).\n' \
+    printf 'FULLNESS violation: %s:%s — equality fullness test against a capacity bound; write `>=` so a count already past the bound still reads as full.\n' \
         "$rel" "$line" >&2
     violation_count=$((violation_count + 1))
 done < <(

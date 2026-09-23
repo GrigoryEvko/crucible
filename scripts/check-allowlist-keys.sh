@@ -6,8 +6,8 @@
 # moves, the entry stops matching anything: the guard that reads it no
 # longer exempts the site it was written for, and — worse — the guard
 # can no longer FIND the site, so a key pointing at a missing file is a
-# guard that cannot fire.  That is the defect class this tree has spent
-# the session closing, and it is the one a rename reintroduces silently.
+# guard that cannot fire.  That is a defect class this tree keeps
+# closing, and it is the one a rename reintroduces silently.
 #
 # It has happened twice, both times in the same shape.  517a43a6 renamed
 # include/crucible/concurrent/Topology.h to _Topology.h and added
@@ -18,7 +18,7 @@
 # RowMismatch.h and broke the fullness allowlist the same way.  Neither
 # commit touched an allowlist.
 #
-# Every remaining Stage A port runs the same `git mv X.h _X.h` flow, so
+# Every remaining port runs the same `git mv X.h _X.h` flow, so
 # the drift is not a pair of accidents.  This guard makes it loud: a key
 # whose path does not exist fails here, with the path the file most
 # likely moved to named in the message, before the guard that owns the
@@ -39,7 +39,7 @@
 # firing, while a dead path in guidance sends a reader to a file that is
 # not there.
 #
-# The prose half was ungated until #208, and it had rotted: CLAUDE.md
+# The prose half was ungated at first, and it had rotted: CLAUDE.md
 # named three headers that no longer existed, two of them in section XII
 # as the place the contract-enforcement story lives, and AGENTS.md named
 # one.  No allowlist dangled at the same moment, because the key half of

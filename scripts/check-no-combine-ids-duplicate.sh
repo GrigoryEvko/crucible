@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# check-no-combine-ids-duplicate.sh — FIXY-FOUND-050 drift-defense guard.
+# check-no-combine-ids-duplicate.sh — combine_ids drift-defense guard.
 #
 # Crucible's row_hash machinery folds via a SINGLE function.  That is
 # the new tree's one Graded fold in foundation/diag/RowHash.h, and the
 # old tree's _RowHashFold.h with its per-wrapper
-# row_hash_contribution<W> specializations, which stands until Stage D
-# deletes it.  Both reach:
+# row_hash_contribution<W> specializations, which stands until the old
+# tree is deleted.  Both reach:
 #
 #   include/foundation/reflect/Hash.h
 #     [[nodiscard]] constexpr uint64_t combine_ids(
@@ -20,8 +20,9 @@
 #
 # Two copies of the same body sit in the frozen old tree until the
 # sibling-tree extraction retires them: include/crucible/Expr.h, which
-# Stage C flips to include Hash.h, and include/crucible/safety/diag/
-# StableName.h, which Stage D deletes.  The scan below exempts both by
+# the consumer migration flips to include Hash.h, and
+# include/crucible/safety/diag/StableName.h, which goes with the old
+# tree.  The scan below exempts both by
 # path so that the guard stays green while they coexist.  Each exemption
 # goes with its file.
 #
@@ -31,10 +32,10 @@
 # stale, and silently break the wire-format witness without tripping
 # the ceremony anchor static_assert.
 #
-# Pre-FIXY-FOUND-050 the function was `consteval` and test/test_row_
+# The function was once `consteval`, and test/test_row_
 # hash_distinctness.cpp shipped a verbatim runtime copy named
-# `combine_ids_runtime`.  FOUND-050 weakened the qualifier to
-# `constexpr` so the SAME body discharges both compile-time and
+# `combine_ids_runtime`.  The qualifier is `constexpr` instead, so
+# the SAME body discharges both compile-time and
 # runtime folds.  This guard ensures the parallel-runtime-copy
 # pattern never reappears.
 #
@@ -71,12 +72,12 @@ Usage:
 
 Exemptions:
   include/foundation/reflect/Hash.h           the canonical definition
-  include/crucible/Expr.h                     frozen chain duplicate, gone at Stage C
-  include/crucible/safety/diag/_StableName.h   frozen chain duplicate, gone at Stage D
+  include/crucible/Expr.h                     frozen chain duplicate, gone with the migration
+  include/crucible/safety/diag/_StableName.h   frozen chain duplicate, gone with the old tree
   test/safety_neg/**                          negative-compile fixtures
   a match inside a `//` or `*` comment        prose, not a definition
 
-FIXY-FOUND-050 — row_hash folds through exactly one combine_ids body.
+row_hash folds through exactly one combine_ids body.
 USAGE
 }
 
@@ -95,7 +96,7 @@ case "${1:-}" in
                  "$tmp_root/include/crucible/safety/diag" \
                  "$tmp_root/test/safety_neg"
         cat >"$tmp_root/src/planted/planted_combine.cpp" <<'PLANTED'
-// Synthetic FIXY-FOUND-050 fixture for --self-test.
+// Synthetic combine_ids fixture for --self-test.
 #include <cstdint>
 namespace crucible::planted {
 // FLAGGED — suffix form, a parallel runtime body.
@@ -122,12 +123,12 @@ CANON
         # Exemption axis: the two frozen chain duplicates of the body.
         cat >"$tmp_root/include/crucible/Expr.h" <<'FROZEN_C'
 #pragma once
-// Frozen duplicate until Stage C — exempt by path.
+// Frozen duplicate until the consumer migration — exempt by path.
 constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
 FROZEN_C
         cat >"$tmp_root/include/crucible/safety/diag/_StableName.h" <<'FROZEN_D'
 #pragma once
-// Frozen duplicate until Stage D — exempt by path.
+// Frozen duplicate until the old tree is deleted — exempt by path.
 constexpr unsigned long long combine_ids_exempt_here(unsigned long long a) { return a; }
 FROZEN_D
         # Exemption axis: negative-compile fixtures may name the ban.
@@ -221,8 +222,9 @@ while IFS= read -r match; do
     # Skip the two frozen chain duplicates of the canonical body.  The
     # identifier in each is exactly `combine_ids`, as at the canonical
     # site, so the exemption is by path and not by a renamed identifier.
-    # Stage C flips Expr.h to include Hash.h and Stage D deletes
-    # StableName.h.  Each exemption goes with its file.
+    # The consumer migration flips Expr.h to include Hash.h, and
+    # StableName.h goes with the old tree.  Each exemption goes with
+    # its file.
     if [[ "$file" == "include/crucible/Expr.h" || \
           "$file" == "include/crucible/safety/diag/_StableName.h" ]]; then
         continue
@@ -272,7 +274,7 @@ check-no-combine-ids-duplicate: ${violation_count} parallel-name
 site(s) detected:
 
 ${violations}
-FIXY-FOUND-050 mandates a single source of truth for combine_ids.
+The tree keeps a single source of truth for combine_ids.
 The canonical definition is constexpr and callable at BOTH compile
 time AND runtime — do not re-introduce a parallel body under any
 alternative name.  Route the call through:

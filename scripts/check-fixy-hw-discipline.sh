@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# check-fixy-hw-discipline.sh — hardware-axis grant-declaration presence gate
-# (FIXY-V-264, Agent 11 Tier 2 #17).
+# check-fixy-hw-discipline.sh — hardware-axis grant-declaration presence gate.
 #
-# Agent 11 Tier 2 wired the hardware-instruction axis (V-250..V-261) into
+# The hardware-instruction axis reaches
 # four production sites whose behaviour depends on a compile-time-selected
 # hardware construct — a SIMD ISA, a cache instruction, or a memory fence.
 # Each site declares the (vendor::intrinsic / simd::width / grant::hw::*)
@@ -11,13 +10,13 @@
 # static_asserts (and, where a concrete compile-time number exists, a
 # stride/width or fence-strength consistency assert).
 #
-#   include/crucible/SwissTable.h            → swiss_hw      (V-262, SimdIsa)
-#   include/crucible/cntp/Fec.h              → fec_hw        (V-263, SimdIsa)
-#   include/crucible/TraceRing.h             → tracering_hw  (V-264, HwInstruction)
-#   include/crucible/concurrent/ChaseLevDeque.h → chaselev_hw (V-264, BarrierStrength)
+#   include/crucible/SwissTable.h            → swiss_hw      (SimdIsa)
+#   include/crucible/cntp/Fec.h              → fec_hw        (SimdIsa)
+#   include/crucible/TraceRing.h             → tracering_hw  (HwInstruction)
+#   include/crucible/concurrent/ChaseLevDeque.h → chaselev_hw (BarrierStrength)
 #
-# Those static_asserts are verified by the C++ BUILD (the V-262/263/264
-# sentinels + every TU that includes the header).  This script is the
+# Those static_asserts are verified by the C++ BUILD (the hardware-grant
+# sentinel tests + every TU that includes the header).  This script is the
 # cheaper, complementary PRESENCE gate: it guards against the declaration
 # being silently DELETED or GUTTED (namespace kept, asserts stripped) in a
 # refactor that does not happen to recompile a sentinel.  Two layers:
@@ -94,7 +93,7 @@ run_scan() {
         fi
 
         if ! grep -qF -- "$marker" "$path"; then
-            printf 'FIXY-HW-DISCIPLINE violation: %s — missing grant block "%s" (FIXY-V-262/263/264). The hardware-axis declaration was removed or renamed.\n' \
+            printf 'FIXY-HW-DISCIPLINE violation: %s — missing grant block "%s". The hardware-axis declaration was removed or renamed.\n' \
                 "$rel" "$marker" >&2
             violations=$((violations + 1))
             continue
@@ -219,7 +218,7 @@ if [[ "$violations" -ne 0 ]]; then
     cat >&2 <<HINT
 
 check-fixy-hw-discipline detected ${violations} hardware-axis grant
-declaration defect(s).  Each Agent 11 Tier 2 site (SwissTable / Fec /
+declaration defect(s).  Each hardware-axis site (SwissTable / Fec /
 TraceRing / ChaseLevDeque) MUST keep its 'namespace <site>_hw' block with
 the IsGrantTag<> + which_dim_v<> static_asserts that pin the SIMD ISA /
 cache / fence grant the compile-time-selected hardware construct uses.
