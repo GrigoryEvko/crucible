@@ -507,6 +507,44 @@ static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int
                   .fault
               == tr::choice_fault::repeated_label_key);
 
+// ── Label words ──────────────────────────────────────────────────────
+
+// Each label branch of this choice names a key, so the choice is keyed.
+// The word of a branch is the label word of its key, and the position of
+// the branch is not on the wire.
+using EnvelopePick = Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Bye, int>, Done>>;
+using EnvelopePickSwapped = Pick<Put<Envelope<Alice, Bye, int>, Done>, Put<Envelope<Alice, Hello, int>, Done>>;
+static_assert(tr::is_keyed_choice_type(reg, ^^EnvelopePick) && !tr::is_keyed_choice_type(reg, ^^Pick<Done, Ping>));
+static_assert(tr::wire_word_of(reg, ^^EnvelopePick, 0).value == tr::wire_word_of(reg, ^^EnvelopePickSwapped, 1).value,
+              "a label keeps its word in another position");
+static_assert(tr::wire_word_of(reg, ^^EnvelopePick, 0).value == tr::label_word_of(^^Envelope<Alice, Hello, void>));
+static_assert(tr::is_keyed_choice_type(reg, ^^Wait<Take<Envelope<Alice, Hello, int>, Done>, Take<Fault<int>, Done>>),
+              "a branch that is no label does not count");
+
+// The word is the stable type id of the key with the top bit set, so it is
+// pinned where foundation/reflect/Hash.h pins the id.  A position never
+// has the top bit, so a word and a position cannot be equal.
+static_assert(tr::label_word_of(^^int) == (0x038bf5d93760ba14ULL | tr::label_word_bit));
+static_assert(tr::wire_word_of(reg, ^^Pick<Done, Ping>, 1).value == 1);
+
+// Rule 4: a choice that mixes a keyed and a positional label branch.
+static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<int, Done>>).fault
+              == tr::choice_fault::mixed_label_keys);
+
+// Rule 5: two distinct closure types print one name, so their keys share
+// a word.  The peer could not tell the two labels apart.
+using ClosureLabelA = decltype([] {});
+using ClosureLabelB = decltype([] {});
+static_assert(!std::is_same_v<ClosureLabelA, ClosureLabelB>);
+static_assert(tr::label_word_of(^^Envelope<Alice, ClosureLabelA, void>)
+              == tr::label_word_of(^^Envelope<Alice, ClosureLabelB, void>));
+static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>,
+                                                   Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
+                  .fault
+              == tr::choice_fault::label_word_collision);
+static_assert(!well_formed(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>,
+                                  Put<Envelope<Alice, ClosureLabelB, int>, Done>>));
+
 // An axiom that breaks the contract and sheds to the same type stops at
 // the depth bound instead of a recursion without end.
 template <class T>
@@ -626,11 +664,14 @@ constexpr bool runtime_facts[] = {
     !tr::refines(reg, ^^envelope_axioms, ^^Put<Envelope<Alice, Hello, short>, Done>,
                  ^^Put<Envelope<Bob, Hello, long>, Done>)
          .holds,
+    tr::wire_word_of(reg, ^^EnvelopePick, 0).value == tr::wire_word_of(reg, ^^EnvelopePickSwapped, 1).value,
+    !well_formed(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>, Put<Envelope<Alice, ClosureLabelB, int>, Done>>),
 };
 
 constexpr std::string_view names[] = {
     "coherent registry",      "narrow output choice", "wide output choice refused", "guarded loop",
     "unguarded loop refused", "drop then weaken",     "congruent payload",          "other peer refused",
+    "label word by label",    "label word collision refused",
 };
 
 }  // namespace

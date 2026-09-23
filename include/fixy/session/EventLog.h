@@ -49,6 +49,11 @@
 //   * The schema hash is the stable type id of foundation/reflect/
 //     Hash.h.  The old tree hashed the compiler's function signature, so
 //     the schema lane of an old log compares only with old hashes.
+//   * A Select or an Offer of a keyed choice records the label word of
+//     the branch in the schema lane, beside the index of the branch.  The
+//     old tree wrote zero there.  A replay against a keyed choice needs
+//     the label word, so an event of the old tree does not replay against
+//     it (replayed_branch in fixy/session/Recording.h).
 //
 // ── One writer ──────────────────────────────────────────────────────
 //
@@ -118,6 +123,13 @@ struct StateHash {
 struct InnerPermSetHash {
     std::uint64_t value = 0;
     constexpr auto operator<=>(const InnerPermSetHash&) const noexcept = default;
+};
+// The label word of the branch that a Select or an Offer of a keyed
+// choice took (foundation/algebra/Transition.h).  Zero in a positional
+// choice, and for a branch that is no label.
+struct LabelWord {
+    std::uint64_t value = 0;
+    constexpr auto operator<=>(const LabelWord&) const noexcept = default;
 };
 // Non-decreasing inside one log.
 struct StepId {
@@ -325,14 +337,18 @@ public:
         return SessionEvent{SessionOp::Recv, peer, self, schema.value, payload.value};
     }
 
+    // The label word goes to the schema lane.  It is zero in a positional
+    // choice.
     [[nodiscard]] static constexpr SessionEvent select(RoleTagId self, RoleTagId peer, std::uint8_t branch,
-                                                       DeliveryFate fate = DeliveryFate::Delivered) noexcept {
+                                                       DeliveryFate fate = DeliveryFate::Delivered,
+                                                       LabelWord label = {}) noexcept {
         CRUCIBLE_PRE(detail::event_log::names_enumerator<DeliveryFate>(static_cast<std::uint8_t>(fate)));
-        return SessionEvent{SessionOp::Select, self, peer, 0, 0, branch, static_cast<std::uint8_t>(fate)};
+        return SessionEvent{SessionOp::Select, self, peer, label.value, 0, branch, static_cast<std::uint8_t>(fate)};
     }
 
-    [[nodiscard]] static constexpr SessionEvent offer(RoleTagId self, RoleTagId peer, std::uint8_t branch) noexcept {
-        return SessionEvent{SessionOp::Offer, peer, self, 0, 0, branch};
+    [[nodiscard]] static constexpr SessionEvent offer(RoleTagId self, RoleTagId peer, std::uint8_t branch,
+                                                      LabelWord label = {}) noexcept {
+        return SessionEvent{SessionOp::Offer, peer, self, label.value, 0, branch};
     }
 
     [[nodiscard]] static constexpr SessionEvent close(RoleTagId self, RoleTagId peer) noexcept {
@@ -451,6 +467,7 @@ public:
     [[nodiscard]] constexpr DeliveryFate delivery_fate() const noexcept {
         return static_cast<DeliveryFate>(reason_kind_);
     }
+    [[nodiscard]] constexpr LabelWord label_word() const noexcept { return LabelWord{payload_schema_.value}; }
     [[nodiscard]] constexpr RoleTagId stopped_role() const noexcept { return RoleTagId{payload_schema_.value}; }
     [[nodiscard]] constexpr StopReasonKind stop_reason() const noexcept {
         return static_cast<StopReasonKind>(reason_kind_);

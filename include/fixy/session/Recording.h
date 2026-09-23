@@ -31,6 +31,13 @@
 //             also recorded as its checkpoint kind, Active.
 //   branch    Offer, with the branch taken.  A Commit, Roll or Abort
 //             label is also recorded as its checkpoint kind, Passive.
+//
+// A Select and an Offer record the index of the branch in the local
+// protocol, and in a keyed choice the label word of the branch too.  The
+// word is the one on the wire, so the recorder reads it from the
+// protocol of the plain handle at the bottom of the decorators.
+// replayed_branch checks one recorded event against a choice, and it
+// refuses an event of a keyed choice that carries no label word.
 //   close     Close.
 //   detach    Detach, with the reason kind of the tag.
 //   crash     Stop, LocalAbort, with the cause.
@@ -76,6 +83,37 @@ template <typename H>
 struct checkpoint_shape : std::false_type {};
 template <typename Inner, typename Head, typename Loop, typename Frame>
 struct checkpoint_shape<CheckpointHandle<Inner, Head, Loop, Frame>> : std::true_type {};
+
+// The protocol of the plain handle under the decorators, whose wire words
+// the transport carries.  A handle of an unknown shape has no entry, so
+// the build stops instead of reading a word against the wrong choice.
+template <typename H>
+struct wire_protocol;
+template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
+struct wire_protocol<SessionHandle<Proto, Resource, LoopCtx, Policy, PS>> {
+    using type = Proto;
+};
+template <typename H, typename Self, typename Peer, typename Reliable>
+struct wire_protocol<CrashWatched<H, Self, Peer, Reliable>> : wire_protocol<H> {};
+template <typename Inner, typename Head, typename Loop, typename Frame>
+struct wire_protocol<CheckpointHandle<Inner, Head, Loop, Frame>> : wire_protocol<Inner> {};
+
+template <typename H>
+using wire_protocol_t = typename wire_protocol<H>::type;
+
+// The event lane of a branch index holds one byte.
+inline constexpr std::size_t recordable_branch_limit = 256;
+
+// The label word that an event records for branch I of Choice: the word
+// of a keyed choice, and zero otherwise.
+template <typename Choice, std::size_t I>
+[[nodiscard]] consteval LabelWord label_word_for_select() noexcept {
+    if constexpr (is_keyed_choice_v<Choice>) {
+        return LabelWord{branch_wire_word_v<Choice, I>};
+    } else {
+        return LabelWord{};
+    }
+}
 
 template <typename R>
 struct crash_send_shape : std::false_type {};
@@ -255,6 +293,10 @@ public:
     template <std::size_t I, typename Transport>
         requires is_select_v<protocol> && std::is_invocable_v<Transport, resource_type&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
+        using Wire = detail::recording::wire_protocol_t<Inner>;
+        static_assert(Wire::branch_count <= detail::recording::recordable_branch_limit,
+                      "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
+                      "index in one byte, and this Select has more than 256 branches.");
         constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, std::size_t>;
         bool is_delivered = false;
         auto marked = [&transport, &is_delivered](resource_type& resource, std::size_t label) noexcept(is_nothrow) {
@@ -263,7 +305,8 @@ public:
         };
         auto next = std::move(inner_).template select<I>(marked);
         record_(SessionEvent::select(self_, peer_, static_cast<std::uint8_t>(I),
-                                     is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
+                                     is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer,
+                                     detail::recording::label_word_for_select<Wire, I>()));
         using Branch = std::tuple_element_t<I, typename protocol::branches_tuple>;
         if (const auto event = detail::recording::checkpoint_event<Branch>(self_, peer_, CheckpointRole::Active))
             record_(*event);
@@ -272,32 +315,42 @@ public:
 
     // The label reader is whatever the inner handle takes: a transport
     // for a plain or checkpoint handle, a poll for a crash-watched one.
+    // The recorder keeps the word it read, and names the branch that
+    // the word names in the protocol of the wire.
     template <typename Reader, typename Handler>
         requires is_offer_v<protocol>
     constexpr auto branch(Reader reader, Handler handler) && {
+        using Wire = detail::recording::wire_protocol_t<Inner>;
         using Branches = typename protocol::branches_tuple;
         constexpr std::size_t count = std::tuple_size_v<Branches>;
-        constexpr std::size_t no_label = count;
+        static_assert(count <= detail::recording::recordable_branch_limit,
+                      "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
+                      "index in one byte, and this Offer has more than 256 branches.");
         constexpr bool is_nothrow = std::is_nothrow_invocable_v<Reader, resource_type&>;
-        std::size_t label = no_label;
-        auto marked = [&reader, &label](resource_type& resource) noexcept(is_nothrow) {
+        std::optional<std::uint64_t> word;
+        auto marked = [&reader, &word](resource_type& resource) noexcept(is_nothrow) {
             auto read = std::invoke(reader, resource);
             if constexpr (std::is_same_v<decltype(read), std::size_t>) {
-                label = read;
+                word = read;
             } else if (read) {
-                label = *read;
+                word = *read;
             }
             return read;
         };
-        return std::move(inner_).branch(marked, [this, &handler, &label](auto next) {
-            // No label was read only when a crash-watched handle took the
+        return std::move(inner_).branch(marked, [this, &handler, &word](auto next) {
+            // No word was read only when a crash-watched handle took the
             // crash branch.
-            std::size_t taken = label;
+            std::size_t taken = word ? branch_of_wire_word<Wire>(*word) : no_branch;
+            LabelWord label{};
+            if (word && is_keyed_choice_v<Wire>) label = LabelWord{*word};
             if constexpr (detail::recording::crash_watched_shape<Inner>::value) {
                 using Head = typename decltype(next)::protocol;
-                if constexpr (is_crash_branch_v<Head>) taken = crash_branch_index_v<protocol, typename Inner::peer_role>;
+                if constexpr (is_crash_branch_v<Head>) {
+                    taken = crash_branch_index_v<protocol, typename Inner::peer_role>;
+                    label = LabelWord{};
+                }
             }
-            record_(SessionEvent::offer(self_, peer_, static_cast<std::uint8_t>(taken)));
+            record_(SessionEvent::offer(self_, peer_, static_cast<std::uint8_t>(taken), label));
             record_passive_checkpoint_<Branches>(taken, std::make_index_sequence<count>{});
             return std::invoke(handler, wrap_(std::move(next)));
         });
@@ -359,6 +412,33 @@ template <typename H>
 [[nodiscard]] constexpr auto mint_recorded_session(H handle, SessionEventLog& log, RoleTagId self,
                                                    RoleTagId peer) noexcept {
     return detail::recording::make_recorded(std::move(handle), log, self, peer);
+}
+
+// ── Replay of a choice ───────────────────────────────────────────────
+
+// The branch of Choice that a recorded Select or Offer names, or no value
+// when the event does not fit Choice.  The kind of the event must match
+// the side of the choice, and the index must name a branch.  In a keyed
+// choice the event must carry the label word of that branch, and zero for
+// a branch that is no label.  In a positional choice the word must be
+// zero.  An event that a recorder wrote before label words existed carries
+// zero, so it does not replay against a keyed choice.  Complexity: linear
+// in the branches of Choice.
+template <typename Choice>
+    requires(is_select_v<Choice> || is_offer_v<Choice>)
+[[nodiscard]] constexpr std::optional<std::size_t> replayed_branch(const SessionEvent& event) noexcept {
+    constexpr SessionOp expected = is_select_v<Choice> ? SessionOp::Select : SessionOp::Offer;
+    if (event.op() != expected) return std::nullopt;
+    const std::size_t index = event.branch_index();
+    if (index >= Choice::branch_count) return std::nullopt;
+    const auto& words = detail::wire_words_v<Choice>;
+    if constexpr (is_keyed_choice_v<Choice>) {
+        const std::uint64_t expected_word = words[index].is_wired ? words[index].value : 0;
+        if (event.label_word().value != expected_word) return std::nullopt;
+    } else {
+        if (event.label_word().value != 0) return std::nullopt;
+    }
+    return index;
 }
 
 }  // namespace fixy::session

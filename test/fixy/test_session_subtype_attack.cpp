@@ -613,10 +613,15 @@ static_assert(s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, first::Hello, int>
 static_assert(!s::is_subtype_sync_v<Select<Send<s::PeerMsg<Bob, first::Hello, int>, End>>,
                                     Select<Send<s::PeerMsg<Bob, second::Hello, int>, End>>>,
               "a label is not replaced by a label with the same name");
-// A label inside a payload is data, not a label.  The branch names no
-// label, so it cannot clash, and its position is still its wire label.
+// A label inside a payload is data, not a label.  Two branches that carry
+// one label inside a payload do not clash, and their positions are their
+// wire words.  A branch of that kind beside a branch that names a label
+// key is refused, because the choice then has no single kind of wire word.
 static_assert(s::is_well_formed_v<Select<Send<std::pair<s::PeerMsg<Bob, L0, int>, int>, End>,
-                                         Send<s::PeerMsg<Bob, L0, int>, End>>>);
+                                         Send<std::pair<s::PeerMsg<Bob, L0, int>, long>, End>>>);
+static_assert(!s::is_well_formed_v<Select<Send<std::pair<s::PeerMsg<Bob, L0, int>, int>, End>,
+                                          Send<s::PeerMsg<Bob, L0, int>, End>>>,
+              "a branch with a label key beside a branch without one");
 
 // Crash branches pair by payload.  A crash branch hidden under a wrapper
 // or a loop at the head of a branch is still a crash branch.
@@ -634,26 +639,28 @@ static_assert(s::is_subtype_sync_v<Offer<Recv<A, End>, Recv<B, End>, BobCrash>, 
 // branch: the positions shift, and the pair at the old position differs.
 static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select<Send<B, End>, Send<A, Continue>>>>);
 
-// ── The wire label of a branch is its position ───────────────────────
+// ── The wire word of a keyed branch is its label ─────────────────────
 //
-// select<I>() sends I, and the Offer of the peer dispatches on I.  So a
-// Select that names the same labels in another order is another
-// protocol, and the relation refuses it.  The run below shows the cost
-// of an acceptance: the two ends take branches with different labels,
-// and no check on the wire notices, because a label is a type.
+// A PeerMsg names a label key.  select<I>() sends the label word of the
+// key of branch I, and the Offer of the peer dispatches on the word.  So
+// a Select that names the same labels in another order takes, at run
+// time, the branch of the label that it sent.  The relation pairs branches
+// by position, so it refuses the permutation that the run below routes.
 
 using Projected = Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L1, int>, End>>;
 using Permuted = Select<Send<s::PeerMsg<Bob, L1, int>, End>, Send<s::PeerMsg<Bob, L0, int>, End>>;
 static_assert(!s::is_subtype_sync_v<Permuted, Projected> && !s::is_subtype_async_v<Permuted, Projected, 4>);
+static_assert(s::branch_wire_word_v<Permuted, 0> == s::branch_wire_word_v<Projected, 1>
+              && s::branch_wire_word_v<Permuted, 1> == s::branch_wire_word_v<Projected, 0>);
 
-struct IndexWire {
-    std::size_t index = 0;
+struct WordWire {
+    std::size_t word = 0;
 };
 struct PickerEnd {
-    IndexWire* wire = nullptr;
+    WordWire* wire = nullptr;
 };
 struct OffererEnd {
-    IndexWire* wire = nullptr;
+    WordWire* wire = nullptr;
 };
 
 template <class Message>
@@ -662,18 +669,18 @@ inline constexpr int label_number_v = std::is_same_v<typename Message::label, L0
 // Returns the label that the picker sent and the label that the offerer
 // received, when the picker speaks Permuted and the offerer speaks the
 // dual of Projected.
-[[nodiscard]] std::pair<int, int> labels_on_an_index_wire() {
-    IndexWire wire{};
+[[nodiscard]] std::pair<int, int> labels_on_a_word_wire() {
+    WordWire wire{};
     auto picker = s::mint_session_handle<Permuted>(PickerEnd{&wire});
     auto chosen =
-        std::move(picker).template select<0>([](PickerEnd& end, std::size_t index) noexcept { end.wire->index = index; });
+        std::move(picker).template select<0>([](PickerEnd& end, std::size_t word) noexcept { end.wire->word = word; });
     using Sent = typename decltype(chosen)::message_type;
     auto picker_done = std::move(chosen).send(Sent{}, [](PickerEnd&, Sent&&) noexcept {});
     (void)std::move(picker_done).close();
 
     int received = -1;
     auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(OffererEnd{&wire});
-    std::move(offerer).branch([](OffererEnd& end) noexcept { return end.wire->index; },
+    std::move(offerer).branch([](OffererEnd& end) noexcept { return end.wire->word; },
                               [&received](auto handle) noexcept {
                                   using Got = typename decltype(handle)::message_type;
                                   received = label_number_v<Got>;
@@ -787,11 +794,10 @@ int main() {
     expect(run_against_dual<early<4>, late<4>>(1) == outcome::deadlocked,
            "the pinned deadlock of ledger entry 2 did not occur, and the entry can be stale");
 
-    // A permuted Select on an index wire: the two ends disagree on the
-    // label, which is why the relation refuses the permutation.
-    const auto [sent, received] = labels_on_an_index_wire();
-    expect(sent == 1 && received == 0,
-           "a permuted Select on an index wire did not mis-route, so the refusal of a permutation is untested");
+    // A permuted Select on a word wire: the offerer takes the branch of
+    // the label that the picker sent.
+    const auto [sent, received] = labels_on_a_word_wire();
+    expect(sent == 1 && received == 1, "a permuted keyed Select took the branch of another label");
 
     // The generated family: every admitted pair runs to completion.
     const generated_tally tally = run_generated();

@@ -48,6 +48,16 @@
 // ring and over a mock all use the same handle and differ only in the
 // callable they pass.
 //
+// ── The word of a choice ────────────────────────────────────────────
+//
+// select<I>() gives the Transport the wire word of branch I, and branch()
+// dispatches on the word that its Transport reads.  The word comes from
+// foundation/algebra/Transition.h.  In a keyed choice, where each label
+// branch names a label key, the word is the label word of that key.  In
+// a positional choice, the word is the position of the branch.  A keyed
+// Select therefore reaches the branch of the peer with the same label,
+// also when the peer holds its branches in another order.
+//
 // ── The scope of the deadlock-freedom guarantee ─────────────────────
 //
 // LinearActris (Jacobs, Hinrichsen and Krebbers, POPL 2024) proves
@@ -96,7 +106,9 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -841,6 +853,77 @@ public:
     }
 };
 
+// ── Wire words ───────────────────────────────────────────────────────
+//
+// The Transport carries a word as std::size_t, which holds the 64 bits
+// of a label word on each target this tree supports.
+
+static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
+              "a label word has 64 bits, and the Transport carries it as std::size_t");
+
+// True when each label branch of the Select or the Offer names a label
+// key, so its wire words are label words.
+template <typename Choice>
+inline constexpr bool is_keyed_choice_v =
+    ::foundation::algebra::transition::is_keyed_choice_type(detail::protocol_registry, ^^Choice);
+
+namespace detail {
+
+// The word of branch I.  A branch that is no label has no word, because
+// the peer never picks it: the endpoint enters it on an event.
+template <typename Choice, std::size_t I>
+consteval std::uint64_t branch_wire_word_of() {
+    constexpr ::foundation::algebra::transition::wire_word word =
+        ::foundation::algebra::transition::wire_word_of(protocol_registry, ^^Choice, I);
+    static_assert(word.is_wired, "fixy::session::diagnostic [Branch_Has_No_Wire_Word]: branch I of the choice is no "
+                                 "label, so no endpoint picks it with a word.  The endpoint enters such a branch on "
+                                 "an event, for example the detection of a crash.");
+    return word.value;
+}
+
+// The word of each branch of the choice, and whether the branch has one.
+template <typename Choice, std::size_t Count>
+consteval std::array<::foundation::algebra::transition::wire_word, Count> wire_words_of() {
+    std::array<::foundation::algebra::transition::wire_word, Count> words{};
+    for (std::size_t index = 0; index < Count; ++index) {
+        words[index] = ::foundation::algebra::transition::wire_word_of(protocol_registry, ^^Choice, index);
+    }
+    return words;
+}
+
+template <typename Choice>
+inline constexpr auto wire_words_v = wire_words_of<Choice, Choice::branch_count>();
+
+}  // namespace detail
+
+// The word that select<I>() sends for branch I of Choice.
+template <typename Choice, std::size_t I>
+inline constexpr std::uint64_t branch_wire_word_v = detail::branch_wire_word_of<Choice, I>();
+
+inline constexpr std::size_t no_branch = static_cast<std::size_t>(-1);
+
+// The branch of Choice that a received word names, or no_branch.  A keyed
+// choice compares the word with the label word of each label branch, so
+// a word that no label of Choice has names no branch.  A positional
+// choice reads the word as a position, and admits the position of a
+// branch that is no label too, because the crash transport of
+// fixy/session/CrashTransport.h enters its crash branch that way.
+// Complexity: linear in the branches, each step a compare with a
+// constant.
+template <typename Choice>
+[[nodiscard]] constexpr std::size_t branch_of_wire_word(std::uint64_t word) noexcept {
+    constexpr std::size_t count = Choice::branch_count;
+    if constexpr (!is_keyed_choice_v<Choice>) {
+        return word < count ? static_cast<std::size_t>(word) : no_branch;
+    } else {
+        constexpr auto& words = detail::wire_words_v<Choice>;
+        for (std::size_t index = 0; index < count; ++index) {
+            if (words[index].is_wired && words[index].value == word) return index;
+        }
+        return no_branch;
+    }
+}
+
 template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>
     : public detail::handle_core<Select<Branches...>, Resource, LoopCtx, Policy, PS> {
@@ -868,7 +951,9 @@ public:
                                     "diagnostic and remediation.");
 
     // Picks branch I and signals the choice to the peer through
-    // Transport, whose signature is void(Resource&, std::size_t).
+    // Transport, whose signature is void(Resource&, std::size_t).  The
+    // Transport receives the wire word of branch I: its label word in a
+    // keyed choice, and I in a positional one.
     //
     // The index bound is a body static_assert rather than a
     // requires-clause so that an out-of-range index reports the named
@@ -885,7 +970,8 @@ public:
                                                "protocol has fewer branches than the index requested; "
                                                "verify I < branch_count at the call site (decltype("
                                                "handle)::branch_count is exposed for compile-time queries).");
-        std::invoke(transport, this->live_resource_(), I);
+        std::invoke(transport, this->live_resource_(),
+                    static_cast<std::size_t>(branch_wire_word_v<Select<Branches...>, I>));
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_());
     }
@@ -967,20 +1053,20 @@ public:
                                     "is not a branch.  See mint_session_handle for the full "
                                     "diagnostic and remediation.");
 
-    // Receives the peer's branch label through Transport, whose
-    // signature is std::size_t(Resource&), then calls the handler with
-    // the handle for that branch.  The handler is invoked once per
-    // branch type and every branch must give the handler the same
-    // return type, or all of them void.
+    // Receives the peer's wire word through Transport, whose signature
+    // is std::size_t(Resource&), then calls the handler with the handle
+    // for the branch that the word names (branch_of_wire_word).  The
+    // handler is invoked once per branch type and every branch must give
+    // the handler the same return type, or all of them void.
     //
-    // An out-of-range label aborts.  The peer has sent a label this
+    // A word that names no branch aborts.  The peer has sent a label this
     // protocol does not define, so the two endpoints no longer agree
     // and no branch can be entered safely.
     template <typename Transport, typename Handler>
         requires std::is_invocable_r_v<std::size_t, Transport, Resource&>
     constexpr auto branch(Transport transport, Handler handler) && {
-        const std::size_t idx = std::invoke(transport, this->live_resource_());
-        return dispatch_branch_(idx, this->take_resource_(), std::move(handler),
+        const std::size_t word = std::invoke(transport, this->live_resource_());
+        return dispatch_branch_(branch_of_wire_word<protocol>(word), this->take_resource_(), std::move(handler),
                                 std::make_index_sequence<branch_count>{});
     }
 

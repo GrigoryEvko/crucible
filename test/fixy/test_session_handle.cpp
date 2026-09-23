@@ -23,6 +23,7 @@
 
 #include <fixy/ScopedView.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Projection.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/PermSet.h>
@@ -33,6 +34,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -377,6 +380,63 @@ static_assert(!s::DetachReason<int>);
                                                });
     if (taken != 0) {
         std::fprintf(stderr, "branch entered the wrong arm\n");
+        return 1;
+    }
+    return 0;
+}
+
+// ── The word of a choice ─────────────────────────────────────────────
+//
+// A PeerMsg names a label key, so a choice of PeerMsg branches is keyed:
+// its wire word is the label word, and the peer enters the branch of the
+// same label in whatever position it holds.  A choice of plain payloads
+// is positional: its word is the position.
+
+struct Bob {};
+struct Hello {};
+struct Bye {};
+
+using KeyedSelect = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Bye, int>, s::End>>;
+using KeyedOfferSwapped =
+    s::Offer<s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>>;
+using PlainOffer = s::Offer<s::Recv<Ping, s::End>, s::Recv<Stop, s::End>>;
+
+static_assert(s::is_keyed_choice_v<KeyedSelect> && s::is_keyed_choice_v<KeyedOfferSwapped>);
+static_assert(!s::is_keyed_choice_v<PlainOffer>);
+static_assert(s::branch_wire_word_v<KeyedSelect, 0> == s::branch_wire_word_v<KeyedOfferSwapped, 1>,
+              "a label keeps its word in another position");
+static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(s::branch_wire_word_v<KeyedSelect, 0>) == 1);
+static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(s::branch_wire_word_v<KeyedSelect, 1>) == 0);
+static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(0) == s::no_branch && s::branch_of_wire_word<KeyedOfferSwapped>(1)
+                                                                                == s::no_branch,
+              "a position is no word of a keyed choice");
+static_assert(s::branch_wire_word_v<PlainOffer, 1> == 1 && s::branch_of_wire_word<PlainOffer>(1) == 1);
+static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSelect, 0>) == s::no_branch,
+              "a label word is no position");
+
+// The Select holds Hello first and the Offer holds it second.  The word
+// of Hello reaches the Hello branch.
+[[nodiscard]] int walk_keyed_choice_in_another_order() {
+    std::uint64_t wire = 0;
+    auto sender = s::mint_session_handle<KeyedSelect, std::uint64_t*>(&wire);
+    auto receiver = s::mint_session_handle<KeyedOfferSwapped, std::uint64_t*>(&wire);
+
+    auto sent = std::move(sender).select<0>([](std::uint64_t* box, std::size_t word) noexcept { *box = word; });
+    auto sender_end = std::move(sent).send(s::PeerMsg<Bob, Hello, int>{}, [](std::uint64_t*, auto&&) noexcept {});
+    (void)std::move(sender_end).close();
+
+    const int taken = std::move(receiver).branch(
+        [](std::uint64_t* box) noexcept -> std::size_t { return *box; },
+        [](auto branch_handle) {
+            using B = typename decltype(branch_handle)::protocol;
+            auto [message, at_end] = std::move(branch_handle).recv(
+                [](std::uint64_t*) noexcept { return typename decltype(branch_handle)::message_type{}; });
+            (void)message;
+            (void)std::move(at_end).close();
+            return std::is_same_v<B, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>> ? 0 : 1;
+        });
+    if (taken != 0) {
+        std::fprintf(stderr, "the label word of Hello did not reach the Hello branch of the peer\n");
         return 1;
     }
     return 0;
@@ -807,6 +867,7 @@ int main() {
     if (const int rc = walk_pinned_reference(); rc != 0) return rc;
     if (const int rc = walk_choice(); rc != 0) return rc;
     if (const int rc = walk_offer(); rc != 0) return rc;
+    if (const int rc = walk_keyed_choice_in_another_order(); rc != 0) return rc;
     if (const int rc = view_a_position(); rc != 0) return rc;
     if (const int rc = walk_with_session(); rc != 0) return rc;
     if (const int rc = walk_loop_with_permission_set(); rc != 0) return rc;

@@ -120,17 +120,27 @@
 //
 // ── Branches and labels ───────────────────────────────────────────────
 //
-// A choice numbers its branches.  The number of a label branch is its
-// wire label: an endpoint sends it to pick the branch, and the peer
-// dispatches on it.  So refinement compares label branches position by
-// position, and a different order of the same branches is a different
-// choice.  A payload label that a layer registers with `label_key` is
-// data inside the branch, not the wire label.
+// An endpoint picks a label branch with a wire word, and the peer
+// dispatches on that word.  The word comes from one of two sources:
 //
-// A branch that is no label has no number on the wire.  The endpoint
+//   keyed       Each label branch names a label key.  The word of a
+//               branch is the label word of its key: the stable type id
+//               of the key, with the top bit set.  Both endpoints read
+//               the word from the type of the label, so an order of the
+//               branches is not part of the wire.
+//   positional  No label branch names a key.  The word of a branch is
+//               its position.  A different order of the same branches is
+//               then a different choice.
+//
+// The top bit keeps the two kinds of word apart: a position never has
+// it, and a label word always has it.  A label word is stable where the
+// stable type id is stable: across the translation units of one build,
+// and across rebuilds with one toolchain (foundation/reflect/Hash.h).
+//
+// A branch that is no label has no word on the wire.  The endpoint
 // enters it on an event, for example the detection of a crash, and
 // finds it by its payload.  So refinement matches such a branch by its
-// payload, wherever it stands.  Three rules keep the two kinds apart:
+// payload, wherever it stands.  Five rules keep the kinds apart:
 //
 //   1. Each choice has one label branch or more.  An empty internal
 //      choice has no branch to pick, and an empty external choice has
@@ -139,12 +149,17 @@
 //      choice, and a substitute of that type never sends.  The choice
 //      types of Gay and Hole (2005) have one label or more.
 //   2. In an input choice, no label branch follows a branch that is no
-//      label, so the number of each label branch is its position among
+//      label, so the position of each label branch is its position among
 //      the label branches.  An output choice has no branch that is no
 //      label.
 //   3. No two branches that are no label receive the same payload, and
 //      no two label branches name the same `label_key`, so each match
 //      is unique.
+//   4. Either each label branch of a choice names a key, or none does.
+//      A choice that mixes the two has no single kind of wire word.
+//   5. No two label words of one choice are equal.  Two distinct key
+//      types can print one name, for example two closure types, and
+//      then share a word.  The peer would enter the wrong branch.
 //
 // ── Recursion ─────────────────────────────────────────────────────────
 //
@@ -172,6 +187,7 @@
 // (Udomsrirungruang and Yoshida, POPL 2025, section 5).
 
 #include <foundation/Platform.h>
+#include <foundation/reflect/Hash.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -753,13 +769,26 @@ template <class Algebra>
 
 // ── Algebras ──────────────────────────────────────────────────────────
 
+// The bit that every label word carries and no position carries.
+inline constexpr std::uint64_t label_word_bit = std::uint64_t{1} << 63;
+
+// The wire word of a label key: its stable type id, with the top bit
+// set.  Complexity: linear in the length of the printed name of the key.
+[[nodiscard]] consteval std::uint64_t label_word_of(std::meta::info key) {
+    const std::uint64_t id = std::meta::extract<std::uint64_t>(
+        std::meta::substitute(^^::foundation::reflect::stable_type_id, {std::meta::dealias(key)}));
+    return id | label_word_bit;
+}
+
 // The head of one branch of a choice, under its wrappers.  `payload` is
 // the payload of a head step, or null.  `label_key` is the label that
-// the payload names through its registration, or null.
+// the payload names through its registration, or null, and
+// `label_word` is the word of that key, or zero.
 struct branch_head {
     bool is_label = true;
     std::meta::info payload{};
     std::meta::info label_key{};
+    std::uint64_t label_word = 0;
 };
 
 // Why a choice is not well-formed, by the rules of the section on
@@ -771,6 +800,8 @@ enum class choice_fault : std::uint8_t {
     non_label_in_output,
     repeated_non_label_payload,
     repeated_label_key,
+    mixed_label_keys,
+    label_word_collision,
 };
 
 namespace detail {
@@ -793,6 +824,7 @@ namespace detail {
     result.is_label = head.entry.direction != polarity::input || rule.entry.is_label;
     if (rule.entry.label_key != std::meta::info{} && std::meta::can_substitute(rule.entry.label_key, {head.payload})) {
         result.label_key = std::meta::dealias(std::meta::substitute(rule.entry.label_key, {head.payload}));
+        result.label_word = label_word_of(result.label_key);
     }
     return result;
 }
@@ -829,6 +861,14 @@ namespace detail {
         }
     }
     if (!has_label) return choice_fault::no_label_branch;
+    std::size_t keyed = 0;
+    std::size_t labels = 0;
+    for (const branch_head& head : heads) {
+        if (!head.is_label) continue;
+        ++labels;
+        if (head.label_key != std::meta::info{}) ++keyed;
+    }
+    if (keyed != 0 && keyed != labels) return choice_fault::mixed_label_keys;
     for (std::size_t first = 0; first < heads.size(); ++first) {
         for (std::size_t second = first + 1; second < heads.size(); ++second) {
             const branch_head& left = heads[first];
@@ -839,6 +879,10 @@ namespace detail {
             if (left.is_label && right.is_label && left.label_key != std::meta::info{}
                 && left.label_key == right.label_key) {
                 return choice_fault::repeated_label_key;
+            }
+            if (left.is_label && right.is_label && left.label_key != std::meta::info{}
+                && left.label_word == right.label_word) {
+                return choice_fault::label_word_collision;
             }
         }
     }
@@ -860,10 +904,57 @@ namespace detail {
                    "ambiguous";
         case choice_fault::repeated_label_key:
             return "two label branches name the same label";
+        case choice_fault::mixed_label_keys:
+            return "some label branches name a label key and some do not, so the choice has no single kind of wire "
+                   "word";
+        case choice_fault::label_word_collision:
+            return "two label keys of the choice have one label word, so the peer cannot tell the two labels apart. "
+                   "Two distinct types that print one name, for example two closure types, share a word";
         default:
             break;
     }
     return "an unknown fault";
+}
+
+// ── The wire word of a branch ─────────────────────────────────────────
+
+// True when each label branch of the choice names a label key.  The
+// choice must be well-formed.  Complexity: linear in the branches.
+[[nodiscard]] consteval bool is_keyed_choice(std::meta::info registry, const node& choice) {
+    bool has_label = false;
+    for (const std::meta::info branch : choice.branches) {
+        const branch_head head = detail::head_of_branch(registry, branch);
+        if (!head.is_label) continue;
+        has_label = true;
+        if (head.label_key == std::meta::info{}) return false;
+    }
+    return has_label;
+}
+
+// The word that picks one branch of a choice.  A branch that is no
+// label has no word, and `is_wired` is false for it.
+struct wire_word {
+    bool is_wired = false;
+    std::uint64_t value = 0;
+};
+
+// The word of branch `index` of the choice at the head of `choice`: the
+// label word in a keyed choice, and the position in a positional one.
+// An index past the last branch has no word.  Complexity: linear in the
+// branches.
+[[nodiscard]] consteval wire_word wire_word_of(std::meta::info registry, std::meta::info choice, std::size_t index) {
+    const node view = decompose(registry, choice);
+    if (!view.is_registered || view.entry.kind != shape_kind::choice || index >= view.branches.size()) return {};
+    const branch_head head = detail::head_of_branch(registry, view.branches[index]);
+    if (!head.is_label) return {};
+    if (is_keyed_choice(registry, view)) return {true, head.label_word};
+    return {true, static_cast<std::uint64_t>(index)};
+}
+
+// True when the choice at the head of `choice` is a keyed choice.
+[[nodiscard]] consteval bool is_keyed_choice_type(std::meta::info registry, std::meta::info choice) {
+    const node view = decompose(registry, choice);
+    return view.is_registered && view.entry.kind == shape_kind::choice && is_keyed_choice(registry, view);
 }
 
 struct choice_verdict {
@@ -1734,6 +1825,19 @@ struct From {};
 template <class R>
 struct Fault {};
 struct Undeclared {};
+template <class L, class P>
+struct Named {};
+struct LabelA {};
+struct LabelB {};
+
+template <class T>
+struct named_label;
+template <class L, class P>
+struct named_label<Named<L, P>> {
+    using type = L;
+};
+template <class T>
+using named_label_t = typename named_label<T>::type;
 
 template <int V>
 inline constexpr bool pin_is_named_v = V != 0;
@@ -1763,6 +1867,7 @@ inline constexpr combinator halt{.shape = ^^Halt, .kind = shape_kind::terminal, 
 inline constexpr combinator pin{
     .shape = ^^Pin, .kind = shape_kind::wrapper, .dual = ^^Pin, .value_admits = ^^pin_is_named_v};
 inline constexpr payload_rule fault{.shape = ^^Fault, .is_sendable = false, .is_label = false};
+inline constexpr payload_rule named{.shape = ^^Named, .label_key = ^^named_label_t};
 }  // namespace registry
 
 namespace no_axioms {}
@@ -1807,6 +1912,25 @@ static_assert(!well_formed(^^Wait<Take<int, Done>, Take<Fault<int>, Done>, Take<
               "two branches that are no label receive the same payload");
 static_assert(well_formed(^^Wait<Take<int, Done>, Take<Fault<int>, Done>, Take<Fault<char>, Done>>));
 static_assert(first_unregistered(reg, ^^Put<int, Pick<Done, Undeclared>>) == ^^Undeclared);
+
+using KeyedPick = Pick<Put<Named<LabelA, int>, Done>, Put<Named<LabelB, int>, Done>>;
+static_assert(well_formed(^^KeyedPick));
+static_assert(well_formed(^^Wait<Take<Named<LabelA, int>, Done>, Take<Fault<int>, Done>>),
+              "a branch that is no label does not make a keyed choice mixed");
+static_assert(first_faulty_choice(reg, ^^Pick<Put<Named<LabelA, int>, Done>, Put<int, Done>>).fault
+                  == choice_fault::mixed_label_keys,
+              "a choice mixes a keyed and a positional label branch");
+static_assert(first_faulty_choice(reg, ^^Pick<Put<Named<LabelA, int>, Done>, Put<Named<LabelA, char>, Done>>).fault
+                  == choice_fault::repeated_label_key);
+static_assert(is_keyed_choice_type(reg, ^^KeyedPick) && !is_keyed_choice_type(reg, ^^Pick<Put<int, Done>>));
+static_assert((label_word_of(^^LabelA) & label_word_bit) != 0 && label_word_of(^^LabelA) != label_word_of(^^LabelB));
+static_assert(wire_word_of(reg, ^^KeyedPick, 1).is_wired && wire_word_of(reg, ^^KeyedPick, 1).value == label_word_of(^^LabelB),
+              "the word of a keyed branch is the label word of its key, not its position");
+static_assert(wire_word_of(reg, ^^Pick<Put<int, Done>, Put<char, Done>>, 1).value == 1,
+              "the word of a positional branch is its position");
+static_assert(!wire_word_of(reg, ^^Wait<Take<int, Done>, Take<Fault<int>, Done>>, 1).is_wired,
+              "a branch that is no label has no word");
+static_assert(!wire_word_of(reg, ^^KeyedPick, 2).is_wired, "an index past the last branch has no word");
 
 static_assert(fold(reg, ^^Put<int, Pick<Done, Halt>>, compose_algebra{reg, ^^Ping}, 0)
               == ^^Put<int, Pick<Ping, Halt>>);

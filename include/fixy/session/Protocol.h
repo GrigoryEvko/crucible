@@ -47,6 +47,7 @@
 
 #include <cstddef>
 #include <meta>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -612,11 +613,12 @@ public:
 //      sendable;
 //   4. no VendorPinned names VendorBackend::None;
 //   5. each Select and each Offer has a label branch or more, puts its
-//      label branches before each branch that is no label, and matches
-//      each branch uniquely.  The position of a label branch is the
-//      label that the handle sends, so a Select or an Offer in another
-//      order is another protocol.  foundation/algebra/Transition.h
-//      states the three rules.
+//      label branches before each branch that is no label, matches each
+//      branch uniquely, names a label key on each label branch or on
+//      none, and gives each label key its own label word.
+//      foundation/algebra/Transition.h states the five rules, and
+//      ensure_choices_well_formed below names the rule that a choice
+//      breaks.
 //
 // LoopCtx is void outside a loop.  A Loop type as LoopCtx, the form the
 // handle carries, means inside one loop after its first step.  The fold
@@ -659,6 +661,34 @@ struct is_well_formed : std::bool_constant<detail::well_formed_of<P, LoopCtx>()>
 
 template <typename P>
 inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
+
+namespace detail {
+
+template <typename P>
+consteval std::string_view choice_fault_message() {
+    const ::foundation::algebra::transition::choice_verdict verdict =
+        ::foundation::algebra::transition::first_faulty_choice(protocol_registry, ^^P);
+    std::string text = "fixy::session::diagnostic [Protocol_Choice_Ill_Formed]: the choice ";
+    text += verdict.choice == std::meta::info{} ? std::string_view{"(none)"}
+                                                : std::meta::display_string_of(verdict.choice);
+    text += " is not well-formed: ";
+    text += ::foundation::algebra::transition::choice_fault_name(verdict.fault);
+    text += ".";
+    return std::define_static_string(text);
+}
+
+}  // namespace detail
+
+// Names the first choice of P that breaks a rule of the section on
+// branches and labels of foundation/algebra/Transition.h, and the rule.
+// Complexity: the sum of O(b²) over the choices of P.
+template <typename P>
+consteval void ensure_choices_well_formed() noexcept {
+    detail::require_registered_head<P>();
+    static_assert(::foundation::algebra::transition::first_faulty_choice(detail::protocol_registry, ^^P).fault
+                      == ::foundation::algebra::transition::choice_fault::none,
+                  detail::choice_fault_message<P>());
+}
 
 // Every registration of this header is coherent.  A registration that a
 // different header adds is checked where a query first meets it.

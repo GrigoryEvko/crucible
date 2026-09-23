@@ -12,6 +12,7 @@
 // checks each recorded event, and then that the log survives a round
 // trip through bytes.
 
+#include <fixy/session/Projection.h>
 #include <fixy/session/Recording.h>
 
 #include <array>
@@ -309,6 +310,78 @@ int check_checkpoint_recording() {
     return 0;
 }
 
+// ── A keyed choice, and the replay of a choice ──────────────────────
+//
+// The two sides hold the labels in another order.  Each records the
+// index of the branch in its own protocol and the label word of the
+// branch, so the two logs agree on the label.
+
+struct Carol {};
+struct Yes {};
+struct No {};
+using KeyedAsk = s::Select<s::Send<s::PeerMsg<Carol, Yes, int>, s::End>, s::Send<s::PeerMsg<Carol, No, int>, s::End>>;
+using KeyedHear = s::Offer<s::Recv<s::PeerMsg<Carol, No, int>, s::End>, s::Recv<s::PeerMsg<Carol, Yes, int>, s::End>>;
+using PlainAsk = s::Select<s::Send<int, s::End>, s::Send<char, s::End>>;
+
+constexpr auto push_empty = [](Port& port, auto&&) noexcept { port.out->slots.push_back(0); };
+template <typename T>
+constexpr auto pop_empty = [](Port& port) noexcept {
+    port.in->slots.pop_front();
+    return T{};
+};
+
+int check_keyed_recording() {
+    Mailbox to_left;
+    Mailbox to_right;
+    s::SessionEventLog log_left;
+    s::SessionEventLog log_right;
+    auto left =
+        s::mint_recorded_session(s::mint_session_handle<KeyedAsk>(Port{&to_left, &to_right}), log_left, kSelf, kPeer);
+    auto right =
+        s::mint_recorded_session(s::mint_session_handle<KeyedHear>(Port{&to_right, &to_left}), log_right, kPeer, kSelf);
+    auto left_sent = std::move(left).select<1>(push_label);
+    auto left_end = std::move(left_sent).send(s::PeerMsg<Carol, No, int>{}, push_empty);
+    (void)std::move(left_end).close();
+    bool took_no = false;
+    std::move(right).branch(pop_label, [&](auto branch) {
+        using B = typename decltype(branch)::protocol;
+        auto [message, right_end] = std::move(branch).recv(pop_empty<typename B::message_type>);
+        (void)message;
+        took_no = std::is_same_v<B, s::Recv<s::PeerMsg<Carol, No, int>, s::End>>;
+        (void)std::move(right_end).close();
+    });
+    if (!took_no) return fail("the label No did not reach the No branch of the peer");
+
+    constexpr s::LabelWord no_word{s::branch_wire_word_v<KeyedAsk, 1>};
+    if (log_left[0].op() != s::SessionOp::Select || log_left[0].branch_index() != 1 || log_left[0].label_word() != no_word)
+        return fail("the keyed select did not record its index and its label word");
+    if (log_right[0].op() != s::SessionOp::Offer || log_right[0].branch_index() != 0
+        || log_right[0].label_word() != no_word)
+        return fail("the keyed offer did not record its own index and the label word");
+    if (s::replayed_branch<KeyedAsk>(log_left[0]) != 1 || s::replayed_branch<KeyedHear>(log_right[0]) != 0)
+        return fail("a recorded keyed event did not replay against its own protocol");
+
+    // An event with no label word, as the old tree wrote it, does not
+    // replay against a keyed choice.  Nor does an event whose word names
+    // another branch, nor an Offer against a Select.
+    if (s::replayed_branch<KeyedAsk>(s::SessionEvent::select(kSelf, kPeer, 1)))
+        return fail("an event with no label word replayed against a keyed choice");
+    constexpr s::LabelWord yes_word{s::branch_wire_word_v<KeyedAsk, 0>};
+    if (s::replayed_branch<KeyedAsk>(s::SessionEvent::select(kSelf, kPeer, 1, s::DeliveryFate::Delivered, yes_word)))
+        return fail("an event whose word names another branch replayed");
+    if (s::replayed_branch<KeyedAsk>(log_right[0])) return fail("an Offer event replayed against a Select");
+    if (s::replayed_branch<KeyedAsk>(s::SessionEvent::select(kSelf, kPeer, 2, s::DeliveryFate::Delivered, no_word)))
+        return fail("an index past the last branch replayed");
+
+    // A positional choice replays an event with no word, and refuses one
+    // with a word.
+    if (s::replayed_branch<PlainAsk>(s::SessionEvent::select(kSelf, kPeer, 1)) != 1)
+        return fail("a positional event did not replay");
+    if (s::replayed_branch<PlainAsk>(s::SessionEvent::select(kSelf, kPeer, 1, s::DeliveryFate::Delivered, no_word)))
+        return fail("a positional choice replayed an event with a label word");
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -317,5 +390,6 @@ int main() {
     if (const int rc = check_plain_recording(); rc != 0) return rc;
     if (const int rc = check_crash_recording(); rc != 0) return rc;
     if (const int rc = check_checkpoint_recording(); rc != 0) return rc;
+    if (const int rc = check_keyed_recording(); rc != 0) return rc;
     return 0;
 }
