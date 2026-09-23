@@ -36,10 +36,11 @@
 //     below hands out atomic_write<Rename> where it handed out the one
 //     atomicity that could not succeed.
 //
-//  4. The bit maps have fail-open primaries — an unknown mode folds to
-//     O_RDONLY, an unknown flag to nothing — so the gates read known-tag
-//     predicates instead, and walks over the four fixy::fs namespaces
-//     check the hand lists cover every tag declared.
+//  4. The two bit maps have closed primaries.  A mode or a flag with no
+//     specialization has no bits, so a read of its bits is a compile
+//     error and not O_RDONLY or zero.  The known-tag predicates the gates
+//     read are the specialization sets themselves, and walks over the
+//     fixy::fs namespaces check that each declared tag has an entry.
 //
 //  5. The descriptor handle.  The old tree returned its FileHandle,
 //     whose constructor took an int and whose destructor closed it: the
@@ -81,8 +82,12 @@ namespace fixy::fs {
 
 namespace eff = ::foundation::effects;
 
+// The primary has no value.  O_RDONLY is zero, so a primary that
+// answered zero opened an unknown mode for reading, and the kernel
+// accepted it.  A tag reaches the open call only through a
+// specialization below.
 template <typename Mode>
-struct open_mode_flags : std::integral_constant<int, 0> {};
+struct open_mode_flags {};
 template <>
 struct open_mode_flags<open_mode::ReadOnly> : std::integral_constant<int, O_RDONLY> {};
 template <>
@@ -97,8 +102,10 @@ struct open_mode_flags<open_mode::ReadWrite> : std::integral_constant<int, O_RDW
 template <typename Mode>
 inline constexpr int open_mode_flags_v = open_mode_flags<Mode>::value;
 
+// The primary has no value, for the same reason: a zero opened the file
+// without the flag the caller asked for.
 template <typename Flag>
-struct flag_bits : std::integral_constant<int, 0> {};
+struct flag_bits {};
 template <>
 struct flag_bits<flag::CloseOnExec> : std::integral_constant<int, O_CLOEXEC> {};
 template <>
@@ -113,23 +120,23 @@ struct flag_bits<flag::Direct> : std::integral_constant<int, O_DIRECT> {};
 template <typename Flag>
 inline constexpr int flag_bits_v = flag_bits<Flag>::value;
 
-// The bit maps answer zero for a tag they do not know, and zero is a
-// value the kernel accepts: O_RDONLY is zero, so an unmapped mode opens
-// for reading, and an unmapped flag opens without the flag the caller
-// asked for.  These four are what the gates read instead of the bits.
-// They are hand lists, and the walks at the foot of this header read
-// the four fixy::fs namespaces and fail if a declared tag is missing.
+// A tag is known when its bit map has an entry.  The predicate is the
+// specialization set, so no second list can drift from the map.  The
+// walks at the foot of this header read the fixy::fs namespaces and fail
+// if a declared tag has no entry.
 template <typename Mode>
-inline constexpr bool is_known_open_mode_v =
-    std::is_same_v<Mode, open_mode::ReadOnly> || std::is_same_v<Mode, open_mode::WriteCreate>
-    || std::is_same_v<Mode, open_mode::WriteAppend> || std::is_same_v<Mode, open_mode::WriteTruncate>
-    || std::is_same_v<Mode, open_mode::ReadWrite>;
+concept MappedOpenMode = requires { open_mode_flags<Mode>::value; };
 
 template <typename Flag>
-inline constexpr bool is_known_flag_v = std::is_same_v<Flag, flag::CloseOnExec> || std::is_same_v<Flag, flag::NoFollow>
-                                     || std::is_same_v<Flag, flag::DataSync> || std::is_same_v<Flag, flag::FullSync>
-                                     || std::is_same_v<Flag, flag::Direct>;
+concept MappedFlag = requires { flag_bits<Flag>::value; };
 
+template <typename Mode>
+inline constexpr bool is_known_open_mode_v = MappedOpenMode<Mode>;
+
+template <typename Flag>
+inline constexpr bool is_known_flag_v = MappedFlag<Flag>;
+
+// The sync and atomicity tags have no bit map, so these two stay lists.
 template <typename SyncOp>
 inline constexpr bool is_known_sync_op_v =
     std::is_same_v<SyncOp, sync_op::None> || std::is_same_v<SyncOp, sync_op::Fdatasync>
@@ -330,10 +337,23 @@ using extract_atomicity_t = typename extract_atomicity<std::remove_cvref_t<A>>::
 // A durable or atomic_write atom declares intent for a later sync or
 // commit call and adds nothing to the open flags, so those two fold to
 // zero here on purpose rather than by omission.
+//
+// The branches are discarded statements, not a conditional expression.
+// A conditional instantiates the bits of each arm, and a mode atom has
+// no flag, so the closed map refused the arm that the atom did not take.
 template <typename A>
-inline constexpr int atom_open_flags_v = is_mode_atom_v<A>   ? open_mode_flags_v<extract_mode_t<A>>
-                                       : is_flag_atom_v<A> ? flag_bits_v<extract_flag_t<A>>
-                                                           : 0;
+[[nodiscard]] consteval int atom_open_flags() noexcept {
+    if constexpr (is_mode_atom_v<A>) {
+        return open_mode_flags_v<extract_mode_t<A>>;
+    } else if constexpr (is_flag_atom_v<A>) {
+        return flag_bits_v<extract_flag_t<A>>;
+    } else {
+        return 0;
+    }
+}
+
+template <typename A>
+inline constexpr int atom_open_flags_v = atom_open_flags<A>();
 
 // O_CLOEXEC is folded in unconditionally.  A descriptor that survives
 // execve leaks into every child process.
@@ -553,12 +573,15 @@ static_assert(fold_open_flags<A_Trunc, A_NoFollow>() == (O_WRONLY | O_CREAT | O_
 static_assert(fold_open_flags<A_Trunc, A_Fsync, A_Rename>() == (O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC),
               "durable and atomic_write atoms declare intent and add no open flag.");
 
-// The bit maps answer zero for a tag they do not know, and for a mode
-// zero is O_RDONLY: an unmapped mode would open for reading with no
-// diagnostic.  The gate reads the known-tag predicates instead.
+// A tag with no entry in a bit map has no bits.  A read of them is a
+// compile error, so an unmapped mode cannot open for reading and an
+// unmapped flag cannot vanish from the open word.
 struct NotAMode final {};
 struct NotAFlag final {};
-static_assert(open_mode_flags_v<NotAMode> == O_RDONLY, "an unmapped mode folds to O_RDONLY, which the kernel accepts.");
+static_assert(!MappedOpenMode<NotAMode>, "a mode with no entry must have no bits, not O_RDONLY.");
+static_assert(!MappedFlag<NotAFlag>, "a flag with no entry must have no bits, not zero.");
+static_assert(!MappedOpenMode<void> && !MappedFlag<void>);
+static_assert(MappedOpenMode<open_mode::ReadOnly> && MappedFlag<flag::NoFollow>);
 static_assert(!is_known_open_mode_v<NotAMode>);
 static_assert(!is_known_flag_v<NotAFlag>);
 static_assert(all_atom_tags_known_v<A_RO, A_NoFollow, A_Fsync, A_Rename>);
@@ -614,8 +637,10 @@ static_assert(std::is_default_constructible_v<Dirfd>);
 static_assert(!std::is_copy_constructible_v<Dirfd>);
 
 // Every tag the four fixy::fs namespaces declare is known to the
-// predicate that gates it.  The predicates are hand lists; this is what
-// notices a tag they omit.
+// predicate that gates it.  For a mode and a flag the predicate is the
+// bit map, so this walk is the check that each declared tag has an
+// entry.  The sync and atomicity predicates are lists, and the walk is
+// what notices a tag they omit.
 template <std::meta::info Ns, auto Predicate>
 [[nodiscard]] consteval bool every_tag_in_satisfies_() noexcept {
     static constexpr auto members = std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
