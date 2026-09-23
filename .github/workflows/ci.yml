@@ -258,6 +258,9 @@ jobs:
           bash scripts/check-no-coordination-refs.sh --self-test
           bash scripts/check-no-coordination-refs.sh
 
+      - name: session oracle drift (check)
+        run: bash scripts/session-oracle.sh --check
+
       - name: ci_guard label coverage (self-test + scan)
         run: |
           bash scripts/check-ci-guard-labels.sh --self-test

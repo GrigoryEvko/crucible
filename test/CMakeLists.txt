@@ -958,6 +958,20 @@ add_test(NAME no_coordination_refs
 set_tests_properties(no_coordination_refs no_coordination_refs_self_test
     PROPERTIES LABELS "ci_guard")
 
+# Differential tests of the session relations against the projection
+# oracle of Tirore, Bengtson and Carbone (ITP 2023).  The check emits the
+# tests of test/session_oracle/ from golden.csv again and compares them
+# with the committed files.  It needs no oracle and no compiler.  The
+# self-test compiles the emitted tests, then a copy with one wrong row
+# planted in each test, which must fail on that row.  The oracle itself
+# runs only when a person regenerates golden.csv.
+add_test(NAME session_oracle_check
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/session-oracle.sh --check)
+add_test(NAME session_oracle_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/session-oracle.sh --self-test ${CMAKE_CXX_COMPILER})
+set_tests_properties(session_oracle_check session_oracle_self_test
+    PROPERTIES LABELS "ci_guard;session_oracle")
+
 # Stage A port completeness.  Three completed port tasks (A2.3, A9, A11.2)
 # were incomplete and each was found by downstream work or a one-off
 # sweep, never by review.  This is the sweep's permanent form: every
@@ -15882,3 +15896,4 @@ set_tests_properties(parse_clean tsast_self_test mintmodel_self_test PROPERTIES 
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)
+add_subdirectory(session_oracle)
