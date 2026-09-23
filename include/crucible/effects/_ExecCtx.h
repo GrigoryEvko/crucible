@@ -403,14 +403,12 @@ public:
 
 private:
     // The axis members are private, and the capability member is why.
-    // It holds a context whose own default constructor is private and
-    // friended here, so exposing the member would let any translation
-    // unit copy out a capability context that it could not have
-    // constructed for itself.
+    // It holds a context whose own default constructor is private, so
+    // exposing the member would let any translation unit copy out a
+    // capability context that it could not have constructed for itself.
     //
     // Making this a class rather than a struct changes only the default
-    // member access, so the implicit default constructor stays public
-    // and the aliases and builder methods below still work.
+    // member access.
     [[no_unique_address]] Cap cap_{};
     [[no_unique_address]] Numa numa_{};
     [[no_unique_address]] Alloc alloc_{};
@@ -421,6 +419,25 @@ private:
     [[no_unique_address]] Progress progress_{};
 
 public:
+    // A context that claims nothing is free to build, because there is
+    // nothing in it to forge.
+    //
+    // This constructor exists for the foreground marker only.  A default
+    // constructor for every specialization would let `BgDrainCtx{}` build
+    // its Bg member, and the result would satisfy CtxCanMint for every
+    // effect a background source permits, with no pass of the key that
+    // guards the Bg constructor.  Bg, Init and Test do not befriend this
+    // template, so nothing here builds a source.
+    constexpr ExecCtx() noexcept
+        requires std::is_same_v<Cap, ctx_cap::Fg>
+    = default;
+
+    // Every other context is handed the capability it claims, and that
+    // capability is the evidence: the default constructor of Bg, Init
+    // and Test is private, so a caller that holds one obtained it from
+    // a friended mint.
+    constexpr explicit ExecCtx(Cap cap) noexcept : cap_{cap} {}
+
     // The only way to reach the capability, and it borrows rather than
     // copies.  Code that wants a copy has to write one, which a grep
     // for this accessor finds.
@@ -435,42 +452,47 @@ public:
     using workload_hint = Workload;
     using progress_class = Progress;
 
-    // Each builder returns a fresh context with one axis replaced.
-    // Every link of a chain is a distinct type and every link is one
-    // byte.
+    // Each builder returns a fresh context with one axis replaced, and
+    // carries the capability that this context already holds.  Every
+    // link of a chain is a distinct type and every link is one byte.
+    //
+    // Promoting the capability axis takes the capability itself, not
+    // merely its name.  A promotion that names only the type would let
+    // `ExecCtx<>{}.with_cap<Bg>()` climb from a foreground context to a
+    // background context in one call with no evidence at all.
     template <class NewCap>
         requires IsCapType<NewCap> && Subrow<Row, cap_permitted_row_t<NewCap>>
-    [[nodiscard]] consteval auto with_cap() const noexcept
+    [[nodiscard]] constexpr auto with_cap(NewCap cap) const noexcept
         -> ExecCtx<NewCap, Numa, Alloc, Heat, Resid, Row, Workload, Progress> {
-        return {};
+        return ExecCtx<NewCap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>{cap};
     }
 
     template <class NewNuma>
         requires IsNumaPolicy<NewNuma>
-    [[nodiscard]] consteval auto pinned_to() const noexcept
+    [[nodiscard]] constexpr auto pinned_to() const noexcept
         -> ExecCtx<Cap, NewNuma, Alloc, Heat, Resid, Row, Workload, Progress> {
-        return {};
+        return ExecCtx<Cap, NewNuma, Alloc, Heat, Resid, Row, Workload, Progress>{cap_};
     }
 
     template <class NewAlloc>
         requires IsAllocClass<NewAlloc>
-    [[nodiscard]] consteval auto with_alloc() const noexcept
+    [[nodiscard]] constexpr auto with_alloc() const noexcept
         -> ExecCtx<Cap, Numa, NewAlloc, Heat, Resid, Row, Workload, Progress> {
-        return {};
+        return ExecCtx<Cap, Numa, NewAlloc, Heat, Resid, Row, Workload, Progress>{cap_};
     }
 
     template <class NewHeat>
         requires IsHeatTier<NewHeat>
-    [[nodiscard]] consteval auto with_heat() const noexcept
+    [[nodiscard]] constexpr auto with_heat() const noexcept
         -> ExecCtx<Cap, Numa, Alloc, NewHeat, Resid, Row, Workload, Progress> {
-        return {};
+        return ExecCtx<Cap, Numa, Alloc, NewHeat, Resid, Row, Workload, Progress>{cap_};
     }
 
     template <class NewResid>
         requires IsResidencyTier<NewResid>
-    [[nodiscard]] consteval auto with_residency() const noexcept
+    [[nodiscard]] constexpr auto with_residency() const noexcept
         -> ExecCtx<Cap, Numa, Alloc, Heat, NewResid, Row, Workload, Progress> {
-        return {};
+        return ExecCtx<Cap, Numa, Alloc, Heat, NewResid, Row, Workload, Progress>{cap_};
     }
 
     // The row only grows.  It may not grow past what the capability
@@ -478,16 +500,16 @@ public:
     // into one that claims a background effect.
     template <class NewRow>
         requires IsEffectRow<NewRow> && Subrow<Row, NewRow> && Subrow<NewRow, cap_permitted_row_t<Cap>>
-    [[nodiscard]] consteval auto in_row() const noexcept
+    [[nodiscard]] constexpr auto in_row() const noexcept
         -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, NewRow, Workload, Progress> {
-        return {};
+        return ExecCtx<Cap, Numa, Alloc, Heat, Resid, NewRow, Workload, Progress>{cap_};
     }
 
     template <class NewWl>
         requires IsWorkloadHint<NewWl>
-    [[nodiscard]] consteval auto with_workload() const noexcept
+    [[nodiscard]] constexpr auto with_workload() const noexcept
         -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, NewWl, Progress> {
-        return {};
+        return ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, NewWl, Progress>{cap_};
     }
 
     // Any progress claim is accepted here, in either direction.  The
@@ -495,9 +517,9 @@ public:
     // the context records it.
     template <class NewProgress>
         requires IsProgressClass<NewProgress>
-    [[nodiscard]] consteval auto with_progress() const noexcept
+    [[nodiscard]] constexpr auto with_progress() const noexcept
         -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, NewProgress> {
-        return {};
+        return ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, NewProgress>{cap_};
     }
 
     [[nodiscard]] static consteval std::string_view kind_name() noexcept { return "ExecCtx"; }
@@ -734,15 +756,22 @@ inline constexpr auto to_residency_heat_tag_v = to_residency_heat_tag<ResidTag>:
 // Soundness holds because the destination type still checks its own
 // rules when it is instantiated.
 //
-// The result is the same value as default-constructing the
-// destination.  What the call adds is the statement that the new
-// context derives from the old one.
+// The destination keeps the capability source of the old context, or
+// drops to the foreground, which claims nothing.  It never takes a
+// different source, so `rebuild_ctx_to<BgDrainCtx>(HotFgCtx{})` does not
+// compile: a foreground context holds no background source to carry.
 //
 // It is a free function so that the source type need not be spelled.
 template <class NewCtx, IsExecCtx OldCtx>
     requires IsExecCtx<NewCtx>
-[[nodiscard]] consteval NewCtx rebuild_ctx_to(OldCtx const&) noexcept {
-    return NewCtx{};
+             && (std::is_same_v<typename NewCtx::cap_type, typename OldCtx::cap_type>
+                 || std::is_same_v<typename NewCtx::cap_type, ctx_cap::Fg>)
+[[nodiscard]] constexpr NewCtx rebuild_ctx_to(OldCtx const& old) noexcept {
+    if constexpr (std::is_same_v<typename NewCtx::cap_type, ctx_cap::Fg>) {
+        return NewCtx{};
+    } else {
+        return NewCtx{old.cap()};
+    }
 }
 
 namespace detail::exec_ctx_self_test {
@@ -784,7 +813,7 @@ static_assert(std::is_same_v<typename HotFgCtx::workload_hint, ctx_workload::Uns
 static_assert(std::is_same_v<typename HotFgCtx::progress_class, ctx_progress::Terminating>);
 
 constexpr auto _ctx0 = ExecCtx<>{};
-constexpr auto _ctx1 = _ctx0.with_cap<Bg>();
+constexpr auto _ctx1 = _ctx0.with_cap(testing::bg());
 static_assert(std::is_same_v<typename decltype(_ctx1)::cap_type, Bg>);
 static_assert(std::is_same_v<typename decltype(_ctx1)::numa_policy, ctx_numa::Any>);
 static_assert(std::is_same_v<typename decltype(_ctx1)::alloc_class, ctx_alloc::Unbound>);
@@ -943,9 +972,46 @@ static_assert(std::is_same_v<ctx_cap::Test, Test>);
 // Promoting the empty row to a background capability is admitted.
 // Moving a background row to an initialization capability is not, and
 // would have to narrow the row first.
-constexpr auto _bg_promoted = HotFgCtx{}.with_cap<Bg>();
+constexpr auto _bg_promoted = HotFgCtx{}.with_cap(testing::bg());
 static_assert(std::is_same_v<typename decltype(_bg_promoted)::cap_type, Bg>);
 static_assert(std::is_same_v<typename decltype(_bg_promoted)::row_type, Row<>>);
+
+// A context over a background, initialization or test source is built
+// only from a source the caller already holds.  No default constructor,
+// no promotion that names only a type, and no rebuild that changes the
+// source reaches one.
+static_assert(std::is_default_constructible_v<HotFgCtx>, "The foreground context claims nothing, so anyone may build it.");
+static_assert(!std::is_default_constructible_v<BgDrainCtx> && !std::is_default_constructible_v<BgCompileCtx>
+                  && !std::is_default_constructible_v<ColdInitCtx> && !std::is_default_constructible_v<TestRunnerCtx>,
+              "A context over Bg, Init or Test must not be default-constructible.  Build it from a minted "
+              "source: BgDrainCtx{bg}.");
+static_assert(!std::is_convertible_v<Bg, BgDrainCtx>, "The source constructor must be explicit.");
+template <class Ctx, class NewCap>
+concept can_promote_by_type_only_ = requires(Ctx const& ctx) { ctx.template with_cap<NewCap>(); };
+template <class NewCtx, class OldCtx>
+concept can_rebuild_ = requires(OldCtx const& old) { rebuild_ctx_to<NewCtx>(old); };
+
+static_assert(!can_promote_by_type_only_<HotFgCtx, Bg>,
+              "Promoting the capability axis must take the source itself, not only its type.");
+static_assert(!can_rebuild_<BgDrainCtx, HotFgCtx> && !can_rebuild_<BgDrainCtx, ColdInitCtx>,
+              "A rebuild must not change the capability source of a context.");
+static_assert(can_rebuild_<HotFgCtx, BgDrainCtx> && can_rebuild_<BgDrainCtx, BgCompileCtx>,
+              "A rebuild may keep the source, or drop a context to the foreground, which claims nothing.");
+
+// No route builds a context over a source without a constructor.
+// The source has no trivial constructor, so the copy of the context is
+// not trivial either, and the one constructor that is not a copy takes
+// a source.  std::bit_cast and std::start_lifetime_as then refuse the
+// context.  The foreground context stays trivially copyable, because it
+// claims nothing and anyone may build it.
+using capabilities_self_test::is_forgeable_from_bytes_v;
+
+static_assert(!is_forgeable_from_bytes_v<BgDrainCtx> && !is_forgeable_from_bytes_v<BgCompileCtx>
+                  && !is_forgeable_from_bytes_v<ColdInitCtx> && !is_forgeable_from_bytes_v<TestRunnerCtx>,
+              "An execution context over Bg, Init or Test must have no trivial constructor, or std::bit_cast "
+              "builds it from a byte and every ctx-bound gate admits the forged scope.");
+static_assert(std::is_trivially_copyable_v<HotFgCtx>, "The foreground context claims nothing, so a copy of it "
+                                                      "stays free.");
 
 static_assert(heat_resid_coherent_v<ctx_heat::Hot, ctx_resid::L1>);
 static_assert(heat_resid_coherent_v<ctx_heat::Hot, ctx_resid::L2>);
@@ -1102,22 +1168,22 @@ static_assert(to_alloc_class_tag_v<typename BgDrainCtx::alloc_class> == lat::All
 static_assert(to_residency_heat_tag_v<typename BgDrainCtx::residency> == lat::ResidencyHeatTag::Hot);
 static_assert(to_alloc_class_tag_v<typename MaxCtx::alloc_class> == lat::AllocClassTag::HugePage);
 
-constexpr auto _rebuilt = rebuild_ctx_to<BgDrainCtx>(HotFgCtx{});
+constexpr auto _rebuilt = rebuild_ctx_to<BgDrainCtx>(BgCompileCtx{testing::bg()});
 static_assert(std::is_same_v<decltype(_rebuilt), const BgDrainCtx>);
 
 // Every operation is driven here with non-constant arguments.  The
 // static_assert wall above only proves the constant-evaluated path.
 inline void runtime_smoke_test() {
     [[maybe_unused]] HotFgCtx hot{};
-    [[maybe_unused]] BgDrainCtx bg{};
-    [[maybe_unused]] BgCompileCtx compile{};
-    [[maybe_unused]] ColdInitCtx cold{};
-    [[maybe_unused]] TestRunnerCtx test_ctx{};
+    [[maybe_unused]] BgDrainCtx bg{testing::bg()};
+    [[maybe_unused]] BgCompileCtx compile{testing::bg()};
+    [[maybe_unused]] ColdInitCtx cold{testing::init()};
+    [[maybe_unused]] TestRunnerCtx test_ctx{testing::test()};
 
     [[maybe_unused]] auto s1 = sizeof(hot);
     [[maybe_unused]] auto s2 = sizeof(bg);
 
-    auto rebuilt = rebuild_ctx_to<BgDrainCtx>(hot);
+    auto rebuilt = rebuild_ctx_to<BgDrainCtx>(compile);
     [[maybe_unused]] BgDrainCtx r_copy = rebuilt;
 
     // Raising the progress claim of a hot context satisfies the

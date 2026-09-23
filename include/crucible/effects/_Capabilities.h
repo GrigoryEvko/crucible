@@ -261,6 +261,9 @@ using Block = cap::Block;
 namespace crucible {
 class Vigil;
 struct BackgroundThread;
+namespace tools {
+struct HwProbeEntry;
+}  // namespace tools
 }  // namespace crucible
 
 namespace crucible::effects {
@@ -269,36 +272,50 @@ namespace testing {
 struct TestWitness;
 }  // namespace testing
 
-// An execution context default-initializes its capability member, so
-// it needs access to that member's private default constructor.  The
-// contexts below friend this template to grant exactly that.
-template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
-class ExecCtx;
-
+// Each constructor of a key is user-provided, and not defaulted.  A key
+// with a trivial copy is trivially copyable, and std::bit_cast then
+// builds one from any byte.  A key with any trivial constructor is an
+// implicit-lifetime type, and std::start_lifetime_as then builds one
+// over a buffer.  Neither route names a constructor, so neither meets
+// the access check that the friend list controls.  The copy stays
+// public, so a holder can pass a key along.
 namespace detail::ctx_mint {
 
 class bg_key {
 private:
-    constexpr bg_key() noexcept = default;
+    constexpr bg_key() noexcept {}
 
     friend struct ::crucible::BackgroundThread;
+    // The entry point of the hardware-probe tool.  It reads and writes the
+    // capability ledger at process start, and the store blocks on a disk,
+    // which an initialization context does not admit.
+    friend struct ::crucible::tools::HwProbeEntry;
     friend struct ::crucible::effects::testing::TestWitness;
+
+public:
+    constexpr bg_key(const bg_key&) noexcept {}
 };
 
 class init_key {
 private:
-    constexpr init_key() noexcept = default;
+    constexpr init_key() noexcept {}
 
     friend class ::crucible::Vigil;
     friend struct ::crucible::BackgroundThread;
     friend struct ::crucible::effects::testing::TestWitness;
+
+public:
+    constexpr init_key(const init_key&) noexcept {}
 };
 
 class test_key {
 private:
-    constexpr test_key() noexcept = default;
+    constexpr test_key() noexcept {}
 
     friend struct ::crucible::effects::testing::TestWitness;
+
+public:
+    constexpr test_key(const test_key&) noexcept {}
 };
 
 }  // namespace detail::ctx_mint
@@ -325,26 +342,31 @@ concept CanMintInitContext = std::same_as<Key, detail::ctx_mint::init_key>;
 template <class Key>
 concept CanMintTestContext = std::same_as<Key, detail::ctx_mint::test_key>;
 
+// The default constructor and the copy constructor of each context are
+// user-provided, and not defaulted, so no constructor of a context is
+// trivial.  A context with a trivial copy is trivially copyable, and
+// std::bit_cast builds one from a byte.  A context with a trivial
+// constructor is an implicit-lifetime type, and std::start_lifetime_as
+// builds one over a buffer.  Each route skips the private door, and
+// every ctx-bound gate then admits the forged scope.  An empty class
+// copies with no instruction either way, and the destructor stays
+// trivial.
+//
+// No execution context is a friend.  An execution context over a
+// background, initialization or test source takes the source as a
+// constructor argument, so it never builds one itself.
 class Bg {
 private:
-    constexpr Bg() noexcept = default;
+    constexpr Bg() noexcept {}
 
     template <class Key>
         requires CanMintBgContext<Key>
     friend constexpr Bg mint_bg_context(Key) noexcept;
 
-    // Access to a default member initializer is checked in the context
-    // of the class that contains the member, so this friendship is what
-    // lets an execution context default-initialize a Bg member while
-    // every other translation unit stays locked out.
-    // The parameter list must match the declaration above exactly.  A
-    // qualified friend name with the wrong arity is accepted in
-    // silence, so nothing here would report a drift; only unqualifying
-    // the name turns it into a diagnostic.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
-    friend class ::crucible::effects::ExecCtx;
-
 public:
+    constexpr Bg(const Bg& other) noexcept : alloc{other.alloc}, io{other.io}, block{other.block} {}
+    constexpr Bg& operator=(const Bg&) noexcept = default;
+
     [[no_unique_address]] cap::Alloc alloc{};
     [[no_unique_address]] cap::IO io{};
     [[no_unique_address]] cap::Block block{};
@@ -352,40 +374,32 @@ public:
 
 class Init {
 private:
-    constexpr Init() noexcept = default;
+    constexpr Init() noexcept {}
 
     template <class Key>
         requires CanMintInitContext<Key>
     friend constexpr Init mint_init_context(Key) noexcept;
 
-    // The parameter list must match the declaration above exactly.  A
-    // qualified friend name with the wrong arity is accepted in
-    // silence, so nothing here would report a drift; only unqualifying
-    // the name turns it into a diagnostic.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
-    friend class ::crucible::effects::ExecCtx;
-
 public:
+    constexpr Init(const Init& other) noexcept : alloc{other.alloc}, io{other.io} {}
+    constexpr Init& operator=(const Init&) noexcept = default;
+
     [[no_unique_address]] cap::Alloc alloc{};
     [[no_unique_address]] cap::IO io{};
 };
 
 class Test {
 private:
-    constexpr Test() noexcept = default;
+    constexpr Test() noexcept {}
 
     template <class Key>
         requires CanMintTestContext<Key>
     friend constexpr Test mint_test_context(Key) noexcept;
 
-    // The parameter list must match the declaration above exactly.  A
-    // qualified friend name with the wrong arity is accepted in
-    // silence, so nothing here would report a drift; only unqualifying
-    // the name turns it into a diagnostic.
-    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
-    friend class ::crucible::effects::ExecCtx;
-
 public:
+    constexpr Test(const Test& other) noexcept : alloc{other.alloc}, io{other.io}, block{other.block} {}
+    constexpr Test& operator=(const Test&) noexcept = default;
+
     [[no_unique_address]] cap::Alloc alloc{};
     [[no_unique_address]] cap::IO io{};
     [[no_unique_address]] cap::Block block{};
@@ -578,6 +592,29 @@ static_assert(!std::is_default_constructible_v<Init>,
               "production entry point, or through the test witness.");
 static_assert(!std::is_default_constructible_v<Test>,
               "The Test default constructor must stay private.  Build one through the test witness.");
+
+// No route builds a context or its key without a constructor.
+// std::bit_cast builds any trivially copyable type from bytes, and
+// std::start_lifetime_as builds any implicit-lifetime type over a
+// buffer.  Neither names a constructor, so neither meets the access
+// check.  Each assertion fails if a constructor becomes defaulted again.
+template <class C>
+inline constexpr bool is_forgeable_from_bytes_v = std::is_trivially_copyable_v<C> || std::is_implicit_lifetime_v<C>;
+
+static_assert(!is_forgeable_from_bytes_v<Bg> && !is_forgeable_from_bytes_v<Init> && !is_forgeable_from_bytes_v<Test>,
+              "A context must have no trivial constructor.  A trivially copyable context is built by std::bit_cast "
+              "from a byte, and an implicit-lifetime context by std::start_lifetime_as over a buffer.  Keep the "
+              "default and copy constructors of Bg, Init and Test user-provided.");
+static_assert(!is_forgeable_from_bytes_v<detail::ctx_mint::bg_key> && !is_forgeable_from_bytes_v<detail::ctx_mint::init_key>
+                  && !is_forgeable_from_bytes_v<detail::ctx_mint::test_key>,
+              "A context key must have no trivial constructor, or std::bit_cast and std::start_lifetime_as build the "
+              "key that mints the context.  Keep the constructors of the key user-provided.");
+static_assert(std::is_nothrow_copy_constructible_v<Bg> && std::is_nothrow_copy_constructible_v<Init>
+                  && std::is_nothrow_copy_constructible_v<Test>,
+              "A context is passed by value, so its copy must not throw.");
+static_assert(std::is_trivially_destructible_v<Bg> && std::is_trivially_destructible_v<Init>
+                  && std::is_trivially_destructible_v<Test>,
+              "The destructor of a context must stay trivial, so that its end costs nothing.");
 
 // Every accessor is called here with a non-constant argument.  The
 // static_assert wall above only proves the constant-evaluated path.

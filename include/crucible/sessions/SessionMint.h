@@ -43,13 +43,26 @@ struct [[nodiscard]] EpochExecCtx {
     static constexpr std::uint64_t current_epoch = CurrentEpoch;
     static constexpr std::uint64_t current_generation = CurrentGeneration;
 
+    // A wrapper over the foreground context claims nothing, so any caller
+    // can build it.  Every other wrapper takes the context it wraps, which
+    // is the evidence.  The wrapper is not an aggregate.  An aggregate is an
+    // implicit-lifetime type, and std::start_lifetime_as then builds a
+    // wrapper over a background context from a buffer, with no context in
+    // hand.
+    constexpr EpochExecCtx() noexcept
+        requires std::is_same_v<cap_type, ::crucible::effects::ctx_cap::Fg>
+    = default;
+    constexpr explicit EpochExecCtx(InnerCtx wrapped_ctx) noexcept : inner{wrapped_ctx} {}
+
     [[no_unique_address]] InnerCtx inner{};
 };
 
+// The wrapper carries the context it is handed, so the result holds no more
+// authority than the argument.
 template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, ::crucible::effects::IsExecCtx InnerCtx>
-[[nodiscard]] consteval auto with_session_epoch(InnerCtx const&) noexcept
+[[nodiscard]] constexpr auto with_session_epoch(InnerCtx const& ctx) noexcept
     -> EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx> {
-    return {};
+    return EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx>{ctx};
 }
 
 }  // namespace crucible::safety::proto
