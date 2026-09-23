@@ -1062,9 +1062,11 @@ struct is_hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or
 
 // The provided fence strength, read against a floor.  The primary is
 // false: a binding that names no strength provides no fence, so there
-// is nothing for V301 to refuse on it.  The chain order comes from
+// is nothing for V301 to refuse on it.  The order comes from
 // fixy/atoms/Barrier.h's own at_or_above, which is the lattice's leq in
-// its admission direction, so a rule cannot invert the ladder.  Both
+// its admission direction, so a rule cannot invert it.  The order is not
+// a chain: an acquire load is not at or above a release floor, nor the
+// reverse, so a floor on either tag admits only its own tag and above.  Both
 // this and is_hw_at_or_above_ read a member named `tier`; the type check
 // in the constraint is what keeps each from answering for the other's
 // atoms.
@@ -1568,7 +1570,7 @@ struct rules_of {
 
     // ── The barrier-strength family, live since fixy/atoms/Barrier.h ──
     //
-    // One rule, read at one boundary of the chain.  A seq_cst fence or
+    // One rule, read at one floor of the order.  A seq_cst fence or
     // the standalone full fence drains the store buffer, and the hot
     // path's budget is bounded by the cache-coherence fabric, not by a
     // drain.  A release store and an acquire load are one MOV each on

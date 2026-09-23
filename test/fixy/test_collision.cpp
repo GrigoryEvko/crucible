@@ -410,7 +410,7 @@ static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
 // ---------------------------------------------------------------------
 // The barrier-strength family, which reads fixy/atoms/Barrier.h.
 //
-// One rule at one boundary of the chain.  The cost and refinement atoms
+// One rule at one floor of the order.  The cost and refinement atoms
 // silence H001 and H002 on every hot cell.
 
 static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);
@@ -454,6 +454,20 @@ static_assert(live_rules<at::regime::hot, at::hw::privileged_msr, at::with<Eff::
               "the top of the hardware ladder is not a fence");
 static_assert(live_rules<at::barrier::full_fence>::V201_ok && live_rules<at::barrier::full_fence>::V202_ok,
               "the top of the fence ladder is not a hardware tier");
+
+// Acquire and release are incomparable, so neither tag satisfies a floor
+// at the other.  No live rule reads a floor at either tag, so the change
+// from a chain moves no verdict: V301 reads SeqCst and V401 reads AcqRel,
+// and each tag sits below both floors in either order.
+static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
+                                                    at::barrier::release_store>::value);
+static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::ReleaseStore,
+                                                    at::barrier::acquire_load>::value);
+static_assert(col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
+                                                   at::barrier::acq_rel>::value
+              && col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::ReleaseStore,
+                                                      at::barrier::acq_rel>::value,
+              "acq_rel is both an acquire and a release");
 
 // ---------------------------------------------------------------------
 // The memory-scope family, which reads fixy/atoms/Scope.h.
@@ -862,12 +876,6 @@ static_assert(live_rules<at::dispatch::indirect_call<void (attack_owner::*)() &>
 // A family named by an opaque tag states no signature, and D001 admits it.
 static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<attack_owner>>::value);
 static_assert(live_rules<at::dispatch::indirect_call<attack_owner>>::D001_ok);
-
-// BarrierStrength is a chain here, so a release store reads as at or above
-// an acquire floor.  Acquire and release are incomparable.  No live rule
-// asks for an acquire floor, so no verdict depends on this answer.
-static_assert(col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
-                                                   at::barrier::release_store>::value);
 
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {

@@ -1,7 +1,7 @@
 #pragma once
 
-// Chain over the memory-fence strength a code region provides.  bottom
-// is None, top is FullFence.  A stronger fence satisfies a weaker
+// The partial order of the memory-fence strength a code region provides.
+// bottom is None, top is FullFence.  A stronger fence satisfies a weaker
 // requirement, so leq(required, provided) is the admission direction and
 // join is the strictest-wins composition.
 //
@@ -11,19 +11,29 @@
 // a standalone fence instruction orders every surrounding memory
 // operation, not just the tagged one.
 //
-// Acquire and release are incomparable in the C++ memory model: neither
-// provides the other's guarantee.  This chain linearizes them into a
-// strength ladder because gating asks only whether a region provides at
-// least the required strength, and a stronger rung is always a safe
-// over-approximation.  A fence-then-relaxed pattern whose correctness
-// depends on a particular architecture is claimed separately.  Nothing
-// here proves it.
+// AcquireLoad and ReleaseStore are incomparable, as they are in the C++
+// memory model ([atomics.order]): an acquire load orders the operations
+// after it, a release store orders the operations before it, and neither
+// gives the guarantee of the other.  So the order is not a chain.  It is
+// a chain with one diamond:
+//
+//   None < CompilerBarrier < {AcquireLoad, ReleaseStore} < AcqRel < SeqCst < FullFence
+//
+// AcqRel is the join of the two, because acq_rel is both an acquire and a
+// release, and CompilerBarrier is their meet.  Reading the two as a chain
+// would let a release store satisfy an acquire requirement, which orders
+// the wrong side of the operation.  The order is a distributive lattice,
+// and the self-test below proves the laws at every triple.
+//
+// A fence-then-relaxed pattern whose correctness depends on a particular
+// architecture is claimed separately.  Nothing here proves it.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -48,10 +58,44 @@ enum class BarrierStrength : std::uint8_t {
     return ::foundation::reflect::enum_name(k);
 }
 
-struct BarrierStrengthLattice : ChainLatticeOps<BarrierStrength> {
+// The height of a strength in the order: its underlying value, with the
+// two incomparable tags at one height.  The enumerator values are pinned
+// in EnumValuePins.h, so the height follows the declaration.  A value
+// outside the enum gets a height above FullFence, and every operation
+// below stays defined for it.
+[[nodiscard]] constexpr std::uint8_t barrier_strength_height(BarrierStrength k) noexcept {
+    const std::uint8_t value = std::to_underlying(k);
+    return value <= std::to_underlying(BarrierStrength::AcquireLoad) ? value : static_cast<std::uint8_t>(value - 1);
+}
+
+struct BarrierStrengthLattice {
+    using element_type = BarrierStrength;
+
     [[nodiscard]] static constexpr BarrierStrength bottom() noexcept { return BarrierStrength::None; }
     [[nodiscard]] static constexpr BarrierStrength top() noexcept { return BarrierStrength::FullFence; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "BarrierStrengthLattice"; }
+
+    // Two distinct strengths at one height are incomparable.  Every other
+    // pair is ordered by height.
+    [[nodiscard]] static constexpr bool leq(BarrierStrength a, BarrierStrength b) noexcept {
+        if (a == b) return true;
+        return barrier_strength_height(a) < barrier_strength_height(b);
+    }
+
+    // The only two distinct strengths at one height are AcquireLoad and
+    // ReleaseStore, and the self-test below proves that by reflection.
+    // Their join is AcqRel and their meet is CompilerBarrier.
+    [[nodiscard]] static constexpr BarrierStrength join(BarrierStrength a, BarrierStrength b) noexcept {
+        if (a == b) return a;
+        if (barrier_strength_height(a) == barrier_strength_height(b)) return BarrierStrength::AcqRel;
+        return barrier_strength_height(a) > barrier_strength_height(b) ? a : b;
+    }
+
+    [[nodiscard]] static constexpr BarrierStrength meet(BarrierStrength a, BarrierStrength b) noexcept {
+        if (a == b) return a;
+        if (barrier_strength_height(a) == barrier_strength_height(b)) return BarrierStrength::CompilerBarrier;
+        return barrier_strength_height(a) < barrier_strength_height(b) ? a : b;
+    }
 
     template <BarrierStrength K>
     struct AtElement : PinnedElement<K> {
@@ -78,9 +122,59 @@ static_assert(std::to_underlying(BarrierStrength::FullFence) == 6);
 
 static_assert(std::is_same_v<std::underlying_type_t<BarrierStrength>, std::uint8_t>);
 
-static_assert(verify_chain_lattice<BarrierStrengthLattice>(),
-              "BarrierStrengthLattice: the chain order, the pinned grades or the "
-              "reflected names diverged from the BarrierStrength enumerator list.");
+static_assert(Lattice<BarrierStrengthLattice>);
+static_assert(BoundedLattice<BarrierStrengthLattice>);
+
+// The lattice laws at every triple of the seven strengths, and leq, join
+// and meet in agreement at every pair: reflexive, antisymmetric and
+// transitive, and join and meet the least upper and greatest lower
+// bounds.  The walk reads the enumerators by reflection.
+static_assert(verify_enum_lattice_exhaustive<BarrierStrengthLattice>(),
+              "BarrierStrengthLattice: a partial-order or bound law fails at some triple of strengths.");
+
+// A chain with one diamond is distributive.  The law holds at every
+// triple, so a later strength that breaks it stops the build here.
+static_assert(verify_chain_lattice_distributive_exhaustive<BarrierStrengthLattice>(),
+              "BarrierStrengthLattice: the distributive law fails at some triple of strengths.");
+
+static_assert(verify_pinned_at<BarrierStrengthLattice>(),
+              "BarrierStrengthLattice::At<K>: a pinned grade lost its emptiness, its conversion back to K, or its "
+              "reflected name.");
+
+// The incomparable pairs, derived from the order rather than listed.  The
+// only pair is {AcquireLoad, ReleaseStore}, which join and meet above
+// depend on.  A new strength at an existing height adds a pair, and this
+// assertion names the fault before join and meet can give a wrong bound.
+[[nodiscard]] consteval std::size_t incomparable_pairs() noexcept {
+    std::size_t pairs = 0;
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^BarrierStrength));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto first : enumerators) {
+        template for (constexpr auto second : enumerators) {
+            constexpr BarrierStrength a = [:first:];
+            constexpr BarrierStrength b = [:second:];
+            if (std::to_underlying(a) < std::to_underlying(b) && !BarrierStrengthLattice::leq(a, b)
+                && !BarrierStrengthLattice::leq(b, a)) {
+                ++pairs;
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return pairs;
+}
+static_assert(incomparable_pairs() == 1,
+              "BarrierStrengthLattice: the order must have exactly one incomparable pair, AcquireLoad and "
+              "ReleaseStore.  join and meet name AcqRel and CompilerBarrier as its bounds.");
+static_assert(!BarrierStrengthLattice::leq(BarrierStrength::AcquireLoad, BarrierStrength::ReleaseStore)
+                  && !BarrierStrengthLattice::leq(BarrierStrength::ReleaseStore, BarrierStrength::AcquireLoad),
+              "An acquire load orders the operations after it and a release store the operations before it.  "
+              "Neither satisfies a requirement for the other.");
+static_assert(BarrierStrengthLattice::join(BarrierStrength::AcquireLoad, BarrierStrength::ReleaseStore)
+                  == BarrierStrength::AcqRel,
+              "acq_rel is both an acquire and a release, so it is the least strength that satisfies both.");
+static_assert(BarrierStrengthLattice::meet(BarrierStrength::AcquireLoad, BarrierStrength::ReleaseStore)
+                  == BarrierStrength::CompilerBarrier);
 
 static_assert(!::foundation::algebra::Semiring<BarrierStrengthLattice>);
 

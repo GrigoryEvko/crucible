@@ -404,10 +404,13 @@ template <>
 struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_barrier_at_or_above_> {
     using Strength = ::foundation::algebra::lattices::BarrierStrength;
     using accepts = witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::full_fence>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, at::barrier::seq_cst>>;
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, at::barrier::seq_cst>,
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcquireLoad, at::barrier::acq_rel>>;
     using refuses = witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::acq_rel>,
                               ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, int>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::None, at::hw::privileged_msr>>;
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::None, at::hw::privileged_msr>,
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcquireLoad, at::barrier::release_store>,
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::ReleaseStore, at::barrier::acquire_load>>;
 };
 
 // The scope lattice has two trunks, so a host scope is not at or above an

@@ -3,20 +3,21 @@
 // The barrier-strength atoms.  Every atom here engages
 // Axis::BarrierStrength.
 //
-// The ladder is foundation's BarrierStrengthLattice, and its own words
-// say what the grades are: a chain over the memory-fence strength a code
-// region PROVIDES, bottom None and top FullFence, where a stronger fence
+// The order is foundation's BarrierStrengthLattice, and its own words
+// say what the grades are: the memory-fence strength a code region
+// PROVIDES, bottom None and top FullFence, where a stronger fence
 // satisfies a weaker requirement.  The domain brackets the standard
-// memory-order tags at both ends — CompilerBarrier sits below them
-// because it constrains only the optimizer and emits no instruction,
-// FullFence above them because a standalone fence orders every
+// memory-order tags at both ends.  CompilerBarrier sits below them
+// because it constrains only the optimizer and emits no instruction.
+// FullFence sits above them because a standalone fence orders every
 // surrounding memory operation rather than the tagged one.
 //
-// Acquire and release are incomparable in the C++ memory model; the
-// chain linearises them because gating asks only whether a region
-// provides AT LEAST a required strength, and a stronger rung is always a
-// safe over-approximation.  Nothing here proves a fence-then-relaxed
-// pattern that depends on one architecture; that is claimed separately.
+// Acquire and release are incomparable, as they are in the C++ memory
+// model, so the order is a chain with one diamond and AcqRel is their
+// join.  A release store does not satisfy an acquire floor, and an
+// acquire load does not satisfy a release floor.  Nothing here proves a
+// fence-then-relaxed pattern that depends on one architecture.  That is
+// claimed separately.
 //
 // This axis is not the memory-order tag on the Synchronization axis, and
 // fixy/Axis.h says so at the enumerator: this is the standalone
@@ -146,14 +147,20 @@ static_assert(every_tier_has_exactly_one_atom_(),
 static_assert(no_member_lifts_(), "fixy/atoms/Barrier.h: a provided strength names no operation, so no atom here "
                                   "declares lifts_to.  The head of this file says why.");
 
-// The chain at the two boundaries the rules read.  V301 refuses SeqCst
-// or above on the hot path; V401 wants AcqRel or above for a wide scope.
+// The order at the two boundaries the rules read.  V301 refuses SeqCst or
+// above on the hot path, and V401 wants AcqRel or above for a wide scope.
+// The two tags between them are incomparable, so neither is at or above
+// the other.
 static_assert(barrier::at_or_above(fal::BarrierStrength::FullFence, fal::BarrierStrength::SeqCst));
 static_assert(barrier::at_or_above(fal::BarrierStrength::SeqCst, fal::BarrierStrength::SeqCst));
 static_assert(!barrier::at_or_above(fal::BarrierStrength::AcqRel, fal::BarrierStrength::SeqCst));
 static_assert(barrier::at_or_above(fal::BarrierStrength::AcqRel, fal::BarrierStrength::AcqRel));
 static_assert(!barrier::at_or_above(fal::BarrierStrength::ReleaseStore, fal::BarrierStrength::AcqRel));
 static_assert(!barrier::at_or_above(fal::BarrierStrength::None, fal::BarrierStrength::CompilerBarrier));
+static_assert(!barrier::at_or_above(fal::BarrierStrength::ReleaseStore, fal::BarrierStrength::AcquireLoad));
+static_assert(!barrier::at_or_above(fal::BarrierStrength::AcquireLoad, fal::BarrierStrength::ReleaseStore));
+static_assert(barrier::at_or_above(fal::BarrierStrength::AcqRel, fal::BarrierStrength::AcquireLoad)
+              && barrier::at_or_above(fal::BarrierStrength::AcqRel, fal::BarrierStrength::ReleaseStore));
 
 static_assert(!std::is_same_v<barrier::acquire_load, barrier::release_store>);
 
