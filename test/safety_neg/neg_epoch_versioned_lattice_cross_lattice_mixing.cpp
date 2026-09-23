@@ -11,8 +11,8 @@
 // [GCC-WRAPPER-TEXT] — leq parameter-type mismatch on the strong
 // newtype carrier.
 
-#include <crucible/algebra/lattices/EpochLattice.h>
-#include <crucible/algebra/lattices/GenerationLattice.h>
+#include <crucible/algebra/lattices/_EpochLattice.h>
+#include <crucible/algebra/lattices/_GenerationLattice.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -18,7 +18,7 @@
 // [GCC-WRAPPER-TEXT] — operator-resolution rejection on cross-Tag
 // spaceship.
 
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 
 #include <compare>
 

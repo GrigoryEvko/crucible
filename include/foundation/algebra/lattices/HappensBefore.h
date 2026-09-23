@@ -8,7 +8,7 @@
 // clocks that each lead on a different slot are unordered, and
 // is_concurrent answers yes for them.
 //
-// Old spelling: include/crucible/algebra/lattices/HappensBefore.h.  The
+// Old spelling: include/crucible/algebra/lattices/_HappensBefore.h.  The
 // preconditions moved from native pre() clauses into the function bodies,
 // where CRUCIBLE_PRE fires during constant evaluation too.
 

@@ -16,7 +16,7 @@
 // [FRAMEWORK-CONTROLLED] — diagnostic regex matches the exact
 // static_assert message in HappensBefore.h's primary template.
 
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -20,7 +20,7 @@
 // as cross-N: structurally-distinct types per Tag, no framework
 // static_assert needed.
 
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 
 using namespace crucible::algebra::lattices;
 

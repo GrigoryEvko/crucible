@@ -25,7 +25,7 @@
 // [FRAMEWORK-CONTROLLED] — diagnostic regex matches the exact text of
 // the static_assert message below.
 
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 
 #include <compare>
 

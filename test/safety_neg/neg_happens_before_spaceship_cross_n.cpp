@@ -19,7 +19,7 @@
 // [GCC-WRAPPER-TEXT] — operator-resolution rejection on cross-type
 // spaceship.
 
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 
 #include <compare>
 

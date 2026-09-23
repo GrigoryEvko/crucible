@@ -44,8 +44,8 @@
 // graded by its version uses the order dual instead, as
 // fixy/EpochVersioned.h does through DualLattice.h.
 //
-// Old spellings: include/crucible/algebra/lattices/{EpochLattice,
-// GenerationLattice,PeakBytesLattice,BitsBudgetLattice}.h.
+// Old spellings: include/crucible/algebra/lattices/{_EpochLattice,
+// _GenerationLattice,_PeakBytesLattice,_BitsBudgetLattice}.h.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>

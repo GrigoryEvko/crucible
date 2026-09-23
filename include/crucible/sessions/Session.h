@@ -20,8 +20,8 @@
 // C++ template matching cannot express.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/EpochLattice.h>
-#include <crucible/algebra/lattices/GenerationLattice.h>
+#include <crucible/algebra/lattices/_EpochLattice.h>
+#include <crucible/algebra/lattices/_GenerationLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/safety/_Pinned.h>
 

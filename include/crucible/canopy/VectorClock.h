@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_Pinned.h>

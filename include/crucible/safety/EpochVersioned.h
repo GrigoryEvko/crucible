@@ -13,8 +13,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/EpochLattice.h>
-#include <crucible/algebra/lattices/GenerationLattice.h>
+#include <crucible/algebra/lattices/_EpochLattice.h>
+#include <crucible/algebra/lattices/_GenerationLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 
 #include <cstdint>

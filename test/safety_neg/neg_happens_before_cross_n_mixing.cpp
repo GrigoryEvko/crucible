@@ -22,7 +22,7 @@
 // per N; no framework-owned static_assert is needed to enforce the
 // distinction.
 
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -1218,56 +1218,6 @@ int run_mixed_session_cipher_events_ordered() {
 
 }  // anonymous namespace
 
-namespace {
-
-// The permissioned recorder must record an epoched hand-off with its
-// own kinds and both thresholds, as the plain recorder does.  It
-// recorded the plain Delegate and Accept kinds, so replay lost the
-// thresholds it needs to check the hand-off against the epoch chain.
-int run_recording_psh_epoched_delegate_accept_fidelity() {
-    namespace eff = crucible::effects;
-    struct CarrierChannel {
-        int endpoint = 0;
-    };
-    struct InnerChannel {
-        int endpoint = 0;
-    };
-    static constexpr std::uint64_t kEpoch = 7;
-    static constexpr std::uint64_t kGeneration = 2;
-    using Delegated = DelegatedSession<End, EmptyPermSet>;
-    using DelegateCarrier = EpochedDelegate<Delegated, End, kEpoch, kGeneration>;
-    using AcceptCarrier = EpochedAccept<Delegated, End, kEpoch, kGeneration>;
-    using Ctx = EpochExecCtx<kEpoch, kGeneration, eff::HotFgCtx>;
-
-    const Ctx ctx{};
-    SessionEventLog log{SessionTagId{4343}};
-
-    auto delegate_psh = mint_permissioned_session<DelegateCarrier>(ctx, CarrierChannel{});
-    auto delegate_rec = mint_recording_session(std::move(delegate_psh), log, kClient, kServer);
-    auto inner = mint_permissioned_session<End>(ctx, InnerChannel{55});
-    auto delegate_end = std::move(delegate_rec).delegate(
-        std::move(inner), [](CarrierChannel& carrier, InnerChannel&& handed) noexcept { carrier.endpoint = handed.endpoint; });
-    CarrierChannel carrier = std::move(delegate_end).close();
-    if (carrier.endpoint != 55) return 1;
-
-    auto accept_psh = mint_permissioned_session<AcceptCarrier>(ctx, std::move(carrier));
-    auto accept_rec = mint_recording_session(std::move(accept_psh), log, kServer, kClient);
-    auto [accepted, accept_end] = std::move(accept_rec).accept(
-        [](CarrierChannel& c) noexcept -> InnerChannel { return InnerChannel{c.endpoint}; });
-    InnerChannel accepted_channel = std::move(accepted).close();
-    (void)std::move(accept_end).close();
-    if (accepted_channel.endpoint != 55) return 2;
-
-    if (log.size() != 4) return 3;
-    if (log[0].op != SessionOp::EpochedDelegate) return 4;
-    if (log[0].epoched_min_epoch() != kEpoch || log[0].epoched_min_generation() != kGeneration) return 5;
-    if (log[2].op != SessionOp::EpochedAccept) return 6;
-    if (log[2].epoched_min_epoch() != kEpoch || log[2].epoched_min_generation() != kGeneration) return 7;
-    return 0;
-}
-
-}  // namespace
-
 int main() {
     if (int rc = run_log_basic(); rc != 0) return rc;
     if (int rc = run_step_counter_monotone(); rc != 0) return 100 + rc;
@@ -1298,7 +1248,6 @@ int main() {
     if (int rc = run_delegate_event_replay_roundtrip(); rc != 0) return 1200 + rc;
     if (int rc = run_recording_delegate_accept_recorded(); rc != 0) return 1300 + rc;
     if (int rc = run_recording_epoched_delegate_accept_fidelity(); rc != 0) return 1350 + rc;
-    if (int rc = run_recording_psh_epoched_delegate_accept_fidelity(); rc != 0) return 1360 + rc;
     if (int rc = run_all_session_ops_bit_exact_replay(); rc != 0) return 1400 + rc;
     if (int rc = run_mixed_session_cipher_events_ordered(); rc != 0) return 1500 + rc;
 

@@ -23,7 +23,7 @@
 #include <crucible/algebra/lattices/_AffinityLattice.h>
 #include <crucible/algebra/lattices/_AllocClassLattice.h>
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/BitsBudgetLattice.h>
+#include <crucible/algebra/lattices/_BitsBudgetLattice.h>
 #include <crucible/algebra/lattices/_BoolLattice.h>
 #include <crucible/algebra/lattices/CallShapeLattice.h>
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
@@ -33,12 +33,12 @@
 #include <crucible/algebra/lattices/ControlFlowLattice.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
-#include <crucible/algebra/lattices/EpochLattice.h>
+#include <crucible/algebra/lattices/_EpochLattice.h>
 #include <crucible/algebra/lattices/FpModeLattice.h>
 #include <crucible/algebra/lattices/_FractionalLattice.h>
-#include <crucible/algebra/lattices/GenerationLattice.h>
+#include <crucible/algebra/lattices/_GenerationLattice.h>
 #include <crucible/algebra/lattices/GlobalStateLattice.h>
-#include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/_HappensBefore.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/algebra/lattices/HwInstructionLattice.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
@@ -47,7 +47,7 @@
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
 #include <crucible/algebra/lattices/NumaNodeLattice.h>
-#include <crucible/algebra/lattices/PeakBytesLattice.h>
+#include <crucible/algebra/lattices/_PeakBytesLattice.h>
 #include <crucible/algebra/lattices/_PinningRequirementLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>

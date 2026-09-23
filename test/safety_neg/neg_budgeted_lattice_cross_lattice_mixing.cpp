@@ -21,8 +21,8 @@
 // [GCC-WRAPPER-TEXT] — leq parameter-type mismatch on the strong
 // newtype carrier.
 
-#include <crucible/algebra/lattices/BitsBudgetLattice.h>
-#include <crucible/algebra/lattices/PeakBytesLattice.h>
+#include <crucible/algebra/lattices/_BitsBudgetLattice.h>
+#include <crucible/algebra/lattices/_PeakBytesLattice.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -25,8 +25,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/BitsBudgetLattice.h>
-#include <crucible/algebra/lattices/PeakBytesLattice.h>
+#include <crucible/algebra/lattices/_BitsBudgetLattice.h>
+#include <crucible/algebra/lattices/_PeakBytesLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 
 #include <cstdint>
