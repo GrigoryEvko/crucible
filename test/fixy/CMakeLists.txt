@@ -1095,6 +1095,12 @@ fixy_neg_compile_test(neg_sess_subtype_async_input_ahead
   "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
   "Capacity = 8\\]")
 
+# The adversarial campaign against the algebra and the relations.  The
+# runtime half runs two threads over bounded queues with a watchdog, so
+# a deadlock ends the run with a verdict and never hangs.  The attacks
+# that succeed are pinned on a ledger that can only shrink.
+fixy_test(test_session_subtype_attack)
+
 # HS14 for mint_session_handle.  Its requires-clause is the whole
 # admission gate, so each clause gets a fixture that fails through it
 # and through no other: an ill-formed protocol, a well-formed protocol
