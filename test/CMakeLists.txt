@@ -1210,6 +1210,7 @@ crucible_test(test_sessions_compile)
 crucible_test(test_sessions_umbrella_surface)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
+crucible_test(test_effects_ctx_forge_attacks)
 crucible_test(test_resources)
 crucible_test(test_concurrent)
 crucible_test(test_concurrent_spinlock)
@@ -4920,6 +4921,68 @@ crucible_neg_compile_effects_test(neg_effects_mint_test_context_keyless
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_wrong_key
     "constraints.*not satisfied"
     "CanMintTestContext|same_as|bg_key|test_key|is private")
+
+# ─── A background or startup context needs a key or a source context ─
+#
+# Three routes built a background context with no key and no source
+# context.  Each of these fixtures compiles on a tree with one route
+# open.  The first route is a default constructor.  ExecCtx takes one
+# only over the foreground context, and so does the epoch wrapper.
+#
+# The second route is a promotion by type name.  with_cap takes the new
+# capability as an argument, and rebuild_ctx_to keeps the capability of
+# the old context or drops to the foreground context.  The third route
+# is a build from bytes.  Each context, key and capability has
+# user-provided constructors, so std::bit_cast has no candidate and
+# std::start_lifetime_as refuses the type.
+crucible_neg_compile_effects_test(neg_effects_bg_drain_ctx_default_constructed
+    "no matching function for call to .crucible::effects::ExecCtx<crucible::effects::Bg, "
+    "is_same_v<Cap, crucible::effects::ctx_cap::Fg> .with Cap = crucible::effects::Bg.* evaluated to .false.")
+crucible_neg_compile_effects_test(neg_effects_cold_init_ctx_default_constructed
+    "no matching function for call to .crucible::effects::ExecCtx<crucible::effects::Init, "
+    "is_same_v<Cap, crucible::effects::ctx_cap::Fg> .with Cap = crucible::effects::Init.* evaluated to .false.")
+crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_bg_default_constructed
+    "no matching function for call to .crucible::safety::proto::EpochExecCtx<1, 1, crucible::effects::ExecCtx<crucible::effects::Bg, "
+    "is_same_v<typename InnerCtx::cap_type, crucible::effects::ctx_cap::Fg> .with InnerCtx = crucible::effects::ExecCtx<crucible::effects::Bg, .* evaluated to .false.")
+crucible_neg_compile_effects_test(neg_effects_with_cap_bg_by_type_only
+    "no matching function for call to .crucible::effects::ExecCtx<>::with_cap<crucible::effects::Bg>"
+    "candidate expects 1 argument, 0 provided")
+crucible_neg_compile_effects_test(neg_effects_with_cap_init_by_type_only
+    "no matching function for call to .crucible::effects::ExecCtx<.*>::with_cap<crucible::effects::Init>"
+    "candidate expects 1 argument, 0 provided")
+crucible_neg_compile_effects_test(neg_effects_rebuild_ctx_across_sources
+    "no matching function for call to .rebuild_ctx_to<crucible::effects::BgDrainCtx>.const crucible::effects::HotFgCtx&"
+    "no operand of the disjunction is satisfied")
+crucible_neg_compile_effects_test(neg_effects_bg_context_forged_by_bit_cast
+    "no matching function for call to .bit_cast<crucible::effects::Bg>"
+    "is_trivially_copyable_v<_To> .with _To = crucible::effects::Bg.* evaluated to .false.")
+crucible_neg_compile_effects_test(neg_effects_bg_context_forged_by_start_lifetime_as
+    "static assertion failed"
+    ".crucible::effects::Bg. is not an implicit-lifetime type")
+crucible_neg_compile_effects_test(neg_effects_bg_drain_ctx_forged_by_bit_cast
+    "no matching function for call to .bit_cast<crucible::effects::BgDrainCtx>"
+    "is_trivially_copyable_v<_To> .with _To = crucible::effects::ExecCtx<crucible::effects::Bg, ")
+crucible_neg_compile_effects_test(neg_effects_bg_drain_ctx_forged_by_start_lifetime_as
+    "static assertion failed"
+    ".crucible::effects::ExecCtx<crucible::effects::Bg, .* is not an implicit-lifetime type")
+crucible_neg_compile_effects_test(neg_effects_bg_key_forged_by_bit_cast
+    "no matching function for call to .bit_cast<crucible::effects::detail::ctx_mint::bg_key>"
+    "is_trivially_copyable_v<_To> .with _To = crucible::effects::detail::ctx_mint::bg_key.* evaluated to .false.")
+crucible_neg_compile_effects_test(neg_effects_capability_forged_by_start_lifetime_as
+    "static assertion failed"
+    ".crucible::effects::Capability<crucible::effects::Effect::Block, crucible::effects::Bg>. is not an implicit-lifetime type")
+crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_bg_forged_by_start_lifetime_as
+    "static assertion failed"
+    ".crucible::safety::proto::EpochExecCtx<1, 1, crucible::effects::ExecCtx<crucible::effects::Bg, .* is not an implicit-lifetime type")
+# Two attacks from test_effects_ctx_forge_attacks.cpp fail as a hard
+# error, which a constraint cannot observe.  An aggregate holder and a
+# derived class each initialize the context from empty braces.
+crucible_neg_compile_effects_test(neg_effects_bg_drain_ctx_forged_by_aggregate_holder
+    "could not convert .<brace-enclosed initializer list>.*to .crucible::effects::BgDrainCtx."
+    "aka .crucible::effects::ExecCtx<crucible::effects::Bg, ")
+crucible_neg_compile_effects_test(neg_effects_bg_forged_by_derived_class
+    "crucible::effects::Bg::Bg.* is private within this context"
+    "declared private here")
 
 # ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
 #
