@@ -19,11 +19,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
+#include <initializer_list>
 #include <limits>
+#include <map>
+#include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
+#include <vector>
 
 namespace {
 
@@ -220,6 +228,65 @@ void attack_budget_edges() {
     }
 }
 
+// ── Payloads that reach outside the value ───────────────────────────
+
+template <typename T>
+concept can_version = requires { typename EpochVersioned<T>; };
+template <typename T>
+concept can_budget = requires { typename Budgeted<T>; };
+// The two wrappers share one payload rule, so each case must agree.
+template <typename T>
+concept carried_by_both = can_version<T> && can_budget<T>;
+template <typename T>
+concept refused_by_both = !can_version<T> && !can_budget<T>;
+
+struct HoldsName {
+    int id = 0;
+    std::string_view name;
+};
+struct HoldsScratch {
+    int value = 0;
+    mutable std::vector<int> scratch;
+};
+// A range that declares no view and no borrow, whose elements live
+// outside it.
+struct BorrowedRange {
+    int const* first = nullptr;
+    int const* last = nullptr;
+    [[nodiscard]] int const* begin() const noexcept { return first; }
+    [[nodiscard]] int const* end() const noexcept { return last; }
+};
+
+static_assert(refused_by_both<int*> && refused_by_both<int const*> && refused_by_both<int&>);
+static_assert(refused_by_both<std::span<int const>> && refused_by_both<std::string_view>);
+static_assert(refused_by_both<std::unique_ptr<int>> && refused_by_both<std::shared_ptr<int>>);
+static_assert(refused_by_both<std::reference_wrapper<int>> && refused_by_both<std::function<int()>>);
+static_assert(refused_by_both<HoldsName>, "a view in a member reaches out");
+static_assert(refused_by_both<std::vector<std::string_view>>, "a container's elements are read");
+static_assert(refused_by_both<std::optional<int*>>);
+static_assert(refused_by_both<HoldsScratch>, "a mutable member is written through peek()");
+static_assert(refused_by_both<BorrowedRange>, "a range the standard does not declare is walked by its members");
+static_assert(refused_by_both<std::initializer_list<int>>);
+
+static_assert(carried_by_both<int> && carried_by_both<std::string> && carried_by_both<std::vector<int>>);
+static_assert(carried_by_both<std::optional<std::string>> && carried_by_both<std::map<int, std::string>>);
+static_assert(carried_by_both<std::array<int, 4>> && carried_by_both<std::variant<int, std::string>>);
+
+// An owned payload is a copy, so a write to the source after the claim
+// does not reach it.
+void attack_payload_owns_what_it_reaches() {
+    std::uint64_t const s = g_seed;
+    std::vector<int> source{1, 2, 3};
+    EpochVersioned<std::vector<int>> const versioned{source, Epoch{s}, Generation{s}};
+    Budgeted<std::vector<int>> const budgeted{source, BitsBudget{s}, PeakBytes{s}};
+    source[0] = 99;
+    source.push_back(4);
+    expect(versioned.peek() == std::vector<int>{1, 2, 3} && budgeted.peek() == std::vector<int>{1, 2, 3},
+           "a write to the source does not reach an owned payload");
+    expect(versioned.is_at_least(Epoch{s}, Generation{s}) && budgeted.satisfies(BitsBudget{s}, PeakBytes{s}),
+           "the claims stay true of the payload they describe");
+}
+
 // ── The substrate under each wrapper ────────────────────────────────
 
 void attack_the_substrate() {
@@ -254,17 +321,16 @@ struct KnownLimit {
 };
 
 inline constexpr KnownLimit kLedger[] = {
-    {"a pointer or view payload",
-     "The version and the budget describe the handle. The referent behind a pointer, a span or a string_view can "
-     "change after the claim, and the wrapper cannot see through the handle it was given."},
     {"equal versions, payload without equality",
      "select_fresher refuses equal versions with different payloads only when the payload can compare. A payload "
      "with no operator== gives the left operand, and the conflict goes unseen."},
     {"a claim stated by the producer",
-     "The constructor takes the grade the producer states. A version stated too high, or a zero budget computed by "
-     "subtraction, passes the gate. The wrapper cannot measure the work that made its payload."},
+     "The constructor takes the grade the producer states, and nothing in foundation or fixy can produce a grade "
+     "instead: a version comes from a committed fleet membership change, and a budget from a measurement of the "
+     "work. A version stated too high, or a zero budget computed by subtraction, passes the gate until a mint "
+     "that holds that source is the only door."},
 };
-static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
+static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
 
 struct NoEquality {
     int v = 0;
@@ -272,12 +338,6 @@ struct NoEquality {
 
 void reproduce_the_ledger() {
     std::uint64_t const s = g_seed;
-
-    int target = 1;
-    EpochVersioned<int*> const handle{&target, Epoch{s}, Generation{s}};
-    target = 99;
-    expect(*handle.peek() == 99 && handle.is_at_least(Epoch{s}, Generation{s}),
-           "ledger: a pointer payload still changes under its version");
 
     EpochVersioned<NoEquality> const first{NoEquality{1}, Epoch{s}, Generation{s}};
     EpochVersioned<NoEquality> const second{NoEquality{2}, Epoch{s}, Generation{s}};
@@ -303,6 +363,7 @@ int main() {
     attack_moved_from_version();
     attack_moved_from_budget();
     attack_budget_edges();
+    attack_payload_owns_what_it_reaches();
     attack_the_substrate();
     reproduce_the_ledger();
     if (g_failures != 0) {

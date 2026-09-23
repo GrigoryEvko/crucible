@@ -31,15 +31,13 @@
 // A reader who needs the counters in their numeric order reads epoch()
 // and generation(), which are the counters themselves.
 //
-// Three more doors close on the payload side:
+// Two more doors close on the payload side:
 //
-//   - A payload that is a reference is refused.  The referent can change
-//     after construction, and the version would then describe a value it
-//     never saw.  A pointer or a view is admitted, and the version then
-//     covers the handle and not the referent.
-//   - A payload that holds a mutable member anywhere in its by-value
-//     structure is refused.  peek() returns a const reference, and a
-//     mutable member is writable through one, so the payload could change
+//   - A payload that reaches state outside itself, or that a const
+//     reference can write, is refused: a reference, a pointer, a span, a
+//     string_view, a handle that writes through const, or a mutable
+//     member anywhere on a by-value path (SelfContained.h).  peek()
+//     returns a const reference, so each of these lets the payload change
 //     under the version with no cast and no warning.
 //   - A move out of a payload that is not trivially copyable leaves the
 //     source at the genesis version.  The moved-from payload holds some
@@ -56,6 +54,7 @@
 // detection surface of include/crucible/safety/IsEpochVersioned.h.
 
 #include <fixy/GradedFacade.h>
+#include <fixy/SelfContained.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
@@ -63,7 +62,6 @@
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/reflect/Instance.h>
-#include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
 #include <cstdint>
@@ -100,32 +98,7 @@ enum class VersionConflict : std::uint8_t {
     Divergent = 2,
 };
 
-namespace detail::epoch_versioned {
-
-// True for a class whose own non-static data members include a mutable
-// one.  The walk reads members only where the node says it may, so the
-// check instantiates nothing the payload did not already need.
-inline constexpr auto declares_mutable_member = [](::foundation::reflect::TypeNode node) consteval {
-    if (!node.may_read_members) return false;
-    std::meta::info const type = ::foundation::reflect::bare_type(node.type);
-    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
-    for (std::meta::info const member :
-         std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
-        if (std::meta::is_mutable_member(member)) return true;
-    }
-    return false;
-};
-
-}  // namespace detail::epoch_versioned
-
-// A payload the version can describe: an object type, whose structure
-// holds no member that a const reference can write.
-template <typename T>
-concept VersionablePayload =
-    std::is_object_v<T>
-    && !::foundation::reflect::any_component_satisfies<detail::epoch_versioned::declares_mutable_member>(^^T);
-
-template <VersionablePayload T>
+template <SelfContained T>
 class [[nodiscard]] EpochVersioned
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute, EpochVersionLattice, T> {
 public:
@@ -322,25 +295,22 @@ static_assert(!std::is_constructible_v<EV, int, std::uint64_t, std::uint64_t>,
 // counters, and no more for a payload that needs no padding.
 static_assert(sizeof(EpochVersioned<std::uint64_t>) == 24);
 
-// The payload side of the discipline.
+// The payload side of the discipline.  The rule itself is SelfContained,
+// whose own self-test holds the cases; these pin that the wrapper uses it.
 struct HoldsMutable {
     mutable int cache = 0;
 };
-struct NestsMutable {
-    HoldsMutable inner{};
+struct PointsAtValue {
+    int const* target = nullptr;
 };
-struct DerivesMutable : HoldsMutable {};
-struct PointsAtMutable {
-    HoldsMutable* target = nullptr;
-};
-static_assert(VersionablePayload<int>);
-static_assert(!VersionablePayload<int&>, "a reference payload is refused");
-static_assert(!VersionablePayload<int const&>);
-static_assert(!VersionablePayload<HoldsMutable>, "a mutable member is writable through peek()");
-static_assert(!VersionablePayload<NestsMutable>, "a nested mutable member is writable through peek()");
-static_assert(!VersionablePayload<DerivesMutable>, "an inherited mutable member is writable through peek()");
-static_assert(!VersionablePayload<PointsAtMutable>,
-              "the walk follows a pointer, and a mutable pointee is refused with the rest");
+template <typename T>
+concept can_version = requires { typename EpochVersioned<T>; };
+static_assert(can_version<int>);
+static_assert(!can_version<int&> && !can_version<int const&>, "a reference payload is refused");
+static_assert(!can_version<int*> && !can_version<int const*>,
+              "the referent of a pointer can change under the version");
+static_assert(!can_version<PointsAtValue>, "a pointer member reaches out of the value, even to const");
+static_assert(!can_version<HoldsMutable>, "a mutable member is writable through peek()");
 
 inline constexpr EV v_explicit{42, Epoch{5}, Generation{2}};
 static_assert(v_explicit.peek() == 42);
@@ -421,6 +391,7 @@ struct MoveOnly {
     }
     MoveOnly(MoveOnly const&) = delete;
     MoveOnly& operator=(MoveOnly const&) = delete;
+    [[nodiscard]] constexpr bool operator==(MoveOnly const&) const noexcept = default;
 };
 
 static_assert(!std::is_copy_constructible_v<EpochVersioned<MoveOnly>>);

@@ -868,23 +868,35 @@ fixy_neg_compile_test(neg_budgeted_payload_replaced_under_grade
   "has no member named .peek_mut."
   ".class fixy::Budgeted<int>.")
 
-# The payload side and the substrate side.  A reference payload, and for
-# a version a payload with a mutable member, could change under the claim
-# with no cast.  The substrate under each wrapper weakens only toward the
-# weaker claim, which is the older version and the larger use.
+# The payload side and the substrate side.  A payload that reaches state
+# outside itself, or that a const reference can write, could change under
+# the claim with no cast, so each wrapper refuses it and the diagnostic
+# names the way out.  The substrate under each wrapper weakens only toward
+# the weaker claim, which is the older version and the larger use.
 fixy_neg_compile_test(neg_epoch_versioned_reference_payload
-  "template constraint failure for .template<class T>  requires  VersionablePayload<T> class fixy::EpochVersioned."
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::EpochVersioned."
   ".int&. is not an object type")
 fixy_neg_compile_test(neg_epoch_versioned_mutable_payload
-  "template constraint failure for .template<class T>  requires  VersionablePayload<T> class fixy::EpochVersioned."
-  "class fixy::EpochVersioned .with T = CachedValue."
-  "the expression .!any_component_satisfies")
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::EpochVersioned."
+  "is_same_v<WayOut, fixy::detail::self_contained::nothing_reaches_out> .with WayOut = CachedValue.. evaluated to .false.")
+fixy_neg_compile_test(neg_epoch_versioned_pointer_payload
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::EpochVersioned."
+  "is_same_v<WayOut, fixy::detail::self_contained::nothing_reaches_out> .with WayOut = int\\*.. evaluated to .false.")
+fixy_neg_compile_test(neg_epoch_versioned_view_payload
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::EpochVersioned."
+  "is_same_v<WayOut, fixy::detail::self_contained::nothing_reaches_out> .with WayOut = const char\\*.. evaluated to .false.")
+fixy_neg_compile_test(neg_budgeted_span_payload
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::Budgeted."
+  "is_same_v<WayOut, fixy::detail::self_contained::nothing_reaches_out> .with WayOut = const int\\*.. evaluated to .false.")
+fixy_neg_compile_test(neg_budgeted_mutable_payload
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::Budgeted."
+  "is_same_v<WayOut, fixy::detail::self_contained::nothing_reaches_out> .with WayOut = Scratchpad.. evaluated to .false.")
 fixy_neg_compile_test(neg_epoch_versioned_substrate_weaken_to_newer
   "non-constant condition for static assertion"
   ".anonymous.::stale\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_budgeted_reference_payload
-  "template constraint failure for .template<class T>  requires  is_object_v<T> class fixy::Budgeted."
+  "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::Budgeted."
   ".int&. is not an object type")
 fixy_neg_compile_test(neg_budgeted_substrate_weaken_below
   "non-constant condition for static assertion"

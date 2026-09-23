@@ -17,17 +17,17 @@
 //   - There is no peek_mut().  Replacing the payload under the current
 //     grade would let a payload that used more carry the smaller claim
 //     of the one it replaced.
-//   - A payload that is a reference is refused, for the same reason: the
-//     referent can be replaced after the claim is made.
+//   - A payload that reaches state outside itself, or that a const
+//     reference can write, is refused for the same reason: a reference,
+//     a pointer, a span, a view or a mutable member lets the payload be
+//     replaced after the claim is made (SelfContained.h).  A mutable
+//     member is the peek_mut() above by another name, because peek()
+//     hands out a const reference and the member is writable through it.
 //   - A move out of a payload that is not trivially copyable leaves the
 //     source unbounded.  The moved-from payload holds some unspecified
 //     value, and the weakest claim is the only one that stays true for
 //     it.  A trivially copyable payload is copied by a move, so its
 //     source keeps its claim.
-//
-// A mutable member in the payload is admitted, unlike in EpochVersioned.
-// The grade describes what producing the payload used, and a later write
-// through a mutable member does not change what the production used.
 //
 // The two compositions keep the payload of the left operand, and that is
 // sound here, unlike for a version.  Both produce a grade at or above
@@ -42,6 +42,7 @@
 // surface of include/crucible/safety/IsBudgeted.h.
 
 #include <fixy/GradedFacade.h>
+#include <fixy/SelfContained.h>
 #include <foundation/Platform.h>
 #include <foundation/Saturate.h>
 #include <foundation/algebra/Graded.h>
@@ -68,8 +69,7 @@ using ::foundation::algebra::lattices::PeakBytesLattice;
 
 using BudgetLattice = ::foundation::algebra::lattices::ProductLattice<BitsBudgetLattice, PeakBytesLattice>;
 
-template <typename T>
-    requires std::is_object_v<T>
+template <SelfContained T>
 class [[nodiscard]] Budgeted : public graded_facade<::foundation::algebra::ModalityKind::Absolute, BudgetLattice, T> {
 public:
     using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute, BudgetLattice, T>;
@@ -241,6 +241,11 @@ template <typename T>
 concept can_budget = requires { typename Budgeted<T>; };
 static_assert(can_budget<int>);
 static_assert(!can_budget<int&>, "a reference payload is refused");
+static_assert(!can_budget<int*> && !can_budget<int const*>, "the referent of a pointer is not what was measured");
+struct HoldsMutable {
+    mutable int scratch = 0;
+};
+static_assert(!can_budget<HoldsMutable>, "a mutable member replaces the payload through peek()");
 
 // A payload whose move is not a copy.  The source must drop to unbounded.
 struct Counted {
