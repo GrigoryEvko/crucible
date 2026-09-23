@@ -43,7 +43,7 @@ appear as `-` in the flag columns.  `- (alloc)` is documented absence,
 not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees.
 
-Snapshot generated: `2026-09-23T07:38:07Z`.
+Snapshot generated: `2026-09-23T11:35:24Z`.
 
 ## bridges/
 
@@ -58,7 +58,7 @@ Snapshot generated: `2026-09-23T07:38:07Z`.
 | `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:587` | Y | - | Y | Y | ctx | `include/crucible/fixy/Bridge.h:50` | HS14: 14 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:25` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:52` | HS14: 4 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:37` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
-| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:777` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
+| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:781` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingSessionHandle.h:1146` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingSessionHandle.h:1153` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
 | `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:108` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:55` | HS14: 4 |
