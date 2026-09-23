@@ -21,6 +21,8 @@
 # p_pmy25_ex12_g2: Pischke, Masters, Yoshida, Asynchronous Global Protocols, Precisely, v4, Example 12, G2
 # p_pmy25_ex12_g1_prefixed: Pischke, Masters, Yoshida, Asynchronous Global Protocols, Precisely, v4, Example 12, G1 prefixed as in equation (47)
 # p_pmy25_ex12_g2_prefixed: Pischke, Masters, Yoshida, Asynchronous Global Protocols, Precisely, v4, Example 12, G2 prefixed as in equation (47)
+# fh0: a choice with no branch
+# fh1: a loop with an empty choice in one branch
 # p_ekici25_ex18: Ekici, Kamegai, Yoshida, ITP 2025, Example 18, the local type T
 family,case,role,global,oracle,ours,status,class,note
 fixy.dual,p_ekici25_ex18,-,"rec(msg(1,0,bool,msg(0,1,bool,msg(1,0,nat,msg(0,1,nat,var)))))","rec(recv(8,bool,send(1,bool,recv(8,nat,send(1,nat,var0))))) || rec(send(8,bool,recv(1,bool,send(8,nat,recv(1,nat,var0)))))",=,agree,,
@@ -277,6 +279,8 @@ fixy.dual,fa114,-,"msg(0,1,bool,msg(1,0,nat,end))","send(1,bool,recv(8,nat,end))
 fixy.dual,fa115,-,"rec(msg(0,1,nat,msg(1,0,bool,rec(end))))","rec(send(1,nat,recv(8,bool,rec(end)))) || rec(recv(1,nat,send(8,bool,rec(end))))",=,agree,,
 fixy.dual,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))","send(1,bool,send(1,bool,send(1,bool,end))) || recv(1,bool,recv(1,bool,recv(1,bool,end)))",=,agree,,
 fixy.dual,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])","select(1,[recv(8,nat,end),recv(8,bool,end)]) || offer(1,[send(8,nat,end),send(8,bool,end)])",=,agree,,
+fixy.dual,fh0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",=,agree,,
+fixy.dual,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","rec(select(1,[send(1,nat,var0),offer(8,[])])) || rec(offer(1,[recv(1,nat,var0),select(8,[])]))",=,agree,,
 fixy.dual,fm0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",=,agree,,
 fixy.dual,fm1,-,"branch(1,0,[])","offer(8,[]) || select(8,[])",=,agree,,
 fixy.dual,fm2,-,rec(end),rec(end) || rec(end),=,agree,,
@@ -532,6 +536,8 @@ fixy.is_dual,fa114,-,"msg(0,1,bool,msg(1,0,nat,end))","send(1,bool,recv(8,nat,en
 fixy.is_dual,fa115,-,"rec(msg(0,1,nat,msg(1,0,bool,rec(end))))","rec(send(1,nat,recv(8,bool,rec(end)))) || rec(recv(1,nat,send(8,bool,rec(end))))",true,agree,,
 fixy.is_dual,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))","send(1,bool,send(1,bool,send(1,bool,end))) || recv(1,bool,recv(1,bool,recv(1,bool,end)))",true,agree,,
 fixy.is_dual,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])","select(1,[recv(8,nat,end),recv(8,bool,end)]) || offer(1,[send(8,nat,end),send(8,bool,end)])",true,agree,,
+fixy.is_dual,fh0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
+fixy.is_dual,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","rec(select(1,[send(1,nat,var0),offer(8,[])])) || rec(offer(1,[recv(1,nat,var0),select(8,[])]))",true,agree,,
 fixy.is_dual,fm0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
 fixy.is_dual,fm1,-,"branch(1,0,[])","offer(8,[]) || select(8,[])",true,agree,,
 fixy.is_dual,fm2,-,rec(end),rec(end) || rec(end),true,agree,,
@@ -787,6 +793,8 @@ fixy.involution,fa114,-,"msg(0,1,bool,msg(1,0,nat,end))","send(1,bool,recv(8,nat
 fixy.involution,fa115,-,"rec(msg(0,1,nat,msg(1,0,bool,rec(end))))","rec(send(1,nat,recv(8,bool,rec(end)))) || rec(recv(1,nat,send(8,bool,rec(end))))",true,agree,,
 fixy.involution,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))","send(1,bool,send(1,bool,send(1,bool,end))) || recv(1,bool,recv(1,bool,recv(1,bool,end)))",true,agree,,
 fixy.involution,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])","select(1,[recv(8,nat,end),recv(8,bool,end)]) || offer(1,[send(8,nat,end),send(8,bool,end)])",true,agree,,
+fixy.involution,fh0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
+fixy.involution,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","rec(select(1,[send(1,nat,var0),offer(8,[])])) || rec(offer(1,[recv(1,nat,var0),select(8,[])]))",true,agree,,
 fixy.involution,fm0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
 fixy.involution,fm1,-,"branch(1,0,[])","offer(8,[]) || select(8,[])",true,agree,,
 fixy.involution,fm2,-,rec(end),rec(end) || rec(end),true,agree,,
@@ -1042,6 +1050,8 @@ fixy.involutive_flag,fa114,-,"msg(0,1,bool,msg(1,0,nat,end))","send(1,bool,recv(
 fixy.involutive_flag,fa115,-,"rec(msg(0,1,nat,msg(1,0,bool,rec(end))))","rec(send(1,nat,recv(8,bool,rec(end)))) || rec(recv(1,nat,send(8,bool,rec(end))))",true,agree,,
 fixy.involutive_flag,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))","send(1,bool,send(1,bool,send(1,bool,end))) || recv(1,bool,recv(1,bool,recv(1,bool,end)))",true,agree,,
 fixy.involutive_flag,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])","select(1,[recv(8,nat,end),recv(8,bool,end)]) || offer(1,[send(8,nat,end),send(8,bool,end)])",true,agree,,
+fixy.involutive_flag,fh0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
+fixy.involutive_flag,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","rec(select(1,[send(1,nat,var0),offer(8,[])])) || rec(offer(1,[recv(1,nat,var0),select(8,[])]))",true,agree,,
 fixy.involutive_flag,fm0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
 fixy.involutive_flag,fm1,-,"branch(1,0,[])","offer(8,[]) || select(8,[])",true,agree,,
 fixy.involutive_flag,fm2,-,rec(end),rec(end) || rec(end),true,agree,,
@@ -1297,6 +1307,8 @@ fixy.well_formed,fa114,-,"msg(0,1,bool,msg(1,0,nat,end))","send(1,bool,recv(8,na
 fixy.well_formed,fa115,-,"rec(msg(0,1,nat,msg(1,0,bool,rec(end))))","rec(send(1,nat,recv(8,bool,rec(end)))) || rec(recv(1,nat,send(8,bool,rec(end))))",false,divergence,idle-loop,"neither side is unsound: the oracle keeps a recursion binder whose body never loops back (Tirore, Bengtson, Carbone, ITP 2023, trans), and fixy's is_well_formed_v refuses such a Loop.  fixy's projection returns the body of such a recursion instead (Projection.h, proj_rec)"
 fixy.well_formed,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))","send(1,bool,send(1,bool,send(1,bool,end))) || recv(1,bool,recv(1,bool,recv(1,bool,end)))",true,agree,,
 fixy.well_formed,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])","select(1,[recv(8,nat,end),recv(8,bool,end)]) || offer(1,[send(8,nat,end),send(8,bool,end)])",true,agree,,
+fixy.well_formed,fh0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
+fixy.well_formed,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","rec(select(1,[send(1,nat,var0),offer(8,[])])) || rec(offer(1,[recv(1,nat,var0),select(8,[])]))",true,agree,,
 fixy.well_formed,fm0,-,"branch(0,1,[])","select(1,[]) || offer(1,[])",true,agree,,
 fixy.well_formed,fm1,-,"branch(1,0,[])","offer(8,[]) || select(8,[])",true,agree,,
 fixy.well_formed,fm2,-,rec(end),rec(end) || rec(end),false,divergence,idle-loop,"neither side is unsound: the oracle keeps a recursion binder whose body never loops back (Tirore, Bengtson, Carbone, ITP 2023, trans), and fixy's is_well_formed_v refuses such a Loop.  fixy's projection returns the body of such a recursion instead (Projection.h, proj_rec)  Minimal form of fa6, fa75, fa95."
@@ -1581,6 +1593,8 @@ fixy.accepts,fa116,-,"branch(1,0,[rec(var),msg(1,0,bool,msg(0,1,bool,branch(1,0,
 fixy.accepts,fa117,-,"rec(branch(1,0,[var,branch(1,0,[rec(rec(var)),rec(msg(0,1,bool,msg(1,0,bool,rec(branch(0,1,[var,end]))))),rec(rec(branch(0,1,[var1,msg(1,0,nat,branch(0,1,[var]))])))])]))",none || none,untranslatable,gap,inexpressible,"our DSL cannot spell a variable that names an outer binder: Var_G and Continue name the nearest binder.  The paper's projection needs one (Tirore, Bengtson, Carbone, ITP 2023)."
 fixy.accepts,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))",equal,true,agree,,
 fixy.accepts,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])",equal,true,agree,,
+fixy.accepts,fh0,-,"branch(0,1,[])",equal,true,agree,,
+fixy.accepts,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",equal,true,agree,,
 fixy.accepts,fm0,-,"branch(0,1,[])",equal,true,agree,,
 fixy.accepts,fm1,-,"branch(1,0,[])",equal,true,agree,,
 fixy.accepts,fm2,-,rec(end),equal,false,divergence,idle-loop,"neither side is unsound: the oracle keeps a recursion binder whose body never loops back (Tirore, Bengtson, Carbone, ITP 2023, trans), and fixy's is_well_formed_v refuses such a Loop.  fixy's projection returns the body of such a recursion instead (Projection.h, proj_rec)  Minimal form of fa6, fa75, fa95."
@@ -2913,6 +2927,16 @@ fixy.subtype_sync,fa40,2+sort@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bo
 fixy.subtype_sync,fa40,2-sort@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))",supertype run: spin (side 0 loops without an action) after 0>1:nat 0>1:l0 0>1:nat 1>0:bool 0>1:l0 0>1:bool,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
 fixy.subtype_sync,fa40,3+end@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))",supertype run: spin (side 0 loops without an action) after 0>1:bool 0>1:l0 0>1:nat 1>0:bool 0>1:l0 0>1:bool,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
 fixy.subtype_sync,fa40,3-end@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))",deadlock (no send meets a receive) after 0>1:bool,false,agree,,
+fixy.subtype_sync,fh0,0+add@0,"branch(0,1,[])",supertype run: deadlock (a choice with no branch cannot send) after (start),false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh0,0-add@0,"branch(0,1,[])",deadlock (a choice with no branch cannot send) after (start),true,divergence,empty-choice,"ours wrong: is_well_formed_v admits a Select with no branch, and the relation lets it refine a Select that has branches.  The substitute can never send, so the session deadlocks.  A choice needs one branch or more (Gay and Hole 2005, the choice rules; the oracle's size_pred)"
+fixy.subtype_sync,fh1,0+unfold,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh1,0-unfold,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh1,1+drop@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh1,1-drop@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",wrong-type (the receiver has no branch for l1) after 0>1:l1,false,agree,,
+fixy.subtype_sync,fh1,2+add@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh1,2-add@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh1,3+sort@1,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_sync,fh1,3-sort@1,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",supertype run: deadlock (a choice with no branch cannot send) after 0>1:l1,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
 fixy.subtype_async,p_ekici25_ex18,0+unfold,"rec(msg(1,0,bool,msg(0,1,bool,msg(1,0,nat,msg(0,1,nat,var)))))",safe,true,agree,,
 fixy.subtype_async,p_ekici25_ex18,0-unfold,"rec(msg(1,0,bool,msg(0,1,bool,msg(1,0,nat,msg(0,1,nat,var)))))",safe,true,agree,,
 fixy.subtype_async,p_ekici25_ex18,1+sort@0,"rec(msg(1,0,bool,msg(0,1,bool,msg(1,0,nat,msg(0,1,nat,var)))))",wrong-type (role 0 expects nat and takes bool) after 1>0:bool 0<1:bool,false,agree,,
@@ -3417,6 +3441,16 @@ fixy.subtype_async,fa40,2+sort@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,b
 fixy.subtype_async,fa40,2-sort@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))",supertype run: spin (role 0 loops without an action) after 0>1:nat 0>1:l0 0>1:nat 1<0:nat 1<0:l0 1<0:nat 1>0:bool 0<1:bool 0>1:l0 0>1:bool,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
 fixy.subtype_async,fa40,3+end@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))",supertype run: spin (role 0 loops without an action) after 0>1:bool 0>1:l0 0>1:nat 1<0:bool 1<0:l0 1<0:nat 1>0:bool 0<1:bool 0>1:l0 0>1:bool,false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
 fixy.subtype_async,fa40,3-end@0,"msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))",deadlock (waiting: 0) after 0>1:bool 0>1:l0 0>1:nat 1<0:bool,false,agree,,
+fixy.subtype_async,fh0,0+add@0,"branch(0,1,[])","supertype run: deadlock (waiting: 0,1) after (start)",false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh0,0-add@0,"branch(0,1,[])","deadlock (waiting: 0,1) after (start)",true,divergence,empty-choice,"ours wrong: is_well_formed_v admits a Select with no branch, and the relation lets it refine a Select that has branches.  The substitute can never send, so the session deadlocks.  A choice needs one branch or more (Gay and Hole 2005, the choice rules; the oracle's size_pred)"
+fixy.subtype_async,fh1,0+unfold,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh1,0-unfold,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh1,1+drop@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh1,1-drop@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))",wrong-type (role 1 offers {l0} and takes l1) after 0>1:l1 1<0:l1,false,agree,,
+fixy.subtype_async,fh1,2+add@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",false,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh1,2-add@0,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh1,3+sort@1,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
+fixy.subtype_async,fh1,3-sort@1,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","supertype run: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",true,agree,,"the supertype fails against its own dual, so the pair decides nothing"
 old.projection,r0,0,"branch(2,0,[rec(msg(1,2,bool,end)),msg(2,1,bool,end)])","offer(16,[rec(end),end])",=,agree,,
 old.projection,r0,1,"branch(2,0,[rec(msg(1,2,bool,end)),msg(2,1,bool,end)])",none,reject:Merge_Branches_Diverge,agree,,
 old.projection,r0,2,"branch(2,0,[rec(msg(1,2,bool,end)),msg(2,1,bool,end)])","select(16,[rec(recv(10,bool,end)),send(17,bool,end)])",=,agree,,
@@ -4814,6 +4848,8 @@ oracle.safety,fa114,-,"msg(0,1,bool,msg(1,0,nat,end))",safe,-,agree,,
 oracle.safety,fa115,-,"rec(msg(0,1,nat,msg(1,0,bool,rec(end))))",safe,-,agree,,
 oracle.safety,fa118,-,"msg(0,1,bool,msg(0,1,bool,msg(0,1,bool,end)))",safe,-,agree,,
 oracle.safety,fa119,-,"branch(0,1,[msg(1,0,nat,end),msg(1,0,bool,end)])",safe,-,agree,,
+oracle.safety,fh0,-,"branch(0,1,[])","deadlock (waiting: 0,1) after (start)",-,divergence,outside-oracle-domain,"oracle wrong for safety: its proj accepts a type that the development excludes with size_pred (elimination.v), which proj does not call.  The run of the oracle's own projection fails: deadlock (waiting: 0,1) after (start)."
+oracle.safety,fh1,-,"rec(branch(0,1,[msg(0,1,nat,var),branch(1,0,[])]))","deadlock (waiting: 0,1) after 0>1:l1 1<0:l1",-,divergence,outside-oracle-domain,"oracle wrong for safety: its proj accepts a type that the development excludes with size_pred (elimination.v), which proj does not call.  The run of the oracle's own projection fails: deadlock (waiting: 0,1) after 0>1:l1 1<0:l1."
 oracle.safety,fm0,-,"branch(0,1,[])","deadlock (waiting: 0,1) after (start)",-,divergence,outside-oracle-domain,"oracle wrong for safety: its proj accepts a type that the development excludes with size_pred (elimination.v), which proj does not call.  The run of the oracle's own projection fails: deadlock (waiting: 0,1) after (start).  Minimal form of fa67."
 oracle.safety,fm1,-,"branch(1,0,[])","deadlock (waiting: 0,1) after (start)",-,divergence,outside-oracle-domain,"oracle wrong for safety: its proj accepts a type that the development excludes with size_pred (elimination.v), which proj does not call.  The run of the oracle's own projection fails: deadlock (waiting: 0,1) after (start).  Minimal form of fa64, fa87."
 oracle.safety,fm2,-,rec(end),safe,-,agree,,
