@@ -1350,6 +1350,16 @@ fixy_neg_compile_test(neg_sess_mint_unpinned_reference
   "constraints not satisfied"
   "satisfaction of .SessionResource<Resource>.")
 
+# A new-expression gives a handle storage that nothing has to free, so
+# the protocol never ends.  The handle deletes its allocation functions,
+# and a smart pointer that allocates reaches the same deleted function.
+fixy_neg_compile_test(neg_sess_handle_heap_new
+  "use of deleted function .static void\\* fixy::session::SessionHandleBase<"
+  "\\[Session_Handle_On_Heap\\]")
+fixy_neg_compile_test(neg_sess_handle_make_unique
+  "use of deleted function .static void\\* fixy::session::SessionHandleBase<"
+  "\\[Session_Handle_On_Heap\\]")
+
 # No public mint gives the two endpoints of one channel to one caller.
 # The resource-only form is deleted, and the test hatch refuses the
 # background and the foreground contexts, which hold no Test capability.
