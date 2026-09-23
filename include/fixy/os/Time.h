@@ -22,6 +22,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstdint>
 #include <ctime>
@@ -117,11 +118,6 @@ namespace detail {
 #endif
 }
 
-template <typename T>
-inline constexpr bool is_cpu_pinned_v = false;
-template <ml::AffinityMask Mask, sf::PinningPosture Posture, typename Unit>
-inline constexpr bool is_cpu_pinned_v<sf::CpuPinned<Mask, Posture, Unit>> = true;
-
 template <TscMode Mode>
 [[nodiscard]] consteval ClockSource_v tsc_source() noexcept {
     return Mode == TscMode::SerializedPinned ? ClockSource_v::TscSerialized : ClockSource_v::TscRaw;
@@ -145,8 +141,15 @@ template <TscMode Mode>
 // two TSC reads two different counters, with no crash and no diagnostic
 // to say so.  test/fixy/neg/neg_os_cpu_pinned_*.cpp is the standing
 // witness on each closed route.
+//
+// The recognition is the reflection query of foundation/reflect/
+// Instance.h, which no translation unit can specialize.  A variable
+// template in its place could be specialized for a fake class that
+// declares is_singleton_pin, and that class would pass this concept
+// with no pin behind it.
 template <typename T>
-concept IsSingletonCpuPin = detail::is_cpu_pinned_v<std::remove_cvref_t<T>> && std::remove_cvref_t<T>::is_singleton_pin;
+concept IsSingletonCpuPin =
+    ::foundation::reflect::IsInstanceOf<T, ^^sf::CpuPinned> && std::remove_cvref_t<T>::is_singleton_pin;
 
 // Whether the kernel promises the clock never steps backward.  Realtime
 // can be set, and the two CPU-time clocks are per-thread and per-process
@@ -339,6 +342,14 @@ using MultiPin = sf::CpuPinned<ml::AffinityMask::range(0, 1), sf::PinningPosture
 static_assert(IsSingletonCpuPin<SinglePin>);
 static_assert(!IsSingletonCpuPin<MultiPin>);
 static_assert(!IsSingletonCpuPin<int>);
+static_assert(IsSingletonCpuPin<SinglePin const&>);
+
+// A class that copies the shape of a pin is not a pin.
+struct ShapeOfAPin {
+    static constexpr bool is_singleton_pin = true;
+    static constexpr sf::PinningPosture posture = sf::PinningPosture::PinnedExplicit;
+};
+static_assert(!IsSingletonCpuPin<ShapeOfAPin>);
 
 static_assert(std::is_same_v<TscReader<TscMode::Raw, SinglePin>::result_type, sf::TscBytes<std::uint64_t>>);
 static_assert(std::is_same_v<TscReader<TscMode::SerializedPinned, SinglePin>::result_type,

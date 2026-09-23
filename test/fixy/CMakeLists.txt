@@ -1340,6 +1340,21 @@ fixy_neg_compile_test(neg_os_cpu_pinned_copied
   "use of deleted function"
   "a pin proof cannot be duplicated")
 
+# ── The TSC reader recognises a pin by reflection ────────────────────
+#
+# IsSingletonCpuPin recognises a CpuPinned by the reflection query of
+# foundation/reflect/Instance.h.  The first fixture is a class that
+# copies the shape of a pin, refused at the mint.  The second tries to
+# specialize the variable template the concept once read, which let a
+# translation unit declare any class a pin.  That template is gone, so
+# the specialization names nothing.
+fixy_neg_compile_test(neg_os_tsc_reader_shape_of_a_pin
+  "required for the satisfaction of .IsInstanceOf<T, \\^\\^fixy::CpuPinned>. .with T = forged_pin::CopiedShape"
+  "required for the satisfaction of .IsSingletonCpuPin<PinT>.")
+fixy_neg_compile_test(neg_os_tsc_reader_recogniser_specialized
+  "expected initializer before .<. token"
+  "recogniser_specialized\\.cpp:[0-9]+:[0-9]+: error")
+
 # ── Every scheduling door reads one gate ─────────────────────────────
 #
 # mint_affinity, mint_scheduler_policy and mint_priority read the same
