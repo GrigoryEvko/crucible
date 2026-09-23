@@ -1541,6 +1541,15 @@ fixy_neg_compile_test(neg_sess_crash_send_transport_result
 fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
   "fixy::session::diagnostic \\[Crash_Transport_Result\\]"
   "required from .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
+fixy_neg_compile_test(neg_sess_crash_delegation_undefined_template
+  "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel<int>,"
+  "required from .struct fixy::session::detail::crash::delegation_free<")
+fixy_neg_compile_test(neg_sess_crash_delegation_declared_class
+  "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel,"
+  "required from .constexpr const bool fixy::session::payload_conveys_delegation_v<.anonymous.::Frame>.")
+fixy_neg_compile_test(neg_sess_crash_delegation_specialized_after_query
+  "specialization of ..anonymous.::Frame<int>. after instantiation"
+  "redefinition of .struct .anonymous.::Frame<int>.")
 
 # ── Checkpoint and rollback ───────────────────────────────────────────
 #
