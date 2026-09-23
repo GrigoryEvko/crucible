@@ -346,6 +346,11 @@ template <typename... Bs>
 struct structure<Offer<Bs...>> : offer_structure<Bs...> {};
 template <typename Role, typename... Bs>
 struct structure<Offer<Sender<Role>, Bs...>> : offer_structure<Bs...> {};
+// A Sender note on a Select names the role that picks, which is the
+// endpoint itself.  The note is not a branch, so each walk in this
+// header reads a noted Select as the Select of its branches.
+template <typename Role, typename... Bs>
+struct structure<Select<Sender<Role>, Bs...>> : structure<Select<Bs...>> {};
 template <typename B>
 struct structure<Loop<B>> : structure<B> {};
 template <VendorBackend V, typename P>
@@ -394,6 +399,8 @@ template <typename... Bs>
 struct delegation_free<Offer<Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
 template <typename Role, typename... Bs>
 struct delegation_free<Offer<Sender<Role>, Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+template <typename Role, typename... Bs>
+struct delegation_free<Select<Sender<Role>, Bs...>> : delegation_free<Select<Bs...>> {};
 template <typename B>
 struct delegation_free<Loop<B>> : delegation_free<B> {};
 template <VendorBackend V, typename P>
@@ -455,6 +462,8 @@ template <typename... Bs, typename Peer, typename Reliable>
 struct coverage<Offer<Bs...>, Peer, Reliable> : offer_coverage<Peer, Peer, Reliable, Bs...> {};
 template <typename Role, typename... Bs, typename Peer, typename Reliable>
 struct coverage<Offer<Sender<Role>, Bs...>, Peer, Reliable> : offer_coverage<Role, Peer, Reliable, Bs...> {};
+template <typename Role, typename... Bs, typename Peer, typename Reliable>
+struct coverage<Select<Sender<Role>, Bs...>, Peer, Reliable> : coverage<Select<Bs...>, Peer, Reliable> {};
 template <typename B, typename Peer, typename Reliable>
 struct coverage<Loop<B>, Peer, Reliable> : coverage<B, Peer, Reliable> {};
 template <VendorBackend V, typename P, typename Peer, typename Reliable>
@@ -587,6 +596,10 @@ struct erase<Offer<Bs...>> {
 template <typename Role, typename... Bs>
 struct erase<Offer<Sender<Role>, Bs...>> {
     using type = erased_offer_t<Sender<Role>, Bs...>;
+};
+template <typename Role, typename... Bs>
+struct erase<Select<Sender<Role>, Bs...>> {
+    using type = Select<Sender<Role>, erase_t<Bs>...>;
 };
 template <typename B>
 struct erase<Loop<B>> {

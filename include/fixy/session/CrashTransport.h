@@ -146,6 +146,10 @@ struct senders_watched<Offer<Bs...>, Peer, Reliable> : std::bool_constant<offer_
 template <typename Role, typename... Bs, typename Peer, typename Reliable>
 struct senders_watched<Offer<Sender<Role>, Bs...>, Peer, Reliable>
     : std::bool_constant<offer_watched_v<Role, Peer, Reliable, Bs...>> {};
+// The note of a Select names the endpoint itself, which sends and is not
+// watched, so the walk reads the branches alone.
+template <typename Role, typename... Bs, typename Peer, typename Reliable>
+struct senders_watched<Select<Sender<Role>, Bs...>, Peer, Reliable> : senders_watched<Select<Bs...>, Peer, Reliable> {};
 template <typename B, typename Peer, typename Reliable>
 struct senders_watched<Loop<B>, Peer, Reliable> : senders_watched<B, Peer, Reliable> {};
 

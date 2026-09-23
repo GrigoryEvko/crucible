@@ -120,6 +120,13 @@ static_assert(s::checkpoint_verdict_v<s::Offer<s::Commit<s::Select<s::End, s::Ro
                                       s::Select<s::Commit<s::Offer<s::End, s::Roll>>>>
               == s::CheckpointVerdict::RollToImposedCheckpoint);
 
+// A Sender note on a Select names the endpoint that picks.  The erasure
+// keeps the note and erases the branches only, as it does for an Offer.
+static_assert(std::is_same_v<s::detail::checkpoint::erase_t<s::Select<s::Sender<Peer>, s::Commit<s::Send<int, s::End>>, s::Roll>>,
+                             s::Select<s::Sender<Peer>, s::Send<int, s::End>, s::End>>);
+static_assert(std::is_same_v<s::detail::checkpoint::erase_t<s::Select<s::Sender<Peer>, s::End>>,
+                             s::Select<s::Sender<Peer>, s::End>>);
+
 // A loop that rolls back to a checkpoint inside it.
 using LoopDecide = s::Loop<s::Select<s::Commit<s::Send<int, s::Continue>>, s::Roll, s::End>>;
 using LoopFollow = s::Loop<s::Offer<s::Commit<s::Recv<int, s::Continue>>, s::Roll, s::End>>;

@@ -232,6 +232,10 @@ template <typename Role, typename... Bs>
 struct erase<Offer<Sender<Role>, Bs...>> {
     using type = Offer<Sender<Role>, erase_t<Bs>...>;
 };
+template <typename Role, typename... Bs>
+struct erase<Select<Sender<Role>, Bs...>> {
+    using type = Select<Sender<Role>, erase_t<Bs>...>;
+};
 template <typename B>
 struct erase<Loop<B>> {
     using type = Loop<erase_t<B>>;

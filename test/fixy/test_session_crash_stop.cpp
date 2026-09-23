@@ -99,6 +99,30 @@ static_assert(std::is_same_v<s::crash_dual_t<Guarded>, s::Select<s::Send<int, s:
 // label, so no handle can be minted on it.
 static_assert(!s::is_well_formed_v<s::dual_of_t<Guarded>>);
 
+// ── A Select with a Sender note ─────────────────────────────────────
+//
+// The note names the endpoint that picks, and it is not a branch.  Each
+// walk reads a noted Select as the Select of its branches, so the note
+// hides neither a sound branch nor a defect in one.
+namespace walk = s::detail::crash;
+namespace transport_walk = s::detail::crash_transport;
+using NotedSelect = s::Select<s::Sender<P>, s::Send<int, Guarded>>;
+using NotedSelectSendsCrash = s::Select<s::Sender<P>, s::Send<s::Crash<Q>, s::End>>;
+using NotedSelectThenBare = s::Select<s::Sender<P>, s::Send<int, Bare>>;
+using NotedSelectDelegates =
+    s::Select<s::Sender<P>, s::Send<s::DelegatedSession<Bare, ::foundation::permissions::EmptyPermSet>, s::End>>;
+static_assert(walk::structure<NotedSelect>::value);
+static_assert(!walk::structure<NotedSelectSendsCrash>::value);
+static_assert(walk::delegation_free<NotedSelect>::value);
+static_assert(!walk::delegation_free<NotedSelectDelegates>::value);
+static_assert(walk::coverage<NotedSelect, Q, s::ReliableSet<>>::value);
+static_assert(!walk::coverage<NotedSelectThenBare, Q, s::ReliableSet<>>::value);
+static_assert(std::is_same_v<walk::erase_t<NotedSelect>, s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Recv<int, s::End>>>>>);
+static_assert(transport_walk::senders_watched<NotedSelect, Q, s::ReliableSet<>>::value);
+static_assert(!transport_walk::senders_watched<s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>,
+                                                                                        s::Recv<s::Crash<R>, s::End>>>>,
+                                               Q, s::ReliableSet<>>::value);
+
 // ── Example 3.2, as local protocols ─────────────────────────────────
 //
 // p: q!m<"abc">. (q?m'(x).0 + q?crash.0)
