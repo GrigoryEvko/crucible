@@ -69,6 +69,14 @@ enum class PinningPosture : std::uint8_t {
     PinnedExplicit = 2,  // Explicit affinity call.  Migration is excluded.
 };
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+template <AffinityMask Mask, PinningPosture Posture>
+struct cpu_pinned;
+}  // namespace row_discipline
+
 template <AffinityMask Mask, PinningPosture Posture, typename Unit>
 class CpuPinned;
 
@@ -136,6 +144,8 @@ public:
     static constexpr PinningPosture posture = Posture;
     static constexpr bool is_singleton_pin = AffinityLattice::is_singleton(Mask);
     static constexpr bool is_pinned = (Posture != PinningPosture::NotPinned);
+    using row_discipline = ::fixy::row_discipline::cpu_pinned<Mask, Posture>;
+    using row_payload = Unit;
 
 private:
     Unit value_{};

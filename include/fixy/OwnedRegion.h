@@ -46,6 +46,7 @@
 #include <fixy/Borrowed.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Instance.h>
@@ -128,6 +129,15 @@ struct split_mint_t {};
 // program point to another, and a template argument does not.  That is
 // the half of use-after-consume C++ cannot type, and the claim this
 // header makes is the narrower one.
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+struct owned_region;
+template <std::size_t N>
+struct disjoint;
+}  // namespace row_discipline
+
 template <typename Tag, typename Brand, typename SplitName, std::size_t N>
 class [[nodiscard]] Disjoint {
     static_assert(N > 0, "Disjoint: a split of zero shards proves nothing.");
@@ -139,6 +149,8 @@ public:
     using brand_type = Brand;
     using split_name_type = SplitName;
     static constexpr std::size_t shard_count = N;
+    using row_discipline = ::fixy::row_discipline::disjoint<N>;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     Disjoint(Disjoint const&) = delete("a second receipt would let one split authorize two rebuilds");
     Disjoint& operator=(Disjoint const&) = delete("a second receipt would let one split authorize two rebuilds");
@@ -285,6 +297,8 @@ public:
     using value_type = T;
     using tag_type = Tag;
     using brand_type = Brand;
+    using row_discipline = ::fixy::row_discipline::owned_region;
+    using row_payload = T;
 
     OwnedRegion(const OwnedRegion&) = delete("OwnedRegion owns a Permission — copy would duplicate the linear token");
     OwnedRegion& operator=(const OwnedRegion&) =

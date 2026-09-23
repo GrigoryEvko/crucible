@@ -247,6 +247,28 @@ namespace refined {
 template <auto Pred>
 using predicate_t = std::remove_cv_t<decltype(Pred)>;
 
+// The claim a sealed refinement makes that its lattice does not see.
+// Both refinements grade on BoolLattice over the predicate, so without
+// this identity a sealed value and an open one over the same predicate
+// take one cache slot, although only one of them can be mutated in
+// place.  The open form publishes nothing, which leaves its hash where
+// it was.
+namespace row_discipline {
+struct sealed_refinement;
+}  // namespace row_discipline
+
+namespace detail {
+
+template <bool Sealed>
+struct sealed_row_discipline {};
+
+template <>
+struct sealed_row_discipline<true> {
+    using row_discipline = ::fixy::refined::row_discipline::sealed_refinement;
+};
+
+}  // namespace detail
+
 }  // namespace refined
 
 // This gates the mints, never the class template itself.  The subsort
@@ -323,7 +345,8 @@ mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible
 template <auto Pred, typename T, bool Sealed>
 class [[nodiscard]] Refinement
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
-                           ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T> {
+                           ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T>,
+      public refined::detail::sealed_row_discipline<Sealed> {
 public:
     using predicate_type = decltype(Pred);
 

@@ -24,6 +24,7 @@
 #include <fixy/concurrent/WorkingSet.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -34,6 +35,15 @@
 #include <type_traits>
 #include <tuple>
 #include <utility>
+
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct stage;
+struct mpmc_stage;
+struct swmr_stage;
+}  // namespace fixy::row_discipline
 
 namespace fixy::concurrent {
 
@@ -207,6 +217,8 @@ public:
     using producer_handle_type = std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 1>>;
     using input_value_type = pipeline_stage_input_value_t<FnPtr>;
     using output_value_type = pipeline_stage_output_value_t<FnPtr>;
+    using row_discipline = ::fixy::row_discipline::stage;
+    using row_payload = ::foundation::diag::row_payloads<Ctx, consumer_handle_type, producer_handle_type>;
 
     [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
 
@@ -269,6 +281,8 @@ public:
     using ctx_type = Ctx;
     using input_tuple_type = std::tuple<Inputs...>;
     using output_tuple_type = std::tuple<Outputs...>;
+    using row_discipline = ::fixy::row_discipline::mpmc_stage;
+    using row_payload = ::foundation::diag::row_payloads<Ctx, Inputs..., Outputs...>;
 
     static constexpr std::size_t input_count = sizeof...(Inputs);
     static constexpr std::size_t output_count = sizeof...(Outputs);
@@ -358,6 +372,8 @@ public:
     using writer_handle_type = std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 1>>;
     using input_value_type = consumer_handle_value_t<consumer_handle_type>;
     using output_value_type = swmr_writer_value_t<writer_handle_type>;
+    using row_discipline = ::fixy::row_discipline::swmr_stage;
+    using row_payload = ::foundation::diag::row_payloads<Ctx, consumer_handle_type, writer_handle_type>;
 
     static constexpr std::size_t input_count = 1;
     static constexpr std::size_t output_count = 1;

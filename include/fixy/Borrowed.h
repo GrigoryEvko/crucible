@@ -100,6 +100,15 @@ struct borrow_mint_t {};
 
 }  // namespace detail
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+struct borrowed_ref;
+struct borrowed;
+struct weak_ref;
+}  // namespace row_discipline
+
 template <class T, class Brand = ::foundation::brand::DefaultBrand>
 class BorrowedRef;
 
@@ -189,6 +198,8 @@ public:
     using brand_type = Brand;
 
     static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^BorrowedRef>; }
+    using row_discipline = ::fixy::row_discipline::borrowed_ref;
+    using row_payload = T;
 
 private:
     // No reachable constructor leaves this initializer in play.  It is
@@ -263,6 +274,8 @@ public:
     using source_type = Source;
     using brand_type = Brand;
     using span_type = std::span<T>;
+    using row_discipline = ::fixy::row_discipline::borrowed;
+    using row_payload = T;
 
     static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^Borrowed>; }
 
@@ -392,6 +405,8 @@ public:
     using element_type = T;
 
     static constexpr std::string_view wrapper_kind() noexcept { return detail::structural_kind_v<^^WeakRef>; }
+    using row_discipline = ::fixy::row_discipline::weak_ref;
+    using row_payload = T;
 
 private:
     T* ptr_ = nullptr;

@@ -54,6 +54,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 #include <foundation/diag/Catalog.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Fwd.h>
@@ -1576,4 +1577,70 @@ static_assert(combine_n_round_trip());
 static_assert(seplog_roster::root_brands_are_fresh());
 }  // namespace detail
 
+// ── Row-hash identities ─────────────────────────────────────────────
+//
+// SharedPermission grades on the fractional lattice and reaches the
+// graded fold.  The other three carriers here make claims no lattice
+// grades, and each names its claim with one of these identities.  They
+// fold through specializations rather than through published members,
+// because the payload is the tag's row, and naming that row in a class
+// body would make naming a token over an undeclared tag a hard error
+// instead of the constraint failure the mints report.
+
+namespace row_discipline {
+struct exclusive;
+struct shared_guard;
+struct shared_pool;
+}  // namespace row_discipline
+
+namespace detail {
+
+// The tag's declared row, or void for a tag that declares none.  Such a
+// tag cannot be minted, so no value carries the void; the fallback keeps
+// the fold from hard-erroring on a type that is only named.
+template <typename Tag>
+struct row_payload_of_tag {
+    using type = void;
+};
+
+template <typename Tag>
+    requires has_permission_row_v<Tag>
+struct row_payload_of_tag<Tag> {
+    using type = permission_row_t<Tag>;
+};
+
+template <typename Tag>
+using row_payload_of_tag_t = typename row_payload_of_tag<Tag>::type;
+
+}  // namespace detail
+
 }  // namespace foundation::permissions
+
+// The tag is the region an instance owns, so it stays out of the hash,
+// as it does for SharedPermission.  What the tag implies does fold: a
+// token over a region whose row names IO is a different claim from a
+// token over a pure region.
+namespace foundation::diag {
+
+template <typename Tag, typename Brand>
+struct row_hash_contribution<::foundation::permissions::Permission<Tag, Brand>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<::foundation::permissions::row_discipline::exclusive,
+                              ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
+};
+
+template <typename Tag, typename Brand>
+struct row_hash_contribution<::foundation::permissions::SharedPermissionGuard<Tag, Brand>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<::foundation::permissions::row_discipline::shared_guard,
+                              ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
+};
+
+template <typename Tag, typename Brand>
+struct row_hash_contribution<::foundation::permissions::SharedPermissionPool<Tag, Brand>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<::foundation::permissions::row_discipline::shared_pool,
+                              ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
+};
+
+}  // namespace foundation::diag

@@ -32,6 +32,14 @@
 #include <type_traits>
 #include <utility>
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+template <typename Proto>
+struct session_from_machine;
+}  // namespace fixy::row_discipline
+
 namespace fixy::session {
 
 template <typename State, typename Proto, std::meta::info Edges>
@@ -74,6 +82,8 @@ public:
     using machine_type = ::fixy::Machine<State, Edges>;
     using protocol = Proto;
     static constexpr std::meta::info edges = Edges;
+    using row_discipline = ::fixy::row_discipline::session_from_machine<Proto>;
+    using row_payload = machine_type;
 
     using session_handle_type = decltype(mint_session_handle<Proto>(std::declval<machine_type*>()));
 

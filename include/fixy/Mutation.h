@@ -32,6 +32,22 @@ class WriteOnce;
 template <typename Ptr>
 class WriteOnceNonNull;
 
+// The claims the carriers below make that no lattice grades.  Each is a
+// declared-only identity that foundation/diag/RowHash.h folds, so a
+// carrier here takes a cache slot of its own rather than the zero every
+// bare payload shares.  AppendOnly and Monotonic grade on a lattice and
+// need none.
+namespace row_discipline {
+template <typename KeyFn, typename Cmp>
+struct ordered_append_only;
+template <auto Max>
+struct bounded_monotonic;
+struct write_once;
+struct write_once_non_null;
+template <typename Cmp>
+struct atomic_monotonic;
+}  // namespace row_discipline
+
 // Both traits are the one reflection query of foundation/reflect/Instance.h
 // asked of a different template.  The struct forms stay, because callers
 // read `::value` off them.  Struct and value are each derived from the
@@ -237,6 +253,8 @@ class [[nodiscard]] OrderedAppendOnly {
 
 public:
     using value_type = T;
+    using row_discipline = ::fixy::row_discipline::ordered_append_only<KeyFn, Cmp>;
+    using row_payload = AppendOnly<T, Storage>;
     using key_type = std::invoke_result_t<KeyFn, const T&>;
     using key_fn_type = KeyFn;
     using comparator = Cmp;
@@ -397,6 +415,8 @@ class [[nodiscard]] BoundedMonotonic {
 public:
     using value_type = T;
     using comparator_type = Cmp;
+    using row_discipline = ::fixy::row_discipline::bounded_monotonic<Max>;
+    using row_payload = Monotonic<T, Cmp>;
     static constexpr T max() noexcept { return kMax; }
 
     [[nodiscard]] constexpr const T& get() const noexcept { return inner_.get(); }
@@ -445,6 +465,8 @@ class [[nodiscard]] WriteOnce {
 
 public:
     using value_type = T;
+    using row_discipline = ::fixy::row_discipline::write_once;
+    using row_payload = T;
 
     constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
         CRUCIBLE_PRE(!value_.has_value());
@@ -513,6 +535,8 @@ class [[nodiscard]] WriteOnceNonNull<T*> {
 public:
     using value_type = T*;
     using pointee_type = T;
+    using row_discipline = ::fixy::row_discipline::write_once_non_null;
+    using row_payload = T*;
 
     constexpr void set(T* p) noexcept {
         CRUCIBLE_PRE(p != nullptr);
@@ -605,6 +629,8 @@ class [[nodiscard]] alignas(64) AtomicMonotonic : ::foundation::Pinned<AtomicMon
 public:
     using value_type = T;
     using comparator_type = Cmp;
+    using row_discipline = ::fixy::row_discipline::atomic_monotonic<Cmp>;
+    using row_payload = T;
 
     [[nodiscard]] T get() const noexcept { return value_.load(std::memory_order_acquire); }
 

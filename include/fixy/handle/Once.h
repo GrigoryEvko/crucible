@@ -17,6 +17,14 @@
 #include <type_traits>
 #include <utility>
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct set_once;
+struct lazy;
+}  // namespace fixy::row_discipline
+
 namespace fixy::handle {
 
 // A null pointer is the unset state.  A slot that carries its own tag
@@ -29,6 +37,9 @@ class [[nodiscard]] SetOnce {
     T* ptr_ = nullptr;
 
 public:
+    using row_discipline = ::fixy::row_discipline::set_once;
+    using row_payload = T;
+
     constexpr SetOnce() noexcept = default;
     ~SetOnce() = default;
 
@@ -132,6 +143,9 @@ class Lazy : ::foundation::Pinned<Lazy<T>> {
     }
 
 public:
+    using row_discipline = ::fixy::row_discipline::lazy;
+    using row_payload = T;
+
     constexpr Lazy() noexcept = default;
 
     ~Lazy() {

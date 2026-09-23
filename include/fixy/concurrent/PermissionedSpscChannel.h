@@ -31,6 +31,15 @@
 #include <type_traits>
 #include <utility>
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct spsc_channel;
+struct spsc_producer;
+struct spsc_consumer;
+}  // namespace fixy::row_discipline
+
 namespace fixy::concurrent {
 
 // The triple is specialized for splitting at the foot of this file, so
@@ -67,6 +76,8 @@ public:
     using consumer_tag = spsc_tag::Consumer<UserTag>;
 
     static constexpr std::size_t channel_capacity = Capacity;
+    using row_discipline = ::fixy::row_discipline::spsc_channel;
+    using row_payload = T;
 
     // The channel's identity is its address, since the ring's atomics
     // depend on a stable one.
@@ -89,6 +100,8 @@ public:
 
     public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
+        using row_discipline = ::fixy::row_discipline::spsc_producer;
+        using row_payload = T;
 
         ProducerHandle(const ProducerHandle&) =
             delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
@@ -123,6 +136,8 @@ public:
 
     public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
+        using row_discipline = ::fixy::row_discipline::spsc_consumer;
+        using row_payload = T;
 
         ConsumerHandle(const ConsumerHandle&) =
             delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");

@@ -37,6 +37,14 @@
 
 namespace fixy {
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+template <typename Tag>
+struct scoped_view;
+}  // namespace row_discipline
+
 template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class ScopedView;
 
@@ -135,6 +143,8 @@ public:
     using carrier_type = Carrier;
     using tag_type = Tag;
     using brand_type = Brand;
+    using row_discipline = ::fixy::row_discipline::scoped_view<Tag>;
+    using row_payload = Carrier;
 
     // The private converting constructor already suppresses the
     // default one.  The explicit delete is here for its message: a

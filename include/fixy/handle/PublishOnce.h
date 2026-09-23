@@ -16,6 +16,14 @@
 #include <cstdlib>
 #include <type_traits>
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct publish_once;
+struct publish_slot;
+}  // namespace fixy::row_discipline
+
 namespace fixy::handle {
 
 // A contract assertion cannot carry this check.  Hot-path translation
@@ -93,6 +101,9 @@ class CRUCIBLE_OWNER PublishOnce {
     alignas(alignof(std::atomic<T*>)) std::atomic<T*> slot_{nullptr};
 
 public:
+    using row_discipline = ::fixy::row_discipline::publish_once;
+    using row_payload = T;
+
     constexpr PublishOnce() noexcept = default;
     ~PublishOnce() = default;
 
@@ -147,6 +158,9 @@ class CRUCIBLE_OWNER alignas(64) PublishSlot {
     std::atomic<T*> slot_{nullptr};
 
 public:
+    using row_discipline = ::fixy::row_discipline::publish_slot;
+    using row_payload = T;
+
     constexpr PublishSlot() noexcept = default;
     ~PublishSlot() = default;
 

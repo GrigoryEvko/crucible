@@ -55,6 +55,7 @@
 
 #include <fixy/atoms/Os.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 
 #include <sys/mman.h>
 
@@ -66,6 +67,14 @@
 #include <utility>
 
 namespace fixy {
+
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+template <typename Prot, typename Share>
+struct owned_mmap;
+}  // namespace row_discipline
 
 template <typename Tag, typename Prot, typename Share>
 class [[nodiscard]] OwnedMmap {
@@ -81,6 +90,8 @@ public:
     using tag_type = Tag;
     using prot_type = Prot;
     using share_type = Share;
+    using row_discipline = ::fixy::row_discipline::owned_mmap<Prot, Share>;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     // The empty region owns nothing, releases nothing, and claims
     // nothing, so it stays public.

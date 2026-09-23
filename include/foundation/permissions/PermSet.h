@@ -4,9 +4,12 @@
 // crucible::safety::proto.
 
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -189,7 +192,8 @@ using perm_set_difference_t = typename perm_set_difference<PS1, PS2>::type;
 
 // Identity suffices for equality, which compares by containment rather
 // than by canonical form.  A consumer that wants a hashable canonical
-// form needs a real sort here.
+// form needs a real sort here.  The row hash at the foot of this header
+// sorts for itself, so it does not depend on this.
 
 template <typename PS>
 struct perm_set_canonicalize {
@@ -296,3 +300,29 @@ static_assert(std::is_trivially_destructible_v<PermSet<A_tag>>);
 static_assert(std::is_empty_v<PermSet<A_tag, B_tag, C_tag>>);
 
 }  // namespace foundation::permissions::detail::permset_smoke
+
+namespace foundation::permissions::row_discipline {
+struct perm_set;
+}  // namespace foundation::permissions::row_discipline
+
+// A permission set is a grade, as an effect row is: it names the
+// authorities a session position holds.  It hashes as a set for the same
+// reason a row does, so two spellings of one set share a slot.  The tags
+// are the elements here, not identities of an instance, so they fold,
+// sorted by canonical id and seeded with the count.
+namespace foundation::diag {
+
+template <typename... Tags>
+struct row_hash_contribution<::foundation::permissions::PermSet<Tags...>> {
+    static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
+        constexpr std::size_t N = sizeof...(Tags);
+        std::array<std::uint64_t, N> const ids{lattice_canonical_id_v<Tags>...};
+        auto const sorted = detail::sorted_uints(ids);
+        std::uint64_t const elements =
+            detail::fmix64_fold_unique_sorted(sorted, detail::cardinality_seed(detail::unique_count_sorted(sorted)));
+        return detail::combine_ids(
+            discipline_row_hash_v<::foundation::permissions::row_discipline::perm_set, row_payloads<>>, elements);
+    }();
+};
+
+}  // namespace foundation::diag

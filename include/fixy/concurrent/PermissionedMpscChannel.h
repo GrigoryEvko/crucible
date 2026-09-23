@@ -37,6 +37,15 @@
 #include <type_traits>
 #include <utility>
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct mpsc_channel;
+struct mpsc_producer;
+struct mpsc_consumer;
+}  // namespace fixy::row_discipline
+
 namespace fixy::concurrent {
 
 // The triple is specialized for splitting at the foot of this file, so
@@ -73,6 +82,8 @@ public:
     using consumer_tag = mpsc_tag::Consumer<UserTag>;
 
     static constexpr std::size_t channel_capacity = Capacity;
+    using row_discipline = ::fixy::row_discipline::mpsc_channel;
+    using row_payload = T;
 
     // The producer root is minted here rather than passed in, because
     // the pool is the root of trust for its own tag.  Accepting an
@@ -96,6 +107,8 @@ public:
 
     public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
+        using row_discipline = ::fixy::row_discipline::mpsc_producer;
+        using row_payload = T;
 
         ProducerHandle(const ProducerHandle&) =
             delete("ProducerHandle owns a Pool refcount share — copy would double-count");
@@ -130,6 +143,8 @@ public:
 
     public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
+        using row_discipline = ::fixy::row_discipline::mpsc_consumer;
+        using row_payload = T;
 
         ConsumerHandle(const ConsumerHandle&) =
             delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");

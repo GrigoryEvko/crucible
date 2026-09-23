@@ -16,6 +16,7 @@
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 
 #include <sched.h>
@@ -52,6 +53,8 @@ template <int Nice>
     requires(Nice >= -20 && Nice <= 19)
 struct SchedPriority final {
     static constexpr int nice = Nice;
+    using row_discipline = SchedPriority;
+    using row_payload = ::foundation::diag::row_payloads<>;
 };
 
 namespace detail {

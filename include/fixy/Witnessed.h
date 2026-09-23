@@ -172,6 +172,14 @@ struct witnessed_mint_t {};
 // operator[] and the rest are the borrow's, and the borrow is reachable
 // only through deref.  A carrier that forwarded even size() would be a
 // second door with no witness on it.
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+template <typename Witness>
+struct witnessed;
+}  // namespace row_discipline
+
 template <typename Borrow, typename Witness>
     requires(IsBorrowed<Borrow> && IsWitnessKind<Witness>)
 class [[nodiscard]] Witnessed {
@@ -181,6 +189,8 @@ public:
     using element_type = typename Borrow::element_type;
     using source_type = typename Borrow::source_type;
     using brand_type = typename Borrow::brand_type;
+    using row_discipline = ::fixy::row_discipline::witnessed<Witness>;
+    using row_payload = Borrow;
 
 private:
     Borrow borrow_{};

@@ -22,10 +22,12 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace foundation::permissions {
@@ -277,4 +279,22 @@ static_assert(!ReadViewScopable<read_view_rowless_tag>, "the scoped form fails c
 
 }  // namespace detail::read_view_self_test
 
+namespace row_discipline {
+struct read_view;
+}  // namespace row_discipline
+
 }  // namespace foundation::permissions
+
+// A borrow of a region folds the region's row as its payload, as the
+// tokens in Permission.h do, so a view over an IO region is not a view
+// over a pure one.
+namespace foundation::diag {
+
+template <typename Tag, typename Brand>
+struct row_hash_contribution<::foundation::permissions::ReadView<Tag, Brand>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<::foundation::permissions::row_discipline::read_view,
+                              ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
+};
+
+}  // namespace foundation::diag

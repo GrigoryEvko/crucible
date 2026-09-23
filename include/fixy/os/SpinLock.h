@@ -53,6 +53,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -62,6 +63,14 @@
 #include <mutex>
 #include <thread>
 #include <type_traits>
+
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct spin_lock;
+struct spin_guard;
+}  // namespace fixy::row_discipline
 
 namespace fixy::spin {
 
@@ -145,6 +154,8 @@ public:
     using tag_type = Tag;
     using substrate_t = UnwitnessedSpinLock;
     using permission_t = perm::Permission<Tag>;
+    using row_discipline = ::fixy::row_discipline::spin_lock;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     static constexpr cache_tier_t cache_tier = cache_tier_t::Hot;
 
@@ -222,6 +233,8 @@ public:
     using lock_type = SpinLock<Tag>;
     using permission_t = perm::Permission<Tag, Brand>;
     using brand_type = Brand;
+    using row_discipline = ::fixy::row_discipline::spin_guard;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     template <CtxMayAcquireSpin Ctx>
     explicit SpinGuard(Ctx const& ctx, lock_type& lock, permission_t& proof) noexcept : lock_{lock}, proof_{proof} {

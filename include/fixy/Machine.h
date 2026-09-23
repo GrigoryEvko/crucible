@@ -25,6 +25,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/diag/FailClosed.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/reflect/Instance.h>
 
 #include <cstdlib>
@@ -95,6 +96,10 @@ class [[nodiscard]] Machine {
 public:
     using state_type = State;
     static constexpr std::meta::info edges = Edges;
+    // The state is the grade and the edges are the relation, so the
+    // machine names itself.  Nothing it holds is a payload.
+    using row_discipline = Machine;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     Machine(const Machine&) = delete("Machine is move-only; transitions consume it");
     Machine& operator=(const Machine&) = delete("Machine is move-only; transitions consume it");

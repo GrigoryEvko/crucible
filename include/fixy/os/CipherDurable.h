@@ -40,6 +40,7 @@
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/Fs.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 
 #include <sys/stat.h>
@@ -173,6 +174,8 @@ class [[nodiscard]] CipherDurableHandle final {
 
 public:
     using stance_type = Stance;
+    using row_discipline = CipherDurableHandle;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     // A default-constructed handle is closed.  Only a mint opens one.
     CipherDurableHandle() noexcept = default;

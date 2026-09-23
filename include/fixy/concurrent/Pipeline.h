@@ -29,6 +29,7 @@
 #include <fixy/concurrent/WorkingSet.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -48,6 +49,15 @@
 #else
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
 #endif
+
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct pipeline;
+template <typename Edges>
+struct pipeline_dag;
+}  // namespace fixy::row_discipline
 
 namespace fixy::concurrent {
 
@@ -491,6 +501,8 @@ template <class... Stages>
 class Pipeline {
 public:
     static constexpr std::size_t arity = sizeof...(Stages);
+    using row_discipline = ::fixy::row_discipline::pipeline;
+    using row_payload = ::foundation::diag::row_payloads<Stages...>;
     static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
     static constexpr bool inline_safe = pipeline_inline_safe_v<Stages...>;
     static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
@@ -634,6 +646,10 @@ template <class... Stages, class... Edges>
 class PipelineDag<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> {
 public:
     using graph_type = StageGraph<StagePack<Stages...>, EdgePack<Edges...>>;
+    // The edges are the shape of the graph, which is part of the claim;
+    // the stages are what it runs.
+    using row_discipline = ::fixy::row_discipline::pipeline_dag<EdgePack<Edges...>>;
+    using row_payload = ::foundation::diag::row_payloads<Stages...>;
 
     static constexpr std::size_t arity = sizeof...(Stages);
     static constexpr std::size_t edge_count = sizeof...(Edges);

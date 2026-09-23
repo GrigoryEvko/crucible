@@ -24,6 +24,13 @@
 
 namespace fixy {
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+struct saturated;
+}  // namespace row_discipline
+
 template <typename T>
     requires std::is_arithmetic_v<T>
 class [[nodiscard]] Saturated {
@@ -31,6 +38,8 @@ public:
     using value_type = T;
 
     static constexpr std::string_view wrapper_kind() noexcept { return "structural::Saturated"; }
+    using row_discipline = ::fixy::row_discipline::saturated;
+    using row_payload = T;
 
 private:
     T value_ = T{};

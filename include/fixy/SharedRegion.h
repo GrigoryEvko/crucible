@@ -84,6 +84,14 @@ struct shared_read_mint_t {};
 
 }  // namespace detail
 
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace row_discipline {
+struct shared_region;
+struct shared_read;
+}  // namespace row_discipline
+
 template <typename T, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedRead;
 
@@ -142,6 +150,8 @@ public:
     using value_type = T;
     using tag_type = Tag;
     using brand_type = Brand;
+    using row_discipline = ::fixy::row_discipline::shared_region;
+    using row_payload = T;
 
     // The door consumes the exclusive region, which is the evidence:
     // there is no shared region without one, and the region it was built
@@ -216,6 +226,8 @@ public:
     using tag_type = Tag;
     using brand_type = Brand;
     using span_type = std::span<T const>;
+    using row_discipline = ::fixy::row_discipline::shared_read;
+    using row_payload = T;
 
     SharedRead() = delete;
 

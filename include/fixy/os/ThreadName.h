@@ -10,6 +10,7 @@
 // Old spelling: include/crucible/safety/ThreadName.h.
 
 #include <foundation/Platform.h>
+#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 
 #include <pthread.h>
@@ -46,6 +47,8 @@ struct ThreadNameLiteral {
 template <ThreadNameLiteral Name>
 struct [[nodiscard]] ThreadNamed {
     static constexpr ThreadNameLiteral name = Name;
+    using row_discipline = ThreadNamed;
+    using row_payload = ::foundation::diag::row_payloads<>;
 
     [[nodiscard]] static constexpr const char* c_str() noexcept { return Name.c_str(); }
     [[nodiscard]] static constexpr std::size_t visible_length() noexcept { return Name.visible_length; }
