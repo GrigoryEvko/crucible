@@ -16,7 +16,7 @@
 
 // First, and before every crucible/ include below: record_kernel.h parses the
 // two sibling substrates in a fixed order so each keeps its own spelling of the
-// five CRUCIBLE_ macros the two Platform.h files define differently, and it
+// six CRUCIBLE_ macros the two trees define differently, and it
 // refuses to compile after one of them.
 #include "record_kernel.h"
 
