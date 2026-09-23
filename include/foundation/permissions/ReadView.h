@@ -22,6 +22,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
 
@@ -79,14 +80,27 @@ constexpr ReadView<Tag, Brand> mint_read_view(Permission<Tag, Brand> const&&) =
     delete("a borrow proof minted from a temporary permission outlives what it proves; bind the permission to "
            "a name that outlives the view");
 
-// The session layer's borrow payload embeds a view as the recipient's
-// read proof for one protocol step and default-constructs it, which its
-// own accounting of permissions makes sound.  That layer is above this
-// one and cannot be named here, so it reaches the private constructor
-// through this host type, which it declares and defines.
-namespace host {
-struct BorrowIssuer;
-}  // namespace host
+// The second door: a live share of a pool.  The share lives in the
+// guard, not in the SharedPermission token, because a token confers
+// nothing and a copy of it can outlive the share (Permission.h).  So a
+// view comes from a guard, and only from a guard that still holds its
+// share.  The deleted twin refuses a guard that dies at the end of the
+// statement, as the twin above refuses a temporary permission.
+//
+// There is no third source.  A read proof comes from a Permission or
+// from a live share, and from nothing else.  The session layer builds the
+// read proof of its borrow payload through these two mints, so it needs
+// no friend here.
+template <typename Tag, typename Brand>
+    requires ReadViewNeedsNoCtx<Tag>
+[[nodiscard]] constexpr ReadView<Tag, Brand> mint_read_view(SharedPermissionGuard<Tag, Brand> const& g
+                                                            CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+template <typename Tag, typename Brand>
+    requires ReadViewNeedsNoCtx<Tag>
+constexpr ReadView<Tag, Brand> mint_read_view(SharedPermissionGuard<Tag, Brand> const&&) =
+    delete("a borrow proof minted from a temporary share guard outlives the share. Bind the guard to a name that "
+           "outlives the view");
 
 template <typename Tag, typename Brand>
 class [[nodiscard]] ReadView {
@@ -153,9 +167,10 @@ private:
     friend constexpr ReadView<Tag_, Brand_> mint_read_view(Permission<Tag_, Brand_> const& p
                                                            CRUCIBLE_LIFETIMEBOUND) noexcept;
 
-    // The session layer's borrow payload default-constructs a view
-    // through this host type; see the declaration above.
-    friend struct ::foundation::permissions::host::BorrowIssuer;
+    template <typename Tag_, typename Brand_>
+        requires ReadViewNeedsNoCtx<Tag_>
+    friend constexpr ReadView<Tag_, Brand_> mint_read_view(SharedPermissionGuard<Tag_, Brand_> const& g
+                                                           CRUCIBLE_LIFETIMEBOUND) noexcept;
 };
 
 // The annotation on the parameter is the claim.  The deleted twin
@@ -170,8 +185,18 @@ template <typename Tag, typename Brand>
     return ReadView<Tag, Brand>{};
 }
 
-// The scoped form is the second door onto the same borrow, so it carries
-// the same row gate.  Without it the refusal still happened, but inside
+// A guard that was moved from holds no share, so a view from it would
+// prove a share that nothing counts.
+template <typename Tag, typename Brand>
+    requires ReadViewNeedsNoCtx<Tag>
+[[nodiscard]] constexpr ReadView<Tag, Brand> mint_read_view(SharedPermissionGuard<Tag, Brand> const& g
+                                                            CRUCIBLE_LIFETIMEBOUND) noexcept {
+    CRUCIBLE_PRE(g.holds_share());
+    return ReadView<Tag, Brand>{};
+}
+
+// The scoped form is a second door onto the borrow of a Permission, so
+// it carries the same row gate.  Without it the refusal still happened, but inside
 // this header on the call below, and a body that returns the view it was
 // handed would have borrowed an effectful region through a factory that
 // never mentioned one.

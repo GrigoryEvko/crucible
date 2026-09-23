@@ -403,6 +403,19 @@ foundation_neg_compile_test(neg_brand_read_view_from_temporary_permission
   "mint_read_view\\(const Permission<Tag, Brand>&&\\)"
   "a borrow proof minted from a temporary permission outlives what it proves")
 
+# A read proof comes from a Permission or a live share, and from nothing
+# else.  A program that defines the old host type reaches a private
+# constructor, because no friend names that type.
+foundation_neg_compile_test(neg_read_view_host_door_closed
+  "is private within this context"
+  "ReadView<Tag, Brand>::ReadView\\(\\) .with Tag = .*Region")
+
+# A read proof of a share guard that dies at the end of the statement.
+foundation_neg_compile_test(neg_read_view_from_temporary_share_guard
+  "use of deleted function"
+  "mint_read_view\\(const SharedPermissionGuard<Tag, Brand>&&\\)"
+  "a borrow proof minted from a temporary share guard outlives the share")
+
 # The children of two regions do not fold into one parent.
 foundation_neg_compile_test(neg_brand_combine_children_of_two_regions
   "static assertion failed"

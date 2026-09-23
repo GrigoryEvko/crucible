@@ -266,6 +266,30 @@ void test_fork_inline_with_shared_read_view() {
     (void)config_perm;
 }
 
+// A view from a live share.  The guard holds the share, so the view
+// comes from the guard, and the pool cannot upgrade while the guard
+// lives.  A read proof needs a Permission or a live share: the private
+// default constructor and the absent friend leave no third source.
+void test_mint_read_view_from_share_guard() {
+    SharedPermissionPool pool{mint_permission_root<ConfigData>()};
+    {
+        auto guard = pool.lend();
+        CRUCIBLE_TEST_REQUIRE(guard.has_value());
+        const auto& held = *guard;
+        auto view = mint_read_view(held);
+        static_assert(std::is_same_v<typename decltype(view)::tag_type, ConfigData>);
+        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
+        CRUCIBLE_TEST_REQUIRE(!pool.try_upgrade().has_value());
+    }
+    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
+    auto exclusive = pool.try_upgrade();
+    CRUCIBLE_TEST_REQUIRE(exclusive.has_value());
+    permission_drop(std::move(*exclusive));
+
+    static_assert(!std::is_default_constructible_v<ReadView<ConfigData>>,
+                  "a read proof has no constructor that takes nothing");
+}
+
 }  // namespace
 
 int main() {
@@ -282,6 +306,7 @@ int main() {
     run_test("test_handle_composition_zero_cost", test_handle_composition_zero_cost);
     run_test("test_fork_with_shared_read_view", test_fork_with_shared_read_view);
     run_test("test_fork_inline_with_shared_read_view", test_fork_inline_with_shared_read_view);
+    run_test("test_mint_read_view_from_share_guard", test_mint_read_view_from_share_guard);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

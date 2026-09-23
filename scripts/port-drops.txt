@@ -219,7 +219,7 @@ crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier, as 
 
 # ── permissions ─────────────────────────────────────────────────────────
 
-crucible/permissions/_ReadView.h:Borrowed  → none  — A forward declaration of the session payload marker, friended so a session step could mint a borrow. The marker itself is declared in crucible/sessions/SessionGrade.h, which no port has marked superseded, so no port owed it a home. foundation/permissions/ReadView.h:76 friends host::BorrowIssuer in its place. The fixy::Borrowed of the new tree is the borrow wrapper of fixy/Borrowed.h and a different thing with the same name.
+crucible/permissions/_ReadView.h:Borrowed  → none  — A forward declaration of the session payload marker, friended so a session step could mint a borrow. The marker itself is declared in crucible/sessions/SessionGrade.h, which no port has marked superseded, so no port owed it a home. The session marker of the new tree, fixy::session::Borrowed in fixy/session/Payload.h, takes its read proof from mint_read_view, so foundation/permissions/ReadView.h names no friend for it. The fixy::Borrowed of the new tree is the borrow wrapper of fixy/Borrowed.h and a different thing with the same name.
 crucible/permissions/_PermissionFork.h:PermissionForkSpawnCtx  — The spawn context left with the throws gate; foundation/permissions/PermissionFork.h:34 assigns the structural check to fixy/os/Spawn.h.
 
 # ── safety: the diagnostic catalog and the stable name ──────────────────
