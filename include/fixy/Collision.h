@@ -787,6 +787,107 @@ static_assert(detail::code_the_corpus_never_listed_().empty(),
               detail::named_("fixy/Collision.h: this RuleCode enumerator is in no rule_corpus entry: ",
                              detail::code_the_corpus_never_listed_()));
 
+// ---------------------------------------------------------------------
+// The Absent set, by name.
+//
+// The pins above bind the Live rows to the rules that run, and they say
+// nothing about the Absent rows.  An Absent row asks for nothing, so a
+// rule could be moved to Absent, or a new code added as Absent, and every
+// pin would stay green.  A count would not close that: one name can leave
+// the set while another joins it, and the count holds.
+//
+// So the set is written out a second time, here, and the two lists must
+// name the same codes.  The list only shrinks.  A code leaves it when its
+// rule is written and its row turns Live, or when its row records why the
+// rule is not carried further.  A code never joins it: adding a name here
+// is the one edit that grows the set, and it is a visible line in a diff
+// rather than a disposition changed in passing.
+inline constexpr std::string_view absent_rule_codes[] = {
+    "V102", "F103", "F104", "F105", "C001", "S011", "E044", "S010", "I002",
+    "I003", "I004", "M011", "F002", "D001", "L003", "L004", "P003", "N002",
+    "V001", "V002", "F001", "L005", "S004", "G001", "M001",
+};
+
+namespace detail {
+
+[[nodiscard]] consteval bool absent_list_names_(std::string_view code) noexcept {
+    for (const std::string_view listed : absent_rule_codes) {
+        if (listed == code) return true;
+    }
+    return false;
+}
+
+[[nodiscard]] consteval bool corpus_marks_absent_(std::string_view code) noexcept {
+    for (const corpus_entry& entry : rule_corpus) {
+        if (entry.code == code) return entry.disposition == Disposition::Absent;
+    }
+    return false;
+}
+
+// Every offender, comma-separated, so one known offender cannot mask a
+// second.  O(n^2) over the corpus, at compile time only.
+//
+// The two collectors return a std::string rather than a static view, and
+// the diagnostic is assembled in one call.  Handing a static view built
+// by define_static_string to std::string's constructor is not a constant
+// expression under GCC 16: the constructor compares the pointer against
+// null, and GCC refuses that comparison for such a pointer.
+[[nodiscard]] consteval std::string absent_rows_not_listed_() {
+    std::string offenders;
+    for (const corpus_entry& entry : rule_corpus) {
+        if (entry.disposition != Disposition::Absent || absent_list_names_(entry.code)) continue;
+        if (!offenders.empty()) offenders += ", ";
+        for (const char letter : entry.code) offenders += letter;
+    }
+    return offenders;
+}
+
+[[nodiscard]] consteval std::string listed_codes_not_absent_() {
+    std::string offenders;
+    for (const std::string_view listed : absent_rule_codes) {
+        if (corpus_marks_absent_(listed)) continue;
+        if (!offenders.empty()) offenders += ", ";
+        for (const char letter : listed) offenders += letter;
+    }
+    return offenders;
+}
+
+[[nodiscard]] consteval std::string_view absent_code_listed_twice_() noexcept {
+    const std::size_t listed = sizeof(absent_rule_codes) / sizeof(absent_rule_codes[0]);
+    for (std::size_t first = 0; first < listed; ++first) {
+        for (std::size_t second = first + 1; second < listed; ++second) {
+            if (absent_rule_codes[first] == absent_rule_codes[second]) return absent_rule_codes[first];
+        }
+    }
+    return {};
+}
+
+[[nodiscard]] consteval std::string_view absent_pin_message_(std::string_view lead, const std::string& offenders) {
+    std::string message;
+    for (const char letter : lead) message += letter;
+    message += offenders;
+    return std::define_static_string(message);
+}
+
+}  // namespace detail
+
+static_assert(detail::absent_rows_not_listed_().empty(),
+              detail::absent_pin_message_(
+                  "fixy/Collision.h: the corpus marks these rules Absent and absent_rule_codes does not name them.  "
+                  "The Absent set only shrinks: a rule leaves it by being written or by a recorded reason, and "
+                  "never joins it.  Write the rule, or keep the row it had: ",
+                  detail::absent_rows_not_listed_()));
+
+static_assert(detail::listed_codes_not_absent_().empty(),
+              detail::absent_pin_message_(
+                  "fixy/Collision.h: absent_rule_codes names these codes and the corpus does not mark them "
+                  "Absent.  A code whose row left the Absent set leaves this list in the same edit: ",
+                  detail::listed_codes_not_absent_()));
+
+static_assert(detail::absent_code_listed_twice_().empty(),
+              detail::named_("fixy/Collision.h: absent_rule_codes names this code twice: ",
+                             detail::absent_code_listed_twice_()));
+
 // pending_rules and the corpus are two hand-written lists of the same
 // set.  Comparing them catches an edit to one and not the other.
 static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
