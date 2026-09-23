@@ -668,6 +668,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::diag, "the row-hash fold and the diagnostic surface themselves"},
     {^^::foundation::diag::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::fail_closed, kMachinery},
+    {^^::foundation::contracts, "armed cells and the roster verdict, which are gate machinery"},
     {^^::foundation::reflect, kMachinery},
 };
 
