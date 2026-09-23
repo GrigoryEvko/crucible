@@ -153,6 +153,33 @@
 # Either is exit 2.  The sentence must be non-empty and end with a period.
 # `--emit-drops` prints a template line for every current miss.
 #
+# The carrier clause: completeness per row is not completeness per type
+# --------------------------------------------------------------------
+# A row may carry `→ <carrier>` between its key and the em dash, where the
+# carrier is a repo-relative header under a new root, or the word none:
+#
+#   crucible/x/_Old.h:Thing  → include/fixy/Thing.h  — <one sentence>.
+#   crucible/x/_Old.h:Thing  → none  — <one sentence>.
+#
+# Seventeen rows once shared the sentence "the type's own port is not
+# this header's to carry".  Each was true of its header, a set of forward
+# declarations, and together they assigned the types to nobody while the
+# ledger stayed green.  So the clause is REQUIRED on every row whose
+# header only forward-declares the symbol — an opaque class, struct,
+# union or enum declaration and no definition, alias, concept or
+# specialisation of that name in the same header — and the guard decides
+# that from the code, so no rewording of the sentence escapes it.  That
+# requirement is always satisfiable: a drop row can only name a marked
+# header (anything else is STALE), so the type's definition is somewhere
+# a carrier can be named for.  The checks, each exit 2:
+#   - UNCARRIED DEFERRAL: a forward-declaration row with no clause;
+#   - MISSING CARRIER:    the named carrier is not an existing header
+#                         under one of the new roots;
+#   - UNPINNED UNCARRIED: a `→ none` row not on uncarried_pinned;
+#   - STALE PIN:          an uncarried_pinned entry with no `→ none` row.
+# The pinned list is a list of names, never a count, because a count
+# lets one name be swapped for another with the number unchanged.
+#
 # The second half of a trait's identity: specialisation folds
 # ----------------------------------------------------------
 # Everything above compares NAMES.  A trait's identity is its name plus
@@ -200,8 +227,10 @@
 #       and every fold has a written sentence
 #   1 — at least one missing port or unjustified fold (takes precedence
 #       over 2)
-#   2 — stale or obsolete drop or fold entry, malformed entry, sentinel
-#       would not compile, missing dependency, or bad invocation
+#   2 — stale or obsolete drop or fold entry, malformed entry, a carrier
+#       clause that is missing, names no new-tree header, or is `→ none`
+#       off the pinned list, a stale pin, sentinel would not compile,
+#       missing dependency, or bad invocation
 #
 # Usage
 #   check-port-completeness.sh [--quiet]     scan
@@ -224,6 +253,8 @@
 #                               it counts as having received an old one (2)
 #   PORT_GUARD_DROPS            drops file (scripts/port-drops.txt)
 #   PORT_GUARD_FOLDS            folds file (scripts/port-folds.txt)
+#   PORT_GUARD_UNCARRIED        whitespace-separated `header:symbol` pins
+#                               replacing uncarried_pinned (self-test only)
 
 set -euo pipefail
 
@@ -239,6 +270,33 @@ corroboration="${PORT_GUARD_NS_CORROBORATION:-2}"
 drops_file="${PORT_GUARD_DROPS:-scripts/port-drops.txt}"
 folds_file="${PORT_GUARD_FOLDS:-scripts/port-folds.txt}"
 quiet=0
+cxx_for_drops=""
+
+# The drop rows admitted to write `→ none`: a superseded header
+# forward-declared the type, and no header anywhere carries it.  Each one
+# is a type the port has not reached.  The set is pinned BY NAME, not by
+# a count, so it can only change by editing this list: a new uncarried
+# row is refused as UNPINNED, and a pin whose row is gone is refused as
+# STALE, so one name swapped for another reports both halves.  The list
+# shrinks in the same commit as the port that gives a type its carrier.
+uncarried_pinned_default="
+crucible/safety/diag/_RowHashFold.h:Budgeted
+crucible/safety/diag/_RowHashFold.h:Consistency
+crucible/safety/diag/_RowHashFold.h:Crash
+crucible/safety/diag/_RowHashFold.h:CrashClass
+crucible/safety/diag/_RowHashFold.h:EpochVersioned
+crucible/safety/diag/_RowHashFold.h:JoinPolicy
+crucible/safety/diag/_RowHashFold.h:MemOrder
+crucible/safety/diag/_RowHashFold.h:MemOrderTag
+crucible/safety/diag/_RowHashFold.h:NumaPlacement
+crucible/safety/diag/_RowHashFold.h:ResidencyHeat
+crucible/safety/diag/_RowHashFold.h:ResidencyHeatTag
+crucible/safety/diag/_RowHashFold.h:TimeOrdered
+crucible/safety/diag/_RowHashFold.h:Vendor
+crucible/safety/diag/_RowHashFold.h:Witness
+crucible/permissions/_ReadView.h:Borrowed
+"
+uncarried_pinned="${PORT_GUARD_UNCARRIED-$uncarried_pinned_default}"
 
 usage() {
     printf 'usage: %s [--quiet | --emit-drops | --emit-folds | --self-test]\n' "${BASH_SOURCE[0]}" >&2
@@ -690,17 +748,31 @@ verdict_of() {
 # reads the same verdict the miss loop reads, so a row can never be both
 # refused as obsolete and required as a miss.
 load_drops() {
-    local out="$1" surface="$2" verdicts="$3" line key sentence header symbol
+    local out="$1" surface="$2" verdicts="$3" tmp="$4" line key sentence header symbol carrier has_carrier
+    local seen_none="$tmp/seen_uncarried.txt"
     : >"$out"
-    [[ -f "$drops_file" ]] || return 0
+    : >"$seen_none"
+    [[ -f "$drops_file" ]] || { check_uncarried_pins "$seen_none"; return 0; }
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" == \#* ]] && continue
         if [[ "$line" != *" — "* ]]; then
-            printf 'MALFORMED DROP  %s\n  (expected `<header>:<symbol>  — <one sentence>.`)\n' "$line" >&2
+            printf 'MALFORMED DROP  %s\n  (expected `<header>:<symbol>  [→ <carrier>]  — <one sentence>.`)\n' "$line" >&2
             stale_rc=2; continue
         fi
         key="${line%% — *}"; key="${key%"${key##*[![:space:]]}"}"
         sentence="${line#* — }"; sentence="${sentence#"${sentence%%[![:space:]]*}"}"
+        # The carrier clause sits between the key and the em dash, so the
+        # sentence stays free prose and may contain an arrow of its own.
+        has_carrier=0; carrier=""
+        if [[ "$key" == *" → "* ]]; then
+            has_carrier=1
+            carrier="${key#* → }"; carrier="${carrier#"${carrier%%[![:space:]]*}"}"
+            key="${key%% → *}"; key="${key%"${key##*[![:space:]]}"}"
+            if [[ -z "$carrier" || "$carrier" == *[[:space:]]* ]]; then
+                printf 'MALFORMED DROP  %s\n  (the carrier after the arrow must be one header path under a new root, or the word none)\n' "$line" >&2
+                stale_rc=2; continue
+            fi
+        fi
         header="${key%%:*}"; symbol="${key#*:}"
         if [[ -z "$header" || -z "$symbol" || "$key" != *:* ]]; then
             printf 'MALFORMED DROP  %s\n  (no `<header>:<symbol>` key)\n' "$line" >&2
@@ -718,8 +790,92 @@ load_drops() {
             printf 'OBSOLETE DROP   %s  %s\n  (the symbol now exists in the new tree — it is no longer a drop; remove the entry)\n' "$header" "$symbol" >&2
             stale_rc=2; continue
         fi
+        # The row is loaded from here on whatever the carrier verdict, so a
+        # bad carrier reads as exit 2 with its own line and never as a
+        # second report of the same symbol as a missing port.
         printf '%s\t%s\n' "$header" "$symbol" >>"$out"
+        if [[ $has_carrier -eq 0 ]]; then
+            if is_forward_declared_only "$tmp" "$header" "$symbol"; then
+                printf 'UNCARRIED DEFERRAL  %s  %s\n  (that header only forward-declares the symbol, so it never owned the type; name the new-tree\n   header that accounts for it with `→ <header>`, or write `→ none` and pin the row in the guard)\n' "$header" "$symbol" >&2
+                stale_rc=2
+            fi
+            continue
+        fi
+        if [[ "$carrier" == "none" ]]; then
+            printf '%s:%s\n' "$header" "$symbol" >>"$seen_none"
+            if ! is_pinned_uncarried "$header:$symbol"; then
+                printf 'UNPINNED UNCARRIED  %s  %s\n  (`→ none` is admitted only for the rows the guard pins by name in uncarried_pinned; a new\n   uncarried type is a new gap, so admitting it is an edit to the guard, not to this file)\n' "$header" "$symbol" >&2
+                stale_rc=2
+            fi
+            continue
+        fi
+        if ! is_new_tree_header "$carrier"; then
+            printf 'MISSING CARRIER  %s  %s  → %s\n  (the carrier must be an existing header under one of the new roots: %s)\n' "$header" "$symbol" "$carrier" "$new_roots" >&2
+            stale_rc=2
+        fi
     done <"$drops_file"
+    check_uncarried_pins "$seen_none"
+}
+
+# True when $1 names an existing header file under one of the new roots.
+# A carrier must be a place a reader of the NEW tree can open: an old
+# header, marked or not, is where the symbol came from, not where it went.
+is_new_tree_header() {
+    local path="$1" root
+    [[ "$path" == *.h && -f "$path" ]] || return 1
+    for root in $new_roots; do
+        [[ "$path" == "$root"/* ]] && return 0
+    done
+    return 1
+}
+
+# True when $1 (`header:symbol`) is on the pinned uncarried list.
+is_pinned_uncarried() {
+    local want="$1" pin
+    for pin in $uncarried_pinned; do
+        [[ "$pin" == "$want" ]] && return 0
+    done
+    return 1
+}
+
+# Every pinned row must still be written as `→ none`.  A pin with no such
+# row is stale, so the list shrinks in the same commit as the port that
+# gives the type a carrier, and a swap — one name pinned, another written
+# — reports both halves instead of passing on an unchanged count.
+check_uncarried_pins() {
+    local seen="$1" pin
+    for pin in $uncarried_pinned; do
+        if ! grep -qxF "$pin" "$seen"; then
+            printf 'STALE PIN       %s\n  (pinned as uncarried, but no loaded drop row writes `→ none` for it — remove it from uncarried_pinned)\n' "$pin" >&2
+            stale_rc=2
+        fi
+    done
+}
+
+# True when header $2 (relative to the old root) declares $3 only as a
+# forward declaration: an opaque `class X;`, `struct X;`, `union X;` or
+# `enum class X : T;`, and no definition, alias or concept of that name.
+# A body-less primary the same header specialises counts as defined.
+# Such a header never owned the type, so its drop row is a deferral by
+# construction and must say who carries the type.  This is decided from
+# the code, not from the sentence, so no rewording of the prose escapes
+# it.  The text is the comment- and string-stripped header, joined into
+# one line so a template head on the line above does not split the match.
+is_forward_declared_only() {
+    local tmp="$1" header="$2" symbol="$3" text
+    text="$tmp/fwd_text/$header"
+    if [[ ! -f "$text" ]]; then
+        mkdir -p "$(dirname "$text")"
+        template_text "$cxx_for_drops" "$old_root/$header" | tr '\n' ' ' >"$text"
+    fi
+    local kw='\b(?:class|struct|union|enum(?:\s+(?:class|struct))?)\s+(?:\[\[[^\]]*\]\]\s*)?'
+    grep -qP "${kw}\Q${symbol}\E\s*(?::\s*[A-Za-z_][A-Za-z0-9_:\s]*)?;" "$text" || return 1
+    grep -qP "${kw}\Q${symbol}\E\s*(?:final\s*)?(?::[^;{]*)?\{" "$text" && return 1
+    # A primary declared without a body and specialised in the same header
+    # is the header's own trait: the specialisations are its definition.
+    grep -qP "${kw}\Q${symbol}\E\s*<[^;{]*\{" "$text" && return 1
+    grep -qP "\busing\s+\Q${symbol}\E\s*=|\bconcept\s+\Q${symbol}\E\b" "$text" && return 1
+    return 0
 }
 
 # ── Specialisation folds ────────────────────────────────────────────────
@@ -916,7 +1072,8 @@ scan() {
     fi
 
     drops="$tmp/drops.tsv"
-    load_drops "$drops" "$surface" "$verdicts"
+    cxx_for_drops="$cxx"
+    load_drops "$drops" "$surface" "$verdicts" "$tmp"
 
     # A drop is keyed by (header, symbol).  It used to be keyed by symbol
     # alone, so one entry covered every header declaring that NAME. A bare
@@ -970,7 +1127,11 @@ scan() {
 
     if [[ "$mode" == "emit" ]]; then
         while IFS=$'\t' read -r h s; do
-            printf '%s:%s  — <why this symbol has no home in the new tree>.\n' "$h" "$s"
+            if is_forward_declared_only "$tmp" "$h" "$s"; then
+                printf '%s:%s  → <new-tree header that accounts for the type, or none>  — <why this symbol has no home in the new tree>.\n' "$h" "$s"
+            else
+                printf '%s:%s  — <why this symbol has no home in the new tree>.\n' "$h" "$s"
+            fi
         done <"$misses"
         return 0
     fi
@@ -1117,6 +1278,25 @@ struct planted_kept<int> {
 };
 }  // namespace crucible
 EOF
+    # Carrier controls.  The header forward-declares two types and owns
+    # neither, so both drop rows are deferrals by construction and each
+    # must name a carrier.  planted_trait is a body-less primary this
+    # header specialises, which is its own trait and not a deferral: the
+    # negative control that stops the rule from firing on every opaque
+    # declaration.
+    cat >"$tmp/old/crucible/_PlantedFwd.h" <<'EOF'
+#pragma once
+namespace crucible {
+struct planted_fwd_carried;
+enum class planted_fwd_uncarried : unsigned char;
+template <class T>
+struct planted_trait;
+template <>
+struct planted_trait<int> {
+    static constexpr bool value = true;
+};
+}  // namespace crucible
+EOF
     cat >"$tmp/new/foundation/Planted.h" <<'EOF'
 #pragma once
 namespace planted_new {
@@ -1149,11 +1329,13 @@ EOF
     printf '%s:planted_folded  — planted by the self-test as a legitimate fold.\n' \
         "$tmp/new/foundation/Planted.h" >"$tmp/folds-ok.txt"
 
+    local pin_ok="crucible/_PlantedFwd.h:planted_fwd_uncarried"
     run_guard() {
         PORT_GUARD_OLD_ROOT="$tmp/old" PORT_GUARD_OLD_SUBDIR=crucible \
         PORT_GUARD_NEW_ROOTS="$tmp/new/foundation" PORT_GUARD_NS=crucible \
         PORT_GUARD_NEW_NS=planted_new \
         PORT_GUARD_DROPS="$1" PORT_GUARD_FOLDS="${2:-$tmp/folds-ok.txt}" \
+        PORT_GUARD_UNCARRIED="${3-$pin_ok}" \
         bash "${BASH_SOURCE[0]}" --quiet
     }
 
@@ -1162,7 +1344,7 @@ EOF
 
     # Arm 1: no drops file — the misses are exactly the planted unported set.
     out="$tmp/arm1.out"; set +e; run_guard "$tmp/no-such-drops.txt" >"$out" 2>&1; rc=$?; set -e
-    local want="PLANTED_MACRO_KEYED,PLANTED_MACRO_UNPORTED,planted_alias_unported,planted_collided_name,planted_reexport_unported,planted_template_unported,planted_two_homes,planted_two_homes,planted_unported"
+    local want="PLANTED_MACRO_KEYED,PLANTED_MACRO_UNPORTED,planted_alias_unported,planted_collided_name,planted_fwd_carried,planted_fwd_uncarried,planted_reexport_unported,planted_template_unported,planted_trait,planted_two_homes,planted_two_homes,planted_unported"
     if [[ $rc -eq 1 && "$(reported)" == "$want" ]]; then
         printf 'check-port-completeness --self-test: minimal control — planted_unported reported and planted_ported not, as expected.\n'
         printf 'check-port-completeness --self-test: blind spots — template, alias-by-own-name, re-export and macro each reported; the detail member was not, as expected.\n'
@@ -1174,8 +1356,13 @@ EOF
     fi
 
     # Arm 2: every miss has a written drop — clean.
-    cat >"$tmp/drops-ok.txt" <<'EOF'
-# planted
+    {
+        printf '# planted\n'
+        printf 'crucible/_PlantedFwd.h:planted_fwd_carried  → %s  — planted with a carrier that exists.\n' "$tmp/new/foundation/Planted.h"
+        printf 'crucible/_PlantedFwd.h:planted_fwd_uncarried  → none  — planted as a pinned uncarried type.\n'
+        printf 'crucible/_PlantedFwd.h:planted_trait  — planted; the header owns this trait, so no carrier is owed.\n'
+    } >"$tmp/drops-ok.txt"
+    cat >>"$tmp/drops-ok.txt" <<'EOF'
 crucible/_PlantedMinimal.h:planted_unported  — planted by the self-test as a legitimate drop.
 crucible/_PlantedBlindSpots.h:planted_template_unported  — planted.
 crucible/_PlantedBlindSpots.h:planted_alias_unported  — planted.
@@ -1188,7 +1375,7 @@ crucible/_PlantedHomeA.h:PLANTED_MACRO_KEYED  — planted.
 EOF
     out="$tmp/arm2.out"; set +e; run_guard "$tmp/drops-ok.txt" >"$out" 2>&1; rc=$?; set -e
     if [[ $rc -eq 0 ]]; then
-        printf 'check-port-completeness --self-test: written drops reported clean, as expected.\n'
+        printf 'check-port-completeness --self-test: written drops reported clean, a deferral naming an existing new-tree carrier and a pinned `→ none` row among them, as expected.\n'
     else
         printf 'check-port-completeness --self-test: FAIL — a fully dropped set was not clean (exit %s).\n' "$rc" >&2
         sed 's/^/    /' "$out" >&2; fails=1
@@ -1309,6 +1496,65 @@ EOF
         printf 'check-port-completeness --self-test: sentence-less fold rejected, as expected.\n'
     else
         printf 'check-port-completeness --self-test: FAIL — a sentence-less fold was not rejected (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arms 13-17: the carrier clause.  Each derives from drops-ok.txt by
+    # replacing the one row under test, so any other failure would show.
+    local carried_row="crucible/_PlantedFwd.h:planted_fwd_carried"
+    with_row() { grep -vF "$carried_row " "$tmp/drops-ok.txt"; printf '%s\n' "$1"; }
+
+    # Arm 13: a deferral with no carrier is refused, and the trait the
+    # header owns is not — the rule reads the code, not the prose.
+    with_row "$carried_row  — the type's own port is not this header's to carry." >"$tmp/drops-uncarried.txt"
+    out="$tmp/arm13.out"; set +e; run_guard "$tmp/drops-uncarried.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'UNCARRIED DEFERRAL.*planted_fwd_carried' "$out" \
+       && ! grep -q 'UNCARRIED DEFERRAL.*planted_trait' "$out"; then
+        printf 'check-port-completeness --self-test: a forward-declaration row naming no carrier was refused, and the header'"'"'s own trait was not, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a carrier-less deferral was not refused alone as exit 2 (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 14: a named carrier that does not exist is refused.
+    with_row "$carried_row  → $tmp/new/foundation/NoSuchCarrier.h  — carrier missing on purpose." >"$tmp/drops-nocarrier.txt"
+    out="$tmp/arm14.out"; set +e; run_guard "$tmp/drops-nocarrier.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'MISSING CARRIER.*planted_fwd_carried.*NoSuchCarrier.h' "$out"; then
+        printf 'check-port-completeness --self-test: a carrier naming no existing header was refused, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a nonexistent carrier was not refused as exit 2 (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 15: a carrier that exists but lies outside the new roots — here
+    # the old header itself — is refused the same way.
+    with_row "$carried_row  → $tmp/old/crucible/_PlantedFwd.h  — carrier in the old tree on purpose." >"$tmp/drops-oldcarrier.txt"
+    out="$tmp/arm15.out"; set +e; run_guard "$tmp/drops-oldcarrier.txt" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'MISSING CARRIER.*planted_fwd_carried.*_PlantedFwd.h' "$out"; then
+        printf 'check-port-completeness --self-test: a carrier outside the new roots was refused, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — an old-tree carrier was not refused as exit 2 (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 16: the pin list compares names.  Pin the carried row instead of
+    # the uncarried one: the count is unchanged at one, and the guard must
+    # still report both halves of the swap.
+    out="$tmp/arm16.out"; set +e; run_guard "$tmp/drops-ok.txt" "" "$carried_row" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'UNPINNED UNCARRIED.*planted_fwd_uncarried' "$out" \
+       && grep -q 'STALE PIN.*planted_fwd_carried' "$out"; then
+        printf 'check-port-completeness --self-test: one pinned name swapped for another reported both halves, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — a swapped pin was not reported on both sides (exit %s).\n' "$rc" >&2
+        sed 's/^/    /' "$out" >&2; fails=1
+    fi
+
+    # Arm 17: with nothing pinned, a new `→ none` row is refused.
+    out="$tmp/arm17.out"; set +e; run_guard "$tmp/drops-ok.txt" "" "" >"$out" 2>&1; rc=$?; set -e
+    if [[ $rc -eq 2 ]] && grep -q 'UNPINNED UNCARRIED.*planted_fwd_uncarried' "$out"; then
+        printf 'check-port-completeness --self-test: an unpinned `→ none` row was refused, as expected.\n'
+    else
+        printf 'check-port-completeness --self-test: FAIL — an unpinned uncarried row was not refused as exit 2 (exit %s).\n' "$rc" >&2
         sed 's/^/    /' "$out" >&2; fails=1
     fi
 
