@@ -12,6 +12,7 @@
 #include <fixy/Bands.h>
 #include <fixy/Collision.h>
 #include <fixy/Fn.h>
+#include <fixy/os/Spawn.h>
 
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
@@ -581,6 +582,50 @@ static_assert(rules_of<det<DetTier::Pure>, fp_mode<at::fp::FpDenormalInput::Deno
 static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::valid);
 
 // ---------------------------------------------------------------------
+// The three rules the old tree carried as marker traits.
+
+// S011 a capability x a replay-deterministic payload.  Both replay tiers
+// trip it, and a payload below the replay floor, or with no band, does
+// not.  The trust grade keeps T001 out of every cell.
+static_assert(!rules_of<det<DetTier::Pure>, at::capability_usage, at::trust_verified>::S011_ok);
+static_assert(!rules_of<det<DetTier::PhiloxRng>, at::capability_usage, at::trust_verified>::S011_ok);
+static_assert(rules_of<det<DetTier::MonotonicClockRead>, at::capability_usage, at::trust_verified>::S011_ok,
+              "a payload that reads the clock claims no replay, so a capability costs it nothing");
+static_assert(rules_of<int, at::capability_usage, at::trust_verified>::valid,
+              "a capability with no replay claim and a verified trust trips nothing");
+static_assert(rules_of<det<DetTier::Pure>, at::copy>::valid, "a replay payload that holds no capability");
+static_assert(rules_of<det<DetTier::Pure>, at::capability_usage, at::trust_verified>::T001_ok,
+              "S011 must be the rule that catches this pack, not T001");
+static_assert(live_rules<at::capability_usage, at::trust_verified>::S011_ok, "the pack-only view claims no replay");
+
+// D001 an indirect call whose stated signature is not noexcept.  A free
+// function pointer, a function type and a member function pointer each
+// state one; an opaque tag class states none and the rule stands down.
+struct callback_owner final {};
+struct opaque_family final {};
+static_assert(!live_rules<at::dispatch::indirect_call<void (*)(int)>>::D001_ok);
+static_assert(!live_rules<at::dispatch::indirect_call<int(void*)>>::D001_ok);
+static_assert(!live_rules<at::dispatch::indirect_call<void (callback_owner::*)() const>>::D001_ok);
+static_assert(live_rules<at::dispatch::indirect_call<void (*)(int) noexcept>>::D001_ok);
+static_assert(live_rules<at::dispatch::indirect_call<void (callback_owner::*)() const noexcept>>::D001_ok);
+static_assert(live_rules<at::dispatch::indirect_call<opaque_family>>::valid,
+              "a family named by a tag class states no signature, so there is nothing to refuse");
+static_assert(live_rules<at::dispatch::tail_call>::valid);
+
+// L003 a borrow x a spawn no structured join reaches.  A detached child
+// and a raw clone trip it; a subprocess runs in its own copy of the
+// address space and does not; neither half alone trips it.
+static_assert(!live_rules<at::borrow, at::spawn::detach_with<"drain outlives the owner">>::L003_ok);
+static_assert(!live_rules<at::borrow, at::spawn::syscall_only<"loader needs CLONE_VM">>::L003_ok);
+static_assert(live_rules<at::borrow, at::spawn::subprocess<"exec a helper">>::valid,
+              "a forked child borrows from its own copy, so the borrow cannot dangle into the parent");
+static_assert(live_rules<at::spawn::detach_with<"drain outlives the owner">>::valid);
+static_assert(live_rules<at::borrow>::L003_ok);
+static_assert(live_rules<at::borrow, at::spawn::detach_with<"drain outlives the owner">>::L002_ok,
+              "L003 must be the rule that catches this pack, not L002: a detached spawn is neither a suspension "
+              "nor a Bg row");
+
+// ---------------------------------------------------------------------
 // The pending roster.
 
 // Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
@@ -630,7 +675,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 30);
+static_assert(col::live_rule_count == 33);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -639,9 +684,9 @@ static_assert(col::live_rule_count == 30);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 30);
+static_assert(corpus_entries_with(col::Disposition::Live) == 33);
 static_assert(corpus_entries_with(col::Disposition::Pending) == 0);
-static_assert(corpus_entries_with(col::Disposition::Absent) == 18);
+static_assert(corpus_entries_with(col::Disposition::Absent) == 15);
 static_assert(corpus_entries_with(col::Disposition::Retired) == 7);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent) + corpus_entries_with(col::Disposition::Retired)
@@ -723,7 +768,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
     if (col::pending_rule_count != 0) return 2;
-    if (col::live_rule_count != 30) return 3;
+    if (col::live_rule_count != 33) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -747,7 +792,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 30 || pending != 0 || absent != 18 || retired != 7) return 9;
+    if (live != 33 || pending != 0 || absent != 15 || retired != 7) return 9;
     if (live + pending + absent + retired != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 

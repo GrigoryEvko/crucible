@@ -41,7 +41,7 @@
 // ---------------------------------------------------------------------
 // Why rules_of<Payload, Atoms...> takes the payload, and still not fn
 //
-// Four rules pair a grade with the payload's replay claim, which is the
+// Five rules pair a grade with the payload's replay claim, which is the
 // DetSafe band the payload carries and nothing in the pack.  So the
 // rules take the payload as a template parameter of their own.  That is
 // the fn's FIRST template parameter, read directly from the partial
@@ -87,6 +87,20 @@ namespace fixy {
 
 template <class Type, class... Atoms>
 class fn;
+
+// The two spawn atoms L003 reads, declared rather than included.
+// fixy/os/Spawn.h defines them beside the spawning mints, and including
+// it here would pull std::thread and the permission layer into every
+// header that sees this one.  A partial specialisation needs only the
+// template's name, and the redeclaration must match Spawn.h's template
+// head exactly, so a change there that this file does not follow is a
+// compile error rather than a rule that silently stops matching.
+namespace atom::spawn {
+template <::fixy::atom::ctrl::rationale Rationale>
+struct detach_with;
+template <::fixy::atom::ctrl::rationale Rationale>
+struct syscall_only;
+}  // namespace atom::spawn
 
 namespace collision {
 
@@ -263,6 +277,12 @@ enum class RuleCode : std::uint8_t {
     V301,
     V401,
     V402,
+    // Written after the migration: each premise turned out to be
+    // writable in the new tree, where the old tree read a marker trait
+    // nothing specialised.
+    S011,
+    D001,
+    L003,
 };
 
 // ---------------------------------------------------------------------
@@ -396,6 +416,13 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"F101", Disposition::Live, "a replay-deterministic payload x FP reassociation permitted"},
     {"F102", Disposition::Live, "a replay-deterministic payload x FP contraction across statements"},
 
+    // Three the old tree carried as marker traits nothing specialised,
+    // and whose premises the new tree states as grades.  S011 reads the
+    // payload's replay claim as the family above does.
+    {"S011", Disposition::Live, "capability x a replay-deterministic payload"},
+    {"D001", Disposition::Live, "an indirect call whose named signature is not noexcept"},
+    {"L003", Disposition::Live, "borrow x a spawn that no structured join ties to the frame"},
+
     // Nothing waits on an atom any more.  pending_rules above is empty and
     // says why in two parts; the rest of this list is the second part.
 
@@ -466,13 +493,6 @@ inline constexpr corpus_entry rule_corpus[] = {
      "the old catalog declares M001_DontNeedRequiresReleaseAware and ships no CRUCIBLE_COLLISION_DIAGNOSTIC for it, "
      "so the code has a name and no theorem to port"},
 
-    // Three whose premises the new tree CAN write, and whose rules are not
-    // written.  Nothing is missing but the rule.
-    {"S011", Disposition::Absent,
-     "not written; capability_usage and a DetSafe band on the payload state both premises"},
-    {"D001", Disposition::Absent,
-     "not written; indirect_call<Family> states a signature when Family is a function pointer"},
-    {"L003", Disposition::Absent, "not written; borrow and spawn::detach_with state both premises"},
 };
 
 inline constexpr std::size_t rule_corpus_size = sizeof(rule_corpus) / sizeof(rule_corpus[0]);
@@ -820,7 +840,7 @@ static_assert(detail::code_the_corpus_never_listed_().empty(),
 // rather than a disposition changed in passing.
 inline constexpr std::string_view absent_rule_codes[] = {
     "F103", "F104", "F105", "E044", "S010", "I004", "I003", "I002", "M011", "F002",
-    "N002", "L004", "F001", "L005", "S004", "S011", "D001", "L003",
+    "N002", "L004", "F001", "L005", "S004",
 };
 
 namespace detail {
@@ -947,13 +967,14 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
 //
 // A payload carrying a DetSafe band at PhiloxRng or Pure claims that its
 // bytes are replay-deterministic: the same inputs give the same bits on
-// any host.  That claim is what F101, F102, V101 and V203 pair with a
-// grade that falsifies it — an FP mode that reorders a sum, an ISA pin
-// that makes the reduction order host-dependent, a timestamp read.
+// any host.  That claim is what F101, F102, V101, V203 and S011 pair with
+// a grade that falsifies it — an FP mode that reorders a sum, an ISA pin
+// that makes the reduction order host-dependent, a timestamp read, a
+// capability that replay cannot mint again.
 //
 // The old catalog carried this premise as marks_replay_required, a
 // marker trait with a false_type primary that nothing ever specialised,
-// so none of those four rules fired structurally in the old tree either.
+// so none of those five rules fired structurally in the old tree either.
 // fixy/Collision.h's corpus already re-read the premise as the band; this
 // is the read.  The primary is false: a payload with no band claims
 // nothing about replay, and every replay rule stands down for it.  void,
@@ -1135,6 +1156,52 @@ struct is_recursing_ : std::false_type {};
 template <std::size_t MaxDepth>
 struct is_recursing_<::fixy::atom::dispatch::recurses<MaxDepth>> : std::true_type {};
 
+// Whether a signature is stated, and whether it is noexcept.  A function
+// type, a pointer or reference to one, and a pointer to a member function
+// state a signature; anything else — the opaque tag class a family is
+// often named by — states none, and D001 has nothing to read on it.
+template <class Signature>
+struct signature_noexcept_ {
+    static constexpr bool stated = false;
+    static constexpr bool value = true;
+};
+template <class R, class... Args, bool IsNoexcept>
+struct signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {
+    static constexpr bool stated = true;
+    static constexpr bool value = IsNoexcept;
+};
+template <class R, class... Args, bool IsNoexcept>
+struct signature_noexcept_<R (*)(Args...) noexcept(IsNoexcept)> : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+template <class R, class... Args, bool IsNoexcept>
+struct signature_noexcept_<R (&)(Args...) noexcept(IsNoexcept)> : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+template <class R, class Owner, class... Args, bool IsNoexcept>
+struct signature_noexcept_<R (Owner::*)(Args...) noexcept(IsNoexcept)>
+    : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+template <class R, class Owner, class... Args, bool IsNoexcept>
+struct signature_noexcept_<R (Owner::*)(Args...) const noexcept(IsNoexcept)>
+    : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+template <class Signature>
+struct signature_noexcept_<Signature const> : signature_noexcept_<Signature> {};
+
+template <class G>
+struct indirect_call_may_throw_ : std::false_type {};
+template <class Family>
+struct indirect_call_may_throw_<::fixy::atom::dispatch::indirect_call<Family>>
+    : std::bool_constant<signature_noexcept_<Family>::stated && !signature_noexcept_<Family>::value> {};
+
+// A spawn no structured join ties to the caller's frame, in a child that
+// shares the caller's address space.  detach_with is never joined, and
+// syscall_only is a raw clone that the structured join does not reach.
+// subprocess is left out on purpose: a forked or posix_spawn'd child
+// runs in its own copy of the address space, so a borrow there refers to
+// a copy and cannot dangle into the parent's frame.
+template <class G>
+struct spawn_outlives_the_frame_ : std::false_type {};
+template <::fixy::atom::ctrl::rationale Rationale>
+struct spawn_outlives_the_frame_<::fixy::atom::spawn::detach_with<Rationale>> : std::true_type {};
+template <::fixy::atom::ctrl::rationale Rationale>
+struct spawn_outlives_the_frame_<::fixy::atom::spawn::syscall_only<Rationale>> : std::true_type {};
+
 }  // namespace detail
 
 // ---------------------------------------------------------------------
@@ -1146,8 +1213,8 @@ struct is_recursing_<::fixy::atom::dispatch::recurses<MaxDepth>> : std::true_typ
 
 // The rules over one binding: its payload and its pack.
 //
-// Most rules read the pack alone, through grades<Atoms...>.  Four read
-// the PAYLOAD as well — F101, F102, V101 and V203 each pair a grade with
+// Most rules read the pack alone, through grades<Atoms...>.  Five read
+// the PAYLOAD as well — F101, F102, V101, V203 and S011 each pair a grade with
 // a replay claim, and the replay claim is the DetSafe band the payload
 // carries, not anything in the pack.  So the struct takes the payload as
 // its first parameter, and `live_rules<Atoms...>` below is the pack-only
@@ -1410,6 +1477,33 @@ struct rules_of {
     static constexpr bool F101_ok = !(replay_deterministic && fp_reassociates);
     static constexpr bool F102_ok = !(replay_deterministic && fp_contracts_across_statements);
 
+    // ── Three rules the old tree carried as markers ───────────────────
+    //
+    // S011 is the capability against the replay claim.  A capability is
+    // an authorization token minted for one run, so a replay cannot mint
+    // the same one again, and a payload that claims the same bits on
+    // every replay cannot hold one.  T001 also reads capability_usage,
+    // and a capability with no trust grade is unverified, so a fixture
+    // that isolates S011 states a trust.
+    static constexpr bool S011_ok = !(capability && replay_deterministic);
+
+    // D001 reads a signature only where the family states one.  A family
+    // named by an opaque tag class states no signature, so the rule
+    // stands down for it; a caller who wants the check names the pointer
+    // type itself, indirect_call<void (*)(void*) noexcept>, the shape
+    // BackgroundThread's region-ready callback already declares.
+    static constexpr bool indirect_call_may_throw =
+        detail::indirect_call_may_throw_<typename G::template on<Axis::CallShape>>::value;
+    static constexpr bool D001_ok = !indirect_call_may_throw;
+
+    // L003 is L002's lifetime hazard through a different door.  L002
+    // reads a suspension or a Bg row; a detached or raw-cloned child is
+    // neither, and it can still run after the frame the borrow points
+    // into has unwound.
+    static constexpr bool spawn_outlives_the_frame =
+        detail::spawn_outlives_the_frame_<typename G::template on<Axis::Protocol>>::value;
+    static constexpr bool L003_ok = !(borrow && spawn_outlives_the_frame);
+
     // P010 reads the effect row.  Two other axes also force emitted
     // code, and a ghost binding that engages either is the same
     // contradiction through a different door.
@@ -1448,6 +1542,7 @@ struct rules_of {
             rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
             rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"}, rule_verdict{V101_ok, "V101"},
             rule_verdict{V402_ok, "V402"}, rule_verdict{F101_ok, "F101"}, rule_verdict{F102_ok, "F102"},
+            rule_verdict{S011_ok, "S011"}, rule_verdict{D001_ok, "D001"}, rule_verdict{L003_ok, "L003"},
         };
     }
 
@@ -1571,6 +1666,18 @@ struct rules_of {
                                "multiply and an add fuse into one FMA decides where the single rounding falls, and "
                                "'fast' leaves that to the build. Contract within an expression instead, which is "
                                "visible in the source and stable, or lower the band.");
+        static_assert(S011_ok, "S011: capability x a replay-deterministic payload. A capability is an "
+                               "authorization token minted for one run, and replay cannot mint the same token "
+                               "again, so the payload's claim of the same bits on every replay cannot hold. Carry "
+                               "a content-addressed handle instead of the capability, or lower the band.");
+        static_assert(D001_ok, "D001: an indirect call whose named signature is not noexcept. A throw out of the "
+                               "callee crosses a boundary that promised none and ends the process. Add noexcept "
+                               "to the signature, or put a noexcept trampoline in front of the call that turns "
+                               "the failure into a std::expected.");
+        static_assert(L003_ok, "L003: borrow x a spawn no structured join ties to the frame. A detached or "
+                               "raw-cloned child shares the address space and can run after the caller's frame "
+                               "has unwound, so the borrow dangles. Spawn through mint_spawn, which joins, or "
+                               "move ownership into the child.");
         return valid;
     }
 

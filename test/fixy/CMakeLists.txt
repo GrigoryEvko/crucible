@@ -360,6 +360,38 @@ fixy_neg_compile_test(neg_rule_f102_replay_contract_fast
   "Collision rule\\(s\\) F102:"
   "${_fixy_tier5_member}")
 
+# ── Three rules the old tree carried as marker traits ─────────────────
+#
+# Each premise is a grade in the new tree, so each rule fires
+# structurally.  Two fixtures per rule, one per mismatch class the rule
+# reads, and each pack trips its rule alone.  S011's packs state a trust
+# grade so T001 stands down; L003's name no suspension and no Bg row so
+# L002 stands down.
+fixy_neg_compile_test(neg_rule_s011_capability_replay_pure
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) S011:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_s011_capability_replay_philox
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) S011:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_d001_indirect_call_free_function_throws
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) D001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_d001_indirect_call_member_function_throws
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) D001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_l003_borrow_detached_spawn
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) L003:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_l003_borrow_raw_clone
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) L003:"
+  "${_fixy_tier5_member}")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.
