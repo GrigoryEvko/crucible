@@ -295,6 +295,11 @@ jobs:
           bash scripts/check-syscall-allowlist-prose.sh --self-test
           bash scripts/check-syscall-allowlist-prose.sh
 
+      - name: flip list of old-substrate consumers (self-test + scan)
+        run: |
+          bash scripts/check-flip-list.sh --self-test
+          bash scripts/check-flip-list.sh
+
   # ---------------------------------------------------------------------------
   # Full compile + run + negative-compile + golden-binary suite. Matrix over
   # (arch × preset) in a fedora:44 container with stock GCC 16.1.1 (matches

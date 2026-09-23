@@ -15792,6 +15792,17 @@ add_test(NAME syscall_allowlist_prose
 set_tests_properties(syscall_allowlist_prose syscall_allowlist_prose_self_test PROPERTIES
     LABELS "ci_guard;stage-A1")
 
+# flip_list holds the drain of the old substrate's consumers.  Every file
+# under the scan roots that names the frozen tree is on scripts/flip-list.txt,
+# every entry still names it, and no entry is missing.  A new consumer fails,
+# and so does an entry left behind after its file drains.
+add_test(NAME flip_list_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.sh --self-test)
+add_test(NAME flip_list
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.sh)
+set_tests_properties(flip_list flip_list_self_test PROPERTIES
+    LABELS "ci_guard;stage-C")
+
 # allowlist_keys runs over every scripts/*allowlist*.txt and holds the one
 # property none of the owning guards can hold once it breaks: the path half
 # of each key names a file that exists.  When a port underscores a header

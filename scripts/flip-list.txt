@@ -1,0 +1,259 @@
+# scripts/flip-list.txt — every file that still names the old substrate.
+#
+# Read by scripts/check-flip-list.sh.  One repository-relative path per
+# line, sorted in byte order.  The list only shrinks: remove an entry in
+# the commit that drains its file, and never add one.  A new consumer
+# writes include/foundation or include/fixy instead.
+#
+# The old substrate is the FROZEN_PATHS set of scripts/check-frozen-tree.sh.
+# The scan roots are include/crucible, src, vessel, bench, tools, examples
+# and fuzz.  check-flip-list.sh --scan prints the consumers it finds.
+#
+# Flip order.  Each group names the old substrate only after the groups
+# before it are drained, so flip a group only when the group before it is
+# off this list.
+#
+#   1. Platform.h, Types.h, TensorMeta.h
+#   2. Saturate.h, StorageNbytes.h, Arena.h, TraceRing.h, MetaLog.h
+#   3. Expr.h, ExprPool.h, Graph.h, SymbolTable.h, Lower.h
+#   4. CKernel.h, NumericalRecipe.h, RecipePool.h, RecipeRegistry.h
+#   5. MerkleDag.h, TraceGraph.h, IterationDetector.h,
+#      IterationDetectorState.h, PoolAllocator.h, ReplayEngine.h,
+#      CrucibleContext.h, Transaction.h, RegionCache.h, Serialize.h,
+#      TraceLoader.h, SchemaTable.h, Cipher.h, CallSiteTable.h, DimHash.h,
+#      Philox.h, PhiloxSimd.h, SwissTable.h, CostModel.h
+#   6. BackgroundThread.h, Vigil.h
+#   7. the runtime module directories under include/crucible: warden,
+#      perf, cntp, topology, observe, cog, vis, canopy, ledger, forge,
+#      mimic, cipher
+#   8. src
+#   9. vessel, bench, tools, examples, fuzz
+#
+# Notes on the order, as of the list's first commit:
+#   - Platform.h names no old substrate and is not listed.  It stays first
+#     because every other group includes it.
+#   - Saturate.h is ported to include/foundation/Saturate.h and marked
+#     superseded as _Saturate.h.  _Saturate.h still names the old
+#     substrate and is listed.  It drains by deletion, with its entry.
+#   - IterationDetectorState.h and PhiloxSimd.h are in no group of the
+#     plan.  They include IterationDetector.h and Philox.h, so they go in
+#     group 5 with them.
+#   - vis holds no consumer, and examples holds none outside the frozen
+#     examples/fn.
+
+bench/bench_adaptive_scheduler.cpp
+bench/bench_arena.cpp
+bench/bench_auto_router.cpp
+bench/bench_auto_split.cpp
+bench/bench_auto_split_compare.cpp
+bench/bench_chainedge_session.cpp
+bench/bench_chaselev_session.cpp
+bench/bench_cipher.cpp
+bench/bench_concurrent_queues.cpp
+bench/bench_concurrent_saturation.cpp
+bench/bench_content_hash.cpp
+bench/bench_decide_compile_time.cpp
+bench/bench_diag_emission.cpp
+bench/bench_dispatch.cpp
+bench/bench_expr_pool.cpp
+bench/bench_fusion.cpp
+bench/bench_graph.cpp
+bench/bench_harness.h
+bench/bench_merkle_dag.cpp
+bench/bench_metalog_session.cpp
+bench/bench_mpmc_saturation.cpp
+bench/bench_mpsc_contention.cpp
+bench/bench_no_regression.cpp
+bench/bench_observe_metrics_swmr.cpp
+bench/bench_perf_loader.cpp
+bench/bench_permissioned_calendar_grid.cpp
+bench/bench_permissioned_session_handle.cpp
+bench/bench_permissioned_zero_cost.cpp
+bench/bench_phases.cpp
+bench/bench_philox.cpp
+bench/bench_pipeline_dispatch.cpp
+bench/bench_pool_allocator.cpp
+bench/bench_record_leaf.cpp
+bench/bench_reflect.cpp
+bench/bench_region_cache.cpp
+bench/bench_safety.cpp
+bench/bench_scheduler_policies.cpp
+bench/bench_serialize.cpp
+bench/bench_session_persistence.cpp
+bench/bench_simd.cpp
+bench/bench_spsc_session.cpp
+bench/bench_swmr_session.cpp
+fuzz/boundary/fuzz_serialize.cpp
+fuzz/property/prop_arena_alloc_invariants.cpp
+fuzz/property/prop_callsite_table_dedup.cpp
+fuzz/property/prop_checked_arith.cpp
+fuzz/property/prop_expr_pool_intern.cpp
+fuzz/property/prop_factorization_eq.cpp
+fuzz/property/prop_fractional_lattice.cpp
+fuzz/property/prop_intervals_cover_unit.cpp
+fuzz/property/prop_is_power_of_two_le.cpp
+fuzz/property/prop_memory_plan_no_overlap.cpp
+fuzz/property/prop_monotonic_predicates.cpp
+fuzz/property/prop_philox_simd_equivalence.cpp
+fuzz/property/prop_recipe_pool_intern.cpp
+fuzz/property/prop_recipe_registry_roundtrip.cpp
+fuzz/property/prop_trace_graph_csr.cpp
+include/crucible/Arena.h
+include/crucible/BackgroundThread.h
+include/crucible/CKernel.h
+include/crucible/CallSiteTable.h
+include/crucible/Cipher.h
+include/crucible/CostModel.h
+include/crucible/CrucibleContext.h
+include/crucible/DimHash.h
+include/crucible/Expr.h
+include/crucible/ExprPool.h
+include/crucible/Graph.h
+include/crucible/IterationDetector.h
+include/crucible/IterationDetectorState.h
+include/crucible/Lower.h
+include/crucible/MerkleDag.h
+include/crucible/MetaLog.h
+include/crucible/NumericalRecipe.h
+include/crucible/Philox.h
+include/crucible/PhiloxSimd.h
+include/crucible/PoolAllocator.h
+include/crucible/RecipePool.h
+include/crucible/RecipeRegistry.h
+include/crucible/RegionCache.h
+include/crucible/ReplayEngine.h
+include/crucible/SchemaTable.h
+include/crucible/Serialize.h
+include/crucible/StorageNbytes.h
+include/crucible/SwissTable.h
+include/crucible/SymbolTable.h
+include/crucible/TensorMeta.h
+include/crucible/TraceGraph.h
+include/crucible/TraceLoader.h
+include/crucible/TraceRing.h
+include/crucible/Transaction.h
+include/crucible/Types.h
+include/crucible/Vigil.h
+include/crucible/_Saturate.h
+include/crucible/canopy/Crdt.h
+include/crucible/canopy/Hlc.h
+include/crucible/canopy/HyParView.h
+include/crucible/canopy/Lifeguard.h
+include/crucible/canopy/Plumtree.h
+include/crucible/canopy/Scuttlebutt.h
+include/crucible/canopy/Swim.h
+include/crucible/canopy/VectorClock.h
+include/crucible/cipher/CipherTierPromotion.h
+include/crucible/cipher/ComputationCache.h
+include/crucible/cipher/ComputationCacheFederation.h
+include/crucible/cipher/FederationProtocol.h
+include/crucible/cipher/SessionPersistenceSurface.h
+include/crucible/cntp/AfXdp.h
+include/crucible/cntp/Backpressure.h
+include/crucible/cntp/BackpressureRuntime.h
+include/crucible/cntp/CongestionControl.h
+include/crucible/cntp/ConnectionPool.h
+include/crucible/cntp/ConnectionPoolRuntime.h
+include/crucible/cntp/Fec.h
+include/crucible/cntp/Fountain.h
+include/crucible/cntp/GossipMulticast.h
+include/crucible/cntp/IncastControl.h
+include/crucible/cntp/IncastControlRuntime.h
+include/crucible/cntp/Integrity.h
+include/crucible/cntp/MtlsTransport.h
+include/crucible/cntp/OverlayMulticast.h
+include/crucible/cntp/Pacing.h
+include/crucible/cntp/PathSwap.h
+include/crucible/cntp/RoceConfig.h
+include/crucible/cntp/Tcam.h
+include/crucible/cntp/_wip/Doca.h
+include/crucible/cntp/_wip/GpuDirect.h
+include/crucible/cntp/_wip/KtlsOffload.h
+include/crucible/cntp/_wip/P4.h
+include/crucible/cntp/_wip/QuicTransport.h
+include/crucible/cntp/_wip/Sharp.h
+include/crucible/cntp/_wip/Wireguard.h
+include/crucible/cntp/dataplane/TcEbpf.h
+include/crucible/cntp/dataplane/Xdp.h
+include/crucible/cog/Calibrate.h
+include/crucible/cog/CogIdentity.h
+include/crucible/cog/FitsCog.h
+include/crucible/cog/NicConfig.h
+include/crucible/cog/NicOffloadAudit.h
+include/crucible/cog/NumaNic.h
+include/crucible/cog/OpcodeLatencyTable.h
+include/crucible/cog/SrIov.h
+include/crucible/cog/TargetCaps.h
+include/crucible/forge/Ir001/Comm.h
+include/crucible/forge/_wip/Phases/Comm.h
+include/crucible/forge/recipes/Network.h
+include/crucible/ledger/Competence.h
+include/crucible/ledger/HostFingerprint.h
+include/crucible/ledger/Ledger.h
+include/crucible/ledger/LedgerStore.h
+include/crucible/ledger/ProbeSupport.h
+include/crucible/ledger/RefreshDaemon.h
+include/crucible/ledger/Verdict.h
+include/crucible/ledger/probes/CacheTier.h
+include/crucible/ledger/probes/HugePage.h
+include/crucible/ledger/probes/VectorWidth.h
+include/crucible/mimic/CogMimic.h
+include/crucible/mimic/Fence.h
+include/crucible/mimic/Semaphore.h
+include/crucible/mimic/_wip/network/Backend.h
+include/crucible/observe/HdrHistogram.h
+include/crucible/observe/Metrics.h
+include/crucible/observe/Observation.h
+include/crucible/observe/SdcDetect.h
+include/crucible/observe/SyntheticProbe.h
+include/crucible/perf/LockContention.h
+include/crucible/perf/PmuSample.h
+include/crucible/perf/ProcGauges.h
+include/crucible/perf/SchedSwitch.h
+include/crucible/perf/SchedTpBtf.h
+include/crucible/perf/SenseHub.h
+include/crucible/perf/SenseHubV2.h
+include/crucible/perf/Senses.h
+include/crucible/perf/SyscallLatency.h
+include/crucible/perf/SyscallTpBtf.h
+include/crucible/perf/WorkloadProfiler.h
+include/crucible/perf/detail/BpfLoader.h
+include/crucible/topology/AsymmetricFailure.h
+include/crucible/topology/CongestionTelemetry.h
+include/crucible/topology/CongestionTelemetryWorker.h
+include/crucible/topology/Discovery.h
+include/crucible/topology/Health.h
+include/crucible/topology/Pingmesh.h
+include/crucible/topology/Ptp.h
+include/crucible/topology/Telemetry.h
+include/crucible/topology/TopologyGraph.h
+include/crucible/warden/CpuTopology.h
+include/crucible/warden/DeadlineWatchdog.h
+include/crucible/warden/Hardening.h
+include/crucible/warden/Quarantine.h
+include/crucible/warden/Registry.h
+src/ContractHandler.cpp
+src/_DiagRuntime.cpp
+src/cntp/CongestionControl.cpp
+src/cntp/Pacing.cpp
+src/cntp/RoceConfig.cpp
+src/cog/NicOffloadAudit.cpp
+src/cog/NumaNic.cpp
+src/observe/SdcDetect.cpp
+src/observe/SyntheticProbe.cpp
+src/perf/LockContention.cpp
+src/perf/PmuSample.cpp
+src/perf/ProcGauges.cpp
+src/perf/SchedSwitch.cpp
+src/perf/SchedTpBtf.cpp
+src/perf/SenseHub.cpp
+src/perf/SenseHubV2.cpp
+src/perf/Senses.cpp
+src/perf/SyscallLatency.cpp
+src/perf/SyscallTpBtf.cpp
+src/topology/Discovery.cpp
+src/topology/Ptp.cpp
+tools/dump_row_hashes.cpp
+vessel/torch/crucible_fallback.cpp
+vessel/torch/record_kernel.h
+vessel/torch/vessel_api_typed.h
