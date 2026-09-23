@@ -164,16 +164,22 @@ struct payload_rule {
     bool is_label = true;
 };
 
-// One axiom of a payload preorder.  An axiom either drops a wrapper or
-// weakens a type in place:
+// One axiom of a payload preorder.  An axiom drops a wrapper, weakens a
+// type in place, or lifts the order through a class template:
 //
-//   drops    A variable template `template <class T> constexpr bool`.
-//            True when T sheds its outer layer.
-//   inner    An alias template `template <class T> using`, the type T
-//            sheds to.  It must be a template argument of T, so each
-//            drop makes the type smaller.
-//   weakens  A variable template `template <class T, class U> constexpr
-//            bool`.  True when one step takes T to U.
+//   drops       A variable template `template <class T> constexpr bool`.
+//               True when T sheds its outer layer.
+//   inner       An alias template `template <class T> using`, the type
+//               T sheds to.  It must be a template argument of T, so
+//               each drop makes the type smaller.
+//   weakens     A variable template `template <class T, class U>
+//               constexpr bool`.  True when one step takes T to U.
+//   congruence  A class template.  Two of its specializations are in the
+//               order when each argument at a position in `covariant` is
+//               in the order, and each other argument is the same.
+//   covariant   A bit mask over the argument positions of `congruence`.
+//               Bit I is position I.  A position past bit 63 is compared
+//               for identity.
 //
 // The templates must accept every type and answer false where they do
 // not apply.  A template that cannot take a type is read as false.
@@ -181,6 +187,8 @@ struct subsort_axiom {
     std::meta::info drops{};
     std::meta::info inner{};
     std::meta::info weakens{};
+    std::meta::info congruence{};
+    std::uint64_t covariant = 0;
 };
 
 // The position of a node relative to the binders above it.  Depth is
@@ -967,6 +975,36 @@ namespace detail {
 inline constexpr std::size_t subsort_depth_bound = 64;
 
 [[nodiscard]] consteval bool subsorts_within(std::meta::info axioms, std::meta::info sub, std::meta::info super,
+                                             std::size_t depth);
+
+// The congruence of one axiom on one pair.  A type argument at a
+// covariant position recurs into the order, and every other argument is
+// compared for identity.  Complexity: linear in the argument count.
+[[nodiscard]] consteval bool congruent_within(std::meta::info axioms, const subsort_axiom& axiom, std::meta::info sub,
+                                              std::meta::info super, std::size_t depth) {
+    if (axiom.congruence == std::meta::info{}) return false;
+    if (!std::meta::has_template_arguments(sub) || !std::meta::has_template_arguments(super)) return false;
+    if (std::meta::template_of(sub) != axiom.congruence || std::meta::template_of(super) != axiom.congruence) {
+        return false;
+    }
+    const std::vector<std::meta::info> low = std::meta::template_arguments_of(sub);
+    const std::vector<std::meta::info> high = std::meta::template_arguments_of(super);
+    if (low.size() != high.size()) return false;
+    for (std::size_t position = 0; position < low.size(); ++position) {
+        const bool both_types = std::meta::is_type(low[position]) && std::meta::is_type(high[position]);
+        const std::meta::info left = both_types ? std::meta::dealias(low[position]) : low[position];
+        const std::meta::info right = both_types ? std::meta::dealias(high[position]) : high[position];
+        const bool is_covariant = position < 64 && ((axiom.covariant >> position) & 1U) != 0;
+        if (is_covariant && both_types) {
+            if (!subsorts_within(axioms, left, right, depth - 1)) return false;
+        } else if (left != right) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] consteval bool subsorts_within(std::meta::info axioms, std::meta::info sub, std::meta::info super,
                                              std::size_t depth) {
     if (sub == super) return true;
     if (depth == 0) return false;
@@ -976,6 +1014,9 @@ inline constexpr std::size_t subsort_depth_bound = 64;
     }
     for (const subsort_axiom& axiom : found) {
         if (ask(axiom.weakens, {sub, super})) return true;
+    }
+    for (const subsort_axiom& axiom : found) {
+        if (congruent_within(axioms, axiom, sub, super, depth)) return true;
     }
     for (const subsort_axiom& axiom : found) {
         if (!ask(axiom.drops, {sub}) || axiom.inner == std::meta::info{}) continue;

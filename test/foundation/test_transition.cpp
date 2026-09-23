@@ -364,6 +364,32 @@ static_assert(tr::subsorts(^^axioms, ^^Boxed<short>, ^^long), "a drop, then a we
 static_assert(!tr::subsorts(^^axioms, ^^int, ^^Boxed<int>), "nothing rises");
 static_assert(!tr::subsorts(^^axioms, ^^long, ^^short));
 
+// A congruence lifts the order through one position of a class
+// template and asks for identity at every other position.  This is the
+// shape of a message that names its peer, its label and its payload.
+template <class To, class Label, class Payload>
+struct Envelope {};
+struct Alice {};
+struct Bob {};
+struct Hello {};
+struct Bye {};
+namespace envelope_axioms {
+inline constexpr tr::subsort_axiom widen{.weakens = ^^small_to_wide_v};
+inline constexpr tr::subsort_axiom boxed{.drops = ^^is_boxed_v, .inner = ^^shed_t};
+inline constexpr tr::subsort_axiom envelope{.congruence = ^^Envelope, .covariant = 0b100};
+}  // namespace envelope_axioms
+static_assert(tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, short>, ^^Envelope<Alice, Hello, long>));
+static_assert(tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, Boxed<short>>, ^^Envelope<Alice, Hello, long>),
+              "the covariant position recurs into the whole order");
+static_assert(!tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, long>, ^^Envelope<Alice, Hello, short>));
+static_assert(!tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, int>, ^^Envelope<Bob, Hello, int>),
+              "the peer is compared for identity");
+static_assert(!tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, int>, ^^Envelope<Alice, Bye, int>),
+              "the label is compared for identity");
+static_assert(!tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, short>, ^^Envelope<Alice, Bye, long>));
+static_assert(!tr::subsorts(^^axioms, ^^Envelope<Alice, Hello, short>, ^^Envelope<Alice, Hello, long>),
+              "without the congruence, two envelopes are in the order only when they are the same");
+
 // An axiom that breaks the contract and sheds to the same type stops at
 // the depth bound instead of a recursion without end.
 template <class T>
@@ -458,11 +484,17 @@ constexpr bool runtime_facts[] = {
     well_formed(^^Again<Put<int, Back>>),
     !well_formed(^^Again<Back>),
     tr::subsorts(^^axioms, ^^Boxed<short>, ^^long),
+    tr::refines(reg, ^^envelope_axioms, ^^Put<Envelope<Alice, Hello, short>, Done>,
+                ^^Put<Envelope<Alice, Hello, long>, Done>)
+        .holds,
+    !tr::refines(reg, ^^envelope_axioms, ^^Put<Envelope<Alice, Hello, short>, Done>,
+                 ^^Put<Envelope<Bob, Hello, long>, Done>)
+         .holds,
 };
 
 constexpr std::string_view names[] = {
-    "coherent registry", "narrow output choice", "wide output choice refused", "guarded loop",
-    "unguarded loop refused", "drop then weaken",
+    "coherent registry",      "narrow output choice", "wide output choice refused", "guarded loop",
+    "unguarded loop refused", "drop then weaken",     "congruent payload",          "other peer refused",
 };
 
 }  // namespace
