@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <source_location>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -62,15 +63,20 @@ static_assert(!s::is_dual_v<PingPong, PingPong>);
 static_assert(std::is_same_v<s::dual_of_t<s::Select<s::End>>, s::Offer<s::End>>);
 static_assert(std::is_same_v<s::dual_of_t<s::Offer<s::End>>, s::Select<s::End>>);
 
-// Duality is involutive everywhere except across a sender-annotated
-// Offer, where the forward direction drops the tag and the reverse
-// cannot restore it.  is_dual_v is a disjunction precisely so a
-// channel pair on that shape still agrees from either side.
-static_assert(s::is_dual_involutive_v<PingPong>);
-static_assert(!s::is_dual_involutive_v<s::Offer<s::Sender<Alice>, s::End>>);
+// Duality is an involution, also on a choice with a Sender note: the
+// dual of a noted Offer is a Select with the same note.  The two
+// endpoints therefore name the same role, and is_dual_v answers the same
+// from either side.
+static_assert(std::is_same_v<s::dual_of_t<s::dual_of_t<PingPong>>, PingPong>);
 using OfferS = s::Offer<s::Sender<Alice>, s::Recv<Msg, s::End>>;
-static_assert(s::is_dual_v<OfferS, s::dual_of_t<OfferS>>);
-static_assert(!std::is_same_v<s::dual_of_t<s::dual_of_t<OfferS>>, OfferS>);
+using SelectS = s::Select<s::Sender<Alice>, s::Send<Msg, s::End>>;
+static_assert(std::is_same_v<s::dual_of_t<OfferS>, SelectS> && std::is_same_v<s::dual_of_t<SelectS>, OfferS>);
+static_assert(s::is_dual_v<OfferS, SelectS> && s::is_dual_v<SelectS, OfferS>);
+static_assert(SelectS::branch_count == 1 && std::is_same_v<SelectS::branches_tuple, std::tuple<s::Send<Msg, s::End>>>,
+              "the note is not a branch");
+static_assert(!s::is_dual_v<OfferS, s::Select<s::Send<Msg, s::End>>>
+                  && !s::is_dual_v<s::Select<s::Send<Msg, s::End>>, OfferS>,
+              "a Select that drops the note is not the dual, from either side");
 
 // ── Well-formedness ──────────────────────────────────────────────────
 

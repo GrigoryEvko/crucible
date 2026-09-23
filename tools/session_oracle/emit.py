@@ -188,7 +188,7 @@ def _fixy_pair(row: Row) -> tuple[str, str]:
 _FIXY_BOOL = {
     "fixy.is_dual": "fs::is_dual_v<T0, T1>",
     "fixy.involution": "std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0>>, T0>",
-    "fixy.involutive_flag": "fs::is_dual_involutive_v<T0>",
+    "fixy.involutive_flag": "std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0>>, T0>",
     "fixy.well_formed": "(fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>)",
     "fixy.accepts": ("(fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && "
                      "fs::is_dual_v<N0, N1>)"),

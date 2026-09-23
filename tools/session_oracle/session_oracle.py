@@ -682,7 +682,8 @@ def _fixy_probe(t0: str | None, t1: str | None, n0: str | None, n1: str | None) 
                 + show("isdual", "std::bool_constant<fs::is_dual_v<T0, T1>>")
                 + show("invol", "std::bool_constant<std::is_same_v<"
                        "fs::dual_of_t<fs::dual_of_t<T0>>, T0>>")
-                + show("invflag", "std::bool_constant<fs::is_dual_involutive_v<T0>>")
+                + show("invflag", "std::bool_constant<std::is_same_v<"
+                       "fs::dual_of_t<fs::dual_of_t<T0>>, T0>>")
                 + show("wf", "std::bool_constant<(fs::is_well_formed_v<T0> && "
                        "fs::is_well_formed_v<T1>)>"))
     if n0 is not None and n1 is not None:

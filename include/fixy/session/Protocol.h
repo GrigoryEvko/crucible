@@ -79,14 +79,16 @@ struct Select {
 };
 
 // Names the role that signals a choice, as the first template argument
-// of an Offer:
+// of an Offer or a Select:
 //
 //   Offer<Sender<Alice>, Recv<Msg, End>, Recv<Crash<Alice>, Recovery>>
 //
 // A two-party Offer needs no note, because "the peer" is clear.  A
 // multiparty local protocol can hold Offers that different roles
 // signal, and crash analysis must know which role signals an Offer.
-// The note is not a branch.
+// On a Select the note names the local role, which picks the branch.
+// Duality keeps the note, so the two endpoints name the same role.  The
+// note is not a branch.
 template <typename Role>
 struct Sender {
     using role_type = Role;
@@ -111,6 +113,14 @@ struct Offer<Sender<Role>, Branches...> {
     static constexpr std::size_t branch_count = sizeof...(Branches);
     using branches_tuple = std::tuple<Branches...>;
     using sender = Role;
+};
+
+// A Select with a note.  `branch_count` and `branches_tuple` count the
+// real branches only.
+template <typename Role, typename... Branches>
+struct Select<Sender<Role>, Branches...> {
+    static constexpr std::size_t branch_count = sizeof...(Branches);
+    using branches_tuple = std::tuple<Branches...>;
 };
 
 template <typename OfferType>
@@ -205,17 +215,16 @@ inline constexpr ::foundation::algebra::transition::combinator recv{
     .dual = ^^Send,
     .payload_variance = ::foundation::algebra::transition::variance::contravariant};
 
+// A choice and its dual name the same note template, so the dual of an
+// Offer with a note is a Select with the same note, and duality is an
+// involution on every registered combinator.
 inline constexpr ::foundation::algebra::transition::combinator select{
     .shape = ^^Select,
     .kind = ::foundation::algebra::transition::shape_kind::choice,
     .direction = ::foundation::algebra::transition::polarity::output,
-    .dual = ^^Offer};
+    .dual = ^^Offer,
+    .annotation = ^^Sender};
 
-// The dual of an Offer is a Select, which has no note, so the dual
-// drops the Sender note.  From the dual endpoint the sender of the
-// Offer is the local role, and the note has no purpose on an
-// internal choice.  Duality is therefore not an involution on an Offer
-// with a note.
 inline constexpr ::foundation::algebra::transition::combinator offer{
     .shape = ^^Offer,
     .kind = ::foundation::algebra::transition::shape_kind::choice,
@@ -463,27 +472,17 @@ struct dual_of {
     using type = typename[:detail::dual_type_of<P>():];
 };
 
-// True when dual(dual(P)) is P.  The answer is the round trip itself,
-// so it is exact for each registered combinator, and a type that is not
-// a registered combinator stops the build.  It is false on an Offer
-// with a Sender note, whose dual drops the note.
-template <typename P>
-struct is_dual_involutive : std::bool_constant<std::is_same_v<dual_of_t<dual_of_t<P>>, P>> {};
-
-template <typename P>
-inline constexpr bool is_dual_involutive_v = is_dual_involutive<P>::value;
-
 // The two endpoints of one channel must be duals, or the guarantee of
 // deadlock freedom does not hold.
 //
-// The disjunction is necessary.  A channel pair has no primary side, so
-// the test must not depend on the order of the arguments, and the
-// simpler `dual_of_t<P1> == P2` does.  On an Offer with a Sender note
-// the forward direction drops the note, and the reverse direction
-// cannot restore it.
-
+// The test asks for duality in both directions.  A channel pair has no
+// primary side, so the answer must not depend on the order of the
+// arguments.  Coherence makes duality an involution on each registered
+// combinator, so the two directions agree there.  An explicit
+// specialization of dual_of that is no involution makes them differ, and
+// the test then refuses the pair.
 template <typename P1, typename P2>
-inline constexpr bool is_dual_v = std::is_same_v<dual_of_t<P1>, P2> || std::is_same_v<P1, dual_of_t<P2>>;
+inline constexpr bool is_dual_v = std::is_same_v<dual_of_t<P1>, P2> && std::is_same_v<dual_of_t<P2>, P1>;
 
 template <typename P1, typename P2>
 consteval void ensure_dual() noexcept {

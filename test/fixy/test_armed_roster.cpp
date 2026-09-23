@@ -639,15 +639,6 @@ struct foundation::contracts::armed_cell<sess::is_well_formed> {
     using refuses = witnesses<sess::Continue, sess::Send<int, sess::Continue>, sess::Loop<sess::Continue>>;
 };
 
-// The round trip of duality.  An Offer that names its sender loses the
-// note in its dual, so the round trip does not return it.
-template <>
-struct foundation::contracts::armed_cell<sess::is_dual_involutive> {
-    using accepts = witnesses<sess::End, sess::Send<int, sess::Recv<char, sess::End>>, w::NvEnd>;
-    using refuses =
-        witnesses<sess::Offer<sess::Sender<int>, sess::End>, sess::Send<int, sess::Offer<sess::Sender<int>, sess::End>>>;
-};
-
 // The payload walk of fixy/session/Payload.h.  A token reached owned is
 // classified, and a token behind a pointer, in an optional, or a read
 // proof outside its marker is refused.

@@ -952,7 +952,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::is_vendor_pinned, kMetafunction},
     {^^::fixy::session::is_empty_choice, kMetafunction},
     {^^::fixy::session::dual_of, kMetafunction},
-    {^^::fixy::session::is_dual_involutive, kMetafunction},
     {^^::fixy::session::compose, kMetafunction},
     {^^::fixy::session::compose_at_branch, kMetafunction},
     {^^::fixy::session::is_terminal_state, kMetafunction},

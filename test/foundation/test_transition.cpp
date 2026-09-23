@@ -61,8 +61,11 @@ inline constexpr tr::combinator take{.shape = ^^Take,
                                      .direction = tr::polarity::input,
                                      .dual = ^^Put,
                                      .payload_variance = tr::variance::contravariant};
-inline constexpr tr::combinator pick{
-    .shape = ^^Pick, .kind = tr::shape_kind::choice, .direction = tr::polarity::output, .dual = ^^Wait};
+inline constexpr tr::combinator pick{.shape = ^^Pick,
+                                     .kind = tr::shape_kind::choice,
+                                     .direction = tr::polarity::output,
+                                     .dual = ^^Wait,
+                                     .annotation = ^^From};
 inline constexpr tr::combinator wait{.shape = ^^Wait,
                                      .kind = tr::shape_kind::choice,
                                      .direction = tr::polarity::input,
@@ -312,6 +315,43 @@ inline constexpr tr::combinator t{.shape = ^^T, .kind = tr::shape_kind::back, .d
 }  // namespace mixed_kind
 static_assert(tr::check_registry(^^mixed_kind).reason == tr::incoherence::dual_kind_differs);
 
+// A choice whose dual names no note, or another note template, loses the
+// note under duality, and the round trip does not return the choice.
+namespace one_sided_note {
+template <class... Bs>
+struct Out {};
+template <class... Bs>
+struct In {};
+inline constexpr tr::combinator out{
+    .shape = ^^Out, .kind = tr::shape_kind::choice, .direction = tr::polarity::output, .dual = ^^In};
+inline constexpr tr::combinator in{.shape = ^^In,
+                                   .kind = tr::shape_kind::choice,
+                                   .direction = tr::polarity::input,
+                                   .dual = ^^Out,
+                                   .annotation = ^^From};
+}  // namespace one_sided_note
+static_assert(tr::check_registry(^^one_sided_note).reason == tr::incoherence::annotation_differs);
+
+template <class R>
+struct By {};
+namespace other_note {
+template <class... Bs>
+struct Out {};
+template <class... Bs>
+struct In {};
+inline constexpr tr::combinator out{.shape = ^^Out,
+                                    .kind = tr::shape_kind::choice,
+                                    .direction = tr::polarity::output,
+                                    .dual = ^^In,
+                                    .annotation = ^^By};
+inline constexpr tr::combinator in{.shape = ^^In,
+                                   .kind = tr::shape_kind::choice,
+                                   .direction = tr::polarity::input,
+                                   .dual = ^^Out,
+                                   .annotation = ^^From};
+}  // namespace other_note
+static_assert(tr::check_registry(^^other_note).reason == tr::incoherence::annotation_differs);
+
 // ── Decomposition and the refusal of an unknown node ──────────────────
 
 static_assert(tr::is_registered(reg, ^^Put<int, Done>));
@@ -337,8 +377,9 @@ static_assert(!tr::is_registered(^^wrong_layout, ^^Single<int>));
 using Ping = Put<int, Take<char, Done>>;
 using Pong = Take<int, Put<char, Done>>;
 static_assert(dual(^^Ping) == plain(^^Pong));
-static_assert(dual(dual(^^Ping)) == plain(^^Ping), "duality is an involution without notes");
-static_assert(dual(^^Wait<From<int>, Done>) == ^^Pick<Done>, "the dual has no note to keep");
+static_assert(dual(dual(^^Ping)) == plain(^^Ping), "duality is an involution");
+static_assert(dual(^^Wait<From<int>, Done>) == ^^Pick<From<int>, Done>, "the dual keeps the note");
+static_assert(dual(dual(^^Wait<From<int>, Done>)) == ^^Wait<From<int>, Done>, "duality is an involution with notes");
 static_assert(dual(^^Pick<Done>) == ^^Wait<Done>);
 static_assert(dual(^^Raise<3, Done>) == ^^Lower<3, Done>);
 static_assert(dual(^^Again<Put<int, Back>>) == ^^Again<Take<int, Back>>);

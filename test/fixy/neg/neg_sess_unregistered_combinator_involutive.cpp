@@ -1,13 +1,12 @@
-// is_dual_involutive answered true for every type the old primary did
-// not know, so a gate that needs the involution admitted any unknown
-// combinator.  The trait is now the round trip itself, and the dual of
-// a type that is not a registered combinator stops the build with a
-// message that names the type.
-//
-// The assertion below held before the repair: the old primary answered
-// true.  It is the attack.
+// The round trip of duality on a node that no header registers.  An
+// answer of true would let a gate that needs the involution admit an
+// unknown combinator.  The dual of a type that is not a registered
+// combinator stops the build with a message that names the type, so the
+// round trip has no answer to give.
 
 #include <fixy/session/Protocol.h>
+
+#include <type_traits>
 
 namespace {
 
@@ -19,6 +18,6 @@ struct Teleport {};
 
 }  // namespace
 
-static_assert(s::is_dual_involutive_v<Teleport<int, s::End>>);
+static_assert(std::is_same_v<s::dual_of_t<s::dual_of_t<Teleport<int, s::End>>>, Teleport<int, s::End>>);
 
 int main() { return 0; }

@@ -37,7 +37,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case p_ekici25_ex18: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case p_ekici25_ex18: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case p_ekici25_ex18: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case p_ekici25_ex18: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case p_ekici25_ex18: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case p_ekici25_ex18: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case p_ekici25_ex18: agree");
 }  // namespace c_p_ekici25_ex18
@@ -51,7 +51,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Continue, fs::R
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr0: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr0: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr0: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr0: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr0: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr0: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr0: agree");
 }  // namespace c_fr0
@@ -65,7 +65,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr1: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr1: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr1: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr1: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr1: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr1: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr1: agree");
 }  // namespace c_fr1
@@ -79,7 +79,7 @@ using N1 = fs::Select<fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr2: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr2: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr2: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr2: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr2: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr2: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr2: agree");
 }  // namespace c_fr2
@@ -93,7 +93,7 @@ using N1 = fs::Offer<fs::End, fs::Send<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr3: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr3: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr3: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr3: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr3: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr3: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr3: agree");
 }  // namespace c_fr3
@@ -107,7 +107,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Sele
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr4: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr4: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr4: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr4: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr4: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr4: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr4: agree");
 }  // namespace c_fr4
@@ -121,7 +121,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr5: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr5: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr5: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr5: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr5: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr5: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr5: agree");
 }  // namespace c_fr5
@@ -135,7 +135,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr6: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr6: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr6: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr6: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr6: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr6: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr6: agree");
 }  // namespace c_fr6
@@ -149,7 +149,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr7: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr7: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr7: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr7: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr7: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr7: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr7: agree");
 }  // namespace c_fr7
@@ -163,7 +163,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr8: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr8: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr8: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr8: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr8: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr8: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr8: agree");
 }  // namespace c_fr8
@@ -177,7 +177,7 @@ using N1 = fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >, fs:
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr9: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr9: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr9: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr9: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr9: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr9: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr9: agree");
 }  // namespace c_fr9
@@ -191,7 +191,7 @@ using N1 = fs::Loop<fs::Select<fs::Continue, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr10: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr10: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr10: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr10: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr10: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr10: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr10: agree");
 }  // namespace c_fr10
@@ -205,7 +205,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Bo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr11: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr11: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr11: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr11: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr11: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr11: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr11: agree");
 }  // namespace c_fr11
@@ -219,7 +219,7 @@ using N1 = fs::Offer<fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr12: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr12: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr12: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr12: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr12: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr12: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr12: agree");
 }  // namespace c_fr12
@@ -233,7 +233,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr13: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr13: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr13: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr13: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr13: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr13: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr13: agree");
 }  // namespace c_fr13
@@ -247,7 +247,7 @@ using N1 = fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr14: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr14: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr14: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr14: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr14: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr14: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr14: agree");
 }  // namespace c_fr14
@@ -261,7 +261,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr15: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr15: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr15: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr15: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr15: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr15: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr15: agree");
 }  // namespace c_fr15
@@ -275,7 +275,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Loop<fs::Send
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr16: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr16: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr16: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr16: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr16: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr16: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr16: agree");
 }  // namespace c_fr16
@@ -289,7 +289,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr17: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr17: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr17: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr17: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr17: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr17: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr17: agree");
 }  // namespace c_fr17
@@ -303,7 +303,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr18: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr18: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr18: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr18: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr18: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr18: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr18: agree");
 }  // namespace c_fr18
@@ -317,7 +317,7 @@ using N1 = fs::Select<fs::End, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr19: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr19: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr19: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr19: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr19: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr19: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr19: agree");
 }  // namespace c_fr19
@@ -331,7 +331,7 @@ using N1 = fs::Offer<fs::Select<fs::Select<fs::End, fs::Recv<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr20: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr20: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr20: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr20: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr20: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr20: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr20: agree");
 }  // namespace c_fr20
@@ -345,7 +345,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Na
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr21: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr21: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr21: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr21: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr21: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr21: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr21: agree");
 }  // namespace c_fr21
@@ -359,7 +359,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr22: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr22: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr22: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr22: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr22: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr22: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr22: agree");
 }  // namespace c_fr22
@@ -373,7 +373,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Offer<fs::Loop<fs::Recv<session_ora
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr23: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr23: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr23: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr23: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr23: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr23: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr23: agree");
 }  // namespace c_fr23
@@ -387,7 +387,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::End>, fs::Offer<fs::Send<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr24: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr24: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr24: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr24: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr24: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr24: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr24: agree");
 }  // namespace c_fr24
@@ -401,7 +401,7 @@ using N1 = fs::Offer<fs::Select<fs::Recv<session_oracle::Nat, fs::End>, fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr25: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr25: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr25: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr25: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr25: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr25: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr25: agree");
 }  // namespace c_fr25
@@ -415,7 +415,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Offer
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr26: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr26: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr26: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr26: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr26: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr26: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr26: agree");
 }  // namespace c_fr26
@@ -429,7 +429,7 @@ using N1 = fs::Select<fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr27: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr27: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr27: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr27: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr27: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr27: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr27: agree");
 }  // namespace c_fr27
@@ -443,7 +443,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Bool, fs::Loop<fs::Offer<fs::Loop<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr28: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr28: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr28: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr28: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr28: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr28: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr28: agree");
 }  // namespace c_fr28
@@ -457,7 +457,7 @@ using N1 = fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Re
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr29: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr29: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr29: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr29: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr29: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr29: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr29: agree");
 }  // namespace c_fr29
@@ -471,7 +471,7 @@ using N1 = fs::Loop<fs::Select<fs::Continue, fs::Continue, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr30: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr30: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr30: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr30: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr30: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr30: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr30: agree");
 }  // namespace c_fr30
@@ -485,7 +485,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr31: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr31: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr31: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr31: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr31: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr31: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr31: agree");
 }  // namespace c_fr31
@@ -499,7 +499,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr32: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr32: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr32: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr32: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr32: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr32: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr32: agree");
 }  // namespace c_fr32
@@ -513,7 +513,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr34: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr34: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr34: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr34: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr34: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr34: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr34: agree");
 }  // namespace c_fr34
@@ -527,7 +527,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr35: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr35: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr35: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr35: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr35: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr35: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr35: agree");
 }  // namespace c_fr35
@@ -541,7 +541,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr36: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr36: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr36: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr36: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr36: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr36: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr36: agree");
 }  // namespace c_fr36
@@ -555,7 +555,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr37: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr37: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr37: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr37: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr37: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr37: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr37: agree");
 }  // namespace c_fr37
@@ -569,7 +569,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr38: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr38: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr38: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr38: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr38: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr38: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr38: agree");
 }  // namespace c_fr38
@@ -583,7 +583,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Select<fs::Send<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr39: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr39: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr39: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr39: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr39: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr39: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr39: agree");
 }  // namespace c_fr39
@@ -597,7 +597,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr40: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr40: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr40: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr40: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr40: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr40: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr40: agree");
 }  // namespace c_fr40
@@ -611,7 +611,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::Select<fs::Offer<fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr41: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr41: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr41: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr41: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr41: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr41: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr41: agree");
 }  // namespace c_fr41
@@ -625,7 +625,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr42: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr42: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr42: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr42: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr42: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr42: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr42: agree");
 }  // namespace c_fr42
@@ -639,7 +639,7 @@ using N1 = fs::Loop<fs::Offer<fs::Recv<session_oracle::Nat, fs::Continue>, fs::C
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr43: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr43: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr43: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr43: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr43: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr43: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr43: agree");
 }  // namespace c_fr43
@@ -653,7 +653,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr44: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr44: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr44: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr44: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr44: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr44: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr44: agree");
 }  // namespace c_fr44
@@ -667,7 +667,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr45: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr45: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr45: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr45: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr45: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr45: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr45: agree");
 }  // namespace c_fr45
@@ -681,7 +681,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Select<fs::End, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr46: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr46: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr46: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr46: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr46: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr46: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr46: agree");
 }  // namespace c_fr46
@@ -695,7 +695,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Selec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr47: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr47: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr47: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr47: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr47: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr47: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr47: agree");
 }  // namespace c_fr47
@@ -709,7 +709,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Na
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr48: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr48: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr48: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr48: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr48: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr48: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr48: agree");
 }  // namespace c_fr48
@@ -723,7 +723,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Send<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr49: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr49: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr49: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr49: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr49: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr49: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr49: agree");
 }  // namespace c_fr49
@@ -737,7 +737,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr50: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr50: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr50: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr50: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr50: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr50: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr50: agree");
 }  // namespace c_fr50
@@ -751,7 +751,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Na
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr51: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr51: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr51: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr51: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr51: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr51: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr51: agree");
 }  // namespace c_fr51
@@ -765,7 +765,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr52: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr52: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr52: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr52: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr52: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr52: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr52: agree");
 }  // namespace c_fr52
@@ -779,7 +779,7 @@ using N1 = fs::Select<fs::Select<fs::End, fs::Loop<fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr53: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr53: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr53: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr53: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr53: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr53: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr53: agree");
 }  // namespace c_fr53
@@ -793,7 +793,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr54: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr54: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr54: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr54: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr54: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr54: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr54: agree");
 }  // namespace c_fr54
@@ -807,7 +807,7 @@ using N1 = fs::Offer<fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr55: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr55: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr55: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr55: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr55: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr55: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr55: agree");
 }  // namespace c_fr55
@@ -821,7 +821,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr56: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr56: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr56: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr56: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr56: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr56: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr56: agree");
 }  // namespace c_fr56
@@ -835,7 +835,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Loop
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr57: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr57: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr57: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr57: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr57: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr57: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr57: agree");
 }  // namespace c_fr57
@@ -849,7 +849,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr58: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr58: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr58: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr58: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr58: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr58: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr58: agree");
 }  // namespace c_fr58
@@ -863,7 +863,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr59: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr59: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr59: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr59: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr59: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr59: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr59: agree");
 }  // namespace c_fr59
@@ -877,7 +877,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Offer<fs::Loop<fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr60: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr60: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr60: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr60: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr60: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr60: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr60: agree");
 }  // namespace c_fr60
@@ -891,7 +891,7 @@ using N1 = fs::Select<fs::Offer<fs::Recv<session_oracle::Bool, fs::End>, fs::End
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr61: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr61: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr61: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr61: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr61: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr61: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr61: agree");
 }  // namespace c_fr61
@@ -905,7 +905,7 @@ using N1 = fs::Offer<fs::End, fs::Recv<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr62: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr62: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr62: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr62: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr62: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr62: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr62: agree");
 }  // namespace c_fr62
@@ -919,7 +919,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Loop<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr64: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr64: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr64: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr64: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr64: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr64: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr64: agree");
 }  // namespace c_fr64
@@ -933,7 +933,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr65: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr65: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr65: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr65: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr65: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr65: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr65: agree");
 }  // namespace c_fr65
@@ -947,7 +947,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr66: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr66: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr66: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr66: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr66: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr66: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr66: agree");
 }  // namespace c_fr66
@@ -961,7 +961,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Offer<fs::Loop<fs::Recv<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr67: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr67: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr67: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr67: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr67: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr67: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr67: agree");
 }  // namespace c_fr67
@@ -975,7 +975,7 @@ using N1 = fs::Loop<fs::Offer<fs::Select<fs::Send<session_oracle::Bool, fs::Send
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr68: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr68: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr68: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr68: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr68: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr68: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr68: agree");
 }  // namespace c_fr68
@@ -989,7 +989,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr69: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr69: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr69: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr69: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr69: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr69: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr69: agree");
 }  // namespace c_fr69
@@ -1003,7 +1003,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Offer<fs::Select<fs::Re
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr70: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr70: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr70: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr70: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr70: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr70: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr70: agree");
 }  // namespace c_fr70
@@ -1017,7 +1017,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr71: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr71: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr71: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr71: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr71: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr71: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr71: agree");
 }  // namespace c_fr71
@@ -1031,7 +1031,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::End
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr72: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr72: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr72: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr72: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr72: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr72: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr72: agree");
 }  // namespace c_fr72
@@ -1045,7 +1045,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Offer<fs::Recv<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr73: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr73: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr73: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr73: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr73: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr73: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr73: agree");
 }  // namespace c_fr73
@@ -1059,7 +1059,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr74: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr74: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr74: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr74: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr74: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr74: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr74: agree");
 }  // namespace c_fr74
@@ -1073,7 +1073,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Offer<fs::Sen
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr75: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr75: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr75: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr75: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr75: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr75: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr75: agree");
 }  // namespace c_fr75
@@ -1087,7 +1087,7 @@ using N1 = fs::Select<fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >, fs
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr76: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr76: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr76: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr76: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr76: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr76: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr76: agree");
 }  // namespace c_fr76
@@ -1101,7 +1101,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr77: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr77: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr77: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr77: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr77: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr77: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr77: agree");
 }  // namespace c_fr77
@@ -1115,7 +1115,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Sen
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr78: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr78: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr78: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr78: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr78: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr78: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr78: agree");
 }  // namespace c_fr78
@@ -1129,7 +1129,7 @@ using N1 = fs::Offer<fs::Select<fs::Offer<fs::Send<session_oracle::Bool, fs::End
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr79: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr79: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr79: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr79: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr79: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr79: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr79: agree");
 }  // namespace c_fr79
@@ -1143,7 +1143,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr80: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr80: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr80: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr80: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr80: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr80: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr80: agree");
 }  // namespace c_fr80
@@ -1157,7 +1157,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr81: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr81: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr81: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr81: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr81: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr81: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr81: agree");
 }  // namespace c_fr81
@@ -1171,7 +1171,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr82: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr82: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr82: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr82: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr82: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr82: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr82: agree");
 }  // namespace c_fr82
@@ -1185,7 +1185,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::End
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr83: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr83: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr83: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr83: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr83: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr83: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr83: agree");
 }  // namespace c_fr83
@@ -1199,7 +1199,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Select<fs::Select<fs::Offer<fs::Sen
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr84: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr84: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr84: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr84: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr84: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr84: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr84: agree");
 }  // namespace c_fr84
@@ -1213,7 +1213,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr85: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr85: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr85: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr85: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr85: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr85: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr85: agree");
 }  // namespace c_fr85
@@ -1227,7 +1227,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr86: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr86: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr86: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr86: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr86: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr86: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr86: agree");
 }  // namespace c_fr86
@@ -1241,7 +1241,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr87: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr87: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr87: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr87: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr87: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr87: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr87: agree");
 }  // namespace c_fr87
@@ -1255,7 +1255,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Selec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr88: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr88: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr88: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr88: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr88: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr88: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr88: agree");
 }  // namespace c_fr88
@@ -1269,7 +1269,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr89: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr89: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr89: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr89: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr89: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr89: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr89: agree");
 }  // namespace c_fr89
@@ -1283,7 +1283,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Nat, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr90: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr90: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr90: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr90: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr90: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr90: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr90: agree");
 }  // namespace c_fr90
@@ -1297,7 +1297,7 @@ using N1 = fs::Offer<fs::Offer<fs::Send<session_oracle::Nat, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr91: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr91: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr91: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr91: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr91: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr91: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr91: agree");
 }  // namespace c_fr91
@@ -1311,7 +1311,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Select<fs::End, fs::Send<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr92: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr92: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr92: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr92: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr92: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr92: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr92: agree");
 }  // namespace c_fr92
@@ -1325,7 +1325,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr93: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr93: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr93: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr93: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr93: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr93: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr93: agree");
 }  // namespace c_fr93
@@ -1339,7 +1339,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr94: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr94: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr94: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr94: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr94: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr94: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr94: agree");
 }  // namespace c_fr94
@@ -1353,7 +1353,7 @@ using N1 = fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::End
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr95: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr95: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr95: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr95: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr95: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr95: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr95: agree");
 }  // namespace c_fr95
@@ -1367,7 +1367,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr96: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr96: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr96: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr96: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr96: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr96: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr96: agree");
 }  // namespace c_fr96
@@ -1381,7 +1381,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Loop
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr97: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr97: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr97: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr97: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr97: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr97: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr97: agree");
 }  // namespace c_fr97
@@ -1395,7 +1395,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr98: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr98: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr98: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr98: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr98: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr98: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr98: agree");
 }  // namespace c_fr98
@@ -1409,7 +1409,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::Offer<fs::Continue, fs::Se
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr99: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr99: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr99: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr99: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr99: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr99: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr99: agree");
 }  // namespace c_fr99
@@ -1423,7 +1423,7 @@ using N1 = fs::Loop<fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr100: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr100: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr100: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr100: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr100: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr100: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr100: agree");
 }  // namespace c_fr100
@@ -1437,7 +1437,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Bool,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr101: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr101: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr101: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr101: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr101: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr101: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr101: agree");
 }  // namespace c_fr101
@@ -1451,7 +1451,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Bo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr102: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr102: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr102: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr102: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr102: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr102: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr102: agree");
 }  // namespace c_fr102
@@ -1465,7 +1465,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr103: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr103: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr103: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr103: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr103: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr103: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr103: agree");
 }  // namespace c_fr103
@@ -1479,7 +1479,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr104: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr104: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr104: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr104: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr104: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr104: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr104: agree");
 }  // namespace c_fr104
@@ -1493,7 +1493,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr105: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr105: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr105: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr105: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr105: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr105: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr105: agree");
 }  // namespace c_fr105
@@ -1507,7 +1507,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr106: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr106: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr106: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr106: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr106: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr106: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr106: agree");
 }  // namespace c_fr106
@@ -1521,7 +1521,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::Select<fs::Send<session_
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr107: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr107: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr107: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr107: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr107: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr107: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr107: agree");
 }  // namespace c_fr107
@@ -1535,7 +1535,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Loop<fs::Offer<fs::End, fs::Send<s
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr108: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr108: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr108: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr108: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr108: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr108: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr108: agree");
 }  // namespace c_fr108
@@ -1549,7 +1549,7 @@ using N1 = fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> >, fs
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr109: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr109: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr109: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr109: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr109: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr109: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr109: agree");
 }  // namespace c_fr109
@@ -1563,7 +1563,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Offer<fs::Loop<fs::Send<s
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr110: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr110: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr110: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr110: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr110: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr110: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr110: agree");
 }  // namespace c_fr110
@@ -1577,7 +1577,7 @@ using N1 = fs::Offer<fs::Select<fs::End, fs::Recv<session_oracle::Bool, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr111: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr111: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr111: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr111: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr111: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr111: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr111: agree");
 }  // namespace c_fr111
@@ -1591,7 +1591,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr112: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr112: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr112: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr112: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr112: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr112: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr112: agree");
 }  // namespace c_fr112
@@ -1605,7 +1605,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Offer<fs::Loop<fs::Send<s
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr113: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr113: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr113: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr113: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr113: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr113: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr113: agree");
 }  // namespace c_fr113
@@ -1619,7 +1619,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr114: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr114: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr114: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr114: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr114: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr114: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr114: agree");
 }  // namespace c_fr114
@@ -1633,7 +1633,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Offe
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr115: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr115: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr115: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr115: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr115: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr115: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr115: agree");
 }  // namespace c_fr115
@@ -1647,7 +1647,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Offer
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr116: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr116: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr116: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr116: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr116: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr116: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr116: agree");
 }  // namespace c_fr116
@@ -1661,7 +1661,7 @@ using N1 = fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr117: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr117: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr117: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr117: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr117: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr117: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr117: agree");
 }  // namespace c_fr117
@@ -1675,7 +1675,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr118: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr118: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr118: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr118: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr118: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr118: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr118: agree");
 }  // namespace c_fr118
@@ -1689,7 +1689,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Offer<fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr119: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr119: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr119: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr119: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr119: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr119: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr119: agree");
 }  // namespace c_fr119
@@ -1703,7 +1703,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr120: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr120: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr120: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr120: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr120: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr120: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr120: agree");
 }  // namespace c_fr120
@@ -1717,7 +1717,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Selec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr121: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr121: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr121: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr121: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr121: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr121: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr121: agree");
 }  // namespace c_fr121
@@ -1731,7 +1731,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Loop
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr122: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr122: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr122: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr122: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr122: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr122: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr122: agree");
 }  // namespace c_fr122
@@ -1745,7 +1745,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr123: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr123: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr123: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr123: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr123: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr123: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr123: agree");
 }  // namespace c_fr123
@@ -1759,7 +1759,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr124: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr124: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr124: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr124: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr124: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr124: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr124: agree");
 }  // namespace c_fr124
@@ -1773,7 +1773,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr125: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr125: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr125: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr125: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr125: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr125: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr125: agree");
 }  // namespace c_fr125
@@ -1787,7 +1787,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr126: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr126: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr126: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr126: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr126: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr126: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr126: agree");
 }  // namespace c_fr126
@@ -1801,7 +1801,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr127: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr127: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr127: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr127: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr127: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr127: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr127: agree");
 }  // namespace c_fr127
@@ -1815,7 +1815,7 @@ using N1 = fs::Offer<fs::Select<fs::Recv<session_oracle::Nat, fs::End>, fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr128: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr128: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr128: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr128: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr128: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr128: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr128: agree");
 }  // namespace c_fr128
@@ -1829,7 +1829,7 @@ using N1 = fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >, fs:
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr129: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr129: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr129: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr129: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr129: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr129: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr129: agree");
 }  // namespace c_fr129
@@ -1843,7 +1843,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr130: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr130: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr130: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr130: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr130: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr130: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr130: agree");
 }  // namespace c_fr130
@@ -1857,7 +1857,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::Recv<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr131: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr131: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr131: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr131: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr131: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr131: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr131: agree");
 }  // namespace c_fr131
@@ -1871,7 +1871,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr132: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr132: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr132: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr132: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr132: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr132: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr132: agree");
 }  // namespace c_fr132
@@ -1885,7 +1885,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr133: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr133: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr133: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr133: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr133: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr133: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr133: agree");
 }  // namespace c_fr133
@@ -1899,7 +1899,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr134: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr134: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr134: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr134: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr134: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr134: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr134: agree");
 }  // namespace c_fr134
@@ -1913,7 +1913,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr135: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr135: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr135: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr135: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr135: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr135: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr135: agree");
 }  // namespace c_fr135
@@ -1927,7 +1927,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr136: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr136: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr136: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr136: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr136: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr136: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr136: agree");
 }  // namespace c_fr136
@@ -1941,7 +1941,7 @@ using N1 = fs::Select<fs::End, fs::Recv<session_oracle::Bool, fs::Recv<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr137: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr137: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr137: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr137: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr137: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr137: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr137: agree");
 }  // namespace c_fr137
@@ -1955,7 +1955,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr138: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr138: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr138: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr138: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr138: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr138: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr138: agree");
 }  // namespace c_fr138
@@ -1969,7 +1969,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr139: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr139: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr139: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr139: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr139: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr139: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr139: agree");
 }  // namespace c_fr139
@@ -1983,7 +1983,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr140: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr140: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr140: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr140: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr140: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr140: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr140: agree");
 }  // namespace c_fr140
@@ -1997,7 +1997,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr141: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr141: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr141: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr141: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr141: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr141: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr141: agree");
 }  // namespace c_fr141
@@ -2011,7 +2011,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr142: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr142: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr142: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr142: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr142: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr142: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr142: agree");
 }  // namespace c_fr142
@@ -2025,7 +2025,7 @@ using N1 = fs::Offer<fs::Offer<fs::End, fs::Send<session_oracle::Nat, fs::End> >
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr143: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr143: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr143: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr143: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr143: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr143: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr143: agree");
 }  // namespace c_fr143
@@ -2039,7 +2039,7 @@ using N1 = fs::Loop<fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::Continu
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr144: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr144: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr144: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr144: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr144: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr144: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr144: agree");
 }  // namespace c_fr144
@@ -2053,7 +2053,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Na
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr145: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr145: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr145: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr145: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr145: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr145: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr145: agree");
 }  // namespace c_fr145
@@ -2067,7 +2067,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Bool, fs::Offer<fs::Recv<session_
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr146: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr146: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr146: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr146: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr146: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr146: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr146: agree");
 }  // namespace c_fr146
@@ -2081,7 +2081,7 @@ using N1 = fs::Offer<fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Sel
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr147: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr147: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr147: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr147: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr147: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr147: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr147: agree");
 }  // namespace c_fr147
@@ -2095,7 +2095,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Send<session_
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr148: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr148: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr148: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr148: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr148: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr148: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr148: agree");
 }  // namespace c_fr148
@@ -2109,7 +2109,7 @@ using N1 = fs::Select<fs::Select<fs::End, fs::Loop<fs::Send<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr149: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr149: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr149: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr149: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr149: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr149: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr149: agree");
 }  // namespace c_fr149
@@ -2123,7 +2123,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr150: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr150: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr150: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr150: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr150: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr150: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr150: agree");
 }  // namespace c_fr150
@@ -2137,7 +2137,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Select<fs::Select<fs::End, fs::Loo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr151: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr151: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr151: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr151: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr151: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr151: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr151: agree");
 }  // namespace c_fr151
@@ -2151,7 +2151,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr152: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr152: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr152: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr152: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr152: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr152: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr152: agree");
 }  // namespace c_fr152
@@ -2165,7 +2165,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::Loop<fs::Recv<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr153: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr153: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr153: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr153: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr153: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr153: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr153: agree");
 }  // namespace c_fr153
@@ -2179,7 +2179,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Na
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr155: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr155: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr155: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr155: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr155: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr155: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr155: agree");
 }  // namespace c_fr155
@@ -2193,7 +2193,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr156: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr156: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr156: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr156: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr156: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr156: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr156: agree");
 }  // namespace c_fr156
@@ -2207,7 +2207,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Sen
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr157: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr157: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr157: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr157: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr157: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr157: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr157: agree");
 }  // namespace c_fr157
@@ -2221,7 +2221,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Offe
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr158: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr158: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr158: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr158: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr158: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr158: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr158: agree");
 }  // namespace c_fr158
@@ -2235,7 +2235,7 @@ using N1 = fs::Loop<fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::End>, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr159: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr159: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr159: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fr159: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fr159: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fr159: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fr159: agree");
 }  // namespace c_fr159
@@ -2249,7 +2249,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Select<fs::End, fs::Recv<s
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa0: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa0: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa0: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa0: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa0: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa0: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa0: divergence");
 }  // namespace c_fa0
@@ -2263,7 +2263,7 @@ using N1 = fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::Recv<session_ora
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa1: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa1: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa1: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa1: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa1: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa1: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa1: agree");
 }  // namespace c_fa1
@@ -2284,7 +2284,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa3: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa3: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa3: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa3: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa3: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa3: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa3: agree");
 }  // namespace c_fa3
@@ -2305,7 +2305,7 @@ using N1 = fs::Select<fs::Offer<fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa5: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa5: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa5: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa5: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa5: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa5: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa5: agree");
 }  // namespace c_fa5
@@ -2319,7 +2319,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Loop<fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa6: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa6: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa6: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa6: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa6: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa6: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa6: divergence");
 }  // namespace c_fa6
@@ -2354,7 +2354,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa10: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa10: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa10: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa10: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa10: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa10: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa10: agree");
 }  // namespace c_fa10
@@ -2368,7 +2368,7 @@ using N1 = fs::End;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa11: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa11: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa11: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa11: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa11: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa11: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa11: agree");
 }  // namespace c_fa11
@@ -2382,7 +2382,7 @@ using N1 = fs::Loop<fs::Select<fs::Offer<fs::End>, fs::Select<fs::Continue, fs::
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa12: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa12: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa12: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa12: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa12: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa12: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa12: agree");
 }  // namespace c_fa12
@@ -2396,7 +2396,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa13: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa13: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa13: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa13: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa13: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa13: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa13: agree");
 }  // namespace c_fa13
@@ -2417,7 +2417,7 @@ using N1 = fs::Select<fs::Select<fs::Select<> >, fs::Loop<fs::Recv<session_oracl
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa15: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa15: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa15: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa15: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa15: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa15: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa15: agree");
 }  // namespace c_fa15
@@ -2431,7 +2431,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa16: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa16: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa16: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa16: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa16: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa16: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa16: agree");
 }  // namespace c_fa16
@@ -2445,7 +2445,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa18: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa18: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa18: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa18: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa18: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa18: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa18: agree");
 }  // namespace c_fa18
@@ -2466,7 +2466,7 @@ using N1 = fs::Offer<fs::End, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa20: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa20: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa20: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa20: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa20: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa20: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa20: agree");
 }  // namespace c_fa20
@@ -2487,7 +2487,7 @@ using N1 = fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa22: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa22: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa22: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa22: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa22: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa22: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa22: agree");
 }  // namespace c_fa22
@@ -2501,7 +2501,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa23: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa23: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa23: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa23: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa23: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa23: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa23: agree");
 }  // namespace c_fa23
@@ -2515,7 +2515,7 @@ using N1 = fs::Offer<fs::End, fs::Recv<session_oracle::Bool, fs::Loop<fs::Loop<f
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa24: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa24: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa24: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa24: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa24: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa24: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa24: agree");
 }  // namespace c_fa24
@@ -2529,7 +2529,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa25: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa25: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa25: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa25: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa25: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa25: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa25: agree");
 }  // namespace c_fa25
@@ -2543,7 +2543,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::Select<fs::Loop<fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa26: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa26: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa26: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa26: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa26: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa26: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa26: agree");
 }  // namespace c_fa26
@@ -2557,7 +2557,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Select<> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa27: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa27: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa27: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa27: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa27: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa27: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa27: agree");
 }  // namespace c_fa27
@@ -2571,7 +2571,7 @@ using N1 = fs::Select<fs::Offer<fs::Offer<fs::End, fs::Loop<fs::Loop<fs::End> > 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa28: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa28: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa28: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa28: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa28: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa28: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa28: agree");
 }  // namespace c_fa28
@@ -2592,7 +2592,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa30: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa30: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa30: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa30: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa30: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa30: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa30: agree");
 }  // namespace c_fa30
@@ -2606,7 +2606,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Loop<fs::End> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa31: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa31: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa31: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa31: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa31: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa31: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa31: divergence");
 }  // namespace c_fa31
@@ -2620,7 +2620,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Select<> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa32: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa32: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa32: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa32: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa32: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa32: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa32: agree");
 }  // namespace c_fa32
@@ -2634,7 +2634,7 @@ using N1 = fs::Select<fs::Loop<fs::End>, fs::Select<fs::Loop<fs::End> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa33: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa33: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa33: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa33: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa33: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa33: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa33: divergence");
 }  // namespace c_fa33
@@ -2662,7 +2662,7 @@ using N1 = fs::Offer<fs::Offer<fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<s
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa37: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa37: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa37: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa37: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa37: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa37: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa37: agree");
 }  // namespace c_fa37
@@ -2676,7 +2676,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Sen
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa38: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa38: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa38: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa38: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa38: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa38: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa38: agree");
 }  // namespace c_fa38
@@ -2690,7 +2690,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa39: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa39: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa39: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa39: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa39: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa39: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa39: agree");
 }  // namespace c_fa39
@@ -2711,7 +2711,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa41: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa41: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa41: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa41: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa41: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa41: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa41: agree");
 }  // namespace c_fa41
@@ -2725,7 +2725,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa42: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa42: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa42: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa42: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa42: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa42: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa42: agree");
 }  // namespace c_fa42
@@ -2739,7 +2739,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Offer<fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa43: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa43: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa43: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa43: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa43: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa43: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa43: agree");
 }  // namespace c_fa43
@@ -2753,7 +2753,7 @@ using N1 = fs::Select<fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa44: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa44: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa44: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa44: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa44: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa44: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa44: agree");
 }  // namespace c_fa44
@@ -2767,7 +2767,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Loop<fs::Loop<fs::End> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa45: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa45: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa45: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa45: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa45: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa45: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa45: divergence");
 }  // namespace c_fa45
@@ -2781,7 +2781,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::Offer<fs::End, fs::End> 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa46: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa46: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa46: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa46: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa46: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa46: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa46: agree");
 }  // namespace c_fa46
@@ -2795,7 +2795,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Offer<> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa47: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa47: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa47: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa47: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa47: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa47: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa47: agree");
 }  // namespace c_fa47
@@ -2816,7 +2816,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Offer<fs::Loop<fs::Recv<session_ora
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa49: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa49: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa49: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa49: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa49: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa49: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa49: agree");
 }  // namespace c_fa49
@@ -2830,7 +2830,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Off
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa50: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa50: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa50: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa50: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa50: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa50: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa50: divergence");
 }  // namespace c_fa50
@@ -2844,7 +2844,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Select<fs::Loop<fs::End>, fs::Offe
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa51: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa51: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa51: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa51: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa51: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa51: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa51: divergence");
 }  // namespace c_fa51
@@ -2858,7 +2858,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Select<fs::Send<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa52: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa52: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa52: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa52: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa52: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa52: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa52: agree");
 }  // namespace c_fa52
@@ -2872,7 +2872,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Bool,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa53: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa53: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa53: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa53: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa53: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa53: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa53: agree");
 }  // namespace c_fa53
@@ -2893,7 +2893,7 @@ using N1 = fs::Select<fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa55: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa55: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa55: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa55: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa55: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa55: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa55: agree");
 }  // namespace c_fa55
@@ -2907,7 +2907,7 @@ using N1 = fs::Select<fs::End, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa56: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa56: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa56: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa56: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa56: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa56: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa56: agree");
 }  // namespace c_fa56
@@ -2921,7 +2921,7 @@ using N1 = fs::Offer<fs::Loop<fs::Select<fs::Continue, fs::Send<session_oracle::
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa57: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa57: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa57: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa57: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa57: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa57: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa57: agree");
 }  // namespace c_fa57
@@ -2935,7 +2935,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa58: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa58: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa58: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa58: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa58: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa58: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa58: agree");
 }  // namespace c_fa58
@@ -2949,7 +2949,7 @@ using N1 = fs::Select<fs::Select<>, fs::Send<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa59: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa59: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa59: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa59: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa59: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa59: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa59: agree");
 }  // namespace c_fa59
@@ -2963,7 +2963,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa60: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa60: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa60: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa60: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa60: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa60: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa60: agree");
 }  // namespace c_fa60
@@ -2977,7 +2977,7 @@ using N1 = fs::Select<fs::Offer<fs::End>, fs::Recv<session_oracle::Bool, fs::End
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa61: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa61: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa61: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa61: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa61: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa61: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa61: agree");
 }  // namespace c_fa61
@@ -2991,7 +2991,7 @@ using N1 = fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa62: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa62: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa62: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa62: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa62: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa62: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa62: divergence");
 }  // namespace c_fa62
@@ -3005,7 +3005,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Select<fs::Loop<fs::Offer<fs::Conti
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa63: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa63: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa63: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa63: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa63: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa63: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa63: agree");
 }  // namespace c_fa63
@@ -3019,7 +3019,7 @@ using N1 = fs::Select<fs::Select<> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa64: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa64: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa64: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa64: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa64: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa64: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa64: agree");
 }  // namespace c_fa64
@@ -3033,7 +3033,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa65: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa65: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa65: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa65: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa65: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa65: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa65: agree");
 }  // namespace c_fa65
@@ -3047,7 +3047,7 @@ using N1 = fs::Loop<fs::Select<fs::Select<fs::Offer<fs::Continue> > > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa66: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa66: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa66: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa66: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa66: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa66: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa66: agree");
 }  // namespace c_fa66
@@ -3061,7 +3061,7 @@ using N1 = fs::Offer<>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa67: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa67: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa67: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa67: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa67: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa67: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa67: agree");
 }  // namespace c_fa67
@@ -3075,7 +3075,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa68: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa68: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa68: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa68: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa68: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa68: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa68: agree");
 }  // namespace c_fa68
@@ -3089,7 +3089,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Loop<fs::Loop<fs::Select<
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa69: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa69: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa69: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa69: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa69: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa69: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa69: divergence");
 }  // namespace c_fa69
@@ -3110,7 +3110,7 @@ using N1 = fs::Loop<fs::Offer<> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa71: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa71: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa71: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa71: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa71: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa71: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa71: agree");
 }  // namespace c_fa71
@@ -3124,7 +3124,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa72: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa72: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa72: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa72: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa72: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa72: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa72: agree");
 }  // namespace c_fa72
@@ -3138,7 +3138,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa73: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa73: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa73: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa73: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa73: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa73: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa73: agree");
 }  // namespace c_fa73
@@ -3152,7 +3152,7 @@ using N1 = fs::Offer<fs::Loop<fs::Loop<fs::Offer<fs::Loop<fs::End>, fs::Send<ses
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa74: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa74: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa74: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa74: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa74: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa74: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa74: agree");
 }  // namespace c_fa74
@@ -3166,7 +3166,7 @@ using N1 = fs::Loop<fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa75: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa75: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa75: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa75: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa75: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa75: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa75: divergence");
 }  // namespace c_fa75
@@ -3180,7 +3180,7 @@ using N1 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa76: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa76: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa76: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa76: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa76: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa76: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa76: agree");
 }  // namespace c_fa76
@@ -3194,7 +3194,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Loop<fs::Recv<session_orac
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa77: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa77: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa77: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa77: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa77: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa77: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa77: agree");
 }  // namespace c_fa77
@@ -3215,7 +3215,7 @@ using N1 = fs::Offer<fs::End, fs::End, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa79: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa79: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa79: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa79: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa79: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa79: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa79: agree");
 }  // namespace c_fa79
@@ -3236,7 +3236,7 @@ using N1 = fs::Select<fs::Offer<fs::Send<session_oracle::Nat, fs::Recv<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa81: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa81: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa81: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa81: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa81: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa81: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa81: agree");
 }  // namespace c_fa81
@@ -3250,7 +3250,7 @@ using N1 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa82: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa82: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa82: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa82: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa82: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa82: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa82: divergence");
 }  // namespace c_fa82
@@ -3271,7 +3271,7 @@ using N1 = fs::Loop<fs::Loop<fs::Loop<fs::Recv<session_oracle::Nat, fs::Select<f
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa84: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa84: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa84: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa84: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa84: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa84: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa84: agree");
 }  // namespace c_fa84
@@ -3285,7 +3285,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::End>, fs::Loop<fs::End> >
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa85: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa85: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa85: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa85: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa85: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa85: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa85: divergence");
 }  // namespace c_fa85
@@ -3299,7 +3299,7 @@ using N1 = fs::Offer<fs::End, fs::Recv<session_oracle::Bool, fs::Loop<fs::Loop<f
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa86: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa86: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa86: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa86: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa86: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa86: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa86: agree");
 }  // namespace c_fa86
@@ -3313,7 +3313,7 @@ using N1 = fs::Select<>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa87: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa87: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa87: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa87: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa87: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa87: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa87: agree");
 }  // namespace c_fa87
@@ -3327,7 +3327,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Boo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa88: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa88: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa88: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa88: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa88: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa88: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa88: agree");
 }  // namespace c_fa88
@@ -3341,7 +3341,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa89: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa89: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa89: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa89: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa89: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa89: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa89: agree");
 }  // namespace c_fa89
@@ -3355,7 +3355,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa90: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa90: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa90: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa90: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa90: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa90: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa90: agree");
 }  // namespace c_fa90
@@ -3369,7 +3369,7 @@ using N1 = fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa91: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa91: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa91: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa91: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa91: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa91: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa91: agree");
 }  // namespace c_fa91
@@ -3383,7 +3383,7 @@ using N1 = fs::Offer<fs::End, fs::Offer<fs::End, fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa92: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa92: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa92: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa92: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa92: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa92: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa92: agree");
 }  // namespace c_fa92
@@ -3397,7 +3397,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Offer
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa93: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa93: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa93: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa93: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa93: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa93: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa93: divergence");
 }  // namespace c_fa93
@@ -3411,7 +3411,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa94: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa94: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa94: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa94: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa94: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa94: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa94: agree");
 }  // namespace c_fa94
@@ -3425,7 +3425,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa95: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa95: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa95: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa95: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa95: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa95: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa95: divergence");
 }  // namespace c_fa95
@@ -3439,7 +3439,7 @@ using N1 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, 
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa96: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa96: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa96: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa96: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa96: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa96: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa96: agree");
 }  // namespace c_fa96
@@ -3460,7 +3460,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Offe
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa98: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa98: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa98: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa98: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa98: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa98: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa98: agree");
 }  // namespace c_fa98
@@ -3474,7 +3474,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Loop<fs::End> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa99: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa99: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa99: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa99: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa99: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa99: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa99: divergence");
 }  // namespace c_fa99
@@ -3495,7 +3495,7 @@ using N1 = fs::Select<fs::Offer<fs::Offer<> >, fs::Recv<session_oracle::Nat, fs:
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa101: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa101: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa101: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa101: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa101: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa101: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa101: agree");
 }  // namespace c_fa101
@@ -3509,7 +3509,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa102: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa102: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa102: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa102: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa102: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa102: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa102: agree");
 }  // namespace c_fa102
@@ -3523,7 +3523,7 @@ using N1 = fs::Select<fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::Send
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa103: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa103: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa103: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa103: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa103: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa103: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa103: divergence");
 }  // namespace c_fa103
@@ -3544,7 +3544,7 @@ using N1 = fs::Select<fs::Loop<fs::Send<session_oracle::Bool, fs::Recv<session_o
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa105: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa105: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa105: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa105: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa105: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa105: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa105: agree");
 }  // namespace c_fa105
@@ -3558,7 +3558,7 @@ using N1 = fs::Loop<fs::Select<fs::Loop<fs::End>, fs::Offer<fs::End> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa106: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa106: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa106: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa106: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa106: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa106: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa106: divergence");
 }  // namespace c_fa106
@@ -3572,7 +3572,7 @@ using N1 = fs::Loop<fs::Loop<fs::Loop<fs::End> > >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa107: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa107: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa107: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa107: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa107: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa107: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa107: divergence");
 }  // namespace c_fa107
@@ -3586,7 +3586,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa108: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa108: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa108: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa108: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa108: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa108: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa108: divergence");
 }  // namespace c_fa108
@@ -3600,7 +3600,7 @@ using N1 = fs::Select<fs::Loop<fs::End>, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa109: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa109: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa109: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa109: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa109: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa109: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa109: divergence");
 }  // namespace c_fa109
@@ -3621,7 +3621,7 @@ using N1 = fs::Select<fs::Send<session_oracle::Bool, fs::End>, fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa111: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa111: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa111: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa111: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa111: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa111: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa111: agree");
 }  // namespace c_fa111
@@ -3635,7 +3635,7 @@ using N1 = fs::Offer<fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::Selec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa112: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa112: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa112: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa112: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa112: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa112: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa112: agree");
 }  // namespace c_fa112
@@ -3649,7 +3649,7 @@ using N1 = fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Loo
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa113: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa113: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa113: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa113: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa113: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa113: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa113: agree");
 }  // namespace c_fa113
@@ -3663,7 +3663,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End>
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa114: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa114: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa114: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa114: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa114: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa114: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa114: agree");
 }  // namespace c_fa114
@@ -3677,7 +3677,7 @@ using N1 = fs::Loop<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool,
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa115: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa115: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa115: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa115: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa115: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fa115: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa115: divergence");
 }  // namespace c_fa115
@@ -3698,7 +3698,7 @@ using N1 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Rec
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa118: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa118: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa118: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa118: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa118: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa118: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa118: agree");
 }  // namespace c_fa118
@@ -3712,7 +3712,7 @@ using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::End>, fs::Send<session_or
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa119: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa119: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa119: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fa119: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fa119: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == true, "session_oracle fixy.well_formed case fa119: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == true, "session_oracle fixy.accepts case fa119: agree");
 }  // namespace c_fa119
@@ -3726,7 +3726,7 @@ using N1 = fs::Offer<>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fh0: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fh0: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fh0: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fh0: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fh0: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fh0: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fh0: agree");
 }  // namespace c_fh0
@@ -3740,7 +3740,7 @@ using N1 = fs::Loop<fs::Offer<fs::Recv<session_oracle::Nat, fs::Continue>, fs::S
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fh1: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fh1: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fh1: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fh1: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fh1: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fh1: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fh1: agree");
 }  // namespace c_fh1
@@ -3754,7 +3754,7 @@ using N1 = fs::Offer<>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fm0: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fm0: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fm0: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fm0: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fm0: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fm0: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fm0: agree");
 }  // namespace c_fm0
@@ -3768,7 +3768,7 @@ using N1 = fs::Select<>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fm1: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fm1: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fm1: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fm1: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fm1: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fm1: agree");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fm1: agree");
 }  // namespace c_fm1
@@ -3782,7 +3782,7 @@ using N1 = fs::Loop<fs::End>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fm2: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fm2: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fm2: agree");
-static_assert(fs::is_dual_involutive_v<T0> == true, "session_oracle fixy.involutive_flag case fm2: agree");
+static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involutive_flag case fm2: agree");
 static_assert((fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>) == false, "session_oracle fixy.well_formed case fm2: divergence");
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fm2: divergence");
 }  // namespace c_fm2

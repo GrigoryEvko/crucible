@@ -75,8 +75,8 @@
 //                     step is covariant or invariant, and an input step
 //                     is contravariant or invariant.
 //   annotation        The template of the note of a choice, or null.
-//                     The dual keeps the note only when the dual shape
-//                     names the same template.  Refinement compares
+//                     The dual shape must name the same template, so
+//                     the dual keeps the note.  Refinement compares
 //                     notes for equality.
 //   value_variance    The variance of the value of a wrapper.
 //   value_order       A variable template `template <auto A, auto B>
@@ -94,7 +94,9 @@
 // 2026, page 3, where this closure is what makes the type system
 // sound).  A registration keeps that closure when its dual has the same
 // kind, the opposite direction, the opposite payload variance, the
-// opposite value variance and the same absorption.  A self-dual wrapper
+// opposite value variance, the same absorption and the same note
+// template.  The last rule makes duality an involution on a choice with
+// a note, because the dual keeps the note.  A self-dual wrapper
 // must therefore have an invariant value.  The flip alone admits a pair
 // with each side backwards, so a step also needs the variance of its
 // direction: the receiver of an output step then accepts each payload
@@ -448,6 +450,7 @@ enum class incoherence : std::uint8_t {
     payload_variance_not_flipped,
     value_variance_not_flipped,
     absorption_differs,
+    annotation_differs,
     direction_on_neutral_kind,
     order_on_non_wrapper,
     variance_against_direction,
@@ -506,6 +509,7 @@ namespace detail {
         return {incoherence::value_variance_not_flipped, shape};
     }
     if (mirror.absorbs_suffix != entry.absorbs_suffix) return {incoherence::absorption_differs, shape};
+    if (mirror.annotation != entry.annotation) return {incoherence::annotation_differs, shape};
     // A pair can flip its variance under duality and still have each side
     // backwards.  An output that is contravariant lets the subtype send a
     // wider payload than the peer of the supertype receives.
@@ -548,6 +552,9 @@ namespace detail {
             return "the dual value variance is not the opposite, so refinement is not closed under duality";
         case incoherence::absorption_differs:
             return "the dual composes differently";
+        case incoherence::annotation_differs:
+            return "the dual names a different note template, so the dual drops the note and duality is not an "
+                   "involution";
         case incoherence::direction_on_neutral_kind:
             return "a step or a choice has no direction, or a different kind has one";
         case incoherence::order_on_non_wrapper:
@@ -1853,8 +1860,11 @@ inline constexpr combinator take{.shape = ^^Take,
                                  .direction = polarity::input,
                                  .dual = ^^Put,
                                  .payload_variance = variance::contravariant};
-inline constexpr combinator pick{
-    .shape = ^^Pick, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Wait};
+inline constexpr combinator pick{.shape = ^^Pick,
+                                 .kind = shape_kind::choice,
+                                 .direction = polarity::output,
+                                 .dual = ^^Wait,
+                                 .annotation = ^^From};
 inline constexpr combinator wait{.shape = ^^Wait,
                                  .kind = shape_kind::choice,
                                  .direction = polarity::input,
@@ -1887,7 +1897,8 @@ static_assert(check_registry(reg).reason == incoherence::none);
 using Ping = Put<int, Take<char, Done>>;
 using Pong = Take<int, Put<char, Done>>;
 static_assert(dual(^^Ping) == std::meta::dealias(^^Pong) && dual(^^Pong) == std::meta::dealias(^^Ping));
-static_assert(dual(^^Wait<From<int>, Done, Back>) == ^^Pick<Done, Back>);
+static_assert(dual(^^Wait<From<int>, Done, Back>) == ^^Pick<From<int>, Done, Back>);
+static_assert(dual(dual(^^Wait<From<int>, Done, Back>)) == ^^Wait<From<int>, Done, Back>, "the dual keeps the note");
 static_assert(dual(^^Pin<3, Ping>) == ^^Pin<3, Pong>);
 
 static_assert(well_formed(^^Ping));

@@ -731,17 +731,27 @@ struct limitation {
 };
 
 inline constexpr limitation known_limitations[] = {
-    {"duality drops the Sender note of an Offer, so a server speaking Select is compatible, as a server, with "
-     "a client whose Offer names the wrong role; the client side of the same check refuses",
-     "closure under duality holds only where duality is an involution, so compatibility is not symmetric "
-     "(Padovani and Zavattaro, TOPLAS 2026, page 3)"},
     {"composition with a Continue suffix turns every End of a loop into a loop-back; the result is "
      "well-formed and can never end",
      "fair termination (Padovani and Zavattaro, TOPLAS 2026): no relation here preserves it"},
     {"subtyping removes the only exit branch of a loop: a loop that never ends refines a loop that can end",
      "fair subtyping (Padovani and Zavattaro, TOPLAS 2026), which refuses a subtype that loses termination"},
 };
-static_assert(std::size(known_limitations) == 3, "the ledger only shrinks: lower this count when an entry goes");
+static_assert(std::size(known_limitations) == 2, "the ledger only shrinks: lower this count when an entry goes");
+
+// The Sender note under duality was an entry here: the dual of a noted
+// Offer dropped the note, so a server that spoke Select was compatible,
+// as a server, with a client whose Offer named the wrong role, and the
+// client side of the same check refused.  A choice and its dual now name
+// the same note template, so duality keeps the note and is an
+// involution, and compatibility answers the same from either side.  The
+// fixtures neg_sess_compatible_server_wrong_role and
+// neg_sess_compatible_client_wrong_role are the attack from each side.
+using NotedClient = Offer<Sender<Bob>, Recv<A, End>>;
+using PlainServer = Select<Send<A, End>>;
+using NotedServer = Select<Sender<Bob>, Send<A, End>>;
+static_assert(!s::CompatibleServer<PlainServer, NotedClient> && !s::CompatibleClient<NotedClient, PlainServer>);
+static_assert(s::CompatibleServer<NotedServer, NotedClient> && s::CompatibleClient<NotedClient, NotedServer>);
 
 // The capacity of the asynchronous check was an entry here: the caller
 // stated a number, and nothing tied it to the channel the session runs
@@ -770,11 +780,6 @@ static_assert(s::is_subtype_sync_v<Send<Narrow, End>, Send<Middle, End>>
 static_assert(!s::is_subtype_sync_v<Send<Wide, End>, Send<Narrow, End>>
               && s::is_subtype_sync_v<Recv<Wide, End>, Recv<Narrow, End>>
               && !s::is_subtype_sync_v<Recv<Narrow, End>, Recv<Wide, End>>);
-
-// Pin 1: the Sender note and compatibility.
-using NotedClient = Offer<Sender<Bob>, Recv<A, End>>;
-using PlainServer = Select<Send<A, End>>;
-static_assert(s::CompatibleServer<PlainServer, NotedClient> && !s::CompatibleClient<NotedClient, PlainServer>);
 
 // Pin 3: composition with Continue removes every End.
 using WithExit = Loop<Select<Send<A, Continue>, End>>;

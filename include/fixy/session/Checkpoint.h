@@ -143,13 +143,6 @@ struct dual_of<Abort> {
     using type = Abort;
 };
 
-template <typename K>
-struct is_dual_involutive<Commit<K>> : is_dual_involutive<K> {};
-template <>
-struct is_dual_involutive<Roll> : std::true_type {};
-template <>
-struct is_dual_involutive<Abort> : std::true_type {};
-
 // A Roll or an Abort never falls through to what follows it, so
 // composition keeps it, as it keeps a crashed endpoint.
 template <typename K, typename Q>
