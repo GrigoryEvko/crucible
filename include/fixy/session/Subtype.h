@@ -53,8 +53,20 @@
 //
 // Precise asynchronous subtyping is undecidable, also for two parties
 // (Bravetti, Carbone and Zavattaro, 2017; Lange and Yoshida, 2017).
-// is_subtype_async_v<T, U, Capacity> is a sound check that can fail to
+// is_subtype_async_v<T, U, Channel> is a sound check that can fail to
 // prove a true pair.  A pair it cannot prove is refused.
+//
+// The capacity of the check is a property of the channel, never a number
+// that the caller states.  Channel is the type of the channel end that
+// the session runs on, and its constant member `channel_capacity` states
+// how many messages the channel holds in one direction.  A check at a
+// capacity that the channel does not have is not sound: a pair that holds
+// at capacity 4 can deadlock on a channel of capacity 1.  So the one
+// mint that admits an asynchronous pair, mint_forked_async_channel in
+// fixy/session/AsyncChannel.h, runs the check at the channel type of the
+// Resources that the two sides use.  The statement of the channel type is
+// the contract: a channel whose buffer holds fewer messages than its type
+// states breaks it, as a transport that drops a message does.
 //
 // The check is the algorithm of Cutner, Yoshida and Vassor, Rumpsteak
 // (PPoPP 2022, section 3.2, rules oi, oo, ii, io, sub, asm, μL and μR),
@@ -62,7 +74,7 @@
 // of inputs, and nothing else can move.  The transitivity rule is not
 // used, which keeps the check sound and makes it less complete.
 //
-// Capacity is the capacity of the channel.  It bounds two things:
+// The capacity of the channel bounds two things:
 //
 //   1. The number of outputs the subtype sends ahead of the supertype,
 //      and the number of messages the peer sends before the subtype
@@ -140,6 +152,7 @@
 #include <foundation/contracts/Armed.h>
 #include <foundation/diag/FailClosed.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -857,30 +870,44 @@ consteval bool holds() {
 
 }  // namespace detail::async
 
-template <typename Sub, typename Super, std::size_t Capacity>
-inline constexpr bool is_subtype_async_v = detail::async::holds<Sub, Super, Capacity>();
+// True when the channel type states a capacity of one message or more.
+template <typename Channel>
+concept StatesChannelCapacity = requires {
+    { std::remove_cvref_t<Channel>::channel_capacity } -> std::convertible_to<std::size_t>;
+} && (static_cast<std::size_t>(std::remove_cvref_t<Channel>::channel_capacity) > 0);
 
-template <typename Sub, typename Super, std::size_t Capacity>
-concept SubtypeAsync = is_subtype_async_v<Sub, Super, Capacity>;
+template <typename Channel>
+    requires StatesChannelCapacity<Channel>
+inline constexpr std::size_t channel_capacity_v =
+    static_cast<std::size_t>(std::remove_cvref_t<Channel>::channel_capacity);
 
-template <typename Sub, typename Super, std::size_t Capacity>
+template <typename Sub, typename Super, typename Channel>
+    requires StatesChannelCapacity<Channel>
+inline constexpr bool is_subtype_async_v = detail::async::holds<Sub, Super, channel_capacity_v<Channel>>();
+
+template <typename Sub, typename Super, typename Channel>
+concept SubtypeAsync = StatesChannelCapacity<Channel> && is_subtype_async_v<Sub, Super, Channel>;
+
+template <typename Sub, typename Super, typename Channel>
 struct AsyncSubtypeQuery {};
 
 template <typename Q>
 struct is_async_subtype : std::false_type {};
-template <typename Sub, typename Super, std::size_t Capacity>
-struct is_async_subtype<AsyncSubtypeQuery<Sub, Super, Capacity>>
-    : std::bool_constant<is_subtype_async_v<Sub, Super, Capacity>> {};
+template <typename Sub, typename Super, typename Channel>
+    requires StatesChannelCapacity<Channel>
+struct is_async_subtype<AsyncSubtypeQuery<Sub, Super, Channel>>
+    : std::bool_constant<is_subtype_async_v<Sub, Super, Channel>> {};
 
-template <typename Sub, typename Super, std::size_t Capacity>
+template <typename Sub, typename Super, typename Channel>
+    requires StatesChannelCapacity<Channel>
 consteval void assert_subtype_async() noexcept {
-    static_assert(is_subtype_async_v<Sub, Super, Capacity>,
+    static_assert(is_subtype_async_v<Sub, Super, Channel>,
                   "fixy::session::diagnostic [Subtype_Async_Not_Proven]: assert_subtype_async<Sub, Super, "
-                  "Capacity>: the bounded check did not prove that Sub refines Super on a channel of this "
-                  "capacity.  The check refuses a pair it cannot prove.  Usual causes: the subtype sends "
-                  "more messages ahead than the capacity holds, the subtype moves an input ahead of an "
-                  "output, a message is left in a buffer at the end, or the loops need more unfolds than "
-                  "the capacity plus one.");
+                  "Channel>: the bounded check did not prove that Sub refines Super on a channel with the "
+                  "capacity that Channel states.  The check refuses a pair it cannot prove.  Usual causes: "
+                  "the subtype sends more messages ahead than the capacity holds, the subtype moves an input "
+                  "ahead of an output, a message is left in a buffer at the end, or the loops need more "
+                  "unfolds than the capacity plus one.");
 }
 
 }  // namespace fixy::session
@@ -895,6 +922,16 @@ using Wide = ::fixy::session::Select<::fixy::session::Send<Ping, ::fixy::session
                                      ::fixy::session::Send<Stop, ::fixy::session::End>>;
 using Early = ::fixy::session::Send<Ping, ::fixy::session::Recv<Stop, ::fixy::session::End>>;
 using Late = ::fixy::session::Recv<Stop, ::fixy::session::Send<Ping, ::fixy::session::End>>;
+using EarlyTwice = ::fixy::session::Send<Ping, Early>;
+using LateTwice = ::fixy::session::Recv<Stop, ::fixy::session::Recv<Stop, ::fixy::session::Send<
+                                                  Ping, ::fixy::session::Send<Ping, ::fixy::session::End>>>>;
+// Channel ends that state a capacity.
+struct OneSlot {
+    static constexpr std::size_t channel_capacity = 1;
+};
+struct FourSlots {
+    static constexpr std::size_t channel_capacity = 4;
+};
 }  // namespace fixy::session::detail::subtype_armed_witness
 
 template <>
@@ -915,12 +952,16 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_async_subtype> {
     using accepts = witnesses<
         ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Early,
-                                           ::fixy::session::detail::subtype_armed_witness::Late, 1>,
-        ::fixy::session::AsyncSubtypeQuery<::fixy::session::End, ::fixy::session::End, 0>>;
+                                           ::fixy::session::detail::subtype_armed_witness::Late,
+                                           ::fixy::session::detail::subtype_armed_witness::OneSlot>,
+        ::fixy::session::AsyncSubtypeQuery<::fixy::session::End, ::fixy::session::End,
+                                           ::fixy::session::detail::subtype_armed_witness::OneSlot>>;
     using refuses = witnesses<
         int,
         ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Late,
-                                           ::fixy::session::detail::subtype_armed_witness::Early, 4>,
-        ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Early,
-                                           ::fixy::session::detail::subtype_armed_witness::Late, 0>>;
+                                           ::fixy::session::detail::subtype_armed_witness::Early,
+                                           ::fixy::session::detail::subtype_armed_witness::FourSlots>,
+        ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::EarlyTwice,
+                                           ::fixy::session::detail::subtype_armed_witness::LateTwice,
+                                           ::fixy::session::detail::subtype_armed_witness::OneSlot>>;
 };

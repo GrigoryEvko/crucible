@@ -1178,10 +1178,20 @@ fixy_neg_compile_test(neg_sess_subtype_unregistered_in_async
 # output at any capacity.
 fixy_neg_compile_test(neg_sess_subtype_async_capacity_one
   "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
-  "Capacity = 1\\]")
+  "Channel = .*OneSlot\\]")
 fixy_neg_compile_test(neg_sess_subtype_async_input_ahead
   "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
-  "Capacity = 8\\]")
+  "Channel = .*EightSlots\\]")
+
+# The capacity of the check is a property of the channel type.  A number
+# in its place does not compile, and a channel type that states no
+# capacity is refused before the check runs.
+fixy_neg_compile_test(neg_sess_subtype_async_number_capacity
+  "type/value mismatch at argument 3"
+  "is_subtype_async_v")
+fixy_neg_compile_test(neg_sess_subtype_async_silent_channel
+  "constraints not satisfied"
+  "satisfaction of .StatesChannelCapacity<Channel>. .with Channel = .*SilentEnd")
 
 # An empty choice is not well-formed: under the branch rule it refines
 # each larger Select, and a substitute of that type never sends.  Each
@@ -1291,7 +1301,7 @@ fixy_neg_compile_test(neg_sess_forked_channel_body_stops_early
 fixy_test(test_session_async_channel)
 fixy_neg_compile_test(neg_sess_async_channel_capacity_too_small
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, channel_capacity_v<ResourceSelf> >")
+  "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, ResourceSelf>")
 fixy_neg_compile_test(neg_sess_async_channel_without_capacity
   "no matching function for call to .mint_forked_async_channel"
   "StatesChannelCapacity<ResourceSelf>. \\[with ResourceSelf = .unnamed.::SilentEnd\\]")

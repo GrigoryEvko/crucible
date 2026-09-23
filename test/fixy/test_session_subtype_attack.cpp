@@ -81,14 +81,21 @@ using early = typename sends<K, A, typename receives<K, B, End>::type>::type;
 template <std::size_t K>
 using late = typename receives<K, B, typename sends<K, A, End>::type>::type;
 
+// The end of a channel that holds C messages in each direction.  The
+// check reads its capacity from this type, never from a number.
+template <std::size_t C>
+struct ring {
+    static constexpr std::size_t channel_capacity = C;
+};
+
 template <std::size_t K, std::size_t C>
-inline constexpr bool family_verdict_v = s::is_subtype_async_v<early<K>, late<K>, C>;
+inline constexpr bool family_verdict_v = s::is_subtype_async_v<early<K>, late<K>, ring<C>>;
 
 // The check admits exactly the capacities that hold the anticipation:
-// K from 1 to 4, capacity from 0 to 4.
+// K from 1 to 4, capacity from 1 to 5.
 template <std::size_t K, std::size_t... Cs>
 consteval bool row_matches_capacity(std::index_sequence<Cs...>) {
-    return ((family_verdict_v<K, Cs> == (Cs >= K)) && ...);
+    return ((family_verdict_v<K, Cs + 1> == (Cs + 1 >= K)) && ...);
 }
 template <std::size_t... Ks>
 consteval bool family_matches_capacity(std::index_sequence<Ks...>) {
@@ -452,8 +459,8 @@ consteval generated_case make_case(lcg& random) {
     for (std::size_t index = 0; index < peer.size(); ++index) out.peer[index] = peer[index];
     out.peer_length = peer.size();
     for (std::size_t capacity = 1; capacity <= checked_capacity; ++capacity) {
-        const bool admits = std::meta::extract<bool>(
-            std::meta::substitute(^^s::is_subtype_async_v, {sub, super, std::meta::reflect_constant(capacity)}));
+        const std::meta::info channel = std::meta::substitute(^^ring, {std::meta::reflect_constant(capacity)});
+        const bool admits = std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_async_v, {sub, super, channel}));
         if (admits) out.admitted = static_cast<std::uint8_t>(out.admitted | (1U << (capacity - 1)));
     }
     out.is_synchronous = std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_sync_v, {sub, super}));
@@ -580,7 +587,7 @@ static_assert(!s::is_subtype_sync_v<Offload<int, End>, Send<int, End>>, "a new c
 // as a choice of crash branches only.
 
 static_assert(!s::is_subtype_sync_v<Select<>, Select<Send<A, End>>>);
-static_assert(!s::is_subtype_async_v<Select<>, Select<Send<A, End>>, 4>);
+static_assert(!s::is_subtype_async_v<Select<>, Select<Send<A, End>>, ring<4>>);
 static_assert(!s::is_subtype_sync_v<Send<A, Select<>>, Send<A, Select<Send<B, End>>>>);
 static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>, Select<>>>, Loop<Select<Send<A, Continue>>>>);
 static_assert(!s::is_subtype_sync_v<Offer<Sender<Bob>>, Offer<Sender<Bob>>>);
@@ -649,7 +656,7 @@ static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select
 
 using Projected = Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L1, int>, End>>;
 using Permuted = Select<Send<s::PeerMsg<Bob, L1, int>, End>, Send<s::PeerMsg<Bob, L0, int>, End>>;
-static_assert(!s::is_subtype_sync_v<Permuted, Projected> && !s::is_subtype_async_v<Permuted, Projected, 4>);
+static_assert(!s::is_subtype_sync_v<Permuted, Projected> && !s::is_subtype_async_v<Permuted, Projected, ring<4>>);
 static_assert(s::branch_wire_word_v<Permuted, 0> == s::branch_wire_word_v<Projected, 1>
               && s::branch_wire_word_v<Permuted, 1> == s::branch_wire_word_v<Projected, 0>);
 
@@ -710,7 +717,7 @@ using HardSuper = Loop<Offer<
     Select<Offer<Loop<Recv<Bool, End>>, Recv<Bool, Continue>>, Send<Nat, Send<Bool, Continue>>>,
     Select<Offer<End, Continue, Send<Bool, Continue>>, Continue, Send<Bool, Continue>>,
     Send<Bool, Recv<Bool, Recv<Nat, Continue>>>>>;
-static_assert(!s::is_subtype_async_v<HardSub, HardSuper, 3> && !s::is_subtype_async_v<HardSuper, HardSub, 3>);
+static_assert(!s::is_subtype_async_v<HardSub, HardSuper, ring<3>> && !s::is_subtype_async_v<HardSuper, HardSub, ring<3>>);
 
 // ── The known-limitation ledger ──────────────────────────────────────
 //
@@ -728,17 +735,23 @@ inline constexpr limitation known_limitations[] = {
      "a client whose Offer names the wrong role; the client side of the same check refuses",
      "closure under duality holds only where duality is an involution, so compatibility is not symmetric "
      "(Padovani and Zavattaro, TOPLAS 2026, page 3)"},
-    {"the capacity of the asynchronous check is a number the caller states, and nothing ties it to the "
-     "channel the session runs on; a check at capacity 4 admits a pair that deadlocks on a channel of "
-     "capacity 1",
-     "the bound of the check must be the capacity of the channel (misc/session_types_literature.md rule 6)"},
     {"composition with a Continue suffix turns every End of a loop into a loop-back; the result is "
      "well-formed and can never end",
      "fair termination (Padovani and Zavattaro, TOPLAS 2026): no relation here preserves it"},
     {"subtyping removes the only exit branch of a loop: a loop that never ends refines a loop that can end",
      "fair subtyping (Padovani and Zavattaro, TOPLAS 2026), which refuses a subtype that loses termination"},
 };
-static_assert(std::size(known_limitations) == 4, "the ledger only shrinks: lower this count when an entry goes");
+static_assert(std::size(known_limitations) == 3, "the ledger only shrinks: lower this count when an entry goes");
+
+// The capacity of the asynchronous check was an entry here: the caller
+// stated a number, and nothing tied it to the channel the session runs
+// on.  The check now reads the capacity from the channel type, and a
+// number in its place does not compile (neg_sess_subtype_async_number_capacity).
+// mint_forked_async_channel checks at the channel type of the Resources
+// that it runs.  The family above shows the check and the runs agree at
+// each capacity, and main runs the pair that ring<4> admits on a channel
+// of one: that run deadlocks, and the check at ring<1> refuses the pair.
+static_assert(s::is_subtype_async_v<early<4>, late<4>, ring<4>> && !s::is_subtype_async_v<early<4>, late<4>, ring<1>>);
 
 // A payload rule registered after fixy/session/Protocol.h stops the build
 // at the next read of a payload rule, because a seal counts the rules of
@@ -763,9 +776,6 @@ using NotedClient = Offer<Sender<Bob>, Recv<A, End>>;
 using PlainServer = Select<Send<A, End>>;
 static_assert(s::CompatibleServer<PlainServer, NotedClient> && !s::CompatibleClient<NotedClient, PlainServer>);
 
-// Pin 2: the capacity is the caller's word.  The runtime half is in main.
-static_assert(s::is_subtype_async_v<early<4>, late<4>, 4>);
-
 // Pin 3: composition with Continue removes every End.
 using WithExit = Loop<Select<Send<A, Continue>, End>>;
 using NoExit = s::compose_t<WithExit, Continue>;
@@ -789,10 +799,12 @@ int main() {
     expect(run_against_dual<early<2>, early<2>>(1) == outcome::completed,
            "a dual pair of anticipations completes at capacity 1");
 
-    // Pin 2, runtime half: the pair the check admits at capacity 4
-    // deadlocks on a channel of capacity 1, and the watchdog ends it.
+    // The pair that ring<4> admits deadlocks on a channel of capacity 1,
+    // and the watchdog ends it.  So the capacity of the check must be the
+    // capacity of the channel, which is why the check reads it from the
+    // channel type.
     expect(run_against_dual<early<4>, late<4>>(1) == outcome::deadlocked,
-           "the pinned deadlock of ledger entry 2 did not occur, and the entry can be stale");
+           "the pair that needs four slots did not deadlock on one slot, so the harness is wrong");
 
     // A permuted Select on a word wire: the offerer takes the branch of
     // the label that the picker sent.

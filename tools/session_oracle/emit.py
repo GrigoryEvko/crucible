@@ -59,9 +59,20 @@ FIXY_FAMILIES = ("fixy.dual", "fixy.is_dual", "fixy.involution", "fixy.involutiv
 MULTI_FAMILIES = ("fixy.global_wf", "fixy.projection", "fixy.live")
 SUBTYPE_FAMILIES = ("fixy.subtype_sync", "fixy.subtype_async")
 # The capacity that the asynchronous subtyping rows use, in the probe, in
-# the run that decides them, and in the emitted assertion.
+# the run that decides them, and in the emitted assertion.  The relation
+# reads its capacity from a channel type, never from a number, so each
+# source that queries it declares SUBTYPE_CHANNEL.
 SUBTYPE_CAPACITY = 3
+SUBTYPE_CHANNEL = "oracle_channel"
 SUBTYPE_MUTATIONS = 4
+
+
+def subtype_channel_decl() -> str:
+    """Return the channel type whose capacity the asynchronous queries read."""
+    return (f"// The end of a channel that holds {SUBTYPE_CAPACITY} messages in each direction.\n"
+            f"struct {SUBTYPE_CHANNEL} {{\n"
+            f"    static constexpr unsigned channel_capacity = {SUBTYPE_CAPACITY};\n"
+            f"}};\n")
 OLD_FAMILIES = ("old.projection", "old.well_formed")
 # Families that no C++ test can assert: the execution verdict of the
 # frozen tree's projection, and the run of the oracle's own projection.
@@ -356,7 +367,7 @@ def emit_subtype(rows: list[Row]) -> str:
            "// against the dual of U without a wrong message, a deadlock or a loop that never\n",
            "// acts.  Each U is the naive reading of a global type, and each T one change of U.\n\n",
            "#include <fixy/session/Subtype.h>\n\n#include <type_traits>\n\n",
-           cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n",
+           cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n", subtype_channel_decl(), "\n",
            "namespace session_oracle::fixy_subtype {\n\n"]
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: (r.role, SUBTYPE_FAMILIES.index(r.family)))
@@ -371,7 +382,7 @@ def emit_subtype(rows: list[Row]) -> str:
                 t, u = subtype_pair(row.global_text, row.role)
                 out.append(f"namespace {ns} {{\n// {row.role}\nusing T = {t};\nusing U = {u};\n")
             expr = ("fs::is_subtype_sync_v<T, U>" if row.family == "fixy.subtype_sync"
-                    else f"fs::is_subtype_async_v<T, U, {SUBTYPE_CAPACITY}>")
+                    else f"fs::is_subtype_async_v<T, U, ::{SUBTYPE_CHANNEL}>")
             out.append(f"static_assert({expr} == {row.ours}, \"{_message(row)}\");\n")
         if seen:
             out.append(f"}}  // namespace {sorted(seen)[-1]}\n")

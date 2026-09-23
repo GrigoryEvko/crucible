@@ -887,9 +887,9 @@ def classify_subtype(c: Case, role: str, t: Local, u: Local, values: dict[str, s
 
 
 def _subtype_source(pairs: list[tuple[str, Local, Local]], relations: tuple[str, ...]) -> str:
-    from emit import SUBTYPE_CAPACITY
+    from emit import SUBTYPE_CHANNEL, subtype_channel_decl
     from probe import probe_header, show
-    src = probe_header("subtype", "namespace fs = ::fixy::session;")
+    src = probe_header("subtype", "namespace fs = ::fixy::session;") + subtype_channel_decl()
     for role, t, u in pairs:
         key = _subtype_key(role)
         ns = f"p{key}"
@@ -898,7 +898,7 @@ def _subtype_source(pairs: list[tuple[str, Local, Local]], relations: tuple[str,
             src += show(f"s{key}", f"std::bool_constant<fs::is_subtype_sync_v<{ns}::T, {ns}::U>>")
         if "a" in relations:
             src += show(f"a{key}", f"std::bool_constant<fs::is_subtype_async_v<{ns}::T, {ns}::U, "
-                                   f"{SUBTYPE_CAPACITY}>>")
+                                   f"::{SUBTYPE_CHANNEL}>>")
     return src
 
 

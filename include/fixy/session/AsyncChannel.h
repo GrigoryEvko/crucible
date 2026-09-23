@@ -45,16 +45,9 @@
 
 namespace fixy::session {
 
-// True when the Resource states a channel capacity of one message or more.
-template <typename Resource>
-concept StatesChannelCapacity = requires {
-    { std::remove_cvref_t<Resource>::channel_capacity } -> std::convertible_to<std::size_t>;
-} && (static_cast<std::size_t>(std::remove_cvref_t<Resource>::channel_capacity) > 0);
-
-template <typename Resource>
-    requires StatesChannelCapacity<Resource>
-inline constexpr std::size_t channel_capacity_v =
-    static_cast<std::size_t>(std::remove_cvref_t<Resource>::channel_capacity);
+// StatesChannelCapacity and channel_capacity_v are in fixy/session/Subtype.h,
+// because the asynchronous relation reads its capacity from the same
+// channel type.
 
 // The gate of the asynchronous fork-shaped mint.  Each side is runnable,
 // its permission flow closes, the two Resources state one capacity, the
@@ -68,7 +61,7 @@ concept CtxFitsAsyncForkedChannel =
     && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
     && StatesChannelCapacity<ResourceSelf> && StatesChannelCapacity<ResourcePeer>
     && (channel_capacity_v<ResourceSelf> == channel_capacity_v<ResourcePeer>)
-    && is_subtype_async_v<SelfProto, dual_of_t<PeerProto>, channel_capacity_v<ResourceSelf>>
+    && is_subtype_async_v<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
     && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
 
 // Makes a channel whose self side runs SelfProto and whose peer side runs

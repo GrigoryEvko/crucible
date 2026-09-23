@@ -127,9 +127,9 @@ using PatientRight = s::Send<Pong, s::Recv<Ping, s::Recv<Ping, s::End>>>;
 
 static_assert(!s::is_subtype_sync_v<LeftProto, s::dual_of_t<RightProto>>,
               "the pair is not exact duals, so only the asynchronous relation can admit it");
-static_assert(s::is_subtype_async_v<LeftProto, s::dual_of_t<RightProto>, 1>);
-static_assert(!s::is_subtype_async_v<EagerLeft, s::dual_of_t<PatientRight>, 1>);
-static_assert(s::is_subtype_async_v<EagerLeft, s::dual_of_t<PatientRight>, 2>);
+static_assert(s::is_subtype_async_v<LeftProto, s::dual_of_t<RightProto>, LeftEnd>);
+static_assert(!s::is_subtype_async_v<EagerLeft, s::dual_of_t<PatientRight>, LeftEnd>);
+static_assert(s::is_subtype_async_v<EagerLeft, s::dual_of_t<PatientRight>, WideEnd>);
 
 // ── The gate ─────────────────────────────────────────────────────────
 
