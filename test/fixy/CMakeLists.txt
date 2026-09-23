@@ -1025,6 +1025,13 @@ fixy_neg_compile_test(neg_sess_incoherent_registration_not_involutive
 fixy_neg_compile_test(neg_sess_incoherent_registration_variance
   "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
   "Emit is incoherent: the dual payload variance is not the opposite")
+# The pair below flips its variance under duality, so the flip rule
+# admitted it, but each side has the variance of the other direction.
+# The fixture compiled before the repair, and subtyping then put a bare
+# int on the wire where the peer receives a positive int.
+fixy_neg_compile_test(neg_sess_incoherent_registration_backwards_variance
+  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
+  "Emit is incoherent: an output step with a contravariant payload")
 
 # Well-formedness now asks for a guard between a Continue and its Loop,
 # and refuses VendorBackend::None.  Before, the mint gate admitted all

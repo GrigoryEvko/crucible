@@ -61,8 +61,8 @@
 //   dual              The registered shape of the dual combinator.  The
 //                     dual of the dual must be the shape itself.
 //   payload_variance  The variance of the payload of a step.  An output
-//                     step is covariant as a rule, an input
-//                     step contravariant.
+//                     step is covariant or invariant, and an input step
+//                     is contravariant or invariant.
 //   annotation        The template of the note of a choice, or null.
 //                     The dual keeps the note only when the dual shape
 //                     names the same template.  Refinement compares
@@ -84,7 +84,10 @@
 // sound).  A registration keeps that closure when its dual has the same
 // kind, the opposite direction, the opposite payload variance, the
 // opposite value variance and the same absorption.  A self-dual wrapper
-// must therefore have an invariant value.  `check_combinator` refuses a
+// must therefore have an invariant value.  The flip alone admits a pair
+// with each side backwards, so a step also needs the variance of its
+// direction: the receiver of an output step then accepts each payload
+// that a subtype sends.  `check_combinator` refuses a
 // registration that breaks one of these rules, and each query that
 // meets the registration refuses with it.
 //
@@ -297,6 +300,7 @@ enum class incoherence : std::uint8_t {
     absorption_differs,
     direction_on_neutral_kind,
     order_on_non_wrapper,
+    variance_against_direction,
 };
 
 struct coherence_verdict {
@@ -352,6 +356,12 @@ namespace detail {
         return {incoherence::value_variance_not_flipped, shape};
     }
     if (mirror.absorbs_suffix != entry.absorbs_suffix) return {incoherence::absorption_differs, shape};
+    // A pair can flip its variance under duality and still have each side
+    // backwards.  An output that is contravariant lets the subtype send a
+    // wider payload than the peer of the supertype receives.
+    const bool is_backwards = (entry.direction == polarity::output && entry.payload_variance == variance::contravariant)
+                              || (entry.direction == polarity::input && entry.payload_variance == variance::covariant);
+    if (entry.kind == shape_kind::step && is_backwards) return {incoherence::variance_against_direction, shape};
     return {};
 }
 
@@ -392,6 +402,9 @@ namespace detail {
             return "a step or a choice has no direction, or a different kind has one";
         case incoherence::order_on_non_wrapper:
             return "a value order or a value filter on a kind with no value";
+        case incoherence::variance_against_direction:
+            return "an output step with a contravariant payload, or an input step with a covariant payload, lets a "
+                   "subtype send a payload that the peer does not receive";
         default:
             break;
     }

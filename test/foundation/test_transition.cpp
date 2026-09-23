@@ -217,6 +217,40 @@ inline constexpr tr::combinator a{.shape = ^^A,
 }  // namespace order_on_step
 static_assert(tr::check_registry(^^order_on_step).reason == tr::incoherence::order_on_non_wrapper);
 
+// Each side flips the variance of the other, so the flip rule admits the
+// pair, but the output is contravariant and the input covariant.  The
+// subtype could then send a wider payload than the peer receives.
+namespace backwards {
+template <class T, class K>
+struct A {};
+template <class T, class K>
+struct B {};
+inline constexpr tr::combinator a{.shape = ^^A,
+                                  .kind = tr::shape_kind::step,
+                                  .direction = tr::polarity::output,
+                                  .dual = ^^B,
+                                  .payload_variance = tr::variance::contravariant};
+inline constexpr tr::combinator b{.shape = ^^B,
+                                  .kind = tr::shape_kind::step,
+                                  .direction = tr::polarity::input,
+                                  .dual = ^^A,
+                                  .payload_variance = tr::variance::covariant};
+}  // namespace backwards
+static_assert(tr::check_registry(^^backwards).reason == tr::incoherence::variance_against_direction);
+
+// An invariant payload is safe in each direction.
+namespace invariant_step {
+template <class T, class K>
+struct A {};
+template <class T, class K>
+struct B {};
+inline constexpr tr::combinator a{
+    .shape = ^^A, .kind = tr::shape_kind::step, .direction = tr::polarity::output, .dual = ^^B};
+inline constexpr tr::combinator b{
+    .shape = ^^B, .kind = tr::shape_kind::step, .direction = tr::polarity::input, .dual = ^^A};
+}  // namespace invariant_step
+static_assert(tr::check_registry(^^invariant_step).reason == tr::incoherence::none);
+
 namespace neutral_step {
 template <class T, class K>
 struct A {};
