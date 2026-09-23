@@ -111,12 +111,40 @@ struct Node {
     std::vector<Branch> branches;
 };
 
+struct Message {
+    std::string_view label;
+    std::string_view payload;
+};
+
+// Pairs (below, above) of the payload order that a test uses.  Each pair
+// that the test adds is checked at compile time against
+// is_payload_subsort_v, so the explorer cannot admit a pair that the
+// session layer refuses.
+struct PayloadPair {
+    std::string_view below;
+    std::string_view above;
+};
+std::vector<PayloadPair> payload_order;
+
 struct System {
     std::vector<std::string_view> roles;
-    std::vector<std::string> messages;
+    std::vector<Message> messages;
     std::vector<Node> nodes;
     std::vector<int> start;
     std::vector<std::vector<int>> initial_queues;
+
+    // True when a received message fits a branch that offers another
+    // message: the same label, and a payload that is the same or below
+    // (Definition 10 of Pischke, Masters and Yoshida).
+    [[nodiscard]] bool fits(int sent, int offered) const {
+        const Message& got = messages[static_cast<std::size_t>(sent)];
+        const Message& want = messages[static_cast<std::size_t>(offered)];
+        if (got.label != want.label) return false;
+        if (got.payload == want.payload) return true;
+        return std::ranges::any_of(payload_order, [&](const PayloadPair& pair) {
+            return pair.below == got.payload && pair.above == want.payload;
+        });
+    }
 
     // The index of a role.  A peer that is not a role of the context
     // stops the test.  Complexity: linear in the number of roles.
@@ -130,13 +158,10 @@ struct System {
     // The index of a (label, payload) pair, added on first use.
     // Complexity: linear in the number of distinct messages.
     [[nodiscard]] int message_of(std::string_view label, std::string_view payload) {
-        std::string key{label};
-        key += " / ";
-        key += payload;
         for (std::size_t index = 0; index < messages.size(); ++index) {
-            if (messages[index] == key) return static_cast<int>(index);
+            if (messages[index].label == label && messages[index].payload == payload) return static_cast<int>(index);
         }
-        messages.push_back(std::move(key));
+        messages.push_back(Message{label, payload});
         return static_cast<int>(messages.size() - 1);
     }
 
@@ -389,7 +414,7 @@ constexpr std::size_t state_cap = 200000;
                 if (here.queues[pair].empty()) continue;
                 const int head = here.queues[pair].front();
                 const auto match = std::ranges::find_if(
-                    node.branches, [&](const Branch& branch) { return branch.peer == peer && branch.message == head; });
+                    node.branches, [&](const Branch& branch) { return branch.peer == peer && sys.fits(head, branch.message); });
                 if (match == node.branches.end()) {
                     bad = true;
                     continue;
@@ -631,11 +656,340 @@ void expect_context(std::string_view label, bool expect_clean) {
     run_context(load_context<Ctx>(), label, expect_clean);
 }
 
-// A global type that the gates accept must give a live context.
+// ── The association step ─────────────────────────────────────────────
+//
+// Association refines each context entry with synchronous subtyping.
+// For each global type that the gates accept, five rewrites of the
+// projected context test that step:
+//
+//   safe      each Select keeps its first branch, each Offer gains a
+//             branch at the end, and each int payload that a role sends
+//             becomes a Sanitized value.  Association must hold, and the
+//             context must be live.
+//   unfolded  each top-level Loop is unfolded once.  Association must
+//             hold, and the context must be live.
+//   widened   each Select gains a branch at the end, with a label that
+//             no role offers.  Association must refuse.
+//   narrowed  each Offer with two or more branches loses its last one.
+//             Association must refuse.
+//   swapped   each Offer with two or more branches swaps its first two.
+//             Association must refuse, because branches match by
+//             position.  The explorer shows such a context safe, so this
+//             refusal costs completeness, not safety.
+//
+// A refused rewrite also runs in the explorer.  The count of refused
+// rewrites that the explorer shows faulty tells how often the refusal
+// stops a real fault.
+//
+// The type rewrite feeds the association check.  The explorer applies the
+// same rewrite to the node graph of the projected context, because each
+// node of that graph is one occurrence of a combinator in the local type.
+// Unfolding does not change the graph, so the unfolded rewrite reuses
+// the projected context in the explorer.
+
+struct NeverSent {};
+using Checked = ::fixy::Tagged<int, ::fixy::tags::source::Sanitized>;
+static_assert(s::is_payload_subsort_v<Checked, int>);
+static_assert(s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, Checked>, s::PeerMsg<NeverSent, NeverSent, int>>);
+static_assert(!s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, int>, s::PeerMsg<NeverSent, NeverSent, Checked>>);
+
+template <typename Policy, typename T>
+struct Rewrite;
+template <typename Policy>
+struct Rewrite<Policy, s::End> {
+    using type = s::End;
+};
+template <typename Policy>
+struct Rewrite<Policy, s::Continue> {
+    using type = s::Continue;
+};
+template <typename Policy, typename Body>
+struct Rewrite<Policy, s::Loop<Body>> {
+    using type = s::Loop<typename Rewrite<Policy, Body>::type>;
+};
+template <typename Policy, typename Q, typename L, typename P, typename K>
+struct Rewrite<Policy, s::Send<s::PeerMsg<Q, L, P>, K>> {
+    using type = s::Send<s::PeerMsg<Q, L, typename Policy::template sent<P>>, typename Rewrite<Policy, K>::type>;
+};
+template <typename Policy, typename Msg, typename K>
+struct Rewrite<Policy, s::Recv<Msg, K>> {
+    using type = s::Recv<Msg, typename Rewrite<Policy, K>::type>;
+};
+template <typename Policy, typename... Bs>
+struct Rewrite<Policy, s::Select<Bs...>> {
+    using type = typename Policy::template select<typename Rewrite<Policy, Bs>::type...>::type;
+};
+template <typename Policy, typename Q, typename... Bs>
+struct Rewrite<Policy, s::Offer<s::Sender<Q>, Bs...>> {
+    using type = typename Policy::template offer<Q, typename Rewrite<Policy, Bs>::type...>::type;
+};
+
+struct IdentityPolicy {
+    template <typename P>
+    using sent = P;
+    template <typename... Bs>
+    struct select {
+        using type = s::Select<Bs...>;
+    };
+    template <typename Q, typename... Bs>
+    struct offer {
+        using type = s::Offer<s::Sender<Q>, Bs...>;
+    };
+};
+
+struct SafePolicy : IdentityPolicy {
+    template <typename P>
+    using sent = std::conditional_t<std::is_same_v<P, int>, Checked, P>;
+    template <typename First, typename... Bs>
+    struct select {
+        using type = s::Select<First>;
+    };
+    template <typename Q, typename... Bs>
+    struct offer {
+        using type = s::Offer<s::Sender<Q>, Bs..., s::Recv<s::PeerMsg<Q, NeverSent, int>, s::End>>;
+    };
+};
+
+template <typename Branch>
+struct send_peer;
+template <typename Q, typename L, typename P, typename K>
+struct send_peer<s::Send<s::PeerMsg<Q, L, P>, K>> {
+    using type = Q;
+};
+
+struct WidenPolicy : IdentityPolicy {
+    template <typename First, typename... Bs>
+    struct select {
+        using type = s::Select<First, Bs..., s::Send<s::PeerMsg<typename send_peer<First>::type, NeverSent, int>, s::End>>;
+    };
+};
+
+template <typename Q, typename... Bs>
+consteval auto offer_without_last() {
+    if constexpr (sizeof...(Bs) < 2) {
+        return std::type_identity<s::Offer<s::Sender<Q>, Bs...>>{};
+    } else {
+        return []<std::size_t... Index>(std::index_sequence<Index...>) {
+            return std::type_identity<s::Offer<s::Sender<Q>, Bs...[Index]...>>{};
+        }(std::make_index_sequence<sizeof...(Bs) - 1>{});
+    }
+}
+
+struct NarrowPolicy : IdentityPolicy {
+    template <typename Q, typename... Bs>
+    struct offer {
+        using type = typename decltype(offer_without_last<Q, Bs...>())::type;
+    };
+};
+
+template <typename Q, typename... Bs>
+struct offer_swapped {
+    using type = s::Offer<s::Sender<Q>, Bs...>;
+};
+template <typename Q, typename First, typename Second, typename... Rest>
+struct offer_swapped<Q, First, Second, Rest...> {
+    using type = s::Offer<s::Sender<Q>, Second, First, Rest...>;
+};
+
+struct SwapPolicy : IdentityPolicy {
+    template <typename Q, typename... Bs>
+    struct offer {
+        using type = typename offer_swapped<Q, Bs...>::type;
+    };
+};
+
+template <typename T>
+struct SafeRewrite : Rewrite<SafePolicy, T> {};
+template <typename T>
+struct WidenRewrite : Rewrite<WidenPolicy, T> {};
+template <typename T>
+struct NarrowRewrite : Rewrite<NarrowPolicy, T> {};
+template <typename T>
+struct SwapRewrite : Rewrite<SwapPolicy, T> {};
+
+// One unfolding of a top-level Loop.  A Continue inside a nested Loop
+// binds that Loop, so the substitution stops there.
+template <typename T, typename Rep>
+struct LocalSubst;
+template <typename Rep>
+struct LocalSubst<s::End, Rep> {
+    using type = s::End;
+};
+template <typename Rep>
+struct LocalSubst<s::Continue, Rep> {
+    using type = Rep;
+};
+template <typename Body, typename Rep>
+struct LocalSubst<s::Loop<Body>, Rep> {
+    using type = s::Loop<Body>;
+};
+template <typename Msg, typename K, typename Rep>
+struct LocalSubst<s::Send<Msg, K>, Rep> {
+    using type = s::Send<Msg, typename LocalSubst<K, Rep>::type>;
+};
+template <typename Msg, typename K, typename Rep>
+struct LocalSubst<s::Recv<Msg, K>, Rep> {
+    using type = s::Recv<Msg, typename LocalSubst<K, Rep>::type>;
+};
+template <typename... Bs, typename Rep>
+struct LocalSubst<s::Select<Bs...>, Rep> {
+    using type = s::Select<typename LocalSubst<Bs, Rep>::type...>;
+};
+template <typename Q, typename... Bs, typename Rep>
+struct LocalSubst<s::Offer<s::Sender<Q>, Bs...>, Rep> {
+    using type = s::Offer<s::Sender<Q>, typename LocalSubst<Bs, Rep>::type...>;
+};
+
+template <typename T>
+struct UnfoldTop {
+    using type = T;
+};
+template <typename Body>
+struct UnfoldTop<s::Loop<Body>> {
+    using type = typename LocalSubst<Body, s::Loop<Body>>::type;
+};
+
+template <typename Ctx, template <typename> class Transform>
+struct MapContext;
+template <typename... Rs, typename... Qs, typename... Ts, template <typename> class Transform>
+struct MapContext<s::TypingContext<s::RoleState<Rs, Qs, Ts>...>, Transform> {
+    using type = s::TypingContext<s::RoleState<Rs, Qs, typename Transform<Ts>::type>...>;
+};
+
+enum class GraphRewrite : std::uint8_t {
+    Safe,
+    Widen,
+    Narrow,
+    Swap,
+};
+
+// The rewrite of the policies above, on the node graph.  Complexity:
+// linear in the number of nodes and branches.
+[[nodiscard]] System rewritten(const System& base, GraphRewrite kind) {
+    System sys = base;
+    const std::string_view never_sent = name_of<NeverSent>();
+    const std::string_view plain = name_of<int>();
+    const std::string_view checked = name_of<Checked>();
+    const std::size_t original = sys.nodes.size();
+    for (std::size_t index = 0; index < original; ++index) {
+        const NodeKind kind_of_node = sys.nodes[index].kind;
+        if (kind_of_node == NodeKind::Internal) {
+            if (kind == GraphRewrite::Safe) {
+                sys.nodes[index].branches.resize(1);
+                Branch& kept = sys.nodes[index].branches.front();
+                const Message sent = sys.messages[static_cast<std::size_t>(kept.message)];
+                if (sent.payload == plain) kept.message = sys.message_of(sent.label, checked);
+            } else if (kind == GraphRewrite::Widen) {
+                const int peer = sys.nodes[index].branches.front().peer;
+                const int message = sys.message_of(never_sent, plain);
+                const int end = sys.add_node(NodeKind::End);
+                sys.nodes[index].branches.push_back(Branch{peer, message, end});
+            }
+        } else if (kind_of_node == NodeKind::External) {
+            std::vector<Branch>& branches = sys.nodes[index].branches;
+            if (kind == GraphRewrite::Safe) {
+                const int peer = branches.front().peer;
+                const int message = sys.message_of(never_sent, plain);
+                const int end = sys.add_node(NodeKind::End);
+                sys.nodes[index].branches.push_back(Branch{peer, message, end});
+            } else if (kind == GraphRewrite::Narrow && branches.size() >= 2) {
+                branches.pop_back();
+            } else if (kind == GraphRewrite::Swap && branches.size() >= 2) {
+                std::swap(branches[0], branches[1]);
+            }
+        }
+    }
+    return sys;
+}
+
+struct AssociationCounts {
+    std::size_t types = 0;
+    std::size_t full_types = 0;
+    std::size_t safe_live = 0;
+    std::size_t unfolded_live = 0;
+    std::size_t refused = 0;
+    std::size_t refused_faulty = 0;
+    std::size_t swapped_refused = 0;
+    std::size_t swapped_safe = 0;
+};
+AssociationCounts association_counts;
+
+[[nodiscard]] bool is_clean_at_small_capacities(const System& sys) {
+    return analyse(sys, 1).is_clean() && analyse(sys, 2).is_clean();
+}
+
+// A rewrite that association must accept: it must hold, and the context
+// must be live.
+void judge_accepted(std::string_view label, std::string_view rewrite, bool associated, const System& sys,
+                    std::size_t& live) {
+    std::string what{label};
+    what += ", ";
+    what += rewrite;
+    expect(associated, what + ": association refused a safe subtype of the projection");
+    if (!associated) return;
+    const bool clean = is_clean_at_small_capacities(sys);
+    expect(clean, what + ": association accepted the context, and the explorer found a fault");
+    if (clean) ++live;
+}
+
+// A rewrite that association must refuse.  The explorer tells whether
+// the refusal stopped a real fault.
+void judge_refused(std::string_view label, std::string_view rewrite, bool associated, const System& sys,
+                   std::size_t& refused, std::size_t& faulty_or_safe, bool count_faulty) {
+    std::string what{label};
+    what += ", ";
+    what += rewrite;
+    expect(!associated, what + ": association accepted an entry that does not refine its projection");
+    if (associated) return;
+    ++refused;
+    const bool clean = is_clean_at_small_capacities(sys);
+    if (count_faulty ? !clean : clean) ++faulty_or_safe;
+}
+
+// Full runs all five rewrites.  Otherwise only the safe and the widened
+// rewrite run, which keeps the compile time of the large generated
+// families bounded.
+template <typename G, bool Full>
+void check_association_step(std::string_view label) {
+    using Ctx = s::projected_context_t<G>;
+    ++association_counts.types;
+    const System base = load_context<Ctx>();
+    using Safe = typename MapContext<Ctx, SafeRewrite>::type;
+    using Widened = typename MapContext<Ctx, WidenRewrite>::type;
+    judge_accepted(label, "safe rewrite", s::association_holds_v<Safe, G>, rewritten(base, GraphRewrite::Safe),
+                   association_counts.safe_live);
+    if constexpr (!std::is_same_v<Widened, Ctx>) {
+        judge_refused(label, "widened Select", s::association_holds_v<Widened, G>,
+                      rewritten(base, GraphRewrite::Widen), association_counts.refused,
+                      association_counts.refused_faulty, true);
+    }
+    if constexpr (Full) {
+        ++association_counts.full_types;
+        using Unfolded = typename MapContext<Ctx, UnfoldTop>::type;
+        using Narrowed = typename MapContext<Ctx, NarrowRewrite>::type;
+        using Swapped = typename MapContext<Ctx, SwapRewrite>::type;
+        judge_accepted(label, "unfolded", s::association_holds_v<Unfolded, G>, base, association_counts.unfolded_live);
+        if constexpr (!std::is_same_v<Narrowed, Ctx>) {
+            judge_refused(label, "narrowed Offer", s::association_holds_v<Narrowed, G>,
+                          rewritten(base, GraphRewrite::Narrow), association_counts.refused,
+                          association_counts.refused_faulty, true);
+        }
+        if constexpr (!std::is_same_v<Swapped, Ctx>) {
+            judge_refused(label, "swapped Offer", s::association_holds_v<Swapped, G>,
+                          rewritten(base, GraphRewrite::Swap), association_counts.swapped_refused,
+                          association_counts.swapped_safe, false);
+        }
+    }
+}
+
+// A global type that the gates accept must give a live context, and the
+// association step must accept its safe rewrites and refuse its unsafe
+// ones.
 template <typename G>
 void expect_live_global(std::string_view label) {
     static_assert(s::is_live_by_construction_v<G>);
     expect_context<s::projected_context_t<G>>(label, true);
+    check_association_step<G, true>(label);
 }
 
 // ── Roles, labels and payloads ───────────────────────────────────────
@@ -1062,7 +1416,7 @@ void report_variant_not_live(std::string_view family, std::uint64_t seed) {
     expect(false, what);
 }
 
-template <typename G>
+template <typename G, bool FullAssociation>
 void check_generated(FamilyCounts& counts, std::string_view family, std::uint64_t seed) {
     ++counts.generated;
     if constexpr (g::is_global_well_formed_v<G>) {
@@ -1073,6 +1427,7 @@ void check_generated(FamilyCounts& counts, std::string_view family, std::uint64_
         if constexpr (s::is_live_by_construction_v<G>) {
             ++counts.live_by_construction;
             check_live<G>(family, seed);
+            check_association_step<G, FullAssociation>(family);
             using Variant = en_route_variant_t<G>;
             if constexpr (!std::is_void_v<Variant>) {
                 ++counts.variants;
@@ -1095,10 +1450,10 @@ template <std::uint64_t Seed, int Depth, std::size_t RoleCount>
 using generated_t = std::conditional_t<Seed % 2 == 0, typename Gen<Seed, Depth, false, RoleCount>::type,
                                        g::Rec<g::Msg<GenA, GenB, GenL0, int, typename Gen<Seed, Depth, true, RoleCount>::type>>>;
 
-template <std::size_t RoleCount, int Depth, std::uint64_t Base, std::size_t... Index>
+template <std::size_t RoleCount, int Depth, std::uint64_t Base, bool FullAssociation, std::size_t... Index>
 void run_family(std::string_view family, std::index_sequence<Index...>) {
     FamilyCounts counts;
-    (check_generated<generated_t<Base + Index, Depth, RoleCount>>(counts, family, Base + Index), ...);
+    (check_generated<generated_t<Base + Index, Depth, RoleCount>, FullAssociation>(counts, family, Base + Index), ...);
     std::printf("  %-34.*s generated=%zu well_formed=%zu balanced_plus=%zu live=%zu variants_live=%zu/%zu "
                 "projectable_but_unbalanced=%zu\n",
                 static_cast<int>(family.size()), family.data(), counts.generated, counts.well_formed,
@@ -1111,9 +1466,9 @@ void run_family(std::string_view family, std::index_sequence<Index...>) {
 
 void run_generated() {
     std::printf("generated global types (fixed seeds)\n");
-    run_family<3, 4, 1000>("three roles, depth 4", std::make_index_sequence<48>{});
-    run_family<4, 4, 5000>("four roles, depth 4", std::make_index_sequence<48>{});
-    run_family<2, 6, 9000>("two roles, depth 6", std::make_index_sequence<24>{});
+    run_family<3, 4, 1000, false>("three roles, depth 4", std::make_index_sequence<48>{});
+    run_family<4, 4, 5000, false>("four roles, depth 4", std::make_index_sequence<48>{});
+    run_family<2, 6, 9000, true>("two roles, depth 6", std::make_index_sequence<24>{});
 }
 
 // ── The merge grid ───────────────────────────────────────────────────
@@ -1147,7 +1502,7 @@ using grid_t = g::Comm<GenA, GenB, g::Branch<GenL0, int, std::tuple_element_t<Ce
 template <std::size_t... Cell>
 void run_grid(std::index_sequence<Cell...>) {
     FamilyCounts counts;
-    (check_generated<grid_t<Cell>>(counts, "merge grid", Cell), ...);
+    (check_generated<grid_t<Cell>, true>(counts, "merge grid", Cell), ...);
     std::printf("  %-34s generated=%zu live=%zu variants_live=%zu/%zu projectable_but_unbalanced=%zu\n", "merge grid",
                 counts.generated, counts.live_by_construction, counts.variants_live, counts.variants,
                 counts.projectable_but_unbalanced);
@@ -1186,11 +1541,27 @@ void run_ledger() {
     }
 }
 
+void report_association_step() {
+    const AssociationCounts& c = association_counts;
+    std::printf("association step over %zu accepted types, %zu of them with all five rewrites\n", c.types,
+                c.full_types);
+    std::printf("  safe rewrites associated and live: %zu, unfolded associated and live: %zu\n", c.safe_live,
+                c.unfolded_live);
+    std::printf("  widened or narrowed rewrites refused: %zu, of which the explorer shows faulty: %zu\n", c.refused,
+                c.refused_faulty);
+    std::printf("  swapped rewrites refused: %zu, of which the explorer shows safe: %zu\n", c.swapped_refused,
+                c.swapped_safe);
+    expect(c.safe_live == c.types && c.unfolded_live == c.full_types, "a safe rewrite failed the association step");
+    expect(c.refused > 0 && c.refused_faulty > 0, "no refused rewrite showed a fault, so the step proves nothing");
+    expect(c.swapped_refused > 0, "no swapped rewrite was built, so the position rule is untested");
+}
+
 }  // namespace
 
 int main() {
     std::signal(SIGALRM, on_watchdog);
     ::alarm(watchdog_seconds);
+    payload_order.push_back(PayloadPair{name_of<Checked>(), name_of<int>()});
     run_controls();
     run_accepted();
     run_refusals();
@@ -1198,6 +1569,7 @@ int main() {
     run_generated();
     std::printf("merge grid (%zu pairs)\n", shape_count * shape_count);
     run_grid(std::make_index_sequence<shape_count * shape_count>{});
+    report_association_step();
     run_ledger();
     if (failures != 0) {
         std::fprintf(stderr, "test_session_global_attack: %d failure(s)\n", failures);
