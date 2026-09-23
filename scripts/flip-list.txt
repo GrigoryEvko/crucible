@@ -254,6 +254,4 @@ src/perf/SyscallTpBtf.cpp
 src/topology/Discovery.cpp
 src/topology/Ptp.cpp
 tools/dump_row_hashes.cpp
-vessel/torch/crucible_fallback.cpp
-vessel/torch/record_kernel.h
 vessel/torch/vessel_api_typed.h

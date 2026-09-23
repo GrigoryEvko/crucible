@@ -20,6 +20,10 @@
 // refuses to compile after one of them.
 #include "record_kernel.h"
 
+// Parsed inside the fence above. This line records the dependency and
+// parses nothing.
+#include <fixy/Tagged.h>
+
 #include <c10/core/CrucibleState.h>
 
 #include <ATen/core/dispatch/Dispatcher.h>
@@ -35,8 +39,6 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <crucible/fixy/Source.h>
-#include <crucible/fixy/Wrap.h>
 
 #include "vessel_api_typed.h"
 
@@ -98,21 +100,23 @@ using crucible::vessel::phase_flag_bits;
 // time; caching it here keeps the hot boxed path at one array index.
 //
 // `key` carries the c10::OperatorHandle pointer that PyTorch handed
-// to us across the boxed-fallback ABI.  GAPS-096 wraps it in
+// to us across the boxed-fallback ABI.  It is wrapped in
 // `Tagged<const void*, source::External>` to thread the FFI
 // provenance into the type system: the pointer is owned by ATen's
 // schema registry, never freed for the program's lifetime, and treated
 // as identity-only here (compared, never dereferenced).  The wrapper
 // is regime-1 EBO collapse, so the slot stays at 16B and the cache
-// stays L1-resident.  The alias keeps that spelling in one place, so the
-// declaration and the assignment below cannot drift apart, and states the
-// `crucible::fixy::` form used by vessel_api_typed.h and TensorMeta.h --
-// `crucible::safety::` re-exports the same types, and picking one of the
-// two is the point.
-using ExternalOpKey = crucible::fixy::wrap::Tagged<const void*, crucible::fixy::tags::source::External>;
+// stays L1-resident.  The alias and mint_external_op_key keep the
+// spelling in one place, so the declaration and the assignment below
+// cannot drift apart.
+using ExternalOpKey = ::fixy::Tagged<const void*, ::fixy::tags::source::External>;
+
+[[nodiscard]] constexpr ExternalOpKey mint_external_op_key(const void* op) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(op);
+}
 
 struct SchemaHashSlot {
-    ExternalOpKey key{nullptr};
+    ExternalOpKey key = mint_external_op_key(nullptr);
     crucible::SchemaHash hash;
 };
 
@@ -122,7 +126,9 @@ static_assert(sizeof(SchemaHashSlot) == 16, "SchemaHashSlot must remain 16B for 
 
 static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
-static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
+// constinit: an initializer that is not a constant would put a TLS guard
+// call in front of every access on the boxed hot path.
+static constinit thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
 static thread_local bool schema_is_mutable[SCHEMA_CACHE_CAP]{};
 static thread_local bool schema_is_foreach[SCHEMA_CACHE_CAP]{};
 
@@ -188,10 +194,10 @@ struct SchemaInfo {
 
     // Re-tag at the FFI source: the OperatorHandle pointer just
     // crossed the boxed-fallback boundary, so it carries source::External
-    // until something downstream proves otherwise.  Construction is
-    // explicit per Tagged's API; the wrapper is move-assigned
-    // into the slot at zero runtime cost.
-    slot.key = ExternalOpKey{&op};
+    // until something downstream proves otherwise.  Tagged has no public
+    // constructor, so the mint is the one door; the wrapper is
+    // move-assigned into the slot at zero runtime cost.
+    slot.key = mint_external_op_key(&op);
     slot.hash = schema_hash;
     schema_is_mutable[idx] = mutable_op;
     schema_is_foreach[idx] = foreach_op;

@@ -5,8 +5,8 @@
 // CrucibleHandle remains `void*` and CrucibleMeta remains a plain C
 // struct in vessel_api.h because both are exported to C / ctypes
 // callers.  Inside C++, every value crossing the FFI boundary is
-// immediately tagged as `safety::source::ABIBoundary` so foreign-
-// runtime provenance is visible in the type system before the pointer
+// immediately tagged with the `source::ABIBoundary` provenance tag so
+// foreign-runtime provenance is visible in the type system before the pointer
 // reaches Vigil / TensorMeta-consuming code.
 //
 // ── Helper surface ─────────────────────────────────────────────────
@@ -73,6 +73,13 @@
 namespace crucible::vessel {
 
 // ── Vigil typed handle ────────────────────────────────────────────
+//
+// TypedHandle, TypedMeta and TypedDataPtr use the Tagged of the
+// include/crucible tree.  Two things hold them there.  The vessel
+// tests, their negative-compile fixtures and two benches name the same
+// types.  And vessel_api.cpp includes this header with no substrate
+// fence, so an include of ::fixy here would parse crucible/Platform.h
+// with the macros of foundation/Platform.h.
 
 using TypedHandle = fixy::wrap::Tagged<Vigil*, fixy::tags::source::ABIBoundary>;
 
@@ -250,7 +257,13 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 // and `Vigil::dispatch_op` take `crucible::TraceRing::ValidatedEntryPtr`.
 // The retag catalog admits exactly one transition between those two
 // tags, so the checks below are the whole route from an adapter to the
-// ring, and `mint_validated_entry` is the only place that runs them.
+// ring.  The boxed fallback and the C ABI build entries from data that
+// has no compile-time bound, and they run the checks at run time
+// through `mint_validated_entry`.  The unboxed kernels discharge the
+// same checks at compile time: record_kernel.h asserts that
+// `entry_is_well_formed` and `metas_are_well_formed` accept the
+// largest entry each operator can build, and then retags without the
+// runtime walk.
 //
 // Three adapters share one ladder deliberately.  A check that lives in
 // one adapter is a check the next adapter does not have, and this file
@@ -302,7 +315,12 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
     return true;
 }
 
-// The one door from the first tag to the second.  An empty return says
+// The tag a recording entry point accepts.  TraceRing owns the pointer
+// type, so the vessel reads the tag from it and names no substrate
+// namespace of its own.  The two retags in the vessel use this alias.
+using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
+
+// The runtime door from the first tag to the second.  An empty return says
 // no certification exists for this operation, and the caller executes
 // eagerly and leaves the ring alone.  There is no failure value that
 // carries the second tag, which is what makes running the checks the
@@ -314,7 +332,7 @@ mint_validated_entry(crucible::TraceRing::FromPytorchEntryPtr raw, const crucibl
     if (entry == nullptr) return std::nullopt;
     if (!entry_is_well_formed(*entry)) return std::nullopt;
     if (!metas_are_well_formed(metas, n_metas)) return std::nullopt;
-    return std::move(raw).retag<crucible::fixy::tags::vessel_trust::Validated>();
+    return std::move(raw).retag<ValidatedEntryTag>();
 }
 
 }  // namespace crucible::vessel

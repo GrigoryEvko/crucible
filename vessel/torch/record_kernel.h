@@ -78,6 +78,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Role.h>
+#include <fixy/Tagged.h>
 
 #undef CRUCIBLE_DIAG_ASSERT
 #undef CRUCIBLE_FATAL_INVARIANT
@@ -1038,8 +1039,7 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
     // constant. Its only caller passes RecordKernel::kSchemaHash, which the
     // same assert pins to a value other than zero.
     CRUCIBLE_DEBUG_ASSERT(schema_hash.raw() != 0);
-    auto validated =
-        crucible::mint_ffi_entry(entry).retag<crucible::fixy::tags::vessel_trust::Validated>();
+    auto validated = crucible::mint_ffi_entry(entry).retag<crucible::vessel::ValidatedEntryTag>();
 
     RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(std::move(validated));
 
