@@ -148,6 +148,27 @@ template <typename Inner>
 [[nodiscard]] constexpr auto make_recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
     -> Recorded<Inner>;
 
+// The operations of the inner handle that the recorder forwards.  Each
+// member of Recorded exists only when the inner handle has it.
+template <typename Inner, typename T, typename Transport>
+concept inner_can_send = requires(Inner&& inner, T value, Transport transport) {
+    std::move(inner).send(std::move(value), std::move(transport));
+};
+
+template <typename Inner, typename Transport>
+concept inner_can_recv = requires(Inner&& inner, Transport transport) { std::move(inner).recv(std::move(transport)); };
+
+template <typename Inner>
+concept inner_can_detect_crash = requires(Inner&& inner) { std::move(inner).recv(); };
+
+template <typename Inner>
+concept inner_can_close = requires(Inner&& inner) { std::move(inner).close(); };
+
+template <typename Inner>
+concept inner_can_crash = requires(Inner&& inner, CrashCause cause, PeerCrashCell& cell) {
+    std::move(inner).crash(cause, cell);
+};
+
 }  // namespace detail::recording
 
 // What a recorder can wrap: a handle that names its protocol and its
@@ -193,12 +214,8 @@ public:
     Recorded& operator=(const Recorded&) = delete("a recorded handle is linear, like the handle it wraps");
     ~Recorded() = default;
 
-    [[nodiscard]] SessionEventLog& event_log() const noexcept { return *log_; }
-
     template <typename T, typename Transport>
-        requires is_send_v<protocol> && requires(Inner&& inner, T value, Transport transport) {
-            std::move(inner).send(std::move(value), std::move(transport));
-        }
+        requires is_send_v<protocol> && detail::recording::inner_can_send<Inner, T, Transport>
     [[nodiscard]] constexpr auto send(T value, Transport transport) && {
         using Message = typename protocol::message_type;
         constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, Message&&>;
@@ -219,9 +236,7 @@ public:
     }
 
     template <typename Transport>
-        requires is_recv_v<protocol> && requires(Inner&& inner, Transport transport) {
-            std::move(inner).recv(std::move(transport));
-        }
+        requires is_recv_v<protocol> && detail::recording::inner_can_recv<Inner, Transport>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         auto [value, next] = std::move(inner_).recv(std::move(transport));
         record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
@@ -230,7 +245,7 @@ public:
 
     // The crash record of a crash branch.
     template <typename P = protocol>
-        requires is_recv_v<P> && requires(Inner&& inner) { std::move(inner).recv(); }
+        requires is_recv_v<P> && detail::recording::inner_can_detect_crash<Inner>
     [[nodiscard]] constexpr auto recv() && {
         auto [record, next] = std::move(inner_).recv();
         record_(SessionEvent::stop(self_, peer_, peer_, StopReasonKind::PeerCrashed, record.cause));
@@ -289,7 +304,7 @@ public:
     }
 
     template <typename P = protocol>
-        requires is_terminal_state_v<P> && requires(Inner&& inner) { std::move(inner).close(); }
+        requires is_terminal_state_v<P> && detail::recording::inner_can_close<Inner>
     [[nodiscard]] constexpr resource_type close() && {
         record_(SessionEvent::close(self_, peer_));
         return std::move(inner_).close();
@@ -303,8 +318,7 @@ public:
     }
 
     template <typename P = protocol>
-        requires(!is_terminal_state_v<P>)
-                && requires(Inner&& inner, CrashCause cause, PeerCrashCell& cell) { std::move(inner).crash(cause, cell); }
+        requires(!is_terminal_state_v<P>) && detail::recording::inner_can_crash<Inner>
     [[nodiscard]] resource_type crash(CrashCause cause, PeerCrashCell& announce) && {
         record_(SessionEvent::stop(self_, peer_, self_, StopReasonKind::LocalAbort, cause));
         return std::move(inner_).crash(cause, announce);
