@@ -288,6 +288,135 @@ static_assert(verdict.unclassified_templates == 0,
                     "or add the template to the open list if anyone may build it.  The template: ",
                     verdict.first_unclassified));
 
+// An aggregate that holds the proof.  An aggregate is an
+// implicit-lifetime type whatever its members are.
+template <class Proof>
+struct HoldsProof {
+    Proof proof;
+};
+
+// A union that holds the proof beside a byte.
+template <class Proof>
+union ProofOrByte {
+    unsigned char byte;
+    Proof proof;
+};
+
+// ── the union audit ─────────────────────────────────────────────────
+//
+// A union that holds a proof type beside another member starts with the
+// other member alive, and the address of the proof member is a pointer to
+// a proof whose lifetime never started.  No property of the proof type
+// refuses that, so foundation and fixy declare no such union.  The audit
+// walks every union in the two namespaces, also a union nested in a class,
+// and refuses one whose members hold a proof type at any depth: through an
+// array, a base class or a member of an aggregate.  A union template, and
+// a union that user code declares, stay open.  The route ledger at the
+// foot pins them.
+
+// A class nests deeper than this, and the walk reads it as holding a proof.
+inline constexpr int max_hold_depth = 16;
+
+// True when the type, an element of it, a base or a member of it holds a
+// proof type.  A nest deeper than the bound counts as a hold, so the audit
+// fails closed.  Complexity: linear in the number of subobject
+// declarations that the walk reaches.
+[[nodiscard]] consteval bool holds_proof_at(std::meta::info spelled, int depth) {
+    if (depth > max_hold_depth) return true;
+    const std::meta::info type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (std::meta::is_array_type(type)) return holds_proof_at(std::meta::remove_all_extents(type), depth + 1);
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    if (!std::meta::is_complete_type(type)) return false;
+    if (is_proof_shape(type)) return true;
+    for (const std::meta::info base : std::meta::bases_of(type, std::meta::access_context::unchecked())) {
+        if (holds_proof_at(std::meta::type_of(base), depth + 1)) return true;
+    }
+    for (const std::meta::info member :
+         std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
+        if (holds_proof_at(std::meta::type_of(member), depth + 1)) return true;
+    }
+    return false;
+}
+
+struct UnionAudit {
+    std::size_t unions_walked = 0;
+    std::size_t unions_holding_a_proof = 0;
+    std::meta::info first_holding{};
+};
+
+// Walks each union that is a member of the scope, of a namespace inside
+// it, or of a class inside it.  Complexity: linear in the number of
+// declarations under the scope.
+consteval void audit_unions(std::meta::info scope, UnionAudit& audit) {
+    for (const std::meta::info member : std::meta::members_of(scope, std::meta::access_context::unchecked())) {
+        if (std::meta::is_namespace(member)) {
+            if (!std::meta::is_namespace_alias(member)) audit_unions(member, audit);
+            continue;
+        }
+        if (!std::meta::is_type(member) || std::meta::is_type_alias(member)) continue;
+        if (std::meta::has_template_arguments(member) || !std::meta::is_complete_type(member)) continue;
+        if (std::meta::is_union_type(member)) {
+            ++audit.unions_walked;
+            if (holds_proof_at(member, 0) && audit.unions_holding_a_proof++ == 0) audit.first_holding = member;
+        }
+        if (std::meta::is_class_type(member) || std::meta::is_union_type(member)) audit_unions(member, audit);
+    }
+}
+
+[[nodiscard]] consteval UnionAudit union_audit() {
+    UnionAudit audit;
+    audit_unions(^^::foundation, audit);
+    audit_unions(^^::fixy, audit);
+    return audit;
+}
+
+inline constexpr UnionAudit unions = union_audit();
+static_assert(unions.unions_holding_a_proof == 0,
+              named("a union in foundation or fixy holds a proof type, so the address of that member reaches a "
+                    "proof whose lifetime never started.  Hold the proof outside a union.  The union: ",
+                    unions.first_holding));
+
+// The audit is not vacuous: over a scope made to measure, it walks each
+// union, also one nested in a class, and it finds the one that holds a
+// proof through an array inside an aggregate.
+template <class Proof>
+struct NestsProof {
+    int count;
+    Proof proof[2];
+};
+union PlainValues {
+    int whole;
+    float part;
+};
+namespace union_audit_probe {
+union HoldsNestedProof {
+    unsigned char byte;
+    NestsProof<fp::perm_mint_key> nested;
+};
+union Plain {
+    int whole;
+    float part;
+};
+struct Outer {
+    union Inner {
+        int whole;
+        fe::Bg context;
+    };
+};
+}  // namespace union_audit_probe
+
+[[nodiscard]] consteval UnionAudit probe_audit() {
+    UnionAudit audit;
+    audit_unions(^^union_audit_probe, audit);
+    return audit;
+}
+static_assert(probe_audit().unions_walked == 3 && probe_audit().unions_holding_a_proof == 2,
+              "the union audit misses a union, or a union that holds a proof, in a scope made to measure");
+static_assert(holds_proof_at(^^ProofOrByte<fe::Bg>, 0));
+static_assert(holds_proof_at(^^NestsProof<fp::perm_mint_key>, 0));
+static_assert(holds_proof_at(^^HoldsProof<fe::Capability<fe::Effect::Alloc, fe::Bg>>, 0));
+static_assert(!holds_proof_at(^^PlainValues, 0) && !holds_proof_at(^^Region, 0));
+
 // The walk is not vacuous: a proof type made to measure is found, and a
 // passkey gate counts as a gate.
 struct ForgeableProbe {
@@ -341,27 +470,17 @@ static_assert(!is_proof_shape(^^fe::ExecCtx<>), "the foreground context claims n
 // refusal for each proof type of the ledger.
 // Two routes stay, because they name nothing that a guard can refuse:
 //
-//   the inactive member of a union   a union declaration names only its
-//                                    members, and a lexer cannot know
-//                                    that a member type is a proof type
+//   the inactive member of a union   a union may hold any object type,
+//                                    and taking the address of a member
+//                                    that is not active is well-formed.
+//                                    The union audit above refuses such
+//                                    a union in foundation and fixy, and
+//                                    a union that user code declares, or
+//                                    a union template, stays open
 //   a pointer from a void pointer    std::malloc, an allocator, an arena
 //                                    and a cast through void each give a
 //                                    typed pointer with no object, and
 //                                    the language refuses none of them
-
-// An aggregate that holds the proof.  An aggregate is an
-// implicit-lifetime type whatever its members are.
-template <class Proof>
-struct HoldsProof {
-    Proof proof;
-};
-
-// A union that holds the proof beside a byte.
-template <class Proof>
-union ProofOrByte {
-    unsigned char byte;
-    Proof proof;
-};
 
 // True when the checked lifetime start refuses each of the four routes
 // that left the ledger for the proof type.
@@ -460,6 +579,7 @@ static_assert(!std::is_default_constructible_v<DerivedFromContextBase>
 // run time.
 inline constexpr std::size_t witnesses_checked = std::size(template_witnesses);
 inline constexpr std::size_t templates_open = std::size(open_templates);
+inline constexpr std::size_t unions_walked = unions.unions_walked;
 
 }  // namespace forgeable_proofs
 
@@ -482,7 +602,7 @@ int main() {
         return 1;
     }
     std::printf("test_forgeable_proofs: no forgeable proof type, %zu template witnesses closed, %zu open "
-                "templates, %zu ledger routes pinned\n",
-                fps::witnesses_checked, fps::templates_open, open_routes);
+                "templates, %zu unions audited, %zu ledger routes pinned\n",
+                fps::witnesses_checked, fps::templates_open, fps::unions_walked, open_routes);
     return 0;
 }
