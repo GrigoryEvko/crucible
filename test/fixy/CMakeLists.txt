@@ -1112,6 +1112,22 @@ fixy_neg_compile_test(neg_sess_incoherent_registration_variance
 fixy_neg_compile_test(neg_sess_incoherent_registration_backwards_variance
   "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
   "Emit is incoherent: an output step with a contravariant payload")
+# A choice and its dual must name the same note template.  A pair that
+# does not makes the dual drop the note, so duality is no involution.
+fixy_neg_compile_test(neg_sess_incoherent_registration_note_dropped
+  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
+  "Answer is incoherent: the dual names a different note template")
+fixy_neg_compile_test(neg_sess_incoherent_registration_note_differs
+  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
+  "Ask is incoherent: the dual names a different note template")
+# Duality keeps the Sender note, so a client and a server that name
+# different roles for one choice are refused from either side.
+fixy_neg_compile_test(neg_sess_compatible_server_wrong_role
+  "fixy::session::diagnostic \\[Subtype_Annotation\\]: assert_compatible_server"
+  "because the choice notes differ")
+fixy_neg_compile_test(neg_sess_compatible_client_wrong_role
+  "fixy::session::diagnostic \\[Subtype_Annotation\\]: assert_compatible_client"
+  "because the choice notes differ")
 # The payload rules and the payload axioms of the session layer are
 # sealed at the foot of their headers.  A rule or an axiom that stands
 # outside the seal stops the build, and so does a second registration of
