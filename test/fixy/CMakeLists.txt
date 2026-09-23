@@ -1039,6 +1039,55 @@ fixy_neg_compile_test(neg_sess_mint_vendor_none
   "no matching function for call to .mint_session_handle"
   "VendorPinned<foundation::algebra::lattices::VendorBackend::None, fixy::session::Send<.*Ping, fixy::session::End> >\\]. evaluated to .false.")
 
+# Subtyping: one walk gives the verdict and its reason, and each refusal
+# names the class of the failure and the failed pair.  The target has a
+# suffix because test/CMakeLists.txt still registers test_session_subtype
+# for the old tree, and a CMake target name is global.
+fixy_test(test_session_subtype_fixy test_session_subtype.cpp)
+fixy_neg_compile_test(neg_sess_subtype_branch_count
+  "\\[Subtype_BranchCount\\]: assert_subtype_sync"
+  "because the branch counts are in the wrong direction")
+fixy_neg_compile_test(neg_sess_subtype_payload
+  "\\[Subtype_Payload\\]: assert_subtype_sync"
+  "The failed pair is int against fixy::Refinement<")
+fixy_neg_compile_test(neg_sess_subtype_vendor
+  "\\[Subtype_Vendor\\]: assert_subtype_sync"
+  "VendorBackend::Portable, fixy::session::Send<int, fixy::session::End> > against")
+fixy_neg_compile_test(neg_sess_subtype_annotation
+  "\\[Subtype_Annotation\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Offer<fixy::session::Sender<.*Alice>")
+fixy_neg_compile_test(neg_sess_subtype_evolution_adds_select_branch
+  "\\[Subtype_BranchCount\\]: check_protocol_evolution"
+  "the new protocol must refine the old one")
+fixy_neg_compile_test(neg_sess_subtype_client_not_dual
+  "\\[Subtype_Shape\\]: assert_compatible_client"
+  "the client must refine the dual of the server")
+fixy_neg_compile_test(neg_sess_subtype_external_tag_drop
+  "\\[Subtype_Payload\\]: assert_subtype_sync"
+  "The failed pair is fixy::Tagged<int, fixy::tags::source::External> against int")
+fixy_neg_compile_test(neg_sess_subtype_sealed_refined_drop
+  "\\[Subtype_Payload\\]: assert_subtype_sync"
+  "fixy::Refinement<.*, int, true> against int")
+fixy_neg_compile_test(neg_sess_subtype_ill_formed_operand
+  "\\[Subtype_IllFormed\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Loop<fixy::session::Continue> against \\(none\\)")
+fixy_neg_compile_test(neg_sess_subtype_unregistered_node
+  "fixy::session::diagnostic \\[Subtype_Unregistered_Combinator\\]"
+  "the combinator .*Teleport<int, fixy::session::End> has no registration")
+fixy_neg_compile_test(neg_sess_subtype_unregistered_in_async
+  "fixy::session::diagnostic \\[Subtype_Unregistered_Combinator\\]"
+  "the combinator .*Detour<fixy::session::End> has no registration")
+
+# The bounded asynchronous check refuses what it cannot prove: two
+# messages ahead on a channel of capacity one, and an input ahead of an
+# output at any capacity.
+fixy_neg_compile_test(neg_sess_subtype_async_capacity_one
+  "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
+  "Capacity = 1\\]")
+fixy_neg_compile_test(neg_sess_subtype_async_input_ahead
+  "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
+  "Capacity = 8\\]")
+
 # HS14 for mint_session_handle.  Its requires-clause is the whole
 # admission gate, so each clause gets a fixture that fails through it
 # and through no other: an ill-formed protocol, a well-formed protocol
