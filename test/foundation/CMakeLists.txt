@@ -562,6 +562,17 @@ foundation_neg_compile_test(neg_bg_exec_ctx_forged_by_start_lifetime_as
   "static assertion failed"
   ".foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<.* is not an implicit-lifetime type")
 
+# The checked lifetime start walks each subobject.  An aggregate that
+# holds a token passes the mandate of std::start_lifetime_as, and
+# std::start_lifetime_as_array checks nothing about a token.  The checked
+# start refuses each of the two.
+foundation_neg_compile_test(neg_lifetime_start_as_array_proof_holder
+  "no matching function for call to .start_as_array<.*HoldsToken>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = .*HoldsToken\\]")
+foundation_neg_compile_test(neg_lifetime_start_as_proof_array
+  "no matching function for call to .start_as_array<foundation::permissions::Permission<.*Region"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::permissions::Permission<")
+
 # A pool that ends while a share is out aborts.  The attack runs in a
 # child process, and the test passes only on that diagnostic.
 foundation_test(test_share_pool_outlived_aborts)

@@ -45,6 +45,7 @@
 
 #include <fixy/Borrowed.h>
 #include <foundation/Brand.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
@@ -580,13 +581,17 @@ static_assert(!std::is_constructible_v<OR_int_a, OR_int_a_branded const&>, "eras
 
 // The smallest thing adopt asks of an arena: one bump pointer over a
 // fixed block.  The old smoke test used the crucible Arena, which this
-// layer cannot name.
+// layer cannot name.  The lifetime start gives a live object only to a
+// type whose every subobject is an implicit-lifetime type.  For a proof
+// type, or an aggregate that holds one, it gives a pointer to an object
+// whose lifetime never started, so the constraint refuses that type.
 class BumpArena {
     alignas(std::max_align_t) unsigned char block_[4096]{};
     std::size_t used_ = 0;
 
 public:
     template <typename T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
         if (n == 0) return nullptr;
         const std::size_t misalign = used_ % alignof(T);
@@ -594,11 +599,18 @@ public:
         const std::size_t nbytes = n * sizeof(T);
         if (start + nbytes > sizeof(block_)) std::abort();
         used_ = start + nbytes;
-        return std::start_lifetime_as_array<T>(block_ + start, n);
+        return ::foundation::lifetime::start_as_array<T>(block_ + start, n).data();
     }
+};
+struct HoldsPermission {
+    [[no_unique_address]] ::foundation::permissions::Permission<test_tag_a> proof;
 };
 static_assert(ArrayArena<BumpArena, int>);
 static_assert(!ArrayArena<int, int>);
+static_assert(!ArrayArena<BumpArena, ::foundation::permissions::Permission<test_tag_a>>,
+              "the arena must not start the lifetime of a proof type over its bytes");
+static_assert(!ArrayArena<BumpArena, HoldsPermission>,
+              "the arena must not start the lifetime of an aggregate that holds a proof type");
 
 // A region minted from a branded permission carries that brand and its
 // borrow carries it.  The split and the recombine are not constexpr, so

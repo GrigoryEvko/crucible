@@ -18,6 +18,7 @@
 // adopt reads of an arena.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/Lifetime.h>
 
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -74,13 +75,16 @@ struct DataB {
 };
 
 // One bump pointer over a fixed block: the smallest thing adopt asks
-// of an arena.
+// of an arena.  The lifetime start gives a live object only to a type
+// whose every subobject is an implicit-lifetime type, so the constraint
+// refuses every other type.
 class Arena {
     alignas(std::max_align_t) unsigned char block_[1 << 16]{};
     std::size_t used_ = 0;
 
 public:
     template <typename T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
         if (n == 0) return nullptr;
         const std::size_t misalign = used_ % alignof(T);
@@ -88,10 +92,12 @@ public:
         const std::size_t nbytes = n * sizeof(T);
         if (start + nbytes > sizeof(block_)) std::abort();
         used_ = start + nbytes;
-        return std::start_lifetime_as_array<T>(block_ + start, n);
+        return ::foundation::lifetime::start_as_array<T>(block_ + start, n).data();
     }
 };
 static_assert(::fixy::ArrayArena<Arena, float>);
+static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<DataA>>,
+              "the arena must not start the lifetime of a proof type over its bytes");
 
 inline ::foundation::effects::Alloc test_alloc_token() noexcept { return ::foundation::effects::Alloc{}; }
 
