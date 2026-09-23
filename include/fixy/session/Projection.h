@@ -61,8 +61,9 @@
 // at the end of a Select and add branches at the end of an Offer.  A
 // context entry that sends a label at a position where the projection
 // has another label is refused, also when the two lists hold the same
-// labels in another order.  The axiom peer_message below makes a message
-// covariant in its payload and exact in its peer and its label.
+// labels in another order.  The axiom peer_message of
+// fixy/session/Subtype.h makes a message covariant in its payload and
+// exact in its peer and its label.
 //
 // A role of the context that G does not name must have finished, which is
 // the rule of Pischke and Yoshida, "Top-down = Bottom-up" (OOPSLA 2026),
@@ -125,33 +126,11 @@ struct PeerMsg {
     using payload = Payload;
 };
 
-// A message is below another message when the peers are the same, the
-// labels are the same, and the payload is below in the payload order.
-// Bit 2 marks the position of Payload.
-namespace payload_axioms {
-inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg,
-                                                                              .covariant = 0b100};
-}  // namespace payload_axioms
-
-// The label that a message names is its peer and its label, without the
-// payload.  Two branches of one choice that name the same label are not
-// well-formed, as two branches of one Comm with the same label are not
-// (fixy/session/Global.h).
-namespace detail::peer_message {
-template <typename T>
-struct label_of;
-template <typename Peer, typename Label, typename Payload>
-struct label_of<PeerMsg<Peer, Label, Payload>> {
-    using type = PeerMsg<Peer, Label, void>;
-};
-template <typename T>
-using label_of_t = typename label_of<T>::type;
-}  // namespace detail::peer_message
-
-namespace combinators {
-inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
-    .shape = ^^PeerMsg, .label_key = ^^detail::peer_message::label_of_t};
-}  // namespace combinators
+// The payload rule of a message is peer_message in
+// fixy/session/Protocol.h: the label of a message is its peer and its
+// label.  The payload order lifts through a message by the axiom
+// peer_message in fixy/session/Subtype.h.  Each stands under the seal of
+// its header.
 
 // One element of an outgoing queue: a message to To.
 template <typename To, typename Label, typename Payload>

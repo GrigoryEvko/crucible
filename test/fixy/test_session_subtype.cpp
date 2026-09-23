@@ -394,7 +394,7 @@ static_assert(sizeof(BitexactTile) == sizeof(RelaxedTile) && sizeof(BitexactTile
 //
 // A projected local type names the peer and the label of each message
 // in PeerMsg<Peer, Label, Payload>.  PeerMsg is covariant in its payload
-// through the axiom peer_message of fixy/session/Projection.h, and exact
+// through the axiom peer_message of fixy/session/Subtype.h, and exact
 // in its peer and its label.
 
 namespace projected {

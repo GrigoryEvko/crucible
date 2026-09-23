@@ -139,10 +139,34 @@ struct VendorPinned : Proto {
     static constexpr VendorBackend vendor_backend = V;
 };
 
+// The payloads that the registry below has a rule for.  Each is defined
+// in the header of its layer: Crash in fixy/session/Crash.h and PeerMsg
+// in fixy/session/Projection.h.
+template <typename Peer>
+struct Crash;
+
+template <typename Peer, typename Label, typename Payload>
+struct PeerMsg;
+
 namespace detail {
 
 template <VendorBackend V>
 inline constexpr bool vendor_is_named_v = V != VendorBackend::None;
+
+// The label that a message names is its peer and its label, without the
+// payload.  Two branches of one choice that name the same label are not
+// well-formed, as two branches of one Comm with the same label are not
+// (fixy/session/Global.h).
+namespace peer_message {
+template <typename T>
+struct label_of;
+template <typename Peer, typename Label, typename Payload>
+struct label_of<PeerMsg<Peer, Label, Payload>> {
+    using type = PeerMsg<Peer, Label, void>;
+};
+template <typename T>
+using label_of_t = typename label_of<T>::type;
+}  // namespace peer_message
 
 }  // namespace detail
 
@@ -155,6 +179,14 @@ inline constexpr bool vendor_is_named_v = V != VendorBackend::None;
 // duality, because the dual of a pinned endpoint is pinned to the same
 // vendor.  The mint admission, not refinement, decides which vendor a
 // context runs.
+//
+// The combinators stay open: a different header can register a new one.
+// The payload rules are closed by the seal below.  A payload rule
+// decides whether a payload can be sent, whether a branch is a label,
+// and which label the branch names.  A rule that a later header adds
+// would change those answers in some translation units and not in
+// others, so every payload rule of the layer stands here, and a rule
+// anywhere else stops the build.
 
 namespace combinators {
 
@@ -205,6 +237,17 @@ inline constexpr ::foundation::algebra::transition::combinator vendor_pinned{
     .dual = ^^VendorPinned,
     .value_variance = ::foundation::algebra::transition::variance::invariant,
     .value_admits = ^^detail::vendor_is_named_v};
+
+// The crash label is a payload that no endpoint sends (rule 1) and that
+// is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
+inline constexpr ::foundation::algebra::transition::payload_rule crash_label{
+    .shape = ^^Crash, .is_sendable = false, .is_label = false};
+
+inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
+    .shape = ^^PeerMsg, .label_key = ^^detail::peer_message::label_of_t};
+
+inline constexpr ::foundation::algebra::transition::seal payload_rule_seal{
+    .kind = ^^::foundation::algebra::transition::payload_rule, .count = 2};
 
 }  // namespace combinators
 
@@ -623,5 +666,15 @@ static_assert(::foundation::algebra::transition::check_registry(detail::protocol
                   == ::foundation::algebra::transition::incoherence::none,
               "fixy::session::diagnostic [Protocol_Incoherent_Registration]: a registration in "
               "fixy::session::combinators is incoherent.");
+
+// The seal counts every payload rule of the registry.  A rule that stands
+// before this header, in a namespace that a different header opened
+// first, makes the count differ here.
+static_assert(::foundation::algebra::transition::read_seal(detail::protocol_registry,
+                                                           ^^::foundation::algebra::transition::payload_rule)
+                      .fault
+                  == ::foundation::algebra::transition::seal_fault::none,
+              "fixy::session::diagnostic [Protocol_Payload_Rule_Outside_Seal]: fixy::session::combinators holds a "
+              "payload rule that its seal does not count.  Every payload rule stands in fixy/session/Protocol.h.");
 
 }  // namespace fixy::session

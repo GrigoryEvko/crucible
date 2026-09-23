@@ -194,6 +194,44 @@ inline constexpr tr::combinator two{.shape = ^^Stop, .kind = tr::shape_kind::ter
 }  // namespace twice
 static_assert(tr::check_registry(^^twice).reason == tr::incoherence::registered_twice);
 
+// ── Seals ────────────────────────────────────────────────────────────
+
+namespace sealed_rules {
+template <class T>
+struct Opaque {};
+inline constexpr tr::payload_rule opaque{.shape = ^^Opaque, .is_sendable = false, .is_label = false};
+inline constexpr tr::seal rule_seal{.kind = ^^tr::payload_rule, .count = 1};
+}  // namespace sealed_rules
+static_assert(tr::read_seal(^^sealed_rules, ^^tr::payload_rule).is_sealed
+              && tr::read_seal(^^sealed_rules, ^^tr::payload_rule).fault == tr::seal_fault::none);
+static_assert(!tr::read_seal(^^sealed_rules, ^^tr::subsort_axiom).is_sealed, "a seal closes one kind only");
+static_assert(!tr::lookup_payload_rule(^^sealed_rules, ^^sealed_rules::Opaque<int>).entry.is_sendable);
+
+namespace short_seal {
+template <class T>
+struct Opaque {};
+template <class T>
+struct Hidden {};
+inline constexpr tr::payload_rule opaque{.shape = ^^Opaque, .is_sendable = false, .is_label = false};
+inline constexpr tr::seal rule_seal{.kind = ^^tr::payload_rule, .count = 1};
+inline constexpr tr::payload_rule hidden{.shape = ^^Hidden, .is_sendable = false, .is_label = false};
+}  // namespace short_seal
+static_assert(tr::read_seal(^^short_seal, ^^tr::payload_rule).fault == tr::seal_fault::count_differs,
+              "a rule after the seal");
+
+namespace resealed {
+template <class T>
+struct Opaque {};
+inline constexpr tr::payload_rule opaque{.shape = ^^Opaque, .is_sendable = false, .is_label = false};
+inline constexpr tr::seal rule_seal{.kind = ^^tr::payload_rule, .count = 1};
+inline constexpr tr::seal second_seal{.kind = ^^tr::payload_rule, .count = 1};
+}  // namespace resealed
+static_assert(tr::read_seal(^^resealed, ^^tr::payload_rule).fault == tr::seal_fault::sealed_twice);
+
+static_assert(!tr::read_seal(reg, ^^tr::payload_rule).is_sealed
+                  && tr::read_seal(reg, ^^tr::payload_rule).fault == tr::seal_fault::none,
+              "a registry with no seal is open");
+
 namespace ordered_self_dual {
 template <int V, class P>
 struct W {};

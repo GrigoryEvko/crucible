@@ -934,6 +934,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::Continue, kProtocol},
     {^^::fixy::session::End, kProtocol},
     {^^::fixy::session::VendorPinned, kProtocol},
+    {^^::fixy::session::Crash,
+     "the crash label of a session protocol: no endpoint sends it, an Offer receives it when a peer crashes, and "
+     "the handle that steps through the protocol folds it"},
+    {^^::fixy::session::PeerMsg,
+     "a message of a projected local protocol: it names a peer and a label beside its payload, it is the payload "
+     "of a Send or a Recv, and the handle that steps through the protocol folds it"},
     {^^::fixy::session::session_loop_ctx_traits, kMetafunction},
     {^^::fixy::session::session_loop_ctx_rebind_inner, kMetafunction},
     {^^::fixy::session::is_send, kMetafunction},

@@ -101,6 +101,11 @@
 //   Tagged<T, V>               ⩽  T                     for a tag V in
 //                                                        droppable_tags
 //   NumericalTier<Tight, T>    ⩽  NumericalTier<Loose, T>
+//   PeerMsg<R, L, T>           ⩽  PeerMsg<R, L, U>      when T ⩽ U
+//
+// A seal closes the axioms.  An axiom that a later header adds stops the
+// build at the next query of the order, so each translation unit that
+// compiles reads the same order.
 //
 // The implication is the relation of fixy/Refined.h, which is transitive:
 // P implies Q when a chain of admitted steps joins them.  A predicate
@@ -236,7 +241,26 @@ inline constexpr ::foundation::algebra::transition::subsort_axiom tagged_drops{
 inline constexpr ::foundation::algebra::transition::subsort_axiom tier_weakens{
     .weakens = ^^detail::payload_order::tier_weakens_v};
 
+// A message is below another message when the peers are the same, the
+// labels are the same, and the payload is below in the payload order.
+// Bit 2 marks the position of Payload.
+inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg,
+                                                                              .covariant = 0b100};
+
+inline constexpr ::foundation::algebra::transition::seal axiom_seal{
+    .kind = ^^::foundation::algebra::transition::subsort_axiom, .count = 5};
+
 }  // namespace payload_axioms
+
+// The seal counts every axiom of the order.  An axiom that stands before
+// this header, in a namespace that a different header opened first,
+// makes the count differ here.
+static_assert(::foundation::algebra::transition::read_seal(^^::fixy::session::payload_axioms,
+                                                           ^^::foundation::algebra::transition::subsort_axiom)
+                      .fault
+                  == ::foundation::algebra::transition::seal_fault::none,
+              "fixy::session::diagnostic [Subtype_Axiom_Outside_Seal]: fixy::session::payload_axioms holds an axiom "
+              "that its seal does not count.  Every axiom of the payload order stands in fixy/session/Subtype.h.");
 
 template <typename Sub, typename Super>
 inline constexpr bool is_payload_subsort_v =

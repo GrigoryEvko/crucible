@@ -35,7 +35,18 @@
 // registry when it first meets a shape, and that answer holds for the
 // rest of the translation unit.  A query that meets a shape which is not
 // registered stops the build, so a registration that comes too late is
-// an error and never a silent answer.
+// an error and never a silent answer.  A second registration of a shape
+// stops the build at the next read of the registry that is not cached.
+//
+// A payload rule has no such guard: a payload with no rule is a plain
+// payload, so a rule that comes too late gives a different answer and
+// no error.  A layer closes that gap with a seal.  A seal is a variable
+// of type `seal` in the namespace.  It names one kind of registration
+// and states how many registrations of that kind the namespace holds.
+// Each read of a sealed kind counts the registrations again, and it stops
+// the build when the count differs from the seal, or when the namespace
+// holds two seals of that kind.  Each translation unit that compiles
+// then reads the same registrations of that kind.
 //
 // The kind fixes the layout of the template arguments:
 //
@@ -227,6 +238,15 @@ struct subsort_axiom {
     std::uint64_t covariant = 0;
 };
 
+// The closure of one kind of registration in one namespace.  `kind` is
+// ^^payload_rule or ^^subsort_axiom, and `count` is the number of
+// variables of that kind in the namespace.  The count is a literal, so a
+// registration that stands before the seal is refused too.
+struct seal {
+    std::meta::info kind{};
+    std::size_t count = 0;
+};
+
 // The position of a node relative to the binders above it.  Depth is
 // the number of binders above the node.  Guarded is true when some step or
 // choice lies between the node and its nearest binder.  A layer passes
@@ -268,15 +288,93 @@ namespace detail {
     return std::meta::remove_cvref(std::meta::type_of(member)) == type;
 }
 
+// Each function below has no constant definition.  A call to one stops
+// the constant evaluation, and the diagnostic names it.
+void a_combinator_shape_has_two_registrations() noexcept;
+void a_payload_shape_has_two_rules() noexcept;
+void a_registration_stands_outside_its_seal() noexcept;
+void a_kind_of_registration_has_two_seals() noexcept;
+
 }  // namespace detail
 
-// Reads the registry now.  Complexity: linear in its members.
+enum class seal_fault : std::uint8_t { none, count_differs, sealed_twice };
+
+struct seal_reading {
+    bool is_sealed = false;
+    seal_fault fault = seal_fault::none;
+    std::size_t sealed = 0;
+    std::size_t found = 0;
+};
+
+// Reads the seal of one kind in a namespace, and counts the registrations
+// of that kind.  A namespace with no seal of the kind is open, and it
+// has no fault.  Complexity: linear in the members of the namespace.
+[[nodiscard]] consteval seal_reading read_seal(std::meta::info registry, std::meta::info kind) {
+    seal_reading result{};
+    std::size_t seals = 0;
+    for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
+        if (detail::is_registration_of(member, kind)) {
+            ++result.found;
+        } else if (detail::is_registration_of(member, ^^seal)) {
+            const seal entry = std::meta::extract<seal>(member);
+            if (entry.kind != kind) continue;
+            ++seals;
+            result.is_sealed = true;
+            result.sealed = entry.count;
+        }
+    }
+    if (seals > 1) {
+        result.fault = seal_fault::sealed_twice;
+    } else if (result.is_sealed && result.found != result.sealed) {
+        result.fault = seal_fault::count_differs;
+    }
+    return result;
+}
+
+[[nodiscard]] consteval std::string_view seal_fault_name(seal_fault fault) {
+    switch (fault) {
+        case seal_fault::none:
+            return "none";
+        case seal_fault::count_differs:
+            return "the namespace holds a different number of registrations of the kind than its seal states, so a "
+                   "registration stands outside the seal";
+        case seal_fault::sealed_twice:
+            return "the namespace holds two seals of the kind";
+        default:
+            break;
+    }
+    return "an unknown fault";
+}
+
+namespace detail {
+
+// Stops the build when a read of a sealed kind finds a fault.
+consteval void require_seal_holds(std::meta::info registry, std::meta::info kind) {
+    const seal_reading reading = read_seal(registry, kind);
+    if (reading.fault == seal_fault::sealed_twice) a_kind_of_registration_has_two_seals();
+    if (reading.fault == seal_fault::count_differs) a_registration_stands_outside_its_seal();
+}
+
+}  // namespace detail
+
+// Reads the registry now.  A shape with two registrations is counted in
+// the answer, and check_combinator names it.  Two registrations of a
+// different shape stop the build here: a read that is cached could not
+// see the second one.  Complexity: quadratic in the registrations of the
+// registry, which are few.
 [[nodiscard]] consteval combinator_lookup read_combinator(std::meta::info registry, std::meta::info shape) {
     combinator_lookup result{};
+    std::vector<std::meta::info> other_shapes{};
     for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
         if (!detail::is_registration_of(member, ^^combinator)) continue;
         const combinator entry = std::meta::extract<combinator>(member);
-        if (entry.shape != shape) continue;
+        if (entry.shape != shape) {
+            for (const std::meta::info seen : other_shapes) {
+                if (seen == entry.shape) detail::a_combinator_shape_has_two_registrations();
+            }
+            other_shapes.push_back(entry.shape);
+            continue;
+        }
         ++result.count;
         if (!result.is_found) {
             result.is_found = true;
@@ -286,16 +384,19 @@ namespace detail {
     return result;
 }
 
+// Reads the payload rule of one shape now.  A sealed registry must hold
+// the registrations that its seal counts, and two rules for one shape
+// stop the build.  Complexity: linear in the members of the registry.
 [[nodiscard]] consteval payload_lookup read_payload_rule(std::meta::info registry, std::meta::info shape) {
+    detail::require_seal_holds(registry, ^^payload_rule);
     payload_lookup result{};
     for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
         if (!detail::is_registration_of(member, ^^payload_rule)) continue;
         const payload_rule entry = std::meta::extract<payload_rule>(member);
-        if (entry.shape == shape) {
-            result.is_found = true;
-            result.entry = entry;
-            return result;
-        }
+        if (entry.shape != shape) continue;
+        if (result.is_found) detail::a_payload_shape_has_two_rules();
+        result.is_found = true;
+        result.entry = entry;
     }
     return result;
 }
@@ -1131,7 +1232,8 @@ struct compose_at_choice_algebra {
 //
 // The reflexive relation that the axioms of one namespace generate.
 // Each drop makes the subtype smaller, so the walk stops.  The depth
-// bound is a second stop for an axiom that breaks that rule.
+// bound is a second stop for an axiom that breaks that rule.  A seal of
+// ^^subsort_axiom closes the namespace, as it closes a payload registry.
 // Complexity: linear in the number of axioms per layer of the subtype.
 
 namespace detail {
@@ -1178,6 +1280,7 @@ inline constexpr std::size_t subsort_depth_bound = 64;
                                              std::size_t depth) {
     if (sub == super) return true;
     if (depth == 0) return false;
+    require_seal_holds(axioms, ^^subsort_axiom);
     std::vector<subsort_axiom> found;
     for (const std::meta::info member : std::meta::members_of(axioms, std::meta::access_context::unchecked())) {
         if (is_registration_of(member, ^^subsort_axiom)) found.push_back(std::meta::extract<subsort_axiom>(member));

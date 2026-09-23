@@ -202,7 +202,9 @@ inline constexpr bool is_crash_payload_v = is_crash_payload<T>::value;
 // of an endpoint with crash branches, which is correct: the peer of such
 // an endpoint is its crash dual (crash_dual_t below).  The second makes
 // an Offer of crash branches only an empty choice, and gives rule Sub-&
-// its two side conditions in refinement.
+// its two side conditions in refinement.  The rule is crash_label in
+// fixy/session/Protocol.h, because every payload rule stands under the
+// seal of that header.
 
 namespace combinators {
 
@@ -211,9 +213,6 @@ inline constexpr ::foundation::algebra::transition::combinator stop{
     .kind = ::foundation::algebra::transition::shape_kind::terminal,
     .dual = ^^Stop,
     .absorbs_suffix = true};
-
-inline constexpr ::foundation::algebra::transition::payload_rule crash_label{
-    .shape = ^^Crash, .is_sendable = false, .is_label = false};
 
 }  // namespace combinators
 

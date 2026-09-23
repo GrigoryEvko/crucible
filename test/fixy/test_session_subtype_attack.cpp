@@ -730,11 +730,13 @@ inline constexpr limitation known_limitations[] = {
      "fair termination (Padovani and Zavattaro, TOPLAS 2026): no relation here preserves it"},
     {"subtyping removes the only exit branch of a loop: a loop that never ends refines a loop that can end",
      "fair subtyping (Padovani and Zavattaro, TOPLAS 2026), which refuses a subtype that loses termination"},
-    {"a payload registration added after a query that read the same payload is not seen by the answers "
-     "already computed, and nothing refuses the late registration",
-     "the registration contract of foundation/algebra/Transition.h, which the build cannot enforce"},
 };
-static_assert(std::size(known_limitations) == 5, "the ledger only shrinks: lower this count when an entry goes");
+static_assert(std::size(known_limitations) == 4, "the ledger only shrinks: lower this count when an entry goes");
+
+// A payload rule registered after fixy/session/Protocol.h stops the build
+// at the next read of a payload rule, because a seal counts the rules of
+// the registry.  The fixtures neg_sess_payload_rule_after_seal and
+// neg_sess_payload_rule_before_seal are that attack.
 
 // The implication chain was an entry here.  The implication relation of
 // fixy/Refined.h is transitive.  The payload order now joins the two ends
@@ -765,22 +767,6 @@ static_assert(std::is_same_v<NoExit, Loop<Select<Send<A, Continue>, Continue>>> 
 // Pin 4: the exit is lost under subtyping.
 static_assert(s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select<Send<A, Continue>, Send<B, End>>>>);
 
-// Pin 5: a late payload registration.  The query below reads the payload
-// Late before any rule names it, so it answers that the send is
-// well-formed.  A rule registered after it is not seen by that answer.
-template <class T>
-struct Late {};
-static_assert(s::is_well_formed_v<Send<Late<int>, End>>);
-
-}  // namespace
-
-namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::payload_rule late_rule{
-    .shape = ^^::Late, .is_sendable = false, .is_label = false};
-}  // namespace fixy::session::combinators
-
-namespace {
-static_assert(s::is_well_formed_v<Send<Late<int>, End>>, "the stale answer the ledger entry names");
 }  // namespace
 
 int main() {
