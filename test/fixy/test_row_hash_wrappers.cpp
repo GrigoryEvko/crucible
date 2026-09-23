@@ -628,6 +628,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::atom::leak, kGradeVocabulary},
     {^^::fixy::atom::regime, kGradeVocabulary},
     {^^::fixy::atom::scope, kGradeVocabulary},
+    {^^::fixy::atom::session, kGradeVocabulary},
     {^^::fixy::atom::simd, kGradeVocabulary},
     {^^::fixy::atom::stack, kGradeVocabulary},
     {^^::fixy::atom::stdio, kGradeVocabulary},

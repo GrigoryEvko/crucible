@@ -248,8 +248,27 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_recursing
 // protocol<proto::None> writes the strict pole out, so it names no session.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_session_protocol_> {
-    using accepts = witnesses<at::protocol<armed_roster_witness::Plain>>;
+    using accepts =
+        witnesses<at::protocol<armed_roster_witness::Plain>, at::session::live_handle<armed_roster_witness::Plain>>;
     using refuses = witnesses<int, at::protocol<::fixy::pole::proto::None>, at::spawn::detach_with<"no join">>;
+};
+
+// A protocol grade says that a binding speaks a protocol, and it does not
+// say that the frame holds a live handle.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_handle_grade_> {
+    using accepts = witnesses<at::session::live_handle<armed_roster_witness::Plain>>;
+    using refuses = witnesses<int, at::protocol<armed_roster_witness::Plain>, at::protocol<::fixy::pole::proto::None>>;
+};
+
+// A handle before End owes its protocol, a handle at End does not, and a
+// value that is not a handle holds none.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_handle_payload_> {
+    using accepts = witnesses<sess::SessionHandle<sess::Send<int, sess::End>, armed_roster_witness::Plain>,
+                              ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure,
+                                              sess::SessionHandle<sess::Recv<int, sess::End>, armed_roster_witness::Plain>>>;
+    using refuses = witnesses<int, void, sess::SessionHandle<sess::End, armed_roster_witness::Plain>>;
 };
 
 // ── fixy: concurrency handles and pipelines ─────────────────────────

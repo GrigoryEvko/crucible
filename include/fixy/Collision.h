@@ -66,12 +66,14 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Regime.h>
 #include <fixy/atoms/Scope.h>
+#include <fixy/atoms/Session.h>
 #include <fixy/atoms/Simd.h>
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
 #include <fixy/Secret.h>
 #include <foundation/Platform.h>
+#include <foundation/algebra/Modality.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Row.h>
 
@@ -173,6 +175,7 @@ using all_atom_roster =
                                        ::fixy::atom::detail::os_atom_roster,
                                        ::fixy::atom::detail::regime_atom_roster,
                                        ::fixy::atom::detail::scope_atom_roster,
+                                       ::fixy::atom::detail::session_atom_roster,
                                        ::fixy::atom::detail::simd_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
                                        ::fixy::atom::detail::stdio_atom_roster,
@@ -289,6 +292,10 @@ enum class RuleCode : std::uint8_t {
     I004,
     I003,
     I002,
+    // Written here, not inherited.  It reads the session atom of
+    // fixy/atoms/Session.h and the payload of a binding that is a
+    // session handle.
+    R004,
 };
 
 // ---------------------------------------------------------------------
@@ -441,6 +448,11 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"I004", Disposition::Live, "classified x a suspension or a Bg row x a session protocol, without constant time"},
     {"I003", Disposition::Live, "constant time x a failure path"},
     {"I002", Disposition::Live, "classified x a failure whose error type is not Secret"},
+
+    // The session family.  R004 is written here and has no row in the old
+    // catalog.  It reads the live-handle atom of fixy/atoms/Session.h, or
+    // a payload that is a session handle, against a suspension.
+    {"R004", Disposition::Live, "a suspension x a live session handle x a frame that is not linear"},
 
     // Nothing waits on an atom any more.  pending_rules above is empty and
     // says why in two parts; the rest of this list is the second part.
@@ -766,24 +778,27 @@ static_assert(every_pending_axis_is_still_empty(),
 // Each compares two things that were written separately.  None computes
 // one side from the other.
 
-// Fifty-four inherited codes plus one written here.
+// Fifty-four inherited codes plus two written here.
 //
 // The 54 come from the RuleCode enum of
 // include/crucible/safety/CollisionCatalog.h and the count is stated
 // against that external list, so a code dropped from this one stops being
 // reported as absent — the failure this list exists to prevent.
 //
-// B002 is the one addition, and it is an addition rather than a rereading
+// B002 is one addition, and it is an addition rather than a rereading
 // of an inherited code.  Axis::Observability carries two theorems where
 // the old catalog recorded one: B001's back-pressure trap, which keeps
 // its code, and the containment of the observability row in the effect
 // row, which had no code.  Reusing B001
 // for the second would have discarded a theorem that has its own remedy,
 // and the codes are stable API precisely so that cannot happen quietly.
-static_assert(rule_corpus_size == 55,
+//
+// R004 is the other addition.  The old catalog has no rule for a
+// continuation that captures a live session handle.
+static_assert(rule_corpus_size == 56,
               "fixy/Collision.h: the rule corpus must account for the 54 codes inherited from the RuleCode "
-              "enum of include/crucible/safety/CollisionCatalog.h, plus B002, which is written here.  A code "
-              "dropped from this list stops being reported as absent.");
+              "enum of include/crucible/safety/CollisionCatalog.h, plus B002 and R004, which are written here.  "
+              "A code dropped from this list stops being reported as absent.");
 
 // Every code the corpus says ships has an enumerator, and every code it
 // says is absent or retired has none.  A rule written without a corpus entry, or
@@ -1287,12 +1302,53 @@ template <class G>
 
 // Whether the Protocol grade names a session.  The same axis carries the
 // spawn atoms L003 reads, and protocol<proto::None> writes the strict
-// pole out, so neither is a session.
+// pole out, so neither is a session.  A live handle is a session.
 template <class G>
 struct is_session_protocol_ : std::false_type {};
 template <class Proto>
 struct is_session_protocol_<::fixy::atom::protocol<Proto>>
     : std::bool_constant<!std::is_same_v<Proto, ::fixy::pole::proto::None>> {};
+template <class Proto>
+struct is_session_protocol_<::fixy::atom::session::live_handle<Proto>> : std::true_type {};
+
+// Whether the Protocol grade states that the frame holds a live handle.
+template <class G>
+struct is_live_handle_grade_ : std::false_type {};
+template <class Proto>
+struct is_live_handle_grade_<::fixy::atom::session::live_handle<Proto>> : std::true_type {};
+
+// Whether a payload is a session handle that still owes its protocol.
+// The test reads the Stepping contract: the modality that
+// foundation/algebra/Modality.h reserves for session handles, and the
+// handle's own answer to is_terminal().  A Stepping type that does not
+// answer is_terminal() is read as live, which is the answer that
+// refuses.  A handle at End owes nothing, so a frame may hold it across
+// a suspension.
+//
+// The residual, stated: the test reads the payload after its bands, and
+// no deeper.  A handle inside an aggregate or a container is not seen,
+// and a binding that holds one states session::live_handle instead.
+template <class Payload>
+[[nodiscard]] consteval bool payload_owes_a_protocol_() noexcept {
+    if constexpr (requires { requires std::same_as<std::remove_cvref_t<decltype(Payload::modality)>,
+                                                   ::foundation::algebra::ModalityKind>; }) {
+        if constexpr (Payload::modality == ::foundation::algebra::ModalityKind::Stepping) {
+            if constexpr (requires { { Payload::is_terminal() } -> std::same_as<bool>; }) {
+                return !Payload::is_terminal();
+            } else {
+                return true;
+            }
+        } else {
+            return false;
+        }
+    } else {
+        return false;
+    }
+}
+
+template <class Payload>
+struct is_live_handle_payload_
+    : std::bool_constant<payload_owes_a_protocol_<std::remove_cvref_t<typename unbanded_<Payload>::type>>()> {};
 
 // Whether ControlFlow states a suspension.  ctrl::coroutine<Policy> is
 // the same suspension that atom::coroutine states on Reentrancy, written
@@ -1688,6 +1744,27 @@ struct rules_of {
 
     static constexpr bool I002_ok = !(classified && fails_with_plain_error);
 
+    // ── The session family ───────────────────────────────────────────
+    //
+    // R004 reads a live session handle against a suspension.  The
+    // suspension turns the frame into a continuation, and the handle
+    // is then part of the continuation.  A continuation that is dropped
+    // drops the protocol, and one that is resumed twice does one step
+    // two times (Tang, Hillerström, Lindley and Morris, POPL 2024).  A
+    // linear frame is resumed exactly once, so the rule admits it: the
+    // Usage strict pole is linear, and the rule fires only when the
+    // binding states a weaker usage.
+    //
+    // The handle is read two ways.  The atom session::live_handle states
+    // it for a frame that captured one.  A payload that is a session
+    // handle states it by its type, so the binding does not have to
+    // repeat it.  The payload half stands down under the pack-only view.
+    static constexpr bool has_live_handle =
+        detail::is_live_handle_grade_<typename G::template on<Axis::Protocol>>::value
+        || detail::is_live_handle_payload_<Payload>::value;
+    static constexpr bool suspends = coroutine || suspends_in_control_flow;
+    static constexpr bool R004_ok = !(has_live_handle && suspends && !linear);
+
     // ── Naming the rules a pack trips ────────────────────────────────
     //
     // fn's tier-5 message carries these codes, so a reader and a
@@ -1722,7 +1799,7 @@ struct rules_of {
             rule_verdict{S011_ok, "S011"}, rule_verdict{D001_ok, "D001"}, rule_verdict{L003_ok, "L003"},
             rule_verdict{F103_ok, "F103"}, rule_verdict{F104_ok, "F104"}, rule_verdict{F105_ok, "F105"},
             rule_verdict{E044_ok, "E044"}, rule_verdict{S010_ok, "S010"}, rule_verdict{I004_ok, "I004"},
-            rule_verdict{I003_ok, "I003"}, rule_verdict{I002_ok, "I002"},
+            rule_verdict{I003_ok, "I003"}, rule_verdict{I002_ok, "I002"}, rule_verdict{R004_ok, "R004"},
         };
     }
 
@@ -1887,6 +1964,10 @@ struct rules_of {
                                "leaves the classified binding and carries what the body knew when it failed. "
                                "Wrap the error type in fixy::Secret, declassify with a named policy, or state "
                                "atom::as_public.");
+        static_assert(R004_ok, "R004: a suspension x a live session handle x a frame that is not linear. The "
+                               "suspension makes the frame a continuation that holds the handle. A continuation "
+                               "that is dropped drops the protocol, and one that is resumed twice does one step two "
+                               "times. Keep the Usage grade linear, or close the session before the suspension.");
         return valid;
     }
 
@@ -2147,6 +2228,58 @@ static_assert(rules_of<std::expected<int, SecretError>, CT>::I002_ok, "a Secret 
 static_assert(!rules_of<int, CT, at::ctrl::throws<SecretError>>::I003_ok);
 static_assert(rules_of<int, CT>::valid);
 }  // namespace ct_cells
+
+// The session family.  R004 needs three premises: a live handle, a
+// suspension on either axis, and a usage weaker than linear.  Each cell
+// removes one premise and the rule stands down.
+namespace session_cells {
+namespace at = ::fixy::atom;
+using ::fixy::collision::rules_of;
+
+struct handshake final {};
+using Live = at::session::live_handle<handshake>;
+using Suspends = at::ctrl::coroutine<at::ctrl::async_task>;
+
+static_assert(!live_rules<Live, Suspends, at::affine>::R004_ok);
+static_assert(!live_rules<Live, at::coroutine, at::copy>::R004_ok, "a suspension on Reentrancy counts too");
+static_assert(live_rules<Live, Suspends>::R004_ok, "a linear frame is resumed exactly once");
+static_assert(live_rules<Live, at::affine>::R004_ok, "no suspension, so no continuation");
+static_assert(live_rules<Suspends, at::affine>::R004_ok, "no handle in the frame");
+static_assert(live_rules<at::protocol<handshake>, Suspends, at::affine>::R004_ok,
+              "a protocol grade says the binding speaks a protocol, not that its frame holds a handle");
+
+// A live handle is a session, so I004 reads it as one.
+static_assert(!live_rules<Live, Suspends>::I004_ok, "the strict Security pole is classified");
+static_assert(live_rules<Live, Suspends, at::as_public>::valid);
+
+// The payload half.  These stand-ins carry the Stepping contract that a
+// session handle carries: the modality and the answer to is_terminal().
+struct owes_a_step final {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Stepping;
+    [[nodiscard]] static constexpr bool is_terminal() noexcept { return false; }
+};
+struct at_the_end final {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Stepping;
+    [[nodiscard]] static constexpr bool is_terminal() noexcept { return true; }
+};
+struct stepping_with_no_answer final {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Stepping;
+};
+struct graded_not_stepping final {
+    static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
+    [[nodiscard]] static constexpr bool is_terminal() noexcept { return false; }
+};
+
+static_assert(!rules_of<owes_a_step, Suspends, at::affine>::R004_ok);
+static_assert(rules_of<owes_a_step, Suspends>::R004_ok, "a linear frame is resumed exactly once");
+static_assert(rules_of<at_the_end, Suspends, at::affine>::R004_ok, "a handle at End owes nothing");
+static_assert(!rules_of<stepping_with_no_answer, Suspends, at::affine>::R004_ok,
+              "a Stepping type that does not answer is read as live");
+static_assert(rules_of<graded_not_stepping, Suspends, at::affine>::R004_ok, "another modality is not a session");
+static_assert(!rules_of<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, owes_a_step>, Suspends, at::affine>::R004_ok,
+              "a band does not hide the handle it grades");
+static_assert(live_rules<Suspends, at::affine>::R004_ok, "the payload half stands down under the pack-only view");
+}  // namespace session_cells
 
 }  // namespace detail::collision_self_test
 
