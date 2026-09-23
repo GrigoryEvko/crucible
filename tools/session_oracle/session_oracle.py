@@ -160,6 +160,14 @@ PAPER_OLD: tuple[Case, ...] = (
          cite=f"{PMY25}, Example 12, G2 prefixed as in equation (47)"),
 )
 
+# Hand-written two-party cases for the corners that the subtyping corpus
+# must keep whatever the size bound selects.
+FIXY_HAND: tuple[Case, ...] = (
+    Case("fh0", GBranch(0, 1, ()), cite="a choice with no branch"),
+    Case("fh1", GRec(GBranch(0, 1, (GMsg(0, 1, "nat", GVar()), GBranch(1, 0, ())))),
+         cite="a loop with an empty choice in one branch"),
+)
+
 PAPER_FIXY: tuple[Case, ...] = (
     Case("p_ekici25_ex18", GRec(GMsg(1, 0, "bool", GMsg(0, 1, "bool", GMsg(
         1, 0, "nat", GMsg(0, 1, "nat", GVar()))))),
@@ -1084,7 +1092,7 @@ def corpora() -> tuple[list[Case], list[Case]]:
         generate(FIXY_SEED, FIXY_COUNT, roles=2, max_depth=FIXY_DEPTH))]
     fixy += [Case(f"fa{i}", g) for i, g in enumerate(
         generate_adversarial(FIXY_ADV_SEED, FIXY_ADV_COUNT, 2, FIXY_ADV_DEPTH))]
-    fixy += list(PAPER_FIXY)
+    fixy += list(FIXY_HAND) + list(PAPER_FIXY)
     return old, fixy
 
 
@@ -1105,7 +1113,7 @@ def regenerate(cxx: str, workers: int, do_shrink: bool = True,
         small = [c for c in fixy if size(c.g) <= SUBTYPE_MAX_SIZE]
         subtype_cases = ([c for c in small if c.ident.startswith("fr")][:SUBTYPE_CASES_PER_CORPUS]
                          + [c for c in small if c.ident.startswith("fa")][:SUBTYPE_CASES_PER_CORPUS]
-                         + list(PAPER_FIXY))
+                         + list(FIXY_HAND) + list(PAPER_FIXY))
         rows += [r for rs in evaluate_subtype(subtype_cases, env).values() for r in rs]
         minimal: list[Row] = []
         if do_shrink:
@@ -1122,7 +1130,7 @@ def regenerate(cxx: str, workers: int, do_shrink: bool = True,
         f"depth {OLD_DEPTH}; a seed {OLD_ADV_SEED}, {OLD_ADV_COUNT} types, depth {OLD_ADV_DEPTH}",
         f"# minimal cases: {len({r.case for r in minimal})}",
     ]
-    meta += [f"# {c.ident}: {c.cite}" for c in (*HAND_CASES, *PAPER_OLD, *PAPER_FIXY)]
+    meta += [f"# {c.ident}: {c.cite}" for c in (*HAND_CASES, *PAPER_OLD, *FIXY_HAND, *PAPER_FIXY)]
     GOLDEN.parent.mkdir(parents=True, exist_ok=True)
     write_golden(GOLDEN, meta, rows)
     _write_tests(read_golden(GOLDEN)[1])

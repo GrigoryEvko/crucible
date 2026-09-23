@@ -50,9 +50,9 @@ COLUMNS = ("family", "case", "role", "global", "oracle", "ours", "status", "clas
 # The corpora, in the order of the golden file.  For the frozen tree: r
 # random, a adversarial, h hand-written review cases, m minimal forms of
 # the divergences that the shrinker found.  p holds the paper examples
-# of the two trees.  fr, fa and fm are the random, adversarial and
-# minimal corpora of the fixy tree.
-CORPORA = ("r", "a", "h", "p", "m", "fr", "fa", "fm")
+# of the two trees.  fr, fa, fh and fm are the random, adversarial,
+# hand-written and minimal corpora of the fixy tree.
+CORPORA = ("r", "a", "h", "p", "m", "fr", "fa", "fh", "fm")
 
 FIXY_FAMILIES = ("fixy.dual", "fixy.is_dual", "fixy.involution", "fixy.involutive_flag",
                  "fixy.well_formed", "fixy.accepts")
