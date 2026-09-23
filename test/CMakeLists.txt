@@ -942,6 +942,22 @@ add_test(NAME ctx_testing_boundary
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard")
 
+# A comment, a script or an allowlist in the new tree states what the code
+# does, not which task, stage or tracker entry produced it.  The guard
+# scans include/foundation, include/fixy, test/foundation, test/fixy,
+# scripts and vessel for a task reference, a tracker tag or a stage label,
+# and it has no allowlist.  The self-test plants one reference of each
+# family and a file of clean look-alikes (directives, collision rule codes,
+# suppression markers), and proves the first is reported and the second
+# is not.
+add_test(NAME no_coordination_refs_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.sh
+          --self-test)
+add_test(NAME no_coordination_refs
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.sh)
+set_tests_properties(no_coordination_refs no_coordination_refs_self_test
+    PROPERTIES LABELS "ci_guard")
+
 # Stage A port completeness.  Three completed port tasks (A2.3, A9, A11.2)
 # were incomplete and each was found by downstream work or a one-off
 # sweep, never by review.  This is the sweep's permanent form: every
