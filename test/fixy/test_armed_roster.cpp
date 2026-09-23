@@ -65,6 +65,13 @@ struct Publisher {
 struct Loader {
     int load() const noexcept { return 0; }
 };
+// Two dispatch families: one names a noexcept signature, one names data.
+struct NamesNoexceptSignature {
+    using signature = void(void*) noexcept;
+};
+struct NamesDataSignature {
+    using signature = int;
+};
 
 using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg>>;
 using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>;
@@ -355,22 +362,26 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_busy_wait
     using refuses = witnesses<at::sync::umwait_c01, at::sync::block, int>;
 };
 
-// The value of a signature that is stated.  A type that states no
-// signature answers true with `stated` false, and this cell does not pin
-// that reading, because the rules read `stated` first.
+// A family names a noexcept signature through a function type, a pointer
+// or member pointer to one, or a `signature` member that is not a class.
+// A family that names no function answers false.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_signature_noexcept_> {
-    using accepts = witnesses<void() noexcept, int (*)(char) noexcept, int (w::Plain::*)() const noexcept>;
-    using refuses = witnesses<void(), int (&)(char), void (w::Plain::*)()>;
+    using accepts = witnesses<void() noexcept, int (*)(char, ...) noexcept, void (w::Plain::*)() & noexcept,
+                              w::NamesNoexceptSignature>;
+    using refuses = witnesses<void(), int (&)(char), void (w::Plain::*)() &, w::Plain, w::NamesDataSignature>;
 };
 
-// An indirect call can throw when its family states a signature that is
-// not noexcept.  A family that states no signature is not pinned here.
+// An indirect call can throw unless its family names a noexcept signature.
+// An opaque tag family names no signature, so the call can throw.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::can_indirect_call_throw_> {
-    using accepts = witnesses<at::dispatch::indirect_call<int(char)>, at::dispatch::indirect_call<void (*)()>>;
+    using accepts = witnesses<at::dispatch::indirect_call<int(char)>, at::dispatch::indirect_call<w::Plain>,
+                              at::dispatch::indirect_call<void (w::Plain::*)() &>,
+                              at::dispatch::indirect_call<int (*)(char, ...)>>;
     using refuses = witnesses<at::dispatch::indirect_call<int(char) noexcept>,
-                              at::dispatch::indirect_call<void (*)() noexcept>, int>;
+                              at::dispatch::indirect_call<void (*)() noexcept>,
+                              at::dispatch::indirect_call<w::NamesNoexceptSignature>, int>;
 };
 
 // A subprocess has its own copy of the address space, so it cannot
