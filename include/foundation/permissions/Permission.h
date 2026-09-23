@@ -543,9 +543,21 @@ mint_permission_combine_n(Args&&...) noexcept;
 // namespace of the befriending class when no matching declaration is
 // already visible there, so a key inside a detail namespace would
 // befriend a fresh detail-scope mint and silently open the gate.
+//
+// Both constructors of the key are user-provided, and not defaulted.
+// A key whose copy is trivial is trivially copyable, and std::bit_cast
+// then builds one from any byte.  A key with any trivial constructor is
+// an implicit-lifetime type, and std::start_lifetime_as then builds one
+// over a buffer.  Neither route names a constructor, so neither sees
+// the access check below.  The same holds for the token and for
+// ForkRebuildKey.
 class perm_mint_key {
-    constexpr perm_mint_key() noexcept = default;
+    constexpr perm_mint_key() noexcept {}
 
+public:
+    constexpr perm_mint_key(const perm_mint_key&) noexcept {}
+
+private:
     // Every entry below is another way to forge authority over a
     // region.  Additions need review.  Each mint is one template, so
     // each is one entry, whether it is called with a context or
@@ -622,7 +634,13 @@ public:
         "Permission<Tag>: linear — duplicating creates two simultaneous owners of the same region, breaking CSL's frame rule.  Use std::move to transfer.");
     Permission& operator=(const Permission&) =
         delete("Permission<Tag>: linear — assignment would overwrite an existing permission token.");
-    constexpr Permission(Permission&&) noexcept = default;
+    // User-provided, and not defaulted.  A defaulted move is trivial, so
+    // the token was trivially copyable and an implicit-lifetime type:
+    // std::bit_cast built an exclusive token from a byte, and
+    // std::start_lifetime_as built one over a buffer, each with no
+    // constructor call.  With this move no constructor is trivial, so
+    // neither route applies.  The destructor stays trivial.
+    constexpr Permission(Permission&&) noexcept {}
     constexpr Permission& operator=(Permission&&) noexcept = default;
     ~Permission() = default;
 };
@@ -821,7 +839,14 @@ namespace detail {
 
 class ForkRebuildKey {
 private:
-    constexpr ForkRebuildKey() noexcept = default;
+    // User-provided, as perm_mint_key's constructors are, so that no
+    // route builds a key without a constructor.
+    constexpr ForkRebuildKey() noexcept {}
+
+public:
+    constexpr ForkRebuildKey(const ForkRebuildKey&) noexcept {}
+
+private:
 
     // permission_fork_ is the sole friend, and that friendship is the
     // whole gate.  It is reached only through mint_permission_fork or
@@ -880,6 +905,19 @@ static_assert(!std::is_default_constructible_v<detail::ForkRebuildKey>,
               "ForkRebuildAccess::rebuild.");
 static_assert(std::is_empty_v<detail::ForkRebuildKey>, "ForkRebuildKey must stay empty, so that passing it "
                                                        "costs nothing.");
+
+// No route builds a key without a constructor.  std::bit_cast builds any
+// trivially copyable type from bytes, and std::start_lifetime_as builds
+// any implicit-lifetime type over a buffer, and neither names a
+// constructor, so neither meets the access check.  Each assertion fails
+// if a constructor of the key becomes defaulted again.
+static_assert(!std::is_trivially_copyable_v<perm_mint_key> && !std::is_implicit_lifetime_v<perm_mint_key>,
+              "perm_mint_key must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
+              "build the key that mints every Permission.");
+static_assert(!std::is_trivially_copyable_v<detail::ForkRebuildKey>
+                  && !std::is_implicit_lifetime_v<detail::ForkRebuildKey>,
+              "ForkRebuildKey must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
+              "build the key that reissues a Permission for any tag.");
 
 // Fractional permissions generalize the binary own-or-not of plain
 // separation logic to a share `e ↦_p v` for 0 < p ≤ 1.  A share of 1 is
@@ -1017,6 +1055,18 @@ public:
     std::abort();
 }
 
+// Each guard keeps a pointer into its pool, and its destructor writes
+// the pool's count.  A pool that ends while a guard lives would take that
+// write into freed memory, so the pool refuses to end while a share is
+// out.
+[[noreturn]] CRUCIBLE_COLD inline void shared_permission_pool_outlived_abort_() noexcept {
+    std::fputs("crucible: fatal contract violation: a SharedPermissionPool ended while shares were out.  Each "
+               "guard points into its pool, so the release of that guard would write freed memory.  End every "
+               "share before the pool ends.\n",
+               stderr);
+    std::abort();
+}
+
 // The context a pool operation may run in: none, which is the token
 // form and asks the tag's row to be empty in the body, or one that
 // admits the tag's row.
@@ -1041,6 +1091,12 @@ public:
 
     constexpr explicit SharedPermissionPool(Permission<Tag, Brand>&& exc) noexcept
         : parked_{std::move(exc)}, state_{0} {}
+
+    ~SharedPermissionPool() {
+        if ((state_.load(std::memory_order_acquire) & COUNT_MASK) != 0) [[unlikely]] {
+            shared_permission_pool_outlived_abort_();
+        }
+    }
 
     template <typename Ctx = detail::no_ctx>
         requires PoolCtx<Tag, Ctx>
@@ -1339,6 +1395,10 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
     return sizeof(Token) == 1 && std::is_trivially_destructible_v<Token> && !std::is_copy_constructible_v<Token>
         && !std::is_copy_assignable_v<Token> && std::is_move_constructible_v<Token>
         && std::is_nothrow_move_constructible_v<Token>
+        // No route builds a token without a constructor: std::bit_cast
+        // needs a trivially copyable type, and std::start_lifetime_as an
+        // implicit-lifetime one.
+        && !std::is_trivially_copyable_v<Token> && !std::is_implicit_lifetime_v<Token>
         // The key is the sole route in.  Both halves are load-bearing:
         // drop the first and a token is default-constructible by
         // anyone, drop the second and the mints cannot build one.

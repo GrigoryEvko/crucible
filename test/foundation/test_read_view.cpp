@@ -61,7 +61,8 @@ void test_compile_time_properties() {
     // One byte, which is the minimum an empty class can occupy on its own.
     static_assert(sizeof(ReadView<ConfigData>) == 1);
 
-    static_assert(std::is_trivially_copyable_v<ReadView<ConfigData>>);
+    static_assert(!std::is_trivially_copyable_v<ReadView<ConfigData>>);
+    static_assert(!std::is_implicit_lifetime_v<ReadView<ConfigData>>);
     static_assert(std::is_trivially_destructible_v<ReadView<ConfigData>>);
 
     // Copyable but not assignable, because a view binds once.

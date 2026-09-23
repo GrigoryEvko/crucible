@@ -1411,6 +1411,13 @@ file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/armed_roster/every_header.h
 fixy_test(test_armed_roster)
 target_include_directories(test_armed_roster PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
 
+# No proof type is built without a constructor.  std::bit_cast and
+# std::start_lifetime_as build an object with no constructor call, so a
+# trivially copyable or implicit-lifetime proof type is forgeable.  The
+# walk reads the same generated header as the armed roster.
+fixy_test(test_forgeable_proofs)
+target_include_directories(test_forgeable_proofs PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
+
 # ── The lock-free rings ───────────────────────────────────────────────
 #
 # The threaded half of this test is what checks the ordering claim, so

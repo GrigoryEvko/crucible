@@ -482,6 +482,30 @@ foundation_neg_compile_test(neg_read_view_from_temporary_share_guard
   "mint_read_view\\(const SharedPermissionGuard<Tag, Brand>&&\\)"
   "a borrow proof minted from a temporary share guard outlives the share")
 
+# No route builds a token, the mint key or a read proof without a
+# constructor.  std::bit_cast needs a trivially copyable type, and
+# std::start_lifetime_as an implicit-lifetime one, so each of the three
+# has user-provided constructors and no trivial one.
+foundation_neg_compile_test(neg_permission_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::permissions::Permission<.*Region"
+  "is_trivially_copyable_v<_To>")
+foundation_neg_compile_test(neg_permission_forged_by_start_lifetime_as
+  "static assertion failed"
+  "foundation::permissions::Permission<.*Region.*. is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_mint_key_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::permissions::perm_mint_key>"
+  "is_trivially_copyable_v<_To>")
+foundation_neg_compile_test(neg_read_view_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::permissions::ReadView<.*Region"
+  "is_trivially_copyable_v<_To>")
+foundation_neg_compile_test(neg_read_view_forged_by_start_lifetime_as
+  "static assertion failed"
+  "foundation::permissions::ReadView<.*Region.*. is not an implicit-lifetime type")
+
+# A pool that ends while a share is out aborts.  The attack runs in a
+# child process, and the test passes only on that diagnostic.
+foundation_test(test_share_pool_outlived_aborts)
+
 # The children of two regions do not fold into one parent.
 foundation_neg_compile_test(neg_brand_combine_children_of_two_regions
   "static assertion failed"

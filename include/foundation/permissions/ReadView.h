@@ -112,8 +112,14 @@ public:
     using tag_type = Tag;
     using brand_type = Brand;
 
-    constexpr ReadView(const ReadView&) noexcept = default;
-    constexpr ReadView(ReadView&&) noexcept = default;
+    // User-provided, and not defaulted, as the private constructor below
+    // is.  A defaulted copy is trivial, so the view was trivially
+    // copyable and std::bit_cast built one from a byte.  A trivial
+    // default constructor made it an implicit-lifetime type, so
+    // std::start_lifetime_as built one over a buffer.  Neither route
+    // names a constructor, so neither met the access check.
+    constexpr ReadView(const ReadView&) noexcept {}
+    constexpr ReadView(ReadView&&) noexcept {}
 
     // Erasure, one way only: a view of one instance becomes a view on
     // the erased identity, so code written before brands keeps
@@ -144,7 +150,7 @@ private:
     // only the issuers below reach this.  Copy and move stay public, which
     // closes construction from nothing without hindering an already minted
     // view being carried around.
-    constexpr ReadView() noexcept = default;
+    constexpr ReadView() noexcept {}
 
     // Every entry in the friend list below is another way to mint a
     // borrow.  Additions need review.
@@ -241,8 +247,15 @@ static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1, "ReadView<Tag> 
 static_assert(sizeof(ReadView<detail::read_view_test_tag, detail::read_view_brand_a>) == 1,
               "a branded view keeps the layout of an erased one");
 
-static_assert(std::is_trivially_copyable_v<ReadView<detail::read_view_test_tag>>,
-              "ReadView<Tag> must be trivially copyable (zero-cost copy)");
+// A copy compiles to nothing, because the class is empty.  It is not
+// trivial, and that is the point: a trivially copyable view is built by
+// std::bit_cast from a byte, and an implicit-lifetime view is built by
+// std::start_lifetime_as over a buffer.
+static_assert(!std::is_trivially_copyable_v<ReadView<detail::read_view_test_tag>>,
+              "ReadView<Tag> must not be trivially copyable, or std::bit_cast builds a read proof from a byte");
+static_assert(!std::is_implicit_lifetime_v<ReadView<detail::read_view_test_tag>>,
+              "ReadView<Tag> must not be an implicit-lifetime type, or std::start_lifetime_as builds a read "
+              "proof over a buffer");
 static_assert(std::is_trivially_destructible_v<ReadView<detail::read_view_test_tag>>,
               "ReadView<Tag> destructor must be trivial");
 
