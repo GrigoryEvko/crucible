@@ -391,6 +391,14 @@ fixy_neg_compile_test(neg_rule_d001_indirect_call_member_function_throws
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) D001:"
   "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_d001_indirect_call_opaque_family
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) D001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_d001_indirect_call_ref_qualified_member
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) D001:"
+  "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_l003_borrow_detached_spawn
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) L003:"
