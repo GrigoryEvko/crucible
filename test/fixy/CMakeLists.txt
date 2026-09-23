@@ -1185,6 +1185,105 @@ fixy_neg_compile_test(neg_sess_event_log_copied
   "use of deleted function .fixy::session::SessionEventLog::SessionEventLog\\(const fixy::session::SessionEventLog&\\)"
   "Pinned<T>: stable address")
 
+# ── Global types, projection and liveness ─────────────────────────────
+#
+# Global.h checks well-formedness and balanced+, Projection.h projects
+# onto each role and checks association, and Liveness.h joins the chain
+# (Pischke, Masters and Yoshida, arXiv 2505.17676 version 4).  The test
+# holds the paper's examples.
+fixy_test(test_session_global_types)
+
+# Two fixtures for each gate.  Each refused type satisfies each earlier
+# clause of its gate, so only the named clause can refuse it.
+fixy_neg_compile_test(neg_sess_global_self_communication
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Global_Self_Communication\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_duplicate_label
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Global_Duplicate_Label\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_unbalanced_loop
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Global_Not_Balanced\\]"
+  "ensure_balanced_plus\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_en_route_under_loop
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Global_EnRoute_Count_Undefined\\]"
+  "ensure_balanced_plus\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_project_unbound_variable
+  "template constraint failure for .template<class G, class R>"
+  "is_global_well_formed_v<G>"
+  "fixy::session::project_t")
+
+fixy_neg_compile_test(neg_sess_project_not_a_global_type
+  "template constraint failure for .template<class G, class R>"
+  "is_global_well_formed_v<G>"
+  "fixy::session::project_t")
+
+fixy_neg_compile_test(neg_sess_project_merge_label_mismatch
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Projection_Merge_Label_Set_Mismatch\\]"
+  "ensure_projectable\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_project_merge_shape_mismatch
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Projection_Merge_Shape_Mismatch\\]"
+  "ensure_projectable\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_project_queue_differs
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Projection_Queue_Differs_Across_Branches\\]"
+  "ensure_projectable\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_assoc_missing_role
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Missing_Role\\]"
+  "ensure_associated\\(\\) \\[with Ctx")
+
+fixy_neg_compile_test(neg_sess_assoc_local_mismatch
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Local_Mismatch\\]"
+  "ensure_associated\\(\\) \\[with Ctx")
+
+fixy_neg_compile_test(neg_sess_assoc_not_balanced_plus
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Global_Not_Balanced_Plus\\]"
+  "ensure_associated\\(\\) \\[with Ctx")
+
+fixy_neg_compile_test(neg_sess_live_unbalanced
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Global_Not_Balanced\\]"
+  "Liveness\\.h:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_live_unprojectable
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Projection_Merge_Shape_Mismatch\\]"
+  "Liveness\\.h:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_live_extra_role
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Extra_Role_Not_Terminated\\]"
+  "Liveness\\.h:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_context_live_queue_mismatch
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Queue_Mismatch\\]"
+  "Liveness\\.h:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_sess_strip_peers_two_peers
+  "template constraint failure for .template<class Local>"
+  "fixy::session::strip_peers_t"
+  "local_peers_t<Local>::size\\) <= 1")
+
+fixy_neg_compile_test(neg_sess_strip_peers_not_a_local_type
+  "invalid use of incomplete type .struct fixy::session::detail::proj::peer_walk<"
+  "fixy::session::strip_peers_t")
+
 # ── Every gate predicate is armed ─────────────────────────────────────
 #
 # The walk in test_armed_roster.cpp reads every predicate the two layers
