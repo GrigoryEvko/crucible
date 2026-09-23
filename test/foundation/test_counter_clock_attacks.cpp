@@ -386,14 +386,16 @@ struct KnownLimit {
 
 inline constexpr KnownLimit kLedger[] = {
     {"retag through raw()",
-     "Generation{epoch.raw()} states a generation from an epoch's count. The explicit constructor is the door "
-     "that reads a count off the wire, and it cannot tell where its integer came from."},
+     "Generation{epoch.raw()} states a generation from an epoch's count. A count crosses a wire, and the read that "
+     "gives it back is a public injection from integers. A typed wire word only moves the relabel to the word's own "
+     "constructor, so the retag stays legal while any integer door exists."},
     {"retag through std::bit_cast",
-     "Every counter is trivially copyable and eight bytes, so std::bit_cast between two axes is legal. A counter "
-     "that must cross a wire or sit in a register has to stay trivially copyable."},
+     "std::bit_cast needs only two trivially copyable types of one size ([bit.cast]). A counter that is not "
+     "trivially copyable loses std::atomic, which requires it, and its register passing in the ABI."},
     {"a count or a clock from integers claims any history",
-     "The order sees values and not events. Epoch{older} after Epoch{newer}, or a clock with every slot at the top, "
-     "is a legal construction. Forward progress belongs to the code that advances the value."},
+     "The order sees values and not events, and top() is itself a legal element that claims every history. That a "
+     "value was reached by successor steps is a property of the code that advances it, so it belongs to an "
+     "advance-only owner, not to the lattice."},
 };
 static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
 

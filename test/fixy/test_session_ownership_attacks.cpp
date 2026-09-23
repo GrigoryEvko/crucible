@@ -621,6 +621,14 @@ void borrowed_prefix_on_another_thread() {
 // returned, and the CLASS rule, ESOP 2023, that no reader acts after the
 // writer takes the region.  The set accounting of the session layer
 // records the loan, but a copy of the proof is outside the set.
+//
+// Why it stays open.  C++ cannot tie the life of a copyable value to the
+// life of another object: a lifetime annotation constrains a reference,
+// and a ReadView is a value.  The one shape that closes it is a scoped
+// view that is not copyable and exists only as the parameter of a
+// callback that the loan or the guard calls, so the frame of the proof
+// ends before its source can end.  CLAUDE.md states ReadView as copyable,
+// so that shape changes a stated contract and waits for approval.
 template <class Tag>
 concept ReadProofOutlivesItsSource =
     requires(BX& loan) { fp::ReadView<Tag>{loan.view}; } && std::is_copy_constructible_v<fp::ReadView<Tag>>;
@@ -631,6 +639,13 @@ concept ReadProofOutlivesItsSource =
 // breaks the exclusive points-to of Actris 2.0 (Hinrichsen, Bengtson,
 // Krebbers, LMCS 2022): a resource owned twice.  Permission.h states
 // this limit as the linearity decision of the tree.
+//
+// Why it stays open.  C++ has no affine types, so a use after std::move
+// is legal, and GCC 16 has no use-after-move analysis.  A check at the
+// second use needs state that records the move.  A liveness byte in the
+// token is that state, and it makes sizeof(Permission) larger than 1 and
+// defeats the empty-base collapse that CLAUDE.md states for it, so it
+// waits for approval.
 template <class Tag>
 concept TokenMovesTwice = requires(fp::Permission<Tag>& token) {
     sess::Transferable<int, Tag>{1, std::move(token)};
