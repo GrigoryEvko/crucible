@@ -1,6 +1,7 @@
 // One iteration of this loop sends the region that the handle held at the
 // loop entry, and receives nothing back.  The next iteration would start
-// with a different permission set, so the Continue is refused.
+// with a different permission set.  The walk at the first handle refuses
+// the protocol before the step to the Continue is compiled.
 
 #include <fixy/session/Handle.h>
 

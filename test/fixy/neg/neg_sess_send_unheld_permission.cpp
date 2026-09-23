@@ -1,7 +1,8 @@
 // A message that carries a Permission moves its region to the peer, so
-// the sender must hold that region in its permission set.  This handle
-// holds no permission, so the send is refused.  fixy/session/Payload.h
-// computes what the payload takes, and the handle reads it.
+// the sender must hold that region in its permission set.  The public mint
+// starts with an empty set, so it refuses this protocol before any send.
+// fixy/session/Payload.h computes what the payload takes, and the mint
+// walks the whole protocol with it.
 
 #include <fixy/session/Handle.h>
 

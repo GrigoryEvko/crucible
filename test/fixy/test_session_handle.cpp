@@ -212,6 +212,34 @@ static_assert(!s::detail::handle_admits_recv_v<HoldsRegion, Token>);
 static_assert(s::detail::perm_set_admits_close_v<HoldsRegion>);
 static_assert(!s::detail::perm_set_admits_close_v<LendsRegion>);
 
+// The mint walks every path, so an arm that no run selects is checked.
+// Each refused protocol differs from its admitted neighbour in one step.
+using Lend = s::Borrowed<int, Region>;
+static_assert(s::PermissionFlowCloses<s::Send<Token, s::End>, HoldsRegion>);
+static_assert(!s::PermissionFlowCloses<s::Send<Token, s::End>, NoPerms>);
+static_assert(!s::PermissionFlowCloses<s::Select<s::End, s::Send<Token, s::End>>, NoPerms>,
+              "the second arm sends a region that the set does not hold");
+static_assert(!s::PermissionFlowCloses<s::Select<s::End, s::Send<Lend, s::End>>, HoldsRegion>,
+              "the second arm lends the region and reaches End with the loan open");
+static_assert(!s::PermissionFlowCloses<s::Offer<s::End, s::Recv<Token, s::End>>, HoldsRegion>,
+              "the second arm receives a second owner of the region");
+static_assert(s::PermissionFlowCloses<s::Loop<s::Send<Token, s::Recv<Token, s::Continue>>>, HoldsRegion>,
+              "each iteration sends the region and receives it back");
+static_assert(!s::PermissionFlowCloses<s::Loop<s::Send<Token, s::Continue>>, HoldsRegion>,
+              "one iteration gives the region away");
+static_assert(s::PermissionFlowCloses<s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>, NoPerms>);
+
+// A vendor pin is a declaration for the layer above.  The handle steps the
+// protocol that the pin wraps, at the top and after a step.
+using PinnedSend = s::VendorPinned<::fixy::session::VendorBackend::NV, s::Send<Ping, s::End>>;
+static_assert(std::is_same_v<s::detail::first_handle_t<PinnedSend, ValueWire, s::check::Enforced>,
+                             s::Handle<s::Send<Ping, s::End>, NoPerms, ValueWire, void, s::check::Enforced>>);
+static_assert(std::is_same_v<
+              s::detail::first_handle_t<s::Send<Ping, s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>>,
+                                        ValueWire, s::check::Enforced>,
+              s::Handle<s::Send<Ping, s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>>, NoPerms,
+                        ValueWire, void, s::check::Enforced>>);
+
 // ── Where a step lands ───────────────────────────────────────────────
 
 using Once = s::Send<Ping, s::Recv<Pong, s::End>>;
@@ -424,6 +452,18 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
         return 1;
     }
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
+    return 0;
+}
+
+// ── Runtime: a vendor-pinned session ─────────────────────────────────
+
+[[nodiscard]] int walk_vendor_pinned_session() {
+    auto head = s::mint_session_handle<PinnedSend>(ValueWire{});
+    auto at_end = std::move(head).send(Ping{7}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    if (std::move(at_end).close().last_sent != 7) {
+        std::fprintf(stderr, "the vendor-pinned session did not carry its message\n");
+        return 1;
+    }
     return 0;
 }
 
@@ -771,6 +811,7 @@ int main() {
     if (const int rc = walk_with_session(); rc != 0) return rc;
     if (const int rc = walk_loop_with_permission_set(); rc != 0) return rc;
     if (const int rc = move_token_through_session(); rc != 0) return rc;
+    if (const int rc = walk_vendor_pinned_session(); rc != 0) return rc;
     if (const int rc = walk_test_channel(); rc != 0) return rc;
     if (const int rc = walk_forked_channel(); rc != 0) return rc;
     if (const int rc = policy_runs(); rc != 0) return rc;

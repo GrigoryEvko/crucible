@@ -629,6 +629,10 @@ template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Pol
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
         return step_to_next<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), loc);
+    } else if constexpr (is_vendor_pinned_v<R>) {
+        // The vendor is a declaration for the layer above.  The handle
+        // steps the protocol that it pins.
+        return step_to_next<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), loc);
     } else {
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
@@ -1140,20 +1144,114 @@ concept WellFormedRunnableProtocol = is_well_formed_v<Proto> && !is_empty_choice
 
 namespace detail {
 
+// The permission flow of a whole protocol from a starting set PS.  The
+// handle checks each step when the step is compiled, and a branch that no
+// run selects is never compiled.  This walk visits every branch, so an arm
+// that leaves a loan open, or sends a region that the set does not hold,
+// is refused at the mint even when the program never selects that arm.
+//
+// LoopPS is the set at the entry of the innermost Loop, or void outside
+// every Loop.  A head that the walk does not know is refused.
+//
+// Complexity: one visit for each node of the protocol tree.
+template <typename P, typename PS, typename LoopPS>
+struct permission_flow_ {
+    static consteval bool closes() noexcept { return false; }
+};
+
+template <typename T, typename R, typename PS, typename LoopPS>
+struct permission_flow_<Send<T, R>, PS, LoopPS> {
+    static consteval bool closes() noexcept {
+        if constexpr (handle_admits_send_v<PS, T>) {
+            return permission_flow_<R, perm_set_after_send_t<PS, T>, LoopPS>::closes();
+        } else {
+            return false;
+        }
+    }
+};
+
+template <typename T, typename R, typename PS, typename LoopPS>
+struct permission_flow_<Recv<T, R>, PS, LoopPS> {
+    static consteval bool closes() noexcept {
+        if constexpr (handle_admits_recv_v<PS, T>) {
+            return permission_flow_<R, perm_set_after_recv_t<PS, T>, LoopPS>::closes();
+        } else {
+            return false;
+        }
+    }
+};
+
+template <typename... Branches, typename PS, typename LoopPS>
+struct permission_flow_<Select<Branches...>, PS, LoopPS> {
+    static consteval bool closes() noexcept { return (permission_flow_<Branches, PS, LoopPS>::closes() && ...); }
+};
+
+template <typename... Branches, typename PS, typename LoopPS>
+struct permission_flow_<Offer<Branches...>, PS, LoopPS> {
+    static consteval bool closes() noexcept { return (permission_flow_<Branches, PS, LoopPS>::closes() && ...); }
+};
+
+template <typename Role, typename... Branches, typename PS, typename LoopPS>
+struct permission_flow_<Offer<Sender<Role>, Branches...>, PS, LoopPS> {
+    static consteval bool closes() noexcept { return (permission_flow_<Branches, PS, LoopPS>::closes() && ...); }
+};
+
+template <typename Body, typename PS, typename LoopPS>
+struct permission_flow_<Loop<Body>, PS, LoopPS> {
+    static consteval bool closes() noexcept { return permission_flow_<Body, PS, PS>::closes(); }
+};
+
+template <typename PS, typename LoopPS>
+struct permission_flow_<Continue, PS, LoopPS> {
+    static consteval bool closes() noexcept {
+        if constexpr (std::is_void_v<LoopPS>) {
+            return false;
+        } else {
+            return ::foundation::permissions::perm_set_equal_v<PS, LoopPS>;
+        }
+    }
+};
+
+template <typename PS, typename LoopPS>
+struct permission_flow_<End, PS, LoopPS> {
+    static consteval bool closes() noexcept { return perm_set_admits_close_v<PS>; }
+};
+
+template <VendorBackend V, typename P, typename PS, typename LoopPS>
+struct permission_flow_<VendorPinned<V, P>, PS, LoopPS> {
+    static consteval bool closes() noexcept { return permission_flow_<P, PS, LoopPS>::closes(); }
+};
+
+}  // namespace detail
+
+// True when every path of Proto, from the set PS, sends only what the set
+// holds, receives no second owner of a region, returns each loop to the
+// set of its entry, and reaches End with no open loan.
+template <typename Proto, typename PS>
+concept PermissionFlowCloses = detail::permission_flow_<Proto, PS, void>::closes();
+
+namespace detail {
+
 // Builds the first handle of an admitted protocol with a given
 // permission set.  A Proto that starts with a Loop is unrolled one
 // iteration, so the returned handle sits at the loop body with the Loop
 // (or its permission frame) as its LoopCtx.  Any other head passes
 // through unchanged.
 //
-// It checks nothing.  mint_session_handle runs the admission for an
-// empty set.  A mint that consumes Permission tokens runs its own
-// admission and then calls this with the set of the tokens it consumed.
-// No mint may call it with a set whose tokens it did not consume.
+// It checks only the permission flow of the whole protocol.  Each public
+// mint runs its own admission first, and states the flow in its
+// constraint.  A mint that consumes Permission tokens calls this with the
+// set of the tokens it consumed.  No mint may call it with a set whose
+// tokens it did not consume.
 //
 // LoopCtx is void, or a session brand that an owning entry point sets.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
 [[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc) noexcept {
+    static_assert(PermissionFlowCloses<Proto, PS>,
+                  "fixy::session::diagnostic [PermissionImbalance]: a path of the protocol sends a region that the "
+                  "permission set does not hold, receives a second owner of a region, changes the set in one loop "
+                  "iteration, or reaches End with an open loan.  The walk visits every branch, so an arm that no "
+                  "run selects counts too.");
     return step_to_next<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), loc);
 }
 
@@ -1174,6 +1272,7 @@ using brand_ctx_t = session_brand<Brand, void>;
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultAbandonmentPolicy>
     requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
+          && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
 [[nodiscard]] constexpr auto mint_session_handle(Resource r,
                                                  std::source_location loc = std::source_location::current()) noexcept {
     static_assert(is_well_formed_v<Proto>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
@@ -1255,6 +1354,7 @@ concept SessionBody =
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Body>
     requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
+          && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
           && SessionBody<Body, Proto, Resource, Policy>
 [[nodiscard]] constexpr Resource
 with_session(Resource r, Body body, std::source_location loc = std::source_location::current()) noexcept(
@@ -1327,6 +1427,8 @@ concept ForkedEndpointBody =
 // start.
 template <typename Ctx, typename Proto, typename Parent, typename SelfTag, typename PeerTag>
 concept CtxFitsForkedChannel = WellFormedRunnableProtocol<Proto> && WellFormedRunnableProtocol<dual_of_t<Proto>>
+                            && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
+                            && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>
                             && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
 
 // Makes a channel and starts its two sides on two threads through
@@ -1370,7 +1472,9 @@ mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent
 // cannot reach this mint.
 template <typename Ctx, typename Proto>
 concept CtxFitsTestChannel = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Test>
-                          && WellFormedRunnableProtocol<Proto> && WellFormedRunnableProtocol<dual_of_t<Proto>>;
+                          && WellFormedRunnableProtocol<Proto> && WellFormedRunnableProtocol<dual_of_t<Proto>>
+                          && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
+                          && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>;
 
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename ResourceA,
           typename ResourceB>
