@@ -951,12 +951,16 @@ template <::foundation::effects::Effect... Es>
 struct row_admits_bg_<::fixy::atom::with<Es...>>
     : std::bool_constant<((Es == ::foundation::effects::Effect::Bg) || ...)> {};
 
+// P010's set is the observable atoms without Bg.  Whether an atom is
+// observable is decided in foundation/effects/Effect.h, where a count pin
+// makes each new atom take a decision, so a new observable atom joins
+// this set there and cannot be left out here.  Bg is left out because the
+// rules that read a Bg row, L007 and R003 among them, carry its theorem.
 template <class G>
 struct row_admits_observable_ : std::false_type {};
 template <::foundation::effects::Effect... Es>
 struct row_admits_observable_<::fixy::atom::with<Es...>>
-    : std::bool_constant<((Es == ::foundation::effects::Effect::Alloc || Es == ::foundation::effects::Effect::IO
-                           || Es == ::foundation::effects::Effect::Block)
+    : std::bool_constant<((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg)
                           || ...)> {};
 
 // H003's theorem names Alloc and IO specifically, so it gets its own
@@ -1202,6 +1206,14 @@ struct spawn_outlives_the_frame_<::fixy::atom::spawn::detach_with<Rationale>> : 
 template <::fixy::atom::ctrl::rationale Rationale>
 struct spawn_outlives_the_frame_<::fixy::atom::spawn::syscall_only<Rationale>> : std::true_type {};
 
+// Whether ControlFlow states a suspension.  ctrl::coroutine<Policy> is
+// the same suspension that atom::coroutine states on Reentrancy, written
+// on the axis of the ways a frame is left.
+template <class G>
+struct suspends_in_control_flow_ : std::false_type {};
+template <class SuspensionPolicy>
+struct suspends_in_control_flow_<::fixy::atom::ctrl::coroutine<SuspensionPolicy>> : std::true_type {};
+
 }  // namespace detail
 
 // ---------------------------------------------------------------------
@@ -1258,9 +1270,14 @@ struct rules_of {
     static constexpr bool linear = !G::template mentions<Axis::Usage>;
 
     // The concurrency premise several rules share.  A coroutine suspends
-    // and a Bg row runs elsewhere; either makes the body concurrent with
-    // respect to the caller's frame.
-    static constexpr bool concurrent = coroutine || row_bg;
+    // and a Bg row runs elsewhere, and either makes the body concurrent
+    // with respect to the caller's frame.  A suspension can be written on
+    // Reentrancy or on ControlFlow, and the premise reads both.  A read of
+    // one axis only would let a pack avoid every rule below by a write of
+    // the suspension on the other axis.
+    static constexpr bool suspends_in_control_flow =
+        detail::suspends_in_control_flow_<typename G::template on<Axis::ControlFlow>>::value;
+    static constexpr bool concurrent = coroutine || suspends_in_control_flow || row_bg;
 
     static constexpr bool L002_ok = !(borrow && concurrent);
     static constexpr bool M012_ok = !(monotonic && concurrent && !atomic_repr);
