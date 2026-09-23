@@ -502,6 +502,66 @@ foundation_neg_compile_test(neg_read_view_forged_by_start_lifetime_as
   "static assertion failed"
   "foundation::permissions::ReadView<.*Region.*. is not an implicit-lifetime type")
 
+# No route builds a context, a context key, the capability key, a
+# capability or an execution context over Bg without a constructor.
+# Each has user-provided constructors and no trivial one, for the same
+# reason as the token above.  The second regex names the type that the
+# trait or the mandate refused.
+foundation_neg_compile_test(neg_bg_context_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::Bg"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::Bg")
+foundation_neg_compile_test(neg_bg_context_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::Bg.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_init_context_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::Init"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::Init")
+foundation_neg_compile_test(neg_init_context_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::Init.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_test_context_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::Test"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::Test")
+foundation_neg_compile_test(neg_test_context_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::Test.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_bg_key_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::detail::ctx_mint::bg_key"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::detail::ctx_mint::bg_key")
+foundation_neg_compile_test(neg_bg_key_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::detail::ctx_mint::bg_key.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_init_key_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::detail::ctx_mint::init_key"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::detail::ctx_mint::init_key")
+foundation_neg_compile_test(neg_init_key_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::detail::ctx_mint::init_key.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_test_key_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::detail::ctx_mint::test_key"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::detail::ctx_mint::test_key")
+foundation_neg_compile_test(neg_test_key_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::detail::ctx_mint::test_key.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_cap_mint_key_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::cap_mint_key"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::cap_mint_key")
+foundation_neg_compile_test(neg_cap_mint_key_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::cap_mint_key.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_capability_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg")
+foundation_neg_compile_test(neg_capability_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg.* is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_bg_exec_ctx_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<")
+foundation_neg_compile_test(neg_bg_exec_ctx_forged_by_start_lifetime_as
+  "static assertion failed"
+  ".foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<.* is not an implicit-lifetime type")
+
 # A pool that ends while a share is out aborts.  The attack runs in a
 # child process, and the test passes only on that diagnostic.
 foundation_test(test_share_pool_outlived_aborts)

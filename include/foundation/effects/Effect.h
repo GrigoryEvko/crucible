@@ -264,30 +264,46 @@ struct BackgroundOwner;
 struct InitOwner;
 }  // namespace host
 
+// Each constructor of a key is user-provided, and not defaulted.  A key
+// with a trivial copy is trivially copyable, and std::bit_cast then
+// builds one from any byte.  A key with any trivial constructor is an
+// implicit-lifetime type, and std::start_lifetime_as then builds one
+// over a buffer.  Neither route names a constructor, so neither meets
+// the access check that the friend list controls.  The copy stays
+// public, so a holder can pass a key along.
 namespace detail::ctx_mint {
 
 class bg_key {
 private:
-    constexpr bg_key() noexcept = default;
+    constexpr bg_key() noexcept {}
 
     friend struct ::foundation::effects::host::BackgroundOwner;
     friend struct ::foundation::effects::testing::TestWitness;
+
+public:
+    constexpr bg_key(const bg_key&) noexcept {}
 };
 
 class init_key {
 private:
-    constexpr init_key() noexcept = default;
+    constexpr init_key() noexcept {}
 
     friend struct ::foundation::effects::host::InitOwner;
     friend struct ::foundation::effects::host::BackgroundOwner;
     friend struct ::foundation::effects::testing::TestWitness;
+
+public:
+    constexpr init_key(const init_key&) noexcept {}
 };
 
 class test_key {
 private:
-    constexpr test_key() noexcept = default;
+    constexpr test_key() noexcept {}
 
     friend struct ::foundation::effects::testing::TestWitness;
+
+public:
+    constexpr test_key(const test_key&) noexcept {}
 };
 
 }  // namespace detail::ctx_mint
@@ -364,10 +380,24 @@ struct AtomField<Effect::Block> {
 // What the three contexts share.  A context is its own atom, the value
 // atoms it holds as fields, and the key that mints it.  The row it
 // permits is the atom followed by the holdings, in that order, and
-// Ctx.h reads it through permitted_as instead of restating it.  The
-// constructor is protected because the door is the derived class's own
-// private default constructor: that is the one the roster fixture must
-// find private, and a base cannot make it so.
+// Ctx.h reads it through permitted_as instead of restating it.  The door
+// is the derived class's own private default constructor: that is the
+// one the roster fixture must find private, and a base cannot make it
+// so.
+//
+// The constructors are private, and the context is the one friend.  A
+// class that derives from this base cannot build it, so no object other
+// than a context holds one, and no downcast from a base reaches a
+// context that does not exist.
+//
+// The default constructor and the copy constructor are user-provided,
+// and not defaulted, so no constructor of a context is trivial.  A
+// context with a trivial copy is trivially copyable, and std::bit_cast
+// builds one from a byte.  A context with a trivial constructor is an
+// implicit-lifetime type, and std::start_lifetime_as builds one over a
+// buffer.  Each route skips the private door, and every ctx-bound gate
+// then admits the forged scope.  An empty class copies with no
+// instruction either way, and the destructor stays trivial.
 template <class Self, class Key, Effect Own, Effect... Holds>
 class ContextBase : public AtomField<Holds>... {
 public:
@@ -377,8 +407,12 @@ public:
     template <template <Effect...> class R>
     using permitted_as = R<Own, Holds...>;
 
-protected:
-    constexpr ContextBase() noexcept = default;
+private:
+    constexpr ContextBase() noexcept {}
+    constexpr ContextBase(const ContextBase& other) noexcept : AtomField<Holds>(other)... {}
+    constexpr ContextBase& operator=(const ContextBase&) noexcept = default;
+
+    friend Self;
 };
 
 }  // namespace detail
@@ -454,12 +488,16 @@ struct TestWitness {
 
 }  // namespace testing
 
-// The family's invariants, read off the roster so that a context is
-// pinned the moment it is listed.  Each context is one byte and empty,
-// because its atoms are; it is built only through the door; it is
-// named after its own atom, which keeps the effect table and the
-// context table one table; and no two contexts share a key, so a key
-// is the name of the context it mints.
+// The invariants of the family, read off the roster so that a context
+// is pinned the moment it is listed.  Each context obeys these rules:
+//
+//   - It is one byte and empty, because its atoms are.
+//   - It is built only through the door.
+//   - No route builds it or its key without a constructor.
+//   - It has the name of its own atom, so the effect table and the
+//     context table are one table.
+//   - It shares its key with no other context, so a key is the name of
+//     the context it mints.
 namespace detail {
 
 template <class C>
@@ -467,7 +505,17 @@ template <class C>
     static_assert(sizeof(C) == 1, "A context must be 1 byte.  Its capability members are empty and "
                                   "collapse into the object's own byte.");
     static_assert(std::is_empty_v<C>, "A context must be an empty class, so that ExecCtx holds it at no cost.");
-    static_assert(std::is_trivially_copyable_v<C>, "A context is passed by value and copied into ExecCtx.");
+    static_assert(std::is_nothrow_copy_constructible_v<C> && std::is_trivially_destructible_v<C>,
+                  "A context is passed by value and copied into ExecCtx, so its copy must not throw and its "
+                  "destructor must stay trivial.");
+    static_assert(!std::is_trivially_copyable_v<C> && !std::is_implicit_lifetime_v<C>,
+                  "A context must have no trivial constructor.  A trivially copyable context is built by "
+                  "std::bit_cast from a byte, and an implicit-lifetime context by std::start_lifetime_as over "
+                  "a buffer.  Keep the constructors of ContextBase user-provided.");
+    static_assert(!std::is_trivially_copyable_v<typename C::key_type>
+                      && !std::is_implicit_lifetime_v<typename C::key_type>,
+                  "A context key must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
+                  "build the key that mints the context.  Keep the constructors of the key user-provided.");
     static_assert(!std::is_default_constructible_v<C>,
                   "A context's default constructor must stay private.  Build one through a friended entry "
                   "point, or through the test witness.");

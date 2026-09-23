@@ -47,12 +47,22 @@ class Capability;
 // namespace of the befriending class when no matching declaration is
 // already visible there, so a key inside a detail namespace would
 // befriend a fresh detail-scope mint_cap and silently open the gate.
+//
+// Both constructors of the key are user-provided, and not defaulted.  A
+// key with a trivial copy is trivially copyable, and std::bit_cast then
+// builds one from any byte.  A key with any trivial constructor is an
+// implicit-lifetime type, and std::start_lifetime_as then builds one
+// over a buffer.  Neither route names a constructor, so neither meets
+// the access check below.  The same holds for Capability itself.
 class cap_mint_key {
-    constexpr cap_mint_key() noexcept = default;
+    constexpr cap_mint_key() noexcept {}
 
     template <Effect E, class S>
         requires CanMintCap<E, S>
     friend constexpr Capability<E, S> mint_cap(S const&) noexcept;
+
+public:
+    constexpr cap_mint_key(const cap_mint_key&) noexcept {}
 };
 
 template <Effect Cap, class Source>
@@ -65,7 +75,13 @@ public:
 
     Capability(Capability const&) = delete;
     Capability& operator=(Capability const&) = delete;
-    Capability(Capability&&) noexcept = default;
+    // User-provided, and not defaulted.  A defaulted move is trivial, so
+    // the token was trivially copyable and an implicit-lifetime type:
+    // std::bit_cast built a capability from a byte, and
+    // std::start_lifetime_as built one over a buffer, each with no key.
+    // With this move no constructor is trivial.  The destructor stays
+    // trivial.
+    constexpr Capability(Capability&&) noexcept {}
     Capability& operator=(Capability&&) noexcept = default;
     ~Capability() = default;
 
@@ -276,6 +292,21 @@ static_assert(noexcept(mint_cap<Effect::IO>(std::declval<Init const&>())));
 static_assert(noexcept(mint_cap<Effect::Block>(std::declval<Test const&>())));
 
 static_assert(std::is_empty_v<cap_mint_key>);
+
+// No route builds the key or the token without a constructor.
+// std::bit_cast builds any trivially copyable type from bytes, and
+// std::start_lifetime_as builds any implicit-lifetime type over a
+// buffer.  Neither names a constructor, so neither meets the access
+// check.  Each assertion fails if a constructor becomes defaulted again.
+static_assert(!std::is_trivially_copyable_v<cap_mint_key> && !std::is_implicit_lifetime_v<cap_mint_key>,
+              "cap_mint_key must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
+              "build the key that mints every Capability.");
+static_assert(!std::is_trivially_copyable_v<Capability<Effect::Alloc, Bg>>
+                  && !std::is_implicit_lifetime_v<Capability<Effect::Alloc, Bg>>,
+              "Capability must have no trivial constructor, or std::bit_cast and std::start_lifetime_as build "
+              "a capability with no key.");
+static_assert(std::is_trivially_destructible_v<Capability<Effect::Alloc, Bg>>,
+              "The destructor of a Capability must stay trivial, so that its end costs nothing.");
 static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
               "The passkey constructor must preserve the 1-byte size.  The key is empty and the "
               "Capability holds no members.");

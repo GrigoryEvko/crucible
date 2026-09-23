@@ -285,6 +285,23 @@ static_assert(sizeof(BgBlockWitness) == 1);
 static_assert(sizeof(InitWitness) == 1);
 static_assert(sizeof(TestWitnessCtx) == 1);
 
+// A context that holds a capability source is evidence, so no route
+// builds one without a constructor.  The source has no trivial
+// constructor, so the copy of the context is not trivial either, and
+// the one constructor that is not a copy takes a source.  std::bit_cast
+// and std::start_lifetime_as then refuse the context.  The foreground
+// context stays trivially copyable, because it claims nothing and
+// anyone may build it.
+template <class Ctx>
+inline constexpr bool is_context_forgeable_v = std::is_trivially_copyable_v<Ctx> || std::is_implicit_lifetime_v<Ctx>;
+
+static_assert(!is_context_forgeable_v<BgWitness> && !is_context_forgeable_v<BgBlockWitness>
+                  && !is_context_forgeable_v<InitWitness> && !is_context_forgeable_v<TestWitnessCtx>,
+              "An execution context over Bg, Init or Test must have no trivial constructor, or std::bit_cast "
+              "builds it from a byte and every ctx-bound gate admits the forged scope.");
+static_assert(std::is_trivially_copyable_v<FgWitness>, "The foreground context claims nothing, so a copy of it "
+                                                       "stays free.");
+
 // Every axis defaults to the claim-nothing end of its range.
 static_assert(std::is_same_v<typename ExecCtx<>::cap_type, ctx_cap::Fg>);
 static_assert(std::is_same_v<typename ExecCtx<>::row_type, Row<>>);
