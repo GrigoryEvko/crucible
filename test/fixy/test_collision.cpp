@@ -134,7 +134,7 @@ static_assert(live_rules<at::copy, at::stdio::write<at::stdio::streams::Stdout>>
               "only the ghost grade makes an emitted write a contradiction");
 
 // ---------------------------------------------------------------------
-// The regime family, live since fixy/atoms/Regime.h (task #176).
+// The regime family, which reads fixy/atoms/Regime.h.
 //
 // Each cell pair is the rule refusing its pair and admitting each half,
 // the same shape as the eleven above.  Two things are worth reading for
@@ -209,7 +209,7 @@ static_assert(live_rules<>::H001_ok && live_rules<>::H002_ok && live_rules<>::H0
 static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::valid);
 
 // ---------------------------------------------------------------------
-// The wait family, live since fixy/atoms/Sync.h (task #176).
+// The wait family, which reads fixy/atoms/Sync.h.
 //
 // Both rules read one axis from opposite ends of its ladder, so the
 // interesting cells are the ones that show the LINE, not just the ends.
@@ -261,7 +261,7 @@ static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<ho
               && live_rules<at::with<Eff::Bg>>::W002_ok);
 
 // ---------------------------------------------------------------------
-// The observability family, live since fixy/atoms/Observe.h (task #176).
+// The observability family, which reads fixy/atoms/Observe.h.
 //
 // Two theorems on one axis, and the cells below show they are two: each
 // pack trips one and not the other.
@@ -317,8 +317,8 @@ static_assert(live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B002
 static_assert(!fe::LiftsToRow<at::observe::surface<Eff::IO>>);
 
 // ---------------------------------------------------------------------
-// The payload read (task #176, ahead of the FpMode, SimdIsa and
-// HwInstruction atoms that pair with it).
+// The payload read, which the FpMode, SimdIsa and HwInstruction rules
+// pair with.
 //
 // Four rules pair a grade with the payload's replay claim, and the claim
 // is the DetSafe band the payload carries.  rules_of<Payload, Atoms...>
@@ -351,7 +351,7 @@ static_assert(std::is_same_v<live_rules<at::copy>, rules_of<void, at::copy>>);
 static_assert(rules_of<det<DetTier::Pure>>::valid);
 
 // ---------------------------------------------------------------------
-// The hardware-instruction family, live since fixy/atoms/Hw.h (task #176).
+// The hardware-instruction family, which reads fixy/atoms/Hw.h.
 //
 // The ladder is a chain where a tier admits every class below it, so the
 // cells read it at the one boundary V201 and V203 care about — at or
@@ -408,7 +408,7 @@ static_assert(!rules_of<det<DetTier::Pure>, at::hw::non_deterministic_tsc>::V203
 static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
 
 // ---------------------------------------------------------------------
-// The barrier-strength family, live since fixy/atoms/Barrier.h (task #176).
+// The barrier-strength family, which reads fixy/atoms/Barrier.h.
 //
 // One rule at one boundary of the chain.  The cost and refinement atoms
 // silence H001 and H002 on every hot cell.
@@ -456,7 +456,7 @@ static_assert(live_rules<at::barrier::full_fence>::V201_ok && live_rules<at::bar
               "the top of the fence ladder is not a hardware tier");
 
 // ---------------------------------------------------------------------
-// The memory-scope family, live since fixy/atoms/Scope.h (task #176).
+// The memory-scope family, which reads fixy/atoms/Scope.h.
 //
 // V401 is the first rule to read two of the new axes together, and the
 // lattice under the scope axis is two trunks, so the cells cover the
@@ -495,7 +495,7 @@ static_assert(!live_rules<at::regime::hot, at::scope::system, at::barrier::seq_c
                             at::refined_with<hot_invariant>>::V401_ok);
 
 // ---------------------------------------------------------------------
-// The SIMD-ISA family, live since fixy/atoms/Simd.h (task #176).
+// The SIMD-ISA family, which reads fixy/atoms/Simd.h.
 //
 // Two trunks again, and two rules.  V101 reads the payload, so its cells
 // use rules_of; V402 reads two axes of the pack, so its use live_rules.
@@ -536,7 +536,7 @@ static_assert(live_rules<at::simd::neon, at::scope::inner>::V401_ok
               && live_rules<at::simd::neon, at::scope::inner>::V402_ok);
 
 // ---------------------------------------------------------------------
-// The floating-point-mode family, live since fixy/atoms/Fp.h (task #176).
+// The floating-point-mode family, which reads fixy/atoms/Fp.h.
 //
 // The atom is a product, so a mode names some settings and leaves the
 // rest at their enum's first enumerator.  The cells read both halves:
@@ -630,15 +630,12 @@ static_assert(live_rules<at::borrow, at::spawn::detach_with<"drain outlives the 
 // ---------------------------------------------------------------------
 // The pending roster.
 
-// Fourteen, down from twenty-two: fixy/atoms/Regime.h took the six H, R
-// and S rules live and fixy/atoms/Sync.h took W001 and W002 (task #176).
-// The number moves once per axis this task drains, and it is a literal
-// rather than a floor because the three dispositions partition the
-// catalog — a floor here would let a rule fall out of all three and go
-// unnoticed.
+// Zero, because every axis but Type has an atom.  It is a literal rather
+// than a floor because the dispositions partition the catalog, and a
+// floor here would let a rule fall out of all of them and go unnoticed.
 static_assert(col::pending_rule_count == 0,
-              "task #176 drained the pending roster: every axis but Type now has an atom, so a rule that still "
-              "cannot fire is Absent for a reason this layer can name, not Pending on an atom");
+              "the pending roster is empty: every axis but Type has an atom, so a rule that still cannot fire "
+              "is Absent for a reason this layer can name, not Pending on an atom");
 static_assert(col::every_pending_axis_is_still_empty());
 
 // pending_axes is a hand-written list, so the pin on its length compares
@@ -671,10 +668,10 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // are counted separately and must sum to the catalog's size.
 //
 // That size is 55, not 54: the 54 are inherited from the old catalog's
-// RuleCode enum and B002 was written in fixy/Collision.h by task #176,
-// which found two theorems on Axis::Observability where the old catalog
-// recorded one.  B001 kept its back-pressure theorem rather than being
-// reread as the containment rule, because the codes are stable API.
+// RuleCode enum, and B002 is written in fixy/Collision.h, because
+// Axis::Observability carries two theorems where the old catalog recorded
+// one.  B001 keeps its back-pressure theorem rather than being reread as
+// the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
 static_assert(col::live_rule_count == 41);
@@ -727,9 +724,9 @@ static_assert(every_absent_entry_gives_a_reason());
 // Each pending axis really has no atom, and each axis carrying a live
 // rule really has one.  Both halves, so the roster is not merely
 // self-consistent.
-// Every axis on this side now, because task #176 drained the other one.
-// The cells stay rather than being deleted: each is the witness that its
-// axis crossed, and the rule cells above are what each crossing bought.
+// Every axis is on this side, because the pending roster is empty.  Each
+// cell is the witness that its axis has an atom, and the rule cells above
+// read those atoms.
 static_assert(col::axis_has_an_atom<Axis::FpMode>);
 static_assert(col::axis_has_an_atom<Axis::SimdIsa>);
 static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);

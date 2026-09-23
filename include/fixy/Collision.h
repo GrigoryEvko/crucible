@@ -208,18 +208,13 @@ inline constexpr bool axis_has_an_atom = detail::axis_has_an_atom_<A>();
 // caller-supplied by design, being the payload itself, so it is the one
 // axis that is atomless and complete rather than atomless and waiting.
 //
-// Task #176 drained this list, one axis per commit, because the user's
-// decision was to ship an atom for every axis rather than delete any.
-// Regime.h left first, taking the H, R and S families live; then Sync.h
-// with W001 and W002, Observe.h with B001 and the new B002, Hw.h with the
-// three V2 rules, Barrier.h with V301, Scope.h with V401, Simd.h with
-// V101 and V402, and Fp.h last with F101 and F102.  The list is now
-// empty, which is the whole of what the task set out to prove: every axis
-// but Type can be written.
+// The list is empty: every axis but Type has an atom, so every axis but
+// Type can be written.  The families that give each axis its atoms are
+// the headers under fixy/atoms/, and each one's rules are named in the
+// corpus below.
 //
-// It is a std::array rather than a C array precisely so it can reach
-// zero.  A C array of length zero is ill-formed, so the type that held
-// this list could not express the state the task was aiming at.
+// It is a std::array rather than a C array so it can hold zero entries.
+// A C array of length zero is ill-formed.
 inline constexpr std::array<Axis, 0> pending_axes{};
 
 inline constexpr std::size_t pending_axis_count = pending_axes.size();
@@ -308,15 +303,14 @@ struct pending_rule {
 
 // Empty, and empty for two different reasons.
 //
-// Most of the roster left for the live rules as task #176 shipped each
-// axis: H001, H002, H003, H010, R001 and S001 with fixy/atoms/Regime.h,
-// W001 and W002 with Sync.h, B001 with Observe.h, V201, V202 and V203
-// with Hw.h, V301 with Barrier.h, V401 with Scope.h, V101 and V402 with
-// Simd.h, and F101 with F102 last, when Fp.h shipped.  Each is a
-// live_rules member below and a Live row in rule_corpus.  Three of them
-// moved axis on the way: W001 reads a tier AND a wait strategy, V401 a
-// scope AND a strength, V402 a scope AND a pinned ISA, so each waited on
-// whichever of its two axes was still atomless.
+// Every rule that reads an axis family is live, because every axis has
+// its atoms: H001, H002, H003, H010, R001 and S001 read
+// fixy/atoms/Regime.h, W001 and W002 read Sync.h, B001 reads Observe.h,
+// V201, V202 and V203 read Hw.h, V301 reads Barrier.h, V401 reads
+// Scope.h, V101 and V402 read Simd.h, and F101 and F102 read Fp.h.  Each
+// is a live_rules member below and a Live row in rule_corpus.  Three of
+// them read two families: W001 a tier AND a wait strategy, V401 a scope
+// AND a strength, V402 a scope AND a pinned ISA.
 //
 // Four sit in rule_corpus instead, because the FpMode or SimdIsa atom is
 // not all they read.  F103, F104 and F105, which read an FP mode against
@@ -375,8 +369,8 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"G002", Disposition::Live, "thread-local x atomic representation"},
     {"D002", Disposition::Live, "unbounded recursion x unbounded cost"},
 
-    // The regime family, live since fixy/atoms/Regime.h shipped the
-    // three HotPathTier atoms (task #176).
+    // The regime family, which reads the three HotPathTier atoms of
+    // fixy/atoms/Regime.h.
     {"H001", Disposition::Live, "hot x unstated or unbounded cost"},
     {"H002", Disposition::Live, "hot x no refinement witness"},
     {"H003", Disposition::Live, "hot x an Alloc or IO row x unbounded cost"},
@@ -384,14 +378,14 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"R001", Disposition::Live, "coroutine x hot"},
     {"S001", Disposition::Live, "stdio x hot"},
 
-    // The wait family, live since fixy/atoms/Sync.h shipped the six
-    // WaitStrategy atoms (task #176).  W001 reads a tier and a wait, so
-    // it needed both that commit and the Regime one.
+    // The wait family, which reads the six WaitStrategy atoms of
+    // fixy/atoms/Sync.h.  W001 reads a tier and a wait, so it reads the
+    // Regime family too.
     {"W001", Disposition::Live, "hot x a kernel wait"},
     {"W002", Disposition::Live, "Row<Bg> x a spin that burns the core"},
 
-    // The observability family, live since fixy/atoms/Observe.h shipped
-    // the surface atom (task #176).  Two theorems, not one: B002 is the
+    // The observability family, which reads the surface atom of
+    // fixy/atoms/Observe.h.  Two theorems, not one: B002 is the
     // containment of the observability row in the effect row, and B001 is
     // the back-pressure trap this catalog already recorded.  B002 is a new
     // code rather than a rereading of B001, because the codes are stable
@@ -399,32 +393,30 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"B001", Disposition::Live, "Row<Bg> x an observable surface x an unbounded resource"},
     {"B002", Disposition::Live, "an observability row outside the binding's effect row"},
 
-    // The hardware-instruction family, live since fixy/atoms/Hw.h shipped
-    // the five HwInstruction atoms (task #176).  V203 is the first rule
-    // to consume the payload's replay claim.
+    // The hardware-instruction family, which reads the five
+    // HwInstruction atoms of fixy/atoms/Hw.h.  V203 reads the payload's
+    // replay claim against them.
     {"V201", Disposition::Live, "hot x a tier at or above NonDeterministicTsc"},
     {"V202", Disposition::Live, "the PrivilegedMsr tier x an effect row with no Init"},
     {"V203", Disposition::Live, "a replay-deterministic payload x a tier at or above NonDeterministicTsc"},
 
-    // The barrier-strength family, live since fixy/atoms/Barrier.h shipped
-    // the seven BarrierStrength atoms (task #176).
+    // The barrier-strength family, which reads the seven BarrierStrength
+    // atoms of fixy/atoms/Barrier.h.
     {"V301", Disposition::Live, "hot x a fence at or above SeqCst"},
 
-    // The memory-scope family, live since fixy/atoms/Scope.h shipped the
-    // eight MemoryScope atoms (task #176).  V401 is the first rule to read
-    // two of the new axes together.
+    // The memory-scope family, which reads the eight MemoryScope atoms of
+    // fixy/atoms/Scope.h.  V401 reads a scope and a strength together.
     {"V401", Disposition::Live, "a scope at or above Cluster x a fence below AcqRel"},
 
-    // The SIMD-ISA family, live since fixy/atoms/Simd.h shipped the
-    // fifteen SimdIsa atoms (task #176).  V101 is the second rule to
-    // consume the payload's replay claim, and V402 the second to read
-    // two of the new axes together.
+    // The SIMD-ISA family, which reads the fifteen SimdIsa atoms of
+    // fixy/atoms/Simd.h.  V101 reads the payload's replay claim against
+    // them, and V402 reads a scope and an ISA together.
     {"V101", Disposition::Live, "a replay-deterministic payload x an ISA pinned to one trunk"},
     {"V402", Disposition::Live, "a trunk-pinned scope x a trunk-pinned ISA that do not cohere"},
 
-    // The floating-point-mode family, live since fixy/atoms/Fp.h shipped
-    // the product atom (task #176).  Both read the payload's replay claim,
-    // as V203 and V101 do.
+    // The floating-point-mode family, which reads the product atom of
+    // fixy/atoms/Fp.h.  Both read the payload's replay claim, as V203 and
+    // V101 do.
     {"F101", Disposition::Live, "a replay-deterministic payload x FP reassociation permitted"},
     {"F102", Disposition::Live, "a replay-deterministic payload x FP contraction across statements"},
 
@@ -558,8 +550,8 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 // family roster forgotten from all_atom_roster makes an axis look empty
 // and fires it too.
 //
-// Task #176 emptied pending_axes, so only the second direction can fire
-// now, and it is the one worth keeping: the assertion currently reads
+// pending_axes is empty, so only the second direction can fire, and it
+// is the one worth keeping: the assertion currently reads
 // "every axis but Type has an atom", and a family header that stops being
 // joined into the roster takes that claim down.
 
@@ -765,7 +757,7 @@ static_assert(every_pending_axis_is_still_empty(),
               "fixy/Collision.h: the pending-rule roster is out of date.  Either an axis listed in "
               "collision::pending_axes has gained its first atom — in which case the rules registered against it in "
               "collision::pending_rules can now fire and must be written as live rules, and the axis removed from "
-              "pending_axes — or, since task #176 emptied both lists, a family roster under fixy/atoms/ is no longer "
+              "pending_axes — or, since both lists are empty, a family roster under fixy/atoms/ is no longer "
               "joined into collision::all_atom_roster, which makes its axes look empty.");
 
 // ---------------------------------------------------------------------
@@ -782,10 +774,10 @@ static_assert(every_pending_axis_is_still_empty(),
 // reported as absent — the failure this list exists to prevent.
 //
 // B002 is the one addition, and it is an addition rather than a rereading
-// of an inherited code.  Task #176 gave Axis::Observability its atoms and
-// found two theorems where the old catalog recorded one: B001's
-// back-pressure trap, which it kept, and the containment of the
-// observability row in the effect row, which had no code.  Reusing B001
+// of an inherited code.  Axis::Observability carries two theorems where
+// the old catalog recorded one: B001's back-pressure trap, which keeps
+// its code, and the containment of the observability row in the effect
+// row, which had no code.  Reusing B001
 // for the second would have discarded a theorem that has its own remedy,
 // and the codes are stable API precisely so that cannot happen quietly.
 static_assert(rule_corpus_size == 55,
