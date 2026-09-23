@@ -339,6 +339,10 @@ fixy_neg_compile_test(neg_rule_v101_replay_pinned_isa
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) V101:"
   "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_v101_replay_under_alloc_class
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) V101:"
+  "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_v402_scope_across_trunk
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) V402:"
@@ -352,6 +356,10 @@ fixy_neg_compile_test(neg_rule_v402_scope_across_trunk
 # mode names one setting and leaves the other at its strict pole, which
 # is what makes each trip exactly one of the two.
 fixy_neg_compile_test(neg_rule_f101_replay_reassociate
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F101:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f101_replay_under_hot_path
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) F101:"
   "${_fixy_tier5_member}")
