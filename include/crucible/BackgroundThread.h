@@ -181,7 +181,8 @@ struct BackgroundThread {
     // The foreground raises this when compiled replay diverges.  The
     // background clears its accumulated trace and detector on observing it,
     // so leftover signature ops from the pre-divergence iteration cannot
-    // poison the next region.
+    // poison the next region.  The detector keeps one thing: the periods
+    // that broke, so a layer square that diverged is not picked again.
     //
     // Own cache line: the foreground writes it while the background reads it
     // each drain cycle, and the neighbouring fields are background-private.
@@ -471,7 +472,7 @@ struct BackgroundThread {
 
             BackgroundThread* owner = batch->owner;
             auto do_reset = [&]() noexcept {
-                owner->detector.reset();
+                owner->detector.restart_after_divergence();
                 owner->current_trace.clear();
                 owner->current_meta_starts.clear();
                 owner->current_scope_hashes.clear();
@@ -494,7 +495,7 @@ struct BackgroundThread {
                 owner->current_scope_hashes.push_back(batch->scope_hashes[i]);
                 owner->current_callsite_hashes.push_back(batch->callsite_hashes[i]);
 
-                if (owner->detector.check(batch->entries[i].schema_hash)) {
+                if (owner->detector.check(batch->entries[i].schema_hash, batch->entries[i].shape_hash)) {
                     if (auto work = std::unique_ptr<BgBuildWork>(owner->prepare_iteration_build_work())) {
                         push_pipeline(out, work.get());
                         work.release();
