@@ -43,7 +43,7 @@ appear as `-` in the flag columns.  `- (alloc)` is documented absence,
 not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees.
 
-Snapshot generated: `2026-09-23T18:38:04Z`.
+Snapshot generated: `2026-09-23T20:31:15Z`.
 
 ## bridges/
 
@@ -119,7 +119,7 @@ Snapshot generated: `2026-09-23T18:38:04Z`.
 | `mint_pool_event` | `include/crucible/cntp/ConnectionPool.h:134` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h:182` | Y | Y | - | - | token | [✗ NO-FIXY] | HS14: 3 |
 | `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h:340` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_reed_solomon` | `include/crucible/cntp/Fec.h:496` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
+| `mint_reed_solomon` | `include/crucible/cntp/Fec.h:501` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_resource_limit` | `include/crucible/cntp/Backpressure.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h:108` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_roce_config` | `include/crucible/cntp/RoceConfig.h:113` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
