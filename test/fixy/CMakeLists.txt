@@ -736,6 +736,8 @@ fixy_neg_compile_test(neg_secret_copy
 # carries a suffix, because test/CMakeLists.txt still registers
 # test_owned_region and a CMake target name is global.
 fixy_test(test_stale)
+fixy_test(test_versioned_budgeted)
+fixy_test(test_versioned_budgeted_attacks)
 fixy_test(test_owned_region_fixy test_owned_region.cpp)
 fixy_test(test_borrowed)
 fixy_test(test_scoped_view)
@@ -769,6 +771,56 @@ fixy_neg_compile_test(neg_stale_weakened_downwards
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .eight_behind\\.fixy::Stale<int>::weaken\\("
   "fixy/Stale\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# EpochVersioned has no door that raises a version without new evidence.
+# A default version, a combine that joins two versions into one payload,
+# and a payload write under the current version each make a stale payload
+# read as fresh.
+fixy_neg_compile_test(neg_epoch_versioned_default_claims_no_version
+  "use of deleted function .fixy::EpochVersioned<T>::EpochVersioned\\(\\) .with T = int.."
+  "a value that was never produced at a version has no version to report")
+fixy_neg_compile_test(neg_epoch_versioned_combine_marks_stale_fresh
+  "has no member named .combine_max."
+  ".const class fixy::EpochVersioned<int>.")
+fixy_neg_compile_test(neg_epoch_versioned_payload_replaced_under_version
+  "has no member named .peek_mut."
+  ".class fixy::EpochVersioned<int>.")
+
+# Budgeted has no door that claims less use than was measured.  A factory
+# that grants the zero grade, a swapped pair of grades, and a payload
+# write under the current grade each let a value pass a gate it must fail.
+fixy_neg_compile_test(neg_budgeted_free_claims_zero
+  ".free. is not a member of"
+  ".fixy::Budgeted<int>.")
+fixy_neg_compile_test(neg_budgeted_axes_swapped
+  "no matching function for call to .fixy::Budgeted<int>::Budgeted\\(<brace-enclosed initializer list>\\)."
+  "no known conversion for argument 2 from .element_type<foundation::algebra::lattices::counter_tags::peak_bytes>. to .element_type<foundation::algebra::lattices::counter_tags::bits_budget>.")
+fixy_neg_compile_test(neg_budgeted_payload_replaced_under_grade
+  "has no member named .peek_mut."
+  ".class fixy::Budgeted<int>.")
+
+# The payload side and the substrate side.  A reference payload, and for
+# a version a payload with a mutable member, could change under the claim
+# with no cast.  The substrate under each wrapper weakens only toward the
+# weaker claim, which is the older version and the larger use.
+fixy_neg_compile_test(neg_epoch_versioned_reference_payload
+  "template constraint failure for .template<class T>  requires  VersionablePayload<T> class fixy::EpochVersioned."
+  ".int&. is not an object type")
+fixy_neg_compile_test(neg_epoch_versioned_mutable_payload
+  "template constraint failure for .template<class T>  requires  VersionablePayload<T> class fixy::EpochVersioned."
+  "class fixy::EpochVersioned .with T = CachedValue."
+  "the expression .!any_component_satisfies")
+fixy_neg_compile_test(neg_epoch_versioned_substrate_weaken_to_newer
+  "non-constant condition for static assertion"
+  ".anonymous.::stale\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>"
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_budgeted_reference_payload
+  "template constraint failure for .template<class T>  requires  is_object_v<T> class fixy::Budgeted."
+  ".int&. is not an object type")
+fixy_neg_compile_test(neg_budgeted_substrate_weaken_below
+  "non-constant condition for static assertion"
+  ".anonymous.::measured\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::bits_budget>"
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # ── The consumed bands and the F* aliases ─────────────────────────────
 fixy_test(test_bands)

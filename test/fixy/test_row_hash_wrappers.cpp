@@ -41,6 +41,7 @@
 #include <fixy/Bands.h>
 #include <fixy/Bits.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Budgeted.h>
 #include <fixy/Checked.h>
 #include <fixy/Collision.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -59,6 +60,7 @@
 #include <fixy/Corpus.h>
 #include <fixy/Ctx.h>
 #include <fixy/Cyclic.h>
+#include <fixy/EpochVersioned.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Fn.h>
 #include <fixy/fp/Canonicalize.h>
@@ -797,6 +799,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::Saturated, ^^::fixy::Saturated<int>},
     {^^::fixy::Secret, ^^::fixy::Secret<int>},
     {^^::fixy::Stale, ^^::fixy::Stale<int>},
+    {^^::fixy::EpochVersioned, ^^::fixy::EpochVersioned<int>},
+    {^^::fixy::Budgeted, ^^::fixy::Budgeted<int>},
     {^^::fixy::Tagged, ^^::fixy::Tagged<int, ::fixy::tags::trust::Verified>},
     {^^::fixy::CpuPinned, ^^::fixy::detail::cpu_pinned_invariants::PinnedC0},
     {^^::fixy::SchedClass, ^^::fixy::sched_class::Batch<int>},

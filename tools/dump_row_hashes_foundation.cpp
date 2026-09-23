@@ -75,7 +75,7 @@
 // different compiler. So the first line of the diff answers the question
 // the rest of it raises.
 //
-// A diff in the tag alone, with all thirty-nine payload lines unchanged,
+// A diff in the tag alone, with all forty-one payload lines unchanged,
 // means the toolchain moved and the fold did not. Recapture the golden
 // and say which toolchain in the commit message. Nothing is broken.
 //
@@ -83,6 +83,8 @@
 // R** lines moved, the portable half of the federation key stopped being
 // portable, and that is a defect rather than a ceremony.
 
+#include <fixy/Budgeted.h>
+#include <fixy/EpochVersioned.h>
 #include <fixy/Fn.h>
 #include <fixy/Mutation.h>
 #include <fixy/Qtt.h>
@@ -145,6 +147,11 @@ using G07_Monotonic = ::fixy::Monotonic<std::uint64_t>;
 // trait to express.
 using G08_RefinedPositive = ::fixy::Refined<::fixy::positive, int>;
 using G09_RefinedNonNegative = ::fixy::Refined<::fixy::non_negative, int>;
+
+// The two product-graded wrappers.  Each folds a product lattice, and the
+// product's identity is built from the identities of its two components.
+using G10_EpochVersioned = ::fixy::EpochVersioned<int>;
+using G11_Budgeted = ::fixy::Budgeted<int>;
 
 // ── The counter axes ───────────────────────────────────────────────
 //
@@ -239,7 +246,7 @@ struct LabeledEntry {
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 39> kEntries = {{
+inline constexpr std::array<LabeledEntry, 41> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -271,6 +278,8 @@ inline constexpr std::array<LabeledEntry, 39> kEntries = {{
     {"S03_IoFunction", row_hash_contribution_v<S03_IoFunction>},
     {"S04_BgWorker", row_hash_contribution_v<S04_BgWorker>},
     {"S05_CtCrypto", row_hash_contribution_v<S05_CtCrypto>},
+    {"G10_EpochVersioned", row_hash_contribution_v<G10_EpochVersioned>},
+    {"G11_Budgeted", row_hash_contribution_v<G11_Budgeted>},
     {"K01_OnEpoch", row_hash_contribution_v<K01_OnEpoch>},
     {"K02_OnGeneration", row_hash_contribution_v<K02_OnGeneration>},
     {"K03_OnPeakBytes", row_hash_contribution_v<K03_OnPeakBytes>},
@@ -289,7 +298,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x74b17e98c65f2144ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x398b036ee8547c85ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -414,11 +423,11 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Thirty-nine entries carry thirty-four distinct values. Five entries repeat
+// Forty-one entries carry thirty-six distinct values. Five entries repeat
 // one that stands above them: R05 repeats R04, B02 and B07 and S01 each
 // repeat B01, and S05 repeats B03. Every one of those five has its own
 // assert above, with the property that makes the repeat correct.
-static_assert(distinct_value_count() == 34,
+static_assert(distinct_value_count() == 36,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "
               "claims that must not share a cache slot.");

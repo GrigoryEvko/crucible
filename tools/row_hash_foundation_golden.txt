@@ -1,8 +1,8 @@
 # foundation row_hash cross-build witness
 # format-version:  1
-# matrix-size:     39
+# matrix-size:     41
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0x74b17e98c65f2144
+# fold-anchor:     0x398b036ee8547c85
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
@@ -37,6 +37,8 @@ S02_PureCopy             0xf7744749b767d412
 S03_IoFunction           0x28e2d1651e4cd671
 S04_BgWorker             0x12e21a941a44e678
 S05_CtCrypto             0x1c0979fc154d15e7
+G10_EpochVersioned       0xe3543c60534b7736
+G11_Budgeted             0xdefcdb2e9f0ea002
 K01_OnEpoch              0xde02a1f8d51a1250
 K02_OnGeneration         0x09fc9ae538ebd4c1
 K03_OnPeakBytes          0x1efd403d7caa48e3
