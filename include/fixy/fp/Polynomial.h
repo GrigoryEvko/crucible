@@ -25,8 +25,8 @@
 //
 //  2. There is no runtime_smoke_test.  The old one called each function
 //     into a volatile local and asserted nothing, which is the shape
-//     #178 found compiled into every translation unit and called by
-//     nothing.  The value cells below replace it, and test/fixy/
+//     the port removed: compiled into every translation unit and called
+//     by nothing.  The value cells below replace it, and test/fixy/
 //     test_fp_polynomial.cpp calls each function once at runtime so the
 //     non-constant path is exercised too.
 //

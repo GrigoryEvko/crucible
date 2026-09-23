@@ -13,7 +13,7 @@
 //
 // The old tree spelled each stance with thirty-two accept-the-default
 // markers beside the one or two atoms that said anything.  Those
-// markers went with the engagement tier (A11.1), so a role here is the
+// markers went with the engagement tier, so a role here is the
 // atoms it names and the strict poles it does not.
 //
 // Six old stances are not carried: NamedSession, SyncBlocking,

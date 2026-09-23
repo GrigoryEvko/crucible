@@ -8,7 +8,7 @@
 //   1. Is the payload an object type a wrapper can hold?
 //   2. Is every entry in the pack an atom?
 //   3. Does each axis carry at most one atom?
-//   4. Is the combination admitted?  (A11.2 collision rules, A11.3 corpus.)
+//   4. Is the combination admitted?  (Collision.h rules, Corpus.h entries.)
 //
 // Each question is one concept here.  fixy/Fn.h asks them in the class
 // body, one tier per question, and each tier silences itself when an

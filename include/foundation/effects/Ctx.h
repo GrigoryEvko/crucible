@@ -219,7 +219,7 @@ concept CtxCanMint = IsExecCtx<Ctx> && row_contains_v<cap_permitted_row_t<cap_ty
 namespace detail::ctx_witnesses {
 
 // Witnesses in the shape of the five named contexts the layer above
-// defines (fixy/Ctx.h, A11.3).  They are scaffolding, not a second
+// defines (fixy/Ctx.h).  They are scaffolding, not a second
 // spelling of those contexts.
 //
 // They live in the header rather than in a test because Capability.h,
@@ -239,7 +239,7 @@ using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO
 // The five named contexts of include/crucible/effects/_ExecCtx.h, with
 // the six policy axes this layer dropped removed and the two that
 // survive — the capability source and the row — kept exactly.  The
-// port handed these to A11.3 by name and recorded their rows nowhere
+// port handed these to fixy/Ctx.h by name and recorded their rows nowhere
 // that deleting the old tree would not erase; this is that record.
 // Each is one witness above, and the assertion after each restates the
 // row the old tree declared, so the layer that promotes them to

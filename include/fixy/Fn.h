@@ -80,7 +80,7 @@ struct accepted<fn<T, Atoms...>> : std::bool_constant<IsAccepted<T, Atoms...>> {
 }  // namespace detail::role
 
 // A role is an alias template naming one canonical pack, written in
-// fixy/Role.h (A11.3).  The gate asks that the alias lands on an fn the
+// fixy/Role.h.  The gate asks that the alias lands on an fn the
 // gate itself admits, so a role cannot smuggle a pack past the tiers.
 template <template <class> class Role, class T>
 concept IsRoleFor = is_fn_v<Role<T>> && detail::role::accepted<Role<T>>::value;

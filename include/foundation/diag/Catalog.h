@@ -93,7 +93,7 @@ struct EffectRowMismatch : tag_base {
 
 struct UnknownParameterShape : tag_base {
     static constexpr std::string_view name = "UnknownParameterShape";
-    static constexpr std::string_view description = "The dispatcher (FOUND-D) could not classify the function's "
+    static constexpr std::string_view description = "The dispatcher could not classify the function's "
                                                     "parameter list against any of the seven canonical shapes "
                                                     "(UnaryTransform, BinaryTransform, Reduction, ProducerEndpoint, "
                                                     "ConsumerEndpoint, SwmrWriter, SwmrReader, PipelineStage).  No "
@@ -107,7 +107,7 @@ struct UnknownParameterShape : tag_base {
         "27_04_2026.md §3 for the full shape catalog.";
 
     static constexpr Severity severity = Severity::Warning;
-    static constexpr std::string_view why_this_matters = "The FOUND-D dispatcher (28_04 §6) reads function signatures "
+    static constexpr std::string_view why_this_matters = "The dispatcher (28_04 §6) reads function signatures "
                                                          "and routes them to one of the seven canonical lowerings "
                                                          "(UnaryTransform, BinaryTransform, Reduction, Producer/"
                                                          "Consumer endpoint, SwmrWriter/Reader, PipelineStage).  "
@@ -137,8 +137,8 @@ struct GradedWrapperViolation : tag_base {
                                                     "(declared Absolute but substrate is Comonad), forwarder "
                                                     "fidelity break (value_type_name() / lattice_name() return "
                                                     "strings inconsistent with substrate).  See algebra/GradedTrait.h "
-                                                    "for the full concept definition and the CHEAT-1..CHEAT-5 "
-                                                    "audit cluster.";
+                                                    "for the full concept definition and the five cheats it "
+                                                    "rejects.";
     static constexpr std::string_view remediation = "Audit the wrapper against algebra/GradedTrait.h's "
                                                     "GradedWrapper concept clause-by-clause: verify graded_type is "
                                                     "Graded<M, L, T> for some M/L/T; verify W::modality matches "
@@ -152,14 +152,14 @@ struct GradedWrapperViolation : tag_base {
         "every safety wrapper must satisfy: graded_type points at a "
         "real Graded<M, L, T>, the wrapper's modality matches the "
         "substrate's, value_type and lattice_type are consistent, "
-        "diagnostic forwarders return the substrate's strings.  These "
-        "five 'cheats' are the audit cluster from Round-4; the "
-        "concept's job is to lock them in.  Violating the concept "
-        "means downstream FOUND-D dispatcher reflection produces "
+        "diagnostic forwarders return the substrate's strings.  Each "
+        "clause rejects one of five known 'cheats', and the "
+        "concept's job is to keep them rejected.  Violating the concept "
+        "means downstream dispatcher reflection produces "
         "wrong dispatch decisions (e.g., a 'wrapper' with mismatched "
         "modality routes to the wrong lowering target).";
-    static constexpr std::string_view symptom_pattern = "Surfaces when authoring a NEW wrapper (e.g., for FOUND-G "
-                                                        "wrappers G01-G80) without following the canonical Stale.h "
+    static constexpr std::string_view symptom_pattern = "Surfaces when authoring a NEW wrapper "
+                                                        "without following the canonical Stale.h "
                                                         "template.  Common cause: copying part of an existing wrapper "
                                                         "and forgetting to update graded_type, OR adding a "
                                                         "value_type_decoupled opt-in without justification, OR "
@@ -292,7 +292,7 @@ struct DetSafeLeak : tag_base {
                                                     "structurally broken; bit-exact replay (CI invariant) is "
                                                     "broken; cross-vendor numerics CI will reject downstream "
                                                     "outputs.  This is the load-bearing diagnostic that the "
-                                                    "FOUND-I cache row fence enforces.";
+                                                    "cache row fence enforces.";
     static constexpr std::string_view remediation = "Either eliminate the non-deterministic source (replace "
                                                     "wall-clock seed with Philox-derived seed; replace "
                                                     "/dev/urandom read with seeded Philox), OR if the operation "
@@ -1355,8 +1355,8 @@ struct BitsInvariantViolation : tag_base {
                                                     "loaded a deserialized bit-pattern containing flags outside "
                                                     "E's declared mask (e.g., the on-disk word survived an enum-"
                                                     "tightening upgrade and now carries a bit no current E "
-                                                    "enumerator names); (b) the future mutual-exclusion invariants "
-                                                    "landing with WRAP-Bits-Integration-4 observed two mutually-"
+                                                    "enumerator names); (b) a mutual-exclusion invariant "
+                                                    "observed two mutually-"
                                                     "exclusive flags set simultaneously (e.g., NodeFlags::Dirty + "
                                                     "NodeFlags::Sealed); (c) a subsumption invariant observed a "
                                                     "parent flag set without its declared child flag (e.g., "
@@ -1375,8 +1375,8 @@ struct BitsInvariantViolation : tag_base {
                                                     "that established the invalid combination; the bug is usually "
                                                     "an early-return that skipped the unset() of the conflicting "
                                                     "flag.  Permanent fix: make the invariant a declared "
-                                                    "constraint on the Bits<E, Invariants...> instantiation (per "
-                                                    "WRAP-Bits-Integration-4) and route mutation through guarded "
+                                                    "constraint on the Bits<E, Invariants...> instantiation "
+                                                    "and route mutation through guarded "
                                                     "transitions that fail-loud at the source.";
 
     static constexpr Severity severity = Severity::Error;
@@ -1388,7 +1388,7 @@ struct BitsInvariantViolation : tag_base {
         "on-disk word survives an enum-tightening upgrade and now "
         "carries a bit no current enumerator names); (b) mutual-"
         "exclusion violation — two flags declared MX-pair simultaneously "
-        "set (landing with WRAP-Bits-Integration-4); (c) subsumption "
+        "set; (c) subsumption "
         "violation — parent flag set without its declared child (e.g., "
         "MetaFlags::Quantized without MetaFlags::HasScale).  Silent "
         "acceptance routes the bad value into the model state; "

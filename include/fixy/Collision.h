@@ -595,8 +595,8 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 // complete answer needs a sentinel over every header that can declare a
 // roster; scripts/check-atom-roster-joined.sh builds one from the
 // directory rather than from a list, and calls the same two functions.
-// Both this file and Stage A's gate check consume this derivation rather
-// than building a second set.
+// Both this file and the check that every atom has a consumer read this
+// derivation rather than building a second set.
 //
 // The Site parameter is what makes that second vantage point possible.
 // std::meta::members_of answers as of the point where the walk is

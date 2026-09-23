@@ -476,9 +476,9 @@ template <std::size_t N>
 // background or startup context is admitted there, so nothing on the hot path
 // can repin a running thread, and a stage minted under the foreground context
 // runs its worker unpinned rather than under a context it does not hold.  The
-// old header built a background context from nothing here, which is the
-// forgery #172 closed.  A negative cpu does nothing, and a refused pin is
-// tolerated.
+// old header built a background context from nothing here, which is a
+// forgery this header does not repeat.  A negative cpu does nothing, and a
+// refused pin is tolerated.
 template <class Ctx>
 void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY

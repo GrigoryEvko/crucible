@@ -13,9 +13,9 @@
 // whatever assembles the chain.
 //
 // Old spelling: include/crucible/concurrent/Stage.h.  The two bridge
-// factories declared in detail below are defined by the endpoint bridge,
-// which arrives with #190; until then MpmcStage and SwmrStage have a door
-// and no caller.
+// factories declared in detail below are defined by the endpoint bridge.
+// Until that bridge is ported, MpmcStage and SwmrStage have a door and
+// no caller.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>

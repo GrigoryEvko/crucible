@@ -34,7 +34,7 @@
 //
 // Over grades, not over the pack
 // ------------------------------
-// Each matcher reads collision::grades<Atoms...>::on<Axis> (A11.2),
+// Each matcher reads collision::grades<Atoms...>::on<Axis> (Collision.h),
 // the same resolved grade fn::grade_on gives, computed from the pack
 // alone so that no entry completes fn and recurses through the gate.
 // One axis carries one grade, so "classified" is a question about the

@@ -18,7 +18,7 @@
 //     it.  CanonicalizeRecipeSpec below carries the two axes and nothing
 //     else, and the crucible side builds the spec at its own boundary.
 //
-//  2. The enumerator values are pinned.  Stage C converts a recipe's two
+//  2. The enumerator values are pinned.  Crucible converts a recipe's two
 //     fields into this spec, and the cheapest correct conversion is a
 //     cast, which is only correct while the ordinals agree.  The cells at
 //     the foot of this header pin every value and the cardinality of each
@@ -157,7 +157,7 @@ namespace fixy::fp::detail::canonicalize_self_test {
 
 // ── The pinned enumerator values (deviation 2) ───────────────────────
 //
-// Stage C converts the crucible RoundingMode and ReductionDeterminism
+// Crucible converts its RoundingMode and ReductionDeterminism
 // enums into the two above.  These cells
 // are what make that conversion a cast rather than a switch.
 

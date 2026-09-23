@@ -61,8 +61,8 @@ enum class Discharge : std::uint8_t {
 };
 
 // The wrapper that carries an axis's discipline on a value, where one
-// exists.  The wrappers arrive in tasks A10.x; this names them without
-// declaring them, so the table has no dependency on any of them.
+// exists.  The enum names the wrappers without declaring them, so the
+// table has no dependency on any of them.
 enum class Wrapper : std::uint8_t {
     None = 0,  // the axis lives on the binding only
     Refined = 1,  // fixy/Refined.h

@@ -6,9 +6,9 @@
 // runs.  The retag catalog that admits a transition between two tags,
 // the roster of the policy tags and the completeness check over it
 // belong to the wrappers that consume them (fixy/Tagged.h and
-// fixy/Secret.h, task A10.2).  The composition law of the architecture
+// fixy/Secret.h).  The composition law of the architecture
 // pins, arch_compatible, is defined beside the collision rules that
-// read it (fixy/Collision.h, task A11.2).
+// read it (fixy/Collision.h).
 //
 // Old spellings: include/crucible/safety/Tagged.h (source, trust,
 // access, version, vessel_trust), include/crucible/safety/source/Path.h
