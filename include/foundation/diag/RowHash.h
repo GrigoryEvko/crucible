@@ -40,6 +40,16 @@
 // Two salts survive, because the two types they cover are not Graded:
 // the effect row itself and the computation carrier.
 //
+// Not every carrier that holds a discipline is a one-axis grade, so two
+// more shapes reach a fold of their own. A session handle carries a
+// protocol that steps on every operation, and it publishes the Stepping
+// contract instead of a lattice. Every other carrier names its claim
+// with a discipline identity and names its payload, and one fold reads
+// those two. A type with a claim and neither shape still falls to the
+// zero below, so test/fixy/test_row_hash_wrappers.cpp reads the carrier
+// roster by reflection and fails on any member that folds to zero and
+// has no stated reason to.
+//
 // The old header had a sibling, RowHashGrade.h, answering the other
 // question: which instance is this, rather than which type. That surface
 // is not ported here and its old header is not marked, so a reader
@@ -79,8 +89,9 @@
 // in unconditionally would make the one portable half non-portable, in
 // exchange for a guarantee the caller already takes per key.
 //
-// A cross-build witness covers the rest. tools/dump_row_hashes.cpp
-// prints this fold from a separate binary and CI diffs the output
+// A cross-build witness covers the rest.
+// tools/dump_row_hashes_foundation.cpp prints this fold from a separate
+// binary and CI diffs the output
 // against a committed golden, because a self-test in one translation
 // unit cannot see a reflected name move underneath it.
 
@@ -95,18 +106,22 @@
 #include <cstdint>
 #include <type_traits>
 
-// The carrier is forward-declared rather than included. A partial
+// The carriers are forward-declared rather than included. A partial
 // specialization only has to deduce its template parameters, and pulling
-// the definition in would drag the graded substrate, the whole lattice
+// the definitions in would drag the graded substrate, the whole lattice
 // family and the reflection paths into every consumer of this header. A
-// translation unit that names the carrier as an argument includes its
-// own header for it.
+// translation unit that names a carrier as an argument includes its own
+// header for it.
 //
 // Graded needs no declaration at all, because the fold matches on the
 // shape a wrapper publishes rather than on the template itself.
 namespace foundation::effects {
 template <typename R, typename T>
 class Computation;
+template <class Cap, class R>
+class ExecCtx;
+template <Effect Cap, class Source>
+class Capability;
 }  // namespace foundation::effects
 
 namespace foundation::diag {
@@ -145,6 +160,16 @@ inline constexpr std::uint64_t WRAPPER_GRADED_TAG = 0x0100000000000000ULL;
 // resolved grades in axis order, and this salt is what keeps that fold
 // off the zero slot when every axis happens to contribute zero.
 inline constexpr std::uint64_t WRAPPER_MULTI_AXIS_BINDING_TAG = 0x0200000000000000ULL;
+
+// The salt of a carrier that names its claim with a discipline identity
+// rather than a lattice. It keeps such a carrier off the graded slots
+// when a discipline identity and a lattice happen to share a name.
+inline constexpr std::uint64_t WRAPPER_DISCIPLINE_TAG = 0x0300000000000000ULL;
+
+// The salt of a stepping carrier. Its low bytes take the modality, as
+// the graded salt's do, so a later second stepping kind separates from
+// the first without a salt of its own.
+inline constexpr std::uint64_t WRAPPER_STEPPING_TAG = 0x0400000000000000ULL;
 
 // The sort is quadratic. The array holds one entry per effect atom and
 // the universe is capped well below the point where that matters, which
@@ -262,11 +287,25 @@ inline constexpr std::uint64_t FEDERATION_TOOLCHAIN_TAG = federation_toolchain_i
 
 }  // namespace detail
 
-// A bare type carries no row. Every wrapper that carries one is a
-// spelling over Graded and reaches the fold below, so this primary is
-// the answer for payload types only, and the answer is "nothing".
+// Publishing one graded member is a claim to be graded. A type that
+// publishes a lattice or a modality and still reaches the primary below
+// has published part of a contract, and it would fold to zero without a
+// word. That is the fail-open the port set out to close, so it is a hard
+// error here rather than a silent slot.
+template <typename T>
+concept PublishesGradedMember = requires { typename T::lattice_type; } || requires { T::modality; };
+
+// A bare type carries no row. Every carrier that holds one publishes a
+// shape a fold below reads, so this primary is the answer for payload
+// types and grade vocabulary only, and the answer is "nothing".
 template <typename T>
 struct row_hash_contribution {
+    static_assert(!PublishesGradedMember<T>,
+                  "this type publishes lattice_type or modality but no complete shape a row-hash fold reads, "
+                  "so it would take the zero slot that every bare payload shares.  A graded carrier publishes "
+                  "lattice_type, value_type and modality together.  A stepping carrier publishes "
+                  "protocol_type, resource_type and the Stepping modality.  Any other carrier publishes "
+                  "row_discipline and row_payload.");
     static constexpr std::uint64_t value = 0;
 };
 
@@ -410,13 +449,164 @@ concept GradedShaped = requires {
 // concept too. Its own specialisation is the more specialised of the
 // two, so it wins the partial order and keeps the row-first fold that
 // its published hashes were built from.
+//
+// A graded wrapper can make a claim its lattice does not see. A sealed
+// refinement is one: it grades on the same predicate lattice as the open
+// one, and the one thing that separates them, that the sealed form
+// cannot be mutated in place, reaches neither the lattice nor the
+// modality. Such a wrapper also publishes row_discipline, and that
+// identity folds in between the lattice and the payload. A wrapper that
+// publishes none keeps the hash it had before this step existed.
 template <GradedShaped W>
 struct row_hash_contribution<W> {
+    static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
+        std::uint64_t h = detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
+                                              lattice_canonical_id_v<typename W::lattice_type>);
+        if constexpr (requires { typename W::row_discipline; }) {
+            h = detail::combine_ids(h, lattice_canonical_id_v<typename W::row_discipline>);
+        }
+        return detail::combine_ids(h, row_hash_contribution_v<typename W::value_type>);
+    }();
+};
+
+// ── Carriers that are not one-axis grades ───────────────────────────
+//
+// A carrier folds two things: an identity that names its claim at its
+// tier, and the payloads the claim is over. The identity goes through
+// lattice_canonical_id, so a rename maps onto the old identity the same
+// way a lattice rename does. The payloads recurse, which keeps a row
+// nested inside a carrier visible in the carrier's hash and keeps a bare
+// payload out of it.
+//
+// An identity names the grade-bearing arguments and leaves the payload
+// out. A declared-only struct in a row_discipline namespace beside the
+// carrier is the usual spelling, instantiated with whatever arguments
+// change the claim. A carrier with no payload at all may name itself.
+//
+// Brands, owner tags and region tags are identities of instances, not
+// claims, and none of them folds in. That matches SharedPermission,
+// whose graded fold is blind to its tag.
+
+// The payload list of a carrier over more than one value. The fold reads
+// the entries in order, so two carriers that list the same payloads in a
+// different order are different keys, as nesting order is for graded
+// wrappers.
+template <typename... Payloads>
+struct row_payloads {};
+
+namespace detail {
+
+template <typename P>
+struct payload_fold {
+    [[nodiscard]] static consteval std::uint64_t over(std::uint64_t h) noexcept {
+        return combine_ids(h, row_hash_contribution_v<P>);
+    }
+};
+
+template <typename... Ps>
+struct payload_fold<row_payloads<Ps...>> {
+    [[nodiscard]] static consteval std::uint64_t over(std::uint64_t h) noexcept {
+        ((h = combine_ids(h, row_hash_contribution_v<Ps>)), ...);
+        return h;
+    }
+};
+
+}  // namespace detail
+
+// The fold every discipline carrier reaches, spelled once so that a
+// carrier folded by a specialization and a carrier folded by its
+// published shape agree bit for bit.
+template <typename Identity, typename Payload>
+inline constexpr std::uint64_t discipline_row_hash_v = detail::payload_fold<Payload>::over(
+    detail::combine_ids(detail::WRAPPER_DISCIPLINE_TAG, lattice_canonical_id_v<Identity>));
+
+// The published shape. A carrier declares its own claim in its own body:
+//
+//   using row_discipline = row_discipline::write_once;
+//   using row_payload    = T;
+//
+// A member alias is instantiated with the class, so a carrier whose
+// payload can only be computed lazily, such as a permission whose row is
+// looked up and may be undeclared, specializes row_hash_contribution in
+// its own header through discipline_row_hash_v instead.
+template <typename W>
+concept DisciplineShaped = !GradedShaped<W> && requires {
+    typename W::row_discipline;
+    typename W::row_payload;
+};
+
+template <DisciplineShaped W>
+struct row_hash_contribution<W> {
     static constexpr std::uint64_t value =
-        detail::combine_ids(detail::combine_ids(detail::WRAPPER_GRADED_TAG
-                                                    | static_cast<std::uint64_t>(W::modality),
-                                                lattice_canonical_id_v<typename W::lattice_type>),
-                            row_hash_contribution_v<typename W::value_type>);
+        discipline_row_hash_v<typename W::row_discipline, typename W::row_payload>;
+};
+
+// A session handle does not instantiate Graded, and
+// foundation/algebra/Modality.h says why: every operation advances its
+// grade, so a handle produces a handle at the next grade rather than
+// one at the same grade over a new value. Its grade is the protocol it
+// sits at, and its payload is the resource it steps over. The protocol
+// takes the lattice's place in the fold, through the same canonical-id
+// hook.
+//
+// The abandonment policy does not fold in. It decides whether a dropped
+// handle aborts, which is a property of the build, and a handle built
+// under one policy makes the same claim as a handle built under the
+// other.
+template <typename W>
+concept SteppingShaped = !GradedShaped<W> && requires {
+    typename W::protocol_type;
+    typename W::resource_type;
+    { W::modality } -> std::convertible_to<::foundation::algebra::ModalityKind>;
+    requires W::modality == ::foundation::algebra::ModalityKind::Stepping;
+};
+
+template <SteppingShaped W>
+struct row_hash_contribution<W> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(detail::WRAPPER_STEPPING_TAG | static_cast<std::uint64_t>(W::modality),
+                            lattice_canonical_id_v<typename W::protocol_type>),
+        row_hash_contribution_v<typename W::resource_type>);
+};
+
+// ── The effect layer's own carriers ─────────────────────────────────
+//
+// These three live here beside the row, for the reason the computation
+// carrier does: they are the effect layer's own types, and each one
+// carries a row that the fold has to see.
+
+namespace row_discipline {
+template <class Cap>
+struct exec_ctx;
+template <class Source>
+struct capability;
+}  // namespace row_discipline
+
+// A capability context is its own identity, since it has no payload, and
+// its payload is the row it permits. Two contexts that permit one row
+// are still two claims, because one of them names the background thread.
+template <typename C>
+    requires ::foundation::effects::IsContext<C>
+struct row_hash_contribution<C> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<C, typename C::template permitted_as<::foundation::effects::Row>>;
+};
+
+// An execution context claims a capability source and a row under it.
+// The source changes the claim, so it is in the identity, and the row is
+// the payload.
+template <class Cap, class R>
+struct row_hash_contribution<::foundation::effects::ExecCtx<Cap, R>> {
+    static constexpr std::uint64_t value = discipline_row_hash_v<row_discipline::exec_ctx<Cap>, R>;
+};
+
+// A capability is a linear token for one effect, minted from a source.
+// The effect folds as the one-atom row it grants, so a capability and a
+// context that permit the same atom agree on that half.
+template <::foundation::effects::Effect E, class Source>
+struct row_hash_contribution<::foundation::effects::Capability<E, Source>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<row_discipline::capability<Source>, ::foundation::effects::Row<E>>;
 };
 
 template <typename T>

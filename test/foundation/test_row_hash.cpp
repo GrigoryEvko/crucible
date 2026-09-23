@@ -26,7 +26,10 @@
 #include <foundation/algebra/lattices/DetSafeLattice.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
 #include <array>
@@ -276,6 +279,116 @@ static_assert(row_hash_contribution_v<FacadeProbe<fa::ModalityKind::Absolute, Ho
 static_assert(fd::lattice_canonical_id_v<DetPure> != fd::lattice_canonical_id_v<DetEntropyRead>);
 static_assert(fd::lattice_canonical_id_v<DetPure> != fd::lattice_canonical_id_v<HotHot>);
 static_assert(fd::lattice_canonical_id_v<DetPure> != 0);
+
+// ── A graded wrapper with a claim its lattice does not see ───────────
+//
+// The sealed refinement is the case in the tree. Publishing
+// row_discipline beside the graded shape folds one more identity in, and
+// a wrapper that publishes none keeps the hash it had.
+
+struct sealed_probe_identity;
+
+template <fa::ModalityKind M, typename L, typename T>
+struct SealedFacadeProbe : FacadeProbe<M, L, T> {
+    using row_discipline = sealed_probe_identity;
+};
+
+static_assert(row_hash_contribution_v<SealedFacadeProbe<fa::ModalityKind::Absolute, DetPure, int>>
+              != row_hash_contribution_v<FacadeProbe<fa::ModalityKind::Absolute, DetPure, int>>);
+static_assert(row_hash_contribution_v<SealedFacadeProbe<fa::ModalityKind::Absolute, DetPure, int>>
+              == row_hash_contribution_v<SealedFacadeProbe<fa::ModalityKind::Absolute, DetPure, double>>);
+
+// ── The discipline carrier ───────────────────────────────────────────
+
+struct probe_discipline;
+struct other_probe_discipline;
+
+template <typename Identity, typename Payload>
+struct DisciplineProbe {
+    using row_discipline = Identity;
+    using row_payload = Payload;
+};
+
+using Disc = DisciplineProbe<probe_discipline, int>;
+
+static_assert(fd::DisciplineShaped<Disc>);
+static_assert(!fd::DisciplineShaped<FacadeProbe<fa::ModalityKind::Absolute, DetPure, int>>);
+static_assert(row_hash_contribution_v<Disc> != 0);
+
+// The published shape and the specialisation helper are one fold.
+static_assert(row_hash_contribution_v<Disc> == fd::discipline_row_hash_v<probe_discipline, int>);
+
+// Two identities are two slots, a bare payload is blind, and a payload
+// carrying a row stays visible.
+static_assert(row_hash_contribution_v<Disc> != row_hash_contribution_v<DisciplineProbe<other_probe_discipline, int>>);
+static_assert(row_hash_contribution_v<Disc> == row_hash_contribution_v<DisciplineProbe<probe_discipline, double>>);
+static_assert(row_hash_contribution_v<DisciplineProbe<probe_discipline, fe::Computation<Row<Effect::IO>, int>>>
+              != row_hash_contribution_v<Disc>);
+
+// A payload list folds in order, and an empty list is not a zero payload.
+static_assert(fd::discipline_row_hash_v<probe_discipline, fd::row_payloads<Row<Effect::IO>, EmptyRow>>
+              != fd::discipline_row_hash_v<probe_discipline, fd::row_payloads<EmptyRow, Row<Effect::IO>>>);
+static_assert(fd::discipline_row_hash_v<probe_discipline, fd::row_payloads<>>
+              != fd::discipline_row_hash_v<probe_discipline, int>);
+
+// A discipline identity does not alias the lattice of the same name.
+static_assert(row_hash_contribution_v<DisciplineProbe<DetPure, int>>
+              != row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>>);
+
+// ── The stepping carrier ─────────────────────────────────────────────
+
+struct probe_protocol_end;
+struct probe_protocol_send;
+
+template <typename Proto, typename Resource>
+struct SteppingProbe {
+    using protocol_type = Proto;
+    using resource_type = Resource;
+    static constexpr fa::ModalityKind modality = fa::ModalityKind::Stepping;
+};
+
+static_assert(fd::SteppingShaped<SteppingProbe<probe_protocol_end, int>>);
+static_assert(row_hash_contribution_v<SteppingProbe<probe_protocol_end, int>> != 0);
+static_assert(row_hash_contribution_v<SteppingProbe<probe_protocol_end, int>>
+              != row_hash_contribution_v<SteppingProbe<probe_protocol_send, int>>);
+static_assert(row_hash_contribution_v<SteppingProbe<probe_protocol_end, int>>
+              == row_hash_contribution_v<SteppingProbe<probe_protocol_end, double>>);
+static_assert(row_hash_contribution_v<SteppingProbe<probe_protocol_end, int>>
+              != row_hash_contribution_v<DisciplineProbe<probe_protocol_end, int>>);
+
+// ── Half a shape is an error, not a zero ─────────────────────────────
+//
+// The primary template refuses a type that publishes a lattice or a
+// modality without a whole shape. These cells pin the detector the
+// refusal reads; test/fixy/test_row_hash_wrappers.cpp shows a real
+// half-shaped type, the session handle base, caught by it.
+
+struct HalfGraded {
+    using lattice_type = DetPure;
+    using value_type = int;
+};
+
+struct HalfStepping {
+    using protocol_type = probe_protocol_end;
+    static constexpr fa::ModalityKind modality = fa::ModalityKind::Stepping;
+};
+
+static_assert(fd::PublishesGradedMember<HalfGraded> && !fd::GradedShaped<HalfGraded>);
+static_assert(fd::PublishesGradedMember<HalfStepping> && !fd::SteppingShaped<HalfStepping>);
+static_assert(!fd::PublishesGradedMember<int>);
+
+// ── The effect layer's carriers ──────────────────────────────────────
+
+static_assert(row_hash_contribution_v<fe::Bg> != 0);
+static_assert(row_hash_contribution_v<fe::Bg> != row_hash_contribution_v<fe::Init>);
+static_assert(row_hash_contribution_v<fe::ExecCtx<>> != 0);
+static_assert(row_hash_contribution_v<fe::ExecCtx<>> != row_hash_contribution_v<EmptyRow>);
+static_assert(row_hash_contribution_v<fe::ExecCtx<fe::Bg, Row<Effect::Bg>>>
+              != row_hash_contribution_v<fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>>);
+static_assert(row_hash_contribution_v<fe::ExecCtx<fe::Init, Row<Effect::Alloc>>>
+              != row_hash_contribution_v<fe::ExecCtx<fe::Test, Row<Effect::Alloc>>>);
+static_assert(row_hash_contribution_v<fe::Capability<Effect::IO, fe::Bg>>
+              != row_hash_contribution_v<fe::Capability<Effect::IO, fe::Init>>);
 
 // ── The fold primitives ──────────────────────────────────────────────
 
