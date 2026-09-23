@@ -144,6 +144,18 @@ using EnforcedHandle = s::SessionHandle<s::Send<Ping, s::End>, ValueWire, void, 
 static_assert(sizeof(OffHandle) == sizeof(ValueWire));
 static_assert(sizeof(EnforcedHandle) > sizeof(ValueWire));
 
+// The record of fixy/session/Watch.h sits in the padding of the policy,
+// so a checked handle over a small resource stays at three words.
+static_assert(sizeof(EnforcedHandle) == 3 * sizeof(void*));
+
+// A handle refuses a new-expression, as Permission and ReadView do.  A
+// container builds it in place, so an optional of a handle stays legal.
+template <typename H>
+concept HeapNewable = requires(H&& handle) { new H(std::move(handle)); };
+static_assert(!HeapNewable<AtSend>);
+static_assert(!HeapNewable<OffHandle>);
+static_assert(std::is_constructible_v<std::optional<AtSend>, AtSend&&>);
+
 // The policy is IN THE TYPE.  These two are different types, so a
 // Debug object and a Release object that disagree about the layout
 // cannot silently share one definition — the mismatch is a diagnostic
@@ -860,6 +872,114 @@ template <typename Body>
     return 0;
 }
 
+// ── Runtime: the watch over live sessions ────────────────────────────
+//
+// Every mint under a checking policy claims a record, and every way a
+// session ends gives it back: a step to End, detach, cancel.  check::Off
+// claims nothing.  If a record stays live, the exit hook reports it, and
+// this binary aborts when main returns.
+
+[[nodiscard]] bool live_count_is(std::uint32_t expected, const char* after) noexcept {
+    const std::uint32_t seen = s::watch::live_count();
+    if (seen == expected) return true;
+    std::fprintf(stderr, "the watch holds %u live session(s) after %s, not %u\n", seen, after, expected);
+    return false;
+}
+
+[[nodiscard]] int watch_counts_sessions() {
+    const std::uint32_t baseline = s::watch::live_count();
+
+    auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    if (!live_count_is(baseline + 1, "a mint")) return 1;
+    auto waits = std::move(handle).send(Ping{1}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    if (!live_count_is(baseline + 1, "a step that does not end")) return 1;
+    auto [pong, at_end] = std::move(waits).recv([](ValueWire& w) noexcept { return Pong{w.last_sent}; });
+    (void)pong;
+    if (!live_count_is(baseline, "the step to End")) return 1;
+    (void)std::move(at_end).close();
+
+    auto detached = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    std::move(detached).detach(s::detach_reason::TestInstrumentation{});
+    if (!live_count_is(baseline, "a detach")) return 1;
+
+    auto cancelled = s::mint_session_handle<Once, CancelWire, s::check::Cancel>(CancelWire{});
+    std::move(cancelled).cancel();
+    if (!live_count_is(baseline, "a cancel")) return 1;
+    g_cancellations.store(0, std::memory_order_relaxed);
+
+    {
+        auto unchecked = s::mint_session_handle<Once, ValueWire, s::check::Off>(ValueWire{});
+        (void)unchecked;
+        if (!live_count_is(baseline, "a mint under check::Off")) return 1;
+    }
+
+    // A moved handle keeps its record, and the move does not claim one.
+    auto first = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    auto second = std::move(first);
+    if (!live_count_is(baseline + 1, "a move")) return 1;
+    std::move(second).detach(s::detach_reason::TestInstrumentation{});
+
+    if (walk_test_channel() != 0 || !live_count_is(baseline, "a test channel")) return 1;
+    if (walk_forked_channel() != 0 || !live_count_is(baseline, "a forked channel")) return 1;
+    return 0;
+}
+
+// A polling transport over a mailbox: an empty result while it is empty.
+struct PollBox {
+    Mailbox* (*box_of)(Pipe&) = nullptr;
+
+    template <typename End>
+    [[nodiscard]] std::optional<int> operator()(End& end) const noexcept {
+        Mailbox& box = *box_of(*end.pipe);
+        if (!box.full.load(std::memory_order_acquire)) return std::nullopt;
+        const int value = box.value.load(std::memory_order_relaxed);
+        box.full.store(false, std::memory_order_release);
+        return value;
+    }
+};
+
+// A forked channel whose two sides wait through the watch, and whose
+// peer answers late.  Each wait lasts longer than two checks of the
+// deadlock detector, and the waits form no cycle, so the watch must not
+// abort.  Under TSan this also checks the watch for races.
+[[nodiscard]] int polling_channel_waits_without_a_false_deadlock() {
+    using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+    using Twice = s::Send<int, s::Recv<int, s::Send<int, s::Recv<int, s::End>>>>;
+    constexpr auto late = std::chrono::milliseconds{120};
+    Pipe pipe{};
+    std::atomic<int> total{0};
+    const BgCtx ctx{::foundation::effects::testing::bg()};
+    const PollBox to_self{[](Pipe& p) noexcept { return &p.to_self; }};
+    const PollBox to_peer{[](Pipe& p) noexcept { return &p.to_peer; }};
+    const auto send_to_peer = [](SelfEnd& e, int&& v) noexcept { put(e.pipe->to_peer, v); };
+    const auto send_to_self = [](PeerEnd& e, int&& v) noexcept { put(e.pipe->to_self, v); };
+
+    auto back = s::mint_forked_channel<Twice, channel_tags::Self, channel_tags::Peer>(
+        ctx, ::foundation::permissions::mint_permission_root<channel_tags::Whole>(), SelfEnd{&pipe}, PeerEnd{&pipe},
+        [&](auto head, ::foundation::permissions::Permission<channel_tags::Self>, BgCtx const&) noexcept {
+            auto first_wait = std::move(head).send(1, send_to_peer);
+            auto [first_reply, second_send] = std::move(first_wait).recv(to_self);
+            auto second_wait = std::move(second_send).send(first_reply + 1, send_to_peer);
+            auto [second_reply, done] = std::move(second_wait).recv(to_self);
+            total.store(second_reply, std::memory_order_release);
+            return std::move(done);
+        },
+        [&](auto head, ::foundation::permissions::Permission<channel_tags::Peer>, BgCtx const&) noexcept {
+            auto [first, first_answer] = std::move(head).recv(to_peer);
+            std::this_thread::sleep_for(late);
+            auto second_wait = std::move(first_answer).send(first + 1, send_to_self);
+            auto [second, second_answer] = std::move(second_wait).recv(to_peer);
+            std::this_thread::sleep_for(late);
+            return std::move(second_answer).send(second + 1, send_to_self);
+        });
+    ::foundation::permissions::permission_drop(std::move(back));
+    if (total.load(std::memory_order_acquire) != 4) {
+        std::fprintf(stderr, "the polling channel carried %d, not 4\n", total.load(std::memory_order_acquire));
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -877,5 +997,7 @@ int main() {
     if (const int rc = walk_forked_channel(); rc != 0) return rc;
     if (const int rc = policy_runs(); rc != 0) return rc;
     if (const int rc = liveness_and_cancel_run(); rc != 0) return rc;
+    if (const int rc = watch_counts_sessions(); rc != 0) return rc;
+    if (const int rc = polling_channel_waits_without_a_false_deadlock(); rc != 0) return rc;
     return 0;
 }

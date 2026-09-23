@@ -35,7 +35,11 @@
 // The default is check::Enforced in every build mode, and NDEBUG does not
 // change it.  check::Cancel is not the default, because it needs a
 // Resource that can carry a cancellation, and most Resources cannot.
-// bench/bench_session_handle_policy.cpp measures what each policy costs.
+// check::Off adds no instruction to a step.  A checking policy adds the
+// claim and release of a record in fixy/session/Watch.h at mint and at
+// End, one atomic read-modify-write each.  At each move and each step,
+// it compares the thread-local slot of the calling thread with the slot
+// that the handle keeps.  It reads no shared state there.
 //
 // The policy is in the type.  A Debug object and a Release object that
 // use different policies name different types, so a layout disagreement
@@ -47,6 +51,7 @@
 // a protocol a second time.
 
 #include <fixy/session/Protocol.h>
+#include <fixy/session/Watch.h>
 
 #include <foundation/algebra/Modality.h>
 
@@ -82,9 +87,28 @@ class tracked_policy {
                   "that ignores one.");
 
     bool flag_ = false;
+    // The thread that holds the handle, as the watch last saw it.  With
+    // the record below it sits in the padding after the flag, so the
+    // policy keeps its size.
+    watch::thread_slot holder_ = watch::thread_slot::none;
+    // The session's record in fixy/session/Watch.h.  A consumed policy
+    // holds none: its record belongs to the next handle now.
+    watch::endpoint_id endpoint_ = watch::endpoint_id::none;
     // The handle's construction site.  It is an unknown source for a
     // handle minted without an explicit location.
     std::source_location loc_{};
+
+    // Tells the watch when the handle is on a thread other than the one
+    // it last saw.  A handle that stays on its thread reads one
+    // thread-local value and writes nothing.
+    constexpr void track_holder_() noexcept {
+        if !consteval {
+            if (endpoint_ == watch::endpoint_id::none) return;
+            if (watch::current_thread_slot() != holder_) [[unlikely]] {
+                holder_ = watch::note_holder(endpoint_);
+            }
+        }
+    }
 
 public:
     static constexpr AbandonAction action = Action;
@@ -100,20 +124,41 @@ public:
 
     constexpr tracked_policy() noexcept = default;
     constexpr explicit tracked_policy(std::source_location loc) noexcept : loc_{loc} {}
+    // A step builds the next handle on the thread that runs the step.
+    // That thread is the holder from now on, although it can differ from
+    // the holder that the reference names when it reached the handle
+    // through a pointer.
+    constexpr tracked_policy(std::source_location loc, watch::session_ref session) noexcept
+        : holder_{session.holder}, endpoint_{session.endpoint}, loc_{loc} {
+        track_holder_();
+    }
 
-    constexpr void mark() noexcept { flag_ = true; }
+    /// Marks the handle consumed.  The record goes with the protocol
+    /// position, so this policy lets go of it.
+    constexpr void mark() noexcept {
+        flag_ = true;
+        endpoint_ = watch::endpoint_id::none;
+    }
     [[nodiscard]] constexpr bool was_marked() const noexcept { return flag_; }
     [[nodiscard]] constexpr std::source_location construction_loc() const noexcept { return loc_; }
+    [[nodiscard]] constexpr watch::session_ref session() const noexcept { return {endpoint_, holder_}; }
 
     // A self-move must not change the tracker.  Without the guard,
     // `h = std::move(h)` copies flag_ onto itself and then sets it, and
     // the live handle then reads as consumed.
+    //
+    // A move of a live handle tells the watch that the calling thread
+    // holds it now, which is what the deadlock detector reads.
     constexpr void move_from(tracked_policy& other) noexcept {
         if (this == &other) [[unlikely]]
             return;
         flag_ = other.flag_;
+        holder_ = other.holder_;
+        endpoint_ = other.endpoint_;
         loc_ = other.loc_;
         other.flag_ = true;
+        other.endpoint_ = watch::endpoint_id::none;
+        track_holder_();
     }
 };
 
@@ -133,14 +178,17 @@ public:
     static constexpr std::string_view name() noexcept { return "Off"; }
 
     constexpr Off() noexcept = default;
-    // The signature matches Enforced so a handle constructor forwards
-    // a location unconditionally rather than branching on the policy.
+    // The signatures match Enforced, so a handle constructor forwards a
+    // location and a record with no branch on the policy.  Off keeps
+    // neither, so no mint gives it a record.
     constexpr explicit Off(std::source_location) noexcept {}
+    constexpr Off(std::source_location, watch::session_ref) noexcept {}
 
     constexpr void mark() noexcept {}
     [[nodiscard]] constexpr bool was_marked() const noexcept { return true; }
     constexpr void move_from(Off&) noexcept {}
     [[nodiscard]] constexpr std::source_location construction_loc() const noexcept { return std::source_location{}; }
+    [[nodiscard]] constexpr watch::session_ref session() const noexcept { return {}; }
 };
 
 static_assert(std::is_empty_v<Off>, "check::Off must be empty, or [[no_unique_address]] cannot collapse it and a "
@@ -156,6 +204,10 @@ static_assert(!std::is_empty_v<Cancel>, "check::Cancel must carry state.  An emp
 static_assert(!std::is_same_v<Enforced, Cancel>, "check::Enforced and check::Cancel must be different types, "
                                                  "because the policy is part of the handle type.");
 
+static_assert(sizeof(Enforced) == 2 * sizeof(std::source_location),
+              "the record index of fixy/session/Watch.h must sit in the padding after the flag, so that the watch "
+              "costs a checked handle no byte.");
+
 }  // namespace check
 
 // A policy records a construction site, is marked, answers whether it
@@ -166,16 +218,18 @@ static_assert(!std::is_same_v<Enforced, Cancel>, "check::Enforced and check::Can
 // The last clause binds the two constants.  A policy that claims to
 // check and then ignores a dropped protocol, or the reverse, is refused.
 template <typename P>
-concept AbandonmentPolicy = requires(P policy, P other, std::source_location loc) {
+concept AbandonmentPolicy = requires(P policy, P other, std::source_location loc, watch::session_ref session) {
     { P::checks_abandonment } -> std::convertible_to<bool>;
     { P::action } -> std::convertible_to<AbandonAction>;
     { P::name() } noexcept -> std::same_as<std::string_view>;
     P{};
     P{loc};
+    P{loc, session};
     { policy.mark() } noexcept;
     { policy.was_marked() } noexcept -> std::same_as<bool>;
     { policy.move_from(other) } noexcept;
     { policy.construction_loc() } noexcept -> std::same_as<std::source_location>;
+    { policy.session() } noexcept -> std::same_as<watch::session_ref>;
     requires(P::checks_abandonment == (P::action != AbandonAction::Ignore));
 };
 

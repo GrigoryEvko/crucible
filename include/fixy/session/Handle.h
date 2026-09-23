@@ -114,6 +114,7 @@
 #include <cstdlib>
 #include <functional>
 #include <meta>
+#include <new>
 #include <optional>
 #include <source_location>
 #include <string_view>
@@ -341,6 +342,19 @@ protected:
 
     constexpr bool is_consumed_() const noexcept { return tracker_.was_marked(); }
 
+    // The session's record in fixy/session/Watch.h, or none.
+    [[nodiscard]] constexpr watch::session_ref session_() const noexcept { return tracker_.session(); }
+
+    // Ends the session in the watch: it detached or cancelled.  Call
+    // before mark_consumed_, which lets go of the record.
+    constexpr void release_endpoint_() noexcept {
+        if constexpr (Policy::checks_abandonment) {
+            if !consteval {
+                watch::release(tracker_.session().endpoint);
+            }
+        }
+    }
+
     // The precondition of every operation: the handle is live.  Under
     // check::Off the tracker has no state, and the check folds away.
     constexpr void require_live_() const noexcept {
@@ -405,6 +419,25 @@ public:
     // caller's, not the framework's.
     constexpr explicit SessionHandleBase(std::source_location loc) noexcept : tracker_{loc} {}
 
+    // The handle family passes the record that fixy/session/Watch.h keeps
+    // for the session.  A decorator passes none.
+    constexpr SessionHandleBase(std::source_location loc, watch::session_ref session) noexcept
+        : tracker_{loc, session} {}
+
+    // A handle is linear, and a handle on the heap can outlive every path
+    // that ends its protocol.  The class refuses the new-expression, as
+    // Permission and ReadView do.  A container that holds a handle
+    // constructs it in place and destroys it, so it stays admitted.
+    static void* operator new(std::size_t) =
+        delete("[Session_Handle_On_Heap] a session handle lives on the stack or inside an owner that destroys it.  "
+               "A new-expression gives it storage that nothing has to free, and the protocol then never ends.");
+    static void* operator new[](std::size_t) =
+        delete("[Session_Handle_On_Heap] an array of session handles on the heap can outlive every protocol in it.");
+    static void* operator new(std::size_t, std::align_val_t) =
+        delete("[Session_Handle_On_Heap] a session handle lives on the stack or inside an owner that destroys it.");
+    static void* operator new[](std::size_t, std::align_val_t) =
+        delete("[Session_Handle_On_Heap] an array of session handles on the heap can outlive every protocol in it.");
+
     // A wrapper that did not pass itself as Derived is reported as
     // "SessionHandle", so the destructor diagnostic stays stable.
     [[nodiscard]] static constexpr std::string_view wrapper_name() noexcept {
@@ -444,6 +477,7 @@ public:
         requires DetachReason<Reason>
     constexpr void detach(Reason /*reason_tag*/) && noexcept {
         require_live_();
+        release_endpoint_();
         tracker_.mark();
     }
 
@@ -611,14 +645,19 @@ namespace detail {
 template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
           typename PS = ::foundation::permissions::EmptyPermSet>
 [[nodiscard]] constexpr auto make_session_handle(
-    Resource r,
+    Resource r, watch::session_ref session = {},
     std::source_location loc = std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
     -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS> {
-    return SessionHandle<Proto, Resource, LoopCtx, Policy, PS>{std::forward<Resource>(r), loc};
+    return SessionHandle<Proto, Resource, LoopCtx, Policy, PS>{std::forward<Resource>(r), session, loc};
 }
 
+// Builds the handle at R, and carries the session's reference in the
+// watch to it.  A step that reaches a terminal state owes no message, so
+// it ends the session in the watch and the terminal handle carries no
+// record.  A caller that builds a handle without a record passes none,
+// and that session is not tracked.
 template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-[[nodiscard]] constexpr auto step_to_next(Resource r,
+[[nodiscard]] constexpr auto step_to_next(Resource r, watch::session_ref session = {},
                                           std::source_location loc = std::source_location::current()) noexcept {
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = session_loop_ctx_inner_t<LoopCtx>;
@@ -634,22 +673,31 @@ template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Pol
         // The body may itself begin with a Loop or a Continue, so this
         // recurses.  Forwarding `loc` keeps the outermost caller's site
         // rather than replacing it with this frame's.
-        return step_to_next<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), loc);
+        return step_to_next<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
         using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, loop_frame_t<R, PS>>;
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
-        return step_to_next<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), loc);
+        return step_to_next<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_vendor_pinned_v<R>) {
         // The vendor is a declaration for the layer above.  The handle
         // steps the protocol that it pins.
-        return step_to_next<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), loc);
+        return step_to_next<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session,
+                                                                                loc);
     } else {
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
                                     "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
-        return make_session_handle<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), loc);
+        if constexpr (Policy::checks_abandonment && is_terminal_state_v<R>) {
+            if !consteval {
+                watch::release(session.endpoint);
+            }
+            return make_session_handle<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r),
+                                                                         watch::session_ref{}, loc);
+        } else {
+            return make_session_handle<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+        }
     }
 }
 
@@ -658,6 +706,22 @@ template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Pol
 template <typename Resource>
 constexpr void cancel_resource(std::remove_reference_t<Resource>& resource) noexcept {
     cancel_session(resource);
+}
+
+// Retries a polling transport until it gives a result.  It runs only
+// after the first attempt found nothing, so it is outlined and cold.  It
+// waits through a watch::wait_scope, which publishes the wait for the
+// deadlock detector and aborts on a cycle of waits across sessions.
+template <typename Transport, typename Resource>
+[[gnu::cold, gnu::noinline]] auto wait_for_arrival(Transport& transport, Resource& resource,
+                                                   watch::endpoint_id endpoint) noexcept(
+    std::is_nothrow_invocable_v<Transport&, Resource&>) -> std::invoke_result_t<Transport&, Resource&> {
+    watch::wait_scope wait{endpoint};
+    for (;;) {
+        auto arrived = std::invoke(transport, resource);
+        if (arrived) return arrived;
+        wait.poll();
+    }
 }
 
 // The Resource half of every handle, and the half of the abandonment
@@ -681,14 +745,16 @@ class handle_core : public SessionHandleBase<Proto, SessionHandle<Proto, Resourc
         if constexpr (Policy::action == AbandonAction::Cancel) {
             if (this->owes_protocol_()) [[unlikely]] {
                 cancel_resource<Resource>(resource_);
+                this->release_endpoint_();
                 this->mark_consumed_();
             }
         }
     }
 
 protected:
-    constexpr handle_core(Resource r, std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : base_type{loc}, resource_{std::forward<Resource>(r)} {}
+    constexpr handle_core(Resource r, watch::session_ref session,
+                          std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : base_type{loc, session}, resource_{std::forward<Resource>(r)} {}
 
     // Hands the Resource to the next handle, and marks this one consumed.
     // Each consumer method calls it exactly once, after the transport.
@@ -744,6 +810,7 @@ public:
     {
         this->require_live_();
         cancel_resource<Resource>(resource_);
+        this->release_endpoint_();
         this->mark_consumed_();
     }
 };
@@ -761,13 +828,13 @@ class [[nodiscard]] SessionHandle<End, Resource, LoopCtx, Policy, PS>
                   "each loan before End.");
 
     template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto
-        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
-            -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
+        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
 
-    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+    constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
+                                     std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{std::forward<Resource>(r), loc} {}
+        : core_type{std::forward<Resource>(r), session, loc} {}
 
 public:
     // Closing is what hands the Resource back.  It is available only at
@@ -785,13 +852,13 @@ class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>
     using core_type = detail::handle_core<Send<T, R>, Resource, LoopCtx, Policy, PS>;
 
     template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto
-        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
-            -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
+        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
 
-    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+    constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
+                                     std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{std::forward<Resource>(r), loc} {}
+        : core_type{std::forward<Resource>(r), session, loc} {}
 
 public:
     using message_type = T;
@@ -811,8 +878,9 @@ public:
                       "message takes, or the payload walk of fixy/session/Payload.h refuses the message.  Hold each "
                       "permission that the payload moves or lends before the send.");
         std::invoke(transport, this->live_resource_(), std::move(value));
+        const watch::session_ref session = this->session_();
         return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
-            this->take_resource_());
+            this->take_resource_(), session);
     }
 };
 
@@ -822,22 +890,25 @@ class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>
     using core_type = detail::handle_core<Recv<T, R>, Resource, LoopCtx, Policy, PS>;
 
     template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto
-        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
-            -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
+        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
 
-    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+    constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
+                                     std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{std::forward<Resource>(r), loc} {}
+        : core_type{std::forward<Resource>(r), session, loc} {}
 
 public:
     using message_type = T;
     using continuation = R;
 
     // The Transport signature is T(Resource&).  The pair is the
-    // received value and the handle at the continuation.
+    // received value and the handle at the continuation.  A transport of
+    // this kind waits inside its own call, so the deadlock detector of
+    // fixy/session/Watch.h does not see the wait.
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
+              && (!std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>)
     [[nodiscard]] constexpr auto
     recv(Transport transport) && noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
                                           && std::is_nothrow_move_constructible_v<Resource>
@@ -847,9 +918,33 @@ public:
                       "message closes, the message gives a region that the set already holds, or the payload walk "
                       "of fixy/session/Payload.h refuses the message.");
         T value = std::invoke(transport, this->live_resource_());
+        const watch::session_ref session = this->session_();
         auto next = detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
-            this->take_resource_());
+            this->take_resource_(), session);
         return std::pair{std::move(value), std::move(next)};
+    }
+
+    // A polling Transport has the signature std::optional<T>(Resource&),
+    // and returns an empty optional while no message is there.  The handle
+    // then waits through fixy/session/Watch.h, which aborts on a cycle of
+    // waits across sessions.  A message that is there costs nothing more.
+    template <typename Transport>
+        requires std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>
+    [[nodiscard]] constexpr auto
+    recv(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport&, Resource&>
+                                          && std::is_nothrow_move_constructible_v<Resource>
+                                          && std::is_nothrow_move_constructible_v<T>) {
+        static_assert(detail::handle_admits_recv_v<PS, T>,
+                      "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
+                      "message closes, the message gives a region that the set already holds, or the payload walk "
+                      "of fixy/session/Payload.h refuses the message.");
+        std::optional<T> arrived = std::invoke(transport, this->live_resource_());
+        if (!arrived) [[unlikely]]
+            arrived = detail::wait_for_arrival(transport, this->live_resource_(), this->session_().endpoint);
+        const watch::session_ref session = this->session_();
+        auto next = detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
+            this->take_resource_(), session);
+        return std::pair{std::move(*arrived), std::move(next)};
     }
 };
 
@@ -932,13 +1027,13 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy
     using core_type = detail::handle_core<Select<Branches...>, Resource, LoopCtx, Policy, PS>;
 
     template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto
-        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
-            -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
+        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
 
-    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+    constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
+                                     std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{std::forward<Resource>(r), loc} {}
+        : core_type{std::forward<Resource>(r), session, loc} {}
 
 public:
     using protocol = Select<Branches...>;
@@ -980,7 +1075,8 @@ public:
                                         "handle)::branch_count is exposed for compile-time queries).");
         std::invoke(transport, this->live_resource_(), static_cast<std::size_t>(branch_wire_word_v<protocol, I>));
         using Chosen = std::tuple_element_t<I, branches>;
-        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_());
+        const watch::session_ref session = this->session_();
+        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Advances the local handle WITHOUT telling the peer which branch
@@ -998,7 +1094,8 @@ public:
                                         "branch_count at the call site.");
         this->require_live_();
         using Chosen = std::tuple_element_t<I, branches>;
-        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_());
+        const watch::session_ref session = this->session_();
+        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1022,13 +1119,13 @@ class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy,
     using core_type = detail::handle_core<Offer<Branches...>, Resource, LoopCtx, Policy, PS>;
 
     template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto
-        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
-            -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
+        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
 
-    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+    constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
+                                     std::source_location loc = std::source_location::current()) noexcept(
         std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{std::forward<Resource>(r), loc} {}
+        : core_type{std::forward<Resource>(r), session, loc} {}
 
 public:
     using protocol = Offer<Branches...>;
@@ -1073,8 +1170,24 @@ public:
         requires std::is_invocable_r_v<std::size_t, Transport, Resource&>
     constexpr auto branch(Transport transport, Handler handler) && {
         const std::size_t word = std::invoke(transport, this->live_resource_());
-        return dispatch_branch_(branch_of_wire_word<protocol>(word), this->take_resource_(), std::move(handler),
-                                std::make_index_sequence<branch_count>{});
+        const watch::session_ref session = this->session_();
+        return dispatch_branch_(branch_of_wire_word<protocol>(word), this->take_resource_(), session,
+                                std::move(handler), std::make_index_sequence<branch_count>{});
+    }
+
+    // A polling Transport has the signature
+    // std::optional<std::size_t>(Resource&), and returns an empty optional
+    // while no word is there.  The handle then waits through
+    // fixy/session/Watch.h, as the polling recv does.
+    template <typename Transport, typename Handler>
+        requires std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<std::size_t>>
+    constexpr auto branch(Transport transport, Handler handler) && {
+        std::optional<std::size_t> word = std::invoke(transport, this->live_resource_());
+        if (!word) [[unlikely]]
+            word = detail::wait_for_arrival(transport, this->live_resource_(), this->session_().endpoint);
+        const watch::session_ref session = this->session_();
+        return dispatch_branch_(branch_of_wire_word<protocol>(*word), this->take_resource_(), session,
+                                std::move(handler), std::make_index_sequence<branch_count>{});
     }
 
     // Assumes branch I WITHOUT receiving the peer's label.  The name
@@ -1093,7 +1206,8 @@ public:
                                         "branch, so B0 is index 0.");
         this->require_live_();
         using Chosen = std::tuple_element_t<I, branches>;
-        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_());
+        const watch::session_ref session = this->session_();
+        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1110,13 +1224,14 @@ public:
 
 private:
     template <std::size_t I>
-    static constexpr auto make_branch_handle_(Resource r) {
+    static constexpr auto make_branch_handle_(Resource r, watch::session_ref session) {
         using B = std::tuple_element_t<I, branches>;
-        return detail::step_to_next<B, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r));
+        return detail::step_to_next<B, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     }
 
     template <std::size_t... Is, typename Handler>
-    static constexpr auto dispatch_branch_(std::size_t idx, Resource res, Handler handler, std::index_sequence<Is...>) {
+    static constexpr auto dispatch_branch_(std::size_t idx, Resource res, watch::session_ref session, Handler handler,
+                                           std::index_sequence<Is...>) {
         if (idx >= branch_count) [[unlikely]] {
             std::abort();
         }
@@ -1125,7 +1240,7 @@ private:
         // returns a different type then fails to convert into the
         // single optional below, which is what enforces the
         // same-return-type rule.
-        using FirstHandle = decltype(make_branch_handle_<0>(std::declval<Resource>()));
+        using FirstHandle = decltype(make_branch_handle_<0>(std::declval<Resource>(), session));
         using Result = std::invoke_result_t<Handler&&, FirstHandle>;
 
         if constexpr (std::is_void_v<Result>) {
@@ -1133,7 +1248,8 @@ private:
             (
                 [&]() {
                     if (!dispatched && idx == Is) {
-                        std::invoke(std::move(handler), make_branch_handle_<Is>(std::forward<Resource>(res)));
+                        std::invoke(std::move(handler),
+                                    make_branch_handle_<Is>(std::forward<Resource>(res), session));
                         dispatched = true;
                     }
                 }(),
@@ -1144,8 +1260,8 @@ private:
             (
                 [&]() {
                     if (!dispatched && idx == Is) {
-                        result.emplace(
-                            std::invoke(std::move(handler), make_branch_handle_<Is>(std::forward<Resource>(res))));
+                        result.emplace(std::invoke(std::move(handler),
+                                                   make_branch_handle_<Is>(std::forward<Resource>(res), session)));
                         dispatched = true;
                     }
                 }(),
@@ -1340,14 +1456,61 @@ namespace detail {
 // tokens it did not consume.
 //
 // LoopCtx is void, or a session brand that an owning entry point sets.
-template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
-[[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc) noexcept {
+//
+// Under a checking policy the session has a record in
+// fixy/session/Watch.h, and the first handle names the calling thread as
+// its holder.  The two open_session_ overloads below differ only in how
+// they get the record.
+template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
+[[nodiscard]] constexpr auto start_session_(Resource r, std::source_location loc,
+                                            watch::session_ref session) noexcept {
     static_assert(PermissionFlowCloses<Proto, PS>,
                   "fixy::session::diagnostic [PermissionImbalance]: a path of the protocol sends a region that the "
                   "permission set does not hold, receives a second owner of a region, changes the set in one loop "
                   "iteration, or reaches End with an open loan.  The walk visits every branch, so an arm that no "
                   "run selects counts too.");
-    return step_to_next<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), loc);
+    return step_to_next<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+}
+
+// Opens a session that has no record yet, and claims one for it.
+template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
+[[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc) noexcept {
+    watch::session_ref session{};
+    if constexpr (Policy::checks_abandonment) {
+        if !consteval {
+            const watch::endpoint_id endpoint = watch::claim(type_display_name_v<Proto>, loc);
+            session = {endpoint, watch::current_thread_slot()};
+        }
+    }
+    return start_session_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
+}
+
+// Opens a session on a record that a channel mint claimed and linked to
+// its peer.  The mint can run on a different thread, so the calling
+// thread records itself as the holder.
+template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
+[[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc, watch::endpoint_id endpoint) noexcept {
+    watch::session_ref session{};
+    if constexpr (Policy::checks_abandonment) {
+        if !consteval {
+            session = {endpoint, watch::note_holder(endpoint)};
+        }
+    }
+    return start_session_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
+}
+
+// Claims the two linked records of a channel, one for each end.  Under
+// check::Off it claims nothing.
+template <typename Proto, AbandonmentPolicy Policy>
+[[nodiscard]] inline std::pair<watch::endpoint_id, watch::endpoint_id> claim_channel_(std::source_location loc) noexcept {
+    if constexpr (Policy::checks_abandonment) {
+        const watch::endpoint_id self = watch::claim(type_display_name_v<Proto>, loc);
+        const watch::endpoint_id peer = watch::claim(type_display_name_v<dual_of_t<Proto>>, loc);
+        watch::link(self, peer);
+        return {self, peer};
+    } else {
+        return {watch::endpoint_id::none, watch::endpoint_id::none};
+    }
 }
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy,
@@ -1496,11 +1659,14 @@ struct forked_endpoint_ {
     Resource resource;
     Body body;
     std::source_location loc;
+    // The record the channel mint claimed for this end, linked to the
+    // record of the other end.
+    watch::endpoint_id endpoint = watch::endpoint_id::none;
 
     template <typename Perm, typename Ctx>
     void operator()(Perm permission, Ctx const& ctx) noexcept {
         auto head = open_session_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet, brand_ctx_t<Body>>(
-            std::forward<Resource>(resource), loc);
+            std::forward<Resource>(resource), loc, endpoint);
         auto at_end = std::invoke(std::move(body), std::move(head), std::move(permission), ctx);
         static_cast<void>(std::move(at_end).close());
     }
@@ -1554,9 +1720,11 @@ mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent
                     std::source_location loc = std::source_location::current()) noexcept {
     using SelfSide = detail::forked_endpoint_<Proto, Policy, ResourceSelf, SelfBody>;
     using PeerSide = detail::forked_endpoint_<dual_of_t<Proto>, Policy, ResourcePeer, PeerBody>;
+    const auto [self_endpoint, peer_endpoint] = detail::claim_channel_<Proto, Policy>(loc);
     return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
-        ctx, std::move(parent), SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc},
-        PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc});
+        ctx, std::move(parent),
+        SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
+        PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});
 }
 
 // The one form that gives the two endpoints to one caller.  It is a
@@ -1575,11 +1743,15 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
     requires CtxFitsTestChannel<Ctx, Proto> && SessionResource<ResourceA> && SessionResource<ResourceB>
 [[nodiscard]] constexpr auto mint_test_channel(Ctx const&, ResourceA resource_a, ResourceB resource_b,
                                                std::source_location loc = std::source_location::current()) noexcept {
+    std::pair<watch::endpoint_id, watch::endpoint_id> endpoints{watch::endpoint_id::none, watch::endpoint_id::none};
+    if !consteval {
+        endpoints = detail::claim_channel_<Proto, Policy>(loc);
+    }
     return std::pair{
         detail::open_session_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
-            std::forward<ResourceA>(resource_a), loc),
+            std::forward<ResourceA>(resource_a), loc, endpoints.first),
         detail::open_session_<dual_of_t<Proto>, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
-            std::forward<ResourceB>(resource_b), loc)};
+            std::forward<ResourceB>(resource_b), loc, endpoints.second)};
 }
 
 }  // namespace fixy::session

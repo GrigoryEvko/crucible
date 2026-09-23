@@ -32,9 +32,28 @@
 // fails it until a row is written.  The row count is pinned below, and
 // the pin can only go down.
 //
-// The compile-time attacks are negative fixtures under test/fixy/neg,
-// named neg_sess_* and neg_rule_r004_*, and one is pinned here as a
-// static_assert: a hot binding that waits in a receive compiles.
+// Two routes are refused when the program compiles, and are negative
+// fixtures: a new-expression of a handle (neg_sess_handle_heap_new) and
+// std::make_unique of a handle (neg_sess_handle_make_unique).  The other
+// compile-time attacks are named neg_sess_* and neg_rule_r004_*, and one
+// is pinned here as a static_assert: a hot binding that waits in a
+// receive compiles.
+//
+// ── What fixy/session/Watch.h adds ───────────────────────────────────
+//
+// A handle that is never destroyed leaks its protocol, whatever holds
+// it: storage from ::new, an owner that was released, a coroutine frame
+// that was never destroyed, a static object that quick_exit skips.  The
+// watch keeps a record of each live session, and std::exit and
+// std::quick_exit report a live record and abort.  So each leak route
+// below ends through exit or quick_exit and is caught.  The route that
+// ends the process with no hook is one row for all of them:
+// leak_then_skip_exit_hooks.
+//
+// The watch also follows the waits of polling transports across sessions,
+// and aborts on a cycle.  The two forest attacks use polling transports
+// and are caught.  A transport that waits inside its own call publishes no
+// wait, which is the row blocking_transport_hides_the_cycle.
 
 #include <fixy/Fn.h>
 #include <fixy/ScopedView.h>
@@ -126,27 +145,25 @@ struct limitation_row {
 
 // The attacks that succeed, and the condition each one breaks.
 constexpr limitation_row known_limitations[] = {
-    {"leak_new_without_delete",
-     "linearity: storage that is never destroyed never runs the destructor, so no policy sees the drop"},
-    {"leak_released_unique_ptr",
-     "linearity: unique_ptr::release gives up the only owner, and the handle is never destroyed"},
-    {"leak_coroutine_frame",
-     "linearity: a coroutine frame that is never destroyed holds a live handle that no destructor reaches"},
-    {"quick_exit_with_static_handle",
-     "linearity: quick_exit skips the destructors of objects with static storage duration"},
+    {"leak_then_skip_exit_hooks",
+     "linearity: the watch reads the live sessions at std::exit and std::quick_exit.  std::_Exit, std::abort and a "
+     "fatal signal end the process with no hook, and C++ gives no other point to read them"},
     {"detach_with_a_false_reason",
-     "linearity: detach is a named escape, and a false reason drops the protocol without a diagnostic"},
-    {"off_policy_drop", "linearity: check::Off is an explicit hatch that ignores a dropped protocol"},
+     "linearity: a detach reason states an intent, and no type can check that the intent is true.  The reason is a "
+     "tag, so each detach names its class and a search finds it"},
+    {"off_policy_drop",
+     "linearity: check::Off is empty by contract, so that a handle under it costs exactly its Resource.  With no "
+     "state, nothing can see a dropped protocol"},
     {"off_policy_use_after_move",
-     "linearity: check::Off has no liveness flag, so a moved-from handle steps the protocol again"},
-    {"one_thread_holds_both_ends_after_fork",
-     "forest: a body moves its endpoint through shared memory to the thread that holds the dual"},
-    {"two_forked_sessions_in_a_cycle",
-     "forest: two forked sessions exchange endpoints through shared memory, and the waits form a cycle"},
+     "linearity: a liveness flag needs a byte, and with alignment it grows an 8-byte handle to 16.  check::Off "
+     "gives that byte up by contract, so a moved-from handle steps the protocol again"},
+    {"blocking_transport_hides_the_cycle",
+     "forest: a transport that waits inside its own call publishes no wait, so the deadlock detector of "
+     "fixy/session/Watch.h cannot see the cycle.  A polling transport lets the handle wait, and the detector sees it"},
 };
 
 // The ledger can only shrink.  Lower this number when a row leaves.
-constexpr std::size_t kLedgerCeiling = 9;
+constexpr std::size_t kLedgerCeiling = 5;
 static_assert(sizeof(known_limitations) / sizeof(known_limitations[0]) <= kLedgerCeiling,
               "the ledger of known limitations grew.  A new successful attack is a finding: fix it, or report it "
               "and raise nothing here without a decision.");
@@ -212,6 +229,26 @@ void put(Mailbox& box, int value) noexcept {
     return value;
 }
 
+// A polling transport over the left box of a pipe: an empty result while
+// the box is empty, so the handle waits through fixy/session/Watch.h.
+// The deadline still holds, so no attack can hang the test run.
+struct PollLeftBox {
+    const char* where = "";
+    std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kAttackDeadline;
+
+    template <typename End>
+    [[nodiscard]] std::optional<Ping> operator()(End& end) const noexcept {
+        Mailbox& box = end.pipe->to_left;
+        if (!box.full.load(std::memory_order_acquire)) {
+            if (std::chrono::steady_clock::now() > deadline) deadlock_detected(where);
+            return std::nullopt;
+        }
+        const int value = box.value.load(std::memory_order_relaxed);
+        box.full.store(false, std::memory_order_release);
+        return Ping{value};
+    }
+};
+
 // A slot that carries one value between threads.  The attacks use it to
 // move a handle where the fork did not put it.
 template <typename T>
@@ -271,8 +308,14 @@ using FreshHandle = decltype(fresh());
     std::_Exit(kSilentExit);
 }
 
+// A handle refuses a new-expression, so heap storage holds it inside an
+// owner type.  The owner's destructor destroys the handle.
+struct Holder {
+    FreshHandle handle;
+};
+
 [[noreturn]] void drop_by_unique_ptr_reset() {
-    auto owner = std::make_unique<FreshHandle>(fresh());
+    auto owner = std::make_unique<Holder>(Holder{fresh()});
     owner.reset();
     std::_Exit(kSilentExit);
 }
@@ -410,29 +453,43 @@ Task hold_across_suspension(FreshHandle handle) {
     std::_Exit(kSilentExit);
 }
 
-// ── Attacks that succeed ─────────────────────────────────────────────
+// ── Leaks the exit report catches ────────────────────────────────────
+//
+// Each handle below is never destroyed, so no destructor sees the drop.
+// The process ends through std::exit or std::quick_exit, and the watch
+// reports the live session there and aborts.
 
-[[noreturn]] void leak_new_without_delete() {
-    [[maybe_unused]] auto* leaked = new FreshHandle{fresh()};
-    std::_Exit(kSilentExit);
+[[noreturn]] void leak_global_new_then_exit() {
+    // ::new skips the class-scope operator new that the handle deletes.
+    [[maybe_unused]] auto* leaked = ::new FreshHandle{fresh()};
+    std::exit(kSilentExit);
 }
 
-[[noreturn]] void leak_released_unique_ptr() {
-    auto owner = std::make_unique<FreshHandle>(fresh());
-    [[maybe_unused]] FreshHandle* released = owner.release();
-    std::_Exit(kSilentExit);
+[[noreturn]] void leak_released_holder_then_exit() {
+    auto owner = std::make_unique<Holder>(Holder{fresh()});
+    [[maybe_unused]] Holder* released = owner.release();
+    std::exit(kSilentExit);
 }
 
-[[noreturn]] void leak_coroutine_frame() {
+[[noreturn]] void leak_coroutine_frame_then_exit() {
     Task task = hold_across_suspension(fresh());
     task.abandon();
-    std::_Exit(kSilentExit);
+    std::exit(kSilentExit);
 }
 
 [[noreturn]] void quick_exit_with_static_handle() {
     static FreshHandle kept = fresh();
     (void)kept;
     std::quick_exit(kSilentExit);
+}
+
+// ── Attacks that succeed ─────────────────────────────────────────────
+
+// Every leak above ends through a hook.  This one ends the process with
+// no hook, so no reader of the watch runs.
+[[noreturn]] void leak_then_skip_exit_hooks() {
+    [[maybe_unused]] auto* leaked = ::new FreshHandle{fresh()};
+    std::_Exit(kSilentExit);
 }
 
 [[noreturn]] void detach_with_a_false_reason() {
@@ -483,14 +540,30 @@ struct GiveAwayBody {
     }
 };
 
+// How a left body receives: through a polling transport, which lets the
+// handle wait through the watch, or through a transport that waits
+// inside its own call.
+enum class Receive : std::uint8_t { Polling, Blocking };
+
+// Receives one Ping on the left end of `head`, in the given way.
+template <Receive How, typename Head>
+[[nodiscard]] auto receive_ping(Head head, const char* where) noexcept {
+    if constexpr (How == Receive::Polling) {
+        return std::move(head).recv(PollLeftBox{where});
+    } else {
+        return std::move(head).recv([where](LeftEnd& e) noexcept { return Ping{take(e.pipe->to_left, where)}; });
+    }
+}
+
 // The left body takes the right endpoint, so one thread holds the two
 // ends of one channel.  It then waits on its own end first, for the Ping
 // that only its other end can send.
+template <Receive How>
 struct TakesBothBody {
     template <typename Head>
     auto operator()(Head head, perm::Permission<attack_tags::Left>, BgCtx const&) noexcept {
         RightHead other = g_right_endpoint.take("the left body, for the right endpoint");
-        auto [ping, done] = std::move(head).recv([](LeftEnd& e) noexcept { return Ping{take(e.pipe->to_left, "left recv")}; });
+        auto [ping, done] = receive_ping<How>(std::move(head), "left recv");
         g_right_done.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping&& p) noexcept {
             put(e.pipe->to_left, p.value);
         }));
@@ -498,15 +571,23 @@ struct TakesBothBody {
     }
 };
 
-[[noreturn]] void one_thread_holds_both_ends_after_fork() {
+template <Receive How>
+[[noreturn]] void run_one_thread_holds_both_ends() {
     Pipe pipe{};
     const BgCtx ctx{eff::testing::bg()};
     auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
-        ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, TakesBothBody{},
+        ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, TakesBothBody<How>{},
         GiveAwayBody{});
     perm::permission_drop(std::move(back));
     std::_Exit(kSilentExit);
 }
+
+// The watch sees the wait on the polling transport, finds that the peer
+// of that endpoint is held by the waiting thread itself, and aborts.
+[[noreturn]] void one_thread_holds_both_ends_after_fork() { run_one_thread_holds_both_ends<Receive::Polling>(); }
+
+// The same cycle through a transport that waits in its own call.
+[[noreturn]] void blocking_transport_hides_the_cycle() { run_one_thread_holds_both_ends<Receive::Blocking>(); }
 
 // Two forked sessions, each run from its own thread.  Each right body
 // gives its endpoint to the left body of the OTHER session.  Each left
@@ -543,7 +624,7 @@ struct CycleLeftA {
     template <typename Head>
     auto operator()(Head head, perm::Permission<attack_tags::Left>, BgCtx const&) noexcept {
         CycleHeadB other = g_cycle_endpoint_b.take("session A's left body, for session B's endpoint");
-        auto [ping, done] = std::move(head).recv([](LeftEnd& e) noexcept { return Ping{take(e.pipe->to_left, "A recv")}; });
+        auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "A recv");
         g_cycle_done_b.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping&& p) noexcept {
             put(e.pipe->to_left, p.value);
         }));
@@ -554,7 +635,7 @@ struct CycleLeftB {
     template <typename Head>
     auto operator()(Head head, perm::Permission<attack_tags::Left2>, BgCtx const&) noexcept {
         CycleHeadA other = g_cycle_endpoint_a.take("session B's left body, for session A's endpoint");
-        auto [ping, done] = std::move(head).recv([](LeftEnd& e) noexcept { return Ping{take(e.pipe->to_left, "B recv")}; });
+        auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "B recv");
         g_cycle_done_a.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping&& p) noexcept {
             put(e.pipe->to_left, p.value);
         }));
@@ -662,18 +743,20 @@ constexpr attack_case kAttacks[] = {
     {"read_resource_after_move", Outcome::Caught, read_resource_after_move},
     {"view_a_moved_from_handle", Outcome::Caught, view_a_moved_from_handle},
     {"coroutine_destroyed_before_resume", Outcome::Caught, coroutine_destroyed_before_resume},
+    {"leak_global_new_then_exit", Outcome::Caught, leak_global_new_then_exit},
+    {"leak_released_holder_then_exit", Outcome::Caught, leak_released_holder_then_exit},
+    {"leak_coroutine_frame_then_exit", Outcome::Caught, leak_coroutine_frame_then_exit},
+    {"quick_exit_with_static_handle", Outcome::Caught, quick_exit_with_static_handle},
+    {"one_thread_holds_both_ends_after_fork", Outcome::Caught, one_thread_holds_both_ends_after_fork},
+    {"two_forked_sessions_in_a_cycle", Outcome::Caught, two_forked_sessions_in_a_cycle},
     {"swap_two_live_handles", Outcome::Correct, swap_two_live_handles},
     {"self_move_assign", Outcome::Correct, self_move_assign},
     {"cancellation_races_a_send", Outcome::Correct, cancellation_races_a_send},
-    {"leak_new_without_delete", Outcome::Silent, leak_new_without_delete},
-    {"leak_released_unique_ptr", Outcome::Silent, leak_released_unique_ptr},
-    {"leak_coroutine_frame", Outcome::Silent, leak_coroutine_frame},
-    {"quick_exit_with_static_handle", Outcome::Silent, quick_exit_with_static_handle},
+    {"leak_then_skip_exit_hooks", Outcome::Silent, leak_then_skip_exit_hooks},
     {"detach_with_a_false_reason", Outcome::Silent, detach_with_a_false_reason},
     {"off_policy_drop", Outcome::Silent, off_policy_drop},
     {"off_policy_use_after_move", Outcome::Silent, off_policy_use_after_move},
-    {"one_thread_holds_both_ends_after_fork", Outcome::Deadlock, one_thread_holds_both_ends_after_fork},
-    {"two_forked_sessions_in_a_cycle", Outcome::Deadlock, two_forked_sessions_in_a_cycle},
+    {"blocking_transport_hides_the_cycle", Outcome::Deadlock, blocking_transport_hides_the_cycle},
 };
 
 // Every attack that succeeds has a ledger row, and every ledger row

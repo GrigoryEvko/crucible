@@ -1,0 +1,576 @@
+#pragma once
+
+// The runtime watch over live session endpoints.
+//
+// A handle under a checking policy is linear while it lives, but two
+// failures stay outside the type system:
+//
+//   - A handle that is never destroyed leaks its protocol.  Heap storage
+//     that is never freed, a released owner, a coroutine frame that is
+//     never destroyed and a static object skipped by quick_exit all hold
+//     a live endpoint that no destructor reaches.
+//   - Endpoints that escape through shared memory can form a cycle of
+//     waits across sessions.  The forest condition of LinearActris
+//     (Jacobs, Hinrichsen and Krebbers, POPL 2024) then does not hold,
+//     and the threads deadlock.
+//
+// The watch detects the two at run time.  It does not prevent them.
+//
+// ── The endpoint table ──────────────────────────────────────────────
+//
+// Each session that a mint starts under a checking policy claims one
+// record.  The record holds the protocol at the start, the site of the
+// mint, the peer endpoint when the mint made a channel, and the thread
+// that holds the handle now.  The session releases the record when it
+// reaches End, detaches, or cancels.  A handle carries the index of its
+// record in the padding of its policy, so a handle keeps its size.
+//
+// ── The report at exit ──────────────────────────────────────────────
+//
+// std::exit and std::quick_exit run a hook that walks the table.  A live
+// record is a protocol that nothing will finish, so the hook prints each
+// one and aborts.  A process that ends through std::_Exit, std::abort or
+// a fatal signal runs no hook, and the watch sees nothing there.
+//
+// ── The deadlock detector ───────────────────────────────────────────
+//
+// A handle waits through the watch when its transport polls: the
+// transport returns an empty std::optional while no message is there.
+// The first empty result opens a wait_scope, which publishes the endpoint
+// that the thread waits on.  The scope then follows the wait-for chain:
+// the peer of the endpoint, the thread that holds the peer, the endpoint
+// that thread waits on, and so on.  A chain that comes back to the
+// waiting thread is a cycle.  When the same cycle, with the same wait of
+// each thread, holds at two checks confirm_after apart, the scope prints
+// the cycle and aborts.  A step that does not wait never touches the
+// watch.
+//
+// Limits, stated rather than implied:
+//
+//   - A transport that blocks inside its own call publishes no wait, so a
+//     cycle through it is not seen.
+//   - The holder of an endpoint is the thread that last moved or stepped
+//     its handle.  A thread that only holds a pointer to a handle is not
+//     its holder.  A cycle that runs through such a pointer can be
+//     reported, although the pointer holder will step the handle later.
+//     Linear handles do not cross threads by pointer, so this needs code
+//     that breaks linearity already.
+//   - The table has a fixed capacity.  A session minted when it is full
+//     is not tracked, and a thread with no free slot is not either.
+//
+// Every field is an atomic, so a reader on another thread never races a
+// writer.  Every "none" is zero, so the tables are in .bss and cost no
+// page until a session touches them.
+
+#include <foundation/Platform.h>
+
+#include <pthread.h>
+
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <source_location>
+#include <string_view>
+
+namespace fixy::session::watch {
+
+// The index of an endpoint record, plus one.  Zero is no record, so a
+// handle that no mint tracks carries the zero value.
+enum class endpoint_id : std::uint32_t { none = 0 };
+
+inline constexpr std::uint32_t endpoint_capacity = 4096;
+inline constexpr std::uint32_t thread_capacity = 1024;
+
+// A wait that lasts this long starts to trace its chain.
+inline constexpr std::chrono::milliseconds suspect_after{50};
+
+// The same cycle must hold at two traces this far apart.
+inline constexpr std::chrono::milliseconds confirm_after{50};
+
+// The longest chain the detector follows.
+inline constexpr std::size_t max_chain = 64;
+
+namespace detail {
+
+inline constexpr std::uint64_t low_half = 0xFFFF'FFFFu;
+
+// A thread that found no free slot records this owner token.  The
+// detector reads it as an unknown holder.
+inline constexpr std::uint64_t untracked_owner = ~std::uint64_t{0};
+
+// Packs a one-based index with a generation.  Zero is none.
+[[nodiscard]] constexpr std::uint64_t pack(std::uint32_t index, std::uint32_t generation) noexcept {
+    return (std::uint64_t{generation} << 32) | index;
+}
+
+[[nodiscard]] constexpr std::uint32_t index_of(std::uint64_t packed) noexcept {
+    return static_cast<std::uint32_t>(packed & low_half);
+}
+
+[[nodiscard]] constexpr std::uint32_t generation_of(std::uint64_t packed) noexcept {
+    return static_cast<std::uint32_t>(packed >> 32);
+}
+
+// One live endpoint.  A record changes generation at each claim, so a
+// stale reference to an old session never matches a new one.
+struct alignas(64) endpoint_record {
+    std::atomic<std::uint32_t> is_live{0};
+    std::atomic<std::uint32_t> generation{0};
+    // The next free record, one-based, while the record is free.
+    std::atomic<std::uint32_t> next_free{0};
+    std::atomic<std::uint32_t> protocol_size{0};
+    // The peer endpoint, packed with its generation.
+    std::atomic<std::uint64_t> peer{0};
+    // The thread that holds the handle, packed with its slot generation.
+    std::atomic<std::uint64_t> owner{0};
+    std::atomic<const char*> protocol_text{nullptr};
+    std::atomic<std::source_location> site{};
+};
+
+// One thread that has touched the watch.
+struct alignas(64) thread_record {
+    std::atomic<std::uint32_t> is_taken{0};
+    std::atomic<std::uint32_t> generation{0};
+    // The endpoint the thread waits on, one-based, or zero.
+    std::atomic<std::uint32_t> blocked_on{0};
+    // Counts the waits of the thread, so that a detector can tell one
+    // wait from the next.
+    std::atomic<std::uint64_t> wait_epoch{0};
+};
+
+struct registry {
+    endpoint_record endpoints[endpoint_capacity]{};
+    thread_record threads[thread_capacity]{};
+    // The free list of released records: a one-based index packed with a
+    // tag that changes at each push and pop, which removes the ABA case.
+    std::atomic<std::uint64_t> free_head{0};
+    // The records never claimed start here, zero-based.
+    std::atomic<std::uint32_t> next_unused{0};
+    std::atomic<std::uint32_t> hooks_installed{0};
+    // Set by the first thread that reports a deadlock.  Every thread on a
+    // cycle detects it, and one report is enough.
+    std::atomic<std::uint32_t> is_reporting{0};
+};
+
+inline constinit registry g_registry{};
+
+// The owner token of this thread, or zero before its first use.
+inline constinit thread_local std::uint64_t tls_owner_token = 0;
+
+// The holder stamp of this thread: its one-based slot index, with the
+// low bits of the slot generation above it.  Zero until the thread
+// claims a slot, and for a thread that found no free slot.
+inline constexpr unsigned stamp_index_bits = 11;
+inline constinit thread_local std::uint16_t tls_holder_stamp = 0;
+
+static_assert(thread_capacity < (1u << stamp_index_bits),
+              "the one-based slot index must fit the low bits of a holder stamp");
+
+[[nodiscard]] constexpr std::uint16_t holder_stamp_of(std::uint32_t slot, std::uint32_t generation) noexcept {
+    return static_cast<std::uint16_t>(slot | (generation << stamp_index_bits));
+}
+
+[[nodiscard]] inline endpoint_record& record_at_(std::uint32_t one_based) noexcept {
+    return g_registry.endpoints[one_based - 1];
+}
+
+[[nodiscard]] inline thread_record& thread_at_(std::uint32_t one_based) noexcept {
+    return g_registry.threads[one_based - 1];
+}
+
+// Frees the slot of a thread when the thread ends.  Only the cold claim
+// below names it, so no hot path pays for its destructor.
+struct slot_releaser {
+    std::uint32_t slot = 0;
+
+    slot_releaser() noexcept = default;
+    slot_releaser(const slot_releaser&) = delete("one releaser owns the slot of its thread");
+    slot_releaser& operator=(const slot_releaser&) = delete("one releaser owns the slot of its thread");
+
+    /// Publishes that the thread waits on nothing, bumps the slot
+    /// generation so that no stale owner token matches it, and frees it.
+    ~slot_releaser() {
+        if (slot == 0) return;
+        thread_record& me = thread_at_(slot);
+        me.blocked_on.store(0, std::memory_order_release);
+        me.generation.fetch_add(1, std::memory_order_acq_rel);
+        me.is_taken.store(0, std::memory_order_release);
+        tls_owner_token = 0;
+        tls_holder_stamp = 0;
+    }
+};
+
+/// Claims a thread slot for the calling thread and returns its owner
+/// token.  A full table gives the untracked token, and the thread keeps
+/// it.  Complexity: linear in thread_capacity, once for each thread.
+[[gnu::cold, gnu::noinline]] inline std::uint64_t claim_thread_slot() noexcept {
+    for (std::uint32_t slot = 1; slot <= thread_capacity; ++slot) {
+        thread_record& candidate = thread_at_(slot);
+        std::uint32_t expected = 0;
+        if (candidate.is_taken.load(std::memory_order_acquire) != 0) continue;
+        if (!candidate.is_taken.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                                        std::memory_order_acquire)) {
+            continue;
+        }
+        thread_local slot_releaser releaser;
+        releaser.slot = slot;
+        const std::uint32_t generation = candidate.generation.load(std::memory_order_acquire);
+        tls_owner_token = pack(slot, generation);
+        tls_holder_stamp = holder_stamp_of(slot, generation);
+        return tls_owner_token;
+    }
+    tls_owner_token = untracked_owner;
+    return tls_owner_token;
+}
+
+/// The owner token of the calling thread.  The first call claims a slot.
+[[nodiscard]] inline std::uint64_t owner_token() noexcept {
+    const std::uint64_t token = tls_owner_token;
+    if (token != 0) [[likely]]
+        return token;
+    return claim_thread_slot();
+}
+
+/// Pops a released record, one-based, or returns zero.
+[[nodiscard]] inline std::uint32_t pop_free() noexcept {
+    std::uint64_t head = g_registry.free_head.load(std::memory_order_acquire);
+    for (;;) {
+        const std::uint32_t top = index_of(head);
+        if (top == 0) return 0;
+        const std::uint32_t next = record_at_(top).next_free.load(std::memory_order_acquire);
+        const std::uint64_t replacement = pack(next, generation_of(head) + 1);
+        if (g_registry.free_head.compare_exchange_weak(head, replacement, std::memory_order_acq_rel,
+                                                       std::memory_order_acquire)) {
+            return top;
+        }
+    }
+}
+
+/// Pushes a record, one-based, onto the free list.
+inline void push_free(std::uint32_t index) noexcept {
+    std::uint64_t head = g_registry.free_head.load(std::memory_order_acquire);
+    for (;;) {
+        record_at_(index).next_free.store(index_of(head), std::memory_order_release);
+        const std::uint64_t replacement = pack(index, generation_of(head) + 1);
+        if (g_registry.free_head.compare_exchange_weak(head, replacement, std::memory_order_acq_rel,
+                                                       std::memory_order_acquire)) {
+            return;
+        }
+    }
+}
+
+/// Prints one endpoint: its protocol at the start and the site of its mint.
+inline void print_endpoint(const char* label, std::uint32_t index) noexcept {
+    const endpoint_record& record = record_at_(index);
+    const char* text = record.protocol_text.load(std::memory_order_acquire);
+    const std::uint32_t size = record.protocol_size.load(std::memory_order_acquire);
+    const std::source_location site = record.site.load(std::memory_order_acquire);
+    const char* file = site.file_name();
+    const bool has_site = file != nullptr && file[0] != '\0';
+    std::fprintf(stderr, "  %s endpoint %u: %.*s\n    minted at %s:%u\n", label, index,
+                 static_cast<int>(text == nullptr ? 0 : size), text == nullptr ? "" : text,
+                 has_site ? file : "<unknown site>", has_site ? site.line() : std::uint_least32_t{0});
+}
+
+/// The hook that std::exit and std::quick_exit run.  A live record is a
+/// protocol that nothing will finish: print each one, then abort.
+/// Complexity: linear in the records ever claimed.
+inline void report_live_at_exit() noexcept {
+    const std::uint32_t claimed = g_registry.next_unused.load(std::memory_order_acquire);
+    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
+    std::uint32_t live = 0;
+    for (std::uint32_t index = 1; index <= bound; ++index) {
+        if (record_at_(index).is_live.load(std::memory_order_acquire) != 0) ++live;
+    }
+    if (live == 0) return;
+    std::fprintf(stderr,
+                 "\n"
+                 "fixy::session: LIVE PROTOCOL AT EXIT\n"
+                 "  %u session(s) still owe a message, and no handle will finish them.  A handle was\n"
+                 "  never destroyed: heap storage that was never freed, a released owner, a coroutine\n"
+                 "  frame that was never destroyed, or a static object that quick_exit skips.\n",
+                 live);
+    for (std::uint32_t index = 1; index <= bound; ++index) {
+        if (record_at_(index).is_live.load(std::memory_order_acquire) != 0) print_endpoint("live", index);
+    }
+    std::abort();
+}
+
+/// Forgets every record in a child after fork.  The records belong to
+/// threads of the parent, which the child does not have.
+inline void forget_records_in_child() noexcept {
+    const std::uint32_t claimed = g_registry.next_unused.load(std::memory_order_acquire);
+    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
+    for (std::uint32_t index = 1; index <= bound; ++index) {
+        record_at_(index).is_live.store(0, std::memory_order_release);
+    }
+}
+
+/// Installs the exit hooks once for the process.
+[[gnu::cold, gnu::noinline]] inline void install_exit_hooks() noexcept {
+    std::uint32_t expected = 0;
+    if (!g_registry.hooks_installed.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                                            std::memory_order_acquire)) {
+        return;
+    }
+    static_cast<void>(std::atexit(&report_live_at_exit));
+    static_cast<void>(std::at_quick_exit(&report_live_at_exit));
+    static_cast<void>(::pthread_atfork(nullptr, nullptr, &forget_records_in_child));
+}
+
+// One link of a wait-for chain: a thread waits on an endpoint, and the
+// peer of that endpoint is held by the next thread.
+struct chain_link {
+    std::uint32_t endpoint = 0;
+    std::uint32_t endpoint_generation = 0;
+    std::uint32_t peer = 0;
+    std::uint64_t holder = 0;
+    std::uint64_t holder_epoch = 0;
+
+    friend constexpr bool operator==(const chain_link&, const chain_link&) noexcept = default;
+};
+
+struct wait_chain {
+    chain_link links[max_chain]{};
+    std::size_t count = 0;
+    bool is_cycle = false;
+
+    /// Two chains are the same when they are cycles over the same links.
+    [[nodiscard]] bool same_cycle_as(const wait_chain& other) const noexcept {
+        if (!is_cycle || !other.is_cycle || count != other.count) return false;
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!(links[index] == other.links[index])) return false;
+        }
+        return true;
+    }
+};
+
+/// Follows the wait-for chain from the calling thread, which waits on
+/// `start`.  The result is a cycle only when the chain comes back to the
+/// caller.  Complexity: linear in max_chain.
+[[nodiscard]] inline wait_chain trace_chain(std::uint64_t self, std::uint32_t start) noexcept {
+    wait_chain chain{};
+    std::uint32_t current = start;
+    for (std::size_t step = 0; step < max_chain; ++step) {
+        const endpoint_record& waiting = record_at_(current);
+        if (waiting.is_live.load(std::memory_order_acquire) == 0) return chain;
+        const std::uint64_t peer = waiting.peer.load(std::memory_order_acquire);
+        if (peer == 0) return chain;
+        const endpoint_record& held = record_at_(index_of(peer));
+        if (held.is_live.load(std::memory_order_acquire) == 0
+            || held.generation.load(std::memory_order_acquire) != generation_of(peer)) {
+            return chain;
+        }
+        const std::uint64_t holder = held.owner.load(std::memory_order_acquire);
+        if (holder == 0 || holder == untracked_owner) return chain;
+        const thread_record& thread = thread_at_(index_of(holder));
+        if (thread.is_taken.load(std::memory_order_acquire) == 0
+            || thread.generation.load(std::memory_order_acquire) != generation_of(holder)) {
+            return chain;
+        }
+        chain.links[chain.count++] =
+            chain_link{current, waiting.generation.load(std::memory_order_acquire), index_of(peer), holder,
+                       thread.wait_epoch.load(std::memory_order_acquire)};
+        if (holder == self) {
+            chain.is_cycle = true;
+            return chain;
+        }
+        const std::uint32_t next = thread.blocked_on.load(std::memory_order_acquire);
+        if (next == 0) return chain;
+        for (std::size_t seen = 0; seen + 1 < chain.count; ++seen) {
+            // A cycle that does not pass through the caller belongs to the
+            // threads on it, and each of them detects it.
+            if (chain.links[seen].holder == holder) return chain;
+        }
+        current = next;
+    }
+    return chain;
+}
+
+/// Prints a confirmed cycle that starts at the thread `self`, and aborts.
+[[noreturn, gnu::cold, gnu::noinline]] inline void report_deadlock(const wait_chain& chain,
+                                                                   std::uint64_t self) noexcept {
+    if (g_registry.is_reporting.exchange(1, std::memory_order_acq_rel) != 0) {
+        // Another thread on the cycle reports it and aborts the process.
+        for (;;) CRUCIBLE_SPIN_PAUSE;
+    }
+    std::fprintf(stderr,
+                 "\n"
+                 "fixy::session: DEADLOCK ACROSS SESSIONS\n"
+                 "  %zu thread(s) wait in a cycle, and the cycle held for two checks %lld ms apart.\n"
+                 "  Each thread waits on an endpoint whose peer the next thread holds.  An endpoint\n"
+                 "  escaped the fork that made its channel, so threads and channels no longer form\n"
+                 "  a forest.\n",
+                 chain.count, static_cast<long long>(confirm_after.count()));
+    for (std::size_t index = 0; index < chain.count; ++index) {
+        const chain_link& link = chain.links[index];
+        const std::uint64_t waiter = index == 0 ? self : chain.links[index - 1].holder;
+        std::fprintf(stderr, "  thread slot %u waits on:\n", index_of(waiter));
+        print_endpoint("waited", link.endpoint);
+        std::fprintf(stderr, "  and thread slot %u holds its peer:\n", index_of(link.holder));
+        print_endpoint("peer", link.peer);
+    }
+    std::abort();
+}
+
+}  // namespace detail
+
+/// Claims a record for a session that starts at `protocol`, minted at
+/// `site`.  A full table gives endpoint_id::none, and the session is then
+/// not tracked.  The first claim installs the exit hooks.
+[[nodiscard]] inline endpoint_id claim(std::string_view protocol, std::source_location site) noexcept {
+    if (detail::g_registry.hooks_installed.load(std::memory_order_acquire) == 0) [[unlikely]] {
+        detail::install_exit_hooks();
+    }
+    std::uint32_t index = detail::pop_free();
+    if (index == 0) {
+        const std::uint32_t fresh = detail::g_registry.next_unused.fetch_add(1, std::memory_order_acq_rel);
+        if (fresh >= endpoint_capacity) return endpoint_id::none;
+        index = fresh + 1;
+    }
+    detail::endpoint_record& record = detail::record_at_(index);
+    // The claimant is the only writer of a record's generation, so a load
+    // and a store suffice.  A concurrent trace only reads it.
+    record.generation.store(record.generation.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+    record.peer.store(0, std::memory_order_release);
+    record.protocol_text.store(protocol.data(), std::memory_order_release);
+    record.protocol_size.store(static_cast<std::uint32_t>(protocol.size()), std::memory_order_release);
+    record.site.store(site, std::memory_order_release);
+    record.owner.store(detail::owner_token(), std::memory_order_release);
+    record.is_live.store(1, std::memory_order_release);
+    return static_cast<endpoint_id>(index);
+}
+
+/// Makes `first` and `second` the two ends of one channel.
+inline void link(endpoint_id first, endpoint_id second) noexcept {
+    if (first == endpoint_id::none || second == endpoint_id::none) return;
+    const auto first_index = static_cast<std::uint32_t>(first);
+    const auto second_index = static_cast<std::uint32_t>(second);
+    detail::record_at_(first_index)
+        .peer.store(detail::pack(second_index,
+                                 detail::record_at_(second_index).generation.load(std::memory_order_acquire)),
+                    std::memory_order_release);
+    detail::record_at_(second_index)
+        .peer.store(detail::pack(first_index,
+                                 detail::record_at_(first_index).generation.load(std::memory_order_acquire)),
+                    std::memory_order_release);
+}
+
+/// Ends the session of `endpoint`: it reached End, detached or cancelled.
+inline void release(endpoint_id endpoint) noexcept {
+    if (endpoint == endpoint_id::none) return;
+    const auto index = static_cast<std::uint32_t>(endpoint);
+    detail::endpoint_record& record = detail::record_at_(index);
+    record.is_live.store(0, std::memory_order_release);
+    record.owner.store(0, std::memory_order_release);
+    record.peer.store(0, std::memory_order_release);
+    detail::push_free(index);
+}
+
+// The slot of a thread in the thread table, one-based, in the low bits,
+// and the low bits of the slot generation above them.  Zero is a thread
+// with no slot.  A handle keeps the value of the thread that holds it, so
+// a move or a step compares two small integers and touches no shared line
+// unless the handle crossed threads.  The generation bits tell a thread
+// from an earlier thread that had the same slot, until the slot has 32
+// more owners.
+enum class thread_slot : std::uint16_t { none = 0 };
+
+/// The slot of the calling thread, or none before the thread first
+/// touches the watch.  It reads one thread-local value.
+[[nodiscard]] inline thread_slot current_thread_slot() noexcept {
+    return static_cast<thread_slot>(detail::tls_holder_stamp);
+}
+
+// What a handle keeps of the watch: the session's record and the thread
+// that the watch names as its holder.
+struct session_ref {
+    endpoint_id endpoint = endpoint_id::none;
+    thread_slot holder = thread_slot::none;
+};
+
+/// Records that the calling thread holds the handle of `endpoint` now,
+/// and returns the slot of the thread.  A handle calls it when it finds
+/// itself on a thread other than the one it last saw.
+[[gnu::cold, gnu::noinline]] inline thread_slot note_holder(endpoint_id endpoint) noexcept {
+    const std::uint64_t token = detail::owner_token();
+    if (endpoint != endpoint_id::none) {
+        detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.store(token, std::memory_order_release);
+    }
+    return current_thread_slot();
+}
+
+/// True while the record of `endpoint` belongs to a live session.
+[[nodiscard]] inline bool is_live(endpoint_id endpoint) noexcept {
+    return endpoint != endpoint_id::none
+        && detail::record_at_(static_cast<std::uint32_t>(endpoint)).is_live.load(std::memory_order_acquire) != 0;
+}
+
+/// The number of records live now, for tests.  Complexity: linear in the
+/// records ever claimed.
+[[nodiscard]] inline std::uint32_t live_count() noexcept {
+    const std::uint32_t claimed = detail::g_registry.next_unused.load(std::memory_order_acquire);
+    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
+    std::uint32_t live = 0;
+    for (std::uint32_t index = 1; index <= bound; ++index) {
+        if (detail::record_at_(index).is_live.load(std::memory_order_acquire) != 0) ++live;
+    }
+    return live;
+}
+
+// The wait of one thread on one endpoint.  A handle opens it when its
+// polling transport first finds no message, and poll() runs between the
+// retries.  The scope lives on the stack of the waiting thread only.
+class wait_scope {
+    std::uint32_t endpoint_ = 0;
+    std::uint64_t self_ = 0;
+    std::uint32_t spins_ = 0;
+    std::chrono::steady_clock::time_point start_{};
+    std::chrono::steady_clock::time_point last_trace_{};
+    detail::wait_chain suspect_{};
+
+public:
+    /// Publishes that the calling thread waits on `endpoint`.
+    explicit wait_scope(endpoint_id endpoint) noexcept : start_{std::chrono::steady_clock::now()} {
+        last_trace_ = start_;
+        if (endpoint == endpoint_id::none) return;
+        const std::uint64_t self = detail::owner_token();
+        if (self == detail::untracked_owner) return;
+        endpoint_ = static_cast<std::uint32_t>(endpoint);
+        self_ = self;
+        detail::thread_record& me = detail::thread_at_(detail::index_of(self));
+        me.wait_epoch.fetch_add(1, std::memory_order_acq_rel);
+        me.blocked_on.store(endpoint_, std::memory_order_release);
+    }
+
+    wait_scope(const wait_scope&) = delete("a wait belongs to one frame of one thread");
+    wait_scope& operator=(const wait_scope&) = delete("a wait belongs to one frame of one thread");
+    static void* operator new(std::size_t) = delete("a wait_scope lives on the stack of the waiting thread");
+    static void* operator new[](std::size_t) = delete("a wait_scope lives on the stack of the waiting thread");
+
+    /// Publishes that the thread waits no more.
+    ~wait_scope() {
+        if (endpoint_ == 0) return;
+        detail::thread_at_(detail::index_of(self_)).blocked_on.store(0, std::memory_order_release);
+    }
+
+    /// Pauses once.  After suspect_after, it traces the wait-for chain at
+    /// most once for each confirm_after.  The same cycle at two traces is
+    /// a deadlock: it prints the cycle and aborts.
+    void poll() noexcept {
+        CRUCIBLE_SPIN_PAUSE;
+        if (endpoint_ == 0 || (++spins_ & 1023u) != 0) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - start_ < suspect_after || now - last_trace_ < confirm_after) return;
+        last_trace_ = now;
+        const detail::wait_chain chain = detail::trace_chain(self_, endpoint_);
+        if (chain.same_cycle_as(suspect_)) [[unlikely]]
+            detail::report_deadlock(chain, self_);
+        suspect_ = chain;
+    }
+};
+
+}  // namespace fixy::session::watch

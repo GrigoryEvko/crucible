@@ -652,6 +652,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},
     {^^::fixy::session::position, "protocol positions that a view names; a view carries no claim to fold"},
+    {^^::fixy::session::watch, "the runtime watch over live sessions: its records are process state, not a claim"},
     {^^::fixy::refined, kMachinery},
     {^^::fixy::refined::admitted_implications, kMachinery},
     {^^::fixy::refined_algebra, "refinement predicate combinators, which are grade vocabulary"},
