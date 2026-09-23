@@ -941,7 +941,13 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy
         : core_type{std::forward<Resource>(r), loc} {}
 
 public:
-    static constexpr std::size_t branch_count = sizeof...(Branches);
+    using protocol = Select<Branches...>;
+
+    // Read from the protocol, as the Offer handle does, so that a note in
+    // the pack, such as a Sender, never counts as a branch.
+    using branches = typename protocol::branches_tuple;
+
+    static constexpr std::size_t branch_count = protocol::branch_count;
 
     // A second empty-choice rejection, so a construction route that
     // reaches this class without passing the factory's own check still
@@ -966,15 +972,14 @@ public:
     [[nodiscard]] constexpr auto
     select(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
                                             && std::is_nothrow_move_constructible_v<Resource>) {
-        static_assert(I < sizeof...(Branches), "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
-                                               "SessionHandle<Select<...>>::select<I>(transport): branch "
-                                               "index I is out of range for this Select position.  The "
-                                               "protocol has fewer branches than the index requested; "
-                                               "verify I < branch_count at the call site (decltype("
-                                               "handle)::branch_count is exposed for compile-time queries).");
-        std::invoke(transport, this->live_resource_(),
-                    static_cast<std::size_t>(branch_wire_word_v<Select<Branches...>, I>));
-        using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
+        static_assert(I < branch_count, "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                        "SessionHandle<Select<...>>::select<I>(transport): branch "
+                                        "index I is out of range for this Select position.  The "
+                                        "protocol has fewer branches than the index requested; "
+                                        "verify I < branch_count at the call site (decltype("
+                                        "handle)::branch_count is exposed for compile-time queries).");
+        std::invoke(transport, this->live_resource_(), static_cast<std::size_t>(branch_wire_word_v<protocol, I>));
+        using Chosen = std::tuple_element_t<I, branches>;
         return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_());
     }
 
@@ -986,13 +991,13 @@ public:
     // is fixed at compile time on both sides.
     template <std::size_t I>
     [[nodiscard]] constexpr auto select_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        static_assert(I < sizeof...(Branches), "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
-                                               "SessionHandle<Select<...>>::select_local<I>(): branch index "
-                                               "I is out of range for this Select position.  The protocol "
-                                               "has fewer branches than the index requested; verify I < "
-                                               "branch_count at the call site.");
+        static_assert(I < branch_count, "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                        "SessionHandle<Select<...>>::select_local<I>(): branch index "
+                                        "I is out of range for this Select position.  The protocol "
+                                        "has fewer branches than the index requested; verify I < "
+                                        "branch_count at the call site.");
         this->require_live_();
-        using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
+        using Chosen = std::tuple_element_t<I, branches>;
         return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_());
     }
 
