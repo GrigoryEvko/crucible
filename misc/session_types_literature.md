@@ -21,6 +21,8 @@ The sweep found more than 380 candidate papers. After deduplication and a topic 
 
 We examined each author list in the bibliography against Crossref or DataCite.
 
+The full list of 301 papers, by topic, is in `misc/session_types_catalog.md`.
+
 Markers in this document:
 
 - **[R]** — we read the paper in the PDF for this review
