@@ -9,7 +9,7 @@
 //   Init   the initialization context
 //   Test   the test-driver context
 //
-// The catalog is closed at these six.  Three further atoms were
+// The catalog is closed at these six.  Four further atoms were
 // considered and rejected:
 //
 //   Async — coroutine reentrancy is a property of how a function
@@ -18,9 +18,26 @@
 //   Network — the IO atom already covers socket traffic.  Splitting it
 //     would cost per-call bookkeeping to distinguish two atoms that the
 //     row algebra treats identically.
-//   CT — constant-time code must hold the EMPTY row, because any trip
-//     through IO, Alloc or Block is a timing-observable side channel.
-//     An atom for it would imply such code may opt into those three.
+//   CT — constant time is a discipline on how a body executes, not a
+//     capability it exercises, and its polarity is the opposite of a
+//     row's.  A row grows by union: a caller holds every atom of its
+//     callees, and a context that admits a row admits each subrow of it.
+//     A constant-time claim holds for a composition only when it holds
+//     for every part.  As a row atom, Subrow<Row<>, Row<CT>> would be
+//     true, so a context that admits CT would admit a body that claims
+//     nothing.  That is the wrong direction for a guarantee.  The claim
+//     is the Security grade fixy::atom::constant_time instead: constant
+//     time has a meaning only for classified data, and every collision
+//     rule that reads it reads it on the binding, never through a row.
+//   Fail — a failure is a value that a body returns, and the error type
+//     is part of that value.  An enumerator is one bit and cannot carry
+//     the error type, so Row<Fail> would make two error types one atom,
+//     and Subrow could not tell Fail(E1) from Fail(E2).  The tree spells
+//     a failure one time, in the type: the payload std::expected<T, E>,
+//     or fixy::atom::ctrl::throws<E> for a body that throws.  Two
+//     failures compose through std::expected::and_then, which keeps the
+//     error types apart, and never through a row.  fixy/Collision.h
+//     reads both spellings.
 
 #include <foundation/reflect/EnumName.h>
 
@@ -486,7 +503,8 @@ namespace detail::capabilities_self_test {
 
 static_assert(effect_count == 6, "The Effect catalog has grown or shrunk.  Confirm the change is "
                                  "intended, and check that the name-coverage assertion below still "
-                                 "reaches every atom.");
+                                 "reaches every atom.  CT and Fail are not atoms: the note at the top "
+                                 "of this file says where each one lives, and why a row cannot hold it.");
 
 // The walk that used to sit here asked whether any atom reported the
 // unknown sentinel.  It policed a hand-written switch.  effect_name now

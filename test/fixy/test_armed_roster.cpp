@@ -314,21 +314,21 @@ struct foundation::contracts::armed_cell<::fixy::is_already_consume_disciplined>
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_secret_carrier_> {
-    using accepts = witnesses<at::as_secret, at::as_classified>;
+    using accepts = witnesses<at::as_secret, at::as_classified, at::constant_time>;
     using refuses = witnesses<int, at::as_internal, at::as_public>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_secret_grant_> {
     using accepts =
-        witnesses<at::as_secret, at::declassify<::fixy::tags::secret_policy::WireSerialize>>;
+        witnesses<at::as_secret, at::constant_time, at::declassify<::fixy::tags::secret_policy::WireSerialize>>;
     using refuses = witnesses<int, at::as_internal, at::as_public>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_internal_> {
     using accepts = witnesses<at::as_internal>;
-    using refuses = witnesses<int, at::as_secret, at::as_public>;
+    using refuses = witnesses<int, at::as_secret, at::as_public, at::constant_time>;
 };
 
 template <>

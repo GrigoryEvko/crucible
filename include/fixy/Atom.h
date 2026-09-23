@@ -228,6 +228,98 @@ struct as_internal final : atom_of<Axis::Security> {};
 struct as_classified final : atom_of<Axis::Security> {};
 struct as_secret final : atom_of<Axis::Security> {};
 
+// The binding's data is classified, AND no branch, no memory index and no
+// variable-latency instruction in the body depends on it.  This is the one
+// spelling of constant time in the tree.
+//
+// It is a grade of the binding and not an effect in the row, and
+// foundation/effects/Effect.h says why at the top: a row grows by union,
+// and a constant-time claim holds for a composition only when it holds
+// for every part.  Every rule that reads the claim reads it on the one
+// binding, so a grade is enough.
+//
+// It is a point of the Security axis and not an axis of its own, for two
+// reasons.  Constant time has a meaning only for classified data:
+// fixy/ConstantTime.h refuses public inputs for that reason.  So the claim
+// states the classification too, and a constant-time claim over public
+// data cannot be written.  And a new axis would add one step to the fold
+// in fixy/Fn.h that keys every binding, which moves the federation cache
+// key of every binding in the tree.  A new point on an axis moves no
+// existing key.
+//
+// The cost: an axis takes one grade, so a binding cannot state
+// constant_time and as_secret together.  No rule reads the residual claim
+// of as_secret, that no declassification is permitted, so no rule loses a
+// premise.  The discipline is discharged by measurement, as Regime's is.
+// The type refuses only the combinations that contradict it, which are
+// the constant-time rules of fixy/Collision.h.
+struct constant_time final : atom_of<Axis::Security> {};
+
+// ---------------------------------------------------------------------
+// What a Security grade says, as one closed relation.
+//
+// A rule asks one of three questions of the Security grade: is the data
+// classified, is it in constant time, is it declassified under a policy.
+// Each reader used to answer with its own partial specialisation and a
+// false primary, so a new point on the axis read as "public" in every
+// reader that nobody updated.  On this axis "public" is the answer that
+// lets a binding through, so that default failed open.
+//
+// Here the primary is declared and not defined.  A grade this relation
+// does not name fails at the use with its own name in the diagnostic, and
+// the walk in the self-test below makes sure every Security atom in the
+// roster has an answer.
+enum class SecurityClass : std::uint8_t {
+    Public = 0,  // as_public, as_unclassified: the data was never classified
+    Internal = 1,  // as_internal: below the classified carrier, above public
+    Classified = 2,  // the strict pole, as_classified, as_secret
+    ConstantTime = 3,  // constant_time: classified, with the timing channel closed
+    Declassified = 4,  // declassify<Policy>: a named policy licenses the drop
+};
+
+namespace detail {
+
+template <class Grade>
+struct security_class_of_;
+
+template <>
+struct security_class_of_<as_unclassified> : std::integral_constant<SecurityClass, SecurityClass::Public> {};
+template <>
+struct security_class_of_<as_public> : std::integral_constant<SecurityClass, SecurityClass::Public> {};
+template <>
+struct security_class_of_<as_internal> : std::integral_constant<SecurityClass, SecurityClass::Internal> {};
+template <>
+struct security_class_of_<as_classified> : std::integral_constant<SecurityClass, SecurityClass::Classified> {};
+template <>
+struct security_class_of_<as_secret> : std::integral_constant<SecurityClass, SecurityClass::Classified> {};
+template <>
+struct security_class_of_<constant_time> : std::integral_constant<SecurityClass, SecurityClass::ConstantTime> {};
+template <typename Policy>
+struct security_class_of_<declassify<Policy>> : std::integral_constant<SecurityClass, SecurityClass::Declassified> {};
+// The strict pole: a binding that says nothing about Security is
+// classified.  That is what reject-by-default means on this axis.
+template <>
+struct security_class_of_<axis_traits<Axis::Security>::strict>
+    : std::integral_constant<SecurityClass, SecurityClass::Classified> {};
+
+}  // namespace detail
+
+template <class Grade>
+concept IsSecurityGrade = requires { detail::security_class_of_<Grade>::value; };
+
+template <IsSecurityGrade Grade>
+inline constexpr SecurityClass security_class_of_v = detail::security_class_of_<Grade>::value;
+
+// The two readings every rule shares.  A carrier holds classified data,
+// with or without the timing claim.  A declassified grade is not a
+// carrier: the policy it names is the discharge.
+template <IsSecurityGrade Grade>
+inline constexpr bool is_classified_carrier_v = security_class_of_v<Grade> == SecurityClass::Classified
+                                             || security_class_of_v<Grade> == SecurityClass::ConstantTime;
+
+template <IsSecurityGrade Grade>
+inline constexpr bool is_constant_time_v = security_class_of_v<Grade> == SecurityClass::ConstantTime;
+
 template <typename Proto>
     requires IsSessionProtocol<Proto>
 struct protocol final : atom_of<Axis::Protocol> {};
@@ -504,14 +596,14 @@ using core_atom_roster =
     std::tuple<affine, copy, ghost, borrow, capability_usage, with<>, with<::foundation::effects::Effect::IO>,
                with<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO>,
                declassify<::fixy::tags::secret_policy::AuditedLogging>, as_unclassified, as_public, as_internal,
-               as_classified, as_secret, protocol<atom_axis_witness_proto>, protocol<::fixy::pole::proto::None>,
-               in_region<0>, from_source<atom_axis_witness_source>, from_source<::fixy::tags::source::FromUser>,
-               from_source<::fixy::tags::source::ForgePhase<'F'>>, trust_assumed<0>, trust_verified, trust_tested,
-               trust_unverified, trust_external, repr<::fixy::pole::ReprKind::C>, cost_constant, cost_linear<1>,
-               cost_quadratic<1>, cost_unbounded, precision_f32, precision_f64, precision_higham<1>, space_bounded<1>,
-               space_unbounded, overflow_wrap, overflow_saturate, overflow_widen, mut_mutable, mut_append,
-               mut_monotonic, reentrant, coroutine, sized_at<1>, productive, version<3>, stale_to<5>,
-               refined_with<::fixy::pole::pred::True>>;
+               as_classified, as_secret, constant_time, protocol<atom_axis_witness_proto>,
+               protocol<::fixy::pole::proto::None>, in_region<0>, from_source<atom_axis_witness_source>,
+               from_source<::fixy::tags::source::FromUser>, from_source<::fixy::tags::source::ForgePhase<'F'>>,
+               trust_assumed<0>, trust_verified, trust_tested, trust_unverified, trust_external,
+               repr<::fixy::pole::ReprKind::C>, cost_constant, cost_linear<1>, cost_quadratic<1>, cost_unbounded,
+               precision_f32, precision_f64, precision_higham<1>, space_bounded<1>, space_unbounded, overflow_wrap,
+               overflow_saturate, overflow_widen, mut_mutable, mut_append, mut_monotonic, reentrant, coroutine,
+               sized_at<1>, productive, version<3>, stale_to<5>, refined_with<::fixy::pole::pred::True>>;
 
 }  // namespace detail
 
@@ -520,6 +612,70 @@ namespace detail::atom_self_test {
 static_assert(every_roster_member_is_atom_<core_atom_roster>(),
               "fixy/Atom.h: a member of core_atom_roster is not an atom, is not one empty byte, or names "
               "an axis that is not a fixy::Axis enumerator.");
+
+// ── Every Security atom has a class ──────────────────────────────────
+//
+// The count of Security atoms in the roster, and the count that the
+// closed relation above answers for.  An atom that reaches the axis and
+// not the relation is counted as unproven, so the two counts differ and
+// the assertion names the gap.  There is no else branch: a roster member
+// whose shape the walk does not expect cannot be counted as proven.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+[[nodiscard]] consteval std::size_t security_atoms_rostered_() noexcept {
+    std::size_t found = 0;
+    template for (constexpr auto member : roster_members_v<core_atom_roster>) {
+        using A = [:member:];
+        if constexpr (IsAtom<A>) {
+            if constexpr (A::axis == Axis::Security) ++found;
+        }
+    }
+    return found;
+}
+
+[[nodiscard]] consteval std::size_t security_atoms_classified_() noexcept {
+    std::size_t proven = 0;
+    template for (constexpr auto member : roster_members_v<core_atom_roster>) {
+        using A = [:member:];
+        if constexpr (IsAtom<A>) {
+            if constexpr (A::axis == Axis::Security && IsSecurityGrade<A>) ++proven;
+        }
+    }
+    return proven;
+}
+
+#pragma GCC diagnostic pop
+
+static_assert(security_atoms_rostered_() > 0, "fixy/Atom.h: the roster holds no Security atom, so the walk below "
+                                              "proves nothing.  Either the atoms left core_atom_roster, or they "
+                                              "stopped naming Axis::Security.");
+static_assert(security_atoms_classified_() == security_atoms_rostered_(),
+              "fixy/Atom.h: a Security atom in core_atom_roster has no entry in security_class_of_.  Every "
+              "reader of the Security grade asks that relation, so an atom without an entry cannot be "
+              "used in a binding.  Give it a SecurityClass, next to the others.");
+static_assert(IsSecurityGrade<typename axis_traits<Axis::Security>::strict>,
+              "fixy/Atom.h: the strict Security pole must have a class, because a binding that names no "
+              "Security atom resolves to it.");
+
+// The relation answers what it must and refuses what it must.
+static_assert(security_class_of_v<typename axis_traits<Axis::Security>::strict> == SecurityClass::Classified);
+static_assert(security_class_of_v<constant_time> == SecurityClass::ConstantTime);
+static_assert(security_class_of_v<as_secret> == SecurityClass::Classified);
+static_assert(security_class_of_v<as_public> == SecurityClass::Public);
+static_assert(security_class_of_v<as_internal> == SecurityClass::Internal);
+static_assert(security_class_of_v<declassify<::fixy::tags::secret_policy::AuditedLogging>>
+              == SecurityClass::Declassified);
+static_assert(is_classified_carrier_v<constant_time> && is_constant_time_v<constant_time>);
+static_assert(is_classified_carrier_v<as_classified> && !is_constant_time_v<as_classified>);
+static_assert(!is_classified_carrier_v<as_internal> && !is_classified_carrier_v<as_public>);
+static_assert(!is_classified_carrier_v<declassify<::fixy::tags::secret_policy::AuditedLogging>>,
+              "a declassified grade is the discharge, not a carrier");
+static_assert(!IsSecurityGrade<int>, "a type that is not a Security grade has no class");
+static_assert(!IsSecurityGrade<affine>, "an atom on another axis has no Security class");
+static_assert(!IsSecurityGrade<const as_public>, "a qualified atom is refused rather than stripped");
+static_assert(constant_time::axis == Axis::Security);
+static_assert(sizeof(constant_time) == 1 && std::is_empty_v<constant_time>);
 
 static_assert(IsRefinementPredicate<::fixy::pole::pred::True>,
               "A named empty default-constructible predicate must satisfy "

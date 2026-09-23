@@ -167,39 +167,43 @@ namespace detail {
 template <Axis A, class... Atoms>
 using grade_on = typename ::fixy::collision::grades<Atoms...>::template on<A>;
 
-using security_strict_pole_ = typename ::fixy::axis_traits<Axis::Security>::strict;
+// The three Security readings, each a reading of the one closed relation
+// fixy/Atom.h declares beside the Security atoms.  A type that is not a
+// Security grade makes no Security claim, so each answers false for it.
+// Every Security atom IS a Security grade, which fixy/Atom.h's roster
+// walk proves, so a new point on the axis cannot fall through to that
+// false answer and pass as public.
 
 // Carrier-side Security: the grade is a classification.  The strict
 // pole counts, because a binding that says nothing about Security is
-// classified; that is what reject-by-default means on this axis.
-// `declassify<Policy>` has no specialization here on purpose: it is the
+// classified, and constant_time counts, because it states the
+// classification too.  A declassified grade is not a carrier: it is the
 // discharge side, and a matcher of the shape `has_secret &&
-// !has_declassify` that read it would self-cancel on a declassify-only
-// grade.
+// !has_declassify` that read it as a carrier would cancel itself on a
+// grade that is only a declassification.
 template <class G>
 struct is_secret_carrier_ : std::false_type {};
-template <>
-struct is_secret_carrier_<::fixy::atom::as_secret> : std::true_type {};
-template <>
-struct is_secret_carrier_<::fixy::atom::as_classified> : std::true_type {};
-template <>
-struct is_secret_carrier_<security_strict_pole_> : std::true_type {};
+template <::fixy::atom::IsSecurityGrade G>
+struct is_secret_carrier_<G> : std::bool_constant<::fixy::atom::is_classified_carrier_v<G>> {};
 
 // The grant form: a carrier or a declassification.  The staleness entry
 // reads this one, because a value declassified for export is still a
 // secret where replay is concerned; a policy authorizes exactly the
 // axis it names.
 template <class G>
-struct is_secret_grant_ : is_secret_carrier_<G> {};
-template <class Policy>
-struct is_secret_grant_<::fixy::atom::declassify<Policy>> : std::true_type {};
+struct is_secret_grant_ : std::false_type {};
+template <::fixy::atom::IsSecurityGrade G>
+struct is_secret_grant_<G>
+    : std::bool_constant<::fixy::atom::is_classified_carrier_v<G>
+                         || ::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Declassified> {};
 
 // The Internal tier sits below the strict pole, so a binding reaches it
 // only by writing as_internal.
 template <class G>
 struct is_internal_ : std::false_type {};
-template <>
-struct is_internal_<::fixy::atom::as_internal> : std::true_type {};
+template <::fixy::atom::IsSecurityGrade G>
+struct is_internal_<G>
+    : std::bool_constant<::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Internal> {};
 
 template <::foundation::effects::Effect E, class G>
 struct row_names_ : std::false_type {};
