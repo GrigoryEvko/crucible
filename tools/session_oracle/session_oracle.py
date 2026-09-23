@@ -825,10 +825,11 @@ def classify_subtype(c: Case, role: str, t: Local, u: Local, values: dict[str, s
     """Return the subtyping rows of one pair (T, U).
 
     The reference is a run.  T refines U when T runs against the dual of
-    U at least as safely as U does.  When U itself fails against its
-    dual, the pair decides nothing, and either answer agrees.
+    U at least as safely as U does, and when the run can still end from
+    each state where the side of U can end.  When U itself fails against
+    its dual, the pair decides nothing, and either answer agrees.
     """
-    from execution import explore_sync
+    from execution import explore_sync, keeps_exits_async, keeps_exits_sync
     from model import dual_local, has_empty_choice, has_idle_loop, local_contractive
     text = show_global(c.g)
     key = _subtype_key(role)
@@ -841,6 +842,7 @@ def classify_subtype(c: Case, role: str, t: Local, u: Local, values: dict[str, s
     for fam, prefix in (("fixy.subtype_sync", "s"), ("fixy.subtype_async", "a")):
         spelled = values.get(f"{prefix}{key}")
         run, base = runs[fam]
+        keeps_exits = keeps_exits_sync if fam == "fixy.subtype_sync" else keeps_exits_async
         if spelled is not None and spelled.startswith("reject:"):
             rows.append(Row(fam, c.ident, role, text, run.text(), spelled, "divergence", "hard-error",
                             "ours wrong: the relation stops the build with a hard error (here the "
@@ -852,6 +854,24 @@ def classify_subtype(c: Case, role: str, t: Local, u: Local, values: dict[str, s
         if not base.is_safe:
             rows.append(Row(fam, c.ident, role, text, f"supertype run: {base.text()}", ours, "agree",
                             "", "the supertype fails against its own dual, so the pair decides nothing"))
+        elif ours == "false" and run.is_safe and _bool(values.get(f"x{key}")) == "true":
+            if keeps_exits(t, dual_local(u)):
+                rows.append(Row(fam, c.ident, role, text, run.text(), ours, "divergence", "exit-stricter",
+                                "ours too strict: the relation refuses the pair because T removes an exit "
+                                "of U, and the run of T against the dual of U can still end from each "
+                                "state where U can.  Exit preservation reads the product of the two types, "
+                                "which is a sufficient condition"))
+            else:
+                rows.append(Row(fam, c.ident, role, text, run.text(), ours, "divergence", "loses-exit",
+                                "ours stricter by design: T runs safely against the dual of U, but from a "
+                                "state of that run where U could still end, the run cannot end.  T removes "
+                                "an exit that U offers, and refinement keeps each exit of the supertype "
+                                "(fair subtyping, Padovani and Zavattaro, TOPLAS 2026)"))
+        elif ours == "true" and run.is_safe and not keeps_exits(t, dual_local(u)):
+            rows.append(Row(fam, c.ident, role, text, run.text(), ours, "divergence", "exit-lost",
+                            "ours wrong: the relation holds, but from a state of the run of T against "
+                            "the dual of U where U could still end, the run cannot end.  T removes an "
+                            "exit that U offers"))
         elif (ours == "true") == run.is_safe:
             rows.append(Row(fam, c.ident, role, text, run.text(), ours, "agree", "", ""))
         elif ours == "true" and has_empty_choice(t):
@@ -897,6 +917,8 @@ def _subtype_source(pairs: list[tuple[str, Local, Local]], relations: tuple[str,
         src += f"namespace {ns} {{\nusing T = {cpp_fixy_local(t)};\nusing U = {cpp_fixy_local(u)};\n}}\n"
         if "s" in relations:
             src += show(f"s{key}", f"std::bool_constant<fs::is_subtype_sync_v<{ns}::T, {ns}::U>>")
+            src += show(f"x{key}", f"std::bool_constant<fs::subtype_mismatch_v<{ns}::T, {ns}::U> == "
+                                   f"::foundation::algebra::transition::mismatch::loses_termination>")
         if "a" in relations:
             src += show(f"a{key}", f"std::bool_constant<fs::is_subtype_async_v<{ns}::T, {ns}::U, "
                                    f"::{SUBTYPE_CHANNEL}>>")
@@ -930,6 +952,9 @@ def evaluate_subtype(cases: list[Case], env: Env) -> dict[str, list[Row]]:
             key = f"{rel}{_subtype_key(role)}"
             values[ident][key] = (m.values[key] if m.rejection is None and key in m.values
                                   else f"reject:{m.rejection}")
+            reason = f"x{_subtype_key(role)}"
+            if rel == "s" and m.rejection is None and reason in m.values:
+                values[ident][reason] = m.values[reason]
     return {c.ident: [r for role, t, u in pairs
                       for r in classify_subtype(c, role, t, u, values[c.ident])]
             for c, pairs in work}

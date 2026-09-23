@@ -505,6 +505,15 @@ consteval void ensure_dual() noexcept {
 // Sequential composition replaces each End in P with Q.  Continue stays,
 // because it marks a loop-back and not a protocol end, and it resolves
 // against the LoopCtx when the handle steps.
+//
+// A Continue in Q that no Loop of Q binds names a Loop of the context.
+// Where an End of P stands under a Loop of P, composition would put that
+// Continue under the Loop of P, and the Continue would bind it: the
+// substitution captures it.  Composition with a bare Continue would then
+// turn each exit of a loop into a loop-back, and the protocol could
+// never end.  Composition refuses that capture.  Without capture it
+// keeps terminability: when P and Q can end from each position, so can
+// the result.  foundation/algebra/Transition.h states the probe.
 
 template <typename P, typename Q>
 struct compose;
@@ -513,6 +522,23 @@ template <typename P, typename Q>
 using compose_t = typename compose<P, Q>::type;
 
 namespace detail {
+
+// True when Q holds a Continue that no Loop of Q binds.  It is one
+// constant per suffix, so a composition that reads it at each level of P
+// computes it once.
+template <typename Q>
+inline constexpr bool suffix_is_open_v = ::foundation::algebra::transition::has_open_back(protocol_registry, ^^Q);
+
+// True when composition of Q into P puts an open Continue of Q under a
+// Loop of P.  The probe of P runs only for an open suffix.
+template <typename P, typename Q>
+consteval bool composition_captures() {
+    if constexpr (!suffix_is_open_v<Q>) {
+        return false;
+    } else {
+        return ::foundation::algebra::transition::has_bound_terminal(protocol_registry, ^^P);
+    }
+}
 
 template <typename P, typename Q>
 consteval std::meta::info compose_type_of() {
@@ -527,7 +553,17 @@ consteval std::meta::info compose_type_of() {
 
 template <typename P, typename Q>
 struct compose {
-    using type = typename[:detail::compose_type_of<P, Q>():];
+private:
+    static constexpr bool captures = detail::composition_captures<P, Q>();
+    static_assert(!captures,
+                  "fixy::session::diagnostic [Compose_Captures_Continue]: compose_t<P, Q>: Q holds a Continue "
+                  "that no Loop of Q binds, and an End of P that the composition replaces stands under a Loop of "
+                  "P.  The Continue would bind that Loop, so the composed protocol would loop where P ends, and "
+                  "it could lose every exit.  Put the Loop that the Continue means inside Q, or compose where no "
+                  "Loop of P stands above the End.");
+
+public:
+    using type = typename[:captures ? ^^void : detail::compose_type_of<P, Q>():];
 };
 
 // Composition at one branch.  The walk passes the Send, Recv, Loop and
@@ -553,6 +589,25 @@ consteval std::size_t spine_branch_count() {
     return ::foundation::algebra::transition::first_stop_of_spine(protocol_registry, ^^P).branches.size();
 }
 
+// True when composition of Q into branch I of the first choice of P puts
+// an open Continue of Q under a Loop of P.  The Loops above the choice on
+// the spine of P count, and so do the Loops inside the branch.
+template <typename P, std::size_t I, typename Q>
+consteval bool branch_composition_captures() {
+    if constexpr (!suffix_is_open_v<Q>) {
+        return false;
+    } else {
+        const ::foundation::algebra::transition::node stop =
+            ::foundation::algebra::transition::first_stop_of_spine(protocol_registry, ^^P);
+        if (stop.entry.kind != ::foundation::algebra::transition::shape_kind::choice || I >= stop.branches.size()) {
+            return false;
+        }
+        return ::foundation::algebra::transition::has_bound_terminal(
+            protocol_registry, stop.branches[I],
+            ::foundation::algebra::transition::binders_above_first_stop(protocol_registry, ^^P));
+    }
+}
+
 template <typename P, std::size_t I, typename Q>
 consteval std::meta::info compose_at_branch_type_of() {
     return ::foundation::algebra::transition::fold(
@@ -575,6 +630,7 @@ private:
     static constexpr bool reaches_choice = stop == ::foundation::algebra::transition::shape_kind::choice;
     static constexpr bool reaches_back = stop == ::foundation::algebra::transition::shape_kind::back;
     static constexpr bool index_fits = !reaches_choice || I < detail::spine_branch_count<P>();
+    static constexpr bool captures = detail::branch_composition_captures<P, I, Q>();
 
     static_assert(reaches_choice || reaches_back,
                   "fixy::session::diagnostic [Branch_Compose_No_Choice]: "
@@ -591,9 +647,14 @@ private:
                               "first Select or Offer on the spine of P.  The count of branches does not "
                               "include the Sender<Role> note: an Offer<Sender<R>, B0, B1> has 2 branches, "
                               "not 3.");
+    static_assert(!captures,
+                  "fixy::session::diagnostic [Compose_Captures_Continue]: compose_at_branch_t<P, I, Q>: Q holds "
+                  "a Continue that no Loop of Q binds, and an End of branch I stands under a Loop of P, on the "
+                  "spine above the choice or inside the branch.  The Continue would bind that Loop, so the "
+                  "branch would loop where it ends.  Put the Loop that the Continue means inside Q.");
 
 public:
-    using type = typename[:is_head_checked && reaches_choice && index_fits
+    using type = typename[:is_head_checked && reaches_choice && index_fits && !captures
                               ? detail::compose_at_branch_type_of<P, I, Q>()
                               : ^^void:];
 };

@@ -89,10 +89,12 @@
 //                     with the suffix.  True: composition keeps it, for
 //                     an endpoint that never resumes.
 //
-// Coherence.  Refinement must be closed under duality: when T refines
-// U, the dual of U refines the dual of T (Padovani and Zavattaro, TOPLAS
-// 2026, page 3, where this closure is what makes the type system
-// sound).  A registration keeps that closure when its dual has the same
+// Coherence.  Refinement up to exits must be closed under duality: when
+// T refines U, the dual of U refines the dual of T (Padovani and
+// Zavattaro, TOPLAS 2026, page 3, where this closure is what makes the
+// type system sound).  Exit preservation, below the refinement preorder,
+// is not closed under duality, and the layer states it on its own.  A
+// registration keeps that closure when its dual has the same
 // kind, the opposite direction, the opposite payload variance, the
 // opposite value variance, the same absorption and the same note
 // template.  The last rule makes duality an involution on a choice with
@@ -1326,6 +1328,97 @@ struct compose_at_choice_algebra {
     return view;
 }
 
+// The number of binders on the spine above its first stop.
+[[nodiscard]] consteval std::size_t binders_above_first_stop(std::meta::info registry, std::meta::info type) {
+    std::size_t depth = 0;
+    node view = decompose(registry, type);
+    while (view.is_registered
+           && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
+               || view.entry.kind == shape_kind::wrapper)) {
+        if (view.entry.kind == shape_kind::binder) ++depth;
+        view = decompose(registry, view.next);
+    }
+    return depth;
+}
+
+// ── Capture under composition ─────────────────────────────────────────
+//
+// A back node binds the nearest binder above it.  A suffix with a back
+// node that no binder of the suffix binds is open: its loop-back names a
+// binder of the context.  Composition puts the suffix where a terminal of
+// the prefix stood.  When a binder of the prefix stands above that
+// terminal, the open back node binds it, and the suffix loops in a loop
+// that it never named.  This is the capture of a free variable under
+// substitution.  With a bare back node as the suffix, every exit of a
+// loop becomes a loop-back, and the protocol can never end.
+//
+// A composition without capture keeps terminability: when each node of
+// the prefix and of the suffix can reach a terminal, each node of the
+// result can too, because a replaced terminal leads into the suffix and
+// every other path is unchanged.
+//
+// The probe reads no hook.  A node that the registry does not know can
+// hide a binder or a back node, so the probe answers true at it, and a
+// composition over such a node with an open suffix is refused.
+
+// Finds a node by the binders above it.  `target` names what to find: a
+// back node with no binder above it, or a terminal that composition
+// replaces with a binder above it.  The context is the number of binders
+// above the node.
+struct binding_probe_algebra {
+    enum class probe : std::uint8_t { open_back, bound_terminal };
+    using result = bool;
+    using context = std::size_t;
+    probe target = probe::open_back;
+
+    template <class Child>
+    consteval bool terminal(const node& view, context depth, const Child&) const {
+        return target == probe::bound_terminal && depth > 0 && !view.entry.absorbs_suffix;
+    }
+    template <class Child>
+    consteval bool back(const node&, context depth, const Child&) const {
+        return target == probe::open_back && depth == 0;
+    }
+    template <class Child>
+    consteval bool step(const node& view, context depth, const Child& child) const {
+        return child(view.next, depth);
+    }
+    template <class Child>
+    consteval bool choice(const node& view, context depth, const Child& child) const {
+        for (const std::meta::info branch : view.branches) {
+            if (child(branch, depth)) return true;
+        }
+        return false;
+    }
+    template <class Child>
+    consteval bool binder(const node& view, context depth, const Child& child) const {
+        return child(view.next, depth + 1);
+    }
+    template <class Child>
+    consteval bool wrapper(const node& view, context depth, const Child& child) const {
+        return child(view.next, depth);
+    }
+    consteval bool unregistered(const node&, context) const { return true; }
+    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
+        return {child_type};
+    }
+    consteval bool from_hook(std::meta::info answer) const { return std::meta::extract<bool>(answer); }
+};
+
+// True when `type` holds a back node that no binder of `type` binds.
+// Complexity: linear in the size of the protocol.
+[[nodiscard]] consteval bool has_open_back(std::meta::info registry, std::meta::info type) {
+    return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::open_back}, std::size_t{0});
+}
+
+// True when composition replaces a terminal of `type` that stands below a
+// binder, with `binders_above` binders counted above `type` itself.
+// Complexity: linear in the size of the protocol.
+[[nodiscard]] consteval bool has_bound_terminal(std::meta::info registry, std::meta::info type,
+                                                std::size_t binders_above = 0) {
+    return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::bound_terminal}, binders_above);
+}
+
 // ── The payload preorder ──────────────────────────────────────────────
 //
 // The reflexive relation that the axioms of one namespace generate.
@@ -1424,7 +1517,8 @@ inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, d
 // branch, and `head_payload` is the payload of its head step under its
 // wrappers, or null.  A branch that is no label is matched by that
 // payload.  `has_restricted_payload` is true for a step whose payload a
-// payload registration marks as not sendable or as no label.
+// payload registration marks as not sendable or as no label.  `can_end`
+// is true when a path of the graph leads from this node to a terminal.
 struct graph_node {
     std::meta::info type{};
     combinator entry{};
@@ -1437,6 +1531,7 @@ struct graph_node {
     bool is_label = true;
     std::meta::info head_payload{};
     bool has_restricted_payload = false;
+    bool can_end = false;
 };
 
 struct type_graph {
@@ -1502,12 +1597,52 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
     return here;
 }
 
+// Marks each node from which a path of the graph reaches a terminal.  A
+// back node leads to its binder, and a free back node leads nowhere.
+// Children stand after their parent in the node order, so one pass in
+// the reverse order settles every edge of the tree, and each further pass
+// settles one more level of loop-back.  Complexity: O(N·d) for N nodes
+// and d levels of loops inside loops, O(N²) at worst.
+consteval void mark_can_end(type_graph& graph) {
+    for (bool is_changed = true; is_changed;) {
+        is_changed = false;
+        for (std::size_t index = graph.nodes.size(); index-- > 0;) {
+            graph_node& current = graph.nodes[index];
+            if (current.can_end) continue;
+            bool reaches = false;
+            switch (current.entry.kind) {
+                case shape_kind::terminal:
+                    reaches = current.entry.shape != std::meta::info{};
+                    break;
+                case shape_kind::step:
+                case shape_kind::wrapper:
+                case shape_kind::binder:
+                case shape_kind::back:
+                    reaches = current.next != npos && graph.nodes[current.next].can_end;
+                    break;
+                case shape_kind::choice:
+                    for (std::size_t k = 0; k < current.child_count && !reaches; ++k) {
+                        reaches = graph.nodes[graph.children[current.first_child + k]].can_end;
+                    }
+                    break;
+                default:
+                    break;
+            }
+            if (reaches) {
+                current.can_end = true;
+                is_changed = true;
+            }
+        }
+    }
+}
+
 }  // namespace detail
 
 [[nodiscard]] consteval type_graph build_graph(std::meta::info registry, std::meta::info type) {
     type_graph graph{};
     std::vector<std::size_t> binders;
     detail::add_to_graph(registry, graph, type, binders);
+    detail::mark_can_end(graph);
     return graph;
 }
 
@@ -1585,8 +1720,27 @@ inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
 // relation is the coinductive one on the infinite unfoldings.  A pair
 // that the walk meets a second time holds by assumption.  Every rule is
 // a conjunction, so an assumption that later fails stops the whole
-// walk, and one visited set serves the walk.  Complexity: each pair of
-// graph nodes is visited once, so O(|T|·|U|) pairs.
+// walk, and one visited set serves the walk.
+//
+// Exit preservation.  The pairs that the walk visits, and the edges
+// between them, are the product of T with the peer of U: each run of T
+// against that peer follows the edges.  A pair can end when a path of
+// the product reaches a pair of terminals.  The relation also requires
+// that each visited pair whose node of U can end, as a node of the graph
+// of U, can end as a pair.  So a subtype never removes an exit that the
+// supertype offers at the same position, and a terminable supertype has
+// only terminable subtypes.  This is the fair subtyping of Padovani and
+// Zavattaro (TOPLAS 2026), as a sufficient condition that reads the
+// product and no set of peers.  It refuses some pairs that fair
+// subtyping holds.  It is not closed under duality: a loop that never
+// picks its exit does not refine the loop that can, but the dual of the
+// second refines the dual of the first, because a receiver that never
+// ends keeps no exit.
+//
+// Complexity: each pair of graph nodes is visited once, so O(|T|·|U|)
+// pairs.  The exit check settles the edges of the product in passes, one
+// per level of loop-back, so it is O(P·E) at worst for P pairs and E
+// edges.
 
 enum class mismatch : std::uint8_t {
     none,
@@ -1601,6 +1755,7 @@ enum class mismatch : std::uint8_t {
     unregistered,
     ill_formed,
     missing_non_label_branch,
+    loses_termination,
 };
 
 struct verdict {
@@ -1637,6 +1792,9 @@ struct verdict {
         case mismatch::missing_non_label_branch:
             return "a branch of the supertype that is no label has no branch in the subtype that receives the "
                    "same payload";
+        case mismatch::loses_termination:
+            return "the supertype can end from this pair and the subtype cannot, so the subtype removes an exit "
+                   "(fair subtyping)";
         default:
             break;
     }
@@ -1721,6 +1879,11 @@ struct split_branches {
     if (right.unregistered != std::meta::info{}) return {false, mismatch::unregistered, {}, right.unregistered};
     const std::size_t width = right.nodes.size();
     std::vector<std::uint8_t> visited(left.nodes.size() * width, 0);
+    // The visited pairs in the order of the walk, and the edges of the
+    // product between them, each as a pair key sub * width + super.
+    std::vector<std::size_t> order;
+    std::vector<std::size_t> edge_from;
+    std::vector<std::size_t> edge_to;
     std::vector<std::size_t> pending{0, 0};
     while (!pending.empty()) {
         const std::size_t super_index = settle(right, pending.back());
@@ -1728,9 +1891,11 @@ struct split_branches {
         const std::size_t sub_index = settle(left, pending.back());
         pending.pop_back();
         if (sub_index == npos || super_index == npos) return {false, mismatch::unguarded, sub, super};
-        std::uint8_t& seen = visited[sub_index * width + super_index];
+        const std::size_t key = sub_index * width + super_index;
+        std::uint8_t& seen = visited[key];
         if (seen != 0) continue;
         seen = 1;
+        order.push_back(key);
         const graph_node& a = left.nodes[sub_index];
         const graph_node& b = right.nodes[super_index];
         if (a.entry.shape != b.entry.shape) return {false, mismatch::shape, a.type, b.type};
@@ -1792,6 +1957,15 @@ struct split_branches {
             default:
                 break;
         }
+        // Each child pair is an edge of the product.  A child that does
+        // not settle stops the walk when it is popped.
+        for (std::size_t k = before; k + 1 < pending.size(); k += 2) {
+            const std::size_t child_sub = settle(left, pending[k]);
+            const std::size_t child_super = settle(right, pending[k + 1]);
+            if (child_sub == npos || child_super == npos) continue;
+            edge_from.push_back(key);
+            edge_to.push_back(child_sub * width + child_super);
+        }
         // Pairs are pushed in order and popped from the back, so the
         // walk reaches the last child first.  The pushed block is
         // reversed pair by pair to keep the first child first, which
@@ -1805,7 +1979,41 @@ struct split_branches {
             pending[high - 1] = first_super;
         }
     }
+    // Exit preservation.  A pair of terminals can end, and a pair with an
+    // edge to a pair that can end can end.  The edges are recorded in the
+    // order of the walk, so a pass from the last edge back settles every
+    // edge of the tree, and each further pass settles one more loop-back.
+    std::vector<std::uint8_t> pair_can_end(visited.size(), 0);
+    for (const std::size_t key : order) {
+        if (left.nodes[key / width].entry.kind == shape_kind::terminal) pair_can_end[key] = 1;
+    }
+    for (bool is_changed = true; is_changed;) {
+        is_changed = false;
+        for (std::size_t edge = edge_from.size(); edge-- > 0;) {
+            if (pair_can_end[edge_from[edge]] != 0 || pair_can_end[edge_to[edge]] == 0) continue;
+            pair_can_end[edge_from[edge]] = 1;
+            is_changed = true;
+        }
+    }
+    for (const std::size_t key : order) {
+        const graph_node& a = left.nodes[key / width];
+        const graph_node& b = right.nodes[key % width];
+        if (b.can_end && pair_can_end[key] == 0) return {false, mismatch::loses_termination, a.type, b.type};
+    }
     return {true, mismatch::none, {}, {}};
+}
+
+// True when every node of the protocol can reach a terminal: from each
+// position the protocol can still end.  A stream or a server loop with no
+// exit is not terminable.  Complexity: linear in the nodes of the graph,
+// after the graph.
+[[nodiscard]] consteval bool is_terminable(std::meta::info registry, std::meta::info type) {
+    const graph_view graph = graph_of(registry, type);
+    if (graph.unregistered != std::meta::info{}) return false;
+    for (std::size_t index = 0; index < graph.nodes.size(); ++index) {
+        if (!graph.nodes[index].can_end) return false;
+    }
+    return true;
 }
 
 // ── Self-test over a stand-in registry ────────────────────────────────
@@ -1971,6 +2179,23 @@ static_assert(refines(reg, ^^no_axioms, ^^Wait<Take<int, Done>>, ^^Wait<Take<int
               == mismatch::missing_non_label_branch);
 static_assert(!refines_plain(^^Wait<Take<char, Done>, Take<int, Done>>, ^^Wait<Take<int, Done>, Take<char, Done>>),
               "the position of a label branch is its wire label, so another order is another choice");
+
+
+// Exit preservation: a subtype that drops the only exit of a loop loses
+// termination, and a stream refines a stream.
+using Exiting = Again<Pick<Put<int, Back>, Done>>;
+using Endless = Again<Pick<Put<int, Back>>>;
+static_assert(refines_plain(^^Exiting, ^^Exiting) && refines_plain(^^Endless, ^^Endless));
+static_assert(refines(reg, ^^no_axioms, ^^Endless, ^^Exiting).reason == mismatch::loses_termination);
+static_assert(is_terminable(reg, ^^Exiting) && !is_terminable(reg, ^^Endless));
+
+// Capture: a bare back node is open, and a terminal under a binder is
+// bound unless it absorbs the suffix.
+static_assert(has_open_back(reg, ^^Back) && has_open_back(reg, ^^Put<int, Back>));
+static_assert(!has_open_back(reg, ^^Again<Put<int, Back>>));
+static_assert(has_bound_terminal(reg, ^^Exiting) && !has_bound_terminal(reg, ^^Pick<Done>));
+static_assert(!has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>), "a terminal that absorbs the suffix stays");
+static_assert(has_bound_terminal(reg, ^^Pick<Done>, 1), "a binder above the type binds its terminals");
 
 }  // namespace detail::transition_self_test
 

@@ -584,6 +584,70 @@ struct Verdict {
     [[nodiscard]] bool is_clean() const { return deadlocks == 0 && unsafe == 0 && starved == 0 && !capped; }
 };
 
+// For each node, true when a path of its own local type leads from it to
+// End.  One pass per level of loop-back.  Complexity: O(N·d) for N nodes
+// and d levels of loops inside loops.
+[[nodiscard]] std::vector<char> nodes_that_can_end(const System& sys) {
+    std::vector<char> can_end(sys.nodes.size(), 0);
+    for (bool is_changed = true; is_changed;) {
+        is_changed = false;
+        for (std::size_t index = 0; index < sys.nodes.size(); ++index) {
+            if (can_end[index] != 0) continue;
+            const Node& node = sys.nodes[index];
+            bool reaches = node.kind == NodeKind::End;
+            if (node.kind == NodeKind::Alias) reaches = can_end[static_cast<std::size_t>(sys.resolve(node.alias))] != 0;
+            for (const Branch& branch : node.branches) {
+                reaches = reaches || can_end[static_cast<std::size_t>(sys.resolve(branch.next))] != 0;
+            }
+            if (reaches) {
+                can_end[index] = 1;
+                is_changed = true;
+            }
+        }
+    }
+    return can_end;
+}
+
+// True when a reachable state of the rewritten context cannot reach a
+// final state, while each role stands at a node that can end in the
+// projected context.  The rewrite keeps the node indices of the
+// projected context, so a node names the same position in both.  Such a
+// state is an exit that the rewrite removed.  A backward search from the
+// final states.  Complexity: linear in the number of states and edges.
+[[nodiscard]] bool loses_an_exit(const System& projected, const System& sys, std::size_t capacity) {
+    const Exploration ex = explore(sys, capacity);
+    if (ex.capped) return false;
+    const std::vector<char> could_end = nodes_that_can_end(projected);
+    const std::size_t count = ex.states.size();
+    std::vector<std::vector<int>> predecessors(count);
+    for (const Edge& edge : ex.edges) predecessors[static_cast<std::size_t>(edge.to)].push_back(edge.from);
+    std::vector<char> ends(count, 0);
+    std::vector<int> frontier;
+    for (std::size_t state = 0; state < count; ++state) {
+        if (!is_final(sys, ex.states[state])) continue;
+        ends[state] = 1;
+        frontier.push_back(static_cast<int>(state));
+    }
+    while (!frontier.empty()) {
+        const int state = frontier.back();
+        frontier.pop_back();
+        for (const int previous : predecessors[static_cast<std::size_t>(state)]) {
+            if (ends[static_cast<std::size_t>(previous)] != 0) continue;
+            ends[static_cast<std::size_t>(previous)] = 1;
+            frontier.push_back(previous);
+        }
+    }
+    for (std::size_t state = 0; state < count; ++state) {
+        if (ends[state] != 0) continue;
+        const bool each_could_end = std::ranges::all_of(ex.states[state].at, [&](int node) {
+            return node >= 0 && static_cast<std::size_t>(node) < could_end.size()
+                   && could_end[static_cast<std::size_t>(node)] != 0;
+        });
+        if (each_could_end) return true;
+    }
+    return false;
+}
+
 [[nodiscard]] Verdict analyse(const System& sys, std::size_t capacity) {
     const Exploration ex = explore(sys, capacity);
     Verdict verdict;
@@ -665,7 +729,12 @@ void expect_context(std::string_view label, bool expect_clean) {
 //   safe      each Select keeps its first branch, each Offer gains a
 //             branch at the end, and each int payload that a role sends
 //             becomes a Sanitized value.  Association must hold, and the
-//             context must be live.
+//             context must be live, when the rewrite keeps each exit.
+//             Refinement keeps the exits of the supertype, so association
+//             refuses a Select that loses the only exit of its loop.  The
+//             explorer must then show a state of the rewritten context
+//             that can never end, where each role stands at a node that
+//             can end in the projected context.
 //   unfolded  each top-level Loop is unfolded once.  Association must
 //             hold, and the context must be live.
 //   widened   each Select gains a branch at the end, with a label that
@@ -910,6 +979,7 @@ struct AssociationCounts {
     std::size_t types = 0;
     std::size_t full_types = 0;
     std::size_t safe_live = 0;
+    std::size_t safe_lost_exit = 0;
     std::size_t unfolded_live = 0;
     std::size_t refused = 0;
     std::size_t refused_faulty = 0;
@@ -936,6 +1006,24 @@ void judge_accepted(std::string_view label, std::string_view rewrite, bool assoc
     if (clean) ++live;
 }
 
+// A narrowing that association accepts when it keeps each exit.  A
+// refusal is right only when the explorer shows a state of the rewritten
+// context that can never end, where each role stands at a node that can
+// end in the projected context.
+void judge_narrowed(std::string_view label, std::string_view rewrite, bool associated, const System& base,
+                    const System& sys) {
+    if (associated) {
+        judge_accepted(label, rewrite, associated, sys, association_counts.safe_live);
+        return;
+    }
+    std::string what{label};
+    what += ", ";
+    what += rewrite;
+    const bool lost_exit = loses_an_exit(base, sys, 1);
+    expect(lost_exit, what + ": association refused a safe subtype of the projection that keeps each exit");
+    if (lost_exit) ++association_counts.safe_lost_exit;
+}
+
 // A rewrite that association must refuse.  The explorer tells whether
 // the refusal stopped a real fault.
 void judge_refused(std::string_view label, std::string_view rewrite, bool associated, const System& sys,
@@ -960,8 +1048,7 @@ void check_association_step(std::string_view label) {
     const System base = load_context<Ctx>();
     using Safe = typename MapContext<Ctx, SafeRewrite>::type;
     using Widened = typename MapContext<Ctx, WidenRewrite>::type;
-    judge_accepted(label, "safe rewrite", s::association_holds_v<Safe, G>, rewritten(base, GraphRewrite::Safe),
-                   association_counts.safe_live);
+    judge_narrowed(label, "safe rewrite", s::association_holds_v<Safe, G>, base, rewritten(base, GraphRewrite::Safe));
     if constexpr (!std::is_same_v<Widened, Ctx>) {
         judge_refused(label, "widened Select", s::association_holds_v<Widened, G>,
                       rewritten(base, GraphRewrite::Widen), association_counts.refused,
@@ -1549,13 +1636,16 @@ void report_association_step() {
     const AssociationCounts& c = association_counts;
     std::printf("association step over %zu accepted types, %zu of them with all five rewrites\n", c.types,
                 c.full_types);
-    std::printf("  safe rewrites associated and live: %zu, unfolded associated and live: %zu\n", c.safe_live,
-                c.unfolded_live);
+    std::printf("  safe rewrites associated and live: %zu, refused for a lost exit: %zu, unfolded associated and live: "
+                "%zu\n",
+                c.safe_live, c.safe_lost_exit, c.unfolded_live);
     std::printf("  widened or narrowed rewrites refused: %zu, of which the explorer shows faulty: %zu\n", c.refused,
                 c.refused_faulty);
     std::printf("  swapped rewrites refused: %zu, of which the explorer shows safe: %zu\n", c.swapped_refused,
                 c.swapped_safe);
-    expect(c.safe_live == c.types && c.unfolded_live == c.full_types, "a safe rewrite failed the association step");
+    expect(c.safe_live + c.safe_lost_exit == c.types && c.unfolded_live == c.full_types,
+           "a safe rewrite failed the association step");
+    expect(c.safe_live > 0, "no safe rewrite kept its exits, so the association of a narrowed Select is untested");
     expect(c.refused > 0 && c.refused_faulty > 0, "no refused rewrite showed a fault, so the step proves nothing");
     expect(c.swapped_refused > 0, "no swapped rewrite was built, so the position rule is untested");
 }

@@ -63,7 +63,9 @@
 // has another label is refused, also when the two lists hold the same
 // labels in another order.  The axiom peer_message of
 // fixy/session/Subtype.h makes a message covariant in its payload and
-// exact in its peer and its label.
+// exact in its peer and its label.  Refinement also keeps each exit of
+// the projection, so a context entry cannot drop the only branch of a
+// Select that lets a loop end.
 //
 // A role of the context that G does not name must have finished, which is
 // the rule of Pischke and Yoshida, "Top-down = Bottom-up" (OOPSLA 2026),
@@ -993,7 +995,9 @@ consteval void ensure_associated() noexcept {
                           "fixy::session::diagnostic [Association_Local_Mismatch]: the local type of a role does not "
                           "refine its projection (is_subtype_sync_v).  Branches match by position: keep the branch "
                           "order of the projection, drop branches only at the end of a Select, and add branches "
-                          "only at the end of an Offer.  subtype_reason_t<Local, Projected> names the failed pair.");
+                          "only at the end of an Offer.  A Select keeps each exit of the projection: it cannot drop "
+                          "the only branch that lets a loop end.  subtype_reason_t<Local, Projected> names the "
+                          "failed pair.");
         }
     }
 }

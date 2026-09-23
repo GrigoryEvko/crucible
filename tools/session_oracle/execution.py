@@ -183,7 +183,7 @@ def _enabled(e: Local, me: int, flight: tuple) -> bool:
     return e.send or _match(e, me, flight) is not None
 
 
-def explore(system: dict[int, Local], liveness: bool = True) -> Verdict:
+def explore(system: dict[int, Local], liveness: bool = True, graph_out: dict | None = None) -> Verdict:
     """Explore every interleaving of ``system``.  Return the first bad state.
 
     ``system`` maps each role to its local type.  A state is the local
@@ -191,7 +191,9 @@ def explore(system: dict[int, Local], liveness: bool = True) -> Verdict:
     tuple (channel, sender, receiver, label, sort).  Breadth first, so a
     returned trace is a shortest one.  When no state is bad and
     ``liveness`` is true, the state graph is searched for starvation
-    (see _starvation).  O(states × roles × messages).
+    (see _starvation).  When ``graph_out`` is a dict and no state is bad,
+    it receives the states under "states" and the edges under "edges".
+    O(states × roles × messages).
     """
     roles = sorted(system)
     start = (tuple(head(system[r]) for r in roles), ())
@@ -273,6 +275,9 @@ def explore(system: dict[int, Local], liveness: bool = True) -> Verdict:
                 return Verdict("unknown", trace_of(state), f"more than {STATE_BOUND} states")
             parent[nxt] = (state, step)
             frontier.append(nxt)
+    if graph_out is not None:
+        graph_out["states"] = list(parent)
+        graph_out["edges"] = [(src, dst) for src, dst, _ in edges]
     if liveness:
         starving = _starvation(roles, list(parent), edges)
         if starving is not None:
@@ -333,6 +338,109 @@ def explore_sync(left: Local, right: Local) -> Verdict:
                 parent[nxt] = (state, step)
                 frontier.append(nxt)
     return Verdict("safe", ())
+
+
+def _local_can_end(e: Local, memo: dict) -> bool:
+    """Return true when a path of the local type ``e`` reaches End.
+
+    ``e`` is in head form.  The walk follows each branch to the head of
+    its continuation.  O(states of the local type).
+    """
+    if e in memo:
+        return memo[e]
+    seen: set = {e}
+    frontier: deque = deque([e])
+    found = False
+    while frontier and not found:
+        state = frontier.popleft()
+        if isinstance(state, LEnd):
+            found = True
+            break
+        if not isinstance(state, LChoice):
+            continue
+        for _, _, cont in state.branches:
+            nxt = head(cont)
+            if nxt not in seen:
+                seen.add(nxt)
+                frontier.append(nxt)
+    memo[e] = found
+    return found
+
+
+def _reaches(states: list[tuple], edges: list[tuple[tuple, tuple]], is_final) -> set:
+    """Return the states from which a path of ``edges`` reaches a final state.
+
+    A backward search from the final states.  O(states + edges).
+    """
+    preds: dict[tuple, list[tuple]] = {}
+    for src, dst in edges:
+        preds.setdefault(dst, []).append(src)
+    good = {s for s in states if is_final(s)}
+    frontier: deque = deque(good)
+    while frontier:
+        state = frontier.popleft()
+        for prev in preds.get(state, ()):
+            if prev not in good:
+                good.add(prev)
+                frontier.append(prev)
+    return good
+
+
+def keeps_exits_sync(t: Local, dual_u: Local) -> bool:
+    """Return true when T keeps each exit of U in a synchronous run.
+
+    The run is T against the dual of U, with the moves of explore_sync.
+    At each reachable state where the side of U can still end on its own,
+    the run must still be able to reach the end of the two sides.  This is
+    the reference for the exit condition of the synchronous relation (fair
+    subtyping, Padovani and Zavattaro, TOPLAS 2026).  Call it on a safe
+    run.  O(pairs of states).
+    """
+    start = (head(t), head(dual_u))
+    states: list[tuple] = [start]
+    seen: set = {start}
+    edges: list[tuple[tuple, tuple]] = []
+    frontier: deque = deque([start])
+    while frontier:
+        state = frontier.popleft()
+        a, b = state
+        if not (isinstance(a, LChoice) and isinstance(b, LChoice)) or a.send == b.send:
+            continue
+        sender, receiver = (a, b) if a.send else (b, a)
+        for label, _, cont in sender.branches:
+            match = next((k for lab, _, k in receiver.branches if lab == label), None)
+            if match is None:
+                continue
+            nxt = (head(cont), head(match)) if a.send else (head(match), head(cont))
+            edges.append((state, nxt))
+            if nxt not in seen:
+                if len(seen) >= STATE_BOUND:
+                    return True
+                seen.add(nxt)
+                states.append(nxt)
+                frontier.append(nxt)
+    ends = _reaches(states, edges, lambda s: isinstance(s[0], LEnd) and isinstance(s[1], LEnd))
+    memo: dict = {}
+    return all(s in ends or not _local_can_end(s[1], memo) for s in states)
+
+
+def keeps_exits_async(t: Local, dual_u: Local) -> bool:
+    """Return true when T keeps each exit of U in an asynchronous run.
+
+    The states and moves are those of explore.  A final state has every
+    side at End and no message in flight.  The condition is read at the
+    states with no message in flight: a message in flight can already
+    take away an exit that the side of U still shows.  Call it on a safe
+    run.  O(states × roles × messages).
+    """
+    graph: dict = {}
+    explore({0: t, 1: dual_u}, liveness=False, graph_out=graph)
+    if "states" not in graph:
+        return True
+    states, edges = graph["states"], graph["edges"]
+    ends = _reaches(states, edges, lambda s: all(isinstance(e, LEnd) for e in s[0]) and not s[1])
+    memo: dict = {}
+    return all(s in ends or s[1] or not _local_can_end(s[0][1], memo) for s in states)
 
 
 def _sccs(nodes: list[tuple], succ: dict[tuple, list[tuple]]) -> list[list[tuple]]:

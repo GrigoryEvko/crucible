@@ -406,8 +406,8 @@ namespace m0f {
 // 0+drop@0
 using T = fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > >;
 using U = fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> >, fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Offer<fs::Recv<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::End> > > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fr9 role 0+drop@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, ::oracle_channel> == true, "session_oracle fixy.subtype_async case fr9 role 0+drop@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fr9 role 0+drop@0: divergence");
+static_assert(fs::is_subtype_async_v<T, U, ::oracle_channel> == false, "session_oracle fixy.subtype_async case fr9 role 0+drop@0: divergence");
 }  // namespace m0f
 namespace m0r {
 // 0-drop@0
@@ -1999,8 +1999,8 @@ namespace m2r {
 // 2-add@0
 using T = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Continue, fs::Send<session_oracle::Bool, fs::Continue> > >;
 using U = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Continue, fs::Send<session_oracle::Bool, fs::Continue>, fs::End> >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fr43 role 2-add@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, ::oracle_channel> == true, "session_oracle fixy.subtype_async case fr43 role 2-add@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fr43 role 2-add@0: divergence");
+static_assert(fs::is_subtype_async_v<T, U, ::oracle_channel> == false, "session_oracle fixy.subtype_async case fr43 role 2-add@0: divergence");
 }  // namespace m2r
 namespace m3f {
 // 3+sort@1

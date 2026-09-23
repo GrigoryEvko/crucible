@@ -114,8 +114,17 @@ static_assert(!s::is_subtype_sync_v<Offer<Recv<PingReq, End>>, Offer<Recv<PingRe
 static_assert(!s::is_subtype_sync_v<Offer<>, Offer<Recv<PingReq, End>>>);
 static_assert(!s::is_subtype_sync_v<Offer<>, Offer<>>);
 static_assert(s::subtype_mismatch_v<Offer<>, Offer<>> == tr::mismatch::ill_formed);
+// A narrower Select that keeps an exit refines, and one that drops the
+// only exit of the loop does not: it can never end where the supertype
+// can (fair subtyping).
+static_assert(s::is_subtype_sync_v<Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>>>,
+                                   Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>, Send<int, End>>>>);
+static_assert(s::subtype_mismatch_v<Loop<Select<Send<PingReq, Continue>>>,
+                                    Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>>>>
+              == tr::mismatch::loses_termination);
+// A stream refines a stream, because the supertype never ends either.
 static_assert(s::is_subtype_sync_v<Loop<Select<Send<PingReq, Continue>>>,
-                                   Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>>>>);
+                                   Loop<Select<Send<PingReq, Continue>, Send<StopReq, Continue>>>>);
 static_assert(!s::is_subtype_sync_v<Select<Send<PingReq, End>, Send<StopReq, End>>,
                                     Select<Send<StopReq, End>, Send<PingReq, End>>>,
               "the position of a label branch is the label on the wire");
@@ -191,8 +200,11 @@ static_assert(evolution_holds());
 
 namespace mpmc {
 using ProducerFull = Loop<Select<Send<Job, Continue>, Send<Job, Continue>, End>>;
-using ProducerNarrow = Loop<Select<Send<Job, Continue>>>;
-static_assert(s::is_subtype_sync_v<ProducerNarrow, ProducerFull> && !s::is_subtype_sync_v<ProducerFull, ProducerNarrow>);
+using ProducerNarrow = Loop<Select<Send<Job, Continue>, Send<Job, Continue>>>;
+static_assert(!s::is_subtype_sync_v<ProducerFull, ProducerNarrow>);
+// A producer that never stops does not refine one that can stop: the
+// consumer waits for the stop and never gets it.
+static_assert(s::subtype_mismatch_v<ProducerNarrow, ProducerFull> == tr::mismatch::loses_termination);
 }  // namespace mpmc
 
 // ── The reason ───────────────────────────────────────────────────────
@@ -297,9 +309,30 @@ static_assert(requires_strict_subtype<DS1, DS2>());
 // Closure under duality, one witness per combinator.
 static_assert(s::is_subtype_sync_v<s::dual_of_t<DS2>, s::dual_of_t<DS1>>);
 static_assert(s::is_subtype_sync_v<s::dual_of_t<DO2>, s::dual_of_t<DO1>>);
-using DLoopS1 = Loop<Send<int, Select<Send<PingReq, Continue>>>>;
-using DLoopS2 = Loop<Send<int, Select<Send<PingReq, Continue>, Send<StopReq, End>>>>;
+using DLoopS1 = Loop<Send<int, Select<Send<PingReq, Continue>, Send<StopReq, End>>>>;
+using DLoopS2 = Loop<Send<int, Select<Send<PingReq, Continue>, Send<StopReq, End>, Send<int, End>>>>;
 static_assert(s::is_subtype_sync_v<DLoopS1, DLoopS2> && s::is_subtype_sync_v<s::dual_of_t<DLoopS2>, s::dual_of_t<DLoopS1>>);
+
+// Exit preservation is not closed under duality.  The loop that never
+// picks its exit does not refine the loop that can, and the dual pair
+// refines, because a receiver that never ends keeps no exit.
+// Compatibility asks for both directions, so it refuses the pair from
+// either side.
+using NeverStops = Loop<Send<int, Select<Send<PingReq, Continue>>>>;
+static_assert(s::subtype_mismatch_v<NeverStops, DLoopS1> == tr::mismatch::loses_termination);
+static_assert(s::is_subtype_sync_v<s::dual_of_t<DLoopS1>, s::dual_of_t<NeverStops>>);
+static_assert(!s::CompatibleServer<NeverStops, s::dual_of_t<DLoopS1>> && !s::CompatibleClient<s::dual_of_t<DLoopS1>, NeverStops>);
+
+// The asynchronous relation reads exit preservation on its derivation.
+// The eager loop sends before it receives and never stops.  The bounded
+// search alone proves the pair, and the exit check refuses it.  The
+// eager loop that keeps the stop holds.
+using PatientLoop = Loop<Recv<Req, Select<Send<Resp, Continue>, Send<StopReq, End>>>>;
+using EagerEndless = Loop<Select<Send<Resp, Recv<Req, Continue>>>>;
+using EagerStopping = Loop<Select<Send<Resp, Recv<Req, Continue>>, Send<StopReq, Recv<Req, End>>>>;
+static_assert(s::detail::async::bounded_v<EagerEndless, PatientLoop, 2, false>);
+static_assert(!s::is_subtype_async_v<EagerEndless, PatientLoop, Slots<2>>);
+static_assert(s::is_subtype_async_v<EagerStopping, PatientLoop, Slots<2>>);
 
 // ── The payload order ────────────────────────────────────────────────
 
@@ -589,8 +622,10 @@ consteval std::meta::info widen(std::meta::info type) {
         return std::meta::substitute(recv_shape, arguments);
     }
     if (shape == select_shape) {
+        // The supertype gains a copy of the last branch.  A copy adds no
+        // exit that the subtype lacks, so the pair keeps its exits.
         for (std::meta::info& branch : arguments) branch = widen(branch);
-        arguments.push_back(^^s::End);
+        arguments.push_back(arguments.back());
         return std::meta::substitute(select_shape, arguments);
     }
     if (shape == offer_shape) {
@@ -604,6 +639,13 @@ consteval std::meta::info widen(std::meta::info type) {
 
 consteval bool sync(std::meta::info sub, std::meta::info super) {
     return std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_sync_v, {sub, super}));
+}
+// The refinement without its exit condition: the walk holds, or it holds
+// up to exits.  This part is closed under duality.
+consteval bool safe(std::meta::info sub, std::meta::info super) {
+    return sync(sub, super)
+           || std::meta::extract<tr::mismatch>(std::meta::substitute(^^s::subtype_mismatch_v, {sub, super}))
+                  == tr::mismatch::loses_termination;
 }
 consteval bool async_at_one(std::meta::info sub, std::meta::info super) {
     return std::meta::extract<bool>(
@@ -643,7 +685,7 @@ consteval law_counts check_generated_laws() {
         if (sync(p0, p0) && sync(p1, p1) && sync(p2, p2)) ++counts.reflexive;
         if (sync(p0, p1) && sync(p1, p2)) ++counts.widened;
         if (!sync(p0, p1) || !sync(p1, p2) || sync(p0, p2)) ++counts.transitive;
-        if (sync(dual(p1), dual(p0)) && sync(dual(p2), dual(p1)) && sync(dual(p2), dual(p0))) ++counts.dual_closed;
+        if (safe(dual(p1), dual(p0)) && safe(dual(p2), dual(p1)) && safe(dual(p2), dual(p0))) ++counts.dual_closed;
         if (dual(dual(p0)) == p0 && dual(dual(p2)) == p2) ++counts.involutive;
         if (well_formed(p0) && well_formed(dual(p0)) && well_formed(dual(p2))) ++counts.dual_well_formed;
         if (async_at_one(p0, p1) && async_at_one(p1, p2) && async_at_one(p0, p0)) ++counts.async_contains_sync;
@@ -653,7 +695,7 @@ consteval law_counts check_generated_laws() {
     for (const std::meta::info left : seen) {
         for (const std::meta::info right : seen) {
             ++counts.pairs;
-            if (sync(left, right) == sync(dual(right), dual(left))) ++counts.pair_closure;
+            if (safe(left, right) == safe(dual(right), dual(left))) ++counts.pair_closure;
         }
     }
     return counts;
@@ -665,12 +707,14 @@ static_assert(generated.chains == generated_chains);
 static_assert(generated.reflexive == generated_chains, "the relation is reflexive on each generated protocol");
 static_assert(generated.widened == generated_chains, "each widening rule is admitted by the relation");
 static_assert(generated.transitive == generated_chains, "the relation is transitive on each generated chain");
-static_assert(generated.dual_closed == generated_chains, "the relation is closed under duality on each chain");
-static_assert(generated.involutive == generated_chains, "duality is an involution without notes");
+static_assert(generated.dual_closed == generated_chains,
+              "the relation up to exits is closed under duality on each chain");
+static_assert(generated.involutive == generated_chains, "duality is an involution");
 static_assert(generated.dual_well_formed == generated_chains, "the dual of a well-formed protocol is well-formed");
 static_assert(generated.async_contains_sync == generated_chains, "the asynchronous relation holds each synchronous pair");
 static_assert(generated.pair_closure == generated.pairs,
-              "on every generated pair, T refines U exactly when the dual of U refines the dual of T");
+              "on every generated pair, T refines U up to exits exactly when the dual of U refines the dual of T up "
+              "to exits");
 
 }  // namespace
 

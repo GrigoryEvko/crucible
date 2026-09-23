@@ -396,6 +396,29 @@ static_assert(tr::fold(reg, ^^Pick<Done>, tr::compose_at_choice_algebra{reg, 1, 
               "an index past the last branch has no answer");
 static_assert(tr::first_stop_of_spine(reg, ^^Put<int, Again<Take<int, Back>>>).entry.kind == tr::shape_kind::back);
 
+// Capture: a back node that no binder of its protocol binds is open, and
+// a replaced terminal under a binder is bound.  A composition that puts
+// an open suffix under a binder is a capture.
+static_assert(tr::has_open_back(reg, ^^Back) && tr::has_open_back(reg, ^^Pick<Done, Put<int, Back>>));
+static_assert(!tr::has_open_back(reg, ^^Again<Pick<Done, Put<int, Back>>>) && !tr::has_open_back(reg, ^^Ping));
+static_assert(tr::has_open_back(reg, ^^Unknown), "a node the probe cannot read may hide a back node");
+static_assert(tr::has_bound_terminal(reg, ^^Put<int, Again<Pick<Put<int, Back>, Done>>>));
+static_assert(!tr::has_bound_terminal(reg, ^^Put<int, Pick<Done, Done>>));
+static_assert(!tr::has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>), "a terminal that absorbs the suffix stays");
+static_assert(tr::has_bound_terminal(reg, ^^Pick<Done>, 1), "the binders above the type count");
+static_assert(tr::binders_above_first_stop(reg, ^^Again<Put<int, Again<Pick<Done>>>>) == 2);
+
+// A composition without capture keeps terminability: each node of the
+// result can end when each node of the prefix and of the suffix can.
+using Exiting = Again<Pick<Put<int, Back>, Done>>;
+using Endless = Again<Put<int, Back>>;
+static_assert(tr::is_terminable(reg, ^^Exiting) && tr::is_terminable(reg, ^^Ping) && !tr::is_terminable(reg, ^^Endless));
+static_assert(tr::is_terminable(reg, compose(^^Exiting, ^^Ping)));
+static_assert(tr::is_terminable(reg, compose(^^Pick<Done, Put<int, Done>>, ^^Exiting)));
+static_assert(!tr::is_terminable(reg, compose(^^Exiting, ^^Endless)), "a suffix that never ends stays one");
+static_assert(!tr::is_terminable(reg, compose(^^Exiting, ^^Back)),
+              "the capture that composition refuses is what makes the result lose its exit");
+
 // ── Well-formedness ──────────────────────────────────────────────────
 
 static_assert(well_formed(^^Ping) && well_formed(^^Pin<1, Ping>));
@@ -685,6 +708,20 @@ static_assert(!refines(^^Wait<Ping, Done>, ^^Wait<Done, Ping>), "another order o
 
 // An unknown node is named.
 static_assert(refine(^^Pick<Done, Unknown>, ^^Pick<Done>).reason == tr::mismatch::unregistered);
+
+// Exit preservation.  A subtype that drops the only exit of a loop cannot
+// end where the supertype can.  A stream refines a stream, and a subtype
+// that keeps the exit refines.
+static_assert(refine(^^Again<Pick<Put<int, Back>>>, ^^Exiting).reason == tr::mismatch::loses_termination);
+static_assert(refines(^^Endless, ^^Endless) && refines(^^Exiting, ^^Again<Pick<Put<int, Back>, Done, Done>>));
+static_assert(refine(^^Pick<Done, Put<int, Pick<Put<int, Endless>>>>,
+                     ^^Pick<Done, Put<int, Pick<Put<int, Endless>, Done>>>)
+                  .reason
+              == tr::mismatch::loses_termination,
+              "the exit is lost at an inner position while the root can still end");
+// Exit preservation is not closed under duality: the dual of the pair
+// refines, because a receiver that never ends keeps no exit.
+static_assert(refines(dual(^^Exiting), dual(^^Again<Pick<Put<int, Back>>>)));
 
 // Transitivity on a chain of width steps.
 static_assert(refines(^^Pick<Done>, ^^Pick<Done, Done>) && refines(^^Pick<Done, Done>, ^^Pick<Done, Done, Done>)

@@ -2471,7 +2471,7 @@ fixy.subtype_sync,fr8,0+sort@0,"msg(0,1,nat,msg(0,1,bool,end))",wrong-type (the 
 fixy.subtype_sync,fr8,0-sort@0,"msg(0,1,nat,msg(0,1,bool,end))",wrong-type (the receiver has no branch for nat) after 0>1:nat,false,agree,,
 fixy.subtype_sync,fr8,1+end@0,"msg(0,1,nat,msg(0,1,bool,end))",deadlock (no send meets a receive) after 0>1:nat,false,agree,,
 fixy.subtype_sync,fr8,1-end@0,"msg(0,1,nat,msg(0,1,bool,end))",deadlock (no send meets a receive) after 0>1:nat,false,agree,,
-fixy.subtype_sync,fr9,0+drop@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",safe,true,agree,,
+fixy.subtype_sync,fr9,0+drop@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",safe,false,divergence,loses-exit,"ours stricter by design: T runs safely against the dual of U, but from a state of that run where U could still end, the run cannot end.  T removes an exit that U offers, and refinement keeps each exit of the supertype (fair subtyping, Padovani and Zavattaro, TOPLAS 2026)"
 fixy.subtype_sync,fr9,0-drop@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",wrong-type (the receiver has no branch for l1) after 0>1:l1,false,agree,,
 fixy.subtype_sync,fr9,1+add@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",wrong-type (the receiver has no branch for l2) after 0>1:l2,false,agree,,
 fixy.subtype_sync,fr9,1-add@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",safe,true,agree,,
@@ -2682,7 +2682,7 @@ fixy.subtype_sync,fr43,0-unfold,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bo
 fixy.subtype_sync,fr43,1+drop@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",safe,true,agree,,
 fixy.subtype_sync,fr43,1-drop@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",wrong-type (the receiver has no branch for l2) after 0>1:l2,false,agree,,
 fixy.subtype_sync,fr43,2+add@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",wrong-type (the receiver has no branch for l3) after 0>1:l3,false,agree,,
-fixy.subtype_sync,fr43,2-add@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",safe,true,agree,,
+fixy.subtype_sync,fr43,2-add@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",safe,false,divergence,loses-exit,"ours stricter by design: T runs safely against the dual of U, but from a state of that run where U could still end, the run cannot end.  T removes an exit that U offers, and refinement keeps each exit of the supertype (fair subtyping, Padovani and Zavattaro, TOPLAS 2026)"
 fixy.subtype_sync,fr43,3+sort@1,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",wrong-type (the receiver has no branch for bool) after 0>1:l0 0>1:bool,false,agree,,
 fixy.subtype_sync,fr43,3-sort@1,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",wrong-type (the receiver has no branch for nat) after 0>1:l0 0>1:nat,false,agree,,
 fixy.subtype_sync,fr44,0+drop@0,"branch(0,1,[msg(1,0,nat,msg(0,1,bool,end)),branch(0,1,[msg(0,1,nat,end),msg(1,0,nat,end),msg(0,1,bool,end)])])",safe,true,agree,,
@@ -2985,7 +2985,7 @@ fixy.subtype_async,fr8,0+sort@0,"msg(0,1,nat,msg(0,1,bool,end))",wrong-type (rol
 fixy.subtype_async,fr8,0-sort@0,"msg(0,1,nat,msg(0,1,bool,end))",wrong-type (role 1 expects bool and takes nat) after 0>1:nat 1<0:nat,false,agree,,
 fixy.subtype_async,fr8,1+end@0,"msg(0,1,nat,msg(0,1,bool,end))",deadlock (waiting: 1) after 0>1:nat 1<0:nat,false,agree,,
 fixy.subtype_async,fr8,1-end@0,"msg(0,1,nat,msg(0,1,bool,end))",orphan (1 message(s) never received) after 0>1:nat 0>1:bool 1<0:nat,false,agree,,
-fixy.subtype_async,fr9,0+drop@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",safe,true,agree,,
+fixy.subtype_async,fr9,0+drop@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",safe,false,divergence,loses-exit,"ours stricter by design: T runs safely against the dual of U, but from a state of that run where U could still end, the run cannot end.  T removes an exit that U offers, and refinement keeps each exit of the supertype (fair subtyping, Padovani and Zavattaro, TOPLAS 2026)"
 fixy.subtype_async,fr9,0-drop@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",wrong-type (role 1 offers {l0} and takes l1) after 0>1:l1 1<0:l1,false,agree,,
 fixy.subtype_async,fr9,1+add@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])","wrong-type (role 1 offers {l0,l1} and takes l2) after 0>1:l2 1<0:l2",false,agree,,
 fixy.subtype_async,fr9,1-add@0,"branch(0,1,[rec(msg(1,0,nat,var)),branch(1,0,[rec(msg(1,0,bool,end)),branch(1,0,[msg(1,0,bool,end),msg(0,1,bool,end)])])])",safe,true,agree,,
@@ -3196,7 +3196,7 @@ fixy.subtype_async,fr43,0-unfold,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,b
 fixy.subtype_async,fr43,1+drop@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",safe,true,agree,,
 fixy.subtype_async,fr43,1-drop@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))","wrong-type (role 1 offers {l0,l1} and takes l2) after 0>1:l2 1<0:l2",false,agree,,
 fixy.subtype_async,fr43,2+add@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))","wrong-type (role 1 offers {l0,l1,l2} and takes l3) after 0>1:l3 1<0:l3",false,agree,,
-fixy.subtype_async,fr43,2-add@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",safe,true,agree,,
+fixy.subtype_async,fr43,2-add@0,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",safe,false,divergence,loses-exit,"ours stricter by design: T runs safely against the dual of U, but from a state of that run where U could still end, the run cannot end.  T removes an exit that U offers, and refinement keeps each exit of the supertype (fair subtyping, Padovani and Zavattaro, TOPLAS 2026)"
 fixy.subtype_async,fr43,3+sort@1,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",wrong-type (role 1 expects nat and takes bool) after 0>1:l0 0>1:bool 1<0:l0 1<0:bool,false,agree,,
 fixy.subtype_async,fr43,3-sort@1,"rec(branch(0,1,[msg(0,1,nat,var),var,msg(0,1,bool,var)]))",wrong-type (role 1 expects bool and takes nat) after 0>1:l0 0>1:nat 1<0:l0 1<0:nat,false,agree,,
 fixy.subtype_async,fr44,0+drop@0,"branch(0,1,[msg(1,0,nat,msg(0,1,bool,end)),branch(0,1,[msg(0,1,nat,end),msg(1,0,nat,end),msg(0,1,bool,end)])])",safe,true,agree,,

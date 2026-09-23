@@ -44,10 +44,19 @@
 // and subtype_reason_t turns the verdict into a type.  No second walk
 // exists that could disagree with the first.
 //
-// The relation is closed under duality: when T refines U, the dual of U
-// refines the dual of T.  The payload variance flips with the shape,
-// the branch rule of Select mirrors the rule of Offer, and the vendor
-// value is invariant.
+// Exits.  The relation keeps each exit of the supertype: at each pair of
+// the walk where U can still end, the pair can still end (fair
+// subtyping, Padovani and Zavattaro, TOPLAS 2026).  A Select of the
+// subtype that drops the only exit of a loop is refused, with the reason
+// loses_termination.  A stream refines a stream, because the supertype
+// never ends either.
+//
+// The relation up to exits is closed under duality: when T refines U,
+// the dual of U refines the dual of T.  The payload variance flips with
+// the shape, the branch rule of Select mirrors the rule of Offer, and
+// the vendor value is invariant.  Exit preservation is not closed under
+// duality, so CompatibleClient and CompatibleServer below ask for
+// refinement in both directions.
 //
 // ── The asynchronous relation ─────────────────────────────────────────
 //
@@ -72,7 +81,9 @@
 // (PPoPP 2022, section 3.2, rules oi, oo, ii, io, sub, asm, μL and μR),
 // for one peer.  With one peer, an output of the subtype can move ahead
 // of inputs, and nothing else can move.  The transitivity rule is not
-// used, which keeps the check sound and makes it less complete.
+// used, which keeps the check sound and makes it less complete.  The
+// check keeps the exits of the supertype on the derivation that it
+// proves, as the synchronous relation does on its product.
 //
 // The capacity of the channel bounds two things:
 //
@@ -397,6 +408,8 @@ struct reason_of {
             return "Subtype_IllFormed";
         case mismatch::missing_non_label_branch:
             return "Subtype_MissingNonLabelBranch";
+        case mismatch::loses_termination:
+            return "Subtype_LosesTermination";
         default:
             break;
     }
@@ -468,11 +481,21 @@ consteval bool chain_holds() {
 template <typename... Ts>
 inline constexpr bool subtype_chain_v = detail::subtype::chain_holds<Ts...>();
 
+// A client and a server are compatible when each refines the dual of the
+// other.  Refinement keeps the exits of the supertype, and that condition
+// is not closed under duality: a loop that never picks its exit does not
+// refine the loop that can, but the dual of the second refines the dual
+// of the first, because a receiver that never ends keeps no exit.  One
+// direction alone would let a check from one side admit a pair that the
+// check from the other side refuses.  Both directions make compatibility
+// one symmetric relation, so CompatibleClient<C, S> and
+// CompatibleServer<S, C> always agree.
 template <typename ClientProto, typename ServerProto>
-concept CompatibleClient = is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>;
+concept CompatibleClient = is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>
+                           && is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
 
 template <typename ServerProto, typename ClientProto>
-concept CompatibleServer = is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
+concept CompatibleServer = CompatibleClient<ClientProto, ServerProto>;
 
 template <typename Sub, typename Super>
 consteval void assert_subtype_sync() noexcept {
@@ -489,16 +512,22 @@ consteval void assert_equivalent_sync() noexcept {
 
 template <typename ClientProto, typename ServerProto>
 consteval void assert_compatible_client() noexcept {
-    static_assert(CompatibleClient<ClientProto, ServerProto>,
+    static_assert(is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>,
                   detail::subtype::refusal_message<ClientProto, dual_of_t<ServerProto>>(
                       "assert_compatible_client: the client must refine the dual of the server"));
+    static_assert(is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>,
+                  detail::subtype::refusal_message<ServerProto, dual_of_t<ClientProto>>(
+                      "assert_compatible_client: the server must refine the dual of the client"));
 }
 
 template <typename ServerProto, typename ClientProto>
 consteval void assert_compatible_server() noexcept {
-    static_assert(CompatibleServer<ServerProto, ClientProto>,
+    static_assert(is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>,
                   detail::subtype::refusal_message<ServerProto, dual_of_t<ClientProto>>(
                       "assert_compatible_server: the server must refine the dual of the client"));
+    static_assert(is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>,
+                  detail::subtype::refusal_message<ClientProto, dual_of_t<ServerProto>>(
+                      "assert_compatible_server: the client must refine the dual of the server"));
 }
 
 // The older protocol comes first, which reads as the version ladder.
@@ -535,6 +564,27 @@ struct assumption {
     std::vector<action> super_prefix{};
     std::size_t super_node = ::foundation::algebra::transition::npos;
     std::size_t rho_length = 0;
+    std::size_t config = ::foundation::algebra::transition::npos;
+};
+
+// The derivation of a proof, as a graph.  Each call of prove that holds
+// is a configuration: the node of the supertype it stands at, and true
+// when rule end closes it.  An edge leads from a configuration to each
+// configuration that its rule proves, and rule asm leads back to the
+// assumption it uses.  A path to a configuration that rule end closes is
+// a run in which the subtype and the peer of the supertype both end.
+struct derivation {
+    std::vector<std::size_t> super_node{};
+    std::vector<std::uint8_t> is_end{};
+    std::vector<std::size_t> edge_from{};
+    std::vector<std::size_t> edge_to{};
+};
+
+// The length of a derivation, so that a failed attempt can drop what it
+// recorded.
+struct derivation_mark {
+    std::size_t configs = 0;
+    std::size_t edges = 0;
 };
 
 // The fuel of one direction of the search.  Each step spends units in
@@ -558,7 +608,29 @@ struct search {
     std::size_t fuel = search_fuel;
     std::vector<action> rho{};
     std::vector<assumption> sigma{};
+    derivation proof{};
 };
+
+// The current length of the derivation.
+[[nodiscard]] consteval derivation_mark mark_of(const search& state) {
+    return {state.proof.super_node.size(), state.proof.edge_from.size()};
+}
+
+// Drops what a failed attempt recorded after `mark`.
+consteval void drop_after(search& state, derivation_mark mark) {
+    state.proof.super_node.resize(mark.configs);
+    state.proof.is_end.resize(mark.configs);
+    state.proof.edge_from.resize(mark.edges);
+    state.proof.edge_to.resize(mark.edges);
+}
+
+// Records the edge from one configuration to another.  A configuration
+// with no parent is the root, and no edge leads to it.
+consteval void add_edge(search& state, std::size_t from, std::size_t to) {
+    if (from == ::foundation::algebra::transition::npos) return;
+    state.proof.edge_from.push_back(from);
+    state.proof.edge_to.push_back(to);
+}
 
 // Spends `units` of fuel.  False when the fuel does not cover them, and
 // then the fuel is empty and every later step fails too.
@@ -683,11 +755,12 @@ consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, s
 }
 
 consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t sub_index, std::size_t sub_bound,
-                     std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound);
+                     std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound,
+                     std::size_t parent);
 
 consteval bool exchange(search& state, const std::vector<action>& sub_prefix, std::size_t sub_index,
                         std::size_t sub_bound, const std::vector<action>& super_prefix, std::size_t super_index,
-                        std::size_t super_bound) {
+                        std::size_t super_bound, std::size_t here) {
     const std::vector<move> own = moves_of(state.sub, sub_index);
     const std::vector<move> other = moves_of(state.super, super_index);
     const auto attempt = [&](const move& mine, const move& theirs) {
@@ -698,9 +771,11 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
         next_super.push_back(theirs.act);
         reduce(state.axioms, next_sub, next_super);
         if (!fits(state.capacity, next_sub, next_super)) return false;
+        const derivation_mark mark = mark_of(state);
         state.rho.push_back(mine.act);
-        const bool holds = prove(state, next_sub, mine.next, sub_bound, next_super, theirs.next, super_bound);
+        const bool holds = prove(state, next_sub, mine.next, sub_bound, next_super, theirs.next, super_bound, here);
         state.rho.pop_back();
+        if (!holds) drop_after(state, mark);
         return holds;
     };
     const bool sub_sends = state.sub.nodes[sub_index].entry.direction
@@ -758,7 +833,8 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
 }
 
 consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t sub_index, std::size_t sub_bound,
-                     std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound) {
+                     std::vector<action> super_prefix, std::size_t super_index, std::size_t super_bound,
+                     std::size_t parent) {
     using ::foundation::algebra::transition::shape_kind;
     const std::size_t prefix_length = sub_prefix.size() + super_prefix.size();
     if (!spend(state, 1 + prefix_length + state.rho.size() + state.sigma.size() * (1 + prefix_length))) return false;
@@ -771,35 +847,50 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
     const ::foundation::algebra::transition::graph_node& own = state.sub.nodes[sub_index];
     const ::foundation::algebra::transition::graph_node& other = state.super.nodes[super_index];
     if (own.entry.kind == shape_kind::wrapper || other.entry.kind == shape_kind::wrapper) return false;
+    // This call is a configuration of the derivation.  A caller whose
+    // attempt fails drops it again.
+    const std::size_t here = state.proof.super_node.size();
+    state.proof.super_node.push_back(super_index);
+    state.proof.is_end.push_back(0);
+    add_edge(state, parent, here);
     // Rule end.
     if (sub_prefix.empty() && super_prefix.empty() && own.entry.kind == shape_kind::terminal
         && other.entry.kind == shape_kind::terminal) {
-        return own.entry.shape == other.entry.shape;
+        if (own.entry.shape != other.entry.shape) return false;
+        state.proof.is_end[here] = 1;
+        return true;
     }
     // Rule asm.
     for (const assumption& earlier : state.sigma) {
         if (earlier.sub_node == sub_index && earlier.super_node == super_index
             && same_prefix(earlier.sub_prefix, sub_prefix) && same_prefix(earlier.super_prefix, super_prefix)
             && covers(state.rho, earlier.rho_length, super_prefix)) {
+            add_edge(state, here, earlier.config);
             return true;
         }
     }
     // Rules oi, oo, ii and io.
     if (is_action_node(own) && is_action_node(other)) {
-        return exchange(state, sub_prefix, sub_index, sub_bound, super_prefix, super_index, super_bound);
+        return exchange(state, sub_prefix, sub_index, sub_bound, super_prefix, super_index, super_bound, here);
     }
     // Rules μL and μR.
     if (own.entry.kind == shape_kind::binder && sub_bound > 0) {
-        state.sigma.push_back(assumption{sub_prefix, sub_index, super_prefix, super_index, state.rho.size()});
-        const bool holds = prove(state, sub_prefix, own.next, sub_bound - 1, super_prefix, super_index, super_bound);
+        const derivation_mark mark = mark_of(state);
+        state.sigma.push_back(assumption{sub_prefix, sub_index, super_prefix, super_index, state.rho.size(), here});
+        const bool holds =
+            prove(state, sub_prefix, own.next, sub_bound - 1, super_prefix, super_index, super_bound, here);
         state.sigma.pop_back();
         if (holds) return true;
+        drop_after(state, mark);
     }
     if (other.entry.kind == shape_kind::binder && super_bound > 0) {
-        state.sigma.push_back(assumption{sub_prefix, sub_index, super_prefix, super_index, state.rho.size()});
-        const bool holds = prove(state, sub_prefix, sub_index, sub_bound, super_prefix, other.next, super_bound - 1);
+        const derivation_mark mark = mark_of(state);
+        state.sigma.push_back(assumption{sub_prefix, sub_index, super_prefix, super_index, state.rho.size(), here});
+        const bool holds =
+            prove(state, sub_prefix, sub_index, sub_bound, super_prefix, other.next, super_bound - 1, here);
         state.sigma.pop_back();
         if (holds) return true;
+        drop_after(state, mark);
     }
     return false;
 }
@@ -819,9 +910,38 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
     return false;
 }
 
+// Exit preservation over a derivation.  A configuration can end when a
+// path of the derivation reaches a configuration that rule end closes.
+// Each configuration whose node of the supertype can end, as a node of
+// the graph of the supertype, must be able to end.  So the subtype never
+// removes an exit that the supertype offers where the derivation stands.
+// This is the condition of the synchronous relation (refines in
+// foundation/algebra/Transition.h), read on the derivation in place of
+// the product.  Complexity: O(C·E) at worst for C configurations and E
+// edges, one pass per level of loop-back.
+[[nodiscard]] consteval bool keeps_exits(const search& state) {
+    const derivation& proof = state.proof;
+    std::vector<std::uint8_t> can_end = proof.is_end;
+    for (bool is_changed = true; is_changed;) {
+        is_changed = false;
+        for (std::size_t edge = proof.edge_from.size(); edge-- > 0;) {
+            if (can_end[proof.edge_from[edge]] != 0 || can_end[proof.edge_to[edge]] == 0) continue;
+            can_end[proof.edge_from[edge]] = 1;
+            is_changed = true;
+        }
+    }
+    for (std::size_t config = 0; config < proof.super_node.size(); ++config) {
+        if (state.super.nodes[proof.super_node[config]].can_end && can_end[config] == 0) return false;
+    }
+    return true;
+}
+
 // The bounded check in one direction.  Top-level wrappers must agree,
-// shape and value, and are then passed.
-template <typename Sub, typename Super, std::size_t Capacity>
+// shape and value, and are then passed.  `ChecksExits` adds exit
+// preservation.  The check of the dual direction runs without it: exit
+// preservation asks the subtype to keep the exits of the supertype, and
+// in the dual direction the roles of the two are swapped.
+template <typename Sub, typename Super, std::size_t Capacity, bool ChecksExits>
 consteval bool bounded() {
     subtype::require_registered_spine<Sub>();
     subtype::require_registered_spine<Super>();
@@ -844,13 +964,16 @@ consteval bool bounded() {
     if (is_outside_the_check(state.sub, sub_top) || is_outside_the_check(state.super, super_top)) {
         return false;
     }
-    return prove(state, {}, sub_top, Capacity + 1, {}, super_top, Capacity + 1);
+    if (!prove(state, {}, sub_top, Capacity + 1, {}, super_top, Capacity + 1, ::foundation::algebra::transition::npos)) {
+        return false;
+    }
+    return !ChecksExits || keeps_exits(state);
 }
 
 // One direction of the bounded check, as its own constant evaluation,
 // so each direction has the full operation budget of the build.
-template <typename Sub, typename Super, std::size_t Capacity>
-inline constexpr bool bounded_v = bounded<Sub, Super, Capacity>();
+template <typename Sub, typename Super, std::size_t Capacity, bool ChecksExits>
+inline constexpr bool bounded_v = bounded<Sub, Super, Capacity, ChecksExits>();
 
 // The synchronous relation first, then each direction of the bounded
 // check only when the step before it did not decide.  Each call of a
@@ -861,10 +984,10 @@ template <typename Sub, typename Super, std::size_t Capacity>
 consteval bool holds() {
     if constexpr (is_subtype_sync_v<Sub, Super>) {
         return true;
-    } else if constexpr (!bounded_v<Sub, Super, Capacity>) {
+    } else if constexpr (!bounded_v<Sub, Super, Capacity, true>) {
         return false;
     } else {
-        return bounded_v<dual_of_t<Super>, dual_of_t<Sub>, Capacity>;
+        return bounded_v<dual_of_t<Super>, dual_of_t<Sub>, Capacity, false>;
     }
 }
 
@@ -906,8 +1029,9 @@ consteval void assert_subtype_async() noexcept {
                   "Channel>: the bounded check did not prove that Sub refines Super on a channel with the "
                   "capacity that Channel states.  The check refuses a pair it cannot prove.  Usual causes: "
                   "the subtype sends more messages ahead than the capacity holds, the subtype moves an input "
-                  "ahead of an output, a message is left in a buffer at the end, or the loops need more "
-                  "unfolds than the capacity plus one.");
+                  "ahead of an output, a message is left in a buffer at the end, the loops need more "
+                  "unfolds than the capacity plus one, or the subtype removes an exit that the supertype "
+                  "offers, so a run that could end cannot.");
 }
 
 }  // namespace fixy::session

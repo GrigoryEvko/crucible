@@ -39,6 +39,7 @@ namespace {
 
 struct A {};
 struct B {};
+struct C {};
 struct Alice {};
 struct Bob {};
 
@@ -316,7 +317,8 @@ static_assert(s::equivalent_sync_v<Loop<Loop<Send<int, Continue>>>, Loop<Send<in
 // A Continue inside a branch.
 using Exit = Loop<Select<Send<int, Continue>, End>>;
 static_assert(s::equivalent_sync_v<Exit, Select<Send<int, Exit>, End>>, "one unfold of the loop");
-static_assert(s::is_subtype_sync_v<Loop<Select<Send<int, Continue>>>, Exit>);
+static_assert(s::subtype_mismatch_v<Loop<Select<Send<int, Continue>>>, Exit> == tr::mismatch::loses_termination,
+              "a narrower Select that drops the only exit of the loop removes the exit");
 
 // A loop against the same loop unfolded three times.
 static_assert(s::equivalent_sync_v<Loop<Send<A, Send<A, Send<A, Continue>>>>, Loop<Send<A, Continue>>>);
@@ -722,22 +724,59 @@ static_assert(!s::is_subtype_async_v<HardSub, HardSuper, ring<3>> && !s::is_subt
 // ── The known-limitation ledger ──────────────────────────────────────
 //
 // Each entry is an attack that succeeds, with the condition it breaks.
-// The pin after each entry asserts that the attack still succeeds, so a
-// repair fails the pin, and the entry and its pin go together.
+// A pin after each entry asserts that the attack still succeeds, so a
+// repair fails the pin, and the entry and its pin go together.  The
+// ledger is empty: each attack that it held now fails, and the notes
+// below show where.
 
 struct limitation {
     std::string_view attack;
     std::string_view breaks;
 };
 
-inline constexpr limitation known_limitations[] = {
-    {"composition with a Continue suffix turns every End of a loop into a loop-back; the result is "
-     "well-formed and can never end",
-     "fair termination (Padovani and Zavattaro, TOPLAS 2026): no relation here preserves it"},
-    {"subtyping removes the only exit branch of a loop: a loop that never ends refines a loop that can end",
-     "fair subtyping (Padovani and Zavattaro, TOPLAS 2026), which refuses a subtype that loses termination"},
-};
-static_assert(std::size(known_limitations) == 2, "the ledger only shrinks: lower this count when an entry goes");
+inline constexpr std::array<limitation, 0> known_limitations{};
+static_assert(known_limitations.empty(), "the ledger only shrinks: an attack that succeeds again needs an entry");
+
+// Composition with a bare Continue was an entry here: it turned each End
+// of a loop into a loop-back, and the result could never end.  That is
+// the capture of a free Continue by a Loop of the prefix, and compose_t
+// and compose_at_branch_t refuse it (the fixtures
+// neg_sess_compose_captures_continue, neg_sess_compose_captures_under_nested_loop
+// and neg_sess_compose_at_branch_captures_continue).  A closed suffix
+// composes, and the exit of the loop stays an exit.
+using WithExit = Loop<Select<Send<A, Continue>, End>>;
+static_assert(std::is_same_v<s::compose_t<WithExit, Send<B, End>>, Loop<Select<Send<A, Continue>, Send<B, End>>>>);
+static_assert(std::is_same_v<s::compose_at_branch_t<WithExit, 1, Loop<Send<B, Continue>>>,
+                             Loop<Select<Send<A, Continue>, Loop<Send<B, Continue>>>>>);
+static_assert(std::is_same_v<s::compose_t<Send<A, End>, Continue>, Send<A, Continue>>,
+              "with no Loop above the End, the Continue stays free, and the Loop around the result binds it");
+
+// Subtyping that removed the only exit of a loop was an entry here.  The
+// synchronous relation now keeps each exit that the supertype offers
+// (fair subtyping, Padovani and Zavattaro, TOPLAS 2026), and the
+// asynchronous relation reads the same condition on its derivation.  A
+// stream still refines a stream, because the supertype never ends.
+using ExitingLoop = Loop<Select<Send<A, Continue>, Send<B, End>>>;
+using EndlessLoop = Loop<Select<Send<A, Continue>>>;
+static_assert(s::subtype_mismatch_v<EndlessLoop, ExitingLoop> == tr::mismatch::loses_termination);
+static_assert(!s::is_subtype_async_v<EndlessLoop, ExitingLoop, ring<4>>);
+static_assert(s::is_subtype_sync_v<EndlessLoop, Loop<Select<Send<A, Continue>, Send<B, Continue>>>>);
+
+// The same loss behind an anticipation, which only the asynchronous
+// relation admits: the subtype sends before it receives and never picks
+// the exit.  The version that keeps the exit still holds.
+using PatientLoop = Loop<Recv<B, Select<Send<A, Continue>, Send<C, End>>>>;
+using EagerEndless = Loop<Select<Send<A, Recv<B, Continue>>>>;
+using EagerExiting = Loop<Select<Send<A, Recv<B, Continue>>, Send<C, Recv<B, End>>>>;
+static_assert(!s::is_subtype_async_v<EagerEndless, PatientLoop, ring<2>>);
+static_assert(s::is_subtype_async_v<EagerExiting, PatientLoop, ring<2>> && !s::is_subtype_sync_v<EagerExiting, PatientLoop>);
+
+// The loss at an inner position, while the root can still end.
+using Stream = Loop<Send<C, Continue>>;
+using TwoExits = Select<Send<A, End>, Send<B, Select<Send<A, Stream>, Send<C, End>>>>;
+using InnerLoss = Select<Send<A, End>, Send<B, Select<Send<A, Stream>>>>;
+static_assert(s::subtype_mismatch_v<InnerLoss, TwoExits> == tr::mismatch::loses_termination);
+static_assert(!s::is_subtype_async_v<InnerLoss, TwoExits, ring<2>>);
 
 // The Sender note under duality was an entry here: the dual of a noted
 // Offer dropped the note, so a server that spoke Select was compatible,
@@ -780,14 +819,6 @@ static_assert(s::is_subtype_sync_v<Send<Narrow, End>, Send<Middle, End>>
 static_assert(!s::is_subtype_sync_v<Send<Wide, End>, Send<Narrow, End>>
               && s::is_subtype_sync_v<Recv<Wide, End>, Recv<Narrow, End>>
               && !s::is_subtype_sync_v<Recv<Narrow, End>, Recv<Wide, End>>);
-
-// Pin 3: composition with Continue removes every End.
-using WithExit = Loop<Select<Send<A, Continue>, End>>;
-using NoExit = s::compose_t<WithExit, Continue>;
-static_assert(std::is_same_v<NoExit, Loop<Select<Send<A, Continue>, Continue>>> && s::is_well_formed_v<NoExit>);
-
-// Pin 4: the exit is lost under subtyping.
-static_assert(s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select<Send<A, Continue>, Send<B, End>>>>);
 
 }  // namespace
 
