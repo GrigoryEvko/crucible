@@ -12,6 +12,7 @@
 // specialize is visible.  Each lattice header therefore declares the primary
 // template it specializes inline.
 
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
@@ -45,6 +46,9 @@ struct ProductLattice<L1, L2> {
     using second_lattice = L2;
 
     static constexpr std::size_t arity = 2;
+
+    // The orientation the two components share (ClaimOrientation.h).
+    static constexpr ClaimOrientation claim_orientation = product_orientation<L1, L2>();
 
     template <std::size_t I>
         requires(I < 2)
@@ -154,6 +158,9 @@ struct ProductLattice<Ls...> {
     static_assert((Lattice<Ls> && ...), "ProductLattice<Ls...>: every L_i must satisfy the Lattice concept.");
 
     static constexpr std::size_t arity = sizeof...(Ls);
+
+    // The orientation the components share (ClaimOrientation.h).
+    static constexpr ClaimOrientation claim_orientation = product_orientation<Ls...>();
 
     using element_type = detail::ProductElementImpl<std::make_index_sequence<sizeof...(Ls)>, Ls...>;
 

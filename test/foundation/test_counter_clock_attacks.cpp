@@ -301,30 +301,58 @@ void attack_clock_against_the_causal_order() {
 // the two apart.
 struct forged_epoch_name {
     static constexpr std::string_view lattice_name = "EpochLattice";
+    static constexpr fa::ClaimOrientation claim_orientation = fa::ClaimOrientation::stronger_is_higher;
 };
 using ForgedEpochLattice = fl::StrongCounterLattice<forged_epoch_name>;
 static_assert(ForgedEpochLattice::name() == fl::EpochLattice::name(), "the forged tag does report the same name");
 
-constexpr std::array<std::uint64_t, 16> kIdentities = {
-    fd::row_hash_contribution_v<OnAxis<fl::EpochLattice>>,
-    fd::row_hash_contribution_v<OnAxis<fl::GenerationLattice>>,
+template <typename L>
+using Dual = fl::DualLattice<L>;
+
+// Graded refuses a version counter in its numeric order, so the version
+// axes enter through their duals.  A use counter enters as it is.
+constexpr std::array<std::uint64_t, 13> kIdentities = {
+    fd::row_hash_contribution_v<OnAxis<Dual<fl::EpochLattice>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<fl::GenerationLattice>>>,
     fd::row_hash_contribution_v<OnAxis<fl::PeakBytesLattice>>,
     fd::row_hash_contribution_v<OnAxis<fl::BitsBudgetLattice>>,
-    fd::row_hash_contribution_v<OnAxis<fl::DualLattice<fl::EpochLattice>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::DualLattice<fl::GenerationLattice>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::DualLattice<fl::PeakBytesLattice>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::DualLattice<fl::BitsBudgetLattice>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::DualLattice<fl::DualLattice<fl::EpochLattice>>>>,
-    fd::row_hash_contribution_v<OnAxis<ForgedEpochLattice>>,
-    fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<fl::EpochLattice, fl::GenerationLattice>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<fl::GenerationLattice, fl::EpochLattice>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<Dual<Dual<fl::EpochLattice>>>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<Dual<fl::PeakBytesLattice>>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<ForgedEpochLattice>>>,
+    fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<Dual<fl::EpochLattice>, Dual<fl::GenerationLattice>>>>,
+    fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<Dual<fl::GenerationLattice>, Dual<fl::EpochLattice>>>>,
     fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<fl::BitsBudgetLattice, fl::PeakBytesLattice>>>,
     fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, ReplayClock>>>,
     fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, KernelClock>>>,
     fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<5, ReplayClock>>>,
 };
 
-[[nodiscard]] consteval bool all_distinct_and_nonzero(std::array<std::uint64_t, 16> const& values) {
+// ── The orientation Graded reads ────────────────────────────────────
+
+template <typename L>
+concept can_grade = requires { typename OnAxis<L>; };
+
+// A version counter in its numeric order is refused wherever it appears:
+// alone, under a double dual, inside a product, or in a product beside a
+// dual.  Its dual, and a use counter, are accepted.  The positive cases
+// prove the detector can answer yes.
+static_assert(!can_grade<fl::EpochLattice> && !can_grade<fl::GenerationLattice>);
+static_assert(!can_grade<Dual<Dual<fl::EpochLattice>>>);
+static_assert(!can_grade<fl::ProductLattice<fl::EpochLattice, fl::GenerationLattice>>);
+static_assert(!can_grade<fl::ProductLattice<Dual<fl::EpochLattice>, fl::GenerationLattice>>);
+static_assert(!can_grade<ForgedEpochLattice>);
+static_assert(can_grade<Dual<fl::EpochLattice>> && can_grade<fl::PeakBytesLattice>);
+
+// The dual of a use counter reads up as the stronger claim, fewer bytes
+// than were used, so it is refused too.
+static_assert(!can_grade<Dual<fl::PeakBytesLattice>> && !can_grade<Dual<fl::BitsBudgetLattice>>);
+
+// A clock states no orientation.  It can bound the history a value saw
+// from above or from below, and the wrapper that grades by it chooses.
+static_assert(fa::claim_orientation_v<fl::HappensBeforeLattice<4>> == fa::ClaimOrientation::unstated);
+static_assert(can_grade<fl::HappensBeforeLattice<4>> && can_grade<Dual<fl::HappensBeforeLattice<4>>>);
+
+[[nodiscard]] consteval bool all_distinct_and_nonzero(std::array<std::uint64_t, 13> const& values) {
     for (std::size_t i = 0; i < values.size(); ++i) {
         if (values[i] == 0 || values[i] == kMax) return false;
         for (std::size_t j = i + 1; j < values.size(); ++j) {
@@ -334,15 +362,15 @@ constexpr std::array<std::uint64_t, 16> kIdentities = {
     return true;
 }
 static_assert(all_distinct_and_nonzero(kIdentities),
-              "two counter axes, a counter and its dual, a double dual and its source, a forged name, a swapped "
-              "product, or two clocks share one row-hash slot");
+              "two counter axes, a counter and a double dual of it, a forged name, a swapped product, or two clocks "
+              "share one row-hash slot");
 
 // The payload is part of the fold only when it carries a row, so a bare
 // payload of another type folds to the same slot.  This is the fold's
 // stated design: the payload's identity belongs to the content half of
 // the cache key.
-static_assert(fd::row_hash_contribution_v<OnAxis<fl::EpochLattice>>
-              == fd::row_hash_contribution_v<fa::Graded<fa::ModalityKind::Absolute, fl::EpochLattice, double>>);
+static_assert(fd::row_hash_contribution_v<OnAxis<fl::PeakBytesLattice>>
+              == fd::row_hash_contribution_v<fa::Graded<fa::ModalityKind::Absolute, fl::PeakBytesLattice, double>>);
 
 // ── The ledger ───────────────────────────────────────────────────────
 //
@@ -366,12 +394,8 @@ inline constexpr KnownLimit kLedger[] = {
     {"a count or a clock from integers claims any history",
      "The order sees values and not events. Epoch{older} after Epoch{newer}, or a clock with every slot at the top, "
      "is a legal construction. Forward progress belongs to the code that advances the value."},
-    {"Graded over a version counter in its numeric order",
-     "Graded<Absolute, EpochLattice, T>::weaken raises the epoch, because Graded reads up as the weaker claim and "
-     "a newer epoch is the stronger one. A value graded by its version must use DualLattice, as fixy/EpochVersioned.h "
-     "does. Graded cannot know which orientation a lattice means."},
 };
-static_assert(std::size(kLedger) <= 4, "the ledger only shrinks");
+static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
 
 void reproduce_the_ledger() {
     std::uint64_t const s = g_seed;
@@ -389,20 +413,22 @@ void reproduce_the_ledger() {
     using HB = fl::HappensBeforeLattice<2>;
     HB::element_type const forged{{kMax, kMax}};
     expect(HB::leq(fl::make_clock<HB>(s, s), forged), "ledger: a clock from integers still claims any history");
+}
 
-    using NumericVersion = fa::Graded<fa::ModalityKind::Absolute, fl::EpochLattice, int>;
-    NumericVersion const stale{1, fl::Epoch{s}};
-    NumericVersion const marked_fresh = stale.weaken(fl::Epoch{s + 9});
-    expect(marked_fresh.grade() == fl::Epoch{s + 9} && marked_fresh.peek() == 1,
-           "ledger: Graded over the numeric epoch order still lets weaken raise the epoch");
-
-    // The dual closes that case on the same substrate: weaken moves to an
-    // older epoch only.
-    using DualVersion = fa::Graded<fa::ModalityKind::Absolute, fl::DualLattice<fl::EpochLattice>, int>;
+// Graded over a version counter in its numeric order does not compile, so
+// no weaken() can raise an epoch.  The dual is the one that compiles, and
+// on it weaken() and compose() move toward the older epoch only.  Operands
+// come from run time, so a body that only folds in a constant expression
+// cannot pass.
+void attack_graded_version_orientation() {
+    std::uint64_t const s = g_seed;
+    using DualVersion = fa::Graded<fa::ModalityKind::Absolute, Dual<fl::EpochLattice>, int>;
     DualVersion const current{1, fl::Epoch{s + 9}};
     expect(current.weaken(fl::Epoch{s}).grade() == fl::Epoch{s}, "the dual weakens toward the older epoch");
     expect(DualVersion{2, fl::Epoch{s}}.compose(current).grade() == fl::Epoch{s},
            "the dual composes to the older epoch");
+    expect(!Dual<fl::EpochLattice>::leq(fl::Epoch{s}, fl::Epoch{s + 9}),
+           "an older epoch is not below a newer one in the dual, so no weaken reaches the newer");
 }
 
 }  // namespace
@@ -415,6 +441,7 @@ int main() {
     attack_clock_single_slot();
     attack_clock_equal_and_concurrent();
     attack_clock_against_the_causal_order();
+    attack_graded_version_orientation();
     reproduce_the_ledger();
     for (std::uint64_t const identity : kIdentities) expect(identity != 0, "an identity reached run time as zero");
 

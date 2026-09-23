@@ -40,13 +40,18 @@
 // use counter (peak bytes, bits) more use is the weaker claim, so these
 // lattices grade a value correctly.  For a version counter (epoch,
 // generation) the newer version is the stronger claim, so a Graded over
-// the numeric order would let weaken() mark an old value as new.  A value
-// graded by its version uses the order dual instead, as
-// fixy/EpochVersioned.h does through DualLattice.h.
+// the numeric order would let weaken() mark an old value as new.
+//
+// Each tag states which of the two it is, and the concept below refuses
+// a tag that states neither, so a new axis cannot skip the question.
+// Graded reads the statement and refuses a version counter in its
+// numeric order at the template head.  A value graded by its version uses
+// the order dual, as fixy/EpochVersioned.h does through DualLattice.h.
 //
 // Old spellings: include/crucible/algebra/lattices/{_EpochLattice,
 // _GenerationLattice,_PeakBytesLattice,_BitsBudgetLattice}.h.
 
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/contracts/Pre.h>
@@ -61,15 +66,20 @@
 
 namespace foundation::algebra::lattices {
 
-// A tag names one axis.  It is empty, so it adds no storage, and it
-// publishes the name the lattice reports in a diagnostic.
+// A tag names one axis.  It is empty, so it adds no storage.  It
+// publishes the name the lattice reports in a diagnostic, and the claim
+// orientation of its count, which must be stated.
 template <typename Tag>
 concept CounterTag = std::is_empty_v<Tag> && requires {
     { Tag::lattice_name } -> std::convertible_to<std::string_view>;
-};
+    { Tag::claim_orientation } -> std::convertible_to<ClaimOrientation>;
+} && (Tag::claim_orientation != ClaimOrientation::unstated);
 
 template <CounterTag Tag>
 struct StrongCounterLattice {
+    // Graded reads this (ClaimOrientation.h).
+    static constexpr ClaimOrientation claim_orientation = Tag::claim_orientation;
+
     // Nested in the template, so each tag gives a distinct type.
     class element_type {
     public:
@@ -120,6 +130,7 @@ namespace counter_tags {
 // and the join of two views is the more recent.
 struct epoch {
     static constexpr std::string_view lattice_name = "EpochLattice";
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 };
 
 // The generation of one node: the restart counter that the node
@@ -128,6 +139,7 @@ struct epoch {
 // different things about the same value.
 struct generation {
     static constexpr std::string_view lattice_name = "GenerationLattice";
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 };
 
 // The peak byte count resident while a value is produced.  The order
@@ -139,6 +151,7 @@ struct generation {
 // the memory planner, not to this order.
 struct peak_bytes {
     static constexpr std::string_view lattice_name = "PeakBytesLattice";
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
 };
 
 // The count of bits transferred on the production path of a value.
@@ -148,6 +161,7 @@ struct peak_bytes {
 // because the numbers stay the same.
 struct bits_budget {
     static constexpr std::string_view lattice_name = "BitsBudgetLattice";
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
 };
 
 }  // namespace counter_tags
@@ -256,8 +270,24 @@ static_assert(BitsBudgetLattice::name() == "BitsBudgetLattice");
 struct EightByteValue {
     unsigned long long v{0};
 };
-static_assert(sizeof(Graded<ModalityKind::Absolute, EpochLattice, EightByteValue>) == 16);
+static_assert(sizeof(Graded<ModalityKind::Absolute, PeakBytesLattice, EightByteValue>) == 16);
 static_assert(sizeof(Graded<ModalityKind::Absolute, BitsBudgetLattice, EightByteValue>) == 16);
+
+// A use counter grades the Graded way.  A version counter in its numeric
+// order does not, and Graded refuses it.
+static_assert(GradableLattice<PeakBytesLattice> && GradableLattice<BitsBudgetLattice>);
+static_assert(!GradableLattice<EpochLattice> && !GradableLattice<GenerationLattice>);
+
+// A tag that states no orientation is not a counter tag.
+struct silent_tag {
+    static constexpr std::string_view lattice_name = "Silent";
+};
+struct unstated_tag {
+    static constexpr std::string_view lattice_name = "Unstated";
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::unstated;
+};
+static_assert(!CounterTag<silent_tag> && !CounterTag<unstated_tag>);
+static_assert(CounterTag<counter_tags::epoch> && CounterTag<counter_tags::bits_budget>);
 
 }  // namespace detail::strong_counter_lattice_self_test
 

@@ -154,6 +154,23 @@ foundation_neg_compile_test(neg_strong_counter_retag_by_construction
 foundation_neg_compile_test(neg_strong_counter_join_across_axes
   "cannot convert .element_type<foundation::algebra::lattices::counter_tags::generation>. to .element_type<foundation::algebra::lattices::counter_tags::epoch>."
   "initializing argument 2 of .static constexpr foundation::algebra::lattices::StrongCounterLattice<Tag>::element_type foundation::algebra::lattices::StrongCounterLattice<Tag>::join\\(")
+# Graded reads up as the weaker claim.  A version counter in its numeric
+# order, a product with one such component, and the dual of a use counter
+# each read up as the stronger claim, and Graded refuses each of them.
+foundation_neg_compile_test(neg_graded_version_counter_numeric_order
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
+  "satisfaction of .GradableLattice<L>. .with L = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>."
+  "\\(claim_orientation_v<L>\\) != foundation::algebra::ClaimOrientation::stronger_is_higher")
+foundation_neg_compile_test(neg_graded_version_counter_in_product
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
+  "satisfaction of .GradableLattice<L>. .with L = foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch> >, foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation> >.")
+foundation_neg_compile_test(neg_graded_use_counter_dual
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
+  "satisfaction of .GradableLattice<L>. .with L = foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::peak_bytes> >.")
+# A counter tag that does not state its claim orientation is refused.
+foundation_neg_compile_test(neg_counter_tag_without_orientation
+  "template constraint failure for .template<class Tag> +requires +CounterTag<Tag> struct foundation::algebra::lattices::StrongCounterLattice."
+  "the required expression .Tag::claim_orientation. is invalid")
 # A slot counts events, so a signed argument is refused.
 foundation_neg_compile_test(neg_happens_before_signed_slot
   "no matching function for call to .make_clock<HB>\\(int, int\\)."

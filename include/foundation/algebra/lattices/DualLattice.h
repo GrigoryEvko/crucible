@@ -21,7 +21,12 @@
 // The dual of the dual is the source order, but it is not the source
 // type, and the row-hash identity keeps them apart.  Nothing here folds
 // a double dual back, because no caller needs it.
+//
+// The dual turns the claim orientation of its source over, so Graded
+// accepts the dual of a lattice it refuses, and refuses the dual of a
+// lattice that reads the Graded way (ClaimOrientation.h).
 
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 
 #include <string_view>
@@ -32,6 +37,8 @@ template <Lattice L>
 struct DualLattice {
     using element_type = typename L::element_type;
     using source_lattice = L;
+
+    static constexpr ClaimOrientation claim_orientation = turned_over(claim_orientation_v<L>);
 
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return L::leq(b, a); }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {

@@ -75,7 +75,7 @@
 // different compiler. So the first line of the diff answers the question
 // the rest of it raises.
 //
-// A diff in the tag alone, with all forty-one payload lines unchanged,
+// A diff in the tag alone, with all forty payload lines unchanged,
 // means the toolchain moved and the fold did not. Recapture the golden
 // and say which toolchain in the commit message. Nothing is broken.
 //
@@ -157,10 +157,11 @@ using G11_Budgeted = ::fixy::Budgeted<int>;
 //
 // The four axes are one lattice template under four tags, so the tag is
 // the only input that separates them.  They must print four values.
+// Graded refuses a version counter in its numeric order, so the two
+// version axes enter through their order duals.
 template <typename L>
 using OnAxis = fa::Graded<fa::ModalityKind::Absolute, L, int>;
-using K01_OnEpoch = OnAxis<fl::EpochLattice>;
-using K02_OnGeneration = OnAxis<fl::GenerationLattice>;
+using K02_OnDualGeneration = OnAxis<fl::DualLattice<fl::GenerationLattice>>;
 using K03_OnPeakBytes = OnAxis<fl::PeakBytesLattice>;
 using K04_OnBitsBudget = OnAxis<fl::BitsBudgetLattice>;
 
@@ -246,7 +247,7 @@ struct LabeledEntry {
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 41> kEntries = {{
+inline constexpr std::array<LabeledEntry, 40> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -280,8 +281,7 @@ inline constexpr std::array<LabeledEntry, 41> kEntries = {{
     {"S05_CtCrypto", row_hash_contribution_v<S05_CtCrypto>},
     {"G10_EpochVersioned", row_hash_contribution_v<G10_EpochVersioned>},
     {"G11_Budgeted", row_hash_contribution_v<G11_Budgeted>},
-    {"K01_OnEpoch", row_hash_contribution_v<K01_OnEpoch>},
-    {"K02_OnGeneration", row_hash_contribution_v<K02_OnGeneration>},
+    {"K02_OnDualGeneration", row_hash_contribution_v<K02_OnDualGeneration>},
     {"K03_OnPeakBytes", row_hash_contribution_v<K03_OnPeakBytes>},
     {"K04_OnBitsBudget", row_hash_contribution_v<K04_OnBitsBudget>},
     {"K05_OnDualEpoch", row_hash_contribution_v<K05_OnDualEpoch>},
@@ -298,7 +298,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x398b036ee8547c85ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x9e94e057c7e9ad52ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -393,7 +393,7 @@ static_assert(no_reserved_values(), "an entry took a reserved row_hash value. Ze
 // these must never reach a cache entry filed under another.
 [[nodiscard]] consteval bool counters_and_clocks_are_distinct() noexcept {
     std::uint64_t const values[] = {
-        row_hash_contribution_v<K01_OnEpoch>,     row_hash_contribution_v<K02_OnGeneration>,
+        row_hash_contribution_v<K02_OnDualGeneration>,
         row_hash_contribution_v<K03_OnPeakBytes>, row_hash_contribution_v<K04_OnBitsBudget>,
         row_hash_contribution_v<K05_OnDualEpoch>,
         row_hash_contribution_v<H01_ClockOfFour>, row_hash_contribution_v<H02_ClockOfFourTagged>,
@@ -423,11 +423,11 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Forty-one entries carry thirty-six distinct values. Five entries repeat
+// Forty entries carry thirty-five distinct values. Five entries repeat
 // one that stands above them: R05 repeats R04, B02 and B07 and S01 each
 // repeat B01, and S05 repeats B03. Every one of those five has its own
 // assert above, with the property that makes the repeat correct.
-static_assert(distinct_value_count() == 36,
+static_assert(distinct_value_count() == 35,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "
               "claims that must not share a cache slot.");

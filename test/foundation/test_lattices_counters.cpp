@@ -8,6 +8,7 @@
 // the epoch would share a cache entry with one graded on the generation.
 
 #include <foundation/algebra/Graded.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
@@ -19,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <type_traits>
 
 namespace {
 
@@ -29,6 +31,14 @@ namespace fd = ::foundation::diag;
 template <typename L>
 using OnAxis = fa::Graded<fa::ModalityKind::Absolute, L, int>;
 
+// The lattice Graded accepts for an axis: the axis itself when its up is
+// the weaker claim, and its order dual when its up is the stronger one.
+template <typename L>
+using GradedWay = std::conditional_t<fa::GradableLattice<L>, L, fl::DualLattice<L>>;
+
+template <typename L>
+using OnAxisGradedWay = OnAxis<GradedWay<L>>;
+
 constexpr std::array<std::uint64_t, 4> kAxisIdentities = {
     fd::lattice_canonical_id_v<fl::EpochLattice>,
     fd::lattice_canonical_id_v<fl::GenerationLattice>,
@@ -37,11 +47,16 @@ constexpr std::array<std::uint64_t, 4> kAxisIdentities = {
 };
 
 constexpr std::array<std::uint64_t, 4> kCarrierHashes = {
-    fd::row_hash_contribution_v<OnAxis<fl::EpochLattice>>,
-    fd::row_hash_contribution_v<OnAxis<fl::GenerationLattice>>,
-    fd::row_hash_contribution_v<OnAxis<fl::PeakBytesLattice>>,
-    fd::row_hash_contribution_v<OnAxis<fl::BitsBudgetLattice>>,
+    fd::row_hash_contribution_v<OnAxisGradedWay<fl::EpochLattice>>,
+    fd::row_hash_contribution_v<OnAxisGradedWay<fl::GenerationLattice>>,
+    fd::row_hash_contribution_v<OnAxisGradedWay<fl::PeakBytesLattice>>,
+    fd::row_hash_contribution_v<OnAxisGradedWay<fl::BitsBudgetLattice>>,
 };
+
+// The two version axes enter through their duals, and the two use axes
+// enter as they are.
+static_assert(std::is_same_v<GradedWay<fl::EpochLattice>, fl::DualLattice<fl::EpochLattice>>);
+static_assert(std::is_same_v<GradedWay<fl::PeakBytesLattice>, fl::PeakBytesLattice>);
 
 template <std::size_t N>
 [[nodiscard]] consteval bool pairwise_distinct(std::array<std::uint64_t, N> const& values) noexcept {
@@ -86,7 +101,7 @@ void exercise_counter(char const* name) {
     if (L::top().raw() != std::numeric_limits<std::uint64_t>::max()) fail(name);
     if (!(L::successor(low) == E{g_runtime_seed + 1}) || !L::leq(low, L::successor(low))) fail(name);
 
-    OnAxis<L> const carried{7, high};
+    OnAxisGradedWay<L> const carried{7, high};
     if (!(carried.grade() == high) || carried.peek() != 7) fail(name);
 }
 

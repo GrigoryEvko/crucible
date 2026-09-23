@@ -16,7 +16,13 @@
 // answering "where does the grade already live?".  If the grade is
 // recoverable from the type or from the value, do not add a member
 // for it.
+//
+// Up is the weaker claim here, so weaken() and compose() can only
+// promise less.  A lattice that states the opposite orientation is
+// refused at the template head (ClaimOrientation.h).  A version counter
+// in its numeric order is that lattice, and its dual is accepted.
 
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/contracts/Pre.h>
@@ -30,7 +36,7 @@
 
 namespace foundation::algebra {
 
-template <ModalityKind M, Lattice L, typename T>
+template <ModalityKind M, GradableLattice L, typename T>
 class [[nodiscard]] Graded {
     static_assert(IsModality<M>, "Graded<M, L, T>: M must be one of Comonad / RelativeMonad / "
                                  "Absolute / Relative / Stepping.");
@@ -256,7 +262,7 @@ public:
 // The member set matches the primary exactly.  A caller cannot tell
 // which specialization it got.
 
-template <ModalityKind M, Lattice L, typename T>
+template <ModalityKind M, GradableLattice L, typename T>
     requires std::is_same_v<typename L::element_type, T>
 class [[nodiscard]] Graded<M, L, T> {
 public:
@@ -412,7 +418,7 @@ concept LatticeDerivesGrade = requires(T const& v) {
 // to the wrapper, which mutates the value and lets the derived grade
 // follow.  Read-side lattice operations stay available through L.
 
-template <ModalityKind M, Lattice L, typename T>
+template <ModalityKind M, GradableLattice L, typename T>
     requires LatticeDerivesGrade<L, T> && (!std::is_same_v<typename L::element_type, T>)
 class [[nodiscard]] Graded<M, L, T> {
 public:
