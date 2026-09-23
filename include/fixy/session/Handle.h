@@ -1501,11 +1501,11 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename 
 
 // Claims the two linked records of a channel, one for each end.  Under
 // check::Off it claims nothing.
-template <typename Proto, AbandonmentPolicy Policy>
+template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy>
 [[nodiscard]] inline std::pair<watch::endpoint_id, watch::endpoint_id> claim_channel_(std::source_location loc) noexcept {
     if constexpr (Policy::checks_abandonment) {
-        const watch::endpoint_id self = watch::claim(type_display_name_v<Proto>, loc);
-        const watch::endpoint_id peer = watch::claim(type_display_name_v<dual_of_t<Proto>>, loc);
+        const watch::endpoint_id self = watch::claim(type_display_name_v<SelfProto>, loc);
+        const watch::endpoint_id peer = watch::claim(type_display_name_v<PeerProto>, loc);
         watch::link(self, peer);
         return {self, peer};
     } else {
@@ -1680,6 +1680,25 @@ concept ForkedEndpointBody =
                                               ::foundation::permissions::Permission<Tag>, Ctx const&>,
                          Resource, Body>;
 
+// Claims the two linked records of a channel and starts its two sides on
+// two threads.  Each fork-shaped channel mint states its gate and then
+// calls this, so no mint can start a side without its record.
+template <typename SelfProto, typename PeerProto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy,
+          typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
+          typename SelfBody, typename PeerBody>
+[[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
+fork_channel_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
+              ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
+              std::source_location loc) noexcept {
+    using SelfSide = forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
+    using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
+    const auto [self_endpoint, peer_endpoint] = claim_channel_<SelfProto, PeerProto, Policy>(loc);
+    return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
+        ctx, std::move(parent),
+        SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
+        PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});
+}
+
 }  // namespace detail
 
 // The context gate of the fork-shaped mint: two runnable local
@@ -1718,13 +1737,9 @@ template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy 
 mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                     ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
                     std::source_location loc = std::source_location::current()) noexcept {
-    using SelfSide = detail::forked_endpoint_<Proto, Policy, ResourceSelf, SelfBody>;
-    using PeerSide = detail::forked_endpoint_<dual_of_t<Proto>, Policy, ResourcePeer, PeerBody>;
-    const auto [self_endpoint, peer_endpoint] = detail::claim_channel_<Proto, Policy>(loc);
-    return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
-        ctx, std::move(parent),
-        SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
-        PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});
+    return detail::fork_channel_<Proto, dual_of_t<Proto>, SelfTag, PeerTag, Policy>(
+        ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
+        std::move(self_body), std::move(peer_body), loc);
 }
 
 // The one form that gives the two endpoints to one caller.  It is a
@@ -1745,7 +1760,7 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
                                                std::source_location loc = std::source_location::current()) noexcept {
     std::pair<watch::endpoint_id, watch::endpoint_id> endpoints{watch::endpoint_id::none, watch::endpoint_id::none};
     if !consteval {
-        endpoints = detail::claim_channel_<Proto, Policy>(loc);
+        endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy>(loc);
     }
     return std::pair{
         detail::open_session_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(

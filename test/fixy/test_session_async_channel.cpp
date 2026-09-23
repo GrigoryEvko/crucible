@@ -7,7 +7,7 @@
 // and a Resource that states no capacity, or a different one from its
 // peer, is refused.  The runtime half runs the first pair over a channel
 // that holds one message in each direction.  Each side sends before it
-// receives, so a channel with no buffer would deadlock.  Every wait has a
+// receives, so a channel with no buffer deadlocks.  Every wait has a
 // deadline, so a bug aborts with a diagnostic and does not hang the run.
 
 #include <fixy/session/AsyncChannel.h>
@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
@@ -153,9 +154,15 @@ static_assert(s::channel_capacity_v<LeftEnd const&> == 1, "the capacity is read 
 std::atomic<int> g_left_received{0};
 std::atomic<int> g_right_received{0};
 
+// The live records of fixy/session/Watch.h when the left body starts.  The
+// right side cannot reach End before the left side sends, so the two
+// records of the channel are live then.
+std::atomic<std::uint32_t> g_live_in_left_body{0};
+
 struct LeftBody {
     template <typename Head>
     auto operator()(Head head, perm::Permission<async_tags::Left>, BgCtx const&) noexcept {
+        g_live_in_left_body.store(s::watch::live_count(), std::memory_order_relaxed);
         auto waiting = std::move(head).send(Ping{11}, [](LeftEnd& e, Ping&& p) noexcept {
             put(e.pipe->to_right, p.value, "the left send");
         });
@@ -184,12 +191,19 @@ struct RightBody {
 [[nodiscard]] int run_pair_on_one_slot_channel() {
     Pipe pipe{};
     const BgCtx ctx{eff::testing::bg()};
+    const std::uint32_t live_before = s::watch::live_count();
     auto back = s::mint_forked_async_channel<LeftProto, RightProto, async_tags::Left, async_tags::Right>(
         ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, LeftBody{},
         RightBody{});
     perm::permission_drop(std::move(back));
     if (g_left_received.load(std::memory_order_relaxed) != 22 || g_right_received.load(std::memory_order_relaxed) != 11) {
         std::fprintf(stderr, "test_session_async_channel: the pair did not exchange its two messages\n");
+        return 1;
+    }
+    // The mint claims a record for each side, and End releases it.
+    if (g_live_in_left_body.load(std::memory_order_relaxed) != live_before + 2
+        || s::watch::live_count() != live_before) {
+        std::fprintf(stderr, "test_session_async_channel: the channel did not hold one record for each side\n");
         return 1;
     }
     return 0;

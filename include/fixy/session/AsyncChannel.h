@@ -80,11 +80,9 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
 mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                           ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
                           PeerBody peer_body, std::source_location loc = std::source_location::current()) noexcept {
-    using SelfSide = detail::forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
-    using PeerSide = detail::forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
-    return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
-        ctx, std::move(parent), SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc},
-        PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc});
+    return detail::fork_channel_<SelfProto, PeerProto, SelfTag, PeerTag, Policy>(
+        ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
+        std::move(self_body), std::move(peer_body), loc);
 }
 
 }  // namespace fixy::session
