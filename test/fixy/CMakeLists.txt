@@ -1250,6 +1250,31 @@ fixy_neg_compile_test(neg_sess_subtype_async_silent_channel
   "constraints not satisfied"
   "satisfaction of .StatesChannelCapacity<Channel>. .with Channel = .*SilentEnd")
 
+# Fair termination.  Composition refuses to let a Loop of the prefix
+# capture an open Continue of the suffix, refinement keeps each exit of
+# the supertype, and compatibility asks for refinement both ways.
+fixy_neg_compile_test(neg_sess_compose_captures_continue
+  "fixy::session::diagnostic \\[Compose_Captures_Continue\\]: compose_t<P, Q>"
+  "with P = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.*Job, fixy::session::Continue>, fixy::session::End> >. Q = fixy::session::Continue")
+fixy_neg_compile_test(neg_sess_compose_captures_under_nested_loop
+  "fixy::session::diagnostic \\[Compose_Captures_Continue\\]: compose_t<P, Q>"
+  "with P = fixy::session::Send<.*Hello, fixy::session::Loop<")
+fixy_neg_compile_test(neg_sess_compose_at_branch_captures_continue
+  "fixy::session::diagnostic \\[Compose_Captures_Continue\\]: compose_at_branch_t<P, I, Q>"
+  "long unsigned int I = 1. Q = fixy::session::Send<.*Retry, fixy::session::Continue>")
+fixy_neg_compile_test(neg_sess_subtype_loses_exit
+  "fixy::session::diagnostic \\[Subtype_LosesTermination\\]: assert_subtype_sync"
+  "the supertype can end from this pair and the subtype cannot")
+fixy_neg_compile_test(neg_sess_compatible_client_never_stopped
+  "fixy::session::diagnostic \\[Subtype_LosesTermination\\]: assert_compatible_client: the server must refine the dual of the client"
+  "the supertype can end from this pair and the subtype cannot")
+fixy_neg_compile_test(neg_sess_subtype_async_loses_exit
+  "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]: assert_subtype_async"
+  "with Sub = .*Loop<.*Select<.*Send<.*Job, .*Recv<.*Tick, .*Continue> > > >. Super = .*Loop<.*Recv<.*Tick")
+fixy_neg_compile_test(neg_sess_subtype_async_endless_loop
+  "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]: assert_subtype_async"
+  "with Sub = .*Loop<.*Select<.*Send<.*Job, .*Continue> > >. Super = .*Loop<.*Select<.*Send<.*Job, .*Continue>, .*Send<.*StopCmd, .*End> > >")
+
 # An empty choice is not well-formed: under the branch rule it refines
 # each larger Select, and a substitute of that type never sends.  Each
 # relation refuses it as an operand, the note of an Offer included.
