@@ -280,7 +280,7 @@ static_assert(!CtxFitsRuntimeAffinity<eff::HotFgCtx>, "the Fg hot path owns no B
                                                       "able to re-pin a thread.");
 
 inline bool runtime_smoke_test() {
-    eff::BgDrainCtx bg{};
+    eff::BgDrainCtx bg{eff::testing::bg()};
 
     // SCHED_OTHER and a nice value of 5 need no privilege. A thread may
     // always lower its own priority.

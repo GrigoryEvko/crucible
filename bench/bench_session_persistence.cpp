@@ -59,7 +59,7 @@ int main() {
 
     auto cipher = crucible::Cipher::open(CipherRoot{dir.string()});
     auto view = cipher.mint_open_view();
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{eff::testing::test()};
 
     proto::SessionPersistencePolicy no_midrun_flush{
         .count_threshold = 0,

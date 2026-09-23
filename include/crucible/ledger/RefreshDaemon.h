@@ -226,8 +226,12 @@ struct RefreshDaemonConfig {
 
 class RefreshDaemon {
 public:
-    RefreshDaemon(RefreshDaemonConfig config, HostFacts facts, HostFingerprint fingerprint, Ledger seed) noexcept
-        : config_{config}, facts_{facts}, fingerprint_{fingerprint}, working_{std::move(seed)} {
+    // The daemon keeps the background context that its mint hands to it.  The
+    // commit in run_one_cycle acts under that context, so the daemon never
+    // holds more authority than the caller that started it.
+    RefreshDaemon(effects::Bg const& bg, RefreshDaemonConfig config, HostFacts facts, HostFingerprint fingerprint,
+                  Ledger seed) noexcept
+        : bg_{bg}, config_{config}, facts_{facts}, fingerprint_{fingerprint}, working_{std::move(seed)} {
         publish_(working_);
     }
 
@@ -332,7 +336,7 @@ public:
         CycleReport report = refresh_when_fit(working_, config_.wanted, config_.registry, competence, now);
 
         if (report.result == CycleResult::Admitted) {
-            constexpr LedgerIoCtx io_ctx{};
+            const LedgerIoCtx io_ctx{bg_};
             if (!commit_ledger(io_ctx, working_).has_value()) {
                 report.result = CycleResult::CommitFailed;
             }
@@ -379,6 +383,9 @@ private:
         }
     }
 
+    // No default member initializer: the only source of a background
+    // context is the one the constructor receives.
+    [[no_unique_address]] effects::Bg bg_;
     RefreshDaemonConfig config_{};
     HostFacts facts_{};
     HostFingerprint fingerprint_{};
@@ -431,7 +438,7 @@ template <effects::IsExecCtx Ctx>
             seed = std::move(*loaded);
         }
     }
-    return std::make_unique<RefreshDaemon>(config, facts, fingerprint, std::move(seed));
+    return std::make_unique<RefreshDaemon>(ctx.cap(), config, facts, fingerprint, std::move(seed));
 }
 
 namespace refresh_daemon_detail::self_test {

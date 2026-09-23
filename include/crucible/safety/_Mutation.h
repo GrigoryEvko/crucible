@@ -683,7 +683,7 @@ inline void runtime_smoke_test() {
     if (prev != 10u || am.get() != 11u) std::abort();
 
     MonotonicClock clock{};
-    ::crucible::effects::BgDrainCtx const bg_ctx{};
+    ::crucible::effects::BgDrainCtx const bg_ctx{::crucible::effects::testing::bg()};
     using BytesT = ::crucible::safety::MonotonicClockBytes<std::uint64_t>;
     BytesT const t0 = clock.now_ns(bg_ctx);
     BytesT const t1 = clock.now_ns(bg_ctx);

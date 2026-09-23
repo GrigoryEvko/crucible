@@ -43,7 +43,7 @@ appear as `-` in the flag columns.  `- (alloc)` is documented absence,
 not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees.
 
-Snapshot generated: `2026-09-23T11:35:24Z`.
+Snapshot generated: `2026-09-23T18:38:04Z`.
 
 ## bridges/
 
@@ -157,7 +157,7 @@ Snapshot generated: `2026-09-23T11:35:24Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_ledger_view` | `include/crucible/ledger/Ledger.h:154` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
 | `mint_ledger_view` | `include/crucible/ledger/Ledger.h:174` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h:413` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h:420` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 
 ## mimic/
 
@@ -232,7 +232,7 @@ Snapshot generated: `2026-09-23T11:35:24Z`.
 | `mint_chainedge_waiter` | `include/crucible/sessions/ChainEdgeSession.h:54` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:235` | HS14: 2 |
 | `mint_chainedge_waiter_session` | `include/crucible/sessions/ChainEdgeSession.h:65` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:237` | HS14: 3 |
 | `mint_channel` | `include/crucible/sessions/FederationProtocol.h:170` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:228` | HS14: 10 |
-| `mint_channel` | `include/crucible/sessions/SessionMint.h:661` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:228` | HS14: 10 |
+| `mint_channel` | `include/crucible/sessions/SessionMint.h:674` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:228` | HS14: 10 |
 | `mint_chaselev_owner` | `include/crucible/sessions/ChaseLevDequeSession.h:53` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:175` | HS14: 3 |
 | `mint_chaselev_thief` | `include/crucible/sessions/ChaseLevDequeSession.h:62` | Y | - (alloc) | Y | - | token | `include/crucible/fixy/Substr.h:176` | HS14: 3 |
 | `mint_chaselev_thief` | `include/crucible/sessions/ChaseLevDequeSession.h:68` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:176` | HS14: 3 |
@@ -251,7 +251,7 @@ Snapshot generated: `2026-09-23T11:35:24Z`.
 | `mint_mpmc_producer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h:51` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:264` | HS14: 2 |
 | `mint_mpmc_producer_session` | `include/crucible/sessions/MpmcChannelSession.h:66` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:266` | HS14: 4 |
 | `mint_owner_session` | `include/crucible/sessions/ChaseLevDequeSession.h:75` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:177` | HS14: 3 |
-| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:634` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:200` | HS14: 45 |
+| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:647` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:200` | HS14: 45 |
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h:57` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:113` | HS14: 7 |
 | `mint_producer_session` | `include/crucible/sessions/ShardedCalendarGridSession.h:49` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:113` | HS14: 7 |
 | `mint_producer_session` | `include/crucible/sessions/ShardedGridSession.h:51` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:113` | HS14: 7 |

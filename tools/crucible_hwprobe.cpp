@@ -40,6 +40,21 @@
 #include <span>
 #include <string_view>
 
+namespace crucible::tools {
+
+// The entry point of this tool, named on the background-context key.  The
+// key's own constructor is private, so this is the one place in the program
+// that builds the background context the ledger store asks for.  A second
+// definition of this class in the same program is an ODR violation.
+struct HwProbeEntry {
+    // Builds the background context that main hands to the ledger store.
+    [[nodiscard]] static constexpr ledger::LedgerIoCtx::cap_type background_context() noexcept {
+        return ledger::mint_bg_context(ledger::LedgerIoKey{});
+    }
+};
+
+}  // namespace crucible::tools
+
 namespace {
 
 using namespace crucible;
@@ -290,7 +305,7 @@ int main(int argc, char** argv) {
     // A background capability, even though this is a one-shot tool at
     // process start. Reading and writing the store blocks on a disk, and
     // an initialization context deliberately does not admit Effect::Block.
-    constexpr ledger::LedgerIoCtx ctx{};
+    constexpr ledger::LedgerIoCtx ctx{tools::HwProbeEntry::background_context()};
 
     const ledger::HostFacts facts = ledger::probe_host_facts();
     const ledger::HostFingerprint fingerprint = ledger::fold_fingerprint(facts);

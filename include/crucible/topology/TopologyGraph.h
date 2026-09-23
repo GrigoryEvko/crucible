@@ -343,7 +343,7 @@ static_assert(
         using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,
                                          effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
                                          effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
-        InitCtx ctx{};
+        InitCtx ctx{effects::testing::init()};
         auto g = mint_topology_graph(ctx, std::span<const cog::CogIdentity>{}, std::span<const TopologyEdge>{});
         return g.node_count() == 0 && g.edge_count() == 0;
     }(),

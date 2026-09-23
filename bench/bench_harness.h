@@ -1732,12 +1732,12 @@ inline void print_system_info(FILE* out = stdout) {
 // scheduler noise on the tail.
 inline void elevate_priority() noexcept {
 #ifdef __linux__
-    // ColdInitCtx is the freely-constructible ExecCtx alias whose row
-    // owns Init+Alloc+IO — it satisfies CtxFitsPriorityMint (which only
-    // requires IsExecCtx + in-range Nice).  `effects::testing::init()`
-    // returns the bare `Init` cap-struct, NOT an ExecCtx; spawning the
-    // alias directly is the canonical mint-call shape.
-    auto p = ::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::ColdInitCtx{});
+    // ColdInitCtx is the ExecCtx alias whose row owns Init, Alloc and IO,
+    // and it satisfies CtxFitsPriorityMint.  A context over Init is built
+    // only from an Init source, and the bench takes that source from the
+    // test witness.
+    auto p = ::crucible::fixy::sched::mint_priority<-10>(
+        ::crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
     (void)p;
 #endif
 }
@@ -1746,7 +1746,8 @@ inline void elevate_priority() noexcept {
 // `expected<SchedPriority<-10>, int>`; if a future change moves the
 // nice value or alters the return type, this trips at every bench
 // TU that includes bench_harness.h.
-static_assert(std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::ColdInitCtx{})),
+static_assert(std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(
+                                 ::crucible::effects::ColdInitCtx{::crucible::effects::testing::init()})),
                              std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
               "FIXY-V-197: elevate_priority must mint a SchedPriority<-10> witness "
               "via fixy::sched::mint_priority<-10>(ColdInitCtx).");

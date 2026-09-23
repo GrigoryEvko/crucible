@@ -411,7 +411,7 @@ static_assert(
 
         cog::OpcodeLatencyTable<cog::CogKind::NicPort> tbl{};
 
-        InitCtx ctx{};
+        InitCtx ctx{effects::testing::init()};
         auto m = mint_cog_mimic<cog::CogKind::NicPort>(ctx, id, caps, tbl);
 
         return m.identity == &id && m.identity->kind == cog::CogKind::NicPort
@@ -432,7 +432,7 @@ static_assert(
 
         cog::OpcodeLatencyTable<cog::CogKind::Gpu> tbl{};
 
-        InitCtx ctx{};
+        InitCtx ctx{effects::testing::init()};
         auto m = mint_cog_mimic<cog::CogKind::Gpu>(ctx, id, caps, tbl);
 
         return m.identity == &id && m.calibrated_caps.value().sm_version.value() == 90

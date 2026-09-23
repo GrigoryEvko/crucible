@@ -144,7 +144,7 @@ static_assert(!async_scope_realizable(MemoryScope::System));
 static_assert(!async_scope_realizable(MemoryScope::Inner));
 static_assert(!async_scope_realizable(MemoryScope::Outer));
 
-constexpr eff::TestRunnerCtx ctx{};
+constexpr eff::TestRunnerCtx ctx{eff::testing::test()};
 
 static_assert(
     std::is_same_v<decltype(mint_async_copy<2, MemoryScope::Cta, 16>(ctx)), ga::copy<2, MemoryScope::Cta, 16>>);
@@ -168,7 +168,7 @@ static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_Syn
 // The locals below are non-constant so the calls are not folded at compile
 // time.
 inline void runtime_smoke_test() {
-    eff::TestRunnerCtx live_ctx{};
+    eff::TestRunnerCtx live_ctx{eff::testing::test()};
 
     [[maybe_unused]] auto copy_grant = mint_async_copy<3, MemoryScope::Cta, 128>(live_ctx);
     [[maybe_unused]] auto arrive_grant = mint_mbarrier_arrive<MemoryScope::Cta>(live_ctx);

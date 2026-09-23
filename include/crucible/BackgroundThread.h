@@ -64,14 +64,18 @@ struct BackgroundThread {
         // persistence and commit and leave the runtime half-applied.  Under
         // -fno-exceptions that cannot happen, and the noexcept pins the
         // invariant so a throwing callable reddens at the assignment site.
-        using Fn = void (*)(void*, RegionNode*) noexcept;
+        //
+        // The callback receives the background context of the thread that
+        // runs it.  A callee that acts under a background context takes that
+        // one, and never builds its own.
+        using Fn = void (*)(void*, effects::Bg const&, RegionNode*) noexcept;
 
         void* ctx = nullptr;
         Fn fn = nullptr;
 
         [[nodiscard]] constexpr explicit operator bool() const noexcept { return fn != nullptr; }
 
-        void operator()(RegionNode* region) const noexcept { fn(ctx, region); }
+        void operator()(effects::Bg const& bg, RegionNode* region) const noexcept { fn(ctx, bg, region); }
     };
 
     // Own cache line: background-only state.  Sharing a line with
@@ -406,7 +410,9 @@ struct BackgroundThread {
         uncompiled_regions.push(region);
 
         active_region.store(region, std::memory_order_release);
-        if (region_ready_cb) region_ready_cb(region);
+        if (region_ready_cb) {
+            region_ready_cb(effects::mint_bg_context(effects::detail::ctx_mint::bg_key{}), region);
+        }
     }
 
     static void DrainTraceRingFn(typename StartChannel::ConsumerHandle&& in,
@@ -956,7 +962,8 @@ private:
         auto publish_prod = graph_publish.producer(std::move(publish_prod_perm));
         auto publish_cons = graph_publish.consumer(std::move(publish_cons_perm));
 
-        auto ctx = effects::BgDrainCtx{}.template in_row<run_required_row>();
+        auto ctx = effects::BgDrainCtx{effects::mint_bg_context(effects::detail::ctx_mint::bg_key{})}
+                       .template in_row<run_required_row>();
         while (!start_prod.try_push(BgPipelineStart{this})) {
             CRUCIBLE_SPIN_PAUSE;
         }

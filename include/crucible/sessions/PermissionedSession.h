@@ -1401,8 +1401,12 @@ template <typename G, typename Role, typename SharedChannel, typename Body>
 
 }  // namespace detail
 
-template <typename G, typename Whole, typename... RolePerms, typename SharedChannel, typename... Bodies>
-[[nodiscard]] Permission<Whole> session_fork(SharedChannel& ch, Permission<Whole>&& whole_perm,
+// The caller passes the background context that the role threads run
+// under.  session_fork does not build one, because a context over Bg is
+// evidence that only its holder can give.
+template <typename G, typename Whole, typename... RolePerms, ::crucible::effects::IsExecCtx Ctx,
+          typename SharedChannel, typename... Bodies>
+[[nodiscard]] Permission<Whole> session_fork(Ctx const& ctx, SharedChannel& ch, Permission<Whole>&& whole_perm,
                                              Bodies&&... bodies) noexcept {
     static_assert(is_global_well_formed_v<G>, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
                                               "session_fork<G, ...>: global type G is ill-formed.");
@@ -1422,7 +1426,7 @@ template <typename G, typename Whole, typename... RolePerms, typename SharedChan
                                                    "Derive your channel from safety::Pinned<ChannelType>.");
 
     return mint_permission_fork<RolePerms...>(
-        PermissionForkSpawnCtx{}, std::move(whole_perm),
+        ctx, std::move(whole_perm),
         detail::session_fork_role_lambda<G, RolePerms, SharedChannel, Bodies>(ch, std::forward<Bodies>(bodies))...);
 }
 

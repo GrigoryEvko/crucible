@@ -459,13 +459,22 @@ template <std::size_t N>
 }
 
 // The pin goes through the context-gated surface rather than the raw system
-// call, and a stage worker presents a background context.  Only a background
-// or startup context is admitted there, so nothing on the hot path can repin a
-// running thread.  A negative cpu does nothing, and a refused pin is tolerated.
-inline void pin_current_pipeline_thread_(int cpu) noexcept {
+// call, and presents the context the stage was minted under.  Only a
+// background or startup context is admitted there, so nothing on the hot path
+// can repin a running thread, and a stage minted under the foreground context
+// runs its worker unpinned rather than under a context it does not hold.  A
+// negative cpu does nothing, and a refused pin is tolerated.
+template <class Ctx>
+void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
-    (void)::crucible::fixy::sched::apply_affinity_to_cpu(::crucible::effects::BgDrainCtx{}, cpu);
+    if constexpr (::crucible::fixy::sched::CtxFitsRuntimeAffinity<Ctx>) {
+        (void)::crucible::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
+    } else {
+        (void)ctx;
+        (void)cpu;
+    }
 #else
+    (void)ctx;
     (void)cpu;
 #endif
 }
@@ -570,7 +579,7 @@ private:
         // end of this function joins them all.
         [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
             [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                detail::pin_current_pipeline_thread_(cpu);
+                detail::pin_current_pipeline_thread_(stage.ctx(), cpu);
                 std::move(stage).run();
             }}...};
     }
@@ -700,7 +709,7 @@ private:
 
         [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
             [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                detail::pin_current_pipeline_thread_(cpu);
+                detail::pin_current_pipeline_thread_(stage.ctx(), cpu);
                 std::move(stage).run();
             }}...};
     }

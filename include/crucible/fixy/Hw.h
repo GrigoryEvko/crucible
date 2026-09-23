@@ -391,7 +391,7 @@ static_assert(scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Arm))
 static_assert(!scope_arch_trunk_consistent(MemoryScope::Inner, BarrierArch::Gpu));
 static_assert(!scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Compiler));
 
-constexpr eff::TestRunnerCtx ctx{};
+constexpr eff::TestRunnerCtx ctx{eff::testing::test()};
 
 static_assert(std::is_same_v<decltype(mint_asm_grant<"vpshufb hot probe">(ctx)), ghw::asm_<"vpshufb hot probe">>);
 static_assert(std::is_same_v<decltype(mint_simd_width<256>(ctx)), ghw::simd_width<256>>);
@@ -431,7 +431,7 @@ static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_Mem
 // Non-constant arguments defeat consteval folding.  This catches SFINAE and
 // inline-body faults that the static asserts above can mask.
 inline void runtime_smoke_test() {
-    eff::TestRunnerCtx live_ctx{};
+    eff::TestRunnerCtx live_ctx{eff::testing::test()};
 
     [[maybe_unused]] auto asm_grant = mint_asm_grant<"runtime smoke asm">(live_ctx);
     [[maybe_unused]] auto width_grant = mint_simd_width<512>(live_ctx);

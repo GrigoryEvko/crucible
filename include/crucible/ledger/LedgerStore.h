@@ -86,6 +86,13 @@ using LedgerIoCtx = effects::ExecCtx<
 
 static_assert(sizeof(LedgerIoCtx) == 1, "an execution context must stay a tag");
 
+// The key that builds the background source of a LedgerIoCtx, and the door
+// that takes it.  The key has a private constructor, so only a friend of the
+// key builds one.  A tool that runs the store names these two through this
+// header, and it names the old substrate nowhere of its own.
+using LedgerIoKey = effects::detail::ctx_mint::bg_key;
+using effects::mint_bg_context;
+
 // Every store entry point takes a context admitting both IO and Block,
 // because every one of them opens a file and waits on a disk.
 //

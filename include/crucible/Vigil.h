@@ -166,8 +166,9 @@ public:
                 Cipher::open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>{cfg_.cipher_path}));
         }
 
-        bg_.set_region_ready_callback(
-            this, [](void* self, RegionNode* region) noexcept { static_cast<Vigil*>(self)->on_region_ready(region); });
+        bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg, RegionNode* region) noexcept {
+            static_cast<Vigil*>(self)->on_region_ready(bg, region);
+        });
 
         // The watchdog is constructed before the background thread starts,
         // so on_region_ready can observe on the very first region transition
@@ -564,8 +565,10 @@ public:
 private:
     // Runs on the background thread when a new region is ready.  It must
     // not touch the persistence store: that owns mutable resident-cache and
-    // log state and belongs to the foreground.
-    [[gnu::cold]] void on_region_ready(RegionNode* region) {
+    // log state and belongs to the foreground.  The background thread hands
+    // over its own context, so the observation below acts under a context the
+    // caller holds, not one built here.
+    [[gnu::cold]] void on_region_ready(::crucible::effects::Bg const& bg, RegionNode* region) {
         // bump returns the previous value, which is the index this call
         // reserved.  The background thread is the sole writer.
         const uint64_t step = step_.bump();
@@ -593,7 +596,7 @@ private:
         // because this runs on the region-publishing thread, not the
         // foreground.
         if (wd_) {
-            const auto v = wd_->observe(::crucible::effects::BgDrainCtx{});
+            const auto v = wd_->observe(::crucible::effects::BgDrainCtx{bg});
             wd_last_verdict_.store(v, std::memory_order_release);
             switch (v) {
                 case ::crucible::warden::WatchdogVerdict::Healthy:

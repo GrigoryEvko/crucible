@@ -276,8 +276,8 @@ static_assert(BoundedSleeper<1000000>::max_nanos == 1000000ULL);
 
 inline bool runtime_smoke_test() {
     namespace eff_t = ::crucible::effects;
-    eff_t::ColdInitCtx init{};
-    eff_t::BgDrainCtx bg{};
+    eff_t::ColdInitCtx init{eff_t::testing::init()};
+    eff_t::BgDrainCtx bg{eff_t::testing::bg()};
 
     auto boot_reader = mint_clock_reader<ClockSource_v::Boot>(init);
     const auto t0 = boot_reader.read();
