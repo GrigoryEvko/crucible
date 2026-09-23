@@ -28,6 +28,7 @@
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/TraceGraph.h>
+#include <foundation/Lifetime.h>
 
 namespace crucible {
 
@@ -1149,13 +1150,14 @@ public:
                 // a typed array here, so the later bulk memcpy writes into
                 // live objects rather than raw storage.
                 te.scalar_args =
-                    (n_scalars > 0) ? std::start_lifetime_as_array<int64_t>(aux_cursor, n_scalars) : nullptr;
+                    (n_scalars > 0) ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
+                                    : nullptr;
                 aux_cursor += n_scalars * sizeof(int64_t);
-                te.input_trace_indices = std::start_lifetime_as_array<OpIndex>(aux_cursor, n_in);
+                te.input_trace_indices = ::foundation::lifetime::start_as_array<OpIndex>(aux_cursor, n_in).data();
                 aux_cursor += n_in * sizeof(OpIndex);
-                te.input_slot_ids = std::start_lifetime_as_array<SlotId>(aux_cursor, n_in);
+                te.input_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_in).data();
                 aux_cursor += n_in * sizeof(SlotId);
-                te.output_slot_ids = std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
+                te.output_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_out).data();
                 aux_cursor += n_out * sizeof(SlotId);
 
                 if (n_scalars > 0) std::memcpy(te.scalar_args, re.scalar_values.data(), n_scalars * sizeof(int64_t));

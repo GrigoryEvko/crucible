@@ -5,6 +5,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_OwnedMmap.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/Lifetime.h>
 
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
@@ -369,24 +370,21 @@ safety::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() con
         return safety::Borrowed<const PmuSampleEvent, PmuSample>{};
     }
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // The mapping is untyped byte storage, so start_lifetime_as_array begins
+    // The mapping is untyped byte storage, so the checked lifetime start begins
     // the typed array lifetime inside it.  The bit_cast drops volatile, which
     // is well defined at runtime and forbidden only in a constant expression.
-    // The element type stays non-const: the const-void* overload already
-    // returns a const pointer, and a const element type makes libstdc++ emit
-    // an asm clobber that writes through a const-qualified location.
-    auto* events = std::start_lifetime_as_array<PmuSampleEvent>(
-        std::bit_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)), PMU_SAMPLE_CAPACITY);
+    auto* events = ::foundation::lifetime::start_as_array<PmuSampleEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)), PMU_SAMPLE_CAPACITY).data();
     return safety::Borrowed<const PmuSampleEvent, PmuSample>{events, PMU_SAMPLE_CAPACITY};
 }
 
 uint64_t PmuSample::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // The added const selects the overload taking const volatile void*, which
-    // returns a const volatile pointer to the header.
-    const volatile uint8_t* qbase = base;
-    auto* hdr = std::start_lifetime_as<PmuSampleHeader>(qbase);
+    // The checked lifetime start refuses volatile storage, so the bit_cast
+    // drops volatile, and the header pointer adds it back for the read.
+    const volatile PmuSampleHeader* hdr =
+        ::foundation::lifetime::start_as_array<PmuSampleHeader>(std::bit_cast<const uint8_t*>(base), 1).data();
     return hdr->write_idx;
 }
 

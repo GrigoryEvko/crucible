@@ -12,6 +12,7 @@
 #include <crucible/safety/Simd.h>
 #include <crucible/fixy/Vendor.h>
 #include <crucible/fixy/Simd.h>
+#include <foundation/Lifetime.h>
 
 #include <algorithm>
 #include <array>
@@ -248,11 +249,12 @@ static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
 // compiles to nothing on ARM, and it exposes no byte-shuffle, which the
 // GF(2^8) nibble-table lookup needs.
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
+    namespace lifetime = ::foundation::lifetime;
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
-        auto const a = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(dst + i));
-        auto const b = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(src + i));
-        _mm256_storeu_si256(std::start_lifetime_as<__m256i>(dst + i), _mm256_xor_si256(a, b));
+        auto const a = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(dst + i, 1).data());
+        auto const b = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
+        _mm256_storeu_si256(lifetime::start_as_array<__m256i>(dst + i, 1).data(), _mm256_xor_si256(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
@@ -260,6 +262,7 @@ CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size
 }
 
 CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
+    namespace lifetime = ::foundation::lifetime;
     if (coeff == 0) {
         return;
     }
@@ -269,18 +272,18 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
     }
 
     const auto tables = make_nibble_tables(coeff);
-    const auto lo_table = _mm256_load_si256(std::start_lifetime_as<const __m256i>(tables.lo.data()));
-    const auto hi_table = _mm256_load_si256(std::start_lifetime_as<const __m256i>(tables.hi.data()));
+    const auto lo_table = _mm256_load_si256(lifetime::start_as_array<const __m256i>(tables.lo.data(), 1).data());
+    const auto hi_table = _mm256_load_si256(lifetime::start_as_array<const __m256i>(tables.hi.data(), 1).data());
     const auto mask = _mm256_set1_epi8(0x0f);
 
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
-        const auto bytes = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(src + i));
+        const auto bytes = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
         const auto lo = _mm256_and_si256(bytes, mask);
         const auto hi = _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask);
         const auto prod = _mm256_xor_si256(_mm256_shuffle_epi8(lo_table, lo), _mm256_shuffle_epi8(hi_table, hi));
-        const auto old = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(dst + i));
-        _mm256_storeu_si256(std::start_lifetime_as<__m256i>(dst + i), _mm256_xor_si256(old, prod));
+        const auto old = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(dst + i, 1).data());
+        _mm256_storeu_si256(lifetime::start_as_array<__m256i>(dst + i, 1).data(), _mm256_xor_si256(old, prod));
     }
     for (; i < len; ++i) {
         dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
@@ -288,11 +291,12 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
 }
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
+    namespace lifetime = ::foundation::lifetime;
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
-        auto const a = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(dst + i));
-        auto const b = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(src + i));
-        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i), veorq_u8(a, b));
+        auto const a = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, 16).data());
+        auto const b = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, 16).data());
+        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, 16).data(), veorq_u8(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
@@ -300,6 +304,7 @@ CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size
 }
 
 CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
+    namespace lifetime = ::foundation::lifetime;
     if (coeff == 0) {
         return;
     }
@@ -315,12 +320,12 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_
 
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
-        const auto bytes = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(src + i));
+        const auto bytes = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, 16).data());
         const auto lo = vandq_u8(bytes, mask);
         const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
         const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo), vqtbl1q_u8(hi_table, hi));
-        const auto old = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(dst + i));
-        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i), veorq_u8(old, prod));
+        const auto old = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, 16).data());
+        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, 16).data(), veorq_u8(old, prod));
     }
     for (; i < len; ++i) {
         dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));

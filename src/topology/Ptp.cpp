@@ -3,6 +3,7 @@
 #include <crucible/Platform.h>
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/_ClockSource.h>
+#include <foundation/Lifetime.h>
 
 #include <array>
 #include <cerrno>
@@ -313,7 +314,7 @@ std::expected<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd
             return std::unexpected(PtpError::MalformedTimestampControl);
         }
 
-        auto* ts = std::start_lifetime_as_array<timespec>(CMSG_DATA(cmsg), 3);
+        auto const ts = ::foundation::lifetime::start_as_array<timespec>(CMSG_DATA(cmsg), 3);
         const bool has_hardware = timespec_nonzero(ts[2]);
         const bool has_software = timespec_nonzero(ts[0]);
         if (!has_hardware && !has_software) {

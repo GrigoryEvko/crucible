@@ -5,6 +5,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_OwnedMmap.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/Lifetime.h>
 
 #include <sys/mman.h>
 
@@ -220,25 +221,22 @@ safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> SchedTpBtf::timeline_view
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{};
     }
-    // The mapping is untyped byte storage, so start_lifetime_as_array begins
+    // The mapping is untyped byte storage, so the checked lifetime start begins
     // the typed array lifetime inside it.  The bit_cast drops volatile,
     // because libstdc++ has no span<const volatile T> for a non-scalar T.
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // The element type stays non-const.  The const-void* overload already
-    // returns a const pointer, and a const element type makes libstdc++ emit
-    // an asm clobber that writes through a const-qualified array location.
-    auto* events = std::start_lifetime_as_array<TimelineSchedEvent>(
-        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
+    auto* events = ::foundation::lifetime::start_as_array<TimelineSchedEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY).data();
     return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{events, TIMELINE_CAPACITY};
 }
 
 uint64_t SchedTpBtf::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) return 0;
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
-    // The added const selects the overload taking const volatile void*, which
-    // returns a const volatile pointer to the header.
-    const volatile uint8_t* qbase = base;
-    auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
+    // The checked lifetime start refuses volatile storage, so the bit_cast
+    // drops volatile, and the header pointer adds it back for the read.
+    const volatile TimelineHeader* hdr =
+        ::foundation::lifetime::start_as_array<TimelineHeader>(std::bit_cast<const uint8_t*>(base), 1).data();
     return hdr->write_idx;
 }
 

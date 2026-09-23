@@ -26,6 +26,7 @@
 // scripts/check-start-lifetime.sh refuses a direct use of the two library
 // functions outside a reviewed list.  New code uses start_as_array.
 
+#include <concepts>
 #include <cstddef>
 #include <memory>
 #include <meta>
@@ -70,20 +71,27 @@ inline constexpr int max_subobject_depth = 64;
 template <typename T>
 concept ImplicitLifetimeThroughout = detail::is_implicit_lifetime_throughout_at(^^T, 0);
 
+// T, made const when the storage is const.  A view over read-only bytes
+// keeps that access in its element type.
+template <typename Storage, typename T>
+using element_for_storage_t = std::conditional_t<std::is_const_v<Storage>, const T, T>;
+
 // Starts the lifetime of count objects of type T over the storage and
 // returns them as a span.  The storage must hold count * sizeof(T) bytes
-// aligned for T.  A single object is a span of one.
-template <ImplicitLifetimeThroughout T>
-[[nodiscard]] std::span<T> start_as_array(void* storage, std::size_t count) noexcept {
-    return {std::start_lifetime_as_array<T>(storage, count), count};
-}
-
-// Starts the lifetime of count const objects of type T over the storage
-// and returns them as a span.  The storage must hold count * sizeof(T)
-// bytes aligned for T.
-template <ImplicitLifetimeThroughout T>
-[[nodiscard]] std::span<const T> start_as_array(const void* storage, std::size_t count) noexcept {
-    return {std::start_lifetime_as_array<T>(storage, count), count};
+// aligned for T.  The element of the span is const when the storage or T
+// is const.  A single object is a span of one.
+//
+// Volatile storage is refused, because libstdc++ cannot build a span of a
+// volatile class type.  A caller that reads through volatile converts
+// data() to a pointer to volatile, which is an implicit conversion.
+template <ImplicitLifetimeThroughout T, typename Storage>
+    requires(!std::is_volatile_v<Storage> && !std::is_volatile_v<T>)
+[[nodiscard]] std::span<element_for_storage_t<Storage, T>> start_as_array(Storage* storage,
+                                                                          std::size_t count) noexcept {
+    // libstdc++ names the result in an asm output, and a const element
+    // type fails there.  So the start takes T without its qualifiers, and
+    // the span adds the const back.
+    return {std::start_lifetime_as_array<std::remove_cv_t<T>>(storage, count), count};
 }
 
 namespace detail::lifetime_self_test {
@@ -100,10 +108,6 @@ struct HoldsProof {
     ProofShape proof;
 };
 struct DerivesProof : ProofShape {};
-union ProofOrByte {
-    unsigned char byte;
-    ProofShape proof;
-};
 struct HoldsReference {
     int& target;
 };
@@ -125,8 +129,33 @@ static_assert(!ImplicitLifetimeThroughout<ProofShape[1]>,
 static_assert(std::is_implicit_lifetime_v<HoldsProof> && !ImplicitLifetimeThroughout<HoldsProof>,
               "an aggregate that holds a proof is implicit-lifetime, and the walk must refuse it");
 static_assert(!ImplicitLifetimeThroughout<DerivesProof>, "a base class is a subobject");
-static_assert(!ImplicitLifetimeThroughout<ProofOrByte>, "a union member is a subobject");
+// A union with a proof member.  The union is local to the function, so no
+// namespace of foundation holds a union with a proof member, and the union
+// audit of test/fixy/test_forgeable_proofs.cpp needs no exception.
+[[nodiscard]] consteval bool refuses_a_union_member() {
+    union ProofOrByte {
+        unsigned char byte;
+        ProofShape proof;
+    };
+    return !ImplicitLifetimeThroughout<ProofOrByte>;
+}
+static_assert(refuses_a_union_member(), "a union member is a subobject");
 static_assert(!ImplicitLifetimeThroughout<HoldsReference>, "no lifetime start binds a reference member");
+
+// The element of the span is const when the storage or T is const, and
+// volatile storage is refused.
+template <typename Storage, typename T>
+concept can_start_as = requires(Storage* storage) {
+    { start_as_array<T>(storage, 1) } -> std::same_as<std::span<element_for_storage_t<Storage, T>>>;
+};
+static_assert(can_start_as<unsigned char, Plain> && can_start_as<void, Plain>);
+static_assert(can_start_as<const unsigned char, Plain> && can_start_as<unsigned char, const Plain>);
+static_assert(std::is_same_v<element_for_storage_t<const unsigned char, Plain>, const Plain>);
+static_assert(std::is_same_v<element_for_storage_t<unsigned char, const Plain>, const Plain>);
+static_assert(!can_start_as<volatile unsigned char, Plain> && !can_start_as<const volatile void, Plain>,
+              "volatile storage is refused, and a caller adds volatile to data()");
+static_assert(!can_start_as<unsigned char, HoldsProof> && !can_start_as<const void, ProofShape[1]>,
+              "the checked start refuses a proof subobject through every storage qualifier");
 
 }  // namespace detail::lifetime_self_test
 

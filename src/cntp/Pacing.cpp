@@ -1,6 +1,7 @@
 #include <crucible/cntp/Pacing.h>
 
 #include <crucible/handles/FileHandle.h>
+#include <foundation/Lifetime.h>
 
 #include <array>
 #include <cerrno>
@@ -35,7 +36,7 @@ struct QdiscDumpRequest {
     std::size_t remaining = payload_len;
 
     while (remaining >= sizeof(rtattr)) {
-        auto const* attr = std::start_lifetime_as<rtattr>(cursor);
+        auto const* attr = ::foundation::lifetime::start_as_array<rtattr>(cursor, 1).data();
         if (attr->rta_len < sizeof(rtattr) || attr->rta_len > remaining) {
             return std::unexpected(PacingError::QdiscKindMissing);
         }
@@ -184,7 +185,7 @@ std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noe
         auto const* cursor = static_cast<std::byte const*>(static_cast<void const*>(buffer.data()));
         std::size_t remaining = static_cast<std::size_t>(received);
         while (remaining >= sizeof(nlmsghdr)) {
-            auto const* header = std::start_lifetime_as<nlmsghdr>(cursor);
+            auto const* header = ::foundation::lifetime::start_as_array<nlmsghdr>(cursor, 1).data();
             if (header->nlmsg_len < sizeof(nlmsghdr) || header->nlmsg_len > remaining) {
                 return std::unexpected(PacingError::NetlinkReceiveFailed);
             }
@@ -213,7 +214,7 @@ std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noe
                     return std::unexpected(PacingError::NetlinkReceiveFailed);
                 }
 
-                auto const* msg = std::start_lifetime_as<tcmsg>(cursor + NLMSG_HDRLEN);
+                auto const* msg = ::foundation::lifetime::start_as_array<tcmsg>(cursor + NLMSG_HDRLEN, 1).data();
                 if (msg->tcm_ifindex == static_cast<int>(ifindex) && msg->tcm_parent == TC_H_ROOT) {
                     const auto payload_len = header->nlmsg_len - NLMSG_LENGTH(sizeof(tcmsg));
                     return qdisc_from_attrs(msg, payload_len);

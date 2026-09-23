@@ -35,6 +35,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
 #include <crucible/TraceRing.h>
+#include <foundation/Lifetime.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -437,13 +438,14 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.input_metas = meta_base + meta_offset;
                 te.output_metas = meta_base + meta_offset + n_in;
                 te.scalar_args =
-                    (n_scalars > 0) ? std::start_lifetime_as_array<int64_t>(aux_cursor, n_scalars) : nullptr;
+                    (n_scalars > 0) ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
+                                    : nullptr;
                 aux_cursor += n_scalars * sizeof(int64_t);
-                te.input_trace_indices = std::start_lifetime_as_array<OpIndex>(aux_cursor, n_in);
+                te.input_trace_indices = ::foundation::lifetime::start_as_array<OpIndex>(aux_cursor, n_in).data();
                 aux_cursor += n_in * sizeof(OpIndex);
-                te.input_slot_ids = std::start_lifetime_as_array<SlotId>(aux_cursor, n_in);
+                te.input_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_in).data();
                 aux_cursor += n_in * sizeof(SlotId);
-                te.output_slot_ids = std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
+                te.output_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_out).data();
                 aux_cursor += n_out * sizeof(SlotId);
                 if (n_scalars > 0) std::memcpy(te.scalar_args, re.scalar_values.data(), n_scalars * sizeof(int64_t));
             }
