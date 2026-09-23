@@ -102,9 +102,9 @@
 //                                                        droppable_tags
 //   NumericalTier<Tight, T>    ⩽  NumericalTier<Loose, T>
 //
-// The implication is the relation of fixy/Refined.h, closed here through
-// its admitted edges: P implies Q when a chain of implications through
-// the edge endpoints joins them.
+// The implication is the relation of fixy/Refined.h, which is transitive:
+// P implies Q when a chain of admitted steps joins them.  A predicate
+// implies itself here, because the order is reflexive.
 //
 // The absences are the discipline:
 //
@@ -189,35 +189,6 @@ struct tagged_parts<::fixy::Tagged<X, V>> {
     using tag = V;
 };
 
-template <typename A, typename B>
-inline constexpr bool implies_step_v = ::fixy::refined::implies_types<A, B>();
-
-[[nodiscard]] consteval bool implies_directly(std::meta::info premise, std::meta::info conclusion) {
-    if (premise == conclusion) return true;
-    return std::meta::extract<bool>(std::meta::substitute(^^implies_step_v, {premise, conclusion}));
-}
-
-// P implies Q through a chain whose inner nodes are endpoints of the
-// admitted edges of fixy/Refined.h.  The edges are finite, so the walk
-// stops.  Complexity: O(E²) implication queries for E edges.
-[[nodiscard]] consteval bool implies_closed(std::meta::info premise, std::meta::info conclusion) {
-    std::vector<std::meta::info> reached{premise};
-    for (std::size_t cursor = 0; cursor < reached.size(); ++cursor) {
-        const std::meta::info from = reached[cursor];
-        if (implies_directly(from, conclusion)) return true;
-        for (const std::meta::info member : std::meta::members_of(^^::fixy::refined::admitted_implications,
-                                                                  std::meta::access_context::unchecked())) {
-            if (!::foundation::fail_closed::is_edge(member)) continue;
-            const ::foundation::fail_closed::edge_ends ends = ::foundation::fail_closed::ends_of(member);
-            if (!implies_directly(from, ends.from)) continue;
-            bool is_known = false;
-            for (const std::meta::info seen : reached) is_known = is_known || seen == ends.to;
-            if (!is_known) reached.push_back(ends.to);
-        }
-    }
-    return false;
-}
-
 template <typename T>
 inline constexpr bool refinement_drops_v = refinement_parts<T>::is_refinement && !refinement_parts<T>::is_sealed;
 
@@ -226,10 +197,13 @@ using refinement_value_t = typename refinement_parts<T>::value_type;
 
 template <typename T, typename U>
 inline constexpr bool refinement_weakens_v = false;
+// The relation of fixy/Refined.h reads its admitted steps where that
+// header defines them, so an edge that a later header adds does not
+// change this order.
 template <auto P, auto Q, typename X, bool Sealed>
 inline constexpr bool refinement_weakens_v<::fixy::Refinement<P, X, Sealed>, ::fixy::Refinement<Q, X, Sealed>> =
-    implies_closed(std::meta::dealias(^^::fixy::refined::predicate_t<P>),
-                   std::meta::dealias(^^::fixy::refined::predicate_t<Q>));
+    std::is_same_v<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>
+    || ::fixy::refined::implies_types<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>();
 
 template <typename T>
 inline constexpr bool tagged_drops_v =

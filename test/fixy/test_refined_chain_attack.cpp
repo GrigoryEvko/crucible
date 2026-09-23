@@ -2,18 +2,12 @@
 // fixy/Refined.h.  Each attack uses only what a caller can write: new
 // predicates, new namespaces, derived types, aliases, bounds of mixed
 // signedness, and declarations added after the header.  The file
-// asserts in place each attack that fails, and it pins each attack that
-// succeeds on the known-limitation ledger at the end.  The ledger only
-// shrinks: a pin fails when its attack stops working, and the entry and
-// its pin go together.
+// asserts in place that each attack fails.
 
 #include <fixy/Refined.h>
 #include <fixy/session/Subtype.h>
 
-#include <array>
 #include <cstdio>
-#include <iterator>
-#include <string_view>
 #include <utility>
 
 namespace {
@@ -161,27 +155,16 @@ static_assert(!fixy::implies_v<fixy::non_negative, fixy::positive>, "an edge add
 static_assert(ffc::edge_count<^^rel::admitted_implications>() == 5,
               "a walk here sees the late edge, which is the property the relation avoids");
 
-// ── The known-limitation ledger ──────────────────────────────────────
-
-struct limitation {
-    std::string_view attack;
-    std::string_view breaks;
-};
-
-inline constexpr limitation known_limitations[] = {
-    {"fixy/session/Subtype.h walks admitted_implications at query time, and the late edge above then makes a "
-     "non-negative payload a subtype of a positive one",
-     "the payload order must be the implication relation of fixy/Refined.h, which is closed at the foot of "
-     "that header"},
-};
-static_assert(std::size(known_limitations) == 1, "the ledger only shrinks: lower this count when an entry goes");
-
-// Pin 1: the subtype walk reads the late edge.
+// The payload order of fixy/session/Subtype.h is this relation, so the
+// late edge does not make a non-negative payload a subtype of a positive
+// one.  A chain that the header admits still weakens a payload.
 using NonNegative = fixy::Refined<fixy::non_negative, int>;
 using Positive = fixy::Refined<fixy::positive, int>;
-static_assert(fixy::session::is_subtype_sync_v<fixy::session::Send<NonNegative, fixy::session::End>,
-                                               fixy::session::Send<Positive, fixy::session::End>>,
-              "the pinned attack of ledger entry 1 did not succeed, and the entry can be stale");
+static_assert(!fixy::session::is_subtype_sync_v<fixy::session::Send<NonNegative, fixy::session::End>,
+                                                fixy::session::Send<Positive, fixy::session::End>>);
+static_assert(fixy::session::is_subtype_sync_v<
+              fixy::session::Send<fixy::Refined<fixy::in_range<5, 9>, int>, fixy::session::End>,
+              fixy::session::Send<fixy::Refined<fixy::bounded_above<20>, int>, fixy::session::End>>);
 
 // A value crosses a chained weakening unchanged, and a value that the
 // late edge admits is exactly the one the relation must keep out.
@@ -202,7 +185,6 @@ static_assert(fixy::session::is_subtype_sync_v<fixy::session::Send<NonNegative, 
 
 int main() {
     const int failure = check_runtime();
-    std::printf("test_refined_chain_attack: %zu known limitation(s), runtime check %s\n", std::size(known_limitations),
-                failure == 0 ? "passed" : "failed");
+    std::printf("test_refined_chain_attack: runtime check %s\n", failure == 0 ? "passed" : "failed");
     return failure;
 }
