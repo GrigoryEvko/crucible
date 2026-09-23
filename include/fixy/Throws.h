@@ -69,8 +69,8 @@ inline constexpr bool node_matches_v = Match<Node>::value;
 // reference to a carrier answers the same as the carrier.
 template <template <class> class Match, typename Haystack>
 struct type_tree_any
-    : std::bool_constant<::foundation::reflect::any_component_satisfies<[](std::meta::info node) consteval {
-          return std::meta::extract<bool>(std::meta::substitute(^^node_matches_v, {^^Match, node}));
+    : std::bool_constant<::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
+          return std::meta::extract<bool>(std::meta::substitute(^^node_matches_v, {^^Match, node.type}));
       }>(^^Haystack)> {};
 
 // The exact-type predicate, as a member template so the needle binds

@@ -85,9 +85,12 @@ struct TypeNode {
     return TypeNode{bare, members_readable_without_instantiation(bare)};
 }
 
-// The components one step below `node`.  Complexity: linear in the
-// number of template arguments, bases and members of the one type.
-[[nodiscard]] consteval std::vector<TypeNode> components_of(TypeNode node) {
+// The components one step below `type` that need no read of its
+// members: the element of a pointer, a reference or an array, and each
+// template argument.  An array element inherits `may_read_members`,
+// because the element of a complete array is complete.  Complexity:
+// linear in the number of template arguments.
+[[nodiscard]] consteval std::vector<TypeNode> argument_components_of(TypeNode node) {
     std::vector<TypeNode> components;
     const std::meta::info type = bare_type(node.type);
 
@@ -99,61 +102,87 @@ struct TypeNode {
         components.push_back(TypeNode{bare_type(std::meta::remove_all_extents(type)), node.may_read_members});
         return components;
     }
-    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return components;
+    if (!std::meta::has_template_arguments(type)) return components;
 
-    if (std::meta::has_template_arguments(type)) {
-        for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
-            if (std::meta::is_type(argument)) {
-                components.push_back(node_reached_indirectly(argument));
-            } else if (std::meta::is_value(argument) || std::meta::is_object(argument)) {
-                components.push_back(node_reached_indirectly(std::meta::type_of(argument)));
-            }
-        }
-    }
-
-    if (node.may_read_members) {
-        for (const std::meta::info base : std::meta::bases_of(type, std::meta::access_context::unchecked())) {
-            components.push_back(TypeNode{bare_type(std::meta::type_of(base)), true});
-        }
-        for (const std::meta::info member :
-             std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
-            const std::meta::info member_type = std::meta::type_of(member);
-            if (std::meta::is_reference_type(member_type)) {
-                components.push_back(node_reached_indirectly(member_type));
-            } else {
-                components.push_back(TypeNode{bare_type(member_type), true});
-            }
+    for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
+        if (std::meta::is_type(argument)) {
+            components.push_back(node_reached_indirectly(argument));
+        } else if (std::meta::is_value(argument) || std::meta::is_object(argument)) {
+            components.push_back(node_reached_indirectly(std::meta::type_of(argument)));
         }
     }
     return components;
 }
 
-// True when `predicate` accepts the root or a type the walk reaches from
-// it.  The walk visits each node once, so a type that reaches itself
-// through a pointer ends the walk.  Complexity: linear in the number of
-// distinct nodes, times the cost of the visited-list scan.
+// The bases and the non-static data members of a class or union whose
+// members the walk may read.  For a specialization this read
+// instantiates the class, so the caller must know it is complete.
+// Complexity: linear in the number of bases and members.
+[[nodiscard]] consteval std::vector<TypeNode> member_components_of(TypeNode node) {
+    std::vector<TypeNode> components;
+    const std::meta::info type = bare_type(node.type);
+    if (!node.may_read_members) return components;
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return components;
+
+    for (const std::meta::info base : std::meta::bases_of(type, std::meta::access_context::unchecked())) {
+        components.push_back(TypeNode{bare_type(std::meta::type_of(base)), true});
+    }
+    for (const std::meta::info member :
+         std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
+        const std::meta::info member_type = std::meta::type_of(member);
+        if (std::meta::is_reference_type(member_type)) {
+            components.push_back(node_reached_indirectly(member_type));
+        } else {
+            components.push_back(TypeNode{bare_type(member_type), true});
+        }
+    }
+    return components;
+}
+
+// True when `Predicate` accepts the root or a node the walk reaches from
+// it.  `Predicate` is a consteval callable that takes a TypeNode and
+// returns bool.  A predicate that reads a member of the type, or asks a
+// trait that instantiates it, must do so only when the node says
+// `may_read_members`.
 //
 // The root is read with its members, because the caller holds a value
-// of it.  `predicate` is a consteval callable that takes a reflected
-// type and returns bool.
+// of it, so the root must be complete.  The walk reads the arguments of
+// a node before its members, and it stops at the first node that
+// `Predicate` accepts.  A root whose arguments already answer is
+// therefore never instantiated.
+//
+// The walk visits each node once, so a type that reaches itself through
+// a pointer ends the walk.  Complexity: linear in the number of distinct
+// nodes, times the cost of the visited-list scan.
 template <auto Predicate>
 [[nodiscard]] consteval bool any_component_satisfies(std::meta::info root) {
-    std::vector<TypeNode> pending{TypeNode{bare_type(root), true}};
+    struct Step {
+        TypeNode node{};
+        bool reads_members = false;
+    };
+    std::vector<Step> pending{Step{TypeNode{bare_type(root), true}, false}};
     std::vector<TypeNode> visited;
     while (!pending.empty()) {
-        const TypeNode node = pending.back();
+        const Step step = pending.back();
         pending.pop_back();
+        if (step.reads_members) {
+            for (const TypeNode& component : member_components_of(step.node)) pending.push_back(Step{component, false});
+            continue;
+        }
         bool was_visited = false;
         for (const TypeNode& seen : visited) {
-            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) {
+            if (seen.type == step.node.type && (seen.may_read_members || !step.node.may_read_members)) {
                 was_visited = true;
                 break;
             }
         }
         if (was_visited) continue;
-        visited.push_back(node);
-        if (Predicate(node.type)) return true;
-        for (const TypeNode& component : components_of(node)) pending.push_back(component);
+        visited.push_back(step.node);
+        if (Predicate(step.node)) return true;
+        // The member read is pushed first, so the stack runs it after
+        // every argument and its whole subtree.
+        if (step.node.may_read_members) pending.push_back(Step{step.node, true});
+        for (const TypeNode& component : argument_components_of(step.node)) pending.push_back(Step{component, false});
     }
     return false;
 }
@@ -186,13 +215,14 @@ struct NeedleValue {
     Needle held{};
 };
 
-// The walk stops the build if it instantiates this template.
+// The walk stops the build if it instantiates this template where the
+// template is not a root.
 template <class T>
 struct Detonates {
     static_assert(sizeof(T) == 0, "the walk instantiated a specialization that it reached indirectly");
 };
 
-inline constexpr auto is_needle = [](std::meta::info type) consteval { return type == ^^Needle; };
+inline constexpr auto is_needle = [](TypeNode node) consteval { return node.type == ^^Needle; };
 
 static_assert(any_component_satisfies<is_needle>(^^Needle));
 static_assert(any_component_satisfies<is_needle>(^^Needle const&));

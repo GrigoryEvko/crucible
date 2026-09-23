@@ -26,9 +26,11 @@
 // carries a defaulted Brand parameter, so it has to be named through the
 // header that declares it rather than redeclared here.
 #include <foundation/permissions/Fwd.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
 #include <cstddef>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -226,41 +228,92 @@ struct is_computation : std::false_type {};
 //   * an execution context, which holds a capability member and would
 //     hand that capability out with itself.
 //
-// A nested Computation conveys authority when its own row is engaged,
-// which is the case the old specialization covered, or when its payload
-// does.
+// A nested Computation conveys authority when its own row is engaged.
 //
-// A type outside this list says so itself by carrying
+// Those are the kinds that convey authority by themselves.  A payload
+// conveys authority when one of them is a component of it, read by the
+// walk in foundation/reflect/TypeComponents.h: a template argument, a
+// base, a by-value member, or the target of a pointer.  So a pair, an
+// optional or a plain struct that holds a capability conveys the
+// capability, and a stack of carriers cannot launder one.
+//
+// A class that holds state the walk cannot read is refused, because the
+// gate cannot say what that state is.  That is a class that is not empty
+// and that reflects no base and no data member, which is the shape of a
+// lambda with captures: GCC 16 reflects no capture.  A lambda that
+// captures a capability would otherwise leave through extract as a
+// plain value.
+//
+// A type outside the list says so itself by carrying
 // `static constexpr bool conveys_authority = true;`, the same opt-in
 // shape GradedTrait.h uses for value_type_decoupled.
 //
-// The residual, stated rather than papered over.  A type that neither
-// appears here nor declares the member is admitted.  That is not
-// closure.  It is a far smaller hole than the one it replaces, and it is
-// deliberate: most payloads are inert, and refusing them by default
-// would make extract unusable rather than safe.  A new authority-bearing
-// type has to arrive in this list or declare itself, and that is the
-// obligation this comment exists to hand the next author.
+// The residual, stated rather than papered over.  The walk does not see
+// a value behind type erasure, as in std::function or std::any, or a
+// member of a specialization that it reaches only through a pointer or a
+// template argument.  TypeComponents.h states both.  Inert payloads are
+// the common case, and a refusal of each unknown type would make extract
+// unusable rather than safe, so a type the walk reads in full and finds
+// no authority in is admitted.
 
 template <typename T>
 concept DeclaresConveysAuthority = requires {
     { T::conveys_authority } -> std::convertible_to<const bool&>;
 } && T::conveys_authority;
 
+// The enumerated kinds alone, without the opt-in member.  The walk asks
+// this of a node whose members it may not read.
 template <typename T>
-struct conveys_authority : std::bool_constant<DeclaresConveysAuthority<T>> {};
+struct conveys_authority_listed : std::false_type {};
 
 template <Effect Cap, class Source>
-struct conveys_authority<Capability<Cap, Source>> : std::true_type {};
+struct conveys_authority_listed<Capability<Cap, Source>> : std::true_type {};
 
 template <typename Tag, typename Brand>
-struct conveys_authority<::foundation::permissions::Permission<Tag, Brand>> : std::true_type {};
+struct conveys_authority_listed<::foundation::permissions::Permission<Tag, Brand>> : std::true_type {};
 
 template <typename Tag, typename Brand>
-struct conveys_authority<::foundation::permissions::SharedPermission<Tag, Brand>> : std::true_type {};
+struct conveys_authority_listed<::foundation::permissions::SharedPermission<Tag, Brand>> : std::true_type {};
 
 template <class Cap, class R>
-struct conveys_authority<ExecCtx<Cap, R>> : std::true_type {};
+struct conveys_authority_listed<ExecCtx<Cap, R>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool conveys_authority_listed_v = conveys_authority_listed<T>::value;
+
+// The enumerated kinds and the opt-in member together.
+template <typename T>
+struct conveys_authority_directly : std::bool_constant<conveys_authority_listed_v<T> || DeclaresConveysAuthority<T>> {};
+
+template <typename T>
+inline constexpr bool conveys_authority_directly_v = conveys_authority_directly<T>::value;
+
+// A class whose state the walk cannot read: complete, not empty, and
+// with no reflected base or data member.  A lambda with captures has
+// this shape.
+[[nodiscard]] consteval bool holds_unreadable_state(std::meta::info type) {
+    if (!std::meta::is_class_type(type) || std::meta::has_template_arguments(type)) return false;
+    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
+    const auto unchecked = std::meta::access_context::unchecked();
+    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
+}
+
+// The opt-in member is read only where the walk may read members.  A
+// read elsewhere would instantiate a specialization that the walk
+// reached through an argument or a pointer, and TypeComponents.h
+// promises no such instantiation.  The enumerated kinds match by
+// partial specialization, which instantiates nothing.
+[[nodiscard]] consteval bool node_conveys_authority(::foundation::reflect::TypeNode node) {
+    if (holds_unreadable_state(node.type)) return true;
+    const std::meta::info trait = node.may_read_members ? ^^conveys_authority_directly_v : ^^conveys_authority_listed_v;
+    return std::meta::extract<bool>(std::meta::substitute(trait, {node.type}));
+}
+
+template <typename T>
+struct conveys_authority
+    : std::bool_constant<::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
+          return node_conveys_authority(node);
+      }>(^^T)> {};
 
 template <typename T>
 inline constexpr bool conveys_authority_v = conveys_authority<std::remove_cvref_t<T>>::value;
@@ -289,7 +342,13 @@ public:
 
     [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept { return row_size_v<R>; }
 
-    constexpr Computation() = default;
+    // The constraint keeps the defaulted body from being defined for a
+    // payload that has no default constructor.  Without it, a reflection
+    // query over the members of such a Computation defines the body, and
+    // the definition fails inside the substrate.
+    constexpr Computation()
+        requires std::is_default_constructible_v<T>
+    = default;
     constexpr Computation(const Computation&) = default;
     constexpr Computation(Computation&&) = default;
     constexpr Computation& operator=(const Computation&) = default;
@@ -458,11 +517,16 @@ struct is_computation<Computation<R, T>> : std::true_type {};
 
 // A nested carrier hides its own row from everything that reads the
 // outer type, so an engaged inner row conveys authority exactly as a
-// capability does.  The payload recurses, which is what keeps a stack of
-// carriers from laundering one.
+// capability does.  The payload is a template argument, so the walk
+// reads it, which is what keeps a stack of carriers from laundering one.
 template <typename R, typename U>
-struct conveys_authority<Computation<R, U>>
-    : std::bool_constant<(row_size_v<R> != 0) || conveys_authority_v<U>> {};
+struct conveys_authority_listed<Computation<R, U>> : std::bool_constant<(row_size_v<R> != 0)> {};
+
+// A Computation declares no opt-in member, so its answer is the row
+// alone.  This keeps the walk from a member lookup that instantiates
+// the carrier.
+template <typename R, typename U>
+struct conveys_authority_directly<Computation<R, U>> : conveys_authority_listed<Computation<R, U>> {};
 }  // namespace detail
 
 #define CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationAlias, T_)                                                   \
@@ -625,6 +689,22 @@ static_assert(!detail::extract_admits_payload_v<Computation<Row<>, Capability<Ef
 static_assert(
     !detail::extract_admits_payload_v<Computation<Row<>, ::foundation::permissions::Permission<AuthorityProbeTag>>>);
 static_assert(!detail::extract_admits_payload_v<Computation<Row<>, ExecCtx<Bg, Row<Effect::Bg>>>>);
+
+// A carrier the list does not name conveys what it holds.  The walk
+// reads a member, a base, a pointer target and an argument of a
+// template, whatever its parameters.  Capability is only declared here,
+// so the cells over complete carriers are in
+// test/foundation/test_computation.cpp.  The target of a pointer needs
+// no complete type.
+static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg>*>);
+static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg> const* const*>);
+
+// A lambda with captures holds state the walk cannot read, so it is
+// refused whatever it captures.  A lambda without captures is empty.
+inline constexpr auto captures_an_int = [held = 7] { return held; };
+inline constexpr auto captures_nothing = [] { return 7; };
+static_assert(!detail::extract_admits_payload_v<decltype(captures_an_int)>);
+static_assert(detail::extract_admits_payload_v<decltype(captures_nothing)>);
 
 // The opt-in escape, for a type that conveys authority without being
 // nameable here.  Declaring the member false is not a way out of the

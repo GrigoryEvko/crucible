@@ -204,6 +204,18 @@ foundation_neg_compile_test(neg_computation_extract_permission_payload
   "constraints not satisfied"
   "extract_admits_payload_v<T> .with T = foundation::permissions::Permission")
 
+# Two more, for a carrier that no list names.  The first holds a
+# capability in a member of a plain class, which the walk over
+# components reads.  The second is a lambda with a capture, which the
+# walk cannot read and so refuses.
+foundation_neg_compile_test(neg_computation_extract_capability_in_member
+  "constraints not satisfied"
+  "extract_admits_payload_v<T> .with T = <unnamed>::HoldsCapability")
+
+foundation_neg_compile_test(neg_computation_extract_capturing_lambda
+  "constraints not satisfied"
+  "Computation<foundation::effects::Row<>, main\\(\\)::<lambda\\(\\)> >::extract\\(\\)")
+
 # The contracts tests keep the file names of the tests they are ported
 # from.  The target names carry the contracts prefix because the old
 # tests still register the plain names in test/CMakeLists.txt, and a

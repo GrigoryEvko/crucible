@@ -158,6 +158,62 @@ static_assert(fe::detail::extract_admits_payload_v<fe::Computation<Row<>, PlainP
 static_assert(requires(fe::Computation<Row<>, PlainPayload> const& c) { c.extract(); },
               "A payload that conveys no authority must still come out of a pure carrier.");
 
+// A carrier that no list names conveys what it holds.  The walk over
+// components reads a member, a base, the target of a pointer and an
+// array element, and each of these holds a capability that no template
+// argument names.
+struct HoldsCapability {
+    int tag = 0;
+    fe::Capability<Effect::IO, fe::Bg> held;
+};
+struct DerivesCapability : fe::Capability<Effect::IO, fe::Bg> {};
+struct PointsAtCapability {
+    fe::Capability<Effect::IO, fe::Bg>* held = nullptr;
+};
+struct HoldsPermissionByReference {
+    fp::Permission<PureRegionTag> const& held;
+};
+struct NestsTheHolder {
+    HoldsCapability inner;
+};
+template <int N>
+struct ValueTemplateHoldsCapability {
+    fe::Capability<Effect::IO, fe::Bg> held;
+};
+
+static_assert(!fe::detail::extract_admits_payload_v<HoldsCapability>);
+static_assert(!fe::detail::extract_admits_payload_v<DerivesCapability>);
+static_assert(!fe::detail::extract_admits_payload_v<PointsAtCapability>);
+static_assert(!fe::detail::extract_admits_payload_v<HoldsPermissionByReference>);
+static_assert(!fe::detail::extract_admits_payload_v<NestsTheHolder>);
+static_assert(!fe::detail::extract_admits_payload_v<HoldsCapability[2]>);
+static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, HoldsCapability>>);
+template <class T>
+struct UnlistedCarrier {
+    T held;
+};
+template <int N, class T>
+struct UnlistedValueCarrier {};
+
+static_assert(!fe::detail::extract_admits_payload_v<UnlistedCarrier<fe::Capability<Effect::IO, fe::Bg>>>);
+static_assert(!fe::detail::extract_admits_payload_v<UnlistedValueCarrier<3, fe::Capability<Effect::IO, fe::Bg>>>,
+              "a template with a value parameter is still read for its type arguments");
+static_assert(!fe::detail::extract_admits_payload_v<
+              fe::Computation<Row<>, UnlistedCarrier<fe::Capability<Effect::IO, fe::Bg>>>>);
+static_assert(fe::detail::extract_admits_payload_v<UnlistedCarrier<int>>);
+static_assert(fe::detail::extract_admits_payload_v<UnlistedCarrier<fe::Computation<Row<>, int>>>);
+static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, ValueTemplateHoldsCapability<1>>>,
+              "the payload of a carrier is complete, so the walk reads its members even for a specialization "
+              "whose arguments name nothing");
+
+// The admitting direction for the same shapes, with no authority inside.
+struct HoldsPlain {
+    PlainPayload inner;
+    int* pointer = nullptr;
+};
+static_assert(fe::detail::extract_admits_payload_v<HoldsPlain>);
+static_assert(requires(fe::Computation<Row<>, HoldsPlain> const& c) { c.extract(); });
+
 }  // namespace authority_relation
 
 }  // namespace
