@@ -336,6 +336,24 @@ static_assert(!well_formed(^^Put<Fault<int>, Done>), "a payload that is not send
 static_assert(well_formed(^^Take<Fault<int>, Done>));
 static_assert(!well_formed(^^Put<int, Unknown>), "an unknown node is refused");
 
+// The three rules of branches and labels.
+static_assert(!well_formed(^^Pick<>) && !well_formed(^^Wait<>) && !well_formed(^^Wait<From<int>>),
+              "a choice has one label branch or more, and a note is not a branch");
+static_assert(!well_formed(^^Wait<Take<Fault<int>, Done>>), "branches that are no label only");
+static_assert(!well_formed(^^Put<int, Pick<Done, Wait<>>>), "an empty choice below the head");
+static_assert(!well_formed(^^Wait<Take<Fault<int>, Done>, Done>), "a label branch after a branch that is no label");
+static_assert(!well_formed(^^Wait<Again<Take<Fault<int>, Back>>, Done>),
+              "a binder at the head of a branch is looked through");
+static_assert(well_formed(^^Wait<Done, Again<Take<Fault<int>, Back>>>));
+static_assert(!well_formed(^^Pick<Done, Take<Fault<int>, Done>>), "an internal choice with a branch that is no label");
+static_assert(!well_formed(^^Wait<Done, Take<Fault<int>, Done>, Pin<1, Take<Fault<int>, Put<int, Done>>>>),
+              "two branches that are no label receive one payload, under a wrapper too");
+static_assert(well_formed(^^Wait<Done, Take<Fault<int>, Done>, Take<Fault<char>, Done>>));
+static_assert(tr::first_faulty_choice(reg, ^^Put<int, Wait<Take<Fault<int>, Done>, Done>>).fault
+              == tr::choice_fault::label_after_non_label);
+static_assert(tr::first_faulty_choice(reg, ^^Put<int, Wait<Take<Fault<int>, Done>, Done>>).choice
+              == ^^Wait<Take<Fault<int>, Done>, Done>);
+
 // ── Terminality and empty choices ────────────────────────────────────
 
 static_assert(terminal(^^Done) && terminal(^^Halt) && terminal(^^Pin<1, Done>));
@@ -424,6 +442,33 @@ static_assert(!tr::subsorts(^^envelope_axioms, ^^Envelope<Alice, Hello, short>, 
 static_assert(!tr::subsorts(^^axioms, ^^Envelope<Alice, Hello, short>, ^^Envelope<Alice, Hello, long>),
               "without the congruence, two envelopes are in the order only when they are the same");
 
+// An envelope names a label: its peer and its label, without the payload.
+// Two label branches of one choice that name the same label are not
+// well-formed.
+template <class T>
+struct envelope_label;
+template <class To, class Label, class Payload>
+struct envelope_label<Envelope<To, Label, Payload>> {
+    using type = Envelope<To, Label, void>;
+};
+template <class T>
+using envelope_label_t = typename envelope_label<T>::type;
+using HelloAlias = Hello;
+namespace good {
+inline constexpr tr::payload_rule envelope{.shape = ^^Envelope, .label_key = ^^envelope_label_t};
+}  // namespace good
+static_assert(!well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Hello, long>, Done>>),
+              "the payload is not part of the label");
+static_assert(!well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, HelloAlias, int>, Done>>),
+              "an alias names the same label");
+static_assert(well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Bob, Hello, int>, Done>>),
+              "the peer is part of the label");
+static_assert(well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Bye, int>, Done>>));
+static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int>, Done>,
+                                                   Put<Envelope<Alice, Hello, long>, Done>>)
+                  .fault
+              == tr::choice_fault::repeated_label_key);
+
 // An axiom that breaks the contract and sheds to the same type stops at
 // the depth bound instead of a recursion without end.
 template <class T>
@@ -453,7 +498,8 @@ static_assert(graph_records_the_unknown());
 consteval bool graph_marks_labels_and_payloads() {
     const tr::graph_view graph = tr::graph_of(reg, ^^Wait<Take<Fault<int>, Done>, Put<Fault<int>, Done>>);
     return graph.nodes[1].is_label == false && graph.nodes[1].has_restricted_payload
-           && graph.nodes[3].has_restricted_payload && graph.nodes[3].is_label;
+           && graph.nodes[1].head_payload == (^^Fault<int>) && graph.nodes[3].has_restricted_payload
+           && graph.nodes[3].is_label;
 }
 static_assert(graph_marks_labels_and_payloads());
 
@@ -466,8 +512,12 @@ static_assert(refines(^^Wait<From<int>, Done, Put<int, Done>>, ^^Wait<From<int>,
 static_assert(refines(^^Again<Put<int, Back>>, ^^Again<Put<int, Back>>));
 static_assert(refines(^^Pin<3, Ping>, ^^Pin<3, Ping>) && refines(^^Raise<2, Ping>, ^^Raise<2, Ping>));
 
-// Width: an output choice narrows, an input choice widens.
-static_assert(refines(^^Pick<>, ^^Pick<Done>) && refines(^^Pick<Done>, ^^Pick<Done, Ping>));
+// Width: an output choice narrows, an input choice widens.  An empty
+// choice is refused also when the layer does not check well-formedness
+// first: under the branch rule it refines each larger internal choice,
+// and a substitute of that type never sends.
+static_assert(!refines(^^Pick<>, ^^Pick<Done>) && refines(^^Pick<Done>, ^^Pick<Done, Ping>));
+static_assert(refine(^^Pick<>, ^^Pick<Done>).reason == tr::mismatch::ill_formed);
 static_assert(!refines(^^Pick<Done, Ping>, ^^Pick<Done>));
 static_assert(refines(^^Wait<Done, Ping>, ^^Wait<Done>) && !refines(^^Wait<Done>, ^^Wait<Done, Ping>));
 static_assert(refine(^^Pick<Done, Done>, ^^Pick<Done>).reason == tr::mismatch::branch_count);
@@ -501,6 +551,20 @@ static_assert(refine(^^Wait<Done, Take<Fault<int>, Done>>, ^^Wait<Done>).reason 
 static_assert(refines(^^Wait<Take<Fault<int>, Done>, Done>, ^^Wait<Take<Fault<int>, Done>, Done>));
 static_assert(refine(^^Wait<Take<Fault<int>, Done>, Done>, ^^Wait<Take<Fault<int>, Done>>).reason
               == tr::mismatch::pure_non_label_choice);
+
+// A label branch pairs by position, because its position is its wire
+// label.  A branch that is no label pairs by the payload it receives.
+static_assert(refines(^^Wait<Done, Ping, Take<Fault<int>, Done>>, ^^Wait<Done, Take<Fault<int>, Done>>),
+              "a label branch added before the branch that is no label (rule Sub-&)");
+static_assert(refines(^^Wait<Done, Take<Fault<char>, Done>, Take<Fault<int>, Done>>,
+                      ^^Wait<Done, Take<Fault<int>, Done>, Take<Fault<char>, Done>>),
+              "branches that are no label pair by payload, in any order");
+static_assert(refine(^^Wait<Done>, ^^Wait<Done, Take<Fault<int>, Done>>).reason
+              == tr::mismatch::missing_non_label_branch);
+static_assert(refine(^^Wait<Done, Take<Fault<char>, Done>>, ^^Wait<Done, Take<Fault<int>, Done>>).reason
+              == tr::mismatch::non_label_branch,
+              "a branch that is no label with no partner of the same payload");
+static_assert(!refines(^^Wait<Ping, Done>, ^^Wait<Done, Ping>), "another order of label branches is another choice");
 
 // An unknown node is named.
 static_assert(refine(^^Pick<Done, Unknown>, ^^Pick<Done>).reason == tr::mismatch::unregistered);

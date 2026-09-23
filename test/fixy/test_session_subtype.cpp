@@ -54,7 +54,8 @@ static_assert(s::is_subtype_sync_v<Select<Send<int, End>, Recv<bool, End>>, Sele
 static_assert(s::is_subtype_sync_v<Offer<Recv<int, End>, Send<bool, End>>, Offer<Recv<int, End>, Send<bool, End>>>);
 static_assert(s::is_subtype_sync_v<Offer<Sender<Alice>, Recv<int, End>>, Offer<Sender<Alice>, Recv<int, End>>>,
               "the old relation was not reflexive on an Offer with a note");
-static_assert(s::is_subtype_sync_v<Offer<Sender<Alice>>, Offer<Sender<Alice>>>);
+static_assert(!s::is_subtype_sync_v<Offer<Sender<Alice>>, Offer<Sender<Alice>>>,
+              "an Offer with a note and no branch is an empty choice, which is not well-formed");
 static_assert(s::is_subtype_sync_v<Loop<Loop<Send<int, Continue>>>, Loop<Loop<Send<int, Continue>>>>);
 
 using NvSendInt = VendorPinned<VendorBackend::NV, Send<int, End>>;
@@ -92,18 +93,73 @@ static_assert(s::is_subtype_sync_v<Send<int, Select<Send<PingReq, End>>>,
                                    Send<int, Select<Send<PingReq, End>, Send<StopReq, End>>>>);
 static_assert(s::is_subtype_sync_v<Recv<int, Select<Send<PingReq, End>>>,
                                    Recv<int, Select<Send<PingReq, End>, Send<StopReq, End>>>>);
-static_assert(s::is_subtype_sync_v<Select<>, Select<Send<PingReq, End>>>);
+// An empty choice is not well-formed.  Under the branch rule Select<>
+// refines every Select, and a substitute of that type never sends, so
+// the session deadlocks.
+static_assert(!s::is_subtype_sync_v<Select<>, Select<Send<PingReq, End>>>);
+static_assert(s::subtype_mismatch_v<Select<>, Select<Send<PingReq, End>>> == tr::mismatch::ill_formed);
+static_assert(!s::is_subtype_async_v<Select<>, Select<Send<PingReq, End>>, 4>);
+static_assert(!s::is_subtype_sync_v<Send<int, Select<>>, Send<int, Select<Send<PingReq, End>>>>,
+              "an empty choice below the top is refused too");
 static_assert(!s::is_subtype_sync_v<Select<Send<PingReq, End>, Send<StopReq, End>>, Select<Send<PingReq, End>>>);
 static_assert(s::is_subtype_sync_v<Offer<Recv<PingReq, End>, Recv<StopReq, End>, End>,
                                    Offer<Recv<PingReq, End>, Recv<StopReq, End>>>);
 static_assert(!s::is_subtype_sync_v<Offer<Recv<PingReq, End>>, Offer<Recv<PingReq, End>, Recv<StopReq, End>>>);
 static_assert(!s::is_subtype_sync_v<Offer<>, Offer<Recv<PingReq, End>>>);
-static_assert(s::is_subtype_sync_v<Offer<>, Offer<>>);
+static_assert(!s::is_subtype_sync_v<Offer<>, Offer<>>);
+static_assert(s::subtype_mismatch_v<Offer<>, Offer<>> == tr::mismatch::ill_formed);
 static_assert(s::is_subtype_sync_v<Loop<Select<Send<PingReq, Continue>>>,
                                    Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>>>>);
 static_assert(!s::is_subtype_sync_v<Select<Send<PingReq, End>, Send<StopReq, End>>,
                                     Select<Send<StopReq, End>, Send<PingReq, End>>>,
-              "branches are positional");
+              "the position of a label branch is the label on the wire");
+
+// ── Branches that are no label ───────────────────────────────────────
+//
+// A crash branch has no position on the wire: the endpoint enters it
+// when it detects the crash.  So the subtype can add a message branch
+// before the crash branch of its Offer (rule Sub-&, LMCS 2025, Def. 4.4),
+// and the crash branches of the two sides pair by the payload they
+// receive, in any order.
+
+using AliceCrash = Recv<s::Crash<Alice>, End>;
+using BobCrash = Recv<s::Crash<Bob>, End>;
+static_assert(s::is_subtype_sync_v<Offer<Recv<PingReq, End>, Recv<StopReq, End>, AliceCrash>,
+                                   Offer<Recv<PingReq, End>, AliceCrash>>,
+              "a message branch added before the crash branch");
+static_assert(s::is_subtype_sync_v<Offer<Recv<PingReq, End>, BobCrash, AliceCrash>,
+                                   Offer<Recv<PingReq, End>, AliceCrash, BobCrash>>,
+              "crash branches pair by payload, not by position");
+static_assert(s::subtype_mismatch_v<Offer<Recv<PingReq, End>>, Offer<Recv<PingReq, End>, AliceCrash>>
+                  == tr::mismatch::missing_non_label_branch,
+              "the subtype must handle each crash that the supertype handles");
+static_assert(s::subtype_mismatch_v<Offer<Recv<PingReq, End>, AliceCrash>, Offer<Recv<PingReq, End>>>
+                  == tr::mismatch::non_label_branch,
+              "the subtype may not add a crash branch");
+static_assert(!s::is_subtype_sync_v<Offer<Recv<StopReq, End>, Recv<PingReq, End>, AliceCrash>,
+                                    Offer<Recv<PingReq, End>, AliceCrash>>,
+              "a message branch keeps its position");
+static_assert(!s::is_well_formed_v<Offer<AliceCrash, Recv<PingReq, End>>>,
+              "a message branch after a crash branch has no wire label");
+static_assert(!s::is_well_formed_v<Offer<Recv<PingReq, End>, AliceCrash, Recv<s::Crash<Alice>, Send<int, End>>>>,
+              "two crash branches for one peer");
+static_assert(!s::is_well_formed_v<Offer<AliceCrash>>, "a choice of crash branches only is empty");
+
+// ── Labels that a payload names ──────────────────────────────────────
+//
+// A PeerMsg names a peer and a label.  Two branches of one choice that
+// name the same label are not well-formed, whatever their payloads.
+
+static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
+                                          Send<s::PeerMsg<Bob, PingReq, int>, Send<int, End>>>>);
+static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
+                                          Send<s::PeerMsg<Bob, PingReq, bool>, End>>>,
+              "the payload is not part of the label");
+static_assert(s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
+                                         Send<s::PeerMsg<Alice, PingReq, int>, End>>>,
+              "the peer is part of the label");
+static_assert(!s::is_well_formed_v<Offer<Sender<Bob>, Recv<s::PeerMsg<Bob, PingReq, int>, End>,
+                                         Recv<s::PeerMsg<Bob, PingReq, int>, End>>>);
 
 // The relation is on the unfoldings, which the old lockstep walk could
 // not see.

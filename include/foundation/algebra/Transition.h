@@ -102,6 +102,38 @@
 //                choice of the supertype is not made only of such
 //                branches (Barwell, Hou, Yoshida and Zhou, LMCS 2025,
 //                Definition 4.4, rule Sub-&).
+//   label_key    An alias template `template <class T> using`, the label
+//                that a payload of this shape names.  Two label branches
+//                of one choice whose heads name the same label are not
+//                well-formed.  Null: the payload names no label.
+//
+// ── Branches and labels ───────────────────────────────────────────────
+//
+// A choice numbers its branches.  The number of a label branch is its
+// wire label: an endpoint sends it to pick the branch, and the peer
+// dispatches on it.  So refinement compares label branches position by
+// position, and a different order of the same branches is a different
+// choice.  A payload label that a layer registers with `label_key` is
+// data inside the branch, not the wire label.
+//
+// A branch that is no label has no number on the wire.  The endpoint
+// enters it on an event, for example the detection of a crash, and
+// finds it by its payload.  So refinement matches such a branch by its
+// payload, wherever it stands.  Three rules keep the two kinds apart:
+//
+//   1. Each choice has one label branch or more.  An empty internal
+//      choice has no branch to pick, and an empty external choice has
+//      no label the peer can send, so a handle there is stuck.  Under
+//      the branch rule such a choice also refines each larger internal
+//      choice, and a substitute of that type never sends.  The choice
+//      types of Gay and Hole (2005) have one label or more.
+//   2. In an input choice, no label branch follows a branch that is no
+//      label, so the number of each label branch is its position among
+//      the label branches.  An output choice has no branch that is no
+//      label.
+//   3. No two branches that are no label receive the same payload, and
+//      no two label branches name the same `label_key`, so each match
+//      is unique.
 //
 // ── Recursion ─────────────────────────────────────────────────────────
 //
@@ -165,6 +197,7 @@ struct payload_rule {
     std::meta::info shape{};
     bool is_sendable = true;
     bool is_label = true;
+    std::meta::info label_key{};
 };
 
 // One axiom of a payload preorder.  An axiom drops a wrapper, weakens a
@@ -619,17 +652,52 @@ template <class Algebra>
 
 // ── Algebras ──────────────────────────────────────────────────────────
 
+// The head of one branch of a choice, under its wrappers.  `payload` is
+// the payload of a head step, or null.  `label_key` is the label that
+// the payload names through its registration, or null.
+struct branch_head {
+    bool is_label = true;
+    std::meta::info payload{};
+    std::meta::info label_key{};
+};
+
+// Why a choice is not well-formed, by the rules of the section on
+// branches and labels.
+enum class choice_fault : std::uint8_t {
+    none,
+    no_label_branch,
+    label_after_non_label,
+    non_label_in_output,
+    repeated_non_label_payload,
+    repeated_label_key,
+};
+
 namespace detail {
 
-// A branch is a label unless its head, under wrappers, is an input step
-// whose payload a payload registration marks as no label.
-[[nodiscard]] consteval bool is_label_branch(std::meta::info registry, std::meta::info branch) {
-    const node head = decompose(registry, strip_wrappers(registry, branch));
-    if (!head.is_registered || head.entry.kind != shape_kind::step || head.entry.direction != polarity::input) {
-        return true;
+// A branch is a label unless its head, under wrappers and binders, is an
+// input step whose payload a payload registration marks as no label.  A
+// binder at the head is looked through, because its first action is the
+// first action of its body.  Complexity: linear in the wrappers and
+// binders at the head.
+[[nodiscard]] consteval branch_head head_of_branch(std::meta::info registry, std::meta::info branch) {
+    branch_head result{};
+    node head = decompose(registry, strip_wrappers(registry, branch));
+    while (head.is_registered && head.entry.kind == shape_kind::binder) {
+        head = decompose(registry, strip_wrappers(registry, head.next));
     }
+    if (!head.is_registered || head.entry.kind != shape_kind::step) return result;
+    result.payload = head.payload;
     const payload_lookup rule = lookup_payload_rule(registry, head.payload);
-    return !rule.is_found || rule.entry.is_label;
+    if (!rule.is_found) return result;
+    result.is_label = head.entry.direction != polarity::input || rule.entry.is_label;
+    if (rule.entry.label_key != std::meta::info{} && std::meta::can_substitute(rule.entry.label_key, {head.payload})) {
+        result.label_key = std::meta::dealias(std::meta::substitute(rule.entry.label_key, {head.payload}));
+    }
+    return result;
+}
+
+[[nodiscard]] consteval bool is_label_branch(std::meta::info registry, std::meta::info branch) {
+    return head_of_branch(registry, branch).is_label;
 }
 
 [[nodiscard]] consteval std::size_t label_count(std::meta::info registry, const node& choice) {
@@ -639,6 +707,91 @@ namespace detail {
     }
     return count;
 }
+
+}  // namespace detail
+
+// The first rule of the section on branches and labels that the choice
+// breaks, or none.  Complexity: O(b²) for b branches, from the pairwise
+// uniqueness rule.
+[[nodiscard]] consteval choice_fault fault_of_choice(std::meta::info registry, const node& choice) {
+    std::vector<branch_head> heads;
+    for (const std::meta::info branch : choice.branches) heads.push_back(detail::head_of_branch(registry, branch));
+    bool has_label = false;
+    bool non_label_seen = false;
+    for (const branch_head& head : heads) {
+        if (head.is_label) {
+            has_label = true;
+            if (non_label_seen) return choice_fault::label_after_non_label;
+        } else {
+            if (choice.entry.direction == polarity::output) return choice_fault::non_label_in_output;
+            non_label_seen = true;
+        }
+    }
+    if (!has_label) return choice_fault::no_label_branch;
+    for (std::size_t first = 0; first < heads.size(); ++first) {
+        for (std::size_t second = first + 1; second < heads.size(); ++second) {
+            const branch_head& left = heads[first];
+            const branch_head& right = heads[second];
+            if (!left.is_label && !right.is_label && left.payload == right.payload) {
+                return choice_fault::repeated_non_label_payload;
+            }
+            if (left.is_label && right.is_label && left.label_key != std::meta::info{}
+                && left.label_key == right.label_key) {
+                return choice_fault::repeated_label_key;
+            }
+        }
+    }
+    return choice_fault::none;
+}
+
+[[nodiscard]] consteval std::string_view choice_fault_name(choice_fault fault) {
+    switch (fault) {
+        case choice_fault::none:
+            return "none";
+        case choice_fault::no_label_branch:
+            return "the choice has no label branch, so no endpoint can pick a branch or send a label";
+        case choice_fault::label_after_non_label:
+            return "a label branch follows a branch that is no label, so its wire label is not its position";
+        case choice_fault::non_label_in_output:
+            return "an internal choice holds a branch that is no label, which no endpoint can pick";
+        case choice_fault::repeated_non_label_payload:
+            return "two branches that are no label receive the same payload, so the event that enters one is "
+                   "ambiguous";
+        case choice_fault::repeated_label_key:
+            return "two label branches name the same label";
+        default:
+            break;
+    }
+    return "an unknown fault";
+}
+
+struct choice_verdict {
+    choice_fault fault = choice_fault::none;
+    std::meta::info choice{};
+};
+
+// The first choice on the spine of `type` that breaks a rule of the
+// section on branches and labels, or a verdict with no fault.
+// Complexity: the sum of O(b²) over the choices of the spine.
+[[nodiscard]] consteval choice_verdict first_faulty_choice(std::meta::info registry, std::meta::info type) {
+    const node view = decompose(registry, type);
+    if (!view.is_registered) return {};
+    if (view.entry.kind == shape_kind::choice) {
+        const choice_fault own = fault_of_choice(registry, view);
+        if (own != choice_fault::none) return {own, view.type};
+    }
+    if (view.next != std::meta::info{}) {
+        const choice_verdict below = first_faulty_choice(registry, view.next);
+        if (below.fault != choice_fault::none) return below;
+    }
+    for (const std::meta::info branch : view.branches) {
+        const choice_verdict below = first_faulty_choice(registry, branch);
+        if (below.fault != choice_fault::none) return below;
+    }
+    return {};
+}
+
+namespace detail {
 
 [[nodiscard]] consteval bool value_is_admitted(const node& wrapper) {
     if (wrapper.entry.value_admits == std::meta::info{}) return true;
@@ -757,6 +910,9 @@ struct empty_choice_algebra {
 //   3. No output step sends a payload that a payload registration
 //      marks as not sendable.
 //   4. Each wrapper value is admitted by the value filter.
+//   5. Each choice obeys the three rules of the section on branches and
+//      labels: a label branch or more, the label branches first, and
+//      each match unique.
 //
 // The hook receives the child type and a `scope` type.
 struct well_formed_algebra {
@@ -787,6 +943,7 @@ struct well_formed_algebra {
     }
     template <class Child>
     consteval bool choice(const node& view, context ctx, const Child& child) const {
+        if (fault_of_choice(registry, view) != choice_fault::none) return false;
         for (const std::meta::info branch : view.branches) {
             if (!child(branch, position{ctx.depth, true})) return false;
         }
@@ -1063,7 +1220,9 @@ inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, d
 // protocol has as many nodes as the protocol has combinators.
 
 // `is_label` is the answer of the payload rules for this node as a
-// branch.  `has_restricted_payload` is true for a step whose payload a
+// branch, and `head_payload` is the payload of its head step under its
+// wrappers, or null.  A branch that is no label is matched by that
+// payload.  `has_restricted_payload` is true for a step whose payload a
 // payload registration marks as not sendable or as no label.
 struct graph_node {
     std::meta::info type{};
@@ -1075,6 +1234,7 @@ struct graph_node {
     std::size_t first_child = 0;
     std::size_t child_count = 0;
     bool is_label = true;
+    std::meta::info head_payload{};
     bool has_restricted_payload = false;
 };
 
@@ -1101,7 +1261,9 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
     graph.nodes[here].payload = view.payload;
     graph.nodes[here].value = view.value;
     graph.nodes[here].annotation = view.annotation;
-    graph.nodes[here].is_label = is_label_branch(registry, view.type);
+    const branch_head head = head_of_branch(registry, view.type);
+    graph.nodes[here].is_label = head.is_label;
+    graph.nodes[here].head_payload = head.payload;
     if (view.entry.kind == shape_kind::step) {
         const payload_lookup rule = lookup_payload_rule(registry, view.payload);
         graph.nodes[here].has_restricted_payload = rule.is_found && (!rule.entry.is_label || !rule.entry.is_sendable);
@@ -1207,11 +1369,14 @@ inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
 //   step      the same shape.  The payload order follows the payload
 //             variance of the shape, then the continuations refine.
 //   choice    the same shape and the same note.  An output choice of T
-//             has no more branches than U, and an input choice of T has
-//             no fewer.  The branches both sides have refine
-//             position by position.  The payload rules add the two
-//             conditions of rule Sub-& that a payload registration
-//             states.
+//             has no more label branches than U, and an input choice of
+//             T has no fewer.  The label branches both sides have refine
+//             position by position, because the position is the wire
+//             label.  Each branch that is no label pairs with the branch
+//             of the other side that receives the same payload,
+//             wherever the two stand.  Rule Sub-& adds two conditions:
+//             each such branch of U has its partner in T, and T has no
+//             such branch without a partner in U.
 //   wrapper   the same shape.  The value order follows the value
 //             variance, then the inner types refine.
 //
@@ -1234,6 +1399,7 @@ enum class mismatch : std::uint8_t {
     unguarded,
     unregistered,
     ill_formed,
+    missing_non_label_branch,
 };
 
 struct verdict {
@@ -1267,6 +1433,9 @@ struct verdict {
             return "a combinator has no registration";
         case mismatch::ill_formed:
             return "an operand is not well-formed";
+        case mismatch::missing_non_label_branch:
+            return "a branch of the supertype that is no label has no branch in the subtype that receives the "
+                   "same payload";
         default:
             break;
     }
@@ -1293,6 +1462,36 @@ namespace detail {
             break;
     }
     return false;
+}
+
+// The branches of one choice node, as graph indices: the label branches
+// in their order, and the branches that are no label.
+struct split_branches {
+    std::vector<std::size_t> labels{};
+    std::vector<std::size_t> non_labels{};
+};
+
+[[nodiscard]] consteval split_branches split_of(const graph_view& graph, const graph_node& choice) {
+    split_branches result{};
+    for (std::size_t k = 0; k < choice.child_count; ++k) {
+        const std::size_t child = graph.children[choice.first_child + k];
+        if (graph.nodes[child].is_label) {
+            result.labels.push_back(child);
+        } else {
+            result.non_labels.push_back(child);
+        }
+    }
+    return result;
+}
+
+// The branch among `candidates` whose head receives `payload`, or npos.
+// Complexity: linear in the candidates.
+[[nodiscard]] consteval std::size_t partner_of(const graph_view& graph, const std::vector<std::size_t>& candidates,
+                                               std::meta::info payload) {
+    for (const std::size_t candidate : candidates) {
+        if (graph.nodes[candidate].head_payload == payload) return candidate;
+    }
+    return npos;
 }
 
 [[nodiscard]] consteval bool payload_in_order(std::meta::info axioms, const graph_node& sub, const graph_node& super) {
@@ -1357,26 +1556,35 @@ namespace detail {
                 break;
             case shape_kind::choice: {
                 if (a.annotation != b.annotation) return {false, mismatch::annotation, a.type, b.type};
-                const std::size_t own = a.child_count;
-                const std::size_t other = b.child_count;
-                const bool is_output = a.entry.direction == polarity::output;
-                if (is_output ? own > other : own < other) return {false, mismatch::branch_count, a.type, b.type};
-                if (!is_output) {
-                    for (std::size_t extra = other; extra < own; ++extra) {
-                        if (!left.nodes[left.children[a.first_child + extra]].is_label) {
-                            return {false, mismatch::non_label_branch, a.type, b.type};
-                        }
-                    }
-                    std::size_t labels = 0;
-                    for (std::size_t k = 0; k < other; ++k) {
-                        if (right.nodes[right.children[b.first_child + k]].is_label) ++labels;
-                    }
-                    if (other > 0 && labels == 0) return {false, mismatch::pure_non_label_choice, a.type, b.type};
+                const detail::split_branches own = detail::split_of(left, a);
+                const detail::split_branches other = detail::split_of(right, b);
+                if (!other.non_labels.empty() && other.labels.empty()) {
+                    return {false, mismatch::pure_non_label_choice, a.type, b.type};
                 }
-                const std::size_t shared = own < other ? own : other;
+                // A choice with no label branch is not well-formed.  The
+                // layer refuses it first, and the relation refuses it too,
+                // so a layer that skips the check stays sound.
+                if (own.labels.empty() || other.labels.empty()) return {false, mismatch::ill_formed, a.type, b.type};
+                const bool is_output = a.entry.direction == polarity::output;
+                const bool count_is_wrong =
+                    is_output ? own.labels.size() > other.labels.size() : own.labels.size() < other.labels.size();
+                if (count_is_wrong) return {false, mismatch::branch_count, a.type, b.type};
+                const std::size_t shared = own.labels.size() < other.labels.size() ? own.labels.size()
+                                                                                    : other.labels.size();
                 for (std::size_t k = 0; k < shared; ++k) {
-                    pending.push_back(left.children[a.first_child + k]);
-                    pending.push_back(right.children[b.first_child + k]);
+                    pending.push_back(own.labels[k]);
+                    pending.push_back(other.labels[k]);
+                }
+                for (const std::size_t mine : own.non_labels) {
+                    if (detail::partner_of(right, other.non_labels, left.nodes[mine].head_payload) == npos) {
+                        return {false, mismatch::non_label_branch, a.type, b.type};
+                    }
+                }
+                for (const std::size_t theirs : other.non_labels) {
+                    const std::size_t mine = detail::partner_of(left, own.non_labels, right.nodes[theirs].head_payload);
+                    if (mine == npos) return {false, mismatch::missing_non_label_branch, a.type, b.type};
+                    pending.push_back(mine);
+                    pending.push_back(theirs);
                 }
                 break;
             }
@@ -1485,6 +1693,16 @@ static_assert(!well_formed(^^Pin<0, Done>), "the value filter refuses the value 
 static_assert(!well_formed(^^Put<Fault<int>, Done>), "a payload that is not sendable is not sent");
 static_assert(well_formed(^^Take<Fault<int>, Done>));
 static_assert(!well_formed(^^Undeclared), "an unregistered combinator is refused");
+static_assert(!well_formed(^^Pick<>) && !well_formed(^^Wait<>), "a choice has one label branch or more");
+static_assert(!well_formed(^^Wait<From<int>>), "a note is not a branch");
+static_assert(!well_formed(^^Wait<Take<Fault<int>, Done>>), "a choice of branches that are no label is empty");
+static_assert(!well_formed(^^Wait<Take<Fault<int>, Done>, Take<int, Done>>),
+              "a label branch after a branch that is no label has no wire label");
+static_assert(!well_formed(^^Pick<Put<int, Done>, Take<Fault<int>, Done>>),
+              "an internal choice has no branch that is no label");
+static_assert(!well_formed(^^Wait<Take<int, Done>, Take<Fault<int>, Done>, Take<Fault<int>, Put<int, Done>>>),
+              "two branches that are no label receive the same payload");
+static_assert(well_formed(^^Wait<Take<int, Done>, Take<Fault<int>, Done>, Take<Fault<char>, Done>>));
 static_assert(first_unregistered(reg, ^^Put<int, Pick<Done, Undeclared>>) == ^^Undeclared);
 
 static_assert(fold(reg, ^^Put<int, Pick<Done, Halt>>, compose_algebra{reg, ^^Ping}, 0)
@@ -1508,6 +1726,13 @@ static_assert(!refines_plain(^^Pin<1, Done>, ^^Pin<2, Done>), "an invariant valu
 static_assert(refines(reg, ^^no_axioms, ^^Wait<Done, Take<Fault<int>, Done>>, ^^Wait<Done>).reason
               == mismatch::non_label_branch);
 static_assert(refines(reg, ^^no_axioms, ^^Put<int, Done>, ^^Put<long, Done>).reason == mismatch::payload);
+static_assert(refines_plain(^^Wait<Take<int, Done>, Take<char, Done>, Take<Fault<int>, Done>>,
+                            ^^Wait<Take<int, Done>, Take<Fault<int>, Done>>),
+              "a label branch added before the trailing branch that is no label (rule Sub-&)");
+static_assert(refines(reg, ^^no_axioms, ^^Wait<Take<int, Done>>, ^^Wait<Take<int, Done>, Take<Fault<int>, Done>>).reason
+              == mismatch::missing_non_label_branch);
+static_assert(!refines_plain(^^Wait<Take<char, Done>, Take<int, Done>>, ^^Wait<Take<int, Done>, Take<char, Done>>),
+              "the position of a label branch is its wire label, so another order is another choice");
 
 }  // namespace detail::transition_self_test
 

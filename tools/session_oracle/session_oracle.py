@@ -64,7 +64,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from emit import GoldenError, Row, emit_all, read_golden, write_golden  # noqa: E402
 from execution import equal_up_to_unfolding, explore, explore_bindings  # noqa: E402
 from model import (GBranch, GEnd, GMsg, GRec, GVar, Global, Local,  # noqa: E402
-                   UntranslatableError, action_ok, canonical_roles, contractive, has_idle_loop,
+                   UntranslatableError, action_ok, canonical_roles, contractive, has_empty_choice,
+                   has_idle_loop,
                    cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
                    generate, generate_adversarial, local_of, roles_of, show_global,
                    show_local, shrinks, size, size_ok)
@@ -195,6 +196,11 @@ NOTE_IDLE = (
     "neither side is unsound: the oracle keeps a recursion binder whose body never loops back "
     f"({ITP23}, trans), and fixy's is_well_formed_v refuses such a Loop.  fixy's projection "
     "returns the body of such a recursion instead (Projection.h, proj_rec)")
+NOTE_EMPTY = (
+    "the oracle's domain excludes this type too: a choice with no branch fails size_pred "
+    "(elimination.v), which the oracle's proj does not call.  fixy's is_well_formed_v refuses "
+    "the empty choice, because a substitute of that type never sends (Gay and Hole 2005, the "
+    "choice rules)")
 NOTE_DOMAIN = (
     "oracle wrong for safety: its proj accepts a type that the development excludes with "
     "{pred} (elimination.v), which proj does not call.  The run of the oracle's own "
@@ -481,6 +487,8 @@ def classify_fixy(c: Case, e0: Local | None, e1: Local | None,
                 raise RuntimeError(f"fixy case {c.ident}: no measurement for {key}: {measured}")
             if value == "true":
                 rows.append(Row(family, c.ident, "-", text, oracle, value, "agree", "", ""))
+            elif family == "fixy.well_formed" and (has_empty_choice(e0) or has_empty_choice(e1)):  # type: ignore[arg-type]
+                rows.append(Row(family, c.ident, "-", text, oracle, value, "agree", "", NOTE_EMPTY))
             elif has_idle_loop(e0) or has_idle_loop(e1):  # type: ignore[arg-type]
                 rows.append(Row(family, c.ident, "-", text, oracle, value, "divergence",
                                 "idle-loop", NOTE_IDLE))
@@ -511,6 +519,8 @@ def classify_fixy(c: Case, e0: Local | None, e1: Local | None,
                             "ours wrong: fixy accepts the naive reading, which the oracle does "
                             f"not produce ({ITP23}, proj); the run of the naive pair gives "
                             f"{verdict.text()}"))
+        elif has_empty_choice(n0) or has_empty_choice(n1):
+            rows.append(Row("fixy.accepts", c.ident, "-", text, cell, accepts, "agree", "", NOTE_EMPTY))
         elif has_idle_loop(n0) or has_idle_loop(n1):
             rows.append(Row("fixy.accepts", c.ident, "-", text, cell, accepts, "divergence",
                             "idle-loop", NOTE_IDLE))

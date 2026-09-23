@@ -43,10 +43,12 @@
 //      to add one, so such a branch is untypable.
 //
 // Rules 1 and 2 hold in every session, through is_well_formed and
-// is_empty_choice.  Rule 4 and the two encoding rules below hold for
-// every protocol that is_crash_well_formed accepts.  Rules 3 and 5 need
-// the set of reliable roles, so they hold where a crash-aware session
-// is minted (CrashTransport.h).
+// is_empty_choice.  The two encoding rules below also hold in every
+// session: the transition algebra refuses a label branch after a branch
+// that is no label, and two branches that receive the same payload.
+// Rule 4 holds for every protocol that is_crash_well_formed accepts.
+// Rules 3 and 5 need the set of reliable roles, so they hold where a
+// crash-aware session is minted (CrashTransport.h).
 //
 // Two more rules come from the encoding, not from the calculus.  The
 // calculus names labels, and an Offer here numbers its branches:

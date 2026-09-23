@@ -360,17 +360,18 @@ struct is_terminal_state : std::bool_constant<detail::terminal_state_of<P>()> {}
 
 // ── Empty choices ────────────────────────────────────────────────────
 //
-// A Select or an Offer with no label branch is a legal type operand.
-// Under branch covariance an empty Select refines every larger Select,
-// so subtyping admits it as the minimum element.  It is not a runnable
-// protocol: an empty Select has no branch to pick, and an empty Offer
-// has no label the peer can send, so a handle there is stuck.  The
-// trait lets handle construction refuse an empty choice while subtyping
-// keeps it.
+// A Select or an Offer with no label branch is not well-formed.  An
+// empty Select has no branch to pick, and an empty Offer has no label
+// the peer can send, so a handle there is stuck.  Under the branch rule
+// an empty Select also refines every larger Select, and a substitute of
+// that type never sends, so the session deadlocks.  is_well_formed
+// therefore refuses it, and subtyping refuses it as an operand.
 //
-// The walk covers the whole spine, because a handle reaches every
-// position eventually.  A refusal at the top level only would let the
-// misuse surface at the dead-end operation instead of at construction.
+// This trait names the fault on its own, so handle construction can
+// give it a specific diagnostic before the general one.  The walk
+// covers the whole spine, because a handle reaches every position
+// eventually.  A refusal at the top level only would let the misuse
+// surface at the dead-end operation instead of at construction.
 
 template <typename P>
 struct is_empty_choice;
@@ -566,7 +567,13 @@ public:
 //      reaches its Continue;
 //   3. no Send sends a payload that a payload registration marks as not
 //      sendable;
-//   4. no VendorPinned names VendorBackend::None.
+//   4. no VendorPinned names VendorBackend::None;
+//   5. each Select and each Offer has a label branch or more, puts its
+//      label branches before each branch that is no label, and matches
+//      each branch uniquely.  The position of a label branch is the
+//      label that the handle sends, so a Select or an Offer in another
+//      order is another protocol.  foundation/algebra/Transition.h
+//      states the three rules.
 //
 // LoopCtx is void outside a loop.  A Loop type as LoopCtx, the form the
 // handle carries, means inside one loop after its first step.  The fold

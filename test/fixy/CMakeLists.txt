@@ -1114,6 +1114,43 @@ fixy_neg_compile_test(neg_sess_subtype_async_input_ahead
   "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
   "Capacity = 8\\]")
 
+# An empty choice is not well-formed: under the branch rule it refines
+# each larger Select, and a substitute of that type never sends.  Each
+# relation refuses it as an operand, the note of an Offer included.
+fixy_neg_compile_test(neg_sess_subtype_empty_select
+  "\\[Subtype_IllFormed\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Select<> against \\(none\\)")
+fixy_neg_compile_test(neg_sess_subtype_empty_offer_note
+  "\\[Subtype_IllFormed\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Offer<fixy::session::Sender<.*Alice> > against \\(none\\)")
+fixy_neg_compile_test(neg_sess_subtype_async_empty_select
+  "fixy::session::diagnostic \\[Subtype_Async_Not_Proven\\]"
+  "with Sub = Select<>. Super = Select<Send<")
+
+# The branches of a choice: a label branch pairs by position, because
+# the position is the wire label, and a crash branch pairs by the
+# payload it receives.  A permutation of labelled branches is refused,
+# and so is a subtype that loses a crash branch of the supertype.
+fixy_neg_compile_test(neg_sess_subtype_permuted_labels
+  "\\[Subtype_Payload\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::PeerMsg<[^>]*Bob, [^>]*Bye, int> against fixy::session::PeerMsg<[^>]*Bob, [^>]*Hello, int>")
+fixy_neg_compile_test(neg_sess_subtype_missing_crash_branch
+  "\\[Subtype_MissingNonLabelBranch\\]: assert_subtype_sync"
+  "because a branch of the supertype that is no label has no branch in the subtype")
+
+# Well-formedness of a choice: no message branch after a crash branch,
+# no two crash branches with one payload, and no two branches that name
+# one label.  The mint gate refuses each through is_well_formed_v.
+fixy_neg_compile_test(neg_sess_wf_label_after_crash_branch
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::Crash<")
+fixy_neg_compile_test(neg_sess_wf_repeated_crash_branch
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Ping, fixy::session::End>, fixy::session::Recv<fixy::session::Crash<")
+fixy_neg_compile_test(neg_sess_wf_repeated_label
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>")
+
 # The adversarial campaign against the algebra and the relations.  The
 # runtime half runs two threads over bounded queues with a watchdog, so
 # a deadlock ends the run with a verdict and never hangs.  The attacks
@@ -1122,8 +1159,8 @@ fixy_test(test_session_subtype_attack)
 
 # HS14 for mint_session_handle.  Its requires-clause is the whole
 # admission gate, so each clause gets a fixture that fails through it
-# and through no other: an ill-formed protocol, a well-formed protocol
-# that is not runnable, and a resource whose address is not stable.
+# and through no other: an ill-formed protocol, a protocol with an empty
+# choice, and a resource whose address is not stable.
 fixy_neg_compile_test(neg_sess_mint_ill_formed
   "no matching function for call to .mint_session_handle"
   "constraints not satisfied"

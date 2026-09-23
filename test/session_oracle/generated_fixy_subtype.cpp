@@ -2822,15 +2822,15 @@ namespace m0r {
 // 0-drop@0
 using T = fs::Offer<fs::Offer<fs::Offer<> >, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > >;
 using U = fs::Offer<fs::Offer<fs::Offer<> > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fa15 role 0-drop@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa15 role 0-drop@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa15 role 0-drop@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa15 role 0-drop@0: agree");
 }  // namespace m0r
 namespace m1f {
 // 1+add@0
 using T = fs::Offer<fs::Offer<fs::Offer<> >, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >, fs::End>;
 using U = fs::Offer<fs::Offer<fs::Offer<> >, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fa15 role 1+add@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa15 role 1+add@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa15 role 1+add@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa15 role 1+add@0: agree");
 }  // namespace m1f
 namespace m1r {
 // 1-add@0
@@ -3099,8 +3099,8 @@ namespace m0f {
 // 0+drop@0
 using T = fs::Select<fs::End>;
 using U = fs::Select<fs::End, fs::Send<session_oracle::Bool, fs::Loop<fs::Loop<fs::Offer<> > > > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fa24 role 0+drop@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa24 role 0+drop@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa24 role 0+drop@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa24 role 0+drop@0: agree");
 }  // namespace m0f
 namespace m0r {
 // 0-drop@0
@@ -3120,22 +3120,22 @@ namespace m1r {
 // 1-add@0
 using T = fs::Select<fs::End, fs::Send<session_oracle::Bool, fs::Loop<fs::Loop<fs::Offer<> > > > >;
 using U = fs::Select<fs::End, fs::Send<session_oracle::Bool, fs::Loop<fs::Loop<fs::Offer<> > > >, fs::End>;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fa24 role 1-add@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa24 role 1-add@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa24 role 1-add@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa24 role 1-add@0: agree");
 }  // namespace m1r
 namespace m2f {
 // 2+sort@1
 using T = fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::Loop<fs::Loop<fs::Offer<> > > > >;
 using U = fs::Select<fs::End, fs::Send<session_oracle::Bool, fs::Loop<fs::Loop<fs::Offer<> > > > >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa24 role 2+sort@1: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa24 role 2+sort@1: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa24 role 2+sort@1: agree");
 }  // namespace m2f
 namespace m2r {
 // 2-sort@1
 using T = fs::Select<fs::End, fs::Send<session_oracle::Bool, fs::Loop<fs::Loop<fs::Offer<> > > > >;
 using U = fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::Loop<fs::Loop<fs::Offer<> > > > >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa24 role 2-sort@1: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa24 role 2-sort@1: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa24 role 2-sort@1: agree");
 }  // namespace m2r
 namespace m3f {
 // 3+end@0
@@ -3251,8 +3251,8 @@ namespace m0f {
 // 0+add@1
 using T = fs::Recv<session_oracle::Nat, fs::Offer<fs::End> >;
 using U = fs::Recv<session_oracle::Nat, fs::Offer<> >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fa27 role 0+add@1: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa27 role 0+add@1: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa27 role 0+add@1: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa27 role 0+add@1: agree");
 }  // namespace m0f
 namespace m0r {
 // 0-add@1
@@ -3266,14 +3266,14 @@ namespace m1f {
 using T = fs::Recv<session_oracle::Bool, fs::Offer<> >;
 using U = fs::Recv<session_oracle::Nat, fs::Offer<> >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa27 role 1+sort@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa27 role 1+sort@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa27 role 1+sort@0: agree");
 }  // namespace m1f
 namespace m1r {
 // 1-sort@0
 using T = fs::Recv<session_oracle::Nat, fs::Offer<> >;
 using U = fs::Recv<session_oracle::Bool, fs::Offer<> >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa27 role 1-sort@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa27 role 1-sort@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa27 role 1-sort@0: agree");
 }  // namespace m1r
 namespace m2f {
 // 2+end@0
@@ -3509,8 +3509,8 @@ namespace m0f {
 // 0+add@1
 using T = fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<fs::End> > >;
 using U = fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<> > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fa32 role 0+add@1: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa32 role 0+add@1: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa32 role 0+add@1: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa32 role 0+add@1: agree");
 }  // namespace m0f
 namespace m0r {
 // 0-add@1
@@ -3524,14 +3524,14 @@ namespace m1f {
 using T = fs::Send<session_oracle::Bool, fs::Loop<fs::Offer<> > >;
 using U = fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<> > >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa32 role 1+sort@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa32 role 1+sort@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa32 role 1+sort@0: agree");
 }  // namespace m1f
 namespace m1r {
 // 1-sort@0
 using T = fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<> > >;
 using U = fs::Send<session_oracle::Bool, fs::Loop<fs::Offer<> > >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fa32 role 1-sort@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fa32 role 1-sort@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fa32 role 1-sort@0: agree");
 }  // namespace m1r
 namespace m2f {
 // 2+end@0
@@ -3880,8 +3880,8 @@ namespace m0r {
 // 0-add@0
 using T = fs::Select<>;
 using U = fs::Select<fs::End>;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fh0 role 0-add@0: divergence");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh0 role 0-add@0: divergence");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh0 role 0-add@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh0 role 0-add@0: agree");
 }  // namespace m0r
 }  // namespace c_fh0
 
@@ -3891,22 +3891,22 @@ namespace m0f {
 // 0+unfold
 using T = fs::Select<fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > > >, fs::Offer<> >;
 using U = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fh1 role 0+unfold: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh1 role 0+unfold: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh1 role 0+unfold: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh1 role 0+unfold: agree");
 }  // namespace m0f
 namespace m0r {
 // 0-unfold
 using T = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > >;
 using U = fs::Select<fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > > >, fs::Offer<> >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fh1 role 0-unfold: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh1 role 0-unfold: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh1 role 0-unfold: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh1 role 0-unfold: agree");
 }  // namespace m0r
 namespace m1f {
 // 1+drop@0
 using T = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue> > >;
 using U = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fh1 role 1+drop@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh1 role 1+drop@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh1 role 1+drop@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh1 role 1+drop@0: agree");
 }  // namespace m1f
 namespace m1r {
 // 1-drop@0
@@ -3926,22 +3926,22 @@ namespace m2r {
 // 2-add@0
 using T = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > >;
 using U = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<>, fs::End> >;
-static_assert(fs::is_subtype_sync_v<T, U> == true, "session_oracle fixy.subtype_sync case fh1 role 2-add@0: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh1 role 2-add@0: agree");
+static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh1 role 2-add@0: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh1 role 2-add@0: agree");
 }  // namespace m2r
 namespace m3f {
 // 3+sort@1
 using T = fs::Loop<fs::Select<fs::Send<session_oracle::Bool, fs::Continue>, fs::Offer<> > >;
 using U = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh1 role 3+sort@1: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh1 role 3+sort@1: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh1 role 3+sort@1: agree");
 }  // namespace m3f
 namespace m3r {
 // 3-sort@1
 using T = fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Continue>, fs::Offer<> > >;
 using U = fs::Loop<fs::Select<fs::Send<session_oracle::Bool, fs::Continue>, fs::Offer<> > >;
 static_assert(fs::is_subtype_sync_v<T, U> == false, "session_oracle fixy.subtype_sync case fh1 role 3-sort@1: agree");
-static_assert(fs::is_subtype_async_v<T, U, 3> == true, "session_oracle fixy.subtype_async case fh1 role 3-sort@1: agree");
+static_assert(fs::is_subtype_async_v<T, U, 3> == false, "session_oracle fixy.subtype_async case fh1 role 3-sort@1: agree");
 }  // namespace m3r
 }  // namespace c_fh1
 

@@ -89,19 +89,25 @@ static_assert(s::is_well_formed_v<s::Loop<s::Select<s::Send<Msg, s::Continue>, s
 
 // ── Empty choice ─────────────────────────────────────────────────────
 //
-// An empty Select is a legitimate type operand under branch covariance
-// but is not runnable: there is no branch to pick.  The trait exists so
-// handle construction can refuse it while subtyping keeps admitting it.
+// An empty Select has no branch to pick, and an empty Offer has no
+// label the peer can send.  Under the branch rule an empty Select also
+// refines every larger Select, and a substitute of that type never
+// sends.  So an empty choice is not well-formed.  The trait names the
+// fault, so handle construction can give it its own diagnostic.
 
 static_assert(s::is_empty_choice_v<s::Select<>>);
 static_assert(s::is_empty_choice_v<s::Offer<>>);
 static_assert(s::is_empty_choice_v<s::Offer<s::Sender<Alice>>>);
 static_assert(!s::is_empty_choice_v<s::Select<s::End>>);
+static_assert(!s::is_well_formed_v<s::Select<>> && !s::is_well_formed_v<s::Offer<>>);
+static_assert(!s::is_well_formed_v<s::Offer<s::Sender<Alice>>>, "a note is not a branch");
 // The walk is recursive: an empty choice buried behind a Send is still
 // a dead end, and rejecting it only at the top would surface the
 // misuse at the eventual operation instead of at construction.
 static_assert(s::is_empty_choice_v<s::Send<Msg, s::Select<>>>);
 static_assert(s::is_empty_choice_v<s::Loop<s::Recv<Msg, s::Offer<>>>>);
+static_assert(!s::is_well_formed_v<s::Send<Msg, s::Select<>>>);
+static_assert(!s::is_well_formed_v<s::Loop<s::Recv<Msg, s::Offer<s::Recv<Msg, s::Continue>, s::Select<>>>>>);
 
 // ── Composition ──────────────────────────────────────────────────────
 

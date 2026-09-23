@@ -26,10 +26,18 @@
 //   Loop   unfolded.  A pair seen a second time holds by assumption.
 //   VendorPinned  the same vendor on both sides.
 //
-// Branches are positional.  The Sender note of an Offer is compared for
-// equality, so each combinator is reflexive, the Offer with a note
-// included.  An operand that is not well-formed is refused, and the
-// reason says so.
+// A label branch is matched by its position, because the handle sends
+// the position as the label: select<I>() puts I on the wire, and the
+// Offer of the peer dispatches on it.  A Select or an Offer with the
+// same branches in another order is therefore another protocol, and the
+// relation refuses it.  A branch that is no label, a crash branch for
+// example, has no position on the wire.  It is matched by the payload
+// it receives, wherever it stands (rule Sub-&, Barwell, Hou, Yoshida and
+// Zhou, LMCS 2025, Definition 4.4).  So an Offer of the subtype can add a
+// message branch before its crash branches.  The Sender note of an Offer
+// is compared for equality, so each combinator is reflexive, the Offer
+// with a note included.  An operand that is not well-formed is refused,
+// and the reason says so.  An empty choice is not well-formed.
 //
 // One walk gives the verdict and its reason.  subtype_verdict_v names
 // the first failed pair, in the order a depth-first walk reaches it,
@@ -376,6 +384,8 @@ struct reason_of {
             return "Subtype_Unregistered_Combinator";
         case mismatch::ill_formed:
             return "Subtype_IllFormed";
+        case mismatch::missing_non_label_branch:
+            return "Subtype_MissingNonLabelBranch";
         default:
             break;
     }

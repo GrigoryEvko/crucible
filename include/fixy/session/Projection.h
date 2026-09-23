@@ -133,6 +133,26 @@ inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.
                                                                               .covariant = 0b100};
 }  // namespace payload_axioms
 
+// The label that a message names is its peer and its label, without the
+// payload.  Two branches of one choice that name the same label are not
+// well-formed, as two branches of one Comm with the same label are not
+// (fixy/session/Global.h).
+namespace detail::peer_message {
+template <typename T>
+struct label_of;
+template <typename Peer, typename Label, typename Payload>
+struct label_of<PeerMsg<Peer, Label, Payload>> {
+    using type = PeerMsg<Peer, Label, void>;
+};
+template <typename T>
+using label_of_t = typename label_of<T>::type;
+}  // namespace detail::peer_message
+
+namespace combinators {
+inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
+    .shape = ^^PeerMsg, .label_key = ^^detail::peer_message::label_of_t};
+}  // namespace combinators
+
 // One element of an outgoing queue: a message to To.
 template <typename To, typename Label, typename Payload>
 struct Queued {

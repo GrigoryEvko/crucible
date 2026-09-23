@@ -860,8 +860,7 @@ public:
 
     // A second empty-choice rejection, so a construction route that
     // reaches this class without passing the factory's own check still
-    // fires the same diagnostic.  Subtyping uses of Select<> never
-    // instantiate this class and are unaffected.
+    // fires the same diagnostic.
     static_assert(branch_count > 0, "fixy::session::diagnostic [Empty_Choice_Combinator]: "
                                     "SessionHandle<Select<>>: cannot construct a runnable handle "
                                     "on Select<> with zero branches — there is no branch for "
@@ -1139,8 +1138,11 @@ concept SessionResource = !std::is_reference_v<Resource>
 // Downstream concepts that ask whether a handle can be minted need that
 // answer, so the checks live in the signature.
 
+// An empty choice is not well-formed either.  The empty-choice clause
+// comes first so that the refusal of such a protocol names that fault
+// and not the general one.
 template <typename Proto>
-concept WellFormedRunnableProtocol = is_well_formed_v<Proto> && !is_empty_choice_v<Proto>;
+concept WellFormedRunnableProtocol = !is_empty_choice_v<Proto> && is_well_formed_v<Proto>;
 
 namespace detail {
 
@@ -1280,9 +1282,8 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
                                            "appears outside any enclosing Loop<Body>.  Every Continue must "
                                            "have a Loop above it in the protocol tree.");
 
-    // The rejection lives at the handle boundary, not in the type
-    // machinery, so subtyping keeps admitting an empty choice as a
-    // legitimate operand while handle construction refuses it.
+    // is_well_formed refuses an empty choice too.  This assertion names
+    // the fault, and the assertion above gives the general refusal.
     static_assert(!is_empty_choice_v<Proto>, "fixy::session::diagnostic [Empty_Choice_Combinator]: "
                                              "mint_session_handle<Proto> — Proto contains a "
                                              "reachable empty Select<> / Offer<> / Offer<Sender<R>> "
@@ -1292,10 +1293,10 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
                                              "the peer can signal.  The trait walks recursively so "
                                              "nested empties are caught at mint time, not at the "
                                              "eventual select<I>() / recv() that hits the dead-end.  "
-                                             "If you intend a type-level subtyping witness, use the "
-                                             "subtyping trait directly; if you intend a runnable "
-                                             "handle, add at least one branch at every reachable choice "
-                                             "position (e.g., Select<Send<Stop, End>>).");
+                                             "Subtyping refuses an empty choice as well, because a "
+                                             "substitute of that type never sends.  Add one branch or "
+                                             "more at every reachable choice position, for example "
+                                             "Select<Send<Stop, End>>.");
 
     static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_NotPinned]: "
                                              "mint_session_handle<Proto, Resource>: Resource must be either "
