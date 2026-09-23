@@ -673,9 +673,13 @@ void expect_context(std::string_view label, bool expect_clean) {
 //   narrowed  each Offer with two or more branches loses its last one.
 //             Association must refuse.
 //   swapped   each Offer with two or more branches swaps its first two.
-//             Association must refuse, because branches match by
-//             position.  The explorer shows such a context safe, so this
-//             refusal costs completeness, not safety.
+//             Association must refuse.  The position of a branch is the
+//             label that the handle sends, so on that wire a swap takes
+//             each message into the branch of another label, and
+//             test_session_subtype_attack runs one such case.  The
+//             explorer here carries the label on the wire, so it shows
+//             such a context safe.  The refusal is right for the wire
+//             that the handle uses.
 //
 // A refused rewrite also runs in the explorer.  The count of refused
 // rewrites that the explorer shows faulty tells how often the refusal
