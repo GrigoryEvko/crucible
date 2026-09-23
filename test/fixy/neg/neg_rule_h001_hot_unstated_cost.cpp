@@ -10,7 +10,7 @@
 //
 // The refinement witness is in the pack for exactly that reason.  Without
 // it the fixture would also trip H002, and its second regex would then be
-// witnessing a rule the file does not claim — the defect #166 was.
+// witnessing a rule the file does not claim.
 
 #include <fixy/Fn.h>
 

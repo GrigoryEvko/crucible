@@ -7,8 +7,8 @@
 // collision rule and every corpus entry read each atom's `axis` member,
 // so a pack holding a non-atom used to produce the tier-2 message and
 // then thirty-eight errors from inside those walks — a fixture over it
-// would have rejected for the wrong reason, which is the defect #166
-// found in three of the old fixtures.  fn asks the tiers in order and
+// would have rejected for the wrong reason, which is the defect three of
+// the old fixtures had.  fn asks the tiers in order and
 // stops at the first failure, so the later walks are never instantiated.
 
 #include <fixy/Fn.h>

@@ -6,9 +6,9 @@
 // CLAUDE.md IX bans the kernel wait on the hot path outright and the
 // hot-path wait is a spin on an acquire load.
 //
-// W001 needed two commits of task #176 rather than one: it reads a tier
-// AND a wait strategy, so it stayed Pending after Axis::Regime gained its
-// atoms and only fired once Axis::Synchronization gained its own.
+// W001 reads a tier AND a wait strategy, so it fires only when both
+// Axis::Regime and Axis::Synchronization carry atoms, and it is Pending
+// while either axis has none.
 //
 // The cost and refinement atoms are in the pack so that the fixture trips
 // W001 alone.  atom::sync::acquire_wait is the cheapest of the three

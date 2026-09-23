@@ -139,9 +139,10 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
     return 0;
 }
 
-// The two things #183 restored, exercised.  A reader minted off the
-// replay path never returns a value lower than the last one it returned,
-// and the clamp holds when handed the regression no real clock produces.
+// The gate and the clamp of the monotonic reader, exercised.  A reader
+// minted off the replay path never returns a value lower than the last
+// one it returned, and the clamp holds when handed the regression no
+// real clock produces.
 // The gate's refusal of a foreground context is a compile-time fact and
 // lives in test/fixy/neg/neg_os_clock_reader_foreground_ctx.cpp; here
 // the gate admits a background and an init context.

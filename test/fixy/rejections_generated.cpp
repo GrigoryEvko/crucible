@@ -106,8 +106,8 @@ static_assert(atoms_clearing_the_structural_tiers() == atom_members.size(),
 // How many atoms tier 5 refuses on their own.  This is reported rather
 // than pinned to a literal: it moves whenever a rule or a corpus entry
 // is written, and the count is not the property — the property is that
-// each refusal has a named reason, which the hand fixtures of A11.4
-// carry one by one.
+// each refusal has a named reason, which the hand-written rejection
+// fixtures carry one by one.
 [[nodiscard]] consteval std::size_t atoms_refused_alone() noexcept {
     std::size_t refused = 0;
     template for (constexpr auto member : atom_members) {
@@ -120,8 +120,8 @@ static_assert(atoms_clearing_the_structural_tiers() == atom_members.size(),
 // The names of the atoms tier 5 refuses on their own, so the reader does
 // not have to take the header comment's word for which four they are.
 // Reported at run time rather than pinned: the set moves whenever a rule
-// or a corpus entry is written, and the A11.4 hand fixtures are what pin
-// each refusal to its reason.
+// or a corpus entry is written, and the hand-written rejection fixtures
+// are what pin each refusal to its reason.
 //
 // display_string_of rather than identifier_of because a roster member can
 // be a class-template specialization — atom::stale_to<N> is one — and

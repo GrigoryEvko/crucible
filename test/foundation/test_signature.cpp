@@ -13,7 +13,7 @@
 // static_assert inside a function body is checked when the body is
 // compiled, not when it is called.  Those cells are the header's wall
 // and stay there.  This file is what was left once they were removed:
-// the smoke body that used to sit inline in the header, under #178.
+// the smoke body that used to sit inline in the header.
 
 #include <foundation/reflect/Signature.h>
 

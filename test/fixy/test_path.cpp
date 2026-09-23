@@ -6,7 +6,7 @@
 // The header's self-test walks the anchors. This TU is the port of the
 // old test/test_path_traversal_predicates.cpp, and it adds the tag
 // arithmetic the old test could not state: the value constructor of
-// Tagged is private since A10.2, so every tainted path here is minted.
+// Tagged is private, so every tainted path here is minted.
 
 #include <fixy/Path.h>
 

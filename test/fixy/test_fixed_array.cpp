@@ -2,8 +2,8 @@
 // braces, the in_place constructor takes exactly N arguments, and the
 // two checked accessors carry their bound differently.
 //
-// The index_type is a Refined whose value constructor is private since
-// A10.1, so every index in this TU is minted.  That is the property
+// The index_type is a Refined whose value constructor is private, so
+// every index in this TU is minted.  That is the property
 // worth pinning: the bound is checked once, at the one door.
 
 #include <fixy/FixedArray.h>

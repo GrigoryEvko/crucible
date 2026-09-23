@@ -4,7 +4,7 @@
 //
 // Old spelling: test/test_pipeline_dag.cpp.  Its three other cases build
 // their stages from channel endpoints through the endpoint bridge, and
-// arrive with that bridge (#190).
+// arrive with that bridge.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>

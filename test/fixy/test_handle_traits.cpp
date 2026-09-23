@@ -9,7 +9,7 @@
 // volatile bound, so the trait reads are not folded away.  Those three
 // bodies were inline smoke tests in the old headers, compiled into every
 // translation unit that included them and called by nothing, which is
-// the shape #178 closed.
+// a shape the port removed.
 //
 // The second is the cross-check that matters more.  A synthetic proves
 // the predicate matches the shape the predicate was written for, which
