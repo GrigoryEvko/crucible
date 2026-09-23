@@ -660,7 +660,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::effects::host, "the owners a context is minted for, never passed as values"},
     {^^::foundation::effects::testing, "the test context's witness, never passed as a value"},
     {^^::foundation::permissions::tag, kGradeVocabulary},
-    {^^::foundation::permissions::host, "the issuer a borrow is minted for, never passed as a value"},
     {^^::foundation::permissions::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::brand, "brands, which are identities of instances and never fold"},
     {^^::foundation::decide, kMachinery},
