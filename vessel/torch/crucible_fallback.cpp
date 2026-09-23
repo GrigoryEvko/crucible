@@ -456,7 +456,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     if (!validated) [[unlikely]]
         return;
 
-    // dispatch_op_pure<>() (FOUND-I19): the row-typed facade pinning the
+    // dispatch_op_pure<>(): the row-typed facade pinning the
     // PyTorch fallback handler as a `Pure` caller — the ATen dispatcher
     // hands control here on the foreground producer thread, with no I/O,
     // Block, Bg, Init, Test, or Alloc effect in scope.  Migrating from

@@ -89,7 +89,7 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 extern "C" {
 
 uint64_t crucible_abi_version(void) noexcept {
-    // ABI version stamp (GAPS-096) — mirrors the constant declared in
+    // ABI version stamp — mirrors the constant declared in
     // vessel_api.h.  Python `crucible_native.py` calls this at load
     // and refuses to construct the controller on mismatch.  Bump the
     // header constant when the C ABI surface changes; the Python side
@@ -162,7 +162,7 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
         crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
     if (!validated) return CrucibleDispatchResult{};
 
-    // dispatch_op_pure<>() (FOUND-I19): the row-typed facade pinning this
+    // dispatch_op_pure<>(): the row-typed facade pinning this
     // FFI extern "C" entry as a `Pure` caller — i.e. no I/O / Block / Bg
     // / Init / Test / Alloc context.  Migrating the call from dispatch_op
     // to dispatch_op_pure<>() (default CallerRow = Row<>) is zero-cost at
@@ -226,7 +226,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
     if (!validated) return CrucibleDispatchResult{};
 
-    // dispatch_op_pure<>() — row-typed facade (FOUND-I19); see the
+    // dispatch_op_pure<>() — row-typed facade; see the
     // sister site in crucible_dispatch_op for the rationale.
     auto result = vigil_typed.value()->dispatch_op_pure(*validated, metas_typed.value(), n_metas);
 

@@ -7,7 +7,7 @@
 // CrucibleMeta is binary-compatible with crucible::TensorMeta (168 bytes).
 // All enum types use the same int8_t ordinals as c10::ScalarType etc.
 //
-// ── Typed-boundary discipline (GAPS-094..096) ────────────────────────
+// ── Typed-boundary discipline ────────────────────────────────────────
 //
 // The C ABI fields below remain raw (`void*`, `const char*`) because
 // ctypes consumers cannot interpret C++ wrapper types.  Inside C++,
@@ -15,17 +15,17 @@
 // helpers in vessel_api_typed.h:
 //
 //   * CrucibleHandle          → Tagged<Vigil*, source::ABIBoundary>
-//                               via `as_vigil_typed(h)` (GAPS-094).
+//                               via `as_vigil_typed(h)`.
 //   * const CrucibleMeta*     → Tagged<const TensorMeta*, ABIBoundary>
-//                               via `as_meta_typed(metas, n)` (GAPS-095).
+//                               via `as_meta_typed(metas, n)`.
 //   * CrucibleMeta::data_ptr  → Tagged<void*, source::External>
 //                               via `data_ptr_typed(typed_meta, i)`
-//                               (GAPS-096) — provenance threads into
+//                               — provenance threads into
 //                               TensorMeta-consuming code without
 //                               changing the wire-struct layout.
 //   * schema name lookup      → SchemaTable::LookupName
 //                               via `schema_name_typed(schema_hash)`
-//                               (GAPS-096) — distinguishes the
+//                               — distinguishes the
 //                               post-validation pointer from raw FFI
 //                               input.
 //
@@ -97,7 +97,7 @@ typedef struct {
     uint32_t op_index;
 } CrucibleDispatchResult;
 
-// ── ABI version (GAPS-096) ───────────────────────────────────────────
+// ── ABI version ──────────────────────────────────────────────────────
 
 // CRUCIBLE_VESSEL_ABI_VERSION — identifies the wire layout of every
 // extern "C" symbol declared in this header AND the byte layout of

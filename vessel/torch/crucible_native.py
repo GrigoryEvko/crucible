@@ -67,7 +67,7 @@ _MASK64     = (1 << 64) - 1
 
 
 # =====================================================================
-# C ABI version stamp (GAPS-096)
+# C ABI version stamp
 # =====================================================================
 #
 # Mirrors `CRUCIBLE_VESSEL_ABI_VERSION` in vessel/torch/vessel_api.h.

@@ -195,7 +195,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
     return std::bit_cast<const CrucibleMeta*>(typed.value());
 }
 
-// ── Per-meta data_ptr typed accessor (GAPS-096) ────────────────────
+// ── Per-meta data_ptr typed accessor ───────────────────────────────
 //
 // Crucible's TensorMeta::data_ptr is a `void*` whose provenance is
 // "data pages PyTorch handed to us — externally-owned, lifetime
@@ -222,7 +222,7 @@ static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
     return TypedDataPtr{metas[i].data_ptr};
 }
 
-// ── Schema-name typed lookup (GAPS-096) ────────────────────────────
+// ── Schema-name typed lookup ───────────────────────────────────────
 //
 // `crucible::schema_name(SchemaHash)` returns a typed borrow from the
 // global SchemaTable's interned-name storage.  Names are
