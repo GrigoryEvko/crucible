@@ -40,11 +40,30 @@
 // type argument, a value argument, or the element of a pointer or a
 // reference, when that type is a specialization.
 //
+// The instantiating read.  A gate that must see every member can ask the
+// walk to read each specialization it reaches, through a pointer, a
+// reference or a template argument.  The completeness query then
+// instantiates the specialization, and a template with no definition
+// here stays unreadable.  The read has two costs:
+//
+//   * an instantiation that fails stops the build, with the diagnostic of
+//     the template that failed and not of the gate;
+//   * the instantiation occurs at the point of the query, so an explicit
+//     specialization of the same arguments after that point is
+//     ill-formed.  GCC reports it as a specialization after
+//     instantiation, and a fixture of the delegation query pins that.
+//
+// A class that is complete in one translation unit and only declared in
+// a different one reads differently in the two.  A gate that uses the
+// instantiating read must refuse an unreadable class with a compile
+// error, and must not answer with a value, so that no two linked units
+// hold different answers.
+//
 // What the walk cannot see, stated rather than implied:
 //
-//   * a member of a specialization that the walk reaches through a
-//     pointer or a template argument, when the arguments do not also name
-//     that member;
+//   * in the default read, a member of a specialization that the walk
+//     reaches through a pointer or a template argument, when the
+//     arguments do not also name that member;
 //   * a value behind type erasure, as in std::function or std::any, where
 //     the type of the held value is not part of the static type;
 //   * a lambda capture.  GCC 16 reflects no data member of a closure
@@ -70,6 +89,16 @@ struct TypeNode {
     return std::meta::dealias(std::meta::remove_cvref(std::meta::dealias(type)));
 }
 
+// How the walk reads a class template specialization that it reaches
+// other than by value.  The head of this header states the costs of the
+// instantiating read.
+enum class SpecializationRead : unsigned char {
+    // Read its template arguments only.  Nothing is instantiated.
+    ArgumentsOnly,
+    // Instantiate it, and read its members too.
+    Instantiating,
+};
+
 // True when a read of the members of `type` needs no instantiation: a
 // class or union that is not a specialization and that is complete.
 [[nodiscard]] consteval bool members_readable_without_instantiation(std::meta::info type) {
@@ -79,9 +108,16 @@ struct TypeNode {
     return std::meta::is_complete_type(bare);
 }
 
-// The node for a type that the walk reaches other than by value.
-[[nodiscard]] consteval TypeNode node_reached_indirectly(std::meta::info type) {
+// The node for a type that the walk reaches other than by value.  In the
+// instantiating read, the completeness query instantiates a
+// specialization, and answers false for a template with no definition.
+[[nodiscard]] consteval TypeNode node_reached_indirectly(std::meta::info type,
+                                                         SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     const std::meta::info bare = bare_type(type);
+    const bool is_class = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
+    if (read == SpecializationRead::Instantiating && is_class && std::meta::has_template_arguments(bare)) {
+        return TypeNode{bare, std::meta::is_complete_type(bare)};
+    }
     return TypeNode{bare, members_readable_without_instantiation(bare)};
 }
 
@@ -90,12 +126,13 @@ struct TypeNode {
 // template argument.  An array element inherits `may_read_members`,
 // because the element of a complete array is complete.  Complexity:
 // linear in the number of template arguments.
-[[nodiscard]] consteval std::vector<TypeNode> argument_components_of(TypeNode node) {
+[[nodiscard]] consteval std::vector<TypeNode> argument_components_of(
+    TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     std::vector<TypeNode> components;
     const std::meta::info type = bare_type(node.type);
 
     if (std::meta::is_pointer_type(type)) {
-        components.push_back(node_reached_indirectly(std::meta::remove_pointer(type)));
+        components.push_back(node_reached_indirectly(std::meta::remove_pointer(type), read));
         return components;
     }
     if (std::meta::is_array_type(type)) {
@@ -106,9 +143,9 @@ struct TypeNode {
 
     for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
         if (std::meta::is_type(argument)) {
-            components.push_back(node_reached_indirectly(argument));
+            components.push_back(node_reached_indirectly(argument, read));
         } else if (std::meta::is_value(argument) || std::meta::is_object(argument)) {
-            components.push_back(node_reached_indirectly(std::meta::type_of(argument)));
+            components.push_back(node_reached_indirectly(std::meta::type_of(argument), read));
         }
     }
     return components;
@@ -118,7 +155,8 @@ struct TypeNode {
 // members the walk may read.  For a specialization this read
 // instantiates the class, so the caller must know it is complete.
 // Complexity: linear in the number of bases and members.
-[[nodiscard]] consteval std::vector<TypeNode> member_components_of(TypeNode node) {
+[[nodiscard]] consteval std::vector<TypeNode> member_components_of(
+    TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     std::vector<TypeNode> components;
     const std::meta::info type = bare_type(node.type);
     if (!node.may_read_members) return components;
@@ -131,7 +169,7 @@ struct TypeNode {
          std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
         const std::meta::info member_type = std::meta::type_of(member);
         if (std::meta::is_reference_type(member_type)) {
-            components.push_back(node_reached_indirectly(member_type));
+            components.push_back(node_reached_indirectly(member_type, read));
         } else {
             components.push_back(TypeNode{bare_type(member_type), true});
         }
@@ -153,9 +191,10 @@ struct TypeNode {
 // therefore never instantiated.
 //
 // The walk visits each node once, so a type that reaches itself through
-// a pointer ends the walk.  Complexity: linear in the number of distinct
-// nodes, times the cost of the visited-list scan.
-template <auto Predicate>
+// a pointer ends the walk.  `Read` selects the read of a specialization
+// that the walk reaches other than by value.  Complexity: linear in the
+// number of distinct nodes, times the cost of the visited-list scan.
+template <auto Predicate, SpecializationRead Read = SpecializationRead::ArgumentsOnly>
 [[nodiscard]] consteval TypeNode first_component_satisfying(std::meta::info root) {
     struct Step {
         TypeNode node{};
@@ -167,7 +206,9 @@ template <auto Predicate>
         const Step step = pending.back();
         pending.pop_back();
         if (step.reads_members) {
-            for (const TypeNode& component : member_components_of(step.node)) pending.push_back(Step{component, false});
+            for (const TypeNode& component : member_components_of(step.node, Read)) {
+                pending.push_back(Step{component, false});
+            }
             continue;
         }
         bool was_visited = false;
@@ -183,16 +224,18 @@ template <auto Predicate>
         // The member read is pushed first, so the stack runs it after
         // every argument and its whole subtree.
         if (step.node.may_read_members) pending.push_back(Step{step.node, true});
-        for (const TypeNode& component : argument_components_of(step.node)) pending.push_back(Step{component, false});
+        for (const TypeNode& component : argument_components_of(step.node, Read)) {
+            pending.push_back(Step{component, false});
+        }
     }
     return TypeNode{};
 }
 
 // True when `Predicate` accepts the root or a node the walk reaches from
 // it.  The walk and its limits are those of first_component_satisfying.
-template <auto Predicate>
+template <auto Predicate, SpecializationRead Read = SpecializationRead::ArgumentsOnly>
 [[nodiscard]] consteval bool any_component_satisfies(std::meta::info root) {
-    return first_component_satisfying<Predicate>(root).type != std::meta::info{};
+    return first_component_satisfying<Predicate, Read>(root).type != std::meta::info{};
 }
 
 namespace detail::type_components_self_test {
@@ -266,6 +309,29 @@ static_assert(!any_component_satisfies<is_needle>(^^Wrap<Unrelated>));
 // arguments and not instantiated.
 static_assert(!any_component_satisfies<is_needle>(^^Wrap<Detonates<int>>));
 static_assert(any_component_satisfies<is_needle>(^^Wrap<Detonates<Needle>>));
+
+// The instantiating read.  A specialization that holds a Needle in a
+// member that no argument names is seen only when the walk reads it.
+template <class T>
+struct BoxesNeedle {
+    T tag{};
+    Needle held{};
+};
+template <class T>
+struct OnlyDeclared;
+inline constexpr auto is_unreadable_class = [](TypeNode node) consteval {
+    return std::meta::is_class_type(node.type) && !node.may_read_members;
+};
+constexpr SpecializationRead kInstantiating = SpecializationRead::Instantiating;
+
+static_assert(!any_component_satisfies<is_needle>(^^BoxesNeedle<int>*));
+static_assert(any_component_satisfies<is_needle, kInstantiating>(^^BoxesNeedle<int>*),
+              "a pointee specialization is read for its members");
+static_assert(any_component_satisfies<is_needle, kInstantiating>(^^Wrap<BoxesNeedle<int>>),
+              "a specialization named by an argument is read for its members");
+static_assert(first_component_satisfying<is_unreadable_class, kInstantiating>(^^OnlyDeclared<int>*).type
+                  == ^^OnlyDeclared<int>,
+              "a template with no definition stays unreadable, so a gate can refuse it");
 
 }  // namespace detail::type_components_self_test
 

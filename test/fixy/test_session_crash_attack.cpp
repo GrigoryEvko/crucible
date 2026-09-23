@@ -119,6 +119,14 @@ struct ForeignHandle {
     int descriptor = 0;
 };
 
+// A specialization that holds a foreign handle in a member that none of
+// its arguments names.
+template <typename T>
+struct ForeignBox {
+    T tag{};
+    ForeignHandle<ForeignProtocol> held;
+};
+
 // A closure that owns an endpoint.  GCC 16 reflects no capture.  The
 // query cannot read what the closure holds, and it refuses the closure.
 [[maybe_unused]] auto capture_endpoint(Endpoint end) {
@@ -129,25 +137,36 @@ using CapturesEndpoint = decltype(capture_endpoint(std::declval<Endpoint>()));
 using WatchedEndpoint = s::CrashWatched<Endpoint, Q, P, s::NoReliableRoles>;
 using RecordedEndpoint = s::Recorded<Endpoint>;
 
+// A class that the payload holds, points at, or names in a template
+// argument is read for its members.  A handle of any library declares
+// the protocol it runs, so the query sees it through each reach.
 static_assert(carrier_of<Endpoint> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<NestsEndpoint> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<HoldsEndpointInUnion> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<Endpoint[2]> == DelegationCarrier::Endpoint);
-// The walk reads the arguments of a specialization before its members.
-// It sees a standard wrapper through the argument that names the
-// endpoint.
-static_assert(carrier_of<std::optional<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<std::variant<int, Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<std::array<Endpoint, 2>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<std::optional<Endpoint>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<std::variant<int, Endpoint>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<std::array<Endpoint, 2>> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<WatchedEndpoint> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<RecordedEndpoint> == DelegationCarrier::Endpoint);
 static_assert(carrier_of<ForeignHandle<ForeignProtocol>> == DelegationCarrier::Endpoint);
-static_assert(carrier_of<Endpoint*> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<ReferencesEndpoint> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<std::unique_ptr<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<std::shared_ptr<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<std::vector<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
-static_assert(carrier_of<ForeignHandle<s::Recv<int, s::End>>*> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<Endpoint*> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<ReferencesEndpoint> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<std::unique_ptr<Endpoint>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<std::shared_ptr<Endpoint>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<std::vector<Endpoint>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<ForeignHandle<s::Recv<int, s::End>>*> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<ForeignHandle<ForeignProtocol>*> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<std::vector<ForeignHandle<ForeignProtocol>>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<ForeignBox<int>*> == DelegationCarrier::Endpoint,
+              "the member that holds the handle is named by no argument, so only a read of the pointee finds it");
+static_assert(carrier_of<std::unique_ptr<ForeignBox<int>>> == DelegationCarrier::Endpoint);
+// A class or a template with no definition here cannot be read, and the
+// query stops the build instead of giving a value:
+// neg_sess_crash_delegation_undefined_template and
+// neg_sess_crash_delegation_declared_class.  The read instantiates each
+// specialization it reaches, so a later explicit specialization of it is
+// ill-formed: neg_sess_crash_delegation_specialized_after_query.
 static_assert(carrier_of<Mention<Delegated>> == DelegationCarrier::HandOff);
 static_assert(carrier_of<s::Transferable<Delegated, X>> == DelegationCarrier::HandOff);
 static_assert(carrier_of<CapturesEndpoint> == DelegationCarrier::UnreadableState);
@@ -224,9 +243,6 @@ constexpr delegation_gap delegation_gaps[] = {
     {"a copy of the Resource of a live session",
      "a Resource is a channel and not an endpoint.  A copy of it lets the recipient write outside the protocol",
      s::payload_conveys_delegation_v<SharedChannel>},
-    {"a foreign handle reached through a pointer",
-     "the walk reads a pointee specialization for its arguments only, and no argument is a fixy protocol",
-     s::payload_conveys_delegation_v<ForeignHandle<ForeignProtocol>*>},
 };
 
 consteval bool delegation_gaps_are_open() {

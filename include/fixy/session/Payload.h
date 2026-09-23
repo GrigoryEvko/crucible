@@ -92,7 +92,9 @@
 // The query reads every component of the payload, and every reach
 // counts.  A pointer or a reference to an endpoint counts too.  The
 // recipient can step the endpoint through it, and it is then a second
-// name for the endpoint.  A component delegates when it is one of these:
+// name for the endpoint.  A template argument counts as well, because a
+// type that names an endpoint can hold one.  A component delegates when
+// it is one of these:
 //
 //   the hand-off       DelegatedSession<P, PS>
 //   an endpoint        a class that declares a member type named protocol
@@ -101,27 +103,32 @@
 //                      tree has that shape: SessionHandle and its base,
 //                      CrashWatched, CheckpointHandle, Recorded and
 //                      SessionFromMachine.  Each handle of the old tree
-//                      has it too
-//   a named endpoint   a specialization that the walk reads for its
-//                      arguments only, through a pointer or as an
-//                      argument, when one argument is a session protocol
+//                      has it too, and so does the handle of a library
+//                      that fixy does not know
+//
+// The walk reads the members of each class it reaches.  A specialization
+// that the payload points at or names is instantiated for the read, so a
+// specialization that cannot be instantiated here stops the build with
+// the diagnostic of its own template.
 //
 // The query also refuses a component with content that it cannot read.
 // Each of these can hold an endpoint that the static type does not name:
 // a type-erasure family, a class with state that the walk cannot read (a
-// lambda with captures), a class that is only declared, and a pointer to
-// void.
+// lambda with captures), and a pointer to void.  A class or a template
+// that is only declared stops the build with
+// [Payload_Delegation_Unreadable].  A value would say different things in
+// a unit that defines the class and in a unit that only declares it.
 //
 // What the query cannot see:
 //
 //   * an integer that holds the address of an endpoint, or an index
-//     into a table of endpoints;
-//   * a function pointer, because the function can reach an endpoint
-//     through global state;
-//   * a copy of the Resource of a live session, which is a channel and
-//     not an endpoint;
-//   * the handle of a session library that fixy does not know, reached
-//     through a pointer, when no argument of it is a fixy protocol.
+//     into a table of endpoints.  An integer has no type provenance, and
+//     the query reads types;
+//   * a function pointer.  It names code and no state.  Its target
+//     reaches an endpoint only through global state, and each function
+//     of the recipient reaches that state without the pointer;
+//   * a copy of the Resource of a live session.  A Resource of raw
+//     pointers is a channel held as plain data, and no type marks it.
 //
 // The crash attack campaign pins each of these on its ledger.
 //
@@ -147,6 +154,7 @@
 #include <cstdlib>
 #include <functional>
 #include <meta>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -310,15 +318,14 @@ private:
 
 // The first component of a payload that gives authority over a session
 // endpoint, as the head of this header states it.  None means that the
-// payload delegates nothing.
+// payload delegates nothing.  A class that the query cannot read is a
+// compile error and has no value here.
 enum class DelegationCarrier : std::uint8_t {
     None,
     HandOff,
     Endpoint,
-    EndpointNamedByArgument,
     TypeErasure,
     UnreadableState,
-    IncompleteType,
     OpaquePointer,
 };
 
@@ -789,10 +796,10 @@ enum class PayloadSet : std::uint8_t {
     return false;
 }
 
-// What one component of a payload carries.  The node says whether the
-// walk may read its members.  Where it may not, this function reads the
-// template arguments only, and no instantiation occurs.
-[[nodiscard]] consteval DelegationCarrier delegation_carrier_of(::foundation::reflect::TypeNode node) {
+// What one component of a payload carries, or no value for a class that
+// the walk cannot read.  The walk instantiates each specialization it
+// reaches, so such a class has no definition here.
+[[nodiscard]] consteval std::optional<DelegationCarrier> delegation_carrier_of(::foundation::reflect::TypeNode node) {
     const std::meta::info type = node.type;
     if (type == std::meta::info{}) return DelegationCarrier::None;
     if (payload_family_is(type, ^^DelegatedSession)) return DelegationCarrier::HandOff;
@@ -804,16 +811,7 @@ enum class PayloadSet : std::uint8_t {
         return DelegationCarrier::OpaquePointer;
     }
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return DelegationCarrier::None;
-    if (!node.may_read_members) {
-        if (!payload_is_specialization(type)) return DelegationCarrier::IncompleteType;
-        if (is_session_protocol_type(type)) return DelegationCarrier::None;
-        for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
-            if (std::meta::is_type(argument) && is_session_protocol_type(std::meta::dealias(argument))) {
-                return DelegationCarrier::EndpointNamedByArgument;
-            }
-        }
-        return DelegationCarrier::None;
-    }
+    if (!node.may_read_members) return std::nullopt;
     if (payload_holds_unreadable_state(type)) return DelegationCarrier::UnreadableState;
     // A protocol is a type that names a conversation.  It is not an
     // endpoint of one, although VendorPinned declares a member protocol.
@@ -821,16 +819,41 @@ enum class PayloadSet : std::uint8_t {
     return DelegationCarrier::None;
 }
 
-inline constexpr auto is_delegating_component = [](::foundation::reflect::TypeNode node) consteval {
-    return delegation_carrier_of(node) != DelegationCarrier::None;
+// A component stops the walk when it delegates or cannot be read.
+inline constexpr auto stops_delegation_walk = [](::foundation::reflect::TypeNode node) consteval {
+    const std::optional<DelegationCarrier> carrier = delegation_carrier_of(node);
+    return !carrier.has_value() || *carrier != DelegationCarrier::None;
 };
 
-// The first component of the payload that delegates, in the order of the
-// component walk.  Complexity: the walk of TypeComponents.h, with a scan
-// of the members of each readable class it reaches.
-[[nodiscard]] consteval DelegationCarrier payload_delegation(std::meta::info payload) {
-    return delegation_carrier_of(
-        ::foundation::reflect::first_component_satisfying<is_delegating_component>(payload));
+// The first component of the payload that delegates or cannot be read,
+// in the order of the component walk.  The walk reads every class it
+// reaches, whether the payload holds it, points at it, or names it in a
+// template argument.  Complexity: the walk of TypeComponents.h, with a
+// scan of the members of each class it reaches.
+[[nodiscard]] consteval ::foundation::reflect::TypeNode payload_delegation_stop(std::meta::info payload) {
+    return ::foundation::reflect::first_component_satisfying<stops_delegation_walk,
+                                                             ::foundation::reflect::SpecializationRead::Instantiating>(
+        payload);
+}
+
+[[nodiscard]] consteval std::string_view unreadable_component_text(std::meta::info type) {
+    std::string text{"fixy::session::diagnostic [Payload_Delegation_Unreadable]: the payload reaches "};
+    text += std::meta::display_string_of(type);
+    text += ", which has no definition here, so the delegation query cannot read whether it holds a session "
+            "endpoint.  Define it before the query, or send a payload that does not reach it.";
+    return std::define_static_string(text);
+}
+
+// The carrier of P.  A class that the walk cannot read is a compile error
+// and not a value.  A class can be complete in one translation unit and
+// only declared in a different one, and a value would then differ between
+// two units of one program.
+template <class P>
+[[nodiscard]] consteval DelegationCarrier payload_delegation() {
+    constexpr ::foundation::reflect::TypeNode stop = payload_delegation_stop(^^P);
+    constexpr std::optional<DelegationCarrier> carrier = delegation_carrier_of(stop);
+    static_assert(carrier.has_value(), unreadable_component_text(stop.type));
+    return carrier.value_or(DelegationCarrier::None);
 }
 
 }  // namespace detail
@@ -889,7 +912,7 @@ inline constexpr bool is_plain_payload_v = is_plain_payload<P>::value;
 // The component of P that delegates first, in the order of the walk, or
 // None.  The head of this header states which components delegate.
 template <class P>
-inline constexpr DelegationCarrier payload_delegation_carrier_v = detail::payload_delegation(^^P);
+inline constexpr DelegationCarrier payload_delegation_carrier_v = detail::payload_delegation<P>();
 
 namespace detail {
 
