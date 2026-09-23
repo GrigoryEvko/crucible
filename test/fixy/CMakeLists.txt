@@ -1631,6 +1631,12 @@ fixy_neg_compile_test(neg_spawn_callable_carries_throws
   "static assertion failed: mint_spawn: a callable.s type carries fixy::atom::ctrl::throws"
   "tears through the join")
 
+# The same refusal when the atom sits in a member of a plain callable,
+# where no template argument names it.
+fixy_neg_compile_test(neg_spawn_callable_member_carries_throws
+  "static assertion failed: mint_spawn: a callable.s type carries fixy::atom::ctrl::throws"
+  "tears through the join")
+
 # A mechanism that never joins has to say why.
 fixy_neg_compile_test(neg_spawn_detached_missing_rationale
   "static assertion failed: a Detached mechanism with no detach_with atom must be refused"
