@@ -1044,11 +1044,19 @@ fixy_test(test_payload_row)
 # first and fail the second, so both are required.  The type arrives in
 # the substitution note, which the fixture source does not contain.
 fixy_neg_compile_test(neg_payload_row_unclassified_wrapper
-  "static assertion failed: payload_row<T>: T is a class template specialization whose family is on none of the "
+  "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "with T = \\{anonymous\\}::UnclassifiedWrapper<int>")
 fixy_neg_compile_test(neg_payload_row_unclassified_hides_effect
-  "static assertion failed: payload_row<T>: T is a class template specialization whose family is on none of the "
+  "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "with T = \\{anonymous\\}::UnclassifiedWrapper<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >")
+#
+# A plain class is read for what it holds, so an unrostered wrapper in a
+# member is refused as it is at the root.  The second regex is the
+# refused type as the text of the assertion names it, which the
+# instantiation note for payload_row<T> does not.
+fixy_neg_compile_test(neg_payload_row_member_hides_unclassified
+  "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
+  "The refused type: \\{anonymous\\}::UnclassifiedWrapper<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >")
 
 # ── Task #119 (A15): the machine topology ─────────────────────────────
 #
@@ -1099,6 +1107,10 @@ fixy_neg_compile_test(neg_stage_mint_ctx_not_exec_ctx
 fixy_neg_compile_test(neg_stage_mint_input_row_not_admitted
   "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."
   "FakeConsumer<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int> >&&, <unnamed>::FakeProducer<int>&&\\)")
+# The same row held in a member of a plain struct payload.
+fixy_neg_compile_test(neg_stage_mint_input_member_row_not_admitted
+  "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."
+  "FakeConsumer<<unnamed>::IoPayload>&&, <unnamed>::FakeProducer<int>&&\\)")
 fixy_neg_compile_test(neg_stage_mint_output_row_not_admitted
   "required for the satisfaction of .StageOutputRowAdmitted<FnPtr, Ctx>."
   "Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init")

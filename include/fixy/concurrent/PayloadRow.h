@@ -19,8 +19,9 @@
 // context.  A class template can also be specialized from any
 // translation unit, so the ladder was open at both ends.
 //
-// Here the primary is a compile error naming the type, and the three
-// answers are three rosters read by reflection:
+// Here a type that cannot be classified is a compile error naming the
+// type, and the answer for a specialization comes from three rosters
+// read by reflection:
 //
 //   row_carrying   the family carries a row of its own, and the rule
 //                  that reads it is written beside the roster entry
@@ -28,18 +29,30 @@
 //                  answer is the answer for what it hides
 //   leaf           the family is a value with no row, stated once
 //
-// A type that is not a specialization at all is a leaf by construction:
-// it has no template parameter in which to hide a payload.  A
-// specialization whose family is on no roster is refused, and the
-// diagnostic carries the type.
+// A type that is not a specialization is read for what it holds.  The
+// walk in foundation/reflect/TypeComponents.h reads its bases and its
+// by-value members, the target of a pointer or a reference, and the
+// element of an array, and each of those answers by the same rules.  So
+// `struct S { Computation<Row<Bg>, int> c; };` carries Row<Bg>, and a
+// scalar, which holds nothing, carries the empty row.
 //
-// Not covered, stated rather than implied: a plain class with an
-// effectful MEMBER, as in `struct S { Computation<Row<Bg>, int> c; };`.
-// S is not a specialization, so it reads as a leaf and its member's row
-// is not seen.  Catching that needs a member walk over arbitrary
-// payloads, which is a larger question than this extractor answers; the
-// old tree did not catch it either.  What changed is that an
-// unclassified WRAPPER is now refused instead of admitted.
+// Three shapes are refused, each because the extractor cannot say what
+// the shape holds:
+//
+//   * a specialization whose family is on no roster, wherever the walk
+//     reaches it;
+//   * a class that is only declared, whose members nobody can read;
+//   * a class that holds state the walk cannot read.  That is a class
+//     that is not empty and that reflects no base and no data member,
+//     which is the shape of a lambda with captures: GCC 16 reflects no
+//     capture.
+//
+// The empty row is therefore an answer the walk derives, never a default
+// it falls back to.  The diagnostic names the refused type.
+//
+// A Computation carries its own row and the row of its payload.  The
+// payload is a value the receiver can take out of the carrier, so a
+// capability inside a carrier at the empty row still conveys its effect.
 
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
@@ -55,10 +68,17 @@
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
+#include <span>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace fixy::concurrent {
 
@@ -103,60 +123,174 @@ inline constexpr std::meta::info leaf_payload_families[] = {
     return std::meta::template_of(std::meta::dealias(type));
 }
 
+[[nodiscard]] consteval bool family_is_on(std::meta::info type, std::span<const std::meta::info> roster) noexcept {
+    if (!is_specialization(type)) return false;
+    const auto family = family_of_payload(type);
+    for (const auto entry : roster) {
+        if (entry == family) return true;
+    }
+    return false;
+}
+
 // The three membership questions.  Each reads one roster and nothing
 // else, so a family is on a roster because this header lists it.
 [[nodiscard]] consteval bool carries_row(std::meta::info type) noexcept {
-    if (!is_specialization(type)) return false;
-    const auto family = family_of_payload(type);
-    for (const auto entry : row_carrying_payload_families) {
-        if (entry == family) return true;
-    }
-    return false;
+    return family_is_on(type, row_carrying_payload_families);
 }
 
 [[nodiscard]] consteval bool is_transparent(std::meta::info type) noexcept {
-    if (!is_specialization(type)) return false;
-    const auto family = family_of_payload(type);
-    for (const auto entry : transparent_payload_families) {
-        if (entry == family) return true;
-    }
-    return false;
+    return family_is_on(type, transparent_payload_families);
 }
 
 [[nodiscard]] consteval bool is_rostered_leaf(std::meta::info type) noexcept {
-    if (!is_specialization(type)) return false;
-    const auto family = family_of_payload(type);
-    for (const auto entry : leaf_payload_families) {
-        if (entry == family) return true;
+    return family_is_on(type, leaf_payload_families);
+}
+
+// The payload a transparent family hides.  Reading the member alias
+// instantiates the wrapper, which each rostered family permits.
+template <class T>
+using hidden_payload_t = typename T::value_type;
+
+// The answer of the walk: the effects found, as one bit per underlying
+// value, or the first type the walk refused.
+struct PayloadRowWalk {
+    std::uint64_t effect_mask = 0;
+    bool is_refused = false;
+    std::meta::info refused_type{};
+};
+
+[[nodiscard]] consteval std::uint64_t effect_bit(::foundation::effects::Effect effect) noexcept {
+    return std::uint64_t{1} << static_cast<unsigned>(std::to_underlying(effect));
+}
+
+[[nodiscard]] consteval std::uint64_t effect_mask_of_row(std::meta::info row) {
+    std::uint64_t mask = 0;
+    for (const std::meta::info effect : std::meta::template_arguments_of(std::meta::dealias(row))) {
+        mask |= effect_bit(std::meta::extract<::foundation::effects::Effect>(effect));
     }
-    return false;
+    return mask;
 }
 
-// The three questions asked of a type rather than of a reflection.  A
-// constraint cannot spell `f(^^T)` without parenthesizing the
-// reflection, so the specializations below name these instead.
-template <class T>
-[[nodiscard]] consteval bool is_transparent_payload() noexcept {
-    return is_transparent(^^T);
+// A class whose state the walk cannot read: complete, not empty, and
+// with no reflected base or data member.
+[[nodiscard]] consteval bool holds_unreadable_state(std::meta::info type) {
+    if (!std::meta::is_class_type(type) || is_specialization(type)) return false;
+    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
+    const auto unchecked = std::meta::access_context::unchecked();
+    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
 }
 
-template <class T>
-[[nodiscard]] consteval bool is_leaf_payload() noexcept {
-    return is_rostered_leaf(^^T);
+// The walk.  Each node answers by its kind:
+//
+//   * a row-carrying family adds its row, and a Computation also hands
+//     its payload to the walk;
+//   * a transparent family hands its hidden payload to the walk;
+//   * a rostered leaf adds nothing;
+//   * any other specialization is refused;
+//   * any other type hands its components to the walk, and a class that
+//     is only declared, or that holds state the walk cannot read, is
+//     refused.
+//
+// Each node is visited once, so a type that reaches itself through a
+// pointer ends the walk.  Complexity: linear in the number of distinct
+// nodes, times the cost of the visited-list scan.
+[[nodiscard]] consteval PayloadRowWalk walk_payload_row(std::meta::info root) {
+    namespace refl = ::foundation::reflect;
+    PayloadRowWalk walked;
+    std::vector<refl::TypeNode> pending{refl::TypeNode{refl::bare_type(root), true}};
+    std::vector<std::meta::info> visited;
+    auto refuse = [&walked](std::meta::info type) consteval {
+        walked.is_refused = true;
+        walked.refused_type = type;
+    };
+    while (!pending.empty() && !walked.is_refused) {
+        const refl::TypeNode node = pending.back();
+        pending.pop_back();
+        const std::meta::info type = node.type;
+        bool was_visited = false;
+        for (const std::meta::info seen : visited) {
+            if (seen == type) {
+                was_visited = true;
+                break;
+            }
+        }
+        if (was_visited) continue;
+        visited.push_back(type);
+
+        if (is_specialization(type)) {
+            if (carries_row(type)) {
+                const auto family = family_of_payload(type);
+                const auto arguments = std::meta::template_arguments_of(type);
+                if (family == ^^::foundation::effects::Computation) {
+                    walked.effect_mask |= effect_mask_of_row(arguments[0]);
+                    pending.push_back(refl::node_reached_indirectly(arguments[1]));
+                } else {
+                    walked.effect_mask |= effect_bit(std::meta::extract<::foundation::effects::Effect>(arguments[0]));
+                }
+            } else if (is_transparent(type)) {
+                pending.push_back(refl::node_reached_indirectly(std::meta::substitute(^^hidden_payload_t, {type})));
+            } else if (!is_rostered_leaf(type)) {
+                refuse(type);
+            }
+            continue;
+        }
+
+        const bool is_class = std::meta::is_class_type(type) || std::meta::is_union_type(type);
+        if (is_class && !std::meta::is_complete_type(type)) {
+            refuse(type);
+            continue;
+        }
+        if (holds_unreadable_state(type)) {
+            refuse(type);
+            continue;
+        }
+        for (const refl::TypeNode& component : refl::argument_components_of(node)) pending.push_back(component);
+        if (is_class) {
+            const refl::TypeNode readable{type, true};
+            for (const refl::TypeNode& component : refl::member_components_of(readable)) pending.push_back(component);
+        }
+    }
+    return walked;
 }
 
-// A type this extractor can answer for: a non-specialization, or a
-// specialization whose family is on exactly one of the three rosters.
-// This is the gate, and the primary template's static_assert is its
-// only consumer.
+// The row with one effect for each bit of the mask, in the canonical
+// order of foundation/effects/Row.h, which sorts by underlying value.
+[[nodiscard]] consteval std::meta::info row_of_effect_mask(std::uint64_t mask) {
+    std::vector<std::meta::info> effects;
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^::foundation::effects::Effect)) {
+        const auto effect = std::meta::extract<::foundation::effects::Effect>(enumerator);
+        if ((mask & effect_bit(effect)) != 0) effects.push_back(std::meta::reflect_constant(effect));
+    }
+    return std::meta::dealias(
+        std::meta::substitute(^^::foundation::effects::canonical_row_t,
+                              {std::meta::substitute(^^::foundation::effects::Row, effects)}));
+}
+
+template <std::uint64_t EffectMask>
+using row_of_effect_mask_t = [:row_of_effect_mask(EffectMask):];
+
+// The diagnostic text when the walk refuses a type.  The refused type is
+// part of the text, because the walk can refuse a member deep inside the
+// payload, which the instantiation note for payload_row<T> does not name.
+[[nodiscard]] consteval std::string_view payload_row_refusal(PayloadRowWalk walked) {
+    if (!walked.is_refused) return {};
+    std::string text{
+        "payload_row<T>: T is, or holds, a type this extractor cannot classify.  A class template "
+        "specialization whose family is on none of the three payload rosters in "
+        "fixy/concurrent/PayloadRow.h is refused, and so is a class that is only declared, or that "
+        "holds state the walk cannot read, such as a lambda with captures.  A payload that hides "
+        "another type must say what it hides: add the family to transparent_payload_families if it "
+        "unwraps, to row_carrying_payload_families with its rule if it carries a row of its own, or to "
+        "leaf_payload_families if it holds no row at all.  Answering Row<> for an unclassified type "
+        "would let it satisfy every execution context.  The refused type: "};
+    text += std::meta::display_string_of(walked.refused_type);
+    return std::define_static_string(text);
+}
+
+// A type this extractor can answer for.
 template <class T>
 [[nodiscard]] consteval bool payload_row_is_classified() noexcept {
-    constexpr auto type = ^^T;
-    if constexpr (!is_specialization(type)) {
-        return true;
-    } else {
-        return carries_row(type) || is_transparent(type) || is_rostered_leaf(type);
-    }
+    return !walk_payload_row(^^T).is_refused;
 }
 
 // No family may sit on two rosters, or the order of the checks below
@@ -186,56 +320,14 @@ static_assert(rosters_are_disjoint(), "A payload family is on two of the three r
 
 // The row a payload carries.
 //
-// The primary is a hard error rather than an answer.  Its static_assert
-// names no type in its text, because the text is fixed; the type is in
-// the instantiation note the compiler prints beside it, which is what
-// the negative fixture matches on.
+// There is one template and no specialization.  The walk decides every
+// answer, and a refusal is a hard error whose text names the refused
+// type, which is what the negative fixtures match on.
 template <class T>
 struct payload_row {
-    static_assert(detail::payload_row_is_classified<T>(),
-                  "payload_row<T>: T is a class template specialization whose family is on none of the "
-                  "three payload rosters in fixy/concurrent/PayloadRow.h.  A payload that hides another "
-                  "type must say what it hides: add the family to transparent_payload_families if it "
-                  "unwraps, to row_carrying_payload_families with its rule if it carries a row of its "
-                  "own, or to leaf_payload_families if it holds no row at all.  Answering Row<> for an "
-                  "unclassified wrapper would let it satisfy every execution context, which is the "
-                  "fail-open shape this roster replaced.");
-
-    // Reached only for a non-specialization, which has no template
-    // parameter in which to hide a payload.
-    using type = ::foundation::effects::Row<>;
-};
-
-// Sending a computation says the payload was produced under row R, and
-// the receiver inherits the obligation that R was authorized.
-template <class R, class T>
-struct payload_row<::foundation::effects::Computation<R, T>> {
-    using type = R;
-};
-
-// Sending a capability conveys the effect itself, because the receiver
-// gains the authority to perform it.  The source is informational at
-// the row level.
-template <::foundation::effects::Effect E, class S>
-struct payload_row<::foundation::effects::Capability<E, S>> {
-    using type = ::foundation::effects::Row<E>;
-};
-
-// Every transparent family, in one partial specialization rather than
-// one per wrapper.  The constraint is what keeps this from swallowing an
-// unclassified specialization: a family absent from the roster does not
-// match here and falls to the primary, where it is refused.
-template <class T>
-    requires(detail::is_transparent_payload<T>())
-struct payload_row<T> {
-    using type = typename payload_row<typename T::value_type>::type;
-};
-
-// Every rostered leaf, likewise in one specialization.
-template <class T>
-    requires(detail::is_leaf_payload<T>())
-struct payload_row<T> {
-    using type = ::foundation::effects::Row<>;
+    static constexpr detail::PayloadRowWalk walked = detail::walk_payload_row(^^T);
+    static_assert(!walked.is_refused, detail::payload_row_refusal(walked));
+    using type = detail::row_of_effect_mask_t<walked.effect_mask>;
 };
 
 template <class T>
@@ -317,6 +409,48 @@ static_assert(payload_row_is_classified<eff::Capability<eff::Effect::Alloc, eff:
 static_assert(payload_row_is_classified<::fixy::Secret<int>>());
 static_assert(payload_row_is_classified<::fixy::Saturated<unsigned>>());
 
+// ── a plain class answers for what it holds ─────────────────────────
+struct HoldsEngaged {
+    int tag = 0;
+    BgComp held;
+};
+struct DerivesEngaged : BgComp {};
+struct PointsAtCapability {
+    eff::Capability<eff::Effect::IO, eff::Init> const* held = nullptr;
+};
+struct HoldsTwoRows {
+    HoldsEngaged first;
+    ::fixy::Secret<eff::Capability<eff::Effect::Alloc, eff::Bg>> second[2];
+};
+struct SelfReferential {
+    SelfReferential* next = nullptr;
+    int value = 0;
+};
+static_assert(std::is_same_v<payload_row_t<HoldsEngaged>, eff::Row<eff::Effect::Bg>>,
+              "A member's row is the class's row.  The empty row here is the fail-open answer this walk "
+              "replaced.");
+static_assert(std::is_same_v<payload_row_t<DerivesEngaged>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<PointsAtCapability>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<HoldsTwoRows>, eff::Row<eff::Effect::Alloc, eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<SelfReferential>, eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff::Init>*>, eff::Row<eff::Effect::IO>>);
+
+// A carrier at the empty row still conveys what its payload conveys.
+static_assert(std::is_same_v<payload_row_t<eff::Computation<eff::Row<>, eff::Capability<eff::Effect::IO, eff::Bg>>>,
+                             eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<eff::Computation<eff::Row<eff::Effect::Bg>, HoldsEngaged>>,
+                             eff::Row<eff::Effect::Bg>>);
+
+// ── what the walk refuses outside the rosters ───────────────────────
+struct OnlyDeclared;
+static_assert(!payload_row_is_classified<OnlyDeclared*>(),
+              "a class that is only declared cannot say what it holds, so a pointer to it is refused.");
+inline constexpr auto captures_state = [held = 7] { return held; };
+inline constexpr auto captures_nothing = [] { return 7; };
+static_assert(!payload_row_is_classified<decltype(captures_state)>(),
+              "a lambda with captures holds state the walk cannot read, so it is refused.");
+static_assert(std::is_same_v<payload_row_t<decltype(captures_nothing)>, eff::Row<>>);
+
 // A template the rosters do not name is refused, whatever it holds.
 template <class T>
 struct UnclassifiedWrapper {
@@ -326,6 +460,11 @@ static_assert(!payload_row_is_classified<UnclassifiedWrapper<int>>(),
               "A class template on none of the three rosters must be refused.  Admitting it as a leaf is "
               "the fail-open shape: it would report the empty row and satisfy every context, including "
               "when it hides an engaged computation.");
+struct HoldsUnclassified {
+    UnclassifiedWrapper<int> held;
+};
+static_assert(!payload_row_is_classified<HoldsUnclassified>(),
+              "An unclassified wrapper in a member is refused as it is at the root.");
 static_assert(!payload_row_is_classified<UnclassifiedWrapper<BgComp>>(),
               "The refusal must not depend on what the unclassified wrapper holds.  A wrapper hiding an "
               "engaged computation is the case that matters, and it is refused for the same reason as one "
