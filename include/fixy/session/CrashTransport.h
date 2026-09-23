@@ -176,14 +176,23 @@ struct sender_of {
     std::abort();
 }
 
-[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_crash_label(std::size_t label,
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_crash_label(std::size_t word,
                                                                           std::size_t message_branches) noexcept {
     std::fprintf(stderr,
-                 "fixy::session: crash transport received label %zu, but the Offer has only %zu message "
-                 "branches.  A label at or after the first crash branch is the crash pseudo-message, which "
-                 "no peer can send.  The two endpoints disagree about the protocol.\n",
-                 label, message_branches);
+                 "fixy::session: crash transport received the wire word %zu, which names no message branch of "
+                 "the Offer (it has %zu message branches).  A crash branch is no label, so no peer can send its "
+                 "word.  The two endpoints disagree about the protocol.\n",
+                 word, message_branches);
     std::abort();
+}
+
+// True when the word names a message branch of the Offer P: a label
+// branch, in the reading of fixy/session/Handle.h.  Message branches
+// stand before the crash branches, so their indices are the first ones.
+template <typename P>
+[[nodiscard]] constexpr bool names_message_branch(std::size_t word) noexcept {
+    const std::size_t index = branch_of_wire_word<P>(word);
+    return index != no_branch && index < message_branch_count<P>::value;
 }
 
 }  // namespace detail::crash_transport
@@ -328,9 +337,14 @@ public:
     // ── branch ───────────────────────────────────────────────────────
     //
     // Poll has the signature std::optional<std::size_t>(Resource&).  It
-    // returns a label when a message from the peer is queued, and no
+    // returns a wire word when a message from the peer is queued, and no
     // value otherwise.  The decorator spins with a pause between polls.
     // A transport that expects long waits parks inside Poll.
+    //
+    // A word goes to the inner handle, which enters the branch that the
+    // word names (branch_of_wire_word in fixy/session/Handle.h).  A crash
+    // branch is no label, so no word names it.  On a crash the decorator
+    // enters the crash branch with pick_local, and no word is read.
     template <typename Poll, typename Handler, typename P = protocol>
         requires is_offer_v<P> && std::is_invocable_r_v<std::optional<std::size_t>, Poll, resource_type&>
     constexpr auto branch(Poll poll, Handler handler) && {
@@ -341,31 +355,28 @@ public:
                       "fixy::session::diagnostic [Crash_Sender_Unwatched]: this Offer has an unreliable sender "
                       "that is not the watched peer.");
 
-        const PeerCrashCell* cell = peer_cell_;
-        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Poll, resource_type&>;
-        auto label_of = [&poll, cell](resource_type& resource) noexcept(is_nothrow) -> std::size_t {
-            const auto checked = [](std::size_t label) noexcept {
-                if (label >= message_branches) [[unlikely]]
-                    detail::crash_transport::abort_on_crash_label(label, message_branches);
-                return label;
-            };
-            for (;;) {
-                if (const std::optional<std::size_t> label = std::invoke(poll, resource)) return checked(*label);
-                if (cell->has_crashed()) {
-                    // A message queued before the crash still wins.
-                    if (const std::optional<std::size_t> label = std::invoke(poll, resource)) return checked(*label);
-                    if constexpr (is_watched) {
-                        return crash_branch_index_v<P, Peer>;
-                    } else {
-                        detail::crash_transport::abort_on_reliable_peer_crash();
-                    }
-                }
-                CRUCIBLE_SPIN_PAUSE;
-            }
-        };
-        return std::move(inner_).branch(label_of, [this, &handler](auto branch_handle) {
+        const auto wrapped = [this, &handler](auto branch_handle) {
             return std::invoke(handler, wrap_(std::move(branch_handle)));
-        });
+        };
+        const auto take_word = [this, &wrapped](std::size_t word) {
+            if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
+                detail::crash_transport::abort_on_crash_label(word, message_branches);
+            return std::move(inner_).branch([word](resource_type&) noexcept { return word; }, wrapped);
+        };
+        resource_type& resource = inner_.resource();
+        for (;;) {
+            if (const std::optional<std::size_t> word = std::invoke(poll, resource)) return take_word(*word);
+            if (peer_cell_->has_crashed()) {
+                // A message queued before the crash still wins.
+                if (const std::optional<std::size_t> word = std::invoke(poll, resource)) return take_word(*word);
+                if constexpr (is_watched) {
+                    return wrapped(std::move(inner_).template pick_local<crash_branch_index_v<P, Peer>>());
+                } else {
+                    detail::crash_transport::abort_on_reliable_peer_crash();
+                }
+            }
+            CRUCIBLE_SPIN_PAUSE;
+        }
     }
 
     // ── close ────────────────────────────────────────────────────────

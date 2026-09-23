@@ -905,16 +905,18 @@ inline constexpr std::size_t no_branch = static_cast<std::size_t>(-1);
 // The branch of Choice that a received word names, or no_branch.  A keyed
 // choice compares the word with the label word of each label branch, so
 // a word that no label of Choice has names no branch.  A positional
-// choice reads the word as a position, and admits the position of a
-// branch that is no label too, because the crash transport of
-// fixy/session/CrashTransport.h enters its crash branch that way.
+// choice reads the word as a position.  In either kind a branch that is
+// no label has no word, so the wire never enters it: the crash transport
+// of fixy/session/CrashTransport.h enters a crash branch with pick_local.
 // Complexity: linear in the branches, each step a compare with a
 // constant.
 template <typename Choice>
 [[nodiscard]] constexpr std::size_t branch_of_wire_word(std::uint64_t word) noexcept {
     constexpr std::size_t count = Choice::branch_count;
     if constexpr (!is_keyed_choice_v<Choice>) {
-        return word < count ? static_cast<std::size_t>(word) : no_branch;
+        constexpr auto& words = detail::wire_words_v<Choice>;
+        if (word >= count || !words[static_cast<std::size_t>(word)].is_wired) return no_branch;
+        return static_cast<std::size_t>(word);
     } else {
         constexpr auto& words = detail::wire_words_v<Choice>;
         for (std::size_t index = 0; index < count; ++index) {

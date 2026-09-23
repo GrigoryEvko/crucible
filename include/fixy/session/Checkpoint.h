@@ -747,9 +747,13 @@ public:
         return take_branch_<Branch>(std::move(inner_).template select<I>(std::move(transport)));
     }
 
-    // Receives the peer's label and calls the handler with the handle for
-    // that branch.  A Commit, Roll or Abort takes effect before the call.
-    // Every branch must give the handler the same return type.
+    // Receives the peer's wire word and calls the handler with the handle
+    // for the branch that the word names.  A Commit, Roll or Abort takes
+    // effect before the call.  Every branch must give the handler the
+    // same return type.  The word is the word of the erased protocol that
+    // the plain handle runs, so the branch comes from that protocol
+    // (branch_of_wire_word in fixy/session/Handle.h).  The erasure keeps
+    // the count and the order of the branches.
     template <typename Transport, typename Handler, typename P = Head>
         requires is_offer_v<P> && std::is_invocable_r_v<std::size_t, Transport, resource_t&>
     constexpr auto branch(Transport transport, Handler handler) && {
@@ -757,8 +761,9 @@ public:
         constexpr std::size_t count = std::tuple_size_v<Branches>;
         std::size_t label = count;
         auto read_label = [&transport, &label](resource_t& resource) -> std::size_t {
-            label = std::invoke(transport, resource);
-            return label;
+            const std::size_t word = std::invoke(transport, resource);
+            label = branch_of_wire_word<typename Inner::protocol>(word);
+            return word;
         };
         return std::move(inner_).branch(read_label, [&handler, &label](auto next) {
             return dispatch_<Branches>(label, std::move(next), handler, std::make_index_sequence<count>{});
@@ -782,7 +787,7 @@ public:
 
 private:
     // The plain handle cannot say which label it took when two branches
-    // erase to one type, so the label read on the wire decides.
+    // erase to one type, so the branch that the wire word names decides.
     template <typename Branches, typename Next, typename Handler, std::size_t... Is>
     static constexpr auto dispatch_(std::size_t label, Next next, Handler& handler, std::index_sequence<Is...>) {
         using First = std::tuple_element_t<0, Branches>;
