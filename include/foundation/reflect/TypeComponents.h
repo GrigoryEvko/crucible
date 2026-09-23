@@ -139,11 +139,12 @@ struct TypeNode {
     return components;
 }
 
-// True when `Predicate` accepts the root or a node the walk reaches from
-// it.  `Predicate` is a consteval callable that takes a TypeNode and
-// returns bool.  A predicate that reads a member of the type, or asks a
-// trait that instantiates it, must do so only when the node says
-// `may_read_members`.
+// The first node that `Predicate` accepts: the root or a node the walk
+// reaches from it.  A node with a null type is the answer when
+// `Predicate` accepts no node.  `Predicate` is a consteval callable that
+// takes a TypeNode and returns bool.  A predicate that reads a member of
+// the type, or asks a trait that instantiates it, must do so only when
+// the node says `may_read_members`.
 //
 // The root is read with its members, because the caller holds a value
 // of it, so the root must be complete.  The walk reads the arguments of
@@ -155,7 +156,7 @@ struct TypeNode {
 // a pointer ends the walk.  Complexity: linear in the number of distinct
 // nodes, times the cost of the visited-list scan.
 template <auto Predicate>
-[[nodiscard]] consteval bool any_component_satisfies(std::meta::info root) {
+[[nodiscard]] consteval TypeNode first_component_satisfying(std::meta::info root) {
     struct Step {
         TypeNode node{};
         bool reads_members = false;
@@ -178,13 +179,20 @@ template <auto Predicate>
         }
         if (was_visited) continue;
         visited.push_back(step.node);
-        if (Predicate(step.node)) return true;
+        if (Predicate(step.node)) return step.node;
         // The member read is pushed first, so the stack runs it after
         // every argument and its whole subtree.
         if (step.node.may_read_members) pending.push_back(Step{step.node, true});
         for (const TypeNode& component : argument_components_of(step.node)) pending.push_back(Step{component, false});
     }
-    return false;
+    return TypeNode{};
+}
+
+// True when `Predicate` accepts the root or a node the walk reaches from
+// it.  The walk and its limits are those of first_component_satisfying.
+template <auto Predicate>
+[[nodiscard]] consteval bool any_component_satisfies(std::meta::info root) {
+    return first_component_satisfying<Predicate>(root).type != std::meta::info{};
 }
 
 namespace detail::type_components_self_test {
@@ -237,6 +245,10 @@ static_assert(any_component_satisfies<is_needle>(^^ValueWrap<NeedleValue{}>),
               "the type of a value argument is a component");
 static_assert(any_component_satisfies<is_needle>(^^Wrap<HoldsNeedle>),
               "a class that is not a specialization is read for members wherever the walk reaches it");
+static_assert(first_component_satisfying<is_needle>(^^HoldsNeedle).type == ^^Needle,
+              "the first accepted node is the one the walk answers with");
+static_assert(first_component_satisfying<is_needle>(^^Unrelated).type == std::meta::info{},
+              "a walk that accepts no node answers with a null type");
 
 // The capture gap, pinned.  The closure holds a Needle and the walk does
 // not see it, because GCC 16 reflects no data member of a closure type.

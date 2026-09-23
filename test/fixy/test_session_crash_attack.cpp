@@ -26,17 +26,23 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <any>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
+#include <vector>
 
 namespace s = ::fixy::session;
 namespace fp = ::foundation::permissions;
@@ -64,8 +70,174 @@ struct HidesDelegation {
 };
 using ReceivesHiddenDelegation = s::Offer<s::Recv<HidesDelegation, s::End>, s::Recv<s::Crash<P>, s::End>>;
 static_assert(!s::CrashSessionAdmissible<ReceivesHiddenDelegation, Q, P, s::NoReliableRoles>);
-static_assert(s::detail::crash::carries_delegation_v<HidesDelegation>);
-static_assert(!s::detail::crash::carries_delegation_v<int>);
+static_assert(s::payload_conveys_delegation_v<HidesDelegation>);
+static_assert(!s::payload_conveys_delegation_v<int>);
+
+// ── Delegation, read by one query ───────────────────────────────────
+//
+// A crash session and a checkpoint session ask one question of each
+// payload: payload_conveys_delegation_v of fixy/session/Payload.h.  Each
+// carrier below hides an endpoint in a legal payload.  The query must see
+// each one, and it must say how it saw it.  Before the query, the two
+// sessions looked for the hand-off marker alone.  Each handle below then
+// travelled.
+
+using DelegationCarrier = s::DelegationCarrier;
+using Endpoint = s::SessionHandle<s::Recv<int, s::End>, int*>;
+
+template <typename T>
+inline constexpr DelegationCarrier carrier_of = s::payload_delegation_carrier_v<T>;
+
+// A class template that only names its argument.
+template <typename T>
+struct Mention {};
+
+struct NestsEndpoint {
+    struct Inner {
+        int sequence = 0;
+        Endpoint end;
+    };
+    Inner inner;
+};
+
+union HoldsEndpointInUnion {
+    Endpoint end;
+    int raw;
+    HoldsEndpointInUnion() noexcept : raw{0} {}
+    ~HoldsEndpointInUnion() noexcept {}
+};
+
+struct ReferencesEndpoint {
+    Endpoint& end;
+};
+
+// A handle of a session library that fixy does not know.
+struct ForeignProtocol {};
+template <typename Proto>
+struct ForeignHandle {
+    using protocol = Proto;
+    int descriptor = 0;
+};
+
+// A closure that owns an endpoint.  GCC 16 reflects no capture.  The
+// query cannot read what the closure holds, and it refuses the closure.
+[[maybe_unused]] auto capture_endpoint(Endpoint end) {
+    return [held = std::move(end)]() mutable noexcept { (void)held; };
+}
+using CapturesEndpoint = decltype(capture_endpoint(std::declval<Endpoint>()));
+
+using WatchedEndpoint = s::CrashWatched<Endpoint, Q, P, s::NoReliableRoles>;
+using RecordedEndpoint = s::Recorded<Endpoint>;
+
+static_assert(carrier_of<Endpoint> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<NestsEndpoint> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<HoldsEndpointInUnion> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<Endpoint[2]> == DelegationCarrier::Endpoint);
+// The walk reads the arguments of a specialization before its members.
+// It sees a standard wrapper through the argument that names the
+// endpoint.
+static_assert(carrier_of<std::optional<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<std::variant<int, Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<std::array<Endpoint, 2>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<WatchedEndpoint> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<RecordedEndpoint> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<ForeignHandle<ForeignProtocol>> == DelegationCarrier::Endpoint);
+static_assert(carrier_of<Endpoint*> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<ReferencesEndpoint> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<std::unique_ptr<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<std::shared_ptr<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<std::vector<Endpoint>> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<ForeignHandle<s::Recv<int, s::End>>*> == DelegationCarrier::EndpointNamedByArgument);
+static_assert(carrier_of<Mention<Delegated>> == DelegationCarrier::HandOff);
+static_assert(carrier_of<s::Transferable<Delegated, X>> == DelegationCarrier::HandOff);
+static_assert(carrier_of<CapturesEndpoint> == DelegationCarrier::UnreadableState);
+static_assert(carrier_of<std::function<void()>> == DelegationCarrier::TypeErasure);
+static_assert(carrier_of<std::any> == DelegationCarrier::TypeErasure);
+static_assert(carrier_of<void*> == DelegationCarrier::OpaquePointer);
+static_assert(carrier_of<const void*> == DelegationCarrier::OpaquePointer);
+
+// A local class reaches the query as any class does.
+[[nodiscard]] consteval bool local_endpoint_is_seen() {
+    struct LocalEndpoint {
+        using protocol [[maybe_unused]] = s::End;
+    };
+    struct LocalMessage {
+        int sequence = 0;
+    };
+    return s::payload_conveys_delegation_v<LocalEndpoint> && s::payload_conveys_delegation_v<Mention<LocalEndpoint>*>
+        && !s::payload_conveys_delegation_v<LocalMessage> && !s::payload_conveys_delegation_v<Mention<LocalMessage>*>;
+}
+static_assert(local_endpoint_is_seen());
+
+// What delegates nothing.  A protocol is a type that names a
+// conversation, and not an endpoint of it.  A payload that names one is
+// plain.
+struct PlainMessage {
+    int sequence = 0;
+    std::array<char, 8> text{};
+};
+static_assert(carrier_of<int> == DelegationCarrier::None);
+static_assert(carrier_of<PlainMessage> == DelegationCarrier::None);
+static_assert(carrier_of<s::Send<int, s::End>> == DelegationCarrier::None);
+static_assert(carrier_of<s::VendorPinned<s::VendorBackend::Portable, s::End>> == DelegationCarrier::None);
+static_assert(carrier_of<s::Crash<P>> == DelegationCarrier::None);
+static_assert(carrier_of<s::Transferable<int, X>> == DelegationCarrier::None);
+static_assert(carrier_of<std::string> == DelegationCarrier::None);
+static_assert(carrier_of<std::vector<int>> == DelegationCarrier::None);
+static_assert(carrier_of<std::optional<PlainMessage>> == DelegationCarrier::None);
+
+// The two sessions refuse what the query sees.
+using ReceivesEndpoint = s::Offer<s::Recv<Endpoint, s::End>, s::Recv<s::Crash<P>, s::End>>;
+static_assert(!s::CrashSessionAdmissible<ReceivesEndpoint, Q, P, s::NoReliableRoles>);
+using ReceivesEndpointPointer = s::Offer<s::Recv<Endpoint*, s::End>, s::Recv<s::Crash<P>, s::End>>;
+static_assert(!s::CrashSessionAdmissible<ReceivesEndpointPointer, Q, P, s::NoReliableRoles>);
+using SendsOwnedEndpoint = s::Select<s::Commit<s::Send<std::unique_ptr<Endpoint>, s::End>>, s::Roll>;
+static_assert(s::checkpoint_verdict_v<SendsOwnedEndpoint, s::dual_of_t<SendsOwnedEndpoint>>
+              == s::CheckpointVerdict::NotCheckpointShaped);
+using SendsPlain = s::Select<s::Commit<s::Send<PlainMessage, s::End>>, s::Roll>;
+static_assert(s::checkpoint_verdict_v<SendsPlain, s::dual_of_t<SendsPlain>> == s::CheckpointVerdict::Compliant);
+
+// ── The delegation ledger ───────────────────────────────────────────
+//
+// Each row is a carrier that the query does not see.  The ledger can
+// only shrink: when the query starts to see a carrier, its row stops the
+// build.
+
+struct SharedChannel {
+    int* in = nullptr;
+    int* out = nullptr;
+};
+
+struct delegation_gap {
+    std::string_view carrier;
+    std::string_view why;
+    bool is_seen;
+};
+
+constexpr delegation_gap delegation_gaps[] = {
+    {"an integer that holds the address of an endpoint",
+     "the query reads types, and std::bit_cast turns the integer back into a pointer to the endpoint",
+     s::payload_conveys_delegation_v<std::uintptr_t>},
+    {"a function pointer whose target steps an endpoint",
+     "the target reaches the endpoint through global state, which no type of the payload names",
+     s::payload_conveys_delegation_v<void (*)() noexcept>},
+    {"a copy of the Resource of a live session",
+     "a Resource is a channel and not an endpoint.  A copy of it lets the recipient write outside the protocol",
+     s::payload_conveys_delegation_v<SharedChannel>},
+    {"a foreign handle reached through a pointer",
+     "the walk reads a pointee specialization for its arguments only, and no argument is a fixy protocol",
+     s::payload_conveys_delegation_v<ForeignHandle<ForeignProtocol>*>},
+};
+
+consteval bool delegation_gaps_are_open() {
+    for (const delegation_gap& gap : delegation_gaps) {
+        if (gap.is_seen || gap.why.empty()) return false;
+    }
+    return true;
+}
+static_assert(delegation_gaps_are_open(),
+              "the query now sees a carrier on the delegation ledger: remove its row, and add the carrier to the "
+              "static assertions above");
 
 // A rollback cannot recall a delegated endpoint.
 using DelegatesThenCommits = s::Select<s::Send<Delegated, s::Select<s::Commit<s::End>, s::Abort>>>;

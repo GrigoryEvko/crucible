@@ -354,11 +354,12 @@ consteval std::vector<info> branches_of(info type) {
 }
 
 // A rollback cannot recall a delegated endpoint that the peer already
-// holds, so a checkpoint session carries no delegation either.
+// holds, so a checkpoint session carries no delegation either.  The
+// question is the one a crash session asks, in fixy/session/Payload.h.
 consteval bool payload_admitted(info payload) {
     return std::meta::extract<bool>(std::meta::substitute(^^is_plain_payload_v, {payload}))
         && !std::meta::extract<bool>(std::meta::substitute(^^is_crash_payload_v, {payload}))
-        && !std::meta::extract<bool>(std::meta::substitute(^^::fixy::session::detail::crash::carries_delegation_v, {payload}));
+        && ::fixy::session::detail::payload_delegation(payload) == DelegationCarrier::None;
 }
 
 consteval bool is_primitive(Kind kind) { return kind == Kind::Commit || kind == Kind::Roll || kind == Kind::Abort; }

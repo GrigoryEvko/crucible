@@ -82,17 +82,63 @@
 // member that the arguments do not name is not seen.
 // TypeComponents.h states the same limit.
 //
+// ── Delegation ──────────────────────────────────────────────────────
+//
+// A payload delegates when it gives the recipient authority over a
+// session endpoint.  Crash sessions and checkpoint sessions refuse
+// delegation.  Each of them reads it through payload_conveys_delegation_v.
+// The two sessions then use one definition of delegation.
+//
+// The query reads every component of the payload, and every reach
+// counts.  A pointer or a reference to an endpoint counts too.  The
+// recipient can step the endpoint through it, and it is then a second
+// name for the endpoint.  A component delegates when it is one of these:
+//
+//   the hand-off       DelegatedSession<P, PS>
+//   an endpoint        a class that declares a member type named protocol
+//                      or protocol_type, and that is not a protocol
+//                      itself.  Each handle, decorator and bridge of this
+//                      tree has that shape: SessionHandle and its base,
+//                      CrashWatched, CheckpointHandle, Recorded and
+//                      SessionFromMachine.  Each handle of the old tree
+//                      has it too
+//   a named endpoint   a specialization that the walk reads for its
+//                      arguments only, through a pointer or as an
+//                      argument, when one argument is a session protocol
+//
+// The query also refuses a component with content that it cannot read.
+// Each of these can hold an endpoint that the static type does not name:
+// a type-erasure family, a class with state that the walk cannot read (a
+// lambda with captures), a class that is only declared, and a pointer to
+// void.
+//
+// What the query cannot see:
+//
+//   * an integer that holds the address of an endpoint, or an index
+//     into a table of endpoints;
+//   * a function pointer, because the function can reach an endpoint
+//     through global state;
+//   * a copy of the Resource of a live session, which is a channel and
+//     not an endpoint;
+//   * the handle of a session library that fixy does not know, reached
+//     through a pointer, when no argument of it is a fixy protocol.
+//
+// The crash attack campaign pins each of these on its ledger.
+//
 // Old spelling: include/crucible/sessions/SessionPermPayloads.h,
 // namespace crucible::safety::proto.
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
+#include <foundation/algebra/Transition.h>
+#include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <fixy/session/Classified.h>
+#include <fixy/session/Protocol.h>
 
 #include <any>
 #include <cstddef>
@@ -260,6 +306,20 @@ public:
 
 private:
     ::foundation::permissions::SharedPermissionGuard<Tag, Brand> guard_;
+};
+
+// The first component of a payload that gives authority over a session
+// endpoint, as the head of this header states it.  None means that the
+// payload delegates nothing.
+enum class DelegationCarrier : std::uint8_t {
+    None,
+    HandOff,
+    Endpoint,
+    EndpointNamedByArgument,
+    TypeErasure,
+    UnreadableState,
+    IncompleteType,
+    OpaquePointer,
 };
 
 namespace detail {
@@ -709,6 +769,70 @@ enum class PayloadSet : std::uint8_t {
     return true;
 }
 
+// ── Delegation ──────────────────────────────────────────────────────
+
+// True when the type is a session protocol: its head is a combinator
+// that fixy/session/Protocol.h, or a header that extends it, registers.
+[[nodiscard]] consteval bool is_session_protocol_type(std::meta::info type) {
+    return std::meta::is_type(type) && ::foundation::algebra::transition::is_registered(protocol_registry, type);
+}
+
+// True when the class declares a member type named protocol or
+// protocol_type, which is how an endpoint names the protocol it runs.
+// Complexity: linear in the number of members.
+[[nodiscard]] consteval bool has_protocol_member(std::meta::info type) {
+    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_type(member) || !std::meta::has_identifier(member)) continue;
+        const std::string_view name = std::meta::identifier_of(member);
+        if (name == "protocol" || name == "protocol_type") return true;
+    }
+    return false;
+}
+
+// What one component of a payload carries.  The node says whether the
+// walk may read its members.  Where it may not, this function reads the
+// template arguments only, and no instantiation occurs.
+[[nodiscard]] consteval DelegationCarrier delegation_carrier_of(::foundation::reflect::TypeNode node) {
+    const std::meta::info type = node.type;
+    if (type == std::meta::info{}) return DelegationCarrier::None;
+    if (payload_family_is(type, ^^DelegatedSession)) return DelegationCarrier::HandOff;
+    if (payload_family_is_on(type, payload_type_erasure_families) || type == ^^std::any) {
+        return DelegationCarrier::TypeErasure;
+    }
+    if (std::meta::is_pointer_type(type)
+        && std::meta::is_void_type(std::meta::remove_cv(std::meta::remove_pointer(type)))) {
+        return DelegationCarrier::OpaquePointer;
+    }
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return DelegationCarrier::None;
+    if (!node.may_read_members) {
+        if (!payload_is_specialization(type)) return DelegationCarrier::IncompleteType;
+        if (is_session_protocol_type(type)) return DelegationCarrier::None;
+        for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
+            if (std::meta::is_type(argument) && is_session_protocol_type(std::meta::dealias(argument))) {
+                return DelegationCarrier::EndpointNamedByArgument;
+            }
+        }
+        return DelegationCarrier::None;
+    }
+    if (payload_holds_unreadable_state(type)) return DelegationCarrier::UnreadableState;
+    // A protocol is a type that names a conversation.  It is not an
+    // endpoint of one, although VendorPinned declares a member protocol.
+    if (has_protocol_member(type) && !is_session_protocol_type(type)) return DelegationCarrier::Endpoint;
+    return DelegationCarrier::None;
+}
+
+inline constexpr auto is_delegating_component = [](::foundation::reflect::TypeNode node) consteval {
+    return delegation_carrier_of(node) != DelegationCarrier::None;
+};
+
+// The first component of the payload that delegates, in the order of the
+// component walk.  Complexity: the walk of TypeComponents.h, with a scan
+// of the members of each readable class it reaches.
+[[nodiscard]] consteval DelegationCarrier payload_delegation(std::meta::info payload) {
+    return delegation_carrier_of(
+        ::foundation::reflect::first_component_satisfying<is_delegating_component>(payload));
+}
+
 }  // namespace detail
 
 // ── The classification predicates ───────────────────────────────────
@@ -759,6 +883,26 @@ struct is_plain_payload
 
 template <class P>
 inline constexpr bool is_plain_payload_v = is_plain_payload<P>::value;
+
+// ── Delegation ──────────────────────────────────────────────────────
+//
+// The component of P that delegates first, in the order of the walk, or
+// None.  The head of this header states which components delegate.
+template <class P>
+inline constexpr DelegationCarrier payload_delegation_carrier_v = detail::payload_delegation(^^P);
+
+namespace detail {
+
+// The one-argument form of the query, so that it can hold an armed cell.
+template <class P>
+struct payload_conveys_delegation : std::bool_constant<payload_delegation_carrier_v<P> != DelegationCarrier::None> {};
+
+}  // namespace detail
+
+// True when P gives the recipient authority over a session endpoint.  A
+// crash session and a checkpoint session refuse such a payload.
+template <class P>
+inline constexpr bool payload_conveys_delegation_v = detail::payload_conveys_delegation<P>::value;
 
 // ── The set after one step ──────────────────────────────────────────
 
@@ -1112,3 +1256,32 @@ mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... toke
 }
 
 }  // namespace fixy::session
+
+// ── Armed cells ──────────────────────────────────────────────────────
+
+namespace fixy::session::detail::delegation_armed_witness {
+struct Wire {};
+struct NamesItsProtocol {
+    using protocol = End;
+    using resource_type = Wire;
+};
+struct HoldsEndpoint {
+    int sequence = 0;
+    NamesItsProtocol endpoint;
+};
+struct PlainMessage {
+    int sequence = 0;
+};
+}  // namespace fixy::session::detail::delegation_armed_witness
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::session::detail::payload_conveys_delegation> {
+    using accepts =
+        witnesses<::fixy::session::DelegatedSession<::fixy::session::End, ::foundation::permissions::EmptyPermSet>,
+                  ::fixy::session::detail::delegation_armed_witness::HoldsEndpoint,
+                  ::fixy::session::detail::delegation_armed_witness::NamesItsProtocol*, void*>;
+    using refuses =
+        witnesses<int, ::fixy::session::detail::delegation_armed_witness::PlainMessage,
+                  ::fixy::session::Send<int, ::fixy::session::End>,
+                  ::fixy::session::VendorPinned<::fixy::session::VendorBackend::Portable, ::fixy::session::End>>;
+};

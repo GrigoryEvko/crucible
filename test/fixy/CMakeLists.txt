@@ -1364,6 +1364,18 @@ fixy_neg_compile_test(neg_sess_crash_hidden_in_delegation
 fixy_neg_compile_test(neg_sess_crash_delegation_in_a_member
   "no matching function for call to .mint_crash_session"
   "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+# A handle, a pointer to one, and a pointer to void delegate as the
+# hand-off marker does.  Each compiled while the rule looked for the
+# marker alone.
+fixy_neg_compile_test(neg_sess_crash_delegation_by_handle
+  "no matching function for call to .mint_crash_session"
+  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::SessionHandle<")
+fixy_neg_compile_test(neg_sess_crash_delegation_behind_pointer
+  "no matching function for call to .mint_crash_session"
+  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+fixy_neg_compile_test(neg_sess_crash_delegation_opaque_pointer
+  "no matching function for call to .mint_crash_session"
+  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_crash_token_not_held
   "no matching function for call to .mint_crash_session"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::Transferable<")
@@ -1405,6 +1417,9 @@ fixy_neg_compile_test(neg_sess_checkpoint_permission_payload
 fixy_neg_compile_test(neg_sess_checkpoint_delegation_payload
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<fixy::session::DelegatedSession<")
+fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<std::unique_ptr<fixy::session::SessionHandle<")
 
 # ── The event log and the recorder ────────────────────────────────────
 #

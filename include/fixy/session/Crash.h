@@ -131,7 +131,6 @@
 #include <fixy/session/Protocol.h>
 
 #include <foundation/contracts/Armed.h>
-#include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -369,20 +368,14 @@ inline constexpr bool is_crash_well_formed_v = is_crash_well_formed<P>::value;
 // 2025, footnote 2 on p. 11).  A delegated endpoint has peers of its
 // own, and no detector of this session watches them, so the crash of
 // such a peer leaves the holder waiting for ever.  The coverage walk
-// below does not look inside a payload.  A crash-aware session therefore
-// refuses a payload that holds a DelegatedSession anywhere inside it,
-// read by the component walk of foundation/reflect/TypeComponents.h.
-// Barwell, Scalas, Yoshida and Zhou (CONCUR 2022) type delegation with
-// crashes, and this tree does not carry that system.
+// below does not look inside a payload.  A crash-aware session refuses
+// each payload that payload_conveys_delegation_v of
+// fixy/session/Payload.h accepts: the hand-off marker, a session handle
+// or a pointer to one, and a carrier with content that the query cannot
+// read.  Barwell, Scalas, Yoshida and Zhou (CONCUR 2022) type delegation
+// with crashes, and this tree does not carry that system.
 
 namespace detail::crash {
-
-inline constexpr auto is_delegation_node = [](::foundation::reflect::TypeNode node) consteval {
-    return std::meta::has_template_arguments(node.type) && std::meta::template_of(node.type) == ^^DelegatedSession;
-};
-
-template <typename T>
-inline constexpr bool carries_delegation_v = ::foundation::reflect::any_component_satisfies<is_delegation_node>(^^T);
 
 // The primary refuses, so a combinator this walk does not know is not
 // admitted.
@@ -393,9 +386,9 @@ struct delegation_free<End> : std::true_type {};
 template <>
 struct delegation_free<Continue> : std::true_type {};
 template <typename T, typename K>
-struct delegation_free<Send<T, K>> : std::bool_constant<!carries_delegation_v<T> && delegation_free<K>::value> {};
+struct delegation_free<Send<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && delegation_free<K>::value> {};
 template <typename T, typename K>
-struct delegation_free<Recv<T, K>> : std::bool_constant<!carries_delegation_v<T> && delegation_free<K>::value> {};
+struct delegation_free<Recv<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && delegation_free<K>::value> {};
 template <typename... Bs>
 struct delegation_free<Select<Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
 template <typename... Bs>
