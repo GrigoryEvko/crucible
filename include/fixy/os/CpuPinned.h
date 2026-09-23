@@ -115,8 +115,35 @@ CRUCIBLE_INLINE void fill_cpu_set(AffinityMask mask, ::cpu_set_t& set) noexcept 
 
 }  // namespace detail
 
+namespace sched {
+
+// The gate on each change to where and how a thread runs.  Four doors
+// read it: mint_affinity, mint_scheduler_policy and mint_priority in
+// fixy/os/Sched.h, and apply_affinity_to_cpu, which is the runtime door
+// with no proof to give back.
+//
+// A context passes when it owns Bg or Init.  A background worker pins
+// itself, sets its policy and sets its nice value at startup, and that is
+// the primary use of the four doors.  An init context prepares the
+// threads that it starts.
+//
+// The foreground hot path owns neither effect, and the gate refuses it.
+// A new pin moves the thread between two recorded operations, so two
+// timestamp reads come from two cores.  A new policy or nice value moves
+// each deadline that the replay measured.  A test context also owns
+// neither effect.  A test that must pin makes a background or an init
+// context, as production code does.
+//
+// A gate on Init alone is too narrow.  It refuses a background worker
+// that pins itself at startup.
+template <typename Ctx>
+concept CtxFitsRuntimeAffinity = ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg,
+                                                                     ::foundation::effects::Effect::Init>;
+
+}  // namespace sched
+
 template <typename Ctx, PinningPosture Posture>
-concept CtxFitsAffinityMint = ::foundation::effects::IsExecCtx<Ctx> && (Posture != PinningPosture::NotPinned);
+concept CtxFitsAffinityMint = sched::CtxFitsRuntimeAffinity<Ctx> && (Posture != PinningPosture::NotPinned);
 
 // Declared here and defined in fixy/os/Sched.h, beside the other
 // scheduling mints.  The declaration has to live here because the class
@@ -252,11 +279,15 @@ static_assert(!std::is_same_v<PinnedC0, CpuPinned<kCore7, PinningPosture::Pinned
 // NotPinned is refused by the mint's own gate, so this type has no
 // constructor at all.  The cell states that, because an unbuildable
 // type is easy to reintroduce by accident.
-static_assert(!CtxFitsAffinityMint<::foundation::effects::ExecCtx<::foundation::effects::Init,
-                                                                 ::foundation::effects::Row<
-                                                                     ::foundation::effects::Effect::Init>>,
-                                   PinningPosture::NotPinned>,
+using InitOnlyCtx = ::foundation::effects::ExecCtx<::foundation::effects::Init,
+                                                   ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
+using ForegroundCtx = ::foundation::effects::ExecCtx<>;
+
+static_assert(CtxFitsAffinityMint<InitOnlyCtx, PinningPosture::PinnedExplicit>);
+static_assert(!CtxFitsAffinityMint<InitOnlyCtx, PinningPosture::NotPinned>,
               "there is no proof of NOT being pinned, so the mint must refuse the NotPinned posture.");
+static_assert(!CtxFitsAffinityMint<ForegroundCtx, PinningPosture::PinnedExplicit>,
+              "the foreground hot path owns neither Bg nor Init, so it must not be able to pin a thread.");
 
 // The three row-hash distinctness assertions the old header carried are
 // not ported, because the specialization they read is not ported.  The

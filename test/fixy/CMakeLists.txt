@@ -1276,6 +1276,39 @@ fixy_neg_compile_test(neg_os_cpu_pinned_copied
   "use of deleted function"
   "a pin proof cannot be duplicated")
 
+# ── Every scheduling door reads one gate ─────────────────────────────
+#
+# mint_affinity, mint_scheduler_policy and mint_priority read the same
+# gate as apply_affinity_to_cpu: the context must own Bg or Init.  Two
+# fixtures for each mint.  The first context is the foreground one,
+# with the empty row.  The second is a test context, with a wide row
+# that still holds neither effect.  The second regex names the gate as
+# the compiler spells its context, which the fixture source does not.
+fixy_neg_compile_test(neg_os_sched_mint_affinity_foreground_ctx
+  "no matching function for call to .mint_affinity<"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_sched_mint_affinity_test_ctx
+  "no matching function for call to .mint_affinity<"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_sched_mint_scheduler_policy_foreground_ctx
+  "no matching function for call to .mint_scheduler_policy<"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_sched_mint_scheduler_policy_test_ctx
+  "no matching function for call to .mint_scheduler_policy<"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_sched_mint_priority_foreground_ctx
+  "no matching function for call to .mint_priority<5>"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
+  "no matching function for call to .mint_priority<5>"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+
 # ── The mapping and io_uring surfaces get their first positive test ───
 #
 # Thirteen negative-compile fixtures stand over the headers these were

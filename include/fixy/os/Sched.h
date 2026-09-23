@@ -139,8 +139,12 @@ template <SchedulerPolicy_v Policy>
 // mint_scheduler_policy<static_cast<SchedulerPolicy_v>(200)> compiles,
 // calls sched_setscheduler with a policy of -1, and turns a compile
 // error into a runtime EINVAL.  The two pins below witness both arms.
+//
+// The first conjunct is the scheduling-authority gate every door here
+// shares.  The rationale is written once, on the concept, in
+// fixy/os/CpuPinned.h.
 template <typename Ctx, SchedulerPolicy_v Policy>
-concept CtxFitsSchedPolicyMint = eff::IsExecCtx<Ctx> && (detail::sched_policy_constant(Policy) >= 0);
+concept CtxFitsSchedPolicyMint = CtxFitsRuntimeAffinity<Ctx> && (detail::sched_policy_constant(Policy) >= 0);
 
 // The [-20, 19] bound here reads like a restatement of the one on
 // SchedPriority<Nice>.  It is not.  The mint names SchedPriority<Nice>
@@ -151,8 +155,10 @@ concept CtxFitsSchedPolicyMint = eff::IsExecCtx<Ctx> && (detail::sched_policy_co
 // discarding the candidate, so the call site cannot recover and no
 // overload set can absorb it.  Measured, not reasoned: the deletion was
 // written, compiled, and reverted on the diagnostic.
+//
+// The first conjunct is the shared scheduling-authority gate, as above.
 template <typename Ctx, int Nice>
-concept CtxFitsPriorityMint = eff::IsExecCtx<Ctx> && (Nice >= -20 && Nice <= 19);
+concept CtxFitsPriorityMint = CtxFitsRuntimeAffinity<Ctx> && (Nice >= -20 && Nice <= 19);
 
 // The definition of the mint declared in fixy/os/CpuPinned.h.  It lives
 // here, beside the other scheduling mints, and it is the sole friend of
@@ -205,11 +211,8 @@ template <int Nice, eff::IsExecCtx Ctx>
 using ::fixy::mint_thread_name;
 
 // The CPU index arrives at runtime, so no compile-time pinning proof can be
-// produced. This is not a mint for that reason. The gate admits only a
-// background or init context. A stage worker pins itself at startup, and
-// hot-path code cannot migrate a thread mid-flight.
-template <typename Ctx>
-concept CtxFitsRuntimeAffinity = eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Init>;
+// produced. This is not a mint for that reason. Its gate is the one the
+// three mints above read, CtxFitsRuntimeAffinity in fixy/os/CpuPinned.h.
 
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
@@ -269,6 +272,17 @@ static_assert(!CtxFitsPriorityMint<BgWitness, 50>,
               "requires-clause in the return type does not work: a constraint failure on a class template is "
               "not in the immediate context of the function template, so GCC 16 raises a hard error instead "
               "of discarding the candidate.");
+
+// The shared scheduling gate, on each of the three mints.  The
+// foreground context is the one IsExecCtx alone used to admit.
+static_assert(CtxFitsSchedPolicyMint<InitWitness, SchedulerPolicy_v::Other>);
+static_assert(!CtxFitsSchedPolicyMint<FgWitness, SchedulerPolicy_v::Other>,
+              "the foreground hot path owns neither Bg nor Init, so it must not change a scheduler policy.");
+static_assert(CtxFitsPriorityMint<InitWitness, 5>);
+static_assert(!CtxFitsPriorityMint<FgWitness, 5>,
+              "the foreground hot path owns neither Bg nor Init, so it must not change a nice value.");
+static_assert(::fixy::CtxFitsAffinityMint<BgWitness, PinningPosture::PinnedExplicit>);
+static_assert(!::fixy::CtxFitsAffinityMint<FgWitness, PinningPosture::PinnedExplicit>);
 
 static_assert(CtxFitsRuntimeAffinity<BgWitness>);
 static_assert(CtxFitsRuntimeAffinity<InitWitness>);
