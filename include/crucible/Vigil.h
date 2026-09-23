@@ -230,11 +230,20 @@ public:
         // so this is reachable from a first run rather than from a rewrite.
         //
         // The cost is a relaxed load and a comparison on a path that already
-        // writes a full cache line and issues two release stores. It is a
-        // mitigation and not a repair. The repair belongs to the adapter,
-        // which gives its backward window one producer rather than giving
-        // this ring several. Refer to the serialisation note in
-        // vessel/torch/crucible_native.py.
+        // writes a full cache line and issues two release stores.
+        //
+        // Commit 498ad4d0 gave the torch adapter's backward windows one
+        // producer, recorded and replayed. The gate stays armed in release
+        // after that commit, for two reasons:
+        //
+        //  - The first call is the claim. is_producer_thread() reads the
+        //    claimed id, and the unboxed kernels and the boxed fallback ask
+        //    it before they record. With the gate compiled out, no thread is
+        //    ever claimed and that question answers true on every thread.
+        //  - A producer path with no serialisation exists. The C ABI
+        //    (crucible_dispatch_op and crucible_dispatch_op_ex in
+        //    vessel/torch/vessel_api.cpp, called by crucible_mode.py) does
+        //    not ask is_producer_thread(), so this gate is its only guard.
         assert_producer_thread_();
         const TraceRing::Entry& entry = *ve.value();
 

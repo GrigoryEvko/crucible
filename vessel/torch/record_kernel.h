@@ -158,12 +158,19 @@ struct MetaCount {
 // The five scalar slots the trace entry stores inline. `count` saturates,
 // which is what makes the two paths report the same number for an operation
 // carrying more.
+//
+// The width is taken from the entry field it is copied into. The unboxed path
+// certifies its entries at compile time from this constant, so a count that
+// can exceed the field has to fail the build rather than the entry.
 struct ScalarArgs {
-    int64_t values[5]{};
+    static constexpr uint16_t kCapacity =
+        static_cast<uint16_t>(decltype(crucible::TraceRing::Entry::scalar_values)::capacity);
+
+    int64_t values[kCapacity]{};
     uint16_t count = 0;
 
     void push(int64_t value) {
-        if (count < 5) values[count++] = value;
+        if (count < kCapacity) values[count++] = value;
     }
 };
 
@@ -183,9 +190,18 @@ inline void fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
 
     // The bound is the lane count of the array being written, named rather than
     // spelled 8, because every other reader of that array derives its bound
-    // from the same constant and a literal here could drift from it.
-    const auto ndim =
-        static_cast<uint8_t>(std::min(tensor.dim(), static_cast<int64_t>(::crucible::kMaxTensorNDim)));
+    // from the same constant and a literal here could drift from it. The
+    // unboxed path does not check ndim at run time, so the assert below makes
+    // this ceiling pass the rank check of the trust ladder.
+    constexpr uint8_t kNDimCeiling = ::crucible::kMaxTensorNDim;
+    static_assert(
+        [] {
+            crucible::TensorMeta ceiling{};
+            ceiling.ndim = kNDimCeiling;
+            return crucible::vessel::metas_are_well_formed(&ceiling, 1);
+        }(),
+        "fill_meta clamps the rank to a value the trust ladder rejects, and the unboxed path relies on the clamp");
+    const auto ndim = static_cast<uint8_t>(std::min(tensor.dim(), static_cast<int64_t>(kNDimCeiling)));
     meta.ndim = ndim;
 
     const auto sizes = tensor.sizes();
@@ -971,6 +987,20 @@ template <bool IsMutable, bool IsForeach>
     return flags;
 }
 
+// The entry the unboxed path builds for one operator, with each bounded field
+// at the largest value it can take. The input and output counts are each at
+// most `capacity`, because Recording stops both at its capacity. The scalar
+// count is at most ScalarArgs::kCapacity, because push saturates there.
+[[nodiscard]] consteval crucible::TraceRing::Entry unboxed_entry_ceiling(crucible::SchemaHash schema_hash,
+                                                                        uint32_t capacity) {
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = schema_hash;
+    entry.num_inputs = static_cast<uint16_t>(capacity);
+    entry.num_outputs = static_cast<uint16_t>(capacity);
+    entry.num_scalar_args = ScalarArgs::kCapacity;
+    return entry;
+}
+
 // Builds the entry and hands it to the Vigil. The schema hash arrives as an
 // argument rather than as a template parameter so that one instantiation
 // serves every operator of the same capacity, mutability and kernel family,
@@ -989,22 +1019,22 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
     for (uint16_t i = 0; i < recording.scalars.count; i++)
         entry.scalar_values[i] = recording.scalars.values[i];
 
-    // The trust ladder. Every field above was read from this operator's own
-    // typed arguments and from the live c10 query surface, which is a foreign
-    // runtime, so the Entry starts at the first trust tag and reaches a
-    // recording entry point only by passing the checks the two other adapters
-    // pass. The operator already ran eagerly before this function was called,
-    // so a rejected Entry costs the trace this operation and costs the caller
-    // nothing.
+    // The trust ladder, discharged at compile time. Every bound it checks has
+    // a compile-time ceiling on this path, and RecordKernel asserts that
+    // entry_is_well_formed accepts the entry built at that ceiling. The rank
+    // clamp in fill_meta asserts the same for metas_are_well_formed. The
+    // runtime walk could therefore reject nothing here. The boxed fallback and
+    // the C ABI build entries from data with no compile-time bound, and they
+    // keep the runtime walk through mint_validated_entry.
     //
-    // Sharing one ladder with the boxed fallback and the C ABI is what keeps
-    // a bound from being enforced on one path and absent on the next.
-    auto validated = crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), recording.metas.data(),
-                                                            recording.counts.total());
-    if (!validated) [[unlikely]]
-        return;
+    // The schema hash is the one input that is an argument rather than a
+    // constant. Its only caller passes RecordKernel::kSchemaHash, which the
+    // same assert pins to a value other than zero.
+    CRUCIBLE_DEBUG_ASSERT(schema_hash.raw() != 0);
+    auto validated =
+        crucible::mint_ffi_entry(entry).retag<crucible::fixy::tags::vessel_trust::Validated>();
 
-    RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(*validated);
+    RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(std::move(validated));
 
     // dispatch_op_pure rather than dispatch_op: the facade demands an empty
     // caller row, which catches a kernel reached from an init, background or
@@ -1054,6 +1084,14 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
     static constexpr uint32_t kCapacity =
         std::min(MAX_INLINE_METAS, kInputBound + result_meta_bound_v<std::remove_cvref_t<Ret>>);
+
+    // append_trace_entry certifies this operator's entries without a runtime
+    // check. That is sound only while the ladder accepts the largest entry
+    // this operator can build: a schema hash other than zero, both tensor
+    // counts at kCapacity, and the scalar count at its saturation point. A
+    // change to any of those caps, or to a ladder bound, fails here.
+    static_assert(crucible::vessel::entry_is_well_formed(unboxed_entry_ceiling(kSchemaHash, kCapacity)),
+                  "the trust ladder rejects an entry this operator can build, so append_trace_entry must not skip it");
 
     // The SchemaTable maps a schema hash to a human name, for the trace reader
     // and for the diagnostic C API in crucible_fallback.cpp. The boxed path
