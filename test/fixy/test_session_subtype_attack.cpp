@@ -717,11 +717,6 @@ struct limitation {
 };
 
 inline constexpr limitation known_limitations[] = {
-    {"the payload order is transitive only as far as the implication relation of fixy/Refined.h chains: "
-     "in_range<5, 9> implies bounded_above<9>, which implies bounded_above<20>, and the order does not "
-     "join the two ends",
-     "transitivity of subtyping, which every subtype relation of the literature has (Gay and Hole 2005; "
-     "Ghilezan et al., TOCL 2023)"},
     {"duality drops the Sender note of an Offer, so a server speaking Select is compatible, as a server, with "
      "a client whose Offer names the wrong role; the client side of the same check refuses",
      "closure under duality holds only where duality is an involution, so compatibility is not symmetric "
@@ -739,33 +734,38 @@ inline constexpr limitation known_limitations[] = {
      "already computed, and nothing refuses the late registration",
      "the registration contract of foundation/algebra/Transition.h, which the build cannot enforce"},
 };
-static_assert(std::size(known_limitations) == 6, "the ledger only shrinks: lower this count when an entry goes");
+static_assert(std::size(known_limitations) == 5, "the ledger only shrinks: lower this count when an entry goes");
 
-// Pin 1: the implication chain.
+// The implication chain was an entry here.  The implication relation of
+// fixy/Refined.h is transitive.  The payload order now joins the two ends
+// of a chain, and the order stays one way.
 using Narrow = ::fixy::Refined<::fixy::in_range<5, 9>, int>;
 using Middle = ::fixy::Refined<::fixy::bounded_above<9>, int>;
 using Wide = ::fixy::Refined<::fixy::bounded_above<20>, int>;
 static_assert(s::is_subtype_sync_v<Send<Narrow, End>, Send<Middle, End>>
               && s::is_subtype_sync_v<Send<Middle, End>, Send<Wide, End>>
-              && !s::is_subtype_sync_v<Send<Narrow, End>, Send<Wide, End>>);
+              && s::is_subtype_sync_v<Send<Narrow, End>, Send<Wide, End>>);
+static_assert(!s::is_subtype_sync_v<Send<Wide, End>, Send<Narrow, End>>
+              && s::is_subtype_sync_v<Recv<Wide, End>, Recv<Narrow, End>>
+              && !s::is_subtype_sync_v<Recv<Narrow, End>, Recv<Wide, End>>);
 
-// Pin 2: the Sender note and compatibility.
+// Pin 1: the Sender note and compatibility.
 using NotedClient = Offer<Sender<Bob>, Recv<A, End>>;
 using PlainServer = Select<Send<A, End>>;
 static_assert(s::CompatibleServer<PlainServer, NotedClient> && !s::CompatibleClient<NotedClient, PlainServer>);
 
-// Pin 3: the capacity is the caller's word.  The runtime half is in main.
+// Pin 2: the capacity is the caller's word.  The runtime half is in main.
 static_assert(s::is_subtype_async_v<early<4>, late<4>, 4>);
 
-// Pin 4: composition with Continue removes every End.
+// Pin 3: composition with Continue removes every End.
 using WithExit = Loop<Select<Send<A, Continue>, End>>;
 using NoExit = s::compose_t<WithExit, Continue>;
 static_assert(std::is_same_v<NoExit, Loop<Select<Send<A, Continue>, Continue>>> && s::is_well_formed_v<NoExit>);
 
-// Pin 5: the exit is lost under subtyping.
+// Pin 4: the exit is lost under subtyping.
 static_assert(s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select<Send<A, Continue>, Send<B, End>>>>);
 
-// Pin 6: a late payload registration.  The query below reads the payload
+// Pin 5: a late payload registration.  The query below reads the payload
 // Late before any rule names it, so it answers that the send is
 // well-formed.  A rule registered after it is not seen by that answer.
 template <class T>
@@ -796,10 +796,10 @@ int main() {
     expect(run_against_dual<early<2>, early<2>>(1) == outcome::completed,
            "a dual pair of anticipations completes at capacity 1");
 
-    // Pin 3, runtime half: the pair the check admits at capacity 4
+    // Pin 2, runtime half: the pair the check admits at capacity 4
     // deadlocks on a channel of capacity 1, and the watchdog ends it.
     expect(run_against_dual<early<4>, late<4>>(1) == outcome::deadlocked,
-           "the pinned deadlock of ledger entry 3 did not occur, so the entry may be stale");
+           "the pinned deadlock of ledger entry 2 did not occur, and the entry can be stale");
 
     // A permuted Select on an index wire: the two ends disagree on the
     // label, which is why the relation refuses the permutation.

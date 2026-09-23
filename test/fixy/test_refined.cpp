@@ -170,8 +170,13 @@ static_assert(TrustedMintable<returns_void, int>);
 namespace ffc = ::foundation::fail_closed;
 namespace rel = ::fixy::refined;
 
-// The five atomic edges are members; every other atomic pair is not.
-static_assert(ffc::edge_count<^^rel::admitted_implications>() == 5);
+// The four atomic edges are members, and every other atomic pair is
+// not.  non_zero ⇒ non_null is the fifth atomic step, and it is a
+// narrowing edge, which fail_closed does not count as an edge.
+static_assert(ffc::edge_count<^^rel::admitted_implications>() == 4);
+static_assert(!ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::non_zero>,
+                             rel::predicate_t<fixy::non_null>>);
+static_assert(fixy::implies_v<fixy::non_zero, fixy::non_null>, "the narrowing edge is a step of the relation");
 static_assert(ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::positive>,
                             rel::predicate_t<fixy::non_negative>>);
 static_assert(!ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::non_negative>,
@@ -192,7 +197,23 @@ static_assert(!fixy::implies_v<fixy::aligned<48>, fixy::aligned<32>>, "48 is not
 static_assert(fixy::implies_v<fixy::bounded_above<10>, fixy::bounded_above<20>>);
 static_assert(!fixy::implies_v<fixy::bounded_above<20>, fixy::bounded_above<10>>);
 static_assert(fixy::implies_v<fixy::in_range<3, 7>, fixy::bounded_above<7>>);
-static_assert(!fixy::implies_v<fixy::in_range<3, 7>, fixy::bounded_above<8>>, "the relation does not chain");
+static_assert(fixy::implies_v<fixy::in_range<3, 7>, fixy::bounded_above<8>>,
+              "the relation chains: in_range<3, 7> ⇒ bounded_above<7> ⇒ bounded_above<8>");
+static_assert(!fixy::implies_v<fixy::in_range<3, 9>, fixy::bounded_above<8>>, "the chain keeps the ceiling");
+static_assert(!fixy::implies_v<fixy::bounded_above<8>, fixy::in_range<3, 7>>, "a chain runs one way");
+
+// The families compare bounds of different signedness by value.  A
+// conversion turns -1 into the largest unsigned value, and then admits
+// each refusal below.
+static_assert(!fixy::implies_v<fixy::bounded_above<9u>, fixy::bounded_above<-1>>);
+static_assert(!fixy::implies_v<fixy::bounded_below<-1>, fixy::bounded_below<9u>>);
+static_assert(!fixy::implies_v<fixy::in_range<-5, 5>, fixy::in_range<0u, 10u>>);
+static_assert(!fixy::implies_v<fixy::divisible_by<-8>, fixy::divisible_by<4>>);
+static_assert(!fixy::implies_v<fixy::in_range<0u, 255u>, fixy::non_zero>);
+static_assert(fixy::implies_v<fixy::in_range<5u, 9u>, fixy::bounded_above<20>>);
+static_assert(fixy::implies_v<fixy::bounded_above<9>, fixy::bounded_above<20u>>);
+static_assert(fixy::implies_v<fixy::divisible_by<8u>, fixy::divisible_by<4>>);
+static_assert(fixy::implies_v<fixy::in_range<1u, 255u>, fixy::non_zero>);
 
 inline constexpr auto even = [](auto x) constexpr noexcept { return x % 2 == 0; };
 
@@ -219,8 +240,9 @@ static_assert(fixy::detail::refined_self_test::every_edge_holds());
     }
     return count;
 }
-static_assert(rule_count() == 19, "one rule per parameterised family: four from Refined.h's own families, "
-                                  "the two combinator rules, and thirteen from the algebra");
+static_assert(rule_count() == 15, "one rule per parameterised family: four from Refined.h's own families, "
+                                  "the two combinator rules, and nine from the algebra.  A chain reaches four "
+                                  "bridges that the namespace does not state.");
 
 // ── The extraction traits ────────────────────────────────────────────
 
@@ -447,11 +469,44 @@ void instantiate_every_combinator_at_runtime() noexcept {
     static_cast<void>(aligned_nonnull_ptr);
 }
 
+// A weakening constrained on the relation, the shape a caller writes.
+// The weakening does not evaluate the predicate again, because the
+// relation proves it.
+template <auto P, auto Q, class T>
+    requires fixy::implies_v<P, Q>
+[[nodiscard]] constexpr Refined<Q, T> weaken_along_the_relation(Refined<P, T>&& refined) noexcept {
+    return fixy::mint_refined_trusted<Q>(std::move(refined).into());
+}
+
+// Each weakening below holds only through a chain, and a run-time value
+// crosses it unchanged.
+[[nodiscard]] int check_chained_weakening() noexcept {
+    int volatile vol = 7;  // defeats constant folding
+    Refined<fixy::in_range<5, 9>, int> narrow = fixy::mint_refined<fixy::in_range<5, 9>>(int{vol});
+    Refined<fixy::bounded_above<20>, int> wide =
+        weaken_along_the_relation<fixy::in_range<5, 9>, fixy::bounded_above<20>>(std::move(narrow));
+    if (wide.value() != 7) return 70;
+    if (!fixy::bounded_above<20>(wide.value())) return 71;
+
+    Refined<fixy::in_range<5, 9>, int> again = fixy::mint_refined<fixy::in_range<5, 9>>(int{vol});
+    Refined<fixy::non_zero, int> non_zero =
+        weaken_along_the_relation<fixy::in_range<5, 9>, fixy::non_zero>(std::move(again));
+    if (non_zero.value() != 7) return 72;
+
+    std::array<int, 3> three{1, 2, 3};
+    fixy::Sized<3, std::array<int, 3>> sized = fixy::mint_refined<fixy::exact_size<3>>(three);
+    fixy::NonEmpty<std::array<int, 3>> non_empty =
+        weaken_along_the_relation<fixy::exact_size<3>, fixy::non_empty>(std::move(sized));
+    if (non_empty.value().size() != 3) return 73;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     instantiate_every_combinator_at_runtime();
 
+    if (int rc = check_chained_weakening(); rc != 0) return rc;
     if (int rc = check_value_paths(); rc != 0) return rc;
     if (int rc = check_refined_doors_and_aliases(); rc != 0) return rc;
     if (int rc = check_sealed_doors(); rc != 0) return rc;
