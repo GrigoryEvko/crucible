@@ -282,7 +282,6 @@ cxx_for_drops=""
 # shrinks in the same commit as the port that gives a type its carrier.
 uncarried_pinned_default="
 crucible/safety/diag/_RowHashFold.h:Consistency
-crucible/safety/diag/_RowHashFold.h:Crash
 crucible/safety/diag/_RowHashFold.h:CrashClass
 crucible/safety/diag/_RowHashFold.h:JoinPolicy
 crucible/safety/diag/_RowHashFold.h:MemOrder
@@ -293,7 +292,6 @@ crucible/safety/diag/_RowHashFold.h:ResidencyHeatTag
 crucible/safety/diag/_RowHashFold.h:TimeOrdered
 crucible/safety/diag/_RowHashFold.h:Vendor
 crucible/safety/diag/_RowHashFold.h:Witness
-crucible/permissions/_ReadView.h:Borrowed
 "
 uncarried_pinned="${PORT_GUARD_UNCARRIED-$uncarried_pinned_default}"
 
