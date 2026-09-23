@@ -607,7 +607,7 @@ inline constexpr StateHash default_proto_hash{::foundation::reflect::stable_type
 
 namespace detail::event_log {
 
-struct StepProjection {
+struct StepKey {
     constexpr StepId operator()(const SessionEvent& event) const noexcept { return event.step_id(); }
 };
 
@@ -626,8 +626,8 @@ struct StepLess {
 // The atomic step counter is the ordering identity of the log, so the
 // log does not move.  A drain moves the events out instead.
 class [[nodiscard]] SessionEventLog : ::foundation::Pinned<SessionEventLog> {
-    ::fixy::OrderedAppendOnly<SessionEvent, detail::event_log::StepProjection, detail::event_log::StepLess> log_ =
-        ::fixy::mint_ordered_append_only<SessionEvent, detail::event_log::StepProjection, detail::event_log::StepLess>();
+    ::fixy::OrderedAppendOnly<SessionEvent, detail::event_log::StepKey, detail::event_log::StepLess> log_ =
+        ::fixy::mint_ordered_append_only<SessionEvent, detail::event_log::StepKey, detail::event_log::StepLess>();
     SessionTagId session_id_{};
     ::fixy::AtomicMonotonic<std::uint64_t> step_counter_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 

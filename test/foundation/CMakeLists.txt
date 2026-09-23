@@ -325,6 +325,11 @@ foundation_test(test_reflect_foundation test_reflect.cpp)
 # The namespace-member relation of foundation/diag/FailClosed.h.
 foundation_test(test_fail_closed)
 
+# The transition algebra of foundation/algebra/Transition.h: the
+# coherence of a registry, the one fold, the payload preorder and the
+# refinement preorder, over stand-in registries.
+foundation_test(test_transition)
+
 # The only Raw -> Checked edge is declared outside the relation's
 # namespace, so the pair is not admitted.  The satisfaction note names
 # the concept and the namespace the check was given.
