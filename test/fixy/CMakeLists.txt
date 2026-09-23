@@ -656,6 +656,7 @@ fixy_neg_compile_test(neg_atom_without_axis_rejected
 # ── Fixy/Refined.h ────────────────────────────────────────────────────
 
 fixy_test(test_refined)
+fixy_test(test_refined_chain_attack)
 
 # The checked mint carries CRUCIBLE_PRE(Pred(v)); a refused value in a
 # constant expression reaches the macro's consteval trap through the
@@ -715,6 +716,45 @@ fixy_neg_compile_test(neg_refined_divisible_by_zero
 fixy_neg_compile_test(neg_refined_bounded_inverted
   "static assertion failed: Bounded<Lo, Hi, T>: range is empty \\(Lo > Hi\\)"
   "In instantiation of .struct fixy::detail::bounded_alias<10, 5, int>.")
+
+# The implication relation is transitive, and a chain uses admitted
+# steps only.  An edge declared outside admitted_implications does not
+# extend a chain, and a chain runs one way.
+fixy_neg_compile_test(neg_refined_chain_through_unadmitted_edge
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = fixy::InRange<5, 9>\\{\\}; Q = .*\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_refined_chain_wrong_direction
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = fixy::BoundedAbove<20>\\{\\}; Q = fixy::InRange<5, 9>\\{\\}\\]. evaluated to .false.")
+
+# Two distinct predicates that imply each other through steps that do
+# not narrow are two names for one predicate.  The walk at the foot of
+# the header runs the closure from each edge, and the search stops on
+# the cycle, of two steps or of three.
+fixy_neg_compile_test(neg_refined_implication_cycle_edges
+  "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
+  "in .constexpr. expansion of .fixy::refined::implies_types<planted::<lambda\\(auto:[0-9]+\\)>, fixy::detail::refined_self_test::unreachable_conclusion>\\(\\).")
+fixy_neg_compile_test(neg_refined_implication_cycle_ring
+  "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
+  "in .constexpr. expansion of .fixy::refined::implies_types<planted::<lambda\\(auto:[0-9]+\\)>, fixy::detail::refined_self_test::unreachable_conclusion>\\(\\).")
+
+# A predicate with a base class borrows none of its base's places in
+# the relation, as a premise or as a conclusion.
+fixy_neg_compile_test(neg_refined_derived_predicate_premise
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = <unnamed>::AcceptsEverything\\{\\}; Q = fixy::BoundedAbove<20>\\{\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_refined_derived_predicate_conclusion
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = fixy::InRange<5, 9>\\{\\}; Q = <unnamed>::AcceptsNothing\\{\\}\\]. evaluated to .false.")
+
+# Bounds of different signedness are compared by value, so -1 never
+# becomes the largest unsigned value inside a step.
+fixy_neg_compile_test(neg_refined_mixed_sign_ceiling
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = fixy::BoundedAbove<9>\\{\\}; Q = fixy::BoundedAbove<-1>\\{\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_refined_mixed_sign_floor
+  "constraints not satisfied"
+  "the expression .implies_v<P, Q> \\[with P = fixy::BoundedBelow<-1>\\{\\}; Q = fixy::BoundedBelow<9>\\{\\}\\]. evaluated to .false.")
 
 # ── Fixy/Tagged.h and fixy/Secret.h ───────────────────────────────────
 
