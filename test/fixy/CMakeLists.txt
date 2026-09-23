@@ -1488,6 +1488,21 @@ fixy_neg_compile_test(neg_sess_assoc_not_balanced_plus
   "fixy::session::diagnostic \\[Association_Global_Not_Balanced_Plus\\]"
   "ensure_associated\\(\\) \\[with Ctx")
 
+fixy_neg_compile_test(neg_sess_assoc_select_widened
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Local_Mismatch\\]"
+  "PeerMsg<\\{anonymous\\}::Carol, \\{anonymous\\}::Stop, int>")
+
+fixy_neg_compile_test(neg_sess_assoc_offer_narrowed
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Local_Mismatch\\]"
+  "RoleState<\\{anonymous\\}::Carol, OutQueue<>, Offer<Sender<\\{anonymous\\}::Bob>, Recv<PeerMsg<\\{anonymous\\}::Bob, \\{anonymous\\}::Left, int>, End> > >")
+
+fixy_neg_compile_test(neg_sess_assoc_untrusted_payload
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Association_Local_Mismatch\\]"
+  "Tagged<int, fixy::tags::source::FromUser>")
+
 fixy_neg_compile_test(neg_sess_live_unbalanced
   "static assertion failed"
   "fixy::session::diagnostic \\[Global_Not_Balanced\\]"
