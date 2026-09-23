@@ -1072,6 +1072,40 @@ fixy_neg_compile_test(neg_sess_crash_branch_index_missing
   "static assertion failed"
   "fixy::session::diagnostic \\[Crash_Branch_Missing\\]")
 
+# ── Checkpoint and rollback ───────────────────────────────────────────
+#
+# Checkpoint.h checks a pair of protocols against the compliance of
+# Mezzina, Tiezzi and Yoshida (LMCS 2025), with each primitive as a
+# coordinated label.  The test runs their Video-on-Demand example.
+fixy_test(test_session_rollback)
+
+# HS14 for mint_checkpoint_session and for the one-endpoint refusal.
+# Each fixture is one way for one side to choose alone, or one rule of
+# the compliance check.
+fixy_neg_compile_test(neg_sess_checkpoint_single_endpoint
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Commit<")
+
+fixy_neg_compile_test(neg_sess_checkpoint_labels_disagree
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::LabelsDisagree")
+
+fixy_neg_compile_test(neg_sess_checkpoint_both_choose
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::Stuck")
+
+fixy_neg_compile_test(neg_sess_checkpoint_local_roll
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Send<int, fixy::session::Roll>")
+
+fixy_neg_compile_test(neg_sess_checkpoint_roll_to_imposed
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::RollToImposedCheckpoint")
+
+fixy_neg_compile_test(neg_sess_checkpoint_permission_payload
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<fixy::session::Transferable<")
+
 # ── Every gate predicate is armed ─────────────────────────────────────
 #
 # The walk in test_armed_roster.cpp reads every predicate the two layers
