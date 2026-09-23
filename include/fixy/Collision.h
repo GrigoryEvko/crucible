@@ -78,6 +78,7 @@
 #include <foundation/effects/Row.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <expected>
 #include <meta>
@@ -431,7 +432,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     // and whose premises the new tree states as grades.  S011 reads the
     // payload's replay claim as the family above does.
     {"S011", Disposition::Live, "capability x a replay-deterministic payload"},
-    {"D001", Disposition::Live, "an indirect call whose named signature is not noexcept"},
+    {"D001", Disposition::Live, "an indirect call whose family names no noexcept signature"},
     {"L003", Disposition::Live, "borrow x a spawn that no structured join ties to the frame"},
 
     // The constant-time family and the failure family.  The specification
@@ -1191,40 +1192,66 @@ struct is_recursing_ : std::false_type {};
 template <std::size_t MaxDepth>
 struct is_recursing_<::fixy::atom::dispatch::recurses<MaxDepth>> : std::true_type {};
 
-// Whether a signature is stated, and whether it is noexcept.  A function
-// type, a pointer or reference to one, and a pointer to a member function
-// state a signature; anything else — the opaque tag class a family is
-// often named by — states none, and D001 has nothing to read on it.
-template <class Signature>
-struct is_signature_noexcept_ {
-    static constexpr bool stated = false;
-    static constexpr bool value = true;
+// The function type a call family names, read in one structural step.
+// References and cv are stripped first.  A function type names itself,
+// and a pointer to a function or a pointer to a member names its pointee.
+// The pointee of a member pointer can carry cv and ref qualifiers, and it
+// is still one function type.  A class names its signature through a
+// member type `signature` that is not a class.  Every other family names
+// nothing, and the reader gives void.
+template <class Family>
+struct named_signature_ {
+    using type = void;
 };
-template <class R, class... Args, bool IsNoexcept>
-struct is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {
-    static constexpr bool stated = true;
-    static constexpr bool value = IsNoexcept;
+template <class Family>
+    requires(!std::same_as<Family, std::remove_cvref_t<Family>>)
+struct named_signature_<Family> : named_signature_<std::remove_cvref_t<Family>> {};
+template <class Function>
+    requires std::is_function_v<Function>
+struct named_signature_<Function> {
+    using type = Function;
 };
-template <class R, class... Args, bool IsNoexcept>
-struct is_signature_noexcept_<R (*)(Args...) noexcept(IsNoexcept)>
-    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
-template <class R, class... Args, bool IsNoexcept>
-struct is_signature_noexcept_<R (&)(Args...) noexcept(IsNoexcept)>
-    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
-template <class R, class Owner, class... Args, bool IsNoexcept>
-struct is_signature_noexcept_<R (Owner::*)(Args...) noexcept(IsNoexcept)>
-    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
-template <class R, class Owner, class... Args, bool IsNoexcept>
-struct is_signature_noexcept_<R (Owner::*)(Args...) const noexcept(IsNoexcept)>
-    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
-template <class Signature>
-struct is_signature_noexcept_<Signature const> : is_signature_noexcept_<Signature> {};
+template <class Function>
+    requires std::is_function_v<Function>
+struct named_signature_<Function*> {
+    using type = Function;
+};
+template <class Function, class Owner>
+    requires std::is_function_v<Function>
+struct named_signature_<Function Owner::*> {
+    using type = Function;
+};
+template <class Family>
+    requires std::is_class_v<Family> && requires { typename Family::signature; }
+             && (!std::is_class_v<std::remove_cvref_t<typename Family::signature>>)
+struct named_signature_<Family> : named_signature_<typename Family::signature> {};
 
+// Whether a family names a signature that is noexcept.  Reflection reads
+// the noexcept of the function type, so each form of the type is read by
+// one query: cv and ref qualifiers, a C variadic tail, and every return
+// and parameter type.  A family that names no signature answers false.
+// That is the default of the language: a function declared with no
+// noexcept-specifier is potentially-throwing ([except.spec]).
+template <class Family>
+[[nodiscard]] consteval bool names_noexcept_signature_() noexcept {
+    using Signature = typename named_signature_<Family>::type;
+    if constexpr (std::is_void_v<Signature>) {
+        return false;
+    } else {
+        return std::meta::is_noexcept(^^Signature);
+    }
+}
+
+template <class Family>
+struct is_signature_noexcept_ : std::bool_constant<names_noexcept_signature_<Family>()> {};
+
+// An indirect call can throw unless its family names a noexcept
+// signature.  An unknown family reads as one that throws.
 template <class G>
 struct can_indirect_call_throw_ : std::false_type {};
 template <class Family>
 struct can_indirect_call_throw_<::fixy::atom::dispatch::indirect_call<Family>>
-    : std::bool_constant<is_signature_noexcept_<Family>::stated && !is_signature_noexcept_<Family>::value> {};
+    : std::bool_constant<!is_signature_noexcept_<Family>::value> {};
 
 // A spawn no structured join ties to the caller's frame, in a child that
 // shares the caller's address space.  detach_with is never joined, and
@@ -1663,11 +1690,12 @@ struct rules_of {
     // that isolates S011 states a trust.
     static constexpr bool S011_ok = !(capability && replay_deterministic);
 
-    // D001 reads a signature only where the family states one.  A family
-    // named by an opaque tag class states no signature, so the rule
-    // stands down for it; a caller who wants the check names the pointer
-    // type itself, indirect_call<void (*)(void*) noexcept>, the shape
-    // BackgroundThread's region-ready callback already declares.
+    // D001 admits an indirect call only when its family names a noexcept
+    // signature.  A family named by an opaque tag class names none, and
+    // an unknown callee is potentially-throwing, so the rule refuses it.
+    // A caller names the pointer type itself, such as
+    // indirect_call<void (*)(void*) noexcept>, or gives its tag class a
+    // member type `signature`.
     static constexpr bool indirect_call_may_throw =
         detail::can_indirect_call_throw_<typename G::template on<Axis::CallShape>>::value;
     static constexpr bool D001_ok = !indirect_call_may_throw;
@@ -1941,10 +1969,12 @@ struct rules_of {
                                "authorization token minted for one run, and replay cannot mint the same token "
                                "again, so the payload's claim of the same bits on every replay cannot hold. Carry "
                                "a content-addressed handle instead of the capability, or lower the band.");
-        static_assert(D001_ok, "D001: an indirect call whose named signature is not noexcept. A throw out of the "
-                               "callee crosses a boundary that promised none and ends the process. Add noexcept "
-                               "to the signature, or put a noexcept trampoline in front of the call that turns "
-                               "the failure into a std::expected.");
+        static_assert(D001_ok, "D001: an indirect call whose family names no noexcept signature. A throw out of the "
+                               "callee crosses a boundary that promised none and ends the process, and a callee "
+                               "whose signature nobody names is potentially-throwing. Name the signature with "
+                               "noexcept, as a function pointer type or as a member type `signature` of the tag "
+                               "class, or put a noexcept trampoline in front of the call that turns the failure "
+                               "into a std::expected.");
         static_assert(L003_ok, "L003: borrow x a spawn no structured join ties to the frame. A detached or "
                                "raw-cloned child shares the address space and can run after the caller's frame "
                                "has unwound, so the borrow dangles. Spawn through mint_spawn, which joins, or "

@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <expected>
 #include <meta>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -614,18 +615,30 @@ static_assert(rules_of<det<DetTier::Pure>, at::capability_usage, at::trust_verif
               "S011 must be the rule that catches this pack, not T001");
 static_assert(live_rules<at::capability_usage, at::trust_verified>::S011_ok, "the pack-only view claims no replay");
 
-// D001 an indirect call whose stated signature is not noexcept.  A free
+// D001 an indirect call whose family names no noexcept signature.  A free
 // function pointer, a function type and a member function pointer each
-// state one; an opaque tag class states none and the rule stands down.
+// name one, and the rule reads its noexcept.  An opaque tag class names
+// none, and an unknown callee is potentially-throwing, so the rule
+// refuses it.  A tag class that names its signature as a member type is
+// read through it.
 struct callback_owner final {};
 struct opaque_family final {};
+struct stated_family final {
+    using signature = void(void*) noexcept;
+};
+struct stated_throwing_family final {
+    using signature = void(void*);
+};
 static_assert(!live_rules<at::dispatch::indirect_call<void (*)(int)>>::D001_ok);
 static_assert(!live_rules<at::dispatch::indirect_call<int(void*)>>::D001_ok);
 static_assert(!live_rules<at::dispatch::indirect_call<void (callback_owner::*)() const>>::D001_ok);
 static_assert(live_rules<at::dispatch::indirect_call<void (*)(int) noexcept>>::D001_ok);
 static_assert(live_rules<at::dispatch::indirect_call<void (callback_owner::*)() const noexcept>>::D001_ok);
-static_assert(live_rules<at::dispatch::indirect_call<opaque_family>>::valid,
-              "a family named by a tag class states no signature, so there is nothing to refuse");
+static_assert(!live_rules<at::dispatch::indirect_call<opaque_family>>::D001_ok,
+              "a family that names no signature is read as one that throws");
+static_assert(live_rules<at::dispatch::indirect_call<stated_family>>::valid,
+              "a tag class that names a noexcept signature is admitted");
+static_assert(!live_rules<at::dispatch::indirect_call<stated_throwing_family>>::D001_ok);
 static_assert(live_rules<at::dispatch::tail_call>::valid);
 
 // L003 a borrow x a spawn no structured join reaches.  A detached child
@@ -851,31 +864,56 @@ static_assert(!col::detail::is_kernel_entry_wait_<at::sync::umwait_c01>::value
               && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
 // A setting of a different enum with the same underlying value is not named.
 static_assert(!col::detail::fp_mode_has_setting_<at::fp::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
-// A const member function states its signature.
-static_assert(col::detail::is_signature_noexcept_<void (attack_owner::*)() const>::stated);
+// A const member function names its signature, and it is not noexcept.
 static_assert(!col::detail::is_signature_noexcept_<void (attack_owner::*)() const>::value);
+
+// Every form of a function type is read by one query, so a form the
+// reader has no arm for cannot pass as one that states nothing.  Each
+// throwing form is refused, and each noexcept twin is admitted: a
+// ref-qualified, volatile or const volatile member function, a C
+// variadic function, and a reference or a const pointer to a function.
+using throwing_forms = std::tuple<void (attack_owner::*)() &, void (attack_owner::*)() &&,
+                                  void (attack_owner::*)() volatile, void (attack_owner::*)() const volatile &,
+                                  int (*)(char, ...), int (*&)(char), int (*const)(char), int(&)(char)>;
+using noexcept_forms =
+    std::tuple<void (attack_owner::*)() & noexcept, void (attack_owner::*)() && noexcept,
+               void (attack_owner::*)() volatile noexcept, void (attack_owner::*)() const volatile & noexcept,
+               int (*)(char, ...) noexcept, int (*&)(char) noexcept, int (*const)(char) noexcept,
+               int (&)(char) noexcept>;
+
+template <class Forms, std::size_t... Index>
+[[nodiscard]] consteval bool every_form_refused_(std::index_sequence<Index...>) noexcept {
+    return (!live_rules<at::dispatch::indirect_call<std::tuple_element_t<Index, Forms>>>::D001_ok && ...);
+}
+template <class Forms, std::size_t... Index>
+[[nodiscard]] consteval bool every_form_admitted_(std::index_sequence<Index...>) noexcept {
+    return (live_rules<at::dispatch::indirect_call<std::tuple_element_t<Index, Forms>>>::D001_ok && ...);
+}
+static_assert(every_form_refused_<throwing_forms>(std::make_index_sequence<std::tuple_size_v<throwing_forms>>{}));
+static_assert(every_form_admitted_<noexcept_forms>(std::make_index_sequence<std::tuple_size_v<noexcept_forms>>{}));
+
+// A family that names no function type reads as one that throws: a tag
+// class, a pointer to a function pointer, a pointer to a data member, a
+// tag class whose `signature` is not a function type, and a tag class
+// whose `signature` names itself.
+struct signature_is_data final {
+    using signature = int;
+};
+struct signature_is_itself final {
+    using signature = signature_is_itself;
+};
+static_assert(!live_rules<at::dispatch::indirect_call<attack_owner>>::D001_ok);
+static_assert(!live_rules<at::dispatch::indirect_call<void (**)() noexcept>>::D001_ok);
+static_assert(!live_rules<at::dispatch::indirect_call<int attack_owner::*>>::D001_ok);
+static_assert(!live_rules<at::dispatch::indirect_call<signature_is_data>>::D001_ok);
+static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D001_ok);
 
 // ── the ledger ──────────────────────────────────────────────────────
 //
 // Each entry pins a wrong answer with its reproducer.  The ledger can only
 // shrink: a repair flips the assertion, and the entry leaves in the same
-// edit as the repair.
-
-// A signature the reader has no arm for reads as one that states nothing,
-// so an indirect call through it reads as one that cannot throw, and D001
-// admits it.  The shapes are a ref-qualified or a volatile member
-// function, a C variadic function, and a reference to a function pointer.
-static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<void (attack_owner::*)() &>>::value);
-static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<void (attack_owner::*)() &&>>::value);
-static_assert(
-    !col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<void (attack_owner::*)() volatile>>::value);
-static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<int (*)(char, ...)>>::value);
-static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<int (*&)(char)>>::value);
-static_assert(live_rules<at::dispatch::indirect_call<void (attack_owner::*)() &>>::D001_ok);
-
-// A family named by an opaque tag states no signature, and D001 admits it.
-static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<attack_owner>>::value);
-static_assert(live_rules<at::dispatch::indirect_call<attack_owner>>::D001_ok);
+// edit as the repair.  It is empty: every attack above gets the answer the
+// rule states.
 
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
