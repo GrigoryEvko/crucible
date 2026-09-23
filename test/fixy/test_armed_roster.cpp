@@ -428,7 +428,16 @@ struct foundation::contracts::armed_cell<sess::is_terminal_state> {
 template <>
 struct foundation::contracts::armed_cell<sess::is_well_formed> {
     using accepts = witnesses<sess::End, sess::Send<int, sess::End>, sess::Loop<sess::Send<int, sess::Continue>>>;
-    using refuses = witnesses<sess::Continue, sess::Send<int, sess::Continue>>;
+    using refuses = witnesses<sess::Continue, sess::Send<int, sess::Continue>, sess::Loop<sess::Continue>>;
+};
+
+// The round trip of duality.  An Offer that names its sender loses the
+// note in its dual, so the round trip does not return it.
+template <>
+struct foundation::contracts::armed_cell<sess::is_dual_involutive> {
+    using accepts = witnesses<sess::End, sess::Send<int, sess::Recv<char, sess::End>>, w::NvEnd>;
+    using refuses =
+        witnesses<sess::Offer<sess::Sender<int>, sess::End>, sess::Send<int, sess::Offer<sess::Sender<int>, sess::End>>>;
 };
 
 // The payload walk of fixy/session/Payload.h.  A token reached owned is
@@ -468,10 +477,6 @@ inline constexpr std::meta::info unarmed_ledger[] = {
     // A stage names a function pointer, and no witness here can name a
     // stage without the stage machinery the pipeline tests build.
     ^^::fixy::concurrent::detail::is_stage,
-    // The primary answers true, and every specialization recurses to a
-    // true leaf, so no protocol is refused.  A predicate that accepts
-    // everything is the unarmed shape this file exists to find.
-    ^^::fixy::session::is_dual_involutive,
 };
 
 inline constexpr std::meta::info walked_scopes[] = {^^::foundation, ^^::fixy};

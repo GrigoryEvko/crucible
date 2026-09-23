@@ -1000,6 +1000,45 @@ fixy_neg_compile_test(neg_sess_compose_at_branch_no_choice
   "fixy::session::diagnostic \\[Branch_Compose_No_Choice\\]"
   "compose_at_branch_t<P, I, Q>")
 
+# ── The transition registry and subtyping ────────────────────────────
+#
+# Every operation of Protocol.h is one fold over the registry in
+# fixy::session::combinators, so a node the registry does not know is
+# refused where a query first meets it, and the message names it.  The
+# involution and empty-choice fixtures compiled before the repair: the
+# two old primaries answered for every type they did not know.
+fixy_neg_compile_test(neg_sess_unregistered_combinator_involutive
+  "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
+  "the combinator .*Teleport<int, fixy::session::End> has no registration")
+fixy_neg_compile_test(neg_sess_unregistered_combinator_empty_choice
+  "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
+  "the combinator .*Detour<fixy::session::Select<> > has no registration")
+fixy_neg_compile_test(neg_sess_unregistered_combinator_in_dual
+  "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
+  "the combinator .*Teleport<int, fixy::session::End> has no registration")
+
+# A registration that breaks the involution of duality, or its closure
+# under refinement, is refused where a query first meets it.
+fixy_neg_compile_test(neg_sess_incoherent_registration_not_involutive
+  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
+  "Push is incoherent: the dual of the dual is not the shape")
+fixy_neg_compile_test(neg_sess_incoherent_registration_variance
+  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
+  "Emit is incoherent: the dual payload variance is not the opposite")
+
+# Well-formedness now asks for a guard between a Continue and its Loop,
+# and refuses VendorBackend::None.  Before, the mint gate admitted all
+# three and the build failed later inside the handle.
+fixy_neg_compile_test(neg_sess_mint_unguarded_loop
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Loop<fixy::session::Continue>\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_mint_unguarded_pinned_loop
+  "no matching function for call to .mint_session_handle"
+  "Loop<fixy::session::VendorPinned<foundation::algebra::lattices::VendorBackend::NV, fixy::session::Continue> >\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_mint_vendor_none
+  "no matching function for call to .mint_session_handle"
+  "VendorPinned<foundation::algebra::lattices::VendorBackend::None, fixy::session::Send<.*Ping, fixy::session::End> >\\]. evaluated to .false.")
+
 # HS14 for mint_session_handle.  Its requires-clause is the whole
 # admission gate, so each clause gets a fixture that fails through it
 # and through no other: an ill-formed protocol, a well-formed protocol
