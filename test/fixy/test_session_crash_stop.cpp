@@ -14,12 +14,16 @@
 
 #include <fixy/session/CrashTransport.h>
 
+#include <array>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -300,6 +304,123 @@ int run_sender_crashes_after_send() {
     return took_message ? 0 : fail("q lost the message that was queued before the crash");
 }
 
+// ── Two threads ─────────────────────────────────────────────────────
+//
+// The decorator reads the crash cell between polls, and the peer writes
+// its queue and then marks the cell on a different thread.  A message
+// that the peer queued before the crash must still arrive (r-rcv-⊙),
+// so the release of the cell must make every earlier write visible.
+
+// A single-producer, single-consumer queue of wire words.  The producer
+// owns head_ and the consumer owns tail_.  The capacity bounds one run,
+// so the producer never waits.
+class WireQueue {
+public:
+    static constexpr std::size_t capacity = 1024;
+
+    void push(std::uint64_t word) noexcept {
+        const std::size_t head = head_.load(std::memory_order_relaxed);
+        slots_[head % capacity] = word;
+        head_.store(head + 1, std::memory_order_release);
+    }
+
+    [[nodiscard]] std::optional<std::uint64_t> pop() noexcept {
+        const std::size_t tail = tail_.load(std::memory_order_relaxed);
+        if (head_.load(std::memory_order_acquire) == tail) return std::nullopt;
+        const std::uint64_t word = slots_[tail % capacity];
+        tail_.store(tail + 1, std::memory_order_release);
+        return word;
+    }
+
+private:
+    std::array<std::uint64_t, capacity> slots_{};
+    alignas(64) std::atomic<std::size_t> head_{0};
+    alignas(64) std::atomic<std::size_t> tail_{0};
+};
+
+struct WirePort {
+    WireQueue* in = nullptr;
+    WireQueue* out = nullptr;
+};
+
+using StreamP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
+using StreamQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
+using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(WirePort{}, std::declval<const s::PeerCrashCell&>()));
+
+constexpr int kStreamMessages = 200;
+constexpr int kStreamRuns = 50;
+static_assert(2 * kStreamMessages <= static_cast<int>(WireQueue::capacity), "a run must fit in the queue");
+
+// p streams its messages and crashes.  q, on a second thread, must
+// receive every message in order, and then take the crash branch with
+// the cause that p recorded.
+int run_stream_across_threads() {
+    for (int run = 0; run < kStreamRuns; ++run) {
+        WireQueue to_p;
+        WireQueue to_q;
+        s::PeerCrashCell cell_p;
+        s::PeerCrashCell cell_q;
+        int received = 0;
+        bool is_in_order = true;
+        bool took_crash_branch = false;
+
+        std::jthread receiver([&] {
+            std::optional<StreamQHandle> q{
+                s::mint_crash_session<StreamQ, Q, P>(WirePort{&to_q, &to_p}, cell_p)};
+            bool is_done = false;
+            while (!is_done) {
+                StreamQHandle current = std::move(*q);
+                q.reset();
+                std::move(current).branch(
+                    [](WirePort& port) noexcept -> std::optional<std::size_t> {
+                        const auto word = port.in->pop();
+                        if (!word) return std::nullopt;
+                        return static_cast<std::size_t>(*word);
+                    },
+                    [&](auto branch) {
+                        using Head = typename decltype(branch)::protocol;
+                        if constexpr (s::is_crash_branch_v<Head>) {
+                            auto [record, end] = std::move(branch).recv();
+                            took_crash_branch = record.cause == s::CrashCause::Abort;
+                            (void)std::move(end).close();
+                            is_done = true;
+                        } else {
+                            auto [value, next] = std::move(branch).recv([](WirePort& port) noexcept -> std::optional<int> {
+                                const auto word = port.in->pop();
+                                if (!word) return std::nullopt;
+                                return static_cast<int>(*word);
+                            });
+                            is_in_order = is_in_order && value == received;
+                            ++received;
+                            q.emplace(std::move(next));
+                        }
+                    });
+            }
+        });
+
+        // The crash at the end also releases q if a send goes wrong, so
+        // the join always returns.
+        bool was_payload_returned = false;
+        auto p = s::mint_crash_session<StreamP, P, Q>(WirePort{&to_p, &to_q}, cell_q);
+        for (int message = 0; message < kStreamMessages; ++message) {
+            auto chosen = std::move(p).select<0>([](WirePort& port, std::size_t label) noexcept { port.out->push(label); });
+            auto [next, undelivered] = std::move(chosen).send(message, [](WirePort& port, int&& value) noexcept {
+                port.out->push(static_cast<std::uint64_t>(value));
+            });
+            was_payload_returned = was_payload_returned || undelivered.has_value();
+            p = std::move(next);
+        }
+        (void)std::move(p).crash(s::CrashCause::Abort, cell_p);
+        receiver.join();
+
+        if (was_payload_returned) return fail("a payload to a live peer came back");
+        if (received != kStreamMessages) return fail("q lost a message that p queued before the crash");
+        if (!is_in_order) return fail("q received the messages out of order");
+        if (!took_crash_branch) return fail("q did not take the crash branch with the recorded cause");
+    }
+    return 0;
+}
+
 // The cell records the first report and keeps it.
 int run_cell() {
     s::PeerCrashCell cell;
@@ -317,5 +438,6 @@ int main() {
     if (const int rc = run_without_crash(); rc != 0) return rc;
     if (const int rc = run_receiver_crashes_first(); rc != 0) return rc;
     if (const int rc = run_sender_crashes_after_send(); rc != 0) return rc;
+    if (const int rc = run_stream_across_threads(); rc != 0) return rc;
     return 0;
 }
