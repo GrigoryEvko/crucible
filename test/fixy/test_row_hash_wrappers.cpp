@@ -962,8 +962,19 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::Released, kMessageMarker},
     {^^::fixy::session::DelegatedSession, kMessageMarker},
     {^^::fixy::session::SharedReader,
-     "a read proof that the payload walk names before any header defines it; a message that carries one is the "
-     "payload of a Send or a Recv, and the handle that steps through the protocol folds it"},
+     "a reader's share of a pool that a message carries: it is the payload of a Send or a Recv, and the handle "
+     "that steps through the protocol folds it"},
+    {^^::fixy::session::DeclassifyOnSend,
+     "a message carrier of a classified value: it is the payload of a Send or a Recv, and the handle that steps "
+     "through the protocol folds it"},
+    {^^::fixy::session::CTPayload,
+     "a message carrier of a constant-time value: it is the payload of a Send or a Recv, and the handle that steps "
+     "through the protocol folds it"},
+    {^^::fixy::session::constant_time_value,
+     "an annotation that marks a class as a constant-time value; it is never a value in a signature"},
+    {^^::fixy::session::PermHold,
+     "the hold of the tokens that one session endpoint owns: it stays on the thread of that endpoint beside the "
+     "handle, and it is never a template argument of a kernel signature"},
     {^^::fixy::session::is_permission_classified, kMetafunction},
     {^^::fixy::session::payload_perm_delta, kMetafunction},
     {^^::fixy::session::is_plain_payload, kMetafunction},
