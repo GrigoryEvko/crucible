@@ -243,6 +243,29 @@ class SessionEvent;
 [[nodiscard]] constexpr std::expected<SessionEvent, EventDecodeError>
 decode_session_event(std::span<const std::byte> bytes) noexcept;
 
+namespace detail::event_log {
+
+// The record as bytes, with every control byte as a plain integer, so
+// that reading a corrupt record creates no invalid enum value.
+struct RawEvent {
+    std::uint64_t step_id = 0;
+    std::uint64_t session = 0;
+    std::uint64_t from_role = 0;
+    std::uint64_t to_role = 0;
+    std::uint64_t payload_schema = 0;
+    std::uint64_t payload_hash = 0;
+    std::uint64_t epoch_threshold = 0;
+    std::uint64_t generation_threshold = 0;
+    std::uint8_t op = 0;
+    std::uint8_t branch_index = 0;
+    std::uint8_t reason_kind = 0;
+    std::uint8_t pad[5]{};
+};
+
+static_assert(sizeof(RawEvent) == session_event_size);
+
+}  // namespace detail::event_log
+
 // ── The event ───────────────────────────────────────────────────────
 
 class SessionEvent {
@@ -259,7 +282,10 @@ class SessionEvent {
     std::uint8_t reason_kind_ = 0;
     std::uint8_t pad_[5]{};
 
-    constexpr SessionEvent() noexcept = default;
+    // User-provided, so that no constructor of the event is trivial.  A
+    // trivial constructor makes an implicit-lifetime type, and
+    // std::start_lifetime_as then builds an event over a buffer.
+    constexpr SessionEvent() noexcept {}
 
     constexpr SessionEvent(SessionOp op, RoleTagId from, RoleTagId to, std::uint64_t schema, std::uint64_t payload,
                            std::uint8_t branch = 0, std::uint8_t reason = 0) noexcept
@@ -276,6 +302,15 @@ class SessionEvent {
     decode_session_event(std::span<const std::byte> bytes) noexcept;
 
 public:
+    // User-provided, and not defaulted.  A defaulted copy is trivial, so
+    // the event was trivially copyable, and std::bit_cast built one from
+    // bytes that no session step wrote.  The one way from bytes to an
+    // event is decode_session_event, which checks each byte.  The copy
+    // compiles to the same 72-byte move.
+    constexpr SessionEvent(const SessionEvent& other) noexcept { *this = other; }
+    constexpr SessionEvent& operator=(const SessionEvent&) noexcept = default;
+    constexpr ~SessionEvent() = default;
+
     // ── Factories ───────────────────────────────────────────────────
 
     [[nodiscard]] static constexpr SessionEvent send(RoleTagId self, RoleTagId peer, SchemaHash schema,
@@ -451,34 +486,33 @@ public:
 
     // The bytes, for a drain to durable storage.
     [[nodiscard]] constexpr std::array<std::byte, session_event_size> encode() const noexcept {
-        return std::bit_cast<std::array<std::byte, session_event_size>>(*this);
+        detail::event_log::RawEvent raw{};
+        raw.step_id = step_id_.value;
+        raw.session = session_.value;
+        raw.from_role = from_role_.value;
+        raw.to_role = to_role_.value;
+        raw.payload_schema = payload_schema_.value;
+        raw.payload_hash = payload_hash_.value;
+        raw.epoch_threshold = epoch_threshold_;
+        raw.generation_threshold = generation_threshold_;
+        raw.op = static_cast<std::uint8_t>(op_);
+        raw.branch_index = branch_index_;
+        raw.reason_kind = reason_kind_;
+        for (std::size_t index = 0; index < std::size(pad_); ++index) raw.pad[index] = pad_[index];
+        return std::bit_cast<std::array<std::byte, session_event_size>>(raw);
     }
 };
 
 static_assert(sizeof(SessionEvent) == session_event_size,
               "SessionEvent must be exactly 72 bytes, because durable storage and the decoder read that record size.");
-static_assert(std::is_trivially_copyable_v<SessionEvent>, "SessionEvent must be trivially copyable for a bulk drain.");
+static_assert(!std::is_trivially_copyable_v<SessionEvent>,
+              "SessionEvent must not be trivially copyable, or std::bit_cast builds an event that no session step "
+              "wrote.  encode() and decode_session_event are the byte routes.");
+static_assert(!std::is_implicit_lifetime_v<SessionEvent>,
+              "SessionEvent must not be an implicit-lifetime type, or std::start_lifetime_as builds an event over a "
+              "buffer.");
 
 namespace detail::event_log {
-
-// The record as bytes, with every control byte as a plain integer, so
-// that reading a corrupt record creates no invalid enum value.
-struct RawEvent {
-    std::uint64_t step_id = 0;
-    std::uint64_t session = 0;
-    std::uint64_t from_role = 0;
-    std::uint64_t to_role = 0;
-    std::uint64_t payload_schema = 0;
-    std::uint64_t payload_hash = 0;
-    std::uint64_t epoch_threshold = 0;
-    std::uint64_t generation_threshold = 0;
-    std::uint8_t op = 0;
-    std::uint8_t branch_index = 0;
-    std::uint8_t reason_kind = 0;
-    std::uint8_t pad[5]{};
-};
-
-static_assert(sizeof(RawEvent) == session_event_size);
 
 // The enum the control byte of each kind is read as, and whether the
 // branch byte and the crash lane carry a value.

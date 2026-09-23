@@ -114,10 +114,6 @@ inline constexpr std::meta::info forgeable_ledger[] = {
     ^^::foundation::effects::Init,
     ^^::foundation::effects::Test,
     ^^::foundation::effects::cap_mint_key,
-    // A session event is a record on the replay path, and its private
-    // constructor is its witness.  std::bit_cast builds one from bytes, so
-    // a log can hold an event that no session step wrote.
-    ^^::fixy::session::SessionEvent,
 };
 
 struct ForgeVerdict {
