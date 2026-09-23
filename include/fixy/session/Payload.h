@@ -51,7 +51,8 @@
 // how each component was reached:
 //
 //   owned      the root, a base, a by-value member of an owned class
-//   aliased    through a pointer, a reference or a reference member
+//   aliased    through a pointer, a reference, a reference member, or a
+//              root that is itself a reference type
 //   in union   a member of a union, which covers std::optional and
 //              std::variant, whose storage is a union
 //   in array   an element of an array
@@ -69,7 +70,10 @@
 //   * a class whose state the walk cannot read, which is the shape of a
 //     lambda with captures;
 //   * a class that is only declared;
-//   * one tag twice in one payload.
+//   * one tag twice in one payload;
+//   * a fixy::Secret outside DeclassifyOnSend, and a type marked
+//     constant_time_value outside CTPayload, as fixy/session/Classified.h
+//     states.
 //
 // A refusal is a compile error.  Its text names the refused type.
 //
@@ -82,19 +86,25 @@
 // namespace crucible::safety::proto.
 
 #include <foundation/Brand.h>
+#include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 #include <foundation/reflect/TypeComponents.h>
+#include <fixy/session/Classified.h>
 
 #include <any>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <meta>
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -209,9 +219,48 @@ struct [[nodiscard]] DelegatedSession {
     using inner_perm_set = InnerPS;
 };
 
-// Defined in fixy/session/Shared.h.  The walk knows the family by name.
+// A reader's share of a pool, which a message can carry to a reader on
+// another thread.  It owns the guard, so the share lives exactly as long
+// as the reader, and the pool cannot upgrade while one reader lives.  No
+// proof is dropped on the way: the read view comes from the guard that
+// this object holds.  The writer is the Permission that try_upgrade hands
+// back, which is linear, so there is one writer and any number of
+// readers, as in CLASS (Rocha and Caires, ESOP 2023).
+//
+// A share moves no tag, so it changes no permission set.  The pool counts
+// its shares.
 template <class Tag, class Brand = ::foundation::brand::DefaultBrand>
-class SharedReader;
+class [[nodiscard]] SharedReader {
+public:
+    using tag_type = Tag;
+    using brand_type = Brand;
+
+    explicit SharedReader(::foundation::permissions::SharedPermissionGuard<Tag, Brand>&& guard) noexcept
+        : guard_{std::move(guard)} {
+        CRUCIBLE_PRE(guard_.holds_share());
+    }
+
+    SharedReader(const SharedReader&) = delete("a SharedReader owns one share of the pool. A copy counts it twice");
+    SharedReader& operator=(const SharedReader&) =
+        delete("a SharedReader owns one share of the pool. A copy counts it twice");
+    SharedReader(SharedReader&&) noexcept = default;
+    SharedReader& operator=(SharedReader&&) = delete("a SharedReader binds one share for its whole life");
+    ~SharedReader() = default;
+
+    // A read proof of the region while this reader lives.  The deleted
+    // twin refuses a proof taken from a reader that dies at the end of
+    // the statement.
+    [[nodiscard]] ::foundation::permissions::ReadView<Tag, Brand> view() const& noexcept {
+        return ::foundation::permissions::mint_read_view(guard_);
+    }
+    ::foundation::permissions::ReadView<Tag, Brand> view() const&& =
+        delete("a read proof taken from a temporary reader outlives the share. Bind the reader to a name");
+
+    [[nodiscard]] bool holds_share() const noexcept { return guard_.holds_share(); }
+
+private:
+    ::foundation::permissions::SharedPermissionGuard<Tag, Brand> guard_;
+};
 
 namespace detail {
 
@@ -227,6 +276,8 @@ enum class PayloadRefusal : std::uint8_t {
     TypeErasure,
     UnreadableState,
     IncompleteType,
+    ClassifiedBare,
+    ConstantTimeBare,
 };
 
 enum class PayloadReach : std::uint8_t {
@@ -321,11 +372,23 @@ struct PayloadAccount {
         std::meta::info type{};
         bool readable = false;
         PayloadReach reach = PayloadReach::Owned;
+        // Set on the value that a CTPayload carries and on its parts,
+        // which is the one place a constant-time value may travel.
+        bool in_ct_carrier = false;
     };
 
     PayloadAccount account;
-    std::vector<Node> pending{Node{refl::bare_type(root), true, PayloadReach::Owned}};
+    std::vector<Node> pending;
     std::vector<Node> visited;
+    // A payload typed as a reference names an object that stays with the
+    // sender, so its tokens are reached aliased, as through a reference
+    // member.
+    if (std::meta::is_reference_type(std::meta::dealias(root))) {
+        const refl::TypeNode reached = refl::node_reached_indirectly(root);
+        pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
+    } else {
+        pending.push_back(Node{refl::bare_type(root), true, PayloadReach::Owned});
+    }
 
     auto refuse = [&account](PayloadRefusal why, std::meta::info type) consteval {
         if (account.refusal != PayloadRefusal::None) return;
@@ -426,6 +489,22 @@ struct PayloadAccount {
                 if (owned_or_refuse(node)) account.carries_share = true;
                 continue;
             }
+            // The carrier declassifies at the transport, so the Secret it
+            // holds is not walked.  The value it will hand over is, for
+            // the tokens inside it.
+            if (family == ^^DeclassifyOnSend) {
+                const refl::TypeNode carried{refl::bare_type(arguments[0]), true};
+                pending.push_back(Node{carried.type, carried.may_read_members, node.reach});
+                continue;
+            }
+            if (family == ^^CTPayload) {
+                pending.push_back(Node{refl::bare_type(arguments[0]), true, node.reach, true});
+                continue;
+            }
+            if (family == ^^::fixy::Secret) {
+                refuse(PayloadRefusal::ClassifiedBare, type);
+                continue;
+            }
             if (payload_family_is_on(type, payload_proof_families)) {
                 refuse(PayloadRefusal::BareBorrowOrShare, type);
                 continue;
@@ -439,6 +518,10 @@ struct PayloadAccount {
             refuse(PayloadRefusal::TypeErasure, type);
             continue;
         }
+        if (!node.in_ct_carrier && carries_constant_time_mark(type)) {
+            refuse(PayloadRefusal::ConstantTimeBare, type);
+            continue;
+        }
 
         if (std::meta::is_pointer_type(type) || std::meta::is_reference_type(type)) {
             const std::meta::info element =
@@ -449,7 +532,8 @@ struct PayloadAccount {
         }
         if (std::meta::is_array_type(type)) {
             const PayloadReach reach = node.reach == PayloadReach::Owned ? PayloadReach::InArray : node.reach;
-            pending.push_back(Node{refl::bare_type(std::meta::remove_all_extents(type)), node.readable, reach});
+            pending.push_back(
+                Node{refl::bare_type(std::meta::remove_all_extents(type)), node.readable, reach, node.in_ct_carrier});
             continue;
         }
         const bool is_union = std::meta::is_union_type(type);
@@ -478,7 +562,7 @@ struct PayloadAccount {
             is_union && node.reach == PayloadReach::Owned ? PayloadReach::InUnion : node.reach;
         const auto unchecked = std::meta::access_context::unchecked();
         for (const std::meta::info base : std::meta::bases_of(type, unchecked)) {
-            pending.push_back(Node{refl::bare_type(std::meta::type_of(base)), true, member_reach});
+            pending.push_back(Node{refl::bare_type(std::meta::type_of(base)), true, member_reach, node.in_ct_carrier});
         }
         for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, unchecked)) {
             const std::meta::info member_type = std::meta::type_of(member);
@@ -486,7 +570,7 @@ struct PayloadAccount {
                 const refl::TypeNode reached = refl::node_reached_indirectly(member_type);
                 pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
             } else {
-                pending.push_back(Node{refl::bare_type(member_type), true, member_reach});
+                pending.push_back(Node{refl::bare_type(member_type), true, member_reach, node.in_ct_carrier});
             }
         }
     }
@@ -530,6 +614,12 @@ struct PayloadVerdict {
             return "it holds a class whose state the walk cannot read, such as a lambda with captures";
         case PayloadRefusal::IncompleteType:
             return "it holds a class that is only declared, so nothing says what it holds";
+        case PayloadRefusal::ClassifiedBare:
+            return "it holds a fixy::Secret outside DeclassifyOnSend.  A classified value on a channel leaves "
+                   "classification, and that needs a named policy.  Carry it as DeclassifyOnSend<T, Policy>";
+        case PayloadRefusal::ConstantTimeBare:
+            return "it holds a constant-time value outside CTPayload.  A bare value offers == and element access, "
+                   "which can branch on the content.  Carry it as CTPayload<T>";
         default:
             break;
     }
@@ -715,5 +805,310 @@ inline constexpr bool perm_set_has_open_loan_v = [] consteval {
     }
     return false;
 }();
+
+
+// ── The tokens of a set, held ───────────────────────────────────────
+//
+// A PermHold keeps the token object for each element of its set: the
+// Permission of each plain tag, the parked Permission of each LentOut
+// tag, and the read proof of each BorrowedIn tag.  Every transition
+// consumes the hold and returns the next one, whose set is the set after
+// the step.  So the tokens and the set cannot disagree:
+//
+//   take / put         a token leaves or enters the hold
+//   pack / unpack      the same, inside a Transferable
+//   lend / end_loan    the token parks in LentOut<Tag>, then returns
+//   accept_loan /      a read proof enters as BorrowedIn<Tag>, then goes
+//     release
+//
+// A hold carries one flag of state, which the transitions clear.  A
+// transition on a hold that a move or an earlier transition consumed
+// aborts, because a second use of it would spend its tokens twice.  A
+// live hold that is destroyed with a loan open aborts too.  A lender
+// that drops its hold leaves the loan unclosed, and a borrower that
+// drops its hold leaves the lender waiting for a release that never
+// comes.  That is the silent drop that LinearActris (Jacobs, Hinrichsen,
+// Krebbers, POPL 2024) forbids.
+
+template <class PS>
+class PermHold;
+
+namespace detail {
+
+// The object that a hold keeps for one element of its set.
+[[nodiscard]] consteval std::meta::info hold_slot_of(std::meta::info element) {
+    const std::meta::info bare = std::meta::dealias(element);
+    if (payload_family_is(bare, ^^LentOut)) {
+        return std::meta::substitute(^^::foundation::permissions::Permission,
+                                     {std::meta::template_arguments_of(bare)[0]});
+    }
+    if (payload_family_is(bare, ^^BorrowedIn)) {
+        return std::meta::substitute(^^::foundation::permissions::ReadView,
+                                     {std::meta::template_arguments_of(bare)[0]});
+    }
+    return std::meta::substitute(^^::foundation::permissions::Permission, {bare});
+}
+
+template <class Element>
+using hold_slot_t = [:hold_slot_of(^^Element):];
+
+// True when the element is a plain tag, and not a loan state.
+template <class Element>
+inline constexpr bool is_plain_tag_v =
+    !payload_family_is(std::meta::dealias(^^Element), ^^LentOut)
+    && !payload_family_is(std::meta::dealias(^^Element), ^^BorrowedIn);
+
+[[noreturn]] CRUCIBLE_COLD inline void hold_consumed_abort_() noexcept {
+    std::fputs("fixy::session::diagnostic [Hold_Consumed]: a PermHold was used after a move or a transition "
+               "consumed it.  A second use spends its tokens twice.  Use the hold that the transition returned.\n",
+               stderr);
+    std::abort();
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void hold_open_loan_abort_() noexcept {
+    std::fputs("fixy::session::diagnostic [Hold_Open_Loan]: a PermHold was destroyed with a loan open.  A lender "
+               "that drops its hold leaves the loan unclosed, and a borrower that drops its hold leaves the lender "
+               "waiting.  Close the loan with end_loan or release before the hold ends.\n",
+               stderr);
+    std::abort();
+}
+
+struct hold_from_slots {};
+
+}  // namespace detail
+
+// Consumes the tokens and returns the hold of their set.  Each token is
+// a parameter by value, so an lvalue token is refused: it would leave a
+// second name for a token that the hold now owns.  One tag twice is
+// refused, because a set holds each tag once.  The brand of each token is
+// erased, so the hold names regions by tag, as a permission set does.
+template <class... Tags, class... Brands>
+    requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
+[[nodiscard]] constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
+mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept;
+
+template <class... Elems>
+class [[nodiscard]] PermHold<::foundation::permissions::PermSet<Elems...>> {
+    using Set = ::foundation::permissions::PermSet<Elems...>;
+
+public:
+    using perm_set = Set;
+
+    PermHold(const PermHold&) = delete("a PermHold owns its tokens. A copy owns them twice");
+    PermHold& operator=(const PermHold&) = delete("a PermHold owns its tokens. A copy owns them twice");
+    PermHold& operator=(PermHold&&) = delete("a transition returns the next hold. Bind it to a new name");
+
+    constexpr PermHold(PermHold&& other) noexcept
+        : slots_{std::move(other.slots_)}, live_{std::exchange(other.live_, false)} {}
+
+    constexpr ~PermHold() {
+        if (live_ && perm_set_has_open_loan_v<Set>) detail::hold_open_loan_abort_();
+    }
+
+    // True while no move and no transition consumed this hold.
+    [[nodiscard]] constexpr bool is_live() const noexcept { return live_; }
+
+    // ── A token leaves or enters the hold ──────────────────────────
+
+    template <class Tag>
+        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::is_plain_tag_v<Tag>)
+    [[nodiscard]] constexpr auto take() && noexcept
+        -> std::pair<::foundation::permissions::Permission<Tag>,
+                     PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
+        require_live_();
+        ::foundation::permissions::Permission<Tag> token = std::move(std::get<index_of_<Tag>>(slots_));
+        auto rest = std::move(*this).template transition_<::foundation::permissions::perm_set_remove_t<Set, Tag>>();
+        return {std::move(token), std::move(rest)};
+    }
+
+    template <class Tag, class Brand>
+        requires(detail::is_plain_tag_v<Tag>
+                 && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
+    [[nodiscard]] constexpr auto put(::foundation::permissions::Permission<Tag, Brand> token) && noexcept
+        -> PermHold<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
+        require_live_();
+        return std::move(*this).template transition_<::foundation::permissions::perm_set_insert_t<Set, Tag>>(
+            ::foundation::permissions::Permission<Tag>{std::move(token)});
+    }
+
+    // ── Moves inside a message ─────────────────────────────────────
+
+    template <class Tag, class T>
+        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::is_plain_tag_v<Tag>)
+    [[nodiscard]] constexpr auto pack(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<Transferable<T, Tag>, PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
+        auto [token, rest] = std::move(*this).template take<Tag>();
+        return {Transferable<T, Tag>{std::move(value), std::move(token)}, std::move(rest)};
+    }
+
+    template <class T, class Tag>
+        requires ReceivablePayload<Transferable<T, Tag>, Set>
+    [[nodiscard]] constexpr auto unpack(Transferable<T, Tag>&& message) && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Transferable<T, Tag>>>> {
+        require_live_();
+        T value = std::move(message.value);
+        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Transferable<T, Tag>>>(
+            std::move(message.perm));
+        return {std::move(value), std::move(next)};
+    }
+
+    template <class T, class Tag>
+        requires ReceivablePayload<Returned<T, Tag>, Set>
+    [[nodiscard]] constexpr auto unpack(Returned<T, Tag>&& message) && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Returned<T, Tag>>>> {
+        require_live_();
+        T value = std::move(message.value);
+        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Returned<T, Tag>>>(
+            std::move(message.perm));
+        return {std::move(value), std::move(next)};
+    }
+
+    // ── A read loan, lender side ───────────────────────────────────
+
+    // The token parks in the LentOut slot, where take cannot reach it.
+    // Only a release of the same tag unparks it.
+    template <class Tag, class T>
+        requires SendablePayload<Borrowed<T, Tag>, Set>
+                 && ::foundation::permissions::ReadViewNeedsNoCtx<Tag>
+    [[nodiscard]] constexpr auto lend(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
+        require_live_();
+        ::foundation::permissions::Permission<Tag>& token = std::get<index_of_<Tag>>(slots_);
+        Borrowed<T, Tag> loan{std::move(value), ::foundation::permissions::mint_read_view(token)};
+        auto next = std::move(*this).template transition_<perm_set_after_send_t<Set, Borrowed<T, Tag>>>(
+            std::move(token));
+        return {std::move(loan), std::move(next)};
+    }
+
+    template <class T, class Tag>
+        requires ReceivablePayload<Released<T, Tag>, Set>
+    [[nodiscard]] constexpr auto end_loan(Released<T, Tag>&& message) && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
+        require_live_();
+        T value = std::move(message.value);
+        ::foundation::permissions::Permission<Tag>& parked = std::get<index_of_<LentOut<Tag>>>(slots_);
+        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Released<T, Tag>>>(
+            std::move(parked));
+        return {std::move(value), std::move(next)};
+    }
+
+    // ── A read loan, borrower side ─────────────────────────────────
+
+    template <class T, class Tag>
+        requires ReceivablePayload<Borrowed<T, Tag>, Set>
+    [[nodiscard]] constexpr auto accept_loan(Borrowed<T, Tag>&& message) && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>> {
+        require_live_();
+        T value = std::move(message.value);
+        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>(
+            ::foundation::permissions::ReadView<Tag>{message.view});
+        return {std::move(value), std::move(next)};
+    }
+
+    // The read proof of a region this hold borrows.
+    template <class Tag>
+        requires(::foundation::permissions::perm_set_contains_v<Set, BorrowedIn<Tag>>)
+    [[nodiscard]] constexpr ::foundation::permissions::ReadView<Tag> view() const& noexcept {
+        require_live_();
+        return ::foundation::permissions::ReadView<Tag>{std::get<index_of_<BorrowedIn<Tag>>>(slots_)};
+    }
+    template <class Tag>
+        requires(::foundation::permissions::perm_set_contains_v<Set, BorrowedIn<Tag>>)
+    ::foundation::permissions::ReadView<Tag> view() const&& =
+        delete("a read proof taken from a temporary hold outlives the loan. Bind the hold to a name");
+
+    template <class Tag, class T>
+        requires SendablePayload<Released<T, Tag>, Set>
+    [[nodiscard]] constexpr auto release(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
+        require_live_();
+        auto next = std::move(*this).template transition_<perm_set_after_send_t<Set, Released<T, Tag>>>();
+        return {Released<T, Tag>{std::move(value)}, std::move(next)};
+    }
+
+    // ── The end of the hold ────────────────────────────────────────
+
+    // Hands every token back.  A hold with a loan open has no tokens to
+    // hand back for the loan, so it cannot end here.
+    [[nodiscard]] constexpr std::tuple<::foundation::permissions::Permission<Elems>...> into_permissions() && noexcept
+        requires(!perm_set_has_open_loan_v<Set>)
+    {
+        require_live_();
+        live_ = false;
+        return std::apply(
+            [](auto&... slot) {
+                return std::tuple<::foundation::permissions::Permission<Elems>...>{std::move(slot)...};
+            },
+            slots_);
+    }
+
+private:
+    template <class>
+    friend class PermHold;
+
+    template <class... Tags, class... Brands>
+        requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
+    friend constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
+    mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept;
+
+    template <class... Slots>
+    constexpr explicit PermHold(detail::hold_from_slots, Slots&&... slots) noexcept
+        : slots_{std::forward<Slots>(slots)...} {}
+
+    constexpr void require_live_() const noexcept {
+        if (!live_) [[unlikely]] detail::hold_consumed_abort_();
+    }
+
+    // The position of an element in the set.  Complexity: linear in the
+    // size of the set.
+    template <class Element>
+    static constexpr std::size_t index_of_ = [] consteval {
+        std::size_t index = 0;
+        for (const std::meta::info element : {^^Elems...}) {
+            if (std::meta::dealias(element) == std::meta::dealias(^^Element)) return index;
+            ++index;
+        }
+        return index;
+    }();
+
+    // The slot of one element of the next set: the slot this hold keeps
+    // for it, or the incoming object when the element is new.  A step
+    // adds at most one element, so at most one element takes the
+    // incoming object.
+    template <class Element, class Incoming>
+    constexpr detail::hold_slot_t<Element> pick_(Incoming&& incoming) noexcept {
+        if constexpr (::foundation::permissions::perm_set_contains_v<Set, Element>) {
+            return std::move(std::get<index_of_<Element>>(slots_));
+        } else {
+            return detail::hold_slot_t<Element>{std::forward<Incoming>(incoming)};
+        }
+    }
+
+    struct no_incoming {};
+
+    template <class Next, class Incoming = no_incoming>
+    constexpr PermHold<Next> transition_(Incoming&& incoming = {}) && noexcept {
+        live_ = false;
+        return [&]<class... Following>(std::type_identity<::foundation::permissions::PermSet<Following...>>) {
+            return PermHold<Next>{detail::hold_from_slots{},
+                                  pick_<Following>(std::forward<Incoming>(incoming))...};
+        }(std::type_identity<Next>{});
+    }
+
+    std::tuple<detail::hold_slot_t<Elems>...> slots_;
+    bool live_ = true;
+};
+
+template <class... Tags, class... Brands>
+    requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
+[[nodiscard]] constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
+mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
+    return PermHold<::foundation::permissions::PermSet<Tags...>>{
+        detail::hold_from_slots{}, ::foundation::permissions::Permission<Tags>{std::move(tokens)}...};
+}
 
 }  // namespace fixy::session

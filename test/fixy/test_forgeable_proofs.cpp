@@ -91,6 +91,8 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^sess::Transferable<int, Region>,
     ^^sess::Returned<int, Region>,
     ^^sess::Borrowed<int, Region>,
+    ^^sess::PermHold<fp::PermSet<Region>>,
+    ^^sess::SharedReader<Region>,
 };
 
 // ── the ledger ──────────────────────────────────────────────────────
