@@ -5,8 +5,9 @@
 // The compile-time half pins the gate: a pair that sends one message
 // ahead needs a capacity of one, a pair that sends two ahead needs two,
 // and a Resource that states no capacity, or a different one from its
-// peer, is refused.  The runtime half runs the first pair over a channel
-// that holds one message in each direction.  Each side sends before it
+// peer, is refused.  A pair in which one side drops an exit is refused in
+// each order.  The runtime half runs the first pair over a channel that
+// holds one message in each direction.  Each side sends before it
 // receives, so a channel with no buffer deadlocks.  Every wait has a
 // deadline, so a bug aborts with a diagnostic and does not hang the run.
 
@@ -148,6 +149,23 @@ static_assert(!gate_admits_v<LeftProto, RightProto, LeftEnd, WideEnd>, "the two 
 static_assert(!gate_admits_v<LeftProto, s::Send<Ping, s::End>, LeftEnd, RightEnd>,
               "a pair that the relation refuses is refused at every capacity");
 static_assert(s::channel_capacity_v<LeftEnd const&> == 1, "the capacity is read through a reference");
+
+// A side that waits for a stop refines the dual of a peer that never
+// sends it.  The peer drops the exit, so it does not refine the dual of
+// that side.  The gate asks for the two directions, and it refuses the
+// pair in each order.
+struct Job {};
+struct StopCmd {};
+using NeverStops = s::Loop<s::Select<s::Send<Job, s::Continue>>>;
+using AwaitsStop = s::Loop<s::Offer<s::Recv<Job, s::Continue>, s::Recv<StopCmd, s::End>>>;
+
+static_assert(s::is_subtype_async_v<AwaitsStop, s::dual_of_t<NeverStops>, LeftEnd>,
+              "the check in one direction admits the pair");
+static_assert(!s::is_subtype_async_v<NeverStops, s::dual_of_t<AwaitsStop>, RightEnd>,
+              "the peer that never stops does not refine the dual of the side that waits for a stop");
+static_assert(!gate_admits_v<AwaitsStop, NeverStops, LeftEnd, RightEnd>);
+static_assert(!gate_admits_v<NeverStops, AwaitsStop, LeftEnd, RightEnd>);
+static_assert(gate_admits_v<RightProto, LeftProto, RightEnd, LeftEnd>, "a compatible pair is admitted in each order");
 
 // ── The runtime pair ─────────────────────────────────────────────────
 
