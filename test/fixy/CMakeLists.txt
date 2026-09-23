@@ -1318,6 +1318,19 @@ fixy_neg_compile_test(neg_sess_crash_branch_index_missing
   "static assertion failed"
   "fixy::session::diagnostic \\[Crash_Branch_Missing\\]")
 
+# The crash-stop theory has no delegation, so no payload may hold a
+# delegated endpoint, alone or in a member.  The mint starts from the
+# empty set, so a token it never received cannot be sent.
+fixy_neg_compile_test(neg_sess_crash_hidden_in_delegation
+  "no matching function for call to .mint_crash_session"
+  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::DelegatedSession")
+fixy_neg_compile_test(neg_sess_crash_delegation_in_a_member
+  "no matching function for call to .mint_crash_session"
+  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+fixy_neg_compile_test(neg_sess_crash_token_not_held
+  "no matching function for call to .mint_crash_session"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::Transferable<")
+
 # ── Checkpoint and rollback ───────────────────────────────────────────
 #
 # Checkpoint.h checks a pair of protocols against the compliance of
@@ -1352,6 +1365,10 @@ fixy_neg_compile_test(neg_sess_checkpoint_permission_payload
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<fixy::session::Transferable<")
 
+fixy_neg_compile_test(neg_sess_checkpoint_delegation_payload
+  "no matching function for call to .mint_checkpoint_session"
+  "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<fixy::session::DelegatedSession<")
+
 # ── The event log and the recorder ────────────────────────────────────
 #
 # EventLog.h decodes bytes only through a check of every control byte,
@@ -1378,6 +1395,23 @@ fixy_neg_compile_test(neg_sess_event_forged
 fixy_neg_compile_test(neg_sess_event_log_copied
   "use of deleted function .fixy::session::SessionEventLog::SessionEventLog\\(const fixy::session::SessionEventLog&\\)"
   "Pinned<T>: stable address")
+
+# No byte route builds an event: the event is not trivially copyable and
+# not an implicit-lifetime type, so the decoder is the one door.
+fixy_neg_compile_test(neg_sess_event_forged_by_bit_cast
+  "no matching function for call to .bit_cast<fixy::session::SessionEvent>"
+  "is_trivially_copyable_v<_To>")
+fixy_neg_compile_test(neg_sess_event_forged_by_start_lifetime_as
+  "static assertion failed"
+  "fixy::session::SessionEvent. is not an implicit-lifetime type")
+
+# ── Crash and checkpoint attacks ──────────────────────────────────────
+#
+# Legal code that tries to defeat the crash transport, the checkpoint
+# session and the event log.  Each runtime attack runs in a child under
+# a watchdog, and the attacks that succeed are pinned on a ledger that
+# can only shrink.
+fixy_test(test_session_crash_attack)
 
 # ── Global types, projection and liveness ─────────────────────────────
 #
@@ -1482,6 +1516,63 @@ fixy_neg_compile_test(neg_sess_strip_peers_two_peers
 fixy_neg_compile_test(neg_sess_strip_peers_not_a_local_type
   "invalid use of incomplete type .struct fixy::session::detail::proj::peer_walk<"
   "fixy::session::strip_peers_t")
+
+# ── Crash-stop global types ───────────────────────────────────────────
+#
+# The crash label, the crash annotation, role removal, crash-stop
+# projection and the liveness predicate of Theorem 4.31, on the examples
+# of the crash-stop paper.  Each gate has fixtures for the faults it
+# names.
+fixy_test(test_session_global_crash)
+
+fixy_neg_compile_test(neg_sess_global_crash_only_choice
+  "fixy::session::diagnostic \\[Global_Crash_Only_Choice\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_crash_label_payload
+  "fixy::session::diagnostic \\[Global_Crash_Label_Payload\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_crashed_sender_of_comm
+  "fixy::session::diagnostic \\[Global_Misplaced_Crash_Annotation\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_live_role_sends_crash_label
+  "fixy::session::diagnostic \\[Global_Misplaced_Crash_Annotation\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_projection_missing_crash_branch
+  "fixy::session::diagnostic \\[Projection_Missing_Crash_Branch\\]"
+  "expansion of .fixy::session::ensure_crash_projectable<")
+
+fixy_neg_compile_test(neg_sess_projection_crash_branch_hidden_in_loop
+  "fixy::session::diagnostic \\[Projection_Missing_Crash_Branch\\]"
+  "expansion of .fixy::session::ensure_crash_live_by_construction<"
+  "expansion of .fixy::session::ensure_crash_projectable<")
+
+fixy_neg_compile_test(neg_sess_projection_crash_branch_from_reliable
+  "fixy::session::diagnostic \\[Projection_Crash_Branch_From_Reliable_Sender\\]"
+  "expansion of .fixy::session::ensure_crash_projectable<")
+
+fixy_neg_compile_test(neg_sess_projection_crash_branch_in_crash_free_projection
+  "fixy::session::diagnostic \\[Projection_Crash_Branch_From_Reliable_Sender\\]"
+  "In instantiation of .consteval void fixy::session::ensure_projectable\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_projection_onto_crashed_role
+  "fixy::session::diagnostic \\[Projection_Onto_Crashed_Role\\]"
+  "expansion of .fixy::session::ensure_crash_projectable<")
+
+fixy_neg_compile_test(neg_sess_projection_en_route_unreliable
+  "fixy::session::diagnostic \\[Projection_EnRoute_From_Unreliable_Sender\\]"
+  "expansion of .fixy::session::ensure_crash_projectable<")
+
+fixy_neg_compile_test(neg_sess_crash_live_runtime_construct
+  "fixy::session::diagnostic \\[Crash_Liveness_Runtime_Construct\\]"
+  "ensure_crash_live_by_construction\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_crash_live_reliable_set_malformed
+  "fixy::session::diagnostic \\[Projection_Reliable_Set_Malformed\\]"
+  "expansion of .fixy::session::ensure_crash_live_by_construction<")
 
 # ── Every gate predicate is armed ─────────────────────────────────────
 #
