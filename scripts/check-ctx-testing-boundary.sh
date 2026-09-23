@@ -1,172 +1,227 @@
 #!/usr/bin/env bash
 #
-# foundation::effects::testing hands out minted capabilities with no gate.
-# Effect.h says naming it outside test and bench code is a review
-# rejection, and that a grep for it finds every translation unit taking
-# the test path.  Nothing performed that grep, so the boundary was prose.
-# A capability is what every ctx-bound mint checks for,
-# so an unnoticed use in production code silently hands out authority.
+# The testing door hands out a context with no key.  Both trees have one:
+# foundation::effects::testing in the new tree, and
+# crucible::effects::testing in the old tree.  bg(), init() and test()
+# each mint a context, and TestWitness is the friend that reaches the
+# keys.  A context is what every ctx-bound mint checks for, so a use of the
+# door in code that ships hands out authority that no mint gave.
 #
-# This scans the new production tree and fails on any file naming the
-# namespace that the allowlist does not admit.  A listed file that no
-# longer names it is a stale entry and also fails, so the list drains
-# with the code rather than rotting.
+# This guard scans the trees that ship and counts each use of the door in
+# code.  A comment or a literal that names the door is not a use.  Each
+# file with a use needs an entry in scripts/ctx-testing-boundary-allowlist.txt,
+# and the entry states how many uses it admits, so a new use in a listed
+# file is refused too.  An entry above the count of its file is stale and
+# fails, so the list drains with the code.
 #
-# The old tree under include/crucible is frozen and is not scanned: it
-# may only shrink, so a marking pass there would violate the freeze.  The
-# old tree is deleted when no consumer needs it.
+# The trees that ship: include/foundation, include/fixy, include/crucible,
+# src, vessel, tools and examples.  test/, bench/ and fuzz/ are not
+# scanned, because taking the test path is what they are for.
 #
-#   --self-test   plant one violating file and one clean file, and prove
-#                 the scan reports the first and not the second.
+# What this guard does not see, stated rather than implied: a name of the
+# door that a macro builds by token pasting.  The scan reads source text,
+# and review sees such a macro.
 #
-# Exit 0 clean, 1 on a violation or a stale entry, 2 on a usage error.
+#   --self-test   plant uses in the new tree and the old tree, a clean
+#                 file, a listed file with a counted use, and a stale
+#                 entry, and prove each verdict.
+#
+# Exit 0 clean, 1 on a violation or a stale entry, 2 on a usage error or a
+# failed self-test.
 
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-allowlist="$root/scripts/ctx-testing-boundary-allowlist.txt"
-
-# The trees that ship.  test/ and bench/ are absent on purpose: taking the
-# test path is what they are for.
-SCAN_DIRS=(include/foundation include/fixy src)
-
-# TestWitness is named as well as the three factories, because friending
-# it is how the capability constructors stay reachable at all.
-#
-# The word boundary after TestWitness is load-bearing.  Without it the
-# pattern also matches TestWitnessCtx, which is a context TYPE alias and
-# mints nothing — a file merely naming that type would read as taking the
-# test path.  Match the factory, not every name that starts like it.
-readonly PATTERN='effects::testing::|[^_[:alnum:]]testing::(bg|init|test)\(\)|TestWitness\b'
+scripts_dir="$(dirname "${BASH_SOURCE[0]}")"
 
 usage() {
     printf 'usage: %s [--self-test]\n' "${BASH_SOURCE[0]}" >&2
     exit 2
 }
 
-# Prints every file under the given root that names the namespace.
-naming_files() {
-    local scan_root="$1"
-    shift
-    local -a dirs=("$@")
-    local -a present=()
-    local d
-    for d in "${dirs[@]}"; do
-        [[ -d "$scan_root/$d" ]] && present+=("$scan_root/$d")
-    done
-    [[ ${#present[@]} -eq 0 ]] && return 0
-    # Strip full-line comments before matching, so prose that merely
-    # mentions the namespace does not read as a use.
-    grep -rEl --include='*.h' --include='*.hpp' --include='*.cpp' \
-        "$PATTERN" "${present[@]}" 2>/dev/null \
-        | while read -r f; do
-            if grep -Ev '^[[:space:]]*(//|\*|/\*)' "$f" | grep -Eq "$PATTERN"; then
-                printf '%s\n' "${f#"$scan_root"/}"
-            fi
-        done
-}
-
-# Prints the allowlisted paths, one per line, comments and prose stripped.
-allowed_paths() {
-    local file="$1"
-    grep -Ev '^[[:space:]]*(#|$)' "$file" | sed -E 's/[[:space:]]*—.*$//' | sed -E 's/[[:space:]]+$//'
-}
-
+# Scans the trees that ship under the root, against the allowlist.
 run_scan() {
-    local scan_root="$1"
-    local list="$2"
-    local rc=0
+    python3 - "$1" "$2" "$scripts_dir" <<'PY'
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
 
-    local -a naming=()
-    mapfile -t naming < <(naming_files "$scan_root" "${SCAN_DIRS[@]}" | sort -u)
+root = Path(sys.argv[1]).resolve()
+allowlist = Path(sys.argv[2])
+sys.path.insert(0, sys.argv[3])
+from cxx_lex import blank, line_of, splice  # noqa: E402
 
-    local -a allowed=()
-    mapfile -t allowed < <(allowed_paths "$list" | sort -u)
+SCAN_DIRS = ("include/foundation", "include/fixy", "include/crucible", "src", "vessel", "tools", "examples")
+SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp", ".c", ".cc", ".cpp", ".cxx", ".cppm"})
+# One use of the door: a factory or the friend named through the testing
+# namespace, however it is qualified, the friend by its own name, and a
+# using-directive or a namespace alias that brings the testing namespace
+# into scope, because the calls it enables name no testing::.
+DOOR = re.compile(r"(?<!\w)testing\s*::\s*(?:bg|init|test|TestWitness)\b"
+                  r"|\bTestWitness\b"
+                  r"|\busing\s+namespace\s+(?:::\s*)?(?:\w+\s*::\s*)*testing\b"
+                  r"|\bnamespace\s+\w+\s*=\s*(?:::\s*)?(?:\w+\s*::\s*)*testing\b")
+ENTRY = re.compile(r"^(?P<path>\S+?)(?: x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
 
-    local f
-    for f in "${naming[@]}"; do
-        [[ -z "$f" ]] && continue
-        if ! printf '%s\n' "${allowed[@]}" | grep -qxF "$f"; then
-            printf 'check-ctx-testing-boundary: %s names foundation::effects::testing and is not allowlisted.\n' "$f" >&2
-            printf '  That namespace returns minted capabilities with no gate, and a capability is what\n' >&2
-            printf '  every ctx-bound mint checks for.  Production code must obtain its context from a\n' >&2
-            printf '  real mint.  If this file genuinely carries a self-test, add it to\n' >&2
-            printf '  scripts/ctx-testing-boundary-allowlist.txt with a sentence saying why.\n' >&2
-            rc=1
-        fi
-    done
 
-    local a
-    for a in "${allowed[@]}"; do
-        [[ -z "$a" ]] && continue
-        if ! printf '%s\n' "${naming[@]}" | grep -qxF "$a"; then
-            printf 'check-ctx-testing-boundary: %s is allowlisted but no longer names the namespace — stale entry, remove it.\n' "$a" >&2
-            rc=1
-        fi
-    done
+def uses_in(path: Path) -> list[int]:
+    """The line of each use of the door in the code of the file.
 
-    return "$rc"
+    Complexity: linear in the length of the file."""
+    joined, joins = splice(path.read_text(errors="replace"))
+    code, _ = blank(joined, blank_literals=True)
+    return [line_of(joined, joins, match.start()) for match in DOOR.finditer(code)]
+
+
+def read_allowlist() -> dict[str, tuple[int, int]]:
+    """Each listed path, the number of uses it admits, and its line in the list."""
+    entries: dict[str, tuple[int, int]] = {}
+    for number, raw in enumerate(allowlist.read_text().splitlines() if allowlist.is_file() else [], 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = ENTRY.match(line)
+        if match is None:
+            print(f"check-ctx-testing-boundary: {allowlist.name}:{number} has no path, count and reason.",
+                  file=sys.stderr)
+            entries[f"<malformed {number}>"] = (0, number)
+            continue
+        entries[match.group("path")] = (int(match.group("count") or 1), number)
+    return entries
+
+
+found: dict[str, list[int]] = defaultdict(list)
+for directory in SCAN_DIRS:
+    base = root / directory
+    if not base.is_dir():
+        continue
+    for path in sorted(base.rglob("*")):
+        if path.suffix in SUFFIXES and path.is_file():
+            lines = uses_in(path)
+            if lines:
+                found[path.relative_to(root).as_posix()] = lines
+
+entries = read_allowlist()
+failed = False
+for path, lines in sorted(found.items()):
+    admitted = entries.get(path, (0, 0))[0]
+    if len(lines) > admitted:
+        failed = True
+        print(f"check-ctx-testing-boundary: {path} uses the testing door {len(lines)} time(s) at lines "
+              f"{', '.join(map(str, lines))}, and its entry admits {admitted}.", file=sys.stderr)
+        print("  The door mints a context with no key, and a context is what every ctx-bound mint checks for.\n"
+              "  Code that ships takes its context from a real mint.  A self-test in a header may use the door:\n"
+              "  give its file an entry with the count and a sentence saying why.", file=sys.stderr)
+for path, (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
+    if len(found.get(path, [])) < admitted:
+        failed = True
+        print(f"check-ctx-testing-boundary: {allowlist.name}:{number} admits {admitted} use(s) in {path}, and the "
+              f"file has {len(found.get(path, []))}.  Lower or remove the entry.", file=sys.stderr)
+total = sum(len(lines) for lines in found.values())
+print(f"check-ctx-testing-boundary: {total} use(s) of the testing door in {len(found)} file(s), "
+      f"{'refused' if failed else 'each one admitted'}.", file=sys.stderr)
+sys.exit(1 if failed else 0)
+PY
 }
 
 self_test() {
-    local tmp
+    local tmp rc
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' RETURN
-    mkdir -p "$tmp/include/foundation/effects"
+    mkdir -p "$tmp/include/foundation/effects" "$tmp/include/crucible/effects" "$tmp/src" "$tmp/test" "$tmp/bench"
 
-    # The violating arm: a production-shaped header reaching for a
-    # capability it was never handed.
-    cat >"$tmp/include/foundation/effects/Planted.h" <<'PLANTED'
+    # A new-tree header and an old-tree source that reach for the door.
+    cat >"$tmp/include/foundation/effects/Planted.h" <<'EOF'
 #pragma once
 inline auto forged() noexcept { return ::foundation::effects::testing::init(); }
-PLANTED
-
-    # The clean arm: a file that mentions the namespace only in prose.
-    # Without this arm the guard could pass by matching nothing at all.
-    cat >"$tmp/include/foundation/effects/PlantedClean.h" <<'CLEAN'
+EOF
+    cat >"$tmp/src/planted.cpp" <<'EOF'
+namespace crucible::effects::testing { struct Door { static int bg() { return 0; } }; }
+inline int old_tree() { using namespace crucible::effects; return testing::bg(); }
+namespace eff = ::crucible::effects;
+inline int through_alias() { return eff::testing::init(); }
+namespace door = ::crucible::effects::testing;
+inline int in_scope() { using namespace crucible::effects::testing; return bg(); }
+EOF
+    # A file that names the door only in a comment and a literal.
+    cat >"$tmp/include/crucible/effects/Clean.h" <<'EOF'
 #pragma once
-// This header explains that effects::testing exists and does not name it
-// in code, so the scan must leave it alone.
+// effects::testing::bg() hands out a context, so this header never calls it.
+inline const char* note = "testing::bg() and TestWitness";
 inline int clean() noexcept { return 0; }
-CLEAN
-
+EOF
+    # A listed self-test header with two uses.
+    cat >"$tmp/include/crucible/effects/Listed.h" <<'EOF'
+#pragma once
+inline void self_test() { (void)::crucible::effects::testing::bg(); (void)::crucible::effects::testing::test(); }
+EOF
+    # Test and bench code is not scanned.
+    printf 'inline auto t() { return effects::testing::test(); }\n' >"$tmp/test/t.cpp"
+    printf 'inline auto b() { return effects::testing::bg(); }\n' >"$tmp/bench/b.cpp"
     local list="$tmp/allowlist.txt"
-    : >"$list"
+    printf '%s\n' 'include/crucible/effects/Listed.h x2 — a planted self-test' >"$list"
 
-    local rc=0
-
-    if run_scan "$tmp" "$list" 2>/dev/null; then
-        printf 'check-ctx-testing-boundary --self-test: FAIL — the planted violation was not reported.\n' >&2
-        rc=1
-    else
-        printf 'check-ctx-testing-boundary --self-test: violating arm reported, as expected.\n'
+    set +e
+    run_scan "$tmp" "$list" >"$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ $rc -ne 1 ]] || ! rg -q -F 'include/foundation/effects/Planted.h uses the testing door 1 time(s)' "$tmp/out" \
+        || ! rg -q -F 'src/planted.cpp uses the testing door 4 time(s)' "$tmp/out"; then
+        printf 'check-ctx-testing-boundary --self-test: FAIL — a use in the new tree or the old tree was not reported (exit %s).\n' "$rc" >&2
+        rg -N '' "$tmp/out" >&2 || true
+        return 2
     fi
-
-    # Now admit the violator and confirm the prose-only file still does
-    # not trip, and that a satisfied list reports clean.
-    printf '%s\n' 'include/foundation/effects/Planted.h  — planted by the self-test' >"$list"
-    if run_scan "$tmp" "$list" 2>/dev/null; then
-        printf 'check-ctx-testing-boundary --self-test: clean arm reported clean, as expected.\n'
-    else
-        printf 'check-ctx-testing-boundary --self-test: FAIL — the prose-only file was reported, or an allowlisted file read as stale.\n' >&2
-        rc=1
+    if rg -q 'Clean\.h|Listed\.h|test/t\.cpp|bench/b\.cpp' "$tmp/out"; then
+        printf 'check-ctx-testing-boundary --self-test: FAIL — a comment, a literal, a listed file or test code was reported.\n' >&2
+        rg -N '' "$tmp/out" >&2 || true
+        return 2
     fi
+    printf 'check-ctx-testing-boundary --self-test: uses in the new tree and the old tree are reported, through a namespace alias, a using-directive and a door alias too, and comments, literals, a listed file and test code are not.\n'
 
-    # And a stale entry must fail, or the list would rot silently.
-    printf '%s\n' 'include/foundation/effects/Planted.h  — planted' \
-                  'include/foundation/effects/Absent.h  — never existed' >"$list"
-    if run_scan "$tmp" "$list" 2>/dev/null; then
-        printf 'check-ctx-testing-boundary --self-test: FAIL — a stale entry was not reported.\n' >&2
-        rc=1
-    else
-        printf 'check-ctx-testing-boundary --self-test: stale entry reported, as expected.\n'
+    # A third use in the listed file exceeds its count.
+    rm -f "$tmp/include/foundation/effects/Planted.h" "$tmp/src/planted.cpp"
+    printf 'inline void more() { (void)::crucible::effects::testing::init(); }\n' \
+        >>"$tmp/include/crucible/effects/Listed.h"
+    set +e
+    run_scan "$tmp" "$list" >"$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ $rc -ne 1 ]] || ! rg -q -F 'Listed.h uses the testing door 3 time(s)' "$tmp/out"; then
+        printf 'check-ctx-testing-boundary --self-test: FAIL — a new use in a listed file was not reported (exit %s).\n' "$rc" >&2
+        rg -N '' "$tmp/out" >&2 || true
+        return 2
     fi
+    printf 'check-ctx-testing-boundary --self-test: a new use in a listed file is reported, as expected.\n'
 
-    return "$rc"
+    # An entry above the count of its file, and an entry for a file with
+    # no use, are stale.
+    printf '%s\n' 'include/crucible/effects/Listed.h x4 — a planted self-test' \
+        'include/crucible/effects/Absent.h — never existed' >"$list"
+    set +e
+    run_scan "$tmp" "$list" >"$tmp/out" 2>&1
+    rc=$?
+    set -e
+    if [[ $rc -ne 1 ]] || ! rg -q -F 'admits 4 use(s) in include/crucible/effects/Listed.h, and the file has 3' "$tmp/out" \
+        || ! rg -q -F 'admits 1 use(s) in include/crucible/effects/Absent.h, and the file has 0' "$tmp/out"; then
+        printf 'check-ctx-testing-boundary --self-test: FAIL — a stale entry was not reported (exit %s).\n' "$rc" >&2
+        rg -N '' "$tmp/out" >&2 || true
+        return 2
+    fi
+    printf 'check-ctx-testing-boundary --self-test: stale entries are reported, as expected.\n'
+
+    # A satisfied list reports clean.
+    printf '%s\n' 'include/crucible/effects/Listed.h x3 — a planted self-test' >"$list"
+    run_scan "$tmp" "$list" >"$tmp/out" 2>&1 || {
+        printf 'check-ctx-testing-boundary --self-test: FAIL — a satisfied list was refused.\n' >&2
+        rg -N '' "$tmp/out" >&2 || true
+        return 2
+    }
+    printf 'check-ctx-testing-boundary --self-test: PASS.\n'
 }
 
 case "${1-}" in
     --self-test) self_test ;;
-    "") run_scan "$root" "$allowlist" ;;
+    "") run_scan "$root" "$root/scripts/ctx-testing-boundary-allowlist.txt" ;;
     *) usage ;;
 esac
