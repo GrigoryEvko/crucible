@@ -1158,6 +1158,33 @@ fixy_neg_compile_test(neg_sess_checkpoint_permission_payload
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<fixy::session::Transferable<")
 
+# ── The event log and the recorder ────────────────────────────────────
+#
+# EventLog.h decodes bytes only through a check of every control byte,
+# and Recording.h writes each step of a plain, crash-watched or
+# checkpoint session.  The test corrupts records one byte at a time.
+fixy_test(test_session_recording)
+
+# HS14 for mint_recorded_session: a value that is no handle, and a log
+# that dies before the recorder does.
+fixy_neg_compile_test(neg_sess_record_not_a_handle
+  "no matching function for call to .mint_recorded_session"
+  "required for the satisfaction of .RecordableHandle<H>. \\[with H = int\\]")
+
+fixy_neg_compile_test(neg_sess_record_temporary_log
+  "no matching function for call to .mint_recorded_session"
+  "cannot convert .fixy::session::SessionEventLog\\(fixy::session::SessionTagId\\{0\\}\\). \\(type .fixy::session::SessionEventLog.\\) to type .fixy::session::SessionEventLog&.")
+
+# An event exists only through a factory or the decoder, and a log does
+# not copy its step counter.
+fixy_neg_compile_test(neg_sess_event_forged
+  "is private within this context"
+  "fixy::session::SessionEvent::SessionEvent\\(fixy::session::SessionOp")
+
+fixy_neg_compile_test(neg_sess_event_log_copied
+  "use of deleted function .fixy::session::SessionEventLog::SessionEventLog\\(const fixy::session::SessionEventLog&\\)"
+  "Pinned<T>: stable address")
+
 # ── Every gate predicate is armed ─────────────────────────────────────
 #
 # The walk in test_armed_roster.cpp reads every predicate the two layers
