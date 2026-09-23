@@ -431,6 +431,26 @@ struct foundation::contracts::armed_cell<sess::is_well_formed> {
     using refuses = witnesses<sess::Continue, sess::Send<int, sess::Continue>>;
 };
 
+// The payload walk of fixy/session/Payload.h.  A token reached owned is
+// classified, and a token behind a pointer, in an optional, or a read
+// proof outside its marker is refused.
+template <>
+struct foundation::contracts::armed_cell<sess::is_permission_classified> {
+    using accepts = witnesses<int, sess::Transferable<int, fp::tag::HugePageTag>,
+                              std::pair<sess::Transferable<int, fp::tag::HugePageTag>, int>>;
+    using refuses =
+        witnesses<sess::Transferable<int, fp::tag::HugePageTag>*,
+                  std::optional<sess::Transferable<int, fp::tag::HugePageTag>>, fp::ReadView<fp::tag::HugePageTag>>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<sess::is_plain_payload> {
+    using accepts = witnesses<int, std::pair<int, double>>;
+    using refuses = witnesses<sess::Transferable<int, fp::tag::HugePageTag>,
+                              std::pair<sess::Transferable<int, fp::tag::HugePageTag>, int>,
+                              sess::Transferable<int, fp::tag::HugePageTag>*>;
+};
+
 namespace {
 
 // ── the ledger ──────────────────────────────────────────────────────
