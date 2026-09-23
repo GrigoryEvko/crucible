@@ -104,8 +104,12 @@ namespace fixy::mmap {
 // WriteCopy and ReadWrite carry identical bits and differ only in the
 // share mode they are meant to accompany.
 
+// The primary has no value.  PROT_NONE is zero, so a primary that
+// answered zero mapped an unknown tag as a page nobody may touch, and
+// the kernel accepted it.  A tag reaches mmap only through a
+// specialization below.
 template <typename Prot>
-struct prot_bits : std::integral_constant<int, 0> {};
+struct prot_bits {};
 template <>
 struct prot_bits<prot::ReadOnly> : std::integral_constant<int, PROT_READ> {};
 template <>
@@ -121,8 +125,10 @@ inline constexpr int prot_bits_v = prot_bits<Prot>::value;
 // The first three are primary modes and a mapping has exactly one.  The
 // last three are flags that stack on any primary.
 
+// The primary has no value, for the same reason: a zero share word is
+// whatever the other flags say.
 template <typename Share>
-struct share_flags : std::integral_constant<int, 0> {};
+struct share_flags {};
 template <>
 struct share_flags<share::Private> : std::integral_constant<int, MAP_PRIVATE> {};
 template <>
@@ -143,24 +149,21 @@ template <typename Share>
 inline constexpr bool is_primary_share_v = std::is_same_v<Share, share::Private> || std::is_same_v<Share, share::Shared>
                                         || std::is_same_v<Share, share::Anonymous>;
 
-// Both bit maps have a primary that answers zero, and zero is a value
-// the kernel accepts: PROT_NONE maps a page nobody may touch, and a
-// share word with no primary bit set is whatever the other flags say.
-// A tag the map has never heard of would therefore fold silently into a
-// mapping that is wrong rather than refused.
-//
-// These two are what the gates read instead of the bits.  They are hand
-// lists, and a hand list cannot see what it omits, so the walk at the
-// foot of this header reads fixy::mmap::prot and fixy::mmap::share and
-// fails if a tag declared there is missing from either.
+// A tag is known when its bit map has an entry.  The predicate is the
+// specialization set, so no second list can drift from the map.  The
+// walk at the foot of this header reads fixy::mmap::prot and
+// fixy::mmap::share and fails if a declared tag has no entry.
 template <typename Prot>
-inline constexpr bool is_known_prot_v = std::is_same_v<Prot, prot::ReadOnly> || std::is_same_v<Prot, prot::WriteCopy>
-                                     || std::is_same_v<Prot, prot::ReadWrite> || std::is_same_v<Prot, prot::Exec>;
+concept MappedProt = requires { prot_bits<Prot>::value; };
 
 template <typename Share>
-inline constexpr bool is_known_share_v = is_primary_share_v<Share> || std::is_same_v<Share, share::Locked>
-                                      || std::is_same_v<Share, share::Populate>
-                                      || std::is_same_v<Share, share::HugeTLB>;
+concept MappedShare = requires { share_flags<Share>::value; };
+
+template <typename Prot>
+inline constexpr bool is_known_prot_v = MappedProt<Prot>;
+
+template <typename Share>
+inline constexpr bool is_known_share_v = MappedShare<Share>;
 
 template <typename Advice>
 struct advice_value : std::integral_constant<int, -1> {};
@@ -291,12 +294,33 @@ using primary_share_of_t = typename primary_share_of<Atoms...>::type;
 
 // An atom of another kind contributes nothing, so the fold is an OR over
 // the whole pack and needs no filtering.
+//
+// The branches are discarded statements, not a conditional expression.
+// A conditional instantiates the bits of the arm the atom does not take,
+// and the closed map refuses the void tag that arm names.
 template <typename A>
-inline constexpr int atom_prot_bits_v = is_with_prot_v<A> ? prot_bits_v<extract_prot_t<std::remove_cvref_t<A>>> : 0;
+[[nodiscard]] consteval int atom_prot_bits() noexcept {
+    if constexpr (is_with_prot_v<A>) {
+        return prot_bits_v<extract_prot_t<std::remove_cvref_t<A>>>;
+    } else {
+        return 0;
+    }
+}
 
 template <typename A>
-inline constexpr int atom_share_flags_v =
-    is_with_share_v<A> ? share_flags_v<extract_share_t<std::remove_cvref_t<A>>> : 0;
+[[nodiscard]] consteval int atom_share_flags() noexcept {
+    if constexpr (is_with_share_v<A>) {
+        return share_flags_v<extract_share_t<std::remove_cvref_t<A>>>;
+    } else {
+        return 0;
+    }
+}
+
+template <typename A>
+inline constexpr int atom_prot_bits_v = atom_prot_bits<A>();
+
+template <typename A>
+inline constexpr int atom_share_flags_v = atom_share_flags<A>();
 
 template <typename... Atoms>
 [[nodiscard]] consteval int fold_prot_bits() noexcept {
@@ -565,17 +589,18 @@ static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::DontNeed>);
 static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::HugePage>,
               "the release-aware door is for the dangerous advice only; the rest go through advise.");
 
-// The bit maps answer zero for a tag they do not know, and the gate
-// reads the known-tag predicates instead.  These cells are the witness
-// that it does: an atom over a tag with no mapping is refused rather
-// than folded into PROT_NONE.
+// A tag with no entry in a bit map has no bits, and a read of them is a
+// compile error.  These cells are the witness: an atom over a tag with
+// no entry is refused at the gate, and it cannot fold into PROT_NONE.
 struct NotAProt final {};
 struct NotAShare final {};
 using A_UnknownProt = ::fixy::atom::mmap::with_prot<NotAProt>;
 using A_UnknownShare = ::fixy::atom::mmap::with_share<NotAShare>;
 
-static_assert(prot_bits_v<NotAProt> == 0, "an unmapped prot tag folds to PROT_NONE, which the kernel accepts.");
-static_assert(share_flags_v<NotAShare> == 0);
+static_assert(!MappedProt<NotAProt>, "a prot tag with no entry must have no bits, not PROT_NONE.");
+static_assert(!MappedShare<NotAShare>, "a share tag with no entry must have no bits, not zero.");
+static_assert(!MappedProt<void> && !MappedShare<void>);
+static_assert(MappedProt<prot::ReadOnly> && MappedShare<share::Private>);
 static_assert(!is_known_prot_v<NotAProt>);
 static_assert(!is_known_share_v<NotAShare>);
 static_assert(all_atom_tags_known_v<A_RO, A_Shared>);
@@ -584,9 +609,9 @@ static_assert(!all_atom_tags_known_v<A_RO, A_Shared, A_UnknownShare>);
 static_assert(!CtxFitsMmapMint<IoBlockCtx, A_UnknownProt, A_Shared>,
               "a prot tag with no PROT_* mapping must be refused at the gate, not mapped as PROT_NONE.");
 
-// Every tag fixy::mmap::prot and fixy::mmap::share declare is known to
-// the bit map above.  The predicates are hand lists, and this is what
-// notices a tag the lists omit.
+// Every tag fixy::mmap::prot and fixy::mmap::share declare has an entry
+// in its bit map.  The known-tag predicates are the maps, so this walk
+// is the check that no declared tag is missing from them.
 template <std::meta::info Ns, bool IsProt>
 [[nodiscard]] consteval bool every_tag_in_is_known_() noexcept {
     static constexpr auto members = std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
@@ -608,11 +633,11 @@ template <std::meta::info Ns, bool IsProt>
 }
 
 static_assert(every_tag_in_is_known_<^^::fixy::mmap::prot, true>(),
-              "fixy/os/Mmap.h: a tag declared in fixy::mmap::prot is missing from is_known_prot_v, so the gate "
-              "would admit it and the fold would map it as PROT_NONE.");
+              "fixy/os/Mmap.h: a tag declared in fixy::mmap::prot has no entry in prot_bits, so the gate "
+              "refuses every mapping that names it.");
 static_assert(every_tag_in_is_known_<^^::fixy::mmap::share, false>(),
-              "fixy/os/Mmap.h: a tag declared in fixy::mmap::share is missing from is_known_share_v, so the gate "
-              "would admit it and the fold would contribute no MAP_* bit for it.");
+              "fixy/os/Mmap.h: a tag declared in fixy::mmap::share has no entry in share_flags, so the "
+              "gate refuses every mapping that names it.");
 
 // A type that is not an advice tag has no value, and the gate reads
 // that rather than instantiating madvise with -1.

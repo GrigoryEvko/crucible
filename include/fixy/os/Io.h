@@ -129,8 +129,11 @@ inline constexpr bool zerocopy_is_simple_transfer_v = zerocopy_is_simple_transfe
 // These are bits of one setup word, so a pack may engage several of
 // different kinds and they fold together.
 
+// The primary has no value.  A zero set up a ring without the flag the
+// caller asked for.  A tag reaches io_uring_setup only through a
+// specialization below.
 template <typename F>
-struct ring_flag_bits : std::integral_constant<std::uint32_t, 0> {};
+struct ring_flag_bits {};
 template <>
 struct ring_flag_bits<ring_flag::IoPoll> : std::integral_constant<std::uint32_t, IORING_SETUP_IOPOLL> {};
 template <>
@@ -144,15 +147,15 @@ struct ring_flag_bits<ring_flag::DeferTaskrun> : std::integral_constant<std::uin
 template <typename F>
 inline constexpr std::uint32_t ring_flag_bits_v = ring_flag_bits<F>::value;
 
-// The bit map answers zero for a flag it does not know, and a ring set
-// up without the flag the caller asked for is worse than one refused.
-// The gate reads this, and the walk at the foot of this header checks
-// that every tag fixy::io::ring_flag declares is on the list.
+// A flag is known when the bit map has an entry.  The predicate is the
+// specialization set, so no second list can drift from the map, and the
+// walk at the foot of this header checks that each tag fixy::io::ring_flag
+// declares has an entry.
 template <typename F>
-inline constexpr bool is_known_ring_flag_v =
-    std::is_same_v<F, ring_flag::IoPoll> || std::is_same_v<F, ring_flag::SqPoll>
-    || std::is_same_v<F, ring_flag::SingleIssuer> || std::is_same_v<F, ring_flag::CoopTaskrun>
-    || std::is_same_v<F, ring_flag::DeferTaskrun>;
+concept MappedRingFlag = requires { ring_flag_bits<F>::value; };
+
+template <typename F>
+inline constexpr bool is_known_ring_flag_v = MappedRingFlag<F>;
 
 namespace detail {
 
@@ -292,8 +295,18 @@ inline constexpr bool cq_entries_is_pow2_or_default_v =
     !has_cq_entries_atom_v<Atoms...> || (is_pow2_(cq_entries_of_v<Atoms...>) && cq_entries_of_v<Atoms...> <= 65536);
 
 template <typename A>
-inline constexpr std::uint32_t atom_ring_flag_bits_v =
-    is_ring_flag_atom_v<A> ? ::fixy::io::ring_flag_bits_v<extract_ring_flag_t<std::remove_cvref_t<A>>> : 0u;
+[[nodiscard]] consteval std::uint32_t atom_ring_flag_bits() noexcept {
+    // A discarded statement, not a conditional expression: a conditional
+    // instantiates the bits of the void tag a non-flag atom names.
+    if constexpr (is_ring_flag_atom_v<A>) {
+        return ::fixy::io::ring_flag_bits_v<extract_ring_flag_t<std::remove_cvref_t<A>>>;
+    } else {
+        return 0u;
+    }
+}
+
+template <typename A>
+inline constexpr std::uint32_t atom_ring_flag_bits_v = atom_ring_flag_bits<A>();
 
 template <typename... Atoms>
 [[nodiscard]] consteval std::uint32_t fold_ring_flags() noexcept {
@@ -614,8 +627,9 @@ static_assert(!engine_is_io_uring_v<FutureEngine>,
               "an engine tag this surface was not told about must be refused, not admitted.");
 static_assert(!zerocopy_is_simple_transfer_v<FutureZerocopy>);
 static_assert(!is_known_ring_flag_v<FutureRingFlag>);
-static_assert(ring_flag_bits_v<FutureRingFlag> == 0, "an unmapped ring flag folds to no bits, which is a ring set "
-                                                     "up without the flag the caller asked for.");
+static_assert(!MappedRingFlag<FutureRingFlag>, "a ring flag with no entry must have no bits, not zero.");
+static_assert(!MappedRingFlag<void>);
+static_assert(MappedRingFlag<ring_flag::IoPoll>);
 static_assert(!engine_is_io_uring_v<void>, "an empty pack names no engine, and void must not pass for one.");
 
 static_assert(!is_pow2_(0));
@@ -706,9 +720,9 @@ static_assert(!std::is_constructible_v<IoUringRing, int, void*, std::size_t, voi
               "the constructor that claims a descriptor and three mappings must not be public: a caller who never "
               "called io_uring_setup could hand it numbers and the destructor would close and unmap them.");
 
-// Every tag fixy::io::ring_flag declares has an IORING_SETUP_* mapping.
-// is_known_ring_flag_v is a hand list, and this is what notices a tag
-// the list omits.
+// Every tag fixy::io::ring_flag declares has an IORING_SETUP_* entry in
+// the bit map.  The known-flag predicate is the map, so this walk is the
+// check that no declared tag is missing from it.
 [[nodiscard]] consteval bool every_ring_flag_is_known_() noexcept {
     static constexpr auto members = std::define_static_array(
         std::meta::members_of(^^::fixy::io::ring_flag, std::meta::access_context::unchecked()));
@@ -726,7 +740,7 @@ static_assert(!std::is_constructible_v<IoUringRing, int, void*, std::size_t, voi
 }
 
 static_assert(every_ring_flag_is_known_(),
-              "fixy/os/Io.h: a tag declared in fixy::io::ring_flag is missing from is_known_ring_flag_v, so the "
-              "gate would admit it and the fold would set no bit for it.");
+              "fixy/os/Io.h: a tag declared in fixy::io::ring_flag has no entry in ring_flag_bits, so the "
+              "gate refuses every ring that names it.");
 
 }  // namespace fixy::io::detail::io_surface_invariants
