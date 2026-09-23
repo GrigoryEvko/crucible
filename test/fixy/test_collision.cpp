@@ -788,6 +788,87 @@ static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::co
               != ::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::as_secret>>);
 static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::constant_time>> != 0);
 
+// ---------------------------------------------------------------------
+// The replay claim is read through bands of other lattices.
+//
+// The canonical order puts HotPath outside DetSafe.  A payload whose
+// DetSafe band sits under another band still claims replay, so each replay
+// rule refuses its pair for it.  The outermost DetSafe band decides.
+
+using PureUnderHotPath = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
+using PureUnderArena = ::fixy::alloc_class::Arena<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
+using ClockUnderHotPath =
+    ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>>;
+using ClockOverPure = ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead,
+                                      ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
+
+static_assert(col::detail::is_replay_deterministic_<PureUnderHotPath>::value);
+static_assert(col::detail::is_replay_deterministic_<PureUnderArena>::value);
+static_assert(!col::detail::is_replay_deterministic_<ClockUnderHotPath>::value);
+static_assert(!col::detail::is_replay_deterministic_<ClockOverPure>::value,
+              "the outermost DetSafe band is the claim, and a weaker outer band takes the claim back");
+static_assert(!col::detail::is_replay_deterministic_<::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>>::value);
+
+static_assert(!rules_of<PureUnderHotPath, at::fp::mode<at::fp::FpReassociate::UnrestrictedRewrite>>::F101_ok);
+static_assert(!rules_of<PureUnderArena, at::simd::avx2>::V101_ok);
+static_assert(rules_of<ClockUnderHotPath, at::simd::avx2>::V101_ok);
+
+// ---------------------------------------------------------------------
+// The grade readers under attack.
+//
+// Each attack is a legal grade that tries to make a reader give the wrong
+// answer.  The attacks that failed are asserted as the answer the reader
+// gives.  The attacks that succeeded are on the ledger below.
+
+struct attack_owner {
+    int value = 0;
+};
+
+// A grade of a different axis that carries a member of the same name is
+// refused by the type check of each floor reader.
+static_assert(!col::detail::is_hw_at_or_above_<at::hw::HwInstruction::Scalar, at::barrier::full_fence>::value);
+static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::None,
+                                                    at::hw::privileged_msr>::value);
+// A host scope is not at or above an accelerator floor.
+static_assert(!col::detail::is_scope_at_or_above_<::foundation::algebra::lattices::MemoryScope::Cluster,
+                                                  at::scope::outer>::value);
+// UMWAIT is neither a kernel entry nor a busy wait.
+static_assert(!col::detail::is_kernel_entry_wait_<at::sync::umwait_c01>::value
+              && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
+// A setting of a different enum with the same underlying value is not named.
+static_assert(!col::detail::fp_mode_has_setting_<at::fp::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
+// A const member function states its signature.
+static_assert(col::detail::is_signature_noexcept_<void (attack_owner::*)() const>::stated);
+static_assert(!col::detail::is_signature_noexcept_<void (attack_owner::*)() const>::value);
+
+// ── the ledger ──────────────────────────────────────────────────────
+//
+// Each entry pins a wrong answer with its reproducer.  The ledger can only
+// shrink: a repair flips the assertion, and the entry leaves in the same
+// edit as the repair.
+
+// A signature the reader has no arm for reads as one that states nothing,
+// so an indirect call through it reads as one that cannot throw, and D001
+// admits it.  The shapes are a ref-qualified or a volatile member
+// function, a C variadic function, and a reference to a function pointer.
+static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<void (attack_owner::*)() &>>::value);
+static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<void (attack_owner::*)() &&>>::value);
+static_assert(
+    !col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<void (attack_owner::*)() volatile>>::value);
+static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<int (*)(char, ...)>>::value);
+static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<int (*&)(char)>>::value);
+static_assert(live_rules<at::dispatch::indirect_call<void (attack_owner::*)() &>>::D001_ok);
+
+// A family named by an opaque tag states no signature, and D001 admits it.
+static_assert(!col::detail::can_indirect_call_throw_<at::dispatch::indirect_call<attack_owner>>::value);
+static_assert(live_rules<at::dispatch::indirect_call<attack_owner>>::D001_ok);
+
+// BarrierStrength is a chain here, so a release store reads as at or above
+// an acquire floor.  Acquire and release are incomparable.  No live rule
+// asks for an acquire floor, so no verdict depends on this answer.
+static_assert(col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
+                                                   at::barrier::release_store>::value);
+
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;

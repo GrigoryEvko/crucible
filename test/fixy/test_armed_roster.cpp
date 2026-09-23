@@ -301,13 +301,16 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_hand
     using refuses = witnesses<int, void, sess::SessionHandle<sess::End, armed_roster_witness::Plain>>;
 };
 
-// A DetSafe band at PhiloxRng or above claims replay.  A band below it,
-// and a payload with no band, claim nothing.
+// A DetSafe band at PhiloxRng or above claims replay, also under a band
+// of another lattice.  A band below it, and a payload with no DetSafe
+// band, claim nothing.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_replay_deterministic_> {
-    using accepts = witnesses<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
-                              ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>>;
-    using refuses = witnesses<int, void, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>>;
+    using accepts = witnesses<
+        ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>, ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>,
+        ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>>;
+    using refuses = witnesses<int, void, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>,
+                              ::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>>;
 };
 
 // The shared bottom and the shared top of the scope lattice pin no trunk.

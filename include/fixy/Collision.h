@@ -1003,6 +1003,11 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
 // is the read.  The primary is false: a payload with no band claims
 // nothing about replay, and every replay rule stands down for it.  void,
 // the pack-only view's payload, takes that primary.
+//
+// A band of another lattice grades the payload and does not change it, so
+// the claim is read through it.  The canonical order puts HotPath outside
+// DetSafe, and HotPath<Hot, DetSafe<Pure, T>> claims replay as fully as
+// DetSafe<Pure, T> does.  The outermost DetSafe band decides.
 template <class Payload>
 struct is_replay_deterministic_ : std::false_type {};
 template <class Payload>
@@ -1010,6 +1015,10 @@ template <class Payload>
 struct is_replay_deterministic_<Payload>
     : std::bool_constant<::foundation::algebra::lattices::DetSafeLattice::leq(
           ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier)> {};
+template <class Payload>
+    requires ::fixy::IsBand<Payload>
+             && (!::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>)
+struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band_value_t<Payload>> {};
 
 // The Observability row, extracted from its grade.
 //
