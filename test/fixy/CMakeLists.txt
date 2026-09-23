@@ -1397,6 +1397,16 @@ fixy_neg_compile_test(neg_sess_async_channel_capacity_too_small
 fixy_neg_compile_test(neg_sess_async_channel_without_capacity
   "no matching function for call to .mint_forked_async_channel"
   "StatesChannelCapacity<ResourceSelf>. \\[with ResourceSelf = .unnamed.::SilentEnd\\]")
+# Refinement keeps each exit, and duality does not keep that property, so
+# the gate asks for refinement in each direction.  A pair in which one
+# side never sends the stop that the other waits for is refused in each
+# order.  GCC prints the parameter of dual_of under a name that can drift.
+fixy_neg_compile_test(neg_sess_async_channel_peer_drops_the_exit
+  "no matching function for call to .mint_forked_async_channel"
+  "is_subtype_async_v<PeerProto, typename fixy::session::dual_of<[A-Za-z0-9]+>::type, ResourcePeer> \\[with PeerProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+fixy_neg_compile_test(neg_sess_async_channel_self_drops_the_exit
+  "no matching function for call to .mint_forked_async_channel"
+  "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, ResourceSelf> \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 
 # The callback entry point closes the handle the body returns, so the
 # body must return it at End.
