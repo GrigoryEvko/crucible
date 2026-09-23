@@ -111,10 +111,10 @@ void feed_trigger(Vigil& vigil, uint32_t iter) {
     }
 }
 
-void wait_mode_compiled(Vigil& vigil) {
+void wait_region_published(Vigil& vigil) {
     uint64_t spins = 0;
-    while (!vigil.is_compiled()) {
-        assert(++spins < 100000000 && "Vigil did not reach COMPILED mode");
+    while (!vigil.has_pending_region()) {
+        assert(++spins < 100000000 && "Vigil did not publish a region");
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -141,7 +141,7 @@ void setup_compiled_vigil(Vigil& vigil) {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
     vigil.flush();
-    wait_mode_compiled(vigil);
+    wait_region_published(vigil);
     align_and_activate(vigil, 3);
 }
 
