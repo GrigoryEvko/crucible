@@ -1,7 +1,7 @@
-// Each entry of an associated context must carry the projection of its
-// role.  Bob's entry here receives the reply label that Alice never
-// sends.  Until fixy/session/Subtype.h lands, association asks for the
-// projected type itself.
+// Each entry of an associated context must refine the projection of its
+// role.  Bob's entry here waits for a label that Alice never sends, and
+// does not accept the label she does send.  A receive with another label
+// is not a subtype, so association refuses the entry.
 //
 // The domain is exact and each queue is empty, as the projection says,
 // so the refusal comes from the local-type clause.

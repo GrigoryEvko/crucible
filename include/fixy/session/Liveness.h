@@ -18,12 +18,12 @@
 //
 // A context that associates with such a global type is live.  The
 // projection of this tree is a subset of the coinductive projection of
-// Definition 4, and its association uses equality in place of
-// subtyping, which is a subset of Definition 21.  So each verdict "live"
-// here is a verdict of Theorem 13.  The synchronous analogue is Theorem
-// 5.8 of Keskin, Yoshida and van Glabbeek, "Formally Verified Liveness
-// with Multiparty Session Types in Rocq" (ITP 2026), which is
-// mechanised.
+// Definition 4, and its association uses synchronous subtyping in place
+// of precise asynchronous subtyping, which is a subset of Definition 21.
+// So each verdict "live" here is a verdict of Theorem 13.  The
+// synchronous analogue is Theorem 5.8 of Keskin, Yoshida and van
+// Glabbeek, "Formally Verified Liveness with Multiparty Session Types in
+// Rocq" (ITP 2026), which is mechanised.
 //
 // Scope.  The result covers ONE session.  Two sessions that each are
 // live can deadlock when a role waits in one session for a peer that
@@ -34,11 +34,14 @@
 // before End breaks the liveness of its peers.  Those conditions belong
 // to the handle, not to the global type.
 //
-// Crash.  The paper has no crash.  A global combinator for a crash
-// branch must add a specialization of each walk in Global.h and of the
-// projection walk, and must restate the liveness condition.  The fair
-// path of Barwell, Scalas, Yoshida and Zhou (CONCUR 2022) needs one
-// more clause: a crash detection that stays enabled eventually occurs.
+// Crash.  The paper has no crash, and is_live_by_construction refuses
+// each crash branch, because project_t refuses it.  For a protocol with
+// crash branches, use crash_live_by_construction_v<G, ReliableSet<...>>
+// and ensure_crash_live_by_construction in fixy/session/Projection.h:
+// balanced+, no runtime construct, and a crash-stop projection onto each
+// role (Theorem 4.31 of Barwell, Hou, Yoshida and Zhou, LMCS 2025).  The
+// fair path of that paper needs one more clause than the fair path
+// here: a crash detection that stays enabled eventually occurs.
 // Without that clause a path can ignore a crash for ever and still
 // count as fair.
 //

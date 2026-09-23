@@ -337,9 +337,9 @@ static_assert(sizeof(BitexactTile) == sizeof(RelaxedTile) && sizeof(BitexactTile
 // ── Messages of a projection ─────────────────────────────────────────
 //
 // A projected local type names the peer and the label of each message
-// in PeerMsg<Peer, Label, Payload>.  PeerMsg has no axiom in the payload
-// order, so two messages are in the order only when they are the same:
-// the peer, the label and the payload must all agree.
+// in PeerMsg<Peer, Label, Payload>.  PeerMsg is covariant in its payload
+// through the axiom peer_message of fixy/session/Projection.h, and exact
+// in its peer and its label.
 
 namespace projected {
 struct Hello {};
@@ -360,9 +360,12 @@ static_assert(s::subtype_mismatch_v<Send<projected::HelloBob, End>, Send<s::Peer
 static_assert(s::subtype_mismatch_v<Send<projected::HelloBob, End>, Send<projected::ByeBob, End>>
                   == tr::mismatch::payload,
               "the label is compared for identity");
-static_assert(!s::is_subtype_sync_v<Send<s::PeerMsg<Bob, projected::Hello, Refined<::fixy::positive, int>>, End>,
+static_assert(s::is_subtype_sync_v<Send<s::PeerMsg<Bob, projected::Hello, Refined<::fixy::positive, int>>, End>,
+                                   Send<projected::HelloBob, End>>,
+              "a payload inside a message follows the payload order, through the congruence axiom peer_message");
+static_assert(!s::is_subtype_sync_v<Send<s::PeerMsg<Bob, projected::Hello, Tagged<int, tags::source::FromUser>>, End>,
                                     Send<projected::HelloBob, End>>,
-              "a payload inside a message is compared for identity, until PeerMsg has a congruence axiom");
+              "an untrusted payload inside a message does not drop its tag");
 static_assert(s::is_subtype_sync_v<Select<Send<projected::HelloBob, End>>, projected::Menu>,
               "an output choice of the subtype can drop the last label");
 static_assert(!s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>>, projected::Menu>,

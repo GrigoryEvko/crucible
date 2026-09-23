@@ -48,12 +48,23 @@
 //
 // Association (Definition 21): a typing context associates with G when
 // it holds an entry for each role of G, and for each such role its local
-// type and its queue refine the projection.  The refinement relation is
-// precise asynchronous subtyping.  Until fixy/session/Subtype.h provides
-// that relation, this header uses equality for local types and queue
-// equivalence for queues.  Equality is a subset of subtyping, so each
-// association this header accepts is an association of the paper.  A
-// role of the context that G does not name must have finished, which is
+// type and its queue refine the projection.  The paper refines with
+// precise asynchronous subtyping.  This header refines a local type with
+// the synchronous relation of fixy/session/Subtype.h, and a queue with
+// queue equivalence.  The synchronous relation is a subset of the
+// asynchronous one, so each association this header accepts is an
+// association of the paper.
+//
+// The relation matches branches by position, and the label of a message
+// is part of its payload PeerMsg<Peer, Label, Payload>.  So a context
+// entry keeps the branch order of the projection.  It can drop branches
+// at the end of a Select and add branches at the end of an Offer.  A
+// context entry that sends a label at a position where the projection
+// has another label is refused, also when the two lists hold the same
+// labels in another order.  The axiom peer_message below makes a message
+// covariant in its payload and exact in its peer and its label.
+//
+// A role of the context that G does not name must have finished, which is
 // the rule of Pischke and Yoshida, "Top-down = Bottom-up" (OOPSLA 2026),
 // Definition 6.9.  Definition 21 does not constrain such a role, but a
 // role that has not finished cannot be live with no peer.
@@ -94,6 +105,8 @@
 #include <fixy/session/Crash.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Protocol.h>
+#include <fixy/session/Subtype.h>
+#include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
 
 #include <cstddef>
@@ -111,6 +124,14 @@ struct PeerMsg {
     using label = Label;
     using payload = Payload;
 };
+
+// A message is below another message when the peers are the same, the
+// labels are the same, and the payload is below in the payload order.
+// Bit 2 marks the position of Payload.
+namespace payload_axioms {
+inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg,
+                                                                              .covariant = 0b100};
+}  // namespace payload_axioms
 
 // One element of an outgoing queue: a message to To.
 template <typename To, typename Label, typename Payload>
@@ -875,9 +896,7 @@ consteval AssociationFault state_fault() {
             return AssociationFault::RoleNotProjectable;
         } else if constexpr (!queues_equivalent_v<typename State::queue, typename P::queue>) {
             return AssociationFault::QueueMismatch;
-        } else if constexpr (!std::is_same_v<typename State::local, typename P::local>) {
-            // TODO(fixy/session/Subtype.h): replace equality with precise
-            // asynchronous subtyping, the refinement of Definition 21.
+        } else if constexpr (!is_subtype_sync_v<typename State::local, typename P::local>) {
             return AssociationFault::LocalMismatch;
         } else {
             return AssociationFault::None;
@@ -923,8 +942,8 @@ template <typename G>
     requires global::is_global_well_formed_v<G>
 using projected_context_t = typename decltype(detail::proj::context_select<G>(global::roles_t<G>{}))::type;
 
-// Definition 21 of the paper, with equality in place of subtyping until
-// fixy/session/Subtype.h lands.  The context holds each role of G once.
+// Definition 21 of the paper, with the synchronous relation in place of
+// precise asynchronous subtyping.  The context holds each role of G once.
 // A role of the context that G does not name must have finished.  G must
 // be well-formed, and the association is false when G is not balanced+.
 // A projection exists for some global types that are not balanced+, so
@@ -972,9 +991,10 @@ consteval void ensure_associated() noexcept {
                           "hold, for some receiver, the messages that the global type has en route from that role.");
         } else if constexpr (fault == F::LocalMismatch) {
             static_assert(detail::proj::dependent_false_v<Ctx, G>,
-                          "fixy::session::diagnostic [Association_Local_Mismatch]: the local type of a role is not "
-                          "its projection.  Until fixy/session/Subtype.h lands, association asks for the projected "
-                          "type itself.");
+                          "fixy::session::diagnostic [Association_Local_Mismatch]: the local type of a role does not "
+                          "refine its projection (is_subtype_sync_v).  Branches match by position: keep the branch "
+                          "order of the projection, drop branches only at the end of a Select, and add branches "
+                          "only at the end of an Offer.  subtype_reason_t<Local, Projected> names the failed pair.");
         }
     }
 }
