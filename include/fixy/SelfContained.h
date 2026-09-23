@@ -53,13 +53,9 @@
 // the number of distinct types reached, because a type reached twice is
 // read once.
 
-#include <array>
 #include <cstddef>
-#include <initializer_list>
-#include <memory_resource>
 #include <meta>
 #include <ranges>
-#include <set>
 #include <type_traits>
 #include <vector>
 
@@ -263,17 +259,6 @@ struct BorrowsElements {
     [[nodiscard]] constexpr int const* begin() const noexcept { return first; }
     [[nodiscard]] constexpr int const* end() const noexcept { return last; }
 };
-// A program-defined range whose storage is a standard container.
-struct OwnsElements {
-    std::vector<int> items;
-    [[nodiscard]] auto begin() const noexcept { return items.begin(); }
-    [[nodiscard]] auto end() const noexcept { return items.end(); }
-};
-// A comparator that reads an order from outside the container.
-struct OrderFromOutside {
-    bool const* reversed = nullptr;
-    [[nodiscard]] bool operator()(int lhs, int rhs) const noexcept { return *reversed ? rhs < lhs : lhs < rhs; }
-};
 
 static_assert(SelfContained<int> && SelfContained<Plain> && SelfContained<Holds> && SelfContained<EitherValue>);
 static_assert(!SelfContained<int*> && !SelfContained<int const*> && !SelfContained<int&>);
@@ -283,20 +268,15 @@ static_assert(!SelfContained<EitherPointer>, "a union member that points is a wa
 static_assert(!SelfContained<HoldsMutable> && !SelfContained<NestsMutable> && !SelfContained<DerivesMutable>,
               "a mutable member anywhere on a by-value path is writable through a const reference");
 static_assert(std::is_same_v<outside_reach_t<NestsMutable>, HoldsMutable>);
-static_assert(SelfContained<std::vector<int>> && SelfContained<std::vector<std::vector<Plain>>>);
-static_assert(!SelfContained<std::vector<int*>>, "a container holds its elements, and its elements are read");
+static_assert(SelfContained<std::vector<int>> && !SelfContained<std::vector<int*>>,
+              "a container holds its elements, and its elements are read");
 static_assert(!SelfContained<BorrowsElements>, "a range the standard does not declare is walked by its members");
-static_assert(SelfContained<OwnsElements>, "its members hold a standard container, and that container owns");
-static_assert(!SelfContained<std::initializer_list<int>>, "a trivially copyable range cannot own what it points at");
-static_assert(SelfContained<std::array<int, 4>>, "a trivially copyable range is walked, and an array member owns");
-static_assert(SelfContained<std::set<int>> && !SelfContained<std::set<int, OrderFromOutside>>,
-              "a comparator is part of the container, and one that reads outside state reaches out");
-static_assert(SelfContained<std::vector<int>> && !SelfContained<std::pmr::vector<int>>,
-              "an allocator that names a memory resource reaches out, because the owner of the resource can free it");
-static_assert(!SelfContained<std::vector<void (*)()>>);
 static_assert(std::is_same_v<outside_reach_t<PointsDeep>, int*>, "the diagnostic names the part that reaches out");
 static_assert(std::is_same_v<outside_reach_t<Holds>, self_contained::nothing_reaches_out>);
-static_assert(NoWayOut<outside_reach_t<std::vector<std::vector<int>>>>);
+
+// The cases over the rest of the standard library, a comparator and an
+// allocator among them, live in test/fixy/test_versioned_budgeted_attacks.cpp
+// so that a header that includes this one does not pay for them.
 
 }  // namespace detail::self_contained_self_test
 

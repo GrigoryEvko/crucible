@@ -24,7 +24,9 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <memory_resource>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -271,6 +273,26 @@ static_assert(refused_by_both<std::initializer_list<int>>);
 static_assert(carried_by_both<int> && carried_by_both<std::string> && carried_by_both<std::vector<int>>);
 static_assert(carried_by_both<std::optional<std::string>> && carried_by_both<std::map<int, std::string>>);
 static_assert(carried_by_both<std::array<int, 4>> && carried_by_both<std::variant<int, std::string>>);
+
+// A standard container is read by its elements and its type arguments.
+// These cases sit here and not in SelfContained.h, so that a header that
+// includes it does not pay for them.
+struct OwnsElements {
+    std::vector<int> items;
+    [[nodiscard]] auto begin() const noexcept { return items.begin(); }
+    [[nodiscard]] auto end() const noexcept { return items.end(); }
+};
+struct OrderFromOutside {
+    bool const* reversed = nullptr;
+    [[nodiscard]] bool operator()(int lhs, int rhs) const noexcept { return *reversed ? rhs < lhs : lhs < rhs; }
+};
+static_assert(carried_by_both<std::vector<std::vector<int>>> && carried_by_both<OwnsElements>,
+              "a program range whose members hold a standard container owns what that container owns");
+static_assert(carried_by_both<std::set<int>> && refused_by_both<std::set<int, OrderFromOutside>>,
+              "a comparator is part of the container, and one that reads outside state reaches out");
+static_assert(refused_by_both<std::pmr::vector<int>>,
+              "an allocator that names a memory resource reaches out, because the owner of the resource can free it");
+static_assert(refused_by_both<std::vector<void (*)()>>);
 
 // An owned payload is a copy, so a write to the source after the claim
 // does not reach it.
