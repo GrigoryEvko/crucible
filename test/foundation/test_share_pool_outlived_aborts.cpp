@@ -28,7 +28,8 @@ struct Region {
 [[nodiscard]] bool attack_aborts_with(void (*attack)(), const char* expected) {
     int channel[2];
     if (::pipe(channel) != 0) return false;
-    const ::pid_t child = ::fork();
+    // The child runs the attack, so that its abort is the result the test reads.
+    const ::pid_t child = ::fork();  // SPAWN-PROCESS-OK: a death test observes the abort in a child
     if (child < 0) return false;
     if (child == 0) {
         ::dup2(channel[1], 2);
@@ -45,7 +46,7 @@ struct Region {
     }
     ::close(channel[0]);
     int status = 0;
-    ::waitpid(child, &status, 0);
+    ::waitpid(child, &status, 0);  // SPAWN-PROCESS-OK: the parent reaps the child of the death test
     const bool aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
     const bool named = text.find(expected) != std::string::npos;
     if (!aborted || !named) std::fprintf(stderr, "child output:\n%s\n", text.c_str());

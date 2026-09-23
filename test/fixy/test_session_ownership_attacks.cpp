@@ -22,6 +22,7 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
+#include <algorithm>
 #include <any>
 #include <array>
 #include <atomic>
@@ -636,11 +637,17 @@ concept TokenMovesTwice = requires(fp::Permission<Tag>& token) {
     sess::Transferable<int, Tag>{2, std::move(token)};
 };
 
-static_assert(ReadProofOutlivesItsSource<X>);
-static_assert(TokenMovesTwice<X>);
-
-inline constexpr std::size_t kLedgerSize = 2;
-static_assert(kLedgerSize == 2, "the ledger only shrinks.  A new entry needs a review of why it cannot be refused.");
+// Each entry is true while its attack compiles.  An attack that stops
+// compiling turns its entry false, and the assertion below then names a
+// repair: delete the entry.  The ledger only shrinks, and a new entry
+// needs a review of why the discipline cannot refuse it.
+inline constexpr bool pinned_attacks[] = {
+    ReadProofOutlivesItsSource<X>,
+    TokenMovesTwice<X>,
+};
+static_assert(std::ranges::all_of(pinned_attacks, std::identity{}),
+              "a pinned attack no longer compiles.  The discipline refuses it now, so delete its ledger entry.");
+inline constexpr std::size_t kLedgerSize = std::size(pinned_attacks);
 
 namespace {
 
