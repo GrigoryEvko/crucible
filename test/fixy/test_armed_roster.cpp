@@ -66,7 +66,17 @@ struct Loader {
 };
 
 using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg>>;
+using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>;
 using NvEnd = sess::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, sess::End>;
+
+// A machine with one edge, Idle to Busy, for the transition predicate.
+struct Idle {};
+struct Busy {};
+struct Done {};
+namespace idle_edges {
+inline constexpr ::foundation::fail_closed::edge<Idle, Busy> idle_to_busy{};
+}  // namespace idle_edges
+using IdleMachine = ::fixy::Machine<Idle, ^^idle_edges>;
 
 }  // namespace armed_roster_witness
 
@@ -151,6 +161,26 @@ template <>
 struct foundation::contracts::armed_cell<::foundation::diag::is_diagnostic> {
     using accepts = witnesses<::foundation::diag::Diagnostic<::foundation::diag::EffectRowMismatch, int>>;
     using refuses = witnesses<int, ::foundation::diag::EffectRowMismatch>;
+};
+
+// A row is a subrow when each of its effects is in the other row.  A
+// shape that is not a row is in no subrow relation.
+template <>
+struct foundation::contracts::armed_instances<^^fe::is_subrow> {
+    using accepts = witnesses<fe::is_subrow<Row<>, Row<Effect::IO>>,
+                              fe::is_subrow<Row<Effect::IO>, Row<Effect::Bg, Effect::IO>>>;
+    using refuses = witnesses<fe::is_subrow<Row<Effect::IO>, Row<>>,
+                              fe::is_subrow<Row<Effect::IO, Effect::Bg>, Row<Effect::IO>>, fe::is_subrow<int, Row<>>>;
+};
+
+// A context admits a tuple of permission tags when its row holds the row
+// of each tag.  HugePageTag carries the IO row.
+template <>
+struct foundation::contracts::armed_instances<^^fp::detail::ctx_admits_tuple> {
+    using accepts = witnesses<fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<w::RegionTag>>,
+                              fp::detail::ctx_admits_tuple<w::BgIoCtx, std::tuple<w::RegionTag, fp::tag::HugePageTag>>>;
+    using refuses = witnesses<fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<fp::tag::HugePageTag>>,
+                              fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<w::RegionTag, fp::tag::HugePageTag>>>;
 };
 
 // ── fixy: the throws atom, spawn and io ─────────────────────────────
@@ -271,6 +301,137 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_hand
     using refuses = witnesses<int, void, sess::SessionHandle<sess::End, armed_roster_witness::Plain>>;
 };
 
+// A DetSafe band at PhiloxRng or above claims replay.  A band below it,
+// and a payload with no band, claim nothing.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_replay_deterministic_> {
+    using accepts = witnesses<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
+                              ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>>;
+    using refuses = witnesses<int, void, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>>;
+};
+
+// The shared bottom and the shared top of the scope lattice pin no trunk.
+// An atom of a different axis names no scope.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_scope_trunk_pinned_> {
+    using accepts = witnesses<at::scope::cta, at::scope::gpu, at::scope::inner>;
+    using refuses = witnesses<at::scope::thread, at::scope::system, int, at::barrier::seq_cst>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_scope_on_host_trunk_> {
+    using accepts = witnesses<at::scope::inner, at::scope::outer>;
+    using refuses = witnesses<at::scope::cta, at::scope::gpu, int>;
+};
+
+// A portable or scalar ISA pins no trunk.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_isa_trunk_pinned_> {
+    using accepts = witnesses<at::simd::avx2, at::simd::neon, at::simd::sve2>;
+    using refuses = witnesses<at::simd::scalar, at::simd::portable, int>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_isa_on_arm_trunk_> {
+    using accepts = witnesses<at::simd::neon, at::simd::sve2>;
+    using refuses = witnesses<at::simd::avx2, at::simd::sse2, int>;
+};
+
+// UMWAIT is neither a kernel entry nor a busy wait, so it is in the
+// refusing list of the two cells.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_kernel_entry_wait_> {
+    using accepts = witnesses<at::sync::block, at::sync::park, at::sync::acquire_wait>;
+    using refuses = witnesses<at::sync::umwait_c01, at::sync::bounded_spin, at::sync::spin_pause, int>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_busy_wait_> {
+    using accepts = witnesses<at::sync::bounded_spin, at::sync::spin_pause>;
+    using refuses = witnesses<at::sync::umwait_c01, at::sync::block, int>;
+};
+
+// The value of a signature that is stated.  A type that states no
+// signature answers true with `stated` false, and this cell does not pin
+// that reading, because the rules read `stated` first.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_signature_noexcept_> {
+    using accepts = witnesses<void() noexcept, int (*)(char) noexcept, int (w::Plain::*)() const noexcept>;
+    using refuses = witnesses<void(), int (&)(char), void (w::Plain::*)()>;
+};
+
+// An indirect call can throw when its family states a signature that is
+// not noexcept.  A family that states no signature is not pinned here.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::can_indirect_call_throw_> {
+    using accepts = witnesses<at::dispatch::indirect_call<int(char)>, at::dispatch::indirect_call<void (*)()>>;
+    using refuses = witnesses<at::dispatch::indirect_call<int(char) noexcept>,
+                              at::dispatch::indirect_call<void (*)() noexcept>, int>;
+};
+
+// A subprocess has its own copy of the address space, so it cannot
+// outlive the frame that it borrows from.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::can_spawn_outlive_the_frame_> {
+    using accepts = witnesses<at::spawn::detach_with<"drain">, at::spawn::syscall_only<"loader">>;
+    using refuses = witnesses<at::spawn::subprocess<"helper">, int>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::control_flow_has_suspension_> {
+    using accepts = witnesses<at::ctrl::coroutine<at::ctrl::async_task>>;
+    using refuses = witnesses<int, at::ctrl::longjmp_unsafe<"setjmp island">, at::ctrl::throws<>>;
+};
+
+// The floor readers take a value and a grade, so each has an instance
+// cell.  An atom of a different axis carries a member of the same name,
+// and the type check of each reader refuses it.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_hw_at_or_above_> {
+    using Tier = ::fixy::atom::hw::HwInstruction;
+    using accepts = witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::NonDeterministicTsc, at::hw::privileged_msr>,
+                              ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::hw::scalar>>;
+    using refuses = witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::PrivilegedMsr, at::hw::vectorizable>,
+                              ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, int>,
+                              ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::barrier::full_fence>>;
+};
+
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_barrier_at_or_above_> {
+    using Strength = ::foundation::algebra::lattices::BarrierStrength;
+    using accepts = witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::full_fence>,
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, at::barrier::seq_cst>>;
+    using refuses = witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::acq_rel>,
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, int>,
+                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::None, at::hw::privileged_msr>>;
+};
+
+// The scope lattice has two trunks, so a host scope is not at or above an
+// accelerator floor.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_scope_at_or_above_> {
+    using Scope = ::foundation::algebra::lattices::MemoryScope;
+    using accepts = witnesses<::fixy::collision::detail::is_scope_at_or_above_<Scope::Cluster, at::scope::gpu>,
+                              ::fixy::collision::detail::is_scope_at_or_above_<Scope::Cta, at::scope::system>>;
+    using refuses = witnesses<::fixy::collision::detail::is_scope_at_or_above_<Scope::Cluster, at::scope::inner>,
+                              ::fixy::collision::detail::is_scope_at_or_above_<Scope::Gpu, at::scope::cta>,
+                              ::fixy::collision::detail::is_scope_at_or_above_<Scope::Cluster, int>>;
+};
+
+// A mode names only the settings it was written with.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::collision::detail::fp_mode_has_setting_> {
+    using accepts = witnesses<
+        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, at::fp::mode<at::fp::FpContract::Fast>>,
+        ::fixy::collision::detail::fp_mode_has_setting_<
+            at::fp::FpReassociate::UnrestrictedRewrite,
+            at::fp::mode<at::fp::FpContract::Fast, at::fp::FpReassociate::UnrestrictedRewrite>>>;
+    using refuses = witnesses<
+        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Off, at::fp::mode<at::fp::FpContract::Fast>>,
+        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, at::fp::mode<>>,
+        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, int>>;
+};
+
 // ── fixy: concurrency handles and pipelines ─────────────────────────
 
 template <>
@@ -381,6 +542,17 @@ struct foundation::contracts::armed_cell<::fixy::is_scoped_view> {
     using refuses = witnesses<int, w::Plain>;
 };
 
+// The third argument says whether the first is a machine.  A machine
+// admits its declared edge and the diagonal, and no other move.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::mach::detail::can_transition_impl> {
+    using accepts = witnesses<::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Busy, true>,
+                              ::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Idle, true>>;
+    using refuses = witnesses<::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Done, true>,
+                              ::fixy::mach::detail::can_transition_impl<::fixy::Machine<w::Busy, ^^w::idle_edges>, w::Idle, true>,
+                              ::fixy::mach::detail::can_transition_impl<int, double, false>>;
+};
+
 // ── fixy: session protocol shapes ───────────────────────────────────
 
 template <>
@@ -487,12 +659,6 @@ namespace {
 // why.  The ledger can only shrink: an entry that gains a cell, or that
 // names a predicate the walk stops finding, fails the walk.
 inline constexpr std::meta::info unarmed_ledger[] = {
-    // Two type arguments.  A cell takes a predicate over one, so the
-    // walk counts these unproven.
-    ^^::foundation::effects::is_subrow,
-    ^^::foundation::permissions::detail::ctx_admits_tuple,
-    // Three arguments, one of them a value.
-    ^^::fixy::mach::detail::can_transition_impl,
     // A stage names a function pointer, and no witness here can name a
     // stage without the stage machinery the pipeline tests build.
     ^^::fixy::concurrent::detail::is_stage,

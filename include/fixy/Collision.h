@@ -1004,10 +1004,10 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
 // nothing about replay, and every replay rule stands down for it.  void,
 // the pack-only view's payload, takes that primary.
 template <class Payload>
-struct replay_deterministic_ : std::false_type {};
+struct is_replay_deterministic_ : std::false_type {};
 template <class Payload>
     requires ::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>
-struct replay_deterministic_<Payload>
+struct is_replay_deterministic_<Payload>
     : std::bool_constant<::foundation::algebra::lattices::DetSafeLattice::leq(
           ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier)> {};
 
@@ -1045,26 +1045,26 @@ struct observability_row_of_<::fixy::atom::observe::surface<Es...>> {
 // fixy/atoms/Hw.h's own at_or_above, so a rule and the atom header
 // cannot disagree about which way the ladder runs.
 template <::fixy::atom::hw::HwInstruction Floor, class G>
-struct hw_at_or_above_ : std::false_type {};
+struct is_hw_at_or_above_ : std::false_type {};
 template <::fixy::atom::hw::HwInstruction Floor, class G>
     requires requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>,
                                                      ::fixy::atom::hw::HwInstruction>
-struct hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or_above(G::tier, Floor)> {};
+struct is_hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or_above(G::tier, Floor)> {};
 
 // The provided fence strength, read against a floor.  The primary is
 // false: a binding that names no strength provides no fence, so there
 // is nothing for V301 to refuse on it.  The chain order comes from
 // fixy/atoms/Barrier.h's own at_or_above, which is the lattice's leq in
 // its admission direction, so a rule cannot invert the ladder.  Both
-// this and hw_at_or_above_ read a member named `tier`; the type check
+// this and is_hw_at_or_above_ read a member named `tier`; the type check
 // in the constraint is what keeps each from answering for the other's
 // atoms.
 template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
-struct barrier_at_or_above_ : std::false_type {};
+struct is_barrier_at_or_above_ : std::false_type {};
 template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
     requires requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>,
                                                      ::foundation::algebra::lattices::BarrierStrength>
-struct barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier::at_or_above(G::tier, Floor)> {};
+struct is_barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier::at_or_above(G::tier, Floor)> {};
 
 // The reached scope, read against a floor.  The primary is false: a
 // binding that names no scope publishes to nobody in particular, so
@@ -1074,11 +1074,11 @@ struct barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier
 // Cluster are incomparable — and a rule reading this stands down for it
 // rather than reading "incomparable" as "wide".
 template <::foundation::algebra::lattices::MemoryScope Floor, class G>
-struct scope_at_or_above_ : std::false_type {};
+struct is_scope_at_or_above_ : std::false_type {};
 template <::foundation::algebra::lattices::MemoryScope Floor, class G>
     requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
                                                       ::foundation::algebra::lattices::MemoryScope>
-struct scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at_or_above(G::scope, Floor)> {};
+struct is_scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at_or_above(G::scope, Floor)> {};
 
 // The two trunk readings V402 composes, and the ISA pin V101 reads.
 // Each primary is false: a binding that names no scope or no ISA pins
@@ -1086,30 +1086,30 @@ struct scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at
 // predicates come from fixy/atoms/Scope.h and fixy/atoms/Simd.h, so the
 // division is read from one place per axis.
 template <class G>
-struct scope_trunk_pinned_ : std::false_type {};
+struct is_scope_trunk_pinned_ : std::false_type {};
 template <class G>
     requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
                                                       ::foundation::algebra::lattices::MemoryScope>
-struct scope_trunk_pinned_<G> : std::bool_constant<::fixy::atom::scope::is_trunk_pinned(G::scope)> {};
+struct is_scope_trunk_pinned_<G> : std::bool_constant<::fixy::atom::scope::is_trunk_pinned(G::scope)> {};
 
 template <class G>
-struct scope_on_host_trunk_ : std::false_type {};
+struct is_scope_on_host_trunk_ : std::false_type {};
 template <class G>
     requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
                                                       ::foundation::algebra::lattices::MemoryScope>
-struct scope_on_host_trunk_<G> : std::bool_constant<::fixy::atom::scope::on_host_trunk(G::scope)> {};
+struct is_scope_on_host_trunk_<G> : std::bool_constant<::fixy::atom::scope::on_host_trunk(G::scope)> {};
 
 template <class G>
-struct isa_trunk_pinned_ : std::false_type {};
+struct is_isa_trunk_pinned_ : std::false_type {};
 template <class G>
     requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
-struct isa_trunk_pinned_<G> : std::bool_constant<::fixy::atom::simd::is_trunk_pinned(G::isa)> {};
+struct is_isa_trunk_pinned_<G> : std::bool_constant<::fixy::atom::simd::is_trunk_pinned(G::isa)> {};
 
 template <class G>
-struct isa_on_arm_trunk_ : std::false_type {};
+struct is_isa_on_arm_trunk_ : std::false_type {};
 template <class G>
     requires requires { G::isa; } && std::is_same_v<std::remove_cvref_t<decltype(G::isa)>, ::fixy::atom::simd::SimdIsa>
-struct isa_on_arm_trunk_<G> : std::bool_constant<::fixy::atom::simd::on_arm_trunk(G::isa)> {};
+struct is_isa_on_arm_trunk_<G> : std::bool_constant<::fixy::atom::simd::on_arm_trunk(G::isa)> {};
 
 // Whether the FP mode NAMES one setting value.  The atom on this axis is
 // a product rather than a family, so a rule asks it about one setting at
@@ -1119,10 +1119,10 @@ struct isa_on_arm_trunk_<G> : std::bool_constant<::fixy::atom::simd::on_arm_trun
 // enumerator — reassociation forbidden, contraction off — and those are
 // exactly the values no rule refuses.
 template <auto Wanted, class G>
-struct fp_names_ : std::false_type {};
+struct fp_mode_has_setting_ : std::false_type {};
 template <auto Wanted, class G>
     requires requires { G::template names<Wanted>; }
-struct fp_names_<Wanted, G> : std::bool_constant<G::template names<Wanted>> {};
+struct fp_mode_has_setting_<Wanted, G> : std::bool_constant<G::template names<Wanted>> {};
 
 // Whether the Effect row carries Init, which is the context V202 asks a
 // privileged tier to be reached from.  Same shape as row_admits_bg_.
@@ -1142,16 +1142,16 @@ struct row_admits_init_<::fixy::atom::with<Es...>>
 // functions.  A grade that moved sides would otherwise move for the lift
 // and not for the rules.
 template <class G>
-struct wait_enters_the_kernel_ : std::false_type {};
+struct is_kernel_entry_wait_ : std::false_type {};
 template <class G>
     requires requires { G::strategy; }
-struct wait_enters_the_kernel_<G> : std::bool_constant<::fixy::atom::sync::enters_the_kernel(G::strategy)> {};
+struct is_kernel_entry_wait_<G> : std::bool_constant<::fixy::atom::sync::enters_the_kernel(G::strategy)> {};
 
 template <class G>
-struct wait_burns_the_core_ : std::false_type {};
+struct is_busy_wait_ : std::false_type {};
 template <class G>
     requires requires { G::strategy; }
-struct wait_burns_the_core_<G> : std::bool_constant<::fixy::atom::sync::burns_the_core(G::strategy)> {};
+struct is_busy_wait_<G> : std::bool_constant<::fixy::atom::sync::burns_the_core(G::strategy)> {};
 
 template <class G>
 struct row_admits_alloc_or_io_ : std::false_type {};
@@ -1185,33 +1185,35 @@ struct is_recursing_<::fixy::atom::dispatch::recurses<MaxDepth>> : std::true_typ
 // state a signature; anything else — the opaque tag class a family is
 // often named by — states none, and D001 has nothing to read on it.
 template <class Signature>
-struct signature_noexcept_ {
+struct is_signature_noexcept_ {
     static constexpr bool stated = false;
     static constexpr bool value = true;
 };
 template <class R, class... Args, bool IsNoexcept>
-struct signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {
+struct is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {
     static constexpr bool stated = true;
     static constexpr bool value = IsNoexcept;
 };
 template <class R, class... Args, bool IsNoexcept>
-struct signature_noexcept_<R (*)(Args...) noexcept(IsNoexcept)> : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+struct is_signature_noexcept_<R (*)(Args...) noexcept(IsNoexcept)>
+    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
 template <class R, class... Args, bool IsNoexcept>
-struct signature_noexcept_<R (&)(Args...) noexcept(IsNoexcept)> : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+struct is_signature_noexcept_<R (&)(Args...) noexcept(IsNoexcept)>
+    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
 template <class R, class Owner, class... Args, bool IsNoexcept>
-struct signature_noexcept_<R (Owner::*)(Args...) noexcept(IsNoexcept)>
-    : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+struct is_signature_noexcept_<R (Owner::*)(Args...) noexcept(IsNoexcept)>
+    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
 template <class R, class Owner, class... Args, bool IsNoexcept>
-struct signature_noexcept_<R (Owner::*)(Args...) const noexcept(IsNoexcept)>
-    : signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
+struct is_signature_noexcept_<R (Owner::*)(Args...) const noexcept(IsNoexcept)>
+    : is_signature_noexcept_<R(Args...) noexcept(IsNoexcept)> {};
 template <class Signature>
-struct signature_noexcept_<Signature const> : signature_noexcept_<Signature> {};
+struct is_signature_noexcept_<Signature const> : is_signature_noexcept_<Signature> {};
 
 template <class G>
-struct indirect_call_may_throw_ : std::false_type {};
+struct can_indirect_call_throw_ : std::false_type {};
 template <class Family>
-struct indirect_call_may_throw_<::fixy::atom::dispatch::indirect_call<Family>>
-    : std::bool_constant<signature_noexcept_<Family>::stated && !signature_noexcept_<Family>::value> {};
+struct can_indirect_call_throw_<::fixy::atom::dispatch::indirect_call<Family>>
+    : std::bool_constant<is_signature_noexcept_<Family>::stated && !is_signature_noexcept_<Family>::value> {};
 
 // A spawn no structured join ties to the caller's frame, in a child that
 // shares the caller's address space.  detach_with is never joined, and
@@ -1220,11 +1222,11 @@ struct indirect_call_may_throw_<::fixy::atom::dispatch::indirect_call<Family>>
 // runs in its own copy of the address space, so a borrow there refers to
 // a copy and cannot dangle into the parent's frame.
 template <class G>
-struct spawn_outlives_the_frame_ : std::false_type {};
+struct can_spawn_outlive_the_frame_ : std::false_type {};
 template <::fixy::atom::ctrl::rationale Rationale>
-struct spawn_outlives_the_frame_<::fixy::atom::spawn::detach_with<Rationale>> : std::true_type {};
+struct can_spawn_outlive_the_frame_<::fixy::atom::spawn::detach_with<Rationale>> : std::true_type {};
 template <::fixy::atom::ctrl::rationale Rationale>
-struct spawn_outlives_the_frame_<::fixy::atom::spawn::syscall_only<Rationale>> : std::true_type {};
+struct can_spawn_outlive_the_frame_<::fixy::atom::spawn::syscall_only<Rationale>> : std::true_type {};
 
 // ── The failure path, in the two spellings the tree has ──────────────
 //
@@ -1354,9 +1356,9 @@ struct is_live_handle_payload_
 // the same suspension that atom::coroutine states on Reentrancy, written
 // on the axis of the ways a frame is left.
 template <class G>
-struct suspends_in_control_flow_ : std::false_type {};
+struct control_flow_has_suspension_ : std::false_type {};
 template <class SuspensionPolicy>
-struct suspends_in_control_flow_<::fixy::atom::ctrl::coroutine<SuspensionPolicy>> : std::true_type {};
+struct control_flow_has_suspension_<::fixy::atom::ctrl::coroutine<SuspensionPolicy>> : std::true_type {};
 
 }  // namespace detail
 
@@ -1421,7 +1423,7 @@ struct rules_of {
     // one axis only would let a pack avoid every rule below by a write of
     // the suspension on the other axis.
     static constexpr bool suspends_in_control_flow =
-        detail::suspends_in_control_flow_<typename G::template on<Axis::ControlFlow>>::value;
+        detail::control_flow_has_suspension_<typename G::template on<Axis::ControlFlow>>::value;
     static constexpr bool concurrent = coroutine || suspends_in_control_flow || row_bg;
 
     static constexpr bool L002_ok = !(borrow && concurrent);
@@ -1447,9 +1449,9 @@ struct rules_of {
 
     // The one premise read from the payload rather than the pack: the
     // DetSafe band's claim that the bytes are replay-deterministic.  See
-    // detail::replay_deterministic_ for what the claim is and where the
+    // detail::is_replay_deterministic_ for what the claim is and where the
     // old catalog left it.  False under the pack-only view.
-    static constexpr bool replay_deterministic = detail::replay_deterministic_<Payload>::value;
+    static constexpr bool replay_deterministic = detail::is_replay_deterministic_<Payload>::value;
     static constexpr bool row_alloc_or_io =
         detail::row_admits_alloc_or_io_<typename G::template on<Axis::Effect>>::value;
 
@@ -1490,9 +1492,9 @@ struct rules_of {
     // rewritten here, so the rules and the atom lift cannot disagree
     // about where the line falls.
     static constexpr bool kernel_wait =
-        detail::wait_enters_the_kernel_<typename G::template on<Axis::Synchronization>>::value;
+        detail::is_kernel_entry_wait_<typename G::template on<Axis::Synchronization>>::value;
     static constexpr bool core_burning_spin =
-        detail::wait_burns_the_core_<typename G::template on<Axis::Synchronization>>::value;
+        detail::is_busy_wait_<typename G::template on<Axis::Synchronization>>::value;
 
     static constexpr bool W001_ok = !(hot && kernel_wait);
 
@@ -1545,9 +1547,9 @@ struct rules_of {
     // claim: the same tier that is too slow for the hot path is also
     // non-deterministic by construction, and a payload claiming
     // replay-determinism cannot survive it.
-    static constexpr bool hw_nondeterministic = detail::hw_at_or_above_<
+    static constexpr bool hw_nondeterministic = detail::is_hw_at_or_above_<
         ::fixy::atom::hw::HwInstruction::NonDeterministicTsc, typename G::template on<Axis::HwInstruction>>::value;
-    static constexpr bool hw_privileged = detail::hw_at_or_above_<
+    static constexpr bool hw_privileged = detail::is_hw_at_or_above_<
         ::fixy::atom::hw::HwInstruction::PrivilegedMsr, typename G::template on<Axis::HwInstruction>>::value;
     static constexpr bool row_init = detail::row_admits_init_<typename G::template on<Axis::Effect>>::value;
 
@@ -1563,7 +1565,7 @@ struct rules_of {
     // drain.  A release store and an acquire load are one MOV each on
     // x86 and are what the SPSC ring is made of, so the floor sits above
     // them and above acq_rel.
-    static constexpr bool barrier_seq_cst_or_above = detail::barrier_at_or_above_<
+    static constexpr bool barrier_seq_cst_or_above = detail::is_barrier_at_or_above_<
         ::foundation::algebra::lattices::BarrierStrength::SeqCst, typename G::template on<Axis::BarrierStrength>>::value;
 
     static constexpr bool V301_ok = !(hot && barrier_seq_cst_or_above);
@@ -1579,9 +1581,9 @@ struct rules_of {
     // same trap with nothing named, so the rule fires on it too.  The
     // floor is read through the lattice's leq, so the host trunk is
     // incomparable with Cluster and the rule stands down for it.
-    static constexpr bool scope_cluster_or_above = detail::scope_at_or_above_<
+    static constexpr bool scope_cluster_or_above = detail::is_scope_at_or_above_<
         ::foundation::algebra::lattices::MemoryScope::Cluster, typename G::template on<Axis::MemoryScope>>::value;
-    static constexpr bool barrier_acq_rel_or_above = detail::barrier_at_or_above_<
+    static constexpr bool barrier_acq_rel_or_above = detail::is_barrier_at_or_above_<
         ::foundation::algebra::lattices::BarrierStrength::AcqRel, typename G::template on<Axis::BarrierStrength>>::value;
 
     static constexpr bool V401_ok = !(scope_cluster_or_above && !barrier_acq_rel_or_above);
@@ -1602,11 +1604,12 @@ struct rules_of {
     // nothing else; the accelerator trunk is GPU scope and coheres with
     // no host ISA at all.  The shared points on either axis cohere with
     // anything.
-    static constexpr bool isa_pinned = detail::isa_trunk_pinned_<typename G::template on<Axis::SimdIsa>>::value;
-    static constexpr bool isa_arm = detail::isa_on_arm_trunk_<typename G::template on<Axis::SimdIsa>>::value;
+    static constexpr bool isa_pinned = detail::is_isa_trunk_pinned_<typename G::template on<Axis::SimdIsa>>::value;
+    static constexpr bool isa_arm = detail::is_isa_on_arm_trunk_<typename G::template on<Axis::SimdIsa>>::value;
     static constexpr bool scope_pinned =
-        detail::scope_trunk_pinned_<typename G::template on<Axis::MemoryScope>>::value;
-    static constexpr bool scope_host = detail::scope_on_host_trunk_<typename G::template on<Axis::MemoryScope>>::value;
+        detail::is_scope_trunk_pinned_<typename G::template on<Axis::MemoryScope>>::value;
+    static constexpr bool scope_host =
+        detail::is_scope_on_host_trunk_<typename G::template on<Axis::MemoryScope>>::value;
     static constexpr bool trunks_cohere = scope_host && isa_arm;
 
     static constexpr bool V101_ok = !(replay_deterministic && isa_pinned);
@@ -1631,10 +1634,10 @@ struct rules_of {
     using fp_mode_grade = typename G::template on<Axis::FpMode>;
 
     static constexpr bool fp_reassociates =
-        detail::fp_names_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value
-        || detail::fp_names_<::fixy::atom::fp::FpReassociate::BoundedTreeDepth, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value
+        || detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::BoundedTreeDepth, fp_mode_grade>::value;
     static constexpr bool fp_contracts_across_statements =
-        detail::fp_names_<::fixy::atom::fp::FpContract::Fast, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::fixy::atom::fp::FpContract::Fast, fp_mode_grade>::value;
 
     static constexpr bool F101_ok = !(replay_deterministic && fp_reassociates);
     static constexpr bool F102_ok = !(replay_deterministic && fp_contracts_across_statements);
@@ -1655,7 +1658,7 @@ struct rules_of {
     // type itself, indirect_call<void (*)(void*) noexcept>, the shape
     // BackgroundThread's region-ready callback already declares.
     static constexpr bool indirect_call_may_throw =
-        detail::indirect_call_may_throw_<typename G::template on<Axis::CallShape>>::value;
+        detail::can_indirect_call_throw_<typename G::template on<Axis::CallShape>>::value;
     static constexpr bool D001_ok = !indirect_call_may_throw;
 
     // L003 is L002's lifetime hazard through a different door.  L002
@@ -1663,7 +1666,7 @@ struct rules_of {
     // neither, and it can still run after the frame the borrow points
     // into has unwound.
     static constexpr bool spawn_outlives_the_frame =
-        detail::spawn_outlives_the_frame_<typename G::template on<Axis::Protocol>>::value;
+        detail::can_spawn_outlive_the_frame_<typename G::template on<Axis::Protocol>>::value;
     static constexpr bool L003_ok = !(borrow && spawn_outlives_the_frame);
 
     // P010 reads the effect row.  Two other axes also force emitted
@@ -1708,11 +1711,11 @@ struct rules_of {
     // nothing about floating point, and the two rules stand down for it.
     static constexpr bool fp_mode_stated = G::template mentions<Axis::FpMode>;
     static constexpr bool fp_flushes_denormal_inputs =
-        detail::fp_names_<::fixy::atom::fp::FpDenormalInput::DenormalsAreZero, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::fixy::atom::fp::FpDenormalInput::DenormalsAreZero, fp_mode_grade>::value;
     static constexpr bool fp_flushes_subnormal_results =
-        detail::fp_names_<::fixy::atom::fp::FpFtz::FlushToZero, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::fixy::atom::fp::FpFtz::FlushToZero, fp_mode_grade>::value;
     static constexpr bool fp_rewrites_without_bound =
-        detail::fp_names_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value;
 
     static constexpr bool F103_ok = !(constant_time && fp_rewrites_without_bound);
     static constexpr bool F104_ok = !(constant_time && fp_mode_stated && !fp_flushes_denormal_inputs);
