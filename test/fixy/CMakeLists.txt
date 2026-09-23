@@ -1045,6 +1045,11 @@ fixy_test(test_session_protocol)
 # one abandonment banner on stderr from that child.
 fixy_test(test_session_handle)
 
+# The label word of a keyed branch is one value in every translation
+# unit.  The two files include the headers in different orders and each
+# registers a combinator of its own, and main compares their words.
+fixy_test(test_session_wire_word test_session_wire_word.cpp test_session_wire_word_peer.cpp)
+
 # The adversarial campaign: legal code that tries to drop a protocol,
 # reuse a handle or make a deadlock.  Each attack runs in a child process
 # with a deadline, and the attacks that succeed are pinned on a ledger
@@ -1099,6 +1104,22 @@ fixy_neg_compile_test(neg_sess_incoherent_registration_variance
 fixy_neg_compile_test(neg_sess_incoherent_registration_backwards_variance
   "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
   "Emit is incoherent: an output step with a contravariant payload")
+# The payload rules and the payload axioms of the session layer are
+# sealed at the foot of their headers.  A rule or an axiom that stands
+# outside the seal stops the build, and so does a second registration of
+# a combinator shape.
+fixy_neg_compile_test(neg_sess_payload_rule_after_seal
+  "a_registration_stands_outside_its_seal"
+  "expansion of .foundation::algebra::transition::read_payload_rule")
+fixy_neg_compile_test(neg_sess_payload_rule_before_seal
+  "fixy::session::diagnostic \\[Protocol_Payload_Rule_Outside_Seal\\]"
+  "holds a payload rule that its seal does not count")
+fixy_neg_compile_test(neg_sess_axiom_after_seal
+  "a_registration_stands_outside_its_seal"
+  "expansion of .foundation::algebra::transition::detail::subsorts_within")
+fixy_neg_compile_test(neg_sess_combinator_registered_twice
+  "a_combinator_shape_has_two_registrations"
+  "expansion of .foundation::algebra::transition::read_combinator")
 
 # Well-formedness now asks for a guard between a Continue and its Loop,
 # and refuses VendorBackend::None.  Before, the mint gate admitted all
@@ -1198,6 +1219,19 @@ fixy_neg_compile_test(neg_sess_wf_repeated_crash_branch
 fixy_neg_compile_test(neg_sess_wf_repeated_label
   "no matching function for call to .mint_session_handle"
   "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>")
+
+# A keyed branch sends its label word and a positional branch sends its
+# position, so a choice that mixes the two is refused.  Two closure types
+# print one name, so their label keys share a word and are refused too.
+fixy_neg_compile_test(neg_sess_wf_mixed_label_keys
+  "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
+  "some label branches name a label key and some do not")
+fixy_neg_compile_test(neg_sess_wf_label_word_collision
+  "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
+  "two label keys of the choice have one label word")
+fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")
 
 # The adversarial campaign against the algebra and the relations.  The
 # runtime half runs two threads over bounded queues with a watchdog, so
