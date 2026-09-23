@@ -23,13 +23,15 @@
 // class template must have a witness or a place on the open list, so a
 // new template there fails the build until someone classifies it.
 //
-// The route ledger at the foot names the routes that still compile after
-// the repair.  Each one reads an object whose lifetime never started,
-// which is undefined behavior, and no property of a type refuses it.
-// The ledger can only shrink: a route that no longer compiles fails its
-// pin.
+// The route ledger at the foot names the routes that still forge a proof
+// type after the repair.  Each one reads an object whose lifetime never
+// started, which is undefined behavior, and no property of a type
+// refuses it.  The ledger can only shrink: a route that no longer
+// compiles fails its pin.
 
 #include "every_header.h"
+
+#include <foundation/Lifetime.h>
 
 #include <array>
 #include <cstddef>
@@ -317,15 +319,35 @@ static_assert(!is_proof_shape(^^fe::ExecCtx<>), "the foreground context claims n
 
 // ── the route ledger ────────────────────────────────────────────────
 //
-// Routes that still compile for every proof type above.  None of them
-// is refused by a property of the type, and each one gives a pointer to
-// an object whose lifetime never started.  Implicit object creation
-// starts the life of an implicit-lifetime type only, and a proof type is
-// not one, so an array or an aggregate of proof types starts with no
-// element alive.  A read through the pointer is undefined behavior.
-// main() compiles and runs each route for each pinned proof type, and
-// never reads through the pointer.  A route that no longer compiles
-// fails the build, and its entry then leaves the ledger.
+// Routes that still forge every proof type above.  None of them is
+// refused by a property of the type, and each one gives a pointer to an
+// object whose lifetime never started.  Implicit object creation starts
+// the life of an implicit-lifetime type only, and a proof type is not
+// one, so an array or an aggregate of proof types starts with no element
+// alive.  A read through the pointer is undefined behavior.  main()
+// compiles and runs each route for each pinned proof type, and never
+// reads through the pointer.  A route that no longer compiles fails the
+// build, and its entry then leaves the ledger.
+//
+// Four routes left the ledger for a guard, not for a language rule.
+// They still compile: std::start_lifetime_as over an array of proofs,
+// std::start_lifetime_as_array over proofs, and std::start_lifetime_as
+// over an aggregate or a std::array that holds a proof.  Each one names
+// std::start_lifetime_as, and scripts/check-start-lifetime.sh refuses
+// that name outside a reviewed list whose element types are
+// implicit-lifetime types.  Its self-test plants each of the four routes.
+// foundation::lifetime::start_as_array, which new code uses, refuses the
+// same four routes at compile time.  The assertions below pin that
+// refusal for each proof type of the ledger.
+// Two routes stay, because they name nothing that a guard can refuse:
+//
+//   the inactive member of a union   a union declaration names only its
+//                                    members, and a lexer cannot know
+//                                    that a member type is a proof type
+//   a pointer from a void pointer    std::malloc, an allocator, an arena
+//                                    and a cast through void each give a
+//                                    typed pointer with no object, and
+//                                    the language refuses none of them
 
 // An aggregate that holds the proof.  An aggregate is an
 // implicit-lifetime type whatever its members are.
@@ -341,26 +363,29 @@ union ProofOrByte {
     Proof proof;
 };
 
-// Runs the six routes over one buffer and counts the pointers they give.
+// True when the checked lifetime start refuses each of the four routes
+// that left the ledger for the proof type.
+template <class Proof>
+inline constexpr bool checked_start_refuses_every_route =
+    !::foundation::lifetime::ImplicitLifetimeThroughout<Proof>
+    && !::foundation::lifetime::ImplicitLifetimeThroughout<Proof[1]>
+    && !::foundation::lifetime::ImplicitLifetimeThroughout<HoldsProof<Proof>>
+    && !::foundation::lifetime::ImplicitLifetimeThroughout<std::array<Proof, 1>>
+    && !::foundation::lifetime::ImplicitLifetimeThroughout<ProofOrByte<Proof>>;
+
+// Runs the two routes and counts the pointers they give.
 // Complexity: constant.
 template <class Proof>
 [[nodiscard]] std::size_t count_open_routes() noexcept {
-    alignas(std::max_align_t) unsigned char storage[sizeof(std::array<Proof, 1>) + sizeof(HoldsProof<Proof>)]{};
+    alignas(Proof) unsigned char storage[sizeof(Proof)]{};
     ProofOrByte<Proof> proof_or_byte{.byte = 0};
-    // An array type is an implicit-lifetime type for any element.
-    Proof* const from_array = *std::start_lifetime_as<Proof[1]>(storage);
-    // The helper for arrays has no mandate on the element type at all.
-    Proof* const from_array_helper = std::start_lifetime_as_array<Proof>(storage, 1);
-    Proof* const from_aggregate = &std::start_lifetime_as<HoldsProof<Proof>>(storage)->proof;
-    Proof* const from_std_array = std::start_lifetime_as<std::array<Proof, 1>>(storage)->data();
     // A member of a union that is not active.
     Proof* const from_union = &proof_or_byte.proof;
     // A conversion through void names no reinterpret_cast, so the
     // reinterpret guard does not see it.  No rule of the language refuses
     // it, so this entry is permanent.
     Proof* const from_void = static_cast<Proof*>(static_cast<void*>(storage));
-    const Proof* const routes[] = {from_array, from_array_helper, from_aggregate,
-                                   from_std_array, from_union, from_void};
+    const Proof* const routes[] = {from_union, from_void};
     std::size_t open = 0;
     for (const Proof* const route : routes) open += route != nullptr ? 1u : 0u;
     return open;
@@ -398,6 +423,12 @@ static_assert(every_closed_route_refused<fe::Capability<fe::Effect::Block, fe::B
               "a capability is built without its key again");
 static_assert(every_closed_route_refused<fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Block>>>,
               "an execution context over Bg is built without a Bg again");
+static_assert(checked_start_refuses_every_route<fe::Bg>
+                  && checked_start_refuses_every_route<fe::detail::ctx_mint::bg_key>
+                  && checked_start_refuses_every_route<fe::cap_mint_key>
+                  && checked_start_refuses_every_route<fp::perm_mint_key>
+                  && checked_start_refuses_every_route<fp::Permission<Region>>,
+              "the checked lifetime start admits an array, an aggregate or a union that holds a proof type");
 
 // A key reaches the door only through a friend.  The empty braces name
 // the private constructor from here, and the wrong key fails the
@@ -434,10 +465,10 @@ inline constexpr std::size_t templates_open = std::size(open_templates);
 
 int main() {
     namespace fps = forgeable_proofs;
-    // Six routes for each of the five pinned proof types.  A route that no
+    // Two routes for each of the five pinned proof types.  A route that no
     // longer gives a pointer lowers the count, and the entry must leave
     // the ledger.
-    constexpr std::size_t expected_open_routes = 6u * 5u;
+    constexpr std::size_t expected_open_routes = 2u * 5u;
     const std::size_t open_routes = fps::count_open_routes<fe::Bg>()
                                     + fps::count_open_routes<fe::detail::ctx_mint::bg_key>()
                                     + fps::count_open_routes<fe::cap_mint_key>()

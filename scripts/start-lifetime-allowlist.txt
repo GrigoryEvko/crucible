@@ -1,0 +1,87 @@
+# start-lifetime-allowlist — the reviewed uses of std::start_lifetime_as
+# and std::start_lifetime_as_array.  scripts/check-start-lifetime.sh reads
+# this file.
+#
+# Format: path:key, or path:key xN.  The key is the name and its template
+# argument list, with the white space reduced, as the guard prints it.
+# An entry admits exactly one use in that file with that key, or N uses
+# with the suffix.  A line that starts with '#' is a comment, and each
+# entry has one above it.
+#
+# A proof type is not an implicit-lifetime type.  A site is safe when its
+# element type is a concrete implicit-lifetime type, or a template
+# parameter that a constraint holds to one.  The comment of each entry
+# names the element type and says which of the two holds.
+
+# The auxiliary buffer of a trace entry: 64-bit scalars and the strong
+# IDs OpIndex and SlotId, each a trivially copyable 32-bit wrapper.
+include/crucible/BackgroundThread.h:start_lifetime_as_array<int64_t>
+include/crucible/BackgroundThread.h:start_lifetime_as_array<OpIndex>
+include/crucible/BackgroundThread.h:start_lifetime_as_array<SlotId> x2
+bench/bench_phases.cpp:start_lifetime_as_array<int64_t>
+bench/bench_phases.cpp:start_lifetime_as_array<OpIndex>
+bench/bench_phases.cpp:start_lifetime_as_array<SlotId> x2
+
+# The erasure-code kernels: AVX2 vectors and byte lanes over packet bytes.
+include/crucible/cntp/Fec.h:start_lifetime_as<const __m256i> x6
+include/crucible/cntp/Fec.h:start_lifetime_as<__m256i> x2
+include/crucible/cntp/Fec.h:start_lifetime_as<const std::uint8_t> x4
+include/crucible/cntp/Fec.h:start_lifetime_as<std::uint8_t> x2
+
+# The seqlock read of a snapshot.  T is a template parameter, and the
+# class constraint holds it to a trivially copyable type.  The mandate of
+# std::start_lifetime_as also refuses a type that is not implicit-lifetime.
+include/crucible/concurrent/AtomicSnapshot.h:start_lifetime_as<T> x2
+
+# A KNOWN OPEN SITE.  slot_type is the template parameter SlotPtr, and
+# nothing constrains it, so SwissTableBuffer<P> over a proof type P gives
+# slots whose lifetime never started.  Each user in the tree passes a
+# pointer type.  The header is in the frozen tree, and no new-tree copy
+# exists to mirror, so the constraint lands when the buffer moves to the
+# new tree: SlotPtr must be an implicit-lifetime type.
+include/crucible/safety/SwissTableBuffer.h:start_lifetime_as_array<slot_type>
+
+# The checked lifetime start, one overload for mutable and one for const
+# storage.  T is a template parameter, and each overload requires
+# ImplicitLifetimeThroughout<T>: T and each subobject of T at each depth
+# is an implicit-lifetime type.  New code uses this function.
+include/foundation/Lifetime.h:start_lifetime_as_array<T> x2
+
+# Netlink replies: the C structs rtattr, nlmsghdr and tcmsg.
+src/cntp/Pacing.cpp:start_lifetime_as<rtattr>
+src/cntp/Pacing.cpp:start_lifetime_as<nlmsghdr>
+src/cntp/Pacing.cpp:start_lifetime_as<tcmsg>
+
+# BPF ring mappings: the plain header and event structs of each probe.
+src/perf/LockContention.cpp:start_lifetime_as<TimelineHeader>
+src/perf/LockContention.cpp:start_lifetime_as_array<TimelineLockEvent>
+src/perf/PmuSample.cpp:start_lifetime_as<PmuSampleHeader>
+src/perf/PmuSample.cpp:start_lifetime_as_array<PmuSampleEvent>
+src/perf/SchedSwitch.cpp:start_lifetime_as<TimelineHeader>
+src/perf/SchedSwitch.cpp:start_lifetime_as_array<TimelineSchedEvent>
+src/perf/SchedTpBtf.cpp:start_lifetime_as<TimelineHeader>
+src/perf/SchedTpBtf.cpp:start_lifetime_as_array<TimelineSchedEvent>
+src/perf/SyscallLatency.cpp:start_lifetime_as<TimelineHeader>
+src/perf/SyscallLatency.cpp:start_lifetime_as_array<TimelineSyscallEvent>
+src/perf/SyscallTpBtf.cpp:start_lifetime_as<TimelineHeader>
+src/perf/SyscallTpBtf.cpp:start_lifetime_as_array<TimelineSyscallEvent>
+
+# The kernel timestamps of a PTP control message: the C struct timespec.
+src/topology/Ptp.cpp:start_lifetime_as_array<timespec>
+
+# Negative-compile fixtures.  Each one applies std::start_lifetime_as to
+# one proof type and must fail to compile, which proves that the proof
+# type is not an implicit-lifetime type.  The fixture that compiled would
+# fail its own test.
+test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp:start_lifetime_as<s::SessionEvent>
+test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Bg>
+test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::ExecCtx<fe::Bg,fe::Row<fe::Effect::Bg,fe::Effect::Block>>>
+test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::bg_key>
+test/foundation/neg/neg_capability_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Capability<fe::Effect::Block,fe::Bg>>
+test/foundation/neg/neg_cap_mint_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::cap_mint_key>
+test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Init>
+test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::init_key>
+test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::Permission<Region>>
+test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::ReadView<Region>>
+test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Test>
+test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::test_key>

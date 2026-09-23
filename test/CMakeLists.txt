@@ -782,6 +782,21 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard")
+# std::start_lifetime_as over an array of proofs, over an aggregate that
+# holds one, and std::start_lifetime_as_array over proofs each give a
+# pointer to a proof whose lifetime never started, and no property of a
+# type refuses them.  scripts/check-start-lifetime.sh refuses each use of
+# the two library names outside a reviewed and counted list.  The guard
+# reads the compile database of this build, so a generated source and a
+# source with an unusual suffix are in scope.  The self-test plants each
+# route and each known bypass.
+add_test(NAME start_lifetime_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.sh --self-test)
+add_test(NAME start_lifetime
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.sh
+          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
+set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
+    LABELS "ci_guard")
 # FIXY-V-094 fast-math-family flag ban enforcement (CLAUDE.md §V "NEVER"
 # matrix + cmake/FpStrict.cmake floor).  scripts/check-no-ffast-math.sh
 # is the per-TU guard against `#pragma GCC optimize("fast-math")` or
